@@ -1,5 +1,5 @@
 name: github-actions
-on: pull_request
+on: pull_request: paths: llm
 jobs:
   llm:
     runs-on: ubuntu-20.04-8-cores
@@ -7,12 +7,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Install OpenVINO and OpenCV
+      - name: Install OpenVINO
         run: |
           mkdir ov
           curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.1/linux/l_openvino_toolkit_ubuntu20_2023.1.0.12185.47b736f63ed_x86_64.tgz | tar --directory ov --strip-components 1 -xz
           sudo ov/install_dependencies/install_openvino_dependencies.sh
-          sudo apt install libopencv-dev
       - name: Build llm
         run: |
           mkdir build
