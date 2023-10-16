@@ -1,0 +1,3 @@
+[submodule "llm/thirdparty/llama.cpp"]
+	path = llm/thirdparty/llama.cpp
+	url = https://github.com/ggerganov/llama.cpp.git
