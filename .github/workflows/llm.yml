@@ -2,7 +2,7 @@ name: github-actions
 on:
   pull_request:
     paths:
-      - llm
+      - llm/**
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
