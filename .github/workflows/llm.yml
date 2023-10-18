@@ -28,15 +28,14 @@ jobs:
           cmake --build . --config Release -j
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.11
+          python-version: 3.9
       - name: Download and convert open_llama_3b_v2 and the vocab
         run: |
-          python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu onnx git+https://github.com/huggingface/optimum-intel.git
+          python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx git+https://github.com/huggingface/optimum-intel.git
           source ov/setupvars.sh
           optimum-cli export openvino -m openlm-research/open_llama_3b_v2 open_llama_3b_v2/
-          rm open_llama_3b_v2/added_tokens.json  # The file added by optimum-cli confuses llama.cpp
-          python llm/thirdparty/llama.cpp/convert.py open_llama_3b_v2/ --vocab-only --outfile open_llama_3b_v2/vocab.gguf
+          python convert_tokenizers.py thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so open_llama_3b_v2/
       - name: Run llm
         run: |
           source ov/setupvars.sh
-          ./build/llm open_llama_3b_v2/openvino_model.xml open_llama_3b_v2/vocab.gguf "return 0"
+          ./build/llm open_llama_3b_v2/openvino_model.xml tokenizer.xml detokenizer.xml "return 0"

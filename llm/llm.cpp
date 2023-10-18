@@ -1,37 +1,54 @@
 // Copyright (C) 2023 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
-//
 
-#include <common.h>  // From llama.cpp
-#include <llama.h>
 #include <openvino/openvino.hpp>
 
 namespace {
-void print_token(const llama_model& vocab, llama_token out_token) {
-    std::array<char, 24> decoded;
-    int length = llama_token_to_piece(&vocab, out_token, decoded.data(), int(decoded.size()));
-    if (length < 0) {
-        throw std::runtime_error("Unexpected number of chars (" + std::to_string(-length) + ") for the token " + std::to_string(out_token));
+void tokenize(ov::InferRequest& tokenizer, const std::string& prompt) {
+    constexpr size_t BATCH_SIZE = 1;
+    ov::Tensor destination = tokenizer.get_input_tensor();
+    destination.set_shape({BATCH_SIZE * 4 + 8  + prompt.length()});
+    // B - batch size, S - start idx, E - end idx (and start for the next string). Tensor layout in bytes:
+    // BbbbSsssEeeePrompt1EeeePrompt2
+    int32_t* ptr = reinterpret_cast<int32_t*>(destination.data<uint8_t>());
+    ptr[0] = BATCH_SIZE;
+    ptr[1] = 0;
+    ptr[2] = prompt.length();
+    std::copy(prompt.begin(), prompt.end(), reinterpret_cast<uint8_t*>(ptr + 3));
+    tokenizer.infer();
+}
+
+void print_token(ov::InferRequest& detokenizer, int32_t out_token) {
+    constexpr size_t BATCH_SIZE = 1;
+    ov::Tensor inp = detokenizer.get_input_tensor();
+    inp.set_shape({BATCH_SIZE, 1});
+    inp.data<int32_t>()[0] = out_token;
+    detokenizer.infer();
+    ov::Tensor detokenized = detokenizer.get_output_tensor();
+    size_t tensor_size = detokenized.get_size();
+    if (tensor_size <= BATCH_SIZE * 4 + 8) {
+        throw std::runtime_error("The detokenized tensor must contain batch size, first string offset and end indices");
     }
-    for (size_t idx = 0; idx < size_t(length); ++idx) {
-        std::cout << decoded[idx];
+    const uint8_t* ptr = detokenized.data<const uint8_t>();
+    if (reinterpret_cast<const int32_t*>(ptr)[0] != BATCH_SIZE) {
+        throw std::runtime_error("Expected batch 1 in the detokenized tensor");
+    }
+    for (const uint8_t* sym_ptr = ptr + BATCH_SIZE * 4 + 8; sym_ptr < ptr + tensor_size; ++sym_ptr) {
+        std::cout << *sym_ptr;
     }
     std::cout << std::flush;
 }
 }
 
 int main(int argc, char* argv[]) try {
-    if (argc != 4) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <model_path> <vocab_path> '<prompt>'");
-    }
-    llama_model_params params;
-    params.vocab_only = true;
-    struct LlamaDeleter {void operator()(llama_model* ptr) noexcept {llama_free_model(ptr);}};
-    std::unique_ptr<llama_model, LlamaDeleter> vocab{llama_load_model_from_file(argv[2], params)};
-    if (!vocab) {
-        throw std::runtime_error("Failed to load vocab");
+    if (argc != 5) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> '<prompt>'");
     }
     ov::Core core;
+    core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in CMakeLists.txt
+    ov::InferRequest tokenizer = core.compile_model(argv[2], "CPU").create_infer_request();
+    ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
+    tokenize(tokenizer, argv[4]);
     std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
     constexpr size_t BATCH_SIZE = 1;
     std::map<std::string, ov::PartialShape> shapes = {
@@ -53,6 +70,10 @@ int main(int argc, char* argv[]) try {
         }
     }
     model->reshape(shapes);
+    ov::preprocess::PrePostProcessor p3(model);
+    p3.input("input_ids").tensor().set_element_type(ov::element::i32);  // cast to the type of tokenyzer's output
+    p3.input("attention_mask").tensor().set_element_type(ov::element::i32);
+    model = p3.build();
     ov::InferRequest ireq = core.compile_model(model, "CPU", {ov::cache_dir("llm-cache")}).create_infer_request();
     for (const ov::Output<ov::Node>& input : model->inputs()) {
         for (const std::string& name : input.get_names()) {
@@ -62,23 +83,18 @@ int main(int argc, char* argv[]) try {
             }
         }
     }
-    constexpr bool add_bos = true;
-    std::vector<llama_token> prompt = llama_tokenize(vocab.get(), argv[3], add_bos);
-    ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, prompt.size()});
-    ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, prompt.size()});
-    std::copy(prompt.begin(), prompt.end(), ireq.get_tensor("input_ids").data<int64_t>());
-    std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), prompt.size(), 1);
+    ireq.get_tensor("input_ids").set_shape(tokenizer.get_tensor("input_ids").get_shape());  // TODO: report that ireq.set_tensor("input_ids", tokenizer.get_tensor("input_ids")); gives different result
+    ireq.get_tensor("attention_mask").set_shape(tokenizer.get_tensor("input_ids").get_shape());
+    std::copy_n(tokenizer.get_tensor("input_ids").data<int32_t>(), tokenizer.get_tensor("input_ids").get_size(), ireq.get_tensor("input_ids").data<int32_t>());
+    std::fill_n(ireq.get_tensor("attention_mask").data<int32_t>(), tokenizer.get_tensor("input_ids").get_size(), 1);
     ireq.infer();
-    size_t n_vocab = size_t(llama_n_vocab(vocab.get()));
-    if (ireq.get_tensor("logits").get_shape().back() != n_vocab) {
-        throw std::runtime_error("Model and vocab number of tokens don't match");
-    }
-    float* logits = ireq.get_tensor("logits").data<float>() + (prompt.size() - 1) * n_vocab;
+    size_t n_vocab = ireq.get_tensor("logits").get_shape().back();
+    float* logits = ireq.get_tensor("logits").data<float>() + (tokenizer.get_tensor("input_ids").get_size() - 1) * n_vocab;
     ptrdiff_t out_token = std::max_element(logits, logits + n_vocab) - logits;
 
     ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, 1});
-    ireq.get_tensor("attention_mask").data<int64_t>()[0] = 1;
+    ireq.get_tensor("attention_mask").data<int32_t>()[0] = 1;
     constexpr ptrdiff_t SPECIAL_EOS_TOKEN = 2;
     while (out_token != SPECIAL_EOS_TOKEN) {
         for (const ov::Output<ov::Node>& input : model->inputs()) {
@@ -89,9 +105,9 @@ int main(int argc, char* argv[]) try {
                 }
             }
         }
-        ireq.get_tensor("input_ids").data<int64_t>()[0] = out_token;
+        ireq.get_tensor("input_ids").data<int32_t>()[0] = out_token;
         ireq.start_async();
-        print_token(*vocab, llama_token(out_token));
+        print_token(detokenizer, out_token);
         ireq.wait();
         logits = ireq.get_tensor("logits").data<float>();
         out_token = std::max_element(logits, logits + n_vocab) - logits;
