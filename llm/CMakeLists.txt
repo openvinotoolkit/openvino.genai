@@ -22,5 +22,10 @@ if(MSVC)
         /wd4710 /wd4711  # Disable the inline warnings
     )
 else()
-    target_compile_options(llm PRIVATE -Wall)  # Display all warnings
+    target_compile_options(
+        llm
+        PRIVATE
+        -Wall  # Display all warnings
+        -Wno-stringop-overflow  # Disable the warning from openvino_contrib
+    )
 endif()
