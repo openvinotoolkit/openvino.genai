@@ -29,8 +29,8 @@ cmake --build . --config Release -j
 ```sh
 python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx git+https://github.com/huggingface/optimum-intel.git
 source <OpenVINO dir>/setupvars.sh
-optimum-cli export openvino -m meta-llama/Llama-2-13b-hf Llama-2-13b-hf
-python convert_tokenizers.py thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so Llama-2-13b-hf/
+optimum-cli export openvino -m meta-llama/Llama-2-7b-hf Llama-2-7b-hf
+python convert_tokenizers.py thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so Llama-2-7b-hf/
 ```
 
 ## Run

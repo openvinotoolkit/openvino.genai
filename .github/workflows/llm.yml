@@ -22,9 +22,10 @@ jobs:
           sudo ov/install_dependencies/install_openvino_dependencies.sh
       - name: Build llm
         run: |
+          source ov/setupvars.sh
           mkdir build
           cd build
-          cmake -DCMAKE_BUILD_TYPE=Release -DOpenVINO_DIR=../ov/runtime/cmake -DCMAKE_CXX_FLAGS=-Werror ../llm
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Werror ../llm
           cmake --build . --config Release -j
       - uses: actions/setup-python@v4
         with:
