@@ -1,6 +1,5 @@
 # Copyright (C) 2023 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-#
 
 cmake_minimum_required(VERSION 3.13)  # The requirement comes from thirdparty/openvino_contrib/modules/custom_operations/CMakeLists.txt
 project(llm)
@@ -22,10 +21,6 @@ if(MSVC)
         /wd4710 /wd4711  # Disable the inline warnings
     )
 else()
-    target_compile_options(
-        llm
-        PRIVATE
-        -Wall  # Display all warnings
-        -Wno-stringop-overflow  # Disable the warning from openvino_contrib
-    )
+    target_compile_options(llm PRIVATE -Wall)  # Display all warnings
+    target_compile_options(sentencepiece-static PRIVATE -Wno-stringop-overflow)  # Disable the warning from openvino_contrib
 endif()
