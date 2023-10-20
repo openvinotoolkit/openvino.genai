@@ -6,34 +6,36 @@
 namespace {
 void tokenize(ov::InferRequest& tokenizer, const std::string& prompt) {
     constexpr size_t BATCH_SIZE = 1;
+    constexpr size_t INDEXES_SIZE = (2 + BATCH_SIZE) * sizeof(uint32_t);
     ov::Tensor destination = tokenizer.get_input_tensor();
-    destination.set_shape({BATCH_SIZE * 4 + 8  + prompt.length()});
+    destination.set_shape({INDEXES_SIZE + prompt.length()});
     // B - batch size, S - start idx, E - end idx (and start for the next string). Tensor layout in bytes:
     // BbbbSsssEeeePrompt1EeeePrompt2
     int32_t* ptr = reinterpret_cast<int32_t*>(destination.data<uint8_t>());
     ptr[0] = BATCH_SIZE;
     ptr[1] = 0;
-    ptr[2] = prompt.length();
+    ptr[2] = int32_t(prompt.length());
     std::copy(prompt.begin(), prompt.end(), reinterpret_cast<uint8_t*>(ptr + 3));
     tokenizer.infer();
 }
 
 void print_token(ov::InferRequest& detokenizer, int32_t out_token) {
     constexpr size_t BATCH_SIZE = 1;
+    constexpr size_t INDEXES_SIZE = (2 + BATCH_SIZE) * sizeof(uint32_t);
     ov::Tensor inp = detokenizer.get_input_tensor();
     inp.set_shape({BATCH_SIZE, 1});
     inp.data<int32_t>()[0] = out_token;
     detokenizer.infer();
     ov::Tensor detokenized = detokenizer.get_output_tensor();
     size_t tensor_size = detokenized.get_size();
-    if (tensor_size <= BATCH_SIZE * 4 + 8) {
+    if (tensor_size <= INDEXES_SIZE) {
         throw std::runtime_error("The detokenized tensor must contain batch size, first string offset and end indices");
     }
     const uint8_t* ptr = detokenized.data<const uint8_t>();
     if (reinterpret_cast<const int32_t*>(ptr)[0] != BATCH_SIZE) {
         throw std::runtime_error("Expected batch 1 in the detokenized tensor");
     }
-    for (const uint8_t* sym_ptr = ptr + BATCH_SIZE * 4 + 8; sym_ptr < ptr + tensor_size; ++sym_ptr) {
+    for (const uint8_t* sym_ptr = ptr + INDEXES_SIZE; sym_ptr < ptr + tensor_size; ++sym_ptr) {
         std::cout << *sym_ptr;
     }
     std::cout << std::flush;
@@ -90,12 +92,12 @@ int main(int argc, char* argv[]) try {
     ireq.infer();
     size_t n_vocab = ireq.get_tensor("logits").get_shape().back();
     float* logits = ireq.get_tensor("logits").data<float>() + (tokenizer.get_tensor("input_ids").get_size() - 1) * n_vocab;
-    ptrdiff_t out_token = std::max_element(logits, logits + n_vocab) - logits;
+    int32_t out_token = int32_t(std::max_element(logits, logits + n_vocab) - logits);
 
     ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, 1});
     ireq.get_tensor("attention_mask").data<int32_t>()[0] = 1;
-    constexpr ptrdiff_t SPECIAL_EOS_TOKEN = 2;
+    constexpr int32_t SPECIAL_EOS_TOKEN = 2;
     while (out_token != SPECIAL_EOS_TOKEN) {
         for (const ov::Output<ov::Node>& input : model->inputs()) {
             for (const std::string& name : input.get_names()) {
@@ -110,7 +112,7 @@ int main(int argc, char* argv[]) try {
         print_token(detokenizer, out_token);
         ireq.wait();
         logits = ireq.get_tensor("logits").data<float>();
-        out_token = std::max_element(logits, logits + n_vocab) - logits;
+        out_token = int32_t(std::max_element(logits, logits + n_vocab) - logits);
     }
     std::cout << '\n';
 } catch (const std::exception& error) {

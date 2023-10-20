@@ -21,8 +21,16 @@ cmake --build . --config Release -j
 
 ## Supported models
 
-1. [LLaMA 2](https://huggingface.co/meta-llama/Llama-2-13b-hf)
-2. [OpenLLaMA](https://huggingface.co/openlm-research/open_llama_3b_v2)
+1. LLaMA 2
+   1. https://huggingface.co/meta-llama/Llama-2-7b-hf
+   2. https://huggingface.co/meta-llama/Llama-2-7b-chat-hf
+   3. https://huggingface.co/llamaste/Llama-2-13b-hf
+   4. https://huggingface.co/meta-llama/Llama-2-13b-chat-hf
+   5. https://huggingface.co/llamaste/Llama-2-70b-hf
+   6. https://huggingface.co/meta-llama/Llama-2-70b-chat-hf
+2. OpenLLaMA 2
+   1. https://huggingface.co/openlm-research/open_llama_3b_v2
+   2. https://huggingface.co/openlm-research/open_llama_7b_v2
 
 ### Download and convert the model and tokenizers
 
