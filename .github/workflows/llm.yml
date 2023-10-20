@@ -35,7 +35,7 @@ jobs:
           python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu llm/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx git+https://github.com/huggingface/optimum-intel.git
           source ov/setupvars.sh
           optimum-cli export openvino -m openlm-research/open_llama_3b_v2 open_llama_3b_v2/
-          python convert_tokenizers.py build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so open_llama_3b_v2/
+          python llm/convert_tokenizers.py build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so open_llama_3b_v2/
       - name: Run llm
         run: |
           source ov/setupvars.sh
