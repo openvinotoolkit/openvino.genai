@@ -1,4 +1,4 @@
-name: llm/cpp
+name: llm-cpp
 on:
   pull_request:
     paths:
@@ -9,7 +9,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  llm/cpp:
+  llm-cpp:
     runs-on: ubuntu-20.04-8-cores
     steps:
       - uses: actions/checkout@v4
