@@ -28,9 +28,13 @@ cmake --build . --config Release -j
    4. https://huggingface.co/meta-llama/Llama-2-13b-chat-hf
    5. https://huggingface.co/meta-llama/Llama-2-70b-hf
    6. https://huggingface.co/meta-llama/Llama-2-70b-chat-hf
-2. OpenLLaMA 2
-   1. https://huggingface.co/openlm-research/open_llama_3b_v2
-   2. https://huggingface.co/openlm-research/open_llama_7b_v2
+2. OpenLLaMA
+   1. https://huggingface.co/openlm-research/open_llama_3b
+   2. https://huggingface.co/openlm-research/open_llama_7b
+   3. https://huggingface.co/openlm-research/open_llama_13b
+   4. https://huggingface.co/openlm-research/open_llama_3b_v2
+   5. https://huggingface.co/openlm-research/open_llama_7b_v2
+3. [Llama2-7b-WhoIsHarryPotter](https://huggingface.co/microsoft/Llama2-7b-WhoIsHarryPotter)
 
 ### Download and convert the model and tokenizers
 
@@ -45,6 +49,6 @@ python convert_tokenizers.py build/thirdparty/openvino_contrib/modules/custom_op
 
 Usage: `llm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "<prompt>"`
 
-Example: `llm openvino_model.xml tokenizer.xml detokenizer.xml "Why is the Sun yellow?"`
+Example: `./build/llm Llama-2-7b-hf/openvino_model.xml tokenizer.xml detokenizer.xml "Why is the Sun yellow?"`
 
 To enable non ASCII characters for Windows cmd open `Region` settings from `Control panel`. `Adiministrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
