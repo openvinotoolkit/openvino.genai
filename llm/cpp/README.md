@@ -1,8 +1,6 @@
 # LLM
 
-This application showcases inference of a large language model (LLM). It doesn't have much of configuration options to encourage the reader to explore and modify the source code.
-
-https://github.com/openvinotoolkit/openvino for C++ must be installed.
+This application showcases inference of a large language model (LLM). It doesn't have much of configuration options to encourage the reader to explore and modify the source code. There's a Jupyter notebooks which corresponds to this pipeline and discusses how to create an LLM-powered Chatbot: https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot.
 
 ## How it works
 
@@ -51,4 +49,4 @@ Usage: `llm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "<prompt>"`
 
 Example: `./build/llm Llama-2-7b-hf/openvino_model.xml tokenizer.xml detokenizer.xml "Why is the Sun yellow?"`
 
-To enable non ASCII characters for Windows cmd open `Region` settings from `Control panel`. `Adiministrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
+To enable non ASCII characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
