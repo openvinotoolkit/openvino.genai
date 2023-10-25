@@ -26,14 +26,14 @@ jobs:
           sudo ov/install_dependencies/install_openvino_dependencies.sh
           wait
       - uses: actions/cache@v3
-        id: llm-cache
+        id: cache
         with:
-          path: llm-cache
-          key: llm-cache
+          path: cache
+          key: cache
       - name: Download, convert and build
         run: |
           source ov/setupvars.sh
-          optimum-cli export openvino -m openlm-research/open_llama_3b_v2 --cache_dir llm-cache/optimum/ open_llama_3b_v2/ &
+          optimum-cli export openvino -m openlm-research/open_llama_3b_v2 --cache_dir cache/optimum/ open_llama_3b_v2/ &
           mkdir build/
           cd build/
           cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Werror ../llm/cpp
