@@ -15,32 +15,29 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Install OpenVINO
-        run: |
-          mkdir ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.1/linux/l_openvino_toolkit_ubuntu20_2023.1.0.12185.47b736f63ed_x86_64.tgz | tar --directory ov/ --strip-components 1 -xz
-          sudo ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build llm and user_ov_extensions
-        run: |
-          source ov/setupvars.sh
-          mkdir build/
-          cd build/
-          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Werror ../llm/cpp
-          cmake --build . --config Release -j
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
       - uses: actions/cache@v3
-        id: cache
+        id: llm-cache
         with:
-          path: cache
-          key: cache
-      - run: python -m pip install --cache-dir cache/pip/ --extra-index-url https://download.pytorch.org/whl/cpu llm/cpp/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx git+https://github.com/huggingface/optimum-intel.git
-      - if: ${{ !steps.cache.outputs.cache-hit }}
-        name: Download and export open_llama_3b_v2
+          path: llm-cache
+          key: llm-cache
+      - name: Install dependencies
+        run: |
+          python -m pip install --cache-dir llm-cache/pip/ --extra-index-url https://download.pytorch.org/whl/cpu llm/cpp/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx git+https://github.com/huggingface/optimum-intel.git &
+          mkdir ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.1/linux/l_openvino_toolkit_ubuntu20_2023.1.0.12185.47b736f63ed_x86_64.tgz | tar --directory ov/ --strip-components 1 -xz
+          wait
+      - name: Download, convert and build
         run: |
           source ov/setupvars.sh
-          optimum-cli export openvino -m openlm-research/open_llama_3b_v2 --cache_dir cache/optimum/ open_llama_3b_v2/
+          optimum-cli export openvino -m openlm-research/open_llama_3b_v2 --cache_dir llm-cache/optimum/ open_llama_3b_v2/ &
+          mkdir build/
+          cd build/
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Werror ../llm/cpp
+          cmake --build . --config Release -j
+          wait
       - name: Convert and run llm
         run: |
           source ov/setupvars.sh
