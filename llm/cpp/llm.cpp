@@ -4,7 +4,7 @@
 #include <openvino/openvino.hpp>
 
 namespace {
-void tokenize(ov::InferRequest& tokenizer, const std::string& prompt) {
+void tokenize(ov::InferRequest& tokenizer, std::string_view prompt) {
     constexpr size_t BATCH_SIZE = 1;
     constexpr size_t INDEXES_SIZE = (2 + BATCH_SIZE) * sizeof(int32_t);
     ov::Tensor destination = tokenizer.get_input_tensor();
@@ -15,7 +15,7 @@ void tokenize(ov::InferRequest& tokenizer, const std::string& prompt) {
     int_ptr[0] = BATCH_SIZE;
     int_ptr[1] = 0;
     int_ptr[2] = int32_t(prompt.length());
-    std::copy(prompt.begin(), prompt.end(), reinterpret_cast<char*>(int_ptr + 3));
+    std::copy(prompt.cbegin(), prompt.cend(), reinterpret_cast<char*>(int_ptr + 3));
     tokenizer.infer();
 }
 

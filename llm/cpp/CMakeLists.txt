@@ -11,7 +11,7 @@ add_executable(llm llm.cpp)
 target_compile_definitions(llm PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 target_link_libraries(llm PRIVATE openvino::runtime)
-set_target_properties(llm PROPERTIES CXX_STANDARD 17)  # The requirement comes from thirdparty\openvino_contrib\modules\custom_operations\user_ie_extensions\tokenizer\CMakeLists.txt
+set_target_properties(llm PROPERTIES CXX_STANDARD 17)
 set_target_properties(llm PROPERTIES CXX_STANDARD_REQUIRED ON)
 if(MSVC)
     target_compile_options(
