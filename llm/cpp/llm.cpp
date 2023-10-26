@@ -4,19 +4,20 @@
 #include <openvino/openvino.hpp>
 
 namespace {
-void tokenize(ov::InferRequest& tokenizer, const std::string& prompt) {
+std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest&& tokenizer, std::string_view prompt) {
     constexpr size_t BATCH_SIZE = 1;
     constexpr size_t INDEXES_SIZE = (2 + BATCH_SIZE) * sizeof(int32_t);
     ov::Tensor destination = tokenizer.get_input_tensor();
     destination.set_shape({INDEXES_SIZE + prompt.length()});
-    // B - batch size, E - end idx (and start for the next prompt). Tensor layout in bytes:
-    // Bbbb0000EeeeEeeePrompt1Prompt2
+    // N - batch size, E - end offset (and start for the next string). Tensor layout in bytes:
+    // Nnnn0000EeeeEeeeChars1Chars2
     int32_t* int_ptr = reinterpret_cast<int32_t*>(destination.data<uint8_t>());
     int_ptr[0] = BATCH_SIZE;
     int_ptr[1] = 0;
     int_ptr[2] = int32_t(prompt.length());
-    std::copy(prompt.begin(), prompt.end(), reinterpret_cast<char*>(int_ptr + 3));
+    std::copy(prompt.cbegin(), prompt.cend(), reinterpret_cast<char*>(int_ptr + 3));
     tokenizer.infer();
+    return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
 }
 
 void print_token(ov::InferRequest& detokenizer, int32_t out_token) {
@@ -45,9 +46,8 @@ int main(int argc, char* argv[]) try {
     }
     ov::Core core;
     core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in CMakeLists.txt
-    ov::InferRequest tokenizer = core.compile_model(argv[2], "CPU").create_infer_request();
+    auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
     ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
-    tokenize(tokenizer, argv[4]);
     std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
     constexpr size_t BATCH_SIZE = 1;
     std::map<std::string, ov::PartialShape> shapes = {
@@ -82,19 +82,19 @@ int main(int argc, char* argv[]) try {
             }
         }
     }
-    ireq.get_tensor("input_ids").set_shape(tokenizer.get_tensor("input_ids").get_shape());  // TODO: replace with ireq.set_tensor("input_ids", tokenizer.get_tensor("input_ids")); after it's fixed
-    ireq.get_tensor("attention_mask").set_shape(tokenizer.get_tensor("input_ids").get_shape());
-    std::copy_n(tokenizer.get_tensor("input_ids").data<int32_t>(), tokenizer.get_tensor("input_ids").get_size(), ireq.get_tensor("input_ids").data<int32_t>());
-    std::fill_n(ireq.get_tensor("attention_mask").data<int32_t>(), tokenizer.get_tensor("input_ids").get_size(), 1);
+    ireq.get_tensor("input_ids").set_shape(input_ids.get_shape());  // TODO: replace with ireq.set_tensor("input_ids", input_ids); after it's fixed
+    ireq.get_tensor("attention_mask").set_shape(input_ids.get_shape());
+    std::copy_n(input_ids.data<const int32_t>(), input_ids.get_size(), ireq.get_tensor("input_ids").data<int32_t>());
+    std::fill_n(ireq.get_tensor("attention_mask").data<int32_t>(), input_ids.get_size(), 1);
     ireq.infer();
-    size_t n_vocab = ireq.get_tensor("logits").get_shape().back();
-    float* logits = ireq.get_tensor("logits").data<float>() + (tokenizer.get_tensor("input_ids").get_size() - 1) * n_vocab;
-    int32_t out_token = int32_t(std::max_element(logits, logits + n_vocab) - logits);
+    size_t vocab_size = ireq.get_tensor("logits").get_shape().back();
+    float* logits = ireq.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
+    int32_t out_token = int32_t(std::max_element(logits, logits + vocab_size) - logits);
 
     ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, 1});
     ireq.get_tensor("attention_mask").data<int32_t>()[0] = 1;
-    constexpr int32_t SPECIAL_EOS_TOKEN = 2;
+    constexpr int32_t SPECIAL_EOS_TOKEN = 2;  // There's no way to extract the value from the tokenizer for now
     while (out_token != SPECIAL_EOS_TOKEN) {
         for (const ov::Output<ov::Node>& input : model->inputs()) {
             for (const std::string& name : input.get_names()) {
@@ -109,7 +109,7 @@ int main(int argc, char* argv[]) try {
         print_token(detokenizer, out_token);
         ireq.wait();
         logits = ireq.get_tensor("logits").data<float>();
-        out_token = int32_t(std::max_element(logits, logits + n_vocab) - logits);
+        out_token = int32_t(std::max_element(logits, logits + vocab_size) - logits);
     }
     std::cout << '\n';
 } catch (const std::exception& error) {
