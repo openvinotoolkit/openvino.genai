@@ -28,12 +28,12 @@ The program loads a tokenizer, detokenizer and a model (`.xml` and `.bin`) to Op
 ```sh
 python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx git+https://github.com/huggingface/optimum-intel.git
 source <OpenVINO dir>/setupvars.sh
-optimum-cli export openvino -m meta-llama/Llama-2-7b-hf Llama-2-7b-hf
-python llm/cpp/convert_tokenizers.py build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so Llama-2-7b-hf/
+optimum-cli export openvino -m meta-llama/Llama-2-7b-hf ./Llama-2-7b-hf/
+python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./Llama-2-7b-hf/
 ```
 
 ## Run
 
 Usage: `llm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "<prompt>"`
 
-Example: `./build/llm Llama-2-7b-hf/openvino_model.xml tokenizer.xml detokenizer.xml "Why is the Sun yellow?"`
+Example: `./build/llm/cpp/llm ./Llama-2-7b-hf/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`

@@ -6,9 +6,9 @@ Build the pipelines and `user_ov_extensions`
 
 ```sh
 git submodule update --init
-mkdir build && cd build
+mkdir ./build/ && cd ./build/
 source <OpenVINO dir>/setupvars.sh
-cmake -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --config Release -j
+cmake -DCMAKE_BUILD_TYPE=Release ../ && cmake --build ./ --config Release -j
 ```
 
 To enable non ASCII characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
