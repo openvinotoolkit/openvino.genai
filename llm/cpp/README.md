@@ -6,17 +6,6 @@ This application showcases inference of a large language model (LLM). It doesn't
 
 The program loads a tokenizer, detokenizer and a model (`.xml` and `.bin`) to OpenVINO™. The model is reshaped to batch 1 and variable prompt length. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
 
-## Build `llm` and `user_ov_extensions`
-
-```sh
-git submodule update --init --recursive
-mkdir build
-cd build
-source <OpenVINO dir>/setupvars.sh
-cmake -DCMAKE_BUILD_TYPE=Release ..
-cmake --build . --config Release -j
-```
-
 ## Supported models
 
 1. LLaMA 2
@@ -40,7 +29,7 @@ cmake --build . --config Release -j
 python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx git+https://github.com/huggingface/optimum-intel.git
 source <OpenVINO dir>/setupvars.sh
 optimum-cli export openvino -m meta-llama/Llama-2-7b-hf Llama-2-7b-hf
-python convert_tokenizers.py build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so Llama-2-7b-hf/
+python llm/cpp/convert_tokenizers.py build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so Llama-2-7b-hf/
 ```
 
 ## Run
@@ -48,5 +37,3 @@ python convert_tokenizers.py build/thirdparty/openvino_contrib/modules/custom_op
 Usage: `llm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "<prompt>"`
 
 Example: `./build/llm Llama-2-7b-hf/openvino_model.xml tokenizer.xml detokenizer.xml "Why is the Sun yellow?"`
-
-To enable non ASCII characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
