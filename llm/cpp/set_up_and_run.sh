@@ -4,13 +4,13 @@
 
 set -e  # Exit immediately if a command exits with a non-zero status.
 
-function cd_to_script_location() {
+function cd_to_root_location() {
     script_path=$(eval echo "${BASH_SOURCE[0]}")
     directory=$(dirname "$script_path")
-    builtin cd "$directory" || exit
+    builtin cd "$directory"../../ || exit
 }
 
-cd_to_script_location
+cd_to_root_location
 
 python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu llm/cpp/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx git+https://github.com/huggingface/optimum-intel.git &
 mkdir ov/
