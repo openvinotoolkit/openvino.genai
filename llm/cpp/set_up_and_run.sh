@@ -16,7 +16,7 @@ python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu thi
 mkdir ./ov/
 curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.1/linux/l_openvino_toolkit_ubuntu20_2023.1.0.12185.47b736f63ed_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
 sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-wait
+wait -n
 
 source ./ov/setupvars.sh
 optimum-cli export openvino -m openlm-research/open_llama_3b_v2 open_llama_3b_v2/ &
@@ -25,7 +25,7 @@ cd ./build/
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Werror ../
 cmake --build . --config Release -j
 cd ..
-wait
+wait -n
 
 python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./open_llama_3b_v2/
 ./build/llm/cpp/llm open_llama_3b_v2/openvino_model.xml tokenizer.xml detokenizer.xml "return 0"
