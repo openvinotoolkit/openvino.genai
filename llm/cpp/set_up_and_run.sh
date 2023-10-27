@@ -24,6 +24,7 @@ mkdir build/
 cd build/
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Werror ../
 cmake --build . --config Release -j
+cd ..
 wait
 
 python llm/cpp/convert_tokenizers.py build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so open_llama_3b_v2/
