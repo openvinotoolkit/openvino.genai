@@ -12,3 +12,4 @@ endif()
 
 add_subdirectory(llm/cpp)
 target_compile_definitions(llm PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
+target_link_libraries(llm PRIVATE user_ov_extensions)
