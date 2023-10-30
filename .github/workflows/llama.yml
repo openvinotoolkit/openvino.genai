@@ -1,13 +1,16 @@
-name: llm-cpp
+name: llama-cpp
 on:
   pull_request:
-    paths-ignore:
-      - '**/README.md'
+    paths:
+      - text_generation/llama/cpp/**
+      - '!text_generation/llama/cpp/README.md'
+      - thirdparty/**
+      - .github/workflows/llama.yml
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  llm-cpp:
+  llama-cpp:
     runs-on: ubuntu-20.04-8-cores
     steps:
       - uses: actions/checkout@v4
@@ -16,4 +19,4 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: llm/cpp/set_up_and_run.sh
+      - run: ./text_generation/llama/cpp/set_up_and_run.sh
