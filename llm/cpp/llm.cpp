@@ -35,10 +35,10 @@ int main(int argc, char* argv[]) try {
     constexpr size_t BATCH_SIZE = 1;
     std::map<size_t, ov::PartialShape> shapes = {
         {0, ov::PartialShape{
-            BATCH_SIZE, {1, std::numeric_limits<ov::Dimension::value_type>::max()}
+            BATCH_SIZE, -1
         }},
         {1, ov::PartialShape{
-            BATCH_SIZE, {1, std::numeric_limits<ov::Dimension::value_type>::max()}
+            BATCH_SIZE, -1
         }}
     };
     std::vector<ov::Output<ov::Node>> inputs = model->inputs();
