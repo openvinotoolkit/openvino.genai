@@ -73,7 +73,7 @@ int main(int argc, char* argv[]) try {
     p3.input("input_ids").tensor().set_element_type(ov::element::i32);  // cast to the type of tokenyzer's output
     p3.input("attention_mask").tensor().set_element_type(ov::element::i32);
     model = p3.build();
-    ov::InferRequest ireq = core.compile_model(model, "CPU", {ov::cache_dir("llm-cache")}).create_infer_request();
+    ov::InferRequest ireq = core.compile_model(model, "CPU", {ov::cache_dir("llama-cache")}).create_infer_request();
     for (const ov::Output<ov::Node>& input : model->inputs()) {
         for (const std::string& name : input.get_names()) {
             if (name.rfind("past_key_values", 0) == 0) {
