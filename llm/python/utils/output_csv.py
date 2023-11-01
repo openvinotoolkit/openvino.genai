@@ -64,7 +64,7 @@ def write_result(report_file, model, framework, device, use_case, iter_data_list
     out_file = Path(report_file)
 
     if len(iter_data_list) > 0:
-        with out_file.open('w+') as f:
+        with open(out_file, 'w+', newline='') as f:
             writer = csv.DictWriter(f, header)
             writer.writeheader()
 

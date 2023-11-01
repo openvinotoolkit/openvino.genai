@@ -9,7 +9,8 @@ from argparse import ArgumentParser
 from enum import Enum
 from functools import wraps
 from pathlib import Path
-from typing import Tuple
+import types
+from typing import Tuple, Dict, Optional
 import torch
 from diffusers import StableDiffusionPipeline, LDMSuperResolutionPipeline
 from nncf import compress_weights
@@ -20,6 +21,8 @@ from optimum.exporters.tasks import make_backend_config_constructor_for_task
 from optimum.exporters.onnx.config import TextDecoderOnnxConfig
 from optimum.utils import (
     NormalizedTextConfig, NormalizedConfigManager, DEFAULT_DUMMY_SHAPES,
+    DummyPastKeyValuesGenerator,
+    DummyTextInputGenerator,
 )
 from optimum.exporters.onnx import get_encoder_decoder_models_for_export
 from optimum.exporters.openvino import export_models
@@ -38,9 +41,9 @@ from optimum.exporters.onnx import __main__ as optimum_main
 try:
     from optimum.exporters.openvino.__main__ import _get_submodels_and_export_configs
 except ImportError:
-    from optimum.exporters.onnx.__main__ import _get_submodels_and_export_configs
+    from optimum.exporters.onnx.__main__ import _get_submodels_and_onnx_configs as _get_submodels_and_export_configs
 
-from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoModel
+from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoModel, PreTrainedModel
 
 
 class BackendType(Enum):
@@ -74,10 +77,165 @@ def is_gptq(config):
     return quantization_config and quantization_config["quant_method"] == "gptq"
 
 
+def patch_gptq(config):
+    do_gptq_patching = False
+    config_dict = config.to_dict()
+    quantization_config = config_dict.get("quantization_config", None)
+    do_gptq_patching = quantization_config and quantization_config["quant_method"] == "gptq"
+    orig_cuda_check = torch.cuda.is_available
+    orig_post_init_model = None
+    if do_gptq_patching:
+        torch.set_default_dtype(torch.float32)
+        torch.cuda.is_available = lambda: True
+
+        from optimum.gptq import GPTQQuantizer
+
+        orig_post_init_model = GPTQQuantizer.post_init_model
+
+        def post_init_model(self, model):
+            from auto_gptq import exllama_set_max_input_length
+
+            class StoreAttr(object):
+                pass
+
+            model.quantize_config = StoreAttr()
+            model.quantize_config.desc_act = self.desc_act
+            if self.desc_act and not self.disable_exllama and self.max_input_length is not None:
+                model = exllama_set_max_input_length(model, self.max_input_length)
+            return model
+
+        GPTQQuantizer.post_init_model = post_init_model
+    return orig_cuda_check, orig_post_init_model
+
+
+def unpatch_gptq(orig_cuda_check, orig_post_init_model):
+    from optimum.gptq import GPTQQuantizer
+    torch.cuda.is_available = orig_cuda_check
+    GPTQQuantizer.post_init_model = orig_post_init_model
+
+
+@torch.jit.script_if_tracing
+def _chatglm2_get_context_layer(query_layer: torch.Tensor, key_layer: torch.Tensor, value_layer: torch.Tensor):
+    if query_layer.shape[2] == key_layer.shape[2]:
+        context_layer = torch.nn.functional.scaled_dot_product_attention(
+            query_layer, key_layer, value_layer, is_causal=True
+        )
+    else:
+        context_layer = torch.nn.functional.scaled_dot_product_attention(query_layer, key_layer, value_layer)
+    return context_layer
+
+
+def _core_attention_forward(self, query_layer, key_layer, value_layer, attention_mask):
+    query_layer, key_layer, value_layer = [k.permute(1, 2, 0, 3) for k in [query_layer, key_layer, value_layer]]
+    if attention_mask is None:
+        context_layer = _chatglm2_get_context_layer(query_layer, key_layer, value_layer)
+    else:
+        attention_mask = ~attention_mask
+        context_layer = torch.nn.functional.scaled_dot_product_attention(
+            query_layer, key_layer, value_layer, attention_mask
+        )
+    context_layer = context_layer.permute(2, 0, 1, 3)
+    new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
+    context_layer = context_layer.reshape(*new_context_layer_shape)
+
+    return context_layer
+
+
+def _patch_chatglm_core_attention_forward(model: "PreTrainedModel"):
+    for block in model.transformer.encoder.layers:
+        block.self_attention.core_attention.forward = types.MethodType(
+            _core_attention_forward, block.self_attention.core_attention
+        )
+
+
 def patch_model_for_optimum_export(model):
     if model.config.model_type in ["stablelm_epoch", "baichuan"]:
         model.model._prepare_decoder_attention_mask = _prepare_decoder_attention_mask
+    elif model.config.model_type == "chatglm":
+        _patch_chatglm_core_attention_forward(model)
     return model
+
+
+def convert_optimum_causallm_base(model, args):
+    tok = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
+    model = patch_model_for_optimum_export(model)
+    model_config = model.config
+    gptq_applied = is_gptq(model_config)
+    precision = args.precision if not gptq_applied else f"GPTQ_INT4-{args.precision}"
+    if gptq_applied and args.compress_weights:
+        log.info("Weights compression will be skipped for GPTQ models")
+    pt_compress_weights = args.compress_weights and BackendType.PYTORCH.value in args.compress_weights_backends
+    if args.save_orig:
+        pt_out_dir = Path(args.output_dir) / 'pytorch'
+        model.save_pretrained(pt_out_dir)
+        save_tokenizer(tok, pt_out_dir)
+    dummy_shapes = DEFAULT_DUMMY_SHAPES
+    onnx_config, models_and_onnx_configs = _get_submodels_and_export_configs(
+        model=model,
+        task="text-generation-with-past",
+        custom_onnx_configs={},
+        custom_architecture=None,
+        fn_get_submodels=None,
+        preprocessors=None,
+        _variant="default",
+        monolith=False
+    )
+    if "decoder_with_past_model" in models_and_onnx_configs:
+        models_and_onnx_configs = {"model": models_and_onnx_configs["decoder_with_past_model"]}
+    ov_out_dir = Path(args.output_dir) / 'pytorch/dldt' / precision
+    model.config.save_pretrained(ov_out_dir)
+    files_subpaths = ["openvino_" + model_name + ".xml" for model_name in models_and_onnx_configs.keys()]
+    export_models(
+        models_and_onnx_configs=models_and_onnx_configs,
+        output_dir=ov_out_dir,
+        output_names=files_subpaths,
+        input_shapes=dummy_shapes,
+        device="cpu",
+        fp16=args.precision == "FP16",
+        int8=False,
+        model_kwargs={},
+    )
+    save_tokenizer(tok, ov_out_dir)
+    if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends and not gptq_applied:
+        ov_int8_dir = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'OV_{args.precision}-INT8'
+        model.config.save_pretrained(ov_int8_dir)
+        export_models(
+            models_and_onnx_configs=models_and_onnx_configs,
+            output_dir=ov_int8_dir,
+            output_names=files_subpaths,
+            input_shapes=dummy_shapes,
+            device="cpu",
+            fp16=args.precision == "FP16",
+            int8=True,
+            model_kwargs={},
+        )
+        save_tokenizer(tok, ov_int8_dir)
+    if pt_compress_weights and not gptq_applied:
+        compressed_model = compress_weights(model)
+        onnx_config, models_and_onnx_configs = _get_submodels_and_export_configs(
+            model=compressed_model,
+            task="text-generation-with-past",
+            custom_onnx_configs={},
+            custom_architecture=None,
+            fn_get_submodels=None,
+            preprocessors=None,
+            _variant="default",
+            monolith=False
+        )
+        pt_out_dir = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'PT_{args.precision}-INT8'
+        model.config.save_pretrained(pt_out_dir)
+        export_models(
+            models_and_onnx_configs=models_and_onnx_configs,
+            output_dir=pt_out_dir,
+            output_names=files_subpaths,
+            input_shapes=dummy_shapes,
+            device="cpu",
+            fp16=args.precision == "FP16",
+            int8=False,
+            model_kwargs={},
+        )
+        save_tokenizer(tok, pt_out_dir)
+    return
 
 
 def convert_causal_lm(args):
@@ -440,140 +598,152 @@ def convert_mpt(args):
 
 
 def convert_stablelm(args):
-    def convert_to_ov(pt_model, tok, out_path, compress_to_fp16=False):
-        pt_model.config.use_cache = True
-        outs = pt_model(input_ids=torch.ones((1, 10), dtype=torch.long), attention_mask=torch.ones((1, 10), dtype=torch.long))
-        inputs = ['input_ids', 'attention_mask']
-        outputs = ['logits']
-
-        dynamic_shapes = {'input_ids': {1: 'seq_len'}, 'attention_mask': {1: 'seq_len'}}
-
-        for idx in range(len(outs.past_key_values)):
-            inputs.extend([f'past_key_values.{idx}.key', f'past_key_values.{idx}.value'])
-            dynamic_shapes[inputs[-1]] = {2: 'past_sequence + sequence'}
-            dynamic_shapes[inputs[-2]] = {2: 'past_sequence + sequence'}
-            outputs.extend([f'present.{idx}.key', f'present.{idx}.value'])
-        dummy_inputs = {
-            'input_ids': torch.ones((1, 2), dtype=torch.long),
-            'attention_mask': torch.ones((1, 12), dtype=torch.long),
-            'past_key_values': outs.past_key_values,
-        }
-        pt_model.config.torchscript = True
-        ov_model = convert_model(pt_model, example_input=dummy_inputs)
-
-        for inp_name, m_input, input_data in zip(inputs, ov_model.inputs, flattenize_inputs(dummy_inputs.values())):
-            input_node = m_input.get_node()
-            if input_node.element_type == Type.dynamic:
-                m_input.get_node().set_element_type(Type.f32)
-            shape = list(input_data.shape)
-            if inp_name in dynamic_shapes:
-                for k in dynamic_shapes[inp_name]:
-                    shape[k] = -1
-            input_node.set_partial_shape(PartialShape(shape))
-            m_input.get_tensor().set_names({inp_name})
-
-        for out, out_name in zip(ov_model.outputs, outputs):
-            out.get_tensor().set_names({out_name})
-
-        save_ov_model_helper(ov_model, out_path, fp16=compress_to_fp16, tok=tok, config=pt_model.config)
-
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     if not config.model_type.startswith('stablelm'):
         return convert_causal_lm(args)
+    cuda, post_init = patch_gptq(config)
     pt_model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
         trust_remote_code=True,
         config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
     )
-    tok = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
-    pt_model.config.use_cache = True
-    pt_model.eval()
-
-    if args.save_orig:
-        pt_out_dir = Path(args.output_dir) / 'pytorch'
-        pt_model.save_pretrained(pt_out_dir)
-        save_tokenizer(tok, pt_out_dir)
-
-    ov_dir = Path(args.output_dir) / 'pytorch/dldt' / args.precision
-    compress_to_fp16 = args.precision == 'FP16'
-
-    convert_to_ov(pt_model, tok, ov_dir, compress_to_fp16)
-    if args.compress_weights:
-        if BackendType.PYTORCH.value in args.compress_weights_backends:
-            compressed_pt_model = compress_weights(pt_model)
-            pt_path = Path(args.output_dir) / 'pytorch/dldt/PT_compressed_weights'
-            convert_to_ov(compressed_pt_model, tok, pt_path, compress_to_fp16)
-        if BackendType.OPENVINO.value in args.compress_weights_backends:
-            ov_model = Core().read_model(ov_dir / 'openvino_model.xml')
-            ov_compressed_path = Path(args.output_dir) / 'pytorch/dldt/INT8_compressed_weights'
-            compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16)
+    NormalizedConfigManager._conf[config.model_type] = NormalizedTextConfig.with_args(
+        num_layers="num_hidden_layers", num_attention_heads="num_attention_heads"
+    )
+    TasksManager._SUPPORTED_MODEL_TYPE[config.model_type] = TasksManager._SUPPORTED_MODEL_TYPE['llama']
+    convert_optimum_causallm_base(pt_model, args)
+    if post_init is not None:
+        unpatch_gptq(cuda, post_init)
 
 
 def convert_chatglm2(args):
-    def convert_to_ov(pt_model, tok, out_path, compress_to_fp16=False):
-        pt_model.config.torchscript = True
-        pt_model.config.use_cache = True
-        outs = pt_model(input_ids=torch.ones((1, 10), dtype=torch.long), position_ids=torch.arange(0, 10, dtype=torch.long))
-        inputs = ['input_ids', 'position_ids']
-        outputs = ['logits']
-        dynamic_shapes = {'input_ids': {1: 'seq_len'}, 'position_ids': {1: 'seq_len'}}
-        for idx in range(len(outs[1])):
-            inputs.extend([f'past_key_values.{idx}.key', f'past_key_values.{idx}.value'])
-            dynamic_shapes[inputs[-1]] = {0: 'past_sequence + 1'}
-            dynamic_shapes[inputs[-2]] = {0: 'past_sequence + 1'}
-            outputs.extend([f'present.{idx}.key', f'present.{idx}.value'])
-        dummy_inputs = {
-            'input_ids': torch.ones((1, 1), dtype=torch.long),
-            'position_ids': torch.tensor([[10]], dtype=torch.long),
-            'past_key_values': outs[1],
+    class ChatGLM2NormalizedConfig(NormalizedTextConfig):
+        NUM_LAYERS = "num_layers"
+        VOCAB_SIZE = "padded_vocab_size"
+
+    class ChatGLM2DummyTextInputGenerator(DummyTextInputGenerator):
+        SUPPORTED_INPUT_NAMES = {
+            "input_ids",
+            "attention_mask",
+            "token_type_ids",
+            "position_ids",
         }
-        ov_model = convert_model(pt_model, example_input=dummy_inputs)
-        for inp_name, m_input, input_data in zip(inputs, ov_model.inputs, flattenize_inputs(dummy_inputs.values())):
-            input_node = m_input.get_node()
-            if input_node.element_type == Type.dynamic:
-                m_input.get_node().set_element_type(Type.f32)
-            shape = list(input_data.shape)
-            if inp_name in dynamic_shapes:
-                for k in dynamic_shapes[inp_name]:
-                    shape[k] = -1
-            input_node.set_partial_shape(PartialShape(shape))
-            m_input.get_tensor().set_names({inp_name})
 
-        for out, out_name in zip(ov_model.outputs, outputs):
-            out.get_tensor().set_names({out_name})
-        ov_model.validate_nodes_and_infer_types()
-        save_ov_model_helper(ov_model, out_path, fp16=compress_to_fp16, tok=tok, config=pt_model.config)
+        def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
+            input = super().generate(input_name, framework, int_dtype, float_dtype)
+            if input_name == "attention_mask":
+                input = torch.ones((input.shape[0], input.shape[1] + 1), dtype=input.dtype)
+            if input_name == "position_ids":
+                input = torch.range(0, input.shape[1] + 1, dtype=input.dtype).repeat(1, 1)
+            return input
 
-    pt_model = AutoModel.from_pretrained(
+    class ChatGLM2DummyPastKeyValuesGenerator(DummyPastKeyValuesGenerator):
+        def __init__(
+            self,
+            task: str,
+            normalized_config: NormalizedTextConfig,
+            batch_size: int = DEFAULT_DUMMY_SHAPES["batch_size"],
+            sequence_length: int = DEFAULT_DUMMY_SHAPES["sequence_length"],
+            random_batch_size_range: Optional[Tuple[int, int]] = None,
+            random_sequence_length_range: Optional[Tuple[int, int]] = None,
+            **kwargs,
+        ):
+            super().__init__(
+                task=task,
+                normalized_config=normalized_config,
+                batch_size=batch_size,
+                sequence_length=sequence_length,
+                random_batch_size_range=random_batch_size_range,
+                random_sequence_length_range=random_sequence_length_range,
+            )
+            self.multi_query_group_num = normalized_config.multi_query_group_num
+            self.head_dim = self.hidden_size // self.num_attention_heads
+
+        def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
+            past_key_shape = (
+                self.sequence_length,
+                self.batch_size,
+                self.multi_query_group_num,
+                self.head_dim,
+            )
+            past_value_shape = (
+                self.sequence_length,
+                self.batch_size,
+                self.multi_query_group_num,
+                self.head_dim,
+            )
+            return [
+                (
+                    self.random_float_tensor(past_key_shape, framework=framework, dtype=float_dtype),
+                    self.random_float_tensor(past_value_shape, framework=framework, dtype=float_dtype),
+                )
+                for _ in range(self.num_layers)
+            ]
+
+    class ChatGLM2OpenVINOConfig(TextDecoderOnnxConfig):
+        NORMALIZED_CONFIG_CLASS = ChatGLM2NormalizedConfig
+        DUMMY_INPUT_GENERATOR_CLASSES = (ChatGLM2DummyTextInputGenerator, ChatGLM2DummyPastKeyValuesGenerator)
+        DUMMY_PKV_GENERATOR_CLASS = ChatGLM2DummyPastKeyValuesGenerator
+        no_position_ids = False
+
+        @property
+        def inputs(self) -> Dict[str, Dict[int, str]]:
+            common_inputs = super().inputs
+            if not self.no_position_ids and self.task == "text-generation":
+                common_inputs["position_ids"] = {0: "batch_size", 1: "sequence_length"}
+
+            return common_inputs
+
+        def add_past_key_values(self, inputs_or_outputs: Dict[str, Dict[int, str]], direction: str):
+            """
+            Fills `input_or_outputs` mapping with past_key_values dynamic axes considering the direction.
+
+            Args:
+                inputs_or_outputs (`Dict[str, Dict[int, str]]`): The mapping to fill.
+                direction (`str`):
+                    either "inputs" or "outputs", it specifies whether `input_or_outputs` is the input mapping or the
+                    output mapping, this is important for axes naming.
+            """
+            if direction not in ["inputs", "outputs"]:
+                raise ValueError(f'direction must either be "inputs" or "outputs", but {direction} was given')
+
+            if direction == "inputs":
+                decoder_sequence_name = "past_sequence_length"
+                name = "past_key_values"
+            else:
+                decoder_sequence_name = "past_sequence_length + 1"
+                name = "present"
+
+            for i in range(self._normalized_config.num_layers):
+                inputs_or_outputs[f"{name}.{i}.key"] = {1: "batch_size", 0: decoder_sequence_name}
+                inputs_or_outputs[f"{name}.{i}.value"] = {1: "batch_size", 0: decoder_sequence_name}
+
+    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    cuda, post_init = patch_gptq(config)
+    pt_model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
         trust_remote_code=True,
-        config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
+        config=config,
     )
-    pt_model.config.use_cache = True
     pt_model.to(torch.float32)
-    pt_model.eval()
-    tok = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
 
-    if args.save_orig:
-        pt_out_dir = Path(args.output_dir) / 'pytorch'
-        pt_model.save_pretrained(pt_out_dir)
-        save_tokenizer(tok, pt_out_dir)
-
-    compress_to_fp16 = args.precision == 'FP16'
-    ov_out_path = Path(args.output_dir) / 'pytorch/dldt' / args.precision
-    convert_to_ov(pt_model, tok, ov_out_path, compress_to_fp16=compress_to_fp16)
-
-    pt_compress_weights = args.compress_weights and BackendType.PYTORCH.value in args.compress_weights_backends
-    if pt_compress_weights:
-        compressed_pt_model = compress_weights(pt_model)
-        pt_out_path = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'PT_{args.precision}-INT8'
-        convert_to_ov(compressed_pt_model, tok, pt_out_path, compress_to_fp16=compress_to_fp16)
-
-    if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_model_path = ov_out_path / 'openvino_model.xml'
-        ov_model = Core().read_model(ov_model_path)
-        ov_compressed_path = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'OV_{args.precision}-INT8'
-        compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16)
+    NormalizedConfigManager._conf[pt_model.config.model_type] = NormalizedTextConfig.with_args(
+        num_layers="num_hidden_layers", num_attention_heads="num_attention_heads"
+    )
+    export_config = ChatGLM2OpenVINOConfig
+    TasksManager._SUPPORTED_MODEL_TYPE[pt_model.config.model_type] = {
+        'onnx': {
+            'text-generation': make_backend_config_constructor_for_task(export_config, 'text-generation'),
+            'text-generation-with-past': make_backend_config_constructor_for_task(export_config, 'text-generation-with-past'),
+        },
+        'openvino': {
+            'text-generation': make_backend_config_constructor_for_task(export_config, 'text-generation'),
+            'text-generation-with-past': make_backend_config_constructor_for_task(export_config, 'text-generation-with-past'),
+        },
+    }
+    convert_optimum_causallm_base(pt_model, args)
+    if post_init is not None:
+        unpatch_gptq(cuda, post_init)
 
 
 def convert_chatglm(args):
@@ -711,8 +881,10 @@ def convert_jais(args):
 
 
 def convert_baichaun(args):
+    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    cuda, post_init = patch_gptq(config)
     normalized_config = NormalizedTextConfig.with_args(num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size')
-    model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, torch_dtype="float32")
 
     class Baichaun2OpenVINOConfig(TextDecoderOnnxConfig):
         DEFAULT_ONNX_OPSET = 13
@@ -730,78 +902,13 @@ def convert_baichaun(args):
         },
     }
     NormalizedConfigManager._conf[model.config.model_type] = normalized_config
-    tok = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
-    model = patch_model_for_optimum_export(model)
-    out = model(torch.ones((1, 16), dtype=torch.long))
-    print(out.past_key_values[0][0].shape)
-    pt_compress_weights = args.compress_weights and BackendType.PYTORCH.value in args.compress_weights_backends
-    if args.save_orig:
-        pt_out_dir = Path(args.output_dir) / 'pytorch'
-        model.save_pretrained(pt_out_dir)
-        save_tokenizer(tok, pt_out_dir)
-    dummy_shapes = DEFAULT_DUMMY_SHAPES
-    onnx_config, models_and_onnx_configs = _get_submodels_and_export_configs(
-        model=model,
-        task="text-generation-with-past",
-        custom_onnx_configs={},
-        custom_architecture=None,
-        fn_get_submodels=None,
-        preprocessors=None,
-        _variant="default",
-    )
-    ov_out_dir = Path(args.output_dir) / 'pytorch/dldt' / args.precision
-    model.config.save_pretrained(ov_out_dir)
-    files_subpaths = ["openvino_" + model_name + ".xml" for model_name in models_and_onnx_configs.keys()]
-    export_models(
-        models_and_onnx_configs=models_and_onnx_configs,
-        output_dir=ov_out_dir,
-        output_names=files_subpaths,
-        input_shapes=dummy_shapes,
-        device="cpu",
-        fp16=args.precision == "FP16",
-        int8=False,
-        model_kwargs={},
-    )
-    save_tokenizer(tok, ov_out_dir)
-    if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_int8_dir = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'OV_{args.precision}-INT8'
-        model.config.save_pretrained(ov_int8_dir)
-        export_models(
-            models_and_onnx_configs=models_and_onnx_configs,
-            output_dir=ov_out_dir,
-            output_names=files_subpaths,
-            input_shapes=dummy_shapes,
-            device="cpu",
-            fp16=args.precision == "FP16",
-            int8=True,
-            model_kwargs={},
-        )
-        save_tokenizer(tok, ov_int8_dir)
-    if pt_compress_weights:
-        compressed_model = compress_weights(model)
-        onnx_config, models_and_onnx_configs = _get_submodels_and_export_configs(
-            model=compressed_model,
-            task="text-generation-with-past",
-            custom_onnx_configs={},
-            custom_architecture=None,
-            fn_get_submodels=None,
-            preprocessors=None,
-            _variant="default",
-        )
-        pt_out_dir = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'PT_{args.precision}-INT8'
-        model.config.save_pretrained(pt_out_dir)
-        export_models(
-            models_and_onnx_configs=models_and_onnx_configs,
-            output_dir=pt_out_dir,
-            output_names=files_subpaths,
-            input_shapes=dummy_shapes,
-            device="cpu",
-            fp16=args.precision == "FP16",
-            int8=False,
-            model_kwargs={},
-        )
-        save_tokenizer(tok, pt_out_dir)
-    return
+    try:
+        # workaround issue with initialization
+        convert_optimum_causallm_base(model, args)
+    except Exception:
+        convert_optimum_causallm_base(model, args)
+    if post_init is not None:
+        unpatch_gptq(cuda, post_init)
 
 
 converters = {
@@ -809,6 +916,8 @@ converters = {
     'blenderbot': convert_seq2seq,
     't5': convert_seq2seq,
     'stable-diffusion': convert_sd,
+    'tiny-sd': convert_sd,
+    'small-sd': convert_sd,
     'ldm': convert_ldm_super_res,
     'mpt': convert_mpt,
     'replit': convert_mpt,

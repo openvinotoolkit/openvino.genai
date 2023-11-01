@@ -22,6 +22,7 @@ def forward_simplified(
     input_ids: torch.LongTensor,
     attention_mask=None,
     past_key_values=None,
+    position_ids=None,
     **kwargs,
 ) -> CausalLMOutputWithPast:
     self.compile()
@@ -69,6 +70,9 @@ def forward_simplified(
     # Add the attention_mask inputs when needed
     if 'attention_mask' in self.input_names and attention_mask is not None:
         inputs['attention_mask'] = np.array(attention_mask)
+
+    if 'position_ids' in self.input_names and position_ids is not None:
+        inputs['position_ids'] = np.array(position_ids)
 
     if hasattr(self, 'next_beam_idx'):
         inputs['beam_idx'] = np.array(self.next_beam_idx)

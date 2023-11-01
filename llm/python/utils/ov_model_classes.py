@@ -14,6 +14,7 @@ from diffusers.utils.torch_utils import randn_tensor
 from diffusers.utils import PIL_INTERPOLATION
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline, ImagePipelineOutput
 from optimum.intel.openvino import OVModelForCausalLM
+from optimum.intel.openvino.utils import ONNX_WEIGHTS_NAME, OV_XML_FILE_NAME
 from openvino.runtime import Model, Core, Tensor, Type
 from optimum.utils import NormalizedTextConfig, NormalizedConfigManager
 from transformers import PretrainedConfig
@@ -339,6 +340,21 @@ class OVChatGLM2Model(OVModelForCausalLM):
         height: int = None,
         width: int = None,
     ):
+        shapes = {}
+        for inputs in model.inputs:
+            shapes[inputs] = inputs.get_partial_shape()
+            shapes[inputs][0] = -1
+            input_name = inputs.get_any_name()
+            if input_name.startswith("past_key_values"):
+                if (
+                    len(inputs.partial_shape) == 3 and input_name.endswith("value")
+                ) or self.config.model_type == "chatglm":
+                    shapes[inputs][1] = -1
+                else:
+                    shapes[inputs][2] = -1
+            else:
+                shapes[inputs][1] = -1
+        model.reshape(shapes)
         return model
 
     def prepare_inputs_for_generation(
@@ -372,6 +388,7 @@ class OVChatGLM2Model(OVModelForCausalLM):
         input_ids: torch.LongTensor,
         attention_mask: Optional[torch.LongTensor] = None,
         past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+        position_ids: Optional[torch.LongTensor] = None,
         **kwargs,
     ) -> CausalLMOutputWithPast:
         self.compile()
@@ -398,16 +415,14 @@ class OVChatGLM2Model(OVModelForCausalLM):
                 model_inputs = self.model.input(input_name)
                 shape = model_inputs.get_partial_shape()
                 shape[0] = 0
-                if shape[2].is_dynamic:
-                    shape[2] = 0
                 if shape[1].is_dynamic:
-                    shape[1] = 0
+                    shape[1] = 1
                 inputs[input_name] = Tensor(model_inputs.get_element_type(), shape.get_shape())
 
         inputs['input_ids'] = np.array(input_ids)
 
-        if 'position_ids' in kwargs and kwargs['position_ids'] is not None:
-            inputs['position_ids'] = np.array(kwargs['position_ids'])
+        if 'position_ids' in self.input_names and position_ids is not None:
+            inputs['position_ids'] = np.array(position_ids)
 
         # Add the attention_mask inputs when needed
         if 'attention_mask' in self.input_names and attention_mask is not None:
@@ -434,6 +449,96 @@ class OVChatGLM2Model(OVModelForCausalLM):
         position_ids = torch.arange(seq_length, dtype=torch.long, device=device).unsqueeze(0).repeat(batch_size, 1)
         return position_ids
 
+    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, **kwargs):
+        past_key_values = past_key_values or kwargs.get("past", None)
+
+        # `past_key_values` may be in the stardard format (e.g. in contrastive search), converts to bloom's format if needed
+        if past_key_values is not None and self.config.model_type == "bloom":
+            if past_key_values[0][0].shape[0] == input_ids.shape[0]:
+                past_key_values = self._convert_to_bloom_cache(past_key_values)
+
+        attention_mask = kwargs.get("attention_mask", None)
+        position_ids = kwargs.get("position_ids", None)
+        if attention_mask is not None and position_ids is None:
+            # create position_ids on the fly for batch generation
+            position_ids = attention_mask.long().cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask == 0, 1)
+        if past_key_values:
+            position_ids = position_ids[:, -1].unsqueeze(-1)
+        return {
+            "input_ids": input_ids,
+            "past_key_values": past_key_values,
+            "use_cache": self.use_cache,
+            "position_ids": position_ids,
+            "attention_mask": attention_mask,
+            "token_type_ids": None,
+        }
+
+    def _update_model_kwargs_for_generation(
+        self,
+        outputs: "ModelOutput",
+        model_kwargs: Dict[str, "Any"],
+        is_encoder_decoder: bool = False,
+        standardize_cache_format: bool = False,
+    ) -> Dict[str, "Any"]:
+        # update past_key_values
+        model_kwargs["past_key_values"] = self._extract_past_from_model_output(
+            outputs, standardize_cache_format=standardize_cache_format
+        )
+
+        # update attention mask
+        if "attention_mask" in model_kwargs:
+            attention_mask = model_kwargs["attention_mask"]
+            model_kwargs["attention_mask"] = torch.cat(
+                [attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1
+            )
+
+        # update position ids
+        if "position_ids" in model_kwargs:
+            position_ids = model_kwargs["position_ids"]
+            new_position_id = position_ids[..., -1:].clone()
+            new_position_id += 1
+            model_kwargs["position_ids"] = torch.cat([position_ids, new_position_id], dim=-1)
+
+        model_kwargs["is_first_forward"] = False
+        return model_kwargs
+
+
+    @classmethod
+    def _from_pretrained(
+        cls,
+        model_id: Union[str, Path],
+        config: PretrainedConfig,
+        use_auth_token: Optional[Union[bool, str, None]] = None,
+        revision: Optional[Union[str, None]] = None,
+        force_download: bool = False,
+        cache_dir: Optional[str] = None,
+        file_name: Optional[str] = None,
+        subfolder: str = "",
+        from_onnx: bool = False,
+        local_files_only: bool = False,
+        load_in_8bit: bool = False,
+        **kwargs,
+    ):
+        model_path = Path(model_id)
+        default_file_name = ONNX_WEIGHTS_NAME if from_onnx else OV_XML_FILE_NAME
+        file_name = file_name or default_file_name
+
+        model_cache_path = cls._cached_file(
+            model_path=model_path,
+            use_auth_token=use_auth_token,
+            revision=revision,
+            force_download=force_download,
+            cache_dir=cache_dir,
+            file_name=file_name,
+            subfolder=subfolder,
+            local_files_only=local_files_only,
+        )
+
+        model = cls.load_model(model_cache_path, load_in_8bit=load_in_8bit)
+        init_cls = OVChatGLM2Model
+
+        return init_cls(model=model, config=config, model_save_dir=model_cache_path.parent, **kwargs)
 
 class OVChatGLMModel(OVModelForCausalLM):
     position_encoding_2d = True
