@@ -13,7 +13,7 @@ usage() {
 }
 
 echo
-echo "---prepare the dependencies: CMake, OpenCV, Boost and OpenVINO---"
+echo "---prepare the dependencies: CMake, Eigen3 and OpenVINO---"
 # Check if CMake is installed
 if ! command -v cmake &> /dev/null
 then
@@ -32,24 +32,6 @@ else
     sudo apt update
     sudo apt install libeigen3-dev -y
 fi
-
-# Check if Boost is installed
-if ! dpkg -l | grep libboost &> /dev/null; then
-    echo "Boost is not installed."
-    echo "Installing Boost..."
-    sudo apt update
-    sudo apt install libboost-all-dev -y
-else
-    echo "Boost is already installed."
-fi
-
-# Check if boost::math::quadrature::trapezoidal is supported
-if g++ -E -x c++ - -I /usr/include -I /usr/local/include -I /usr/include/boost - <<<'#include <boost/math/quadrature/trapezoidal.hpp>' &> /dev/null; then
-    echo "boost::math::quadrature::trapezoidal is supported."
-else
-    echo "boost::math::quadrature::trapezoidal is not supported."
-fi
-
 
 # Prompt the user if they want to install OpenVINO
 read -p "use conda-forge to install OpenVINO Toolkit 2023.1.0 (C++), or download from archives? (yes/no): " choice

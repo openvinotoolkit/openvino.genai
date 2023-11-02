@@ -3,11 +3,10 @@
 
 /**
  * @brief a header file for SD pipeline
- * @file process_bar.hpp
+ * @file stable_diffusion.hpp
  */
 
 #include <algorithm>
-#include <boost/math/quadrature/trapezoidal.hpp>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -44,6 +43,33 @@ std::vector<T> linspace(T a, T b, size_t N) {
     for (x = xs.begin(), val = a; x != xs.end(); ++x, val += h)
         *x = val;
     return xs;
+}
+
+// adaptive trapezoidal integral function
+template <class F, class Real>
+Real trapezoidal(F f, Real a, Real b, Real tol = 1e-6, int max_refinements = 100) {
+    Real h = (b - a) / 2.0;
+    Real ya = f(a);
+    Real yb = f(b);
+    Real I0 = (ya + yb) * h;
+
+    for (int k = 1; k <= max_refinements; ++k) {
+        Real sum = 0.0;
+        for (int j = 1; j <= (1 << (k - 1)); ++j) {
+            sum += f(a + (2 * j - 1) * h);
+        }
+
+        Real I1 = 0.5 * I0 + h * sum;
+        if (k > 1 && std::abs(I1 - I0) < tol) {
+            return I1;
+        }
+
+        I0 = I1;
+        h /= 2.0;
+    }
+
+    // If the desired accuracy is not achieved, return the best estimate
+    return I0;
 }
 
 std::vector<float> LMSDiscreteScheduler(int32_t num_train_timesteps = 1000,
@@ -435,13 +461,24 @@ std::vector<float> diffusion_function(ov::CompiledModel& unet_compiled_model,
             auto f = [order, curr_order, sigma, i](float tau) {
                 return lms_derivative_function(tau, order, curr_order, sigma, i);
             };
+            // auto start1 = std::chrono::steady_clock::now();
+            // auto integrated_coeff = boost::math::quadrature::trapezoidal(f,
+            //                                                              static_cast<double>(sigma[i]),
+            //                                                              static_cast<double>(sigma[i + 1]),
+            //                                                              1e-4);
+            // auto end1 = std::chrono::steady_clock::now();
+            // auto duration1 = std::chrono::duration_cast<std::chrono::duration<float>>(end1 - start1);
+            auto start2 = std::chrono::steady_clock::now();
+            auto integrated_coeff_new =
+                trapezoidal(f, static_cast<double>(sigma[i]), static_cast<double>(sigma[i + 1]), 1e-4);
+            auto end2 = std::chrono::steady_clock::now();
+            auto duration2 = std::chrono::duration_cast<std::chrono::duration<float>>(end2 - start2);
 
-            auto integrated_coeff = boost::math::quadrature::trapezoidal(f,
-                                                                         static_cast<double>(sigma[i]),
-                                                                         static_cast<double>(sigma[i + 1]),
-                                                                         1e-4);
-            lms_coeffs.push_back(integrated_coeff);
-            logger.log_value(LogLevel::DEBUG, "Debug-integrated_coeff: ", integrated_coeff);
+            lms_coeffs.push_back(integrated_coeff_new);
+            // logger.log_value(LogLevel::DEBUG, "Debug-integrated_coeff: ", integrated_coeff);
+            logger.log_value(LogLevel::DEBUG, "Debug-integrated_coeff_new: ", integrated_coeff_new);
+            // logger.log_value(LogLevel::DEBUG, "Debug-integrated_coeff time: ", duration1.count());
+            logger.log_value(LogLevel::DEBUG, "Debug-integrated_coeff_new time : ", duration2.count());
         }
 
         // 4. Compute previous sample based on the derivatives path

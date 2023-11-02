@@ -5,7 +5,6 @@ The pure C++ text-to-image pipeline, driven by the OpenVINO native API for Stabl
 C++ Packages:
 * CMake: Cross-platform build tool
 * OpenVINO: Model inference
-* Boost: LMSDiscreteScheduler's integration
 * Eigen3: Lora enabling
 
 SD Preparation could be auto implemented with `build_dependencies.sh`. This script provides 2 ways to install `OpenVINO 2023.1.0`: [conda-forge](https://anaconda.org/conda-forge/openvino) and [Download archives](https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.1/windows/).
@@ -134,15 +133,7 @@ Program optimization: In addition to inference optimization, now parallel optimi
 2. C++ dependencies:
 * OpenVINO:
 To deployment without Conda: [Download archives* with OpenVINO](https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.1/windows/), unzip and setup environment vars with `.\setupvars.bat`
-* Boost:
-```shell
-1. Download from https://sourceforge.net/projects/boost/files/boost-binaries/1.83.0/
-2. Unzip
-3. Setup: bootstrap.bat 
-4. Build: b2.exe
-5. Install: b2.exe install
-```
-Installed boost in the path C:/Boost, add CMakeList with `SET(BOOST_ROOT"C:/Boost")`
+
 * Eigen:
 ```shell
 1. Download from https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip 
