@@ -884,7 +884,8 @@ def convert_baichaun(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     cuda, post_init = patch_gptq(config)
     normalized_config = NormalizedTextConfig.with_args(num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size')
-    model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, torch_dtype="float32")
+    model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True)
+    model.to(torch.float32)
 
     class Baichaun2OpenVINOConfig(TextDecoderOnnxConfig):
         DEFAULT_ONNX_OPSET = 13
@@ -922,6 +923,7 @@ converters = {
     'mpt': convert_mpt,
     'replit': convert_mpt,
     'chatglm2': convert_chatglm2,
+    'chatglm3': convert_chatglm2,
     'chatglm': convert_chatglm,
     'falcon': convert_falcon,
     'stablelm': convert_stablelm,

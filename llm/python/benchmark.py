@@ -313,12 +313,14 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
             image = os.path.join(os.path.dirname(args['prompt'] if args['prompt'] is not None else args['prompt_file']), image.replace('./', ''))
             images.append(Path(image))
     else:
-        images = args['images'] or Path(__file__).parents[0] / 'prompts/test_data/lr_img.png'
-        images = Path(images)
-        if images.is_dir():
-            images = list(images.glob('*'))
+        if args['images'] is not None:
+            images = Path(args['images'])
+            if images.is_dir():
+                images = list(images.glob('*'))
+            else:
+                images = [images]
         else:
-            images = [images]
+            raise RuntimeError('==Failure image is empty ==')
     log.info(f'Number benchmarking images {len(images)}')
     num_inference_steps = int(DEFAULT_SUPER_RESOLUTION_STEPS if args['infer_count'] is None else args['infer_count'])
 

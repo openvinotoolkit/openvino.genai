@@ -27,6 +27,7 @@ OV_MODEL_CLASSES_MAPPING = {
     'codegen2': OVModelForCausalLM,
     'ldm_super_resolution': OVLDMSuperResolutionPipeline,
     'chatglm2': OVChatGLM2Model,
+    'chatglm3': OVChatGLM2Model,
     'chatglm': OVChatGLMModel
 }
 
@@ -42,7 +43,7 @@ PT_MODEL_CLASSES_MAPPING = {
 }
 
 USE_CASES = {
-    'image_gen': ['stable-diffusion-', 'deepfloyd-if'],
+    'image_gen': ['stable-diffusion-', 'deepfloyd-if', 'tiny-sd', "small-sd"],
     'text2speech': ['whisper'],
     'image_cls': ['vit'],
     'code_gen': ['replit', 'codegen2', 'codegen', 'codet5'],
@@ -68,7 +69,7 @@ USE_CASES = {
         'longchat',
         'jais',
         'orca-mini',
-        'baichuan'
+        'baichuan',
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }
