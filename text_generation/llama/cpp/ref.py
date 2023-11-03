@@ -463,10 +463,8 @@ def main():
     minimum = min(minimum, model.generate(**tokenizer('', return_tensors='pt'), max_new_tokens=9**9, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=4, top_k=50, diversity_penalty=1.0))
     for repeat in range(1, 9**9):
         for prod in itertools.product(string.digits + string.ascii_letters + string.punctuation + string.whitespace, repeat=repeat):
-            try:
-                tokens = tokenizer(prod, return_tensors='pt')
-            except ValueError:
-                continue
+            prod = ''.join(prod)
+            tokens = tokenizer(prod, return_tensors='pt')
             minimum = min(minimum, model.generate(**tokens, max_new_tokens=9**9, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=4, top_k=50, diversity_penalty=1.0))
             print(f'{minimum=}, {prod=}')
     # encode context the generation is conditioned on
