@@ -1,68 +1,23 @@
-model_path = '/home/wov/r/open_llama_3b_v2/'
 
 from transformers import LlamaTokenizer, LlamaForCausalLM
 import transformers
 import torch
 
 import copy
-import inspect
-import warnings
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
-import torch.distributed as dist
 from torch import nn
 
-import logging
 import tqdm
+import itertools
+import string
 
-from transformers.generation.beam_constraints import DisjunctiveConstraint, PhrasalConstraint
-from transformers.generation.beam_search import BeamScorer, BeamSearchScorer, ConstrainedBeamSearchScorer
-from transformers.generation.configuration_utils import GenerationConfig
-from transformers.generation.logits_process import (
-    EncoderNoRepeatNGramLogitsProcessor,
-    EncoderRepetitionPenaltyLogitsProcessor,
-    EpsilonLogitsWarper,
-    EtaLogitsWarper,
-    ExponentialDecayLengthPenalty,
-    ForcedBOSTokenLogitsProcessor,
-    ForcedEOSTokenLogitsProcessor,
-    ForceTokensLogitsProcessor,
-    HammingDiversityLogitsProcessor,
-    InfNanRemoveLogitsProcessor,
-    LogitNormalization,
-    LogitsProcessorList,
-    MinLengthLogitsProcessor,
-    MinNewTokensLengthLogitsProcessor,
-    NoBadWordsLogitsProcessor,
-    NoRepeatNGramLogitsProcessor,
-    PrefixConstrainedLogitsProcessor,
-    RepetitionPenaltyLogitsProcessor,
-    SequenceBiasLogitsProcessor,
-    SuppressTokensAtBeginLogitsProcessor,
-    SuppressTokensLogitsProcessor,
-    TemperatureLogitsWarper,
-    TopKLogitsWarper,
-    TopPLogitsWarper,
-    TypicalLogitsWarper,
-    UnbatchedClassifierFreeGuidanceLogitsProcessor,
-)
-from transformers.generation.stopping_criteria import (
-    MaxLengthCriteria,
-    MaxTimeCriteria,
-    StoppingCriteria,
-    StoppingCriteriaList,
-    validate_stopping_criteria,
-)
+from transformers.generation.beam_search import BeamSearchScorer
+from transformers.generation.logits_process import LogitsProcessorList
+from transformers.generation.stopping_criteria import StoppingCriteriaList
 
-from transformers.utils import ExplicitEnum, ModelOutput, is_accelerate_available, logging
-
-
-logger = logging
-
-@torch.no_grad()
-def generate(self, inputs: Optional[torch.Tensor] = None, **kwargs):
+@torch.inference_mode()
+def generate(self, inputs=None, **kwargs):
     r"""
     Parameters:
         inputs (`torch.Tensor` of varying shape depending on the modality, *optional*):
@@ -355,7 +310,7 @@ def generate(self, inputs: Optional[torch.Tensor] = None, **kwargs):
     beam_scores[:, ::num_sub_beams] = 0
     beam_scores = beam_scores.view((batch_size * num_beams,))
 
-    for _ in tqdm.tqdm(range(9**9)):
+    for _ in tqdm.tqdm(range(2044)):
         # predicted tokens in cur_len step
         current_tokens = torch.zeros(batch_size * num_beams, dtype=input_ids.dtype, device=device)
 
@@ -482,6 +437,7 @@ def generate(self, inputs: Optional[torch.Tensor] = None, **kwargs):
         cur_len = cur_len + 1
 
         if beam_scorer.is_done or stopping_criteria(input_ids, scores):
+            raise "Break"
             break
 
     final_beam_indices = sum(beam_indices, ()) if beam_indices is not None else None
@@ -497,22 +453,29 @@ def generate(self, inputs: Optional[torch.Tensor] = None, **kwargs):
     )
     return sequence_outputs["sequences"]
 
-transformers.GenerationMixin
+def main():
+    model_path = r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer'
+    tokenizer = LlamaTokenizer.from_pretrained(model_path)
 
-tokenizer = LlamaTokenizer.from_pretrained(model_path)
+    # add the EOS token as PAD token to avoid warnings
+    model = LlamaForCausalLM.from_pretrained(model_path, pad_token_id=tokenizer.eos_token_id)
+    model.generate = generate.__get__(model, transformers.GenerationMixin)
 
-# add the EOS token as PAD token to avoid warnings
-model = LlamaForCausalLM.from_pretrained(model_path, pad_token_id=tokenizer.eos_token_id)
-model.generate = generate.__get__(model, transformers.GenerationMixin)
+    for repeat in range(1, 9**9):
+        for prod in itertools.product(string.printable + string.whitespace, repeat=repeat):
+            print(f'{prod = }')
+            tokens = tokenizer(prod, return_tensors='pt')
+            model.generate(**tokens, max_new_tokens=9**9, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=4, top_k=50, diversity_penalty=1.0)
+    # encode context the generation is conditioned on
+    model_inputs = tokenizer('', return_tensors='pt')
+    # transformers.set_seed(69)
+    # no_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=False, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3)
+    # do_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=True, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3, temperature=0.6, top_p=0.0001, top_k=1)
+    group = model.generate(**model_inputs, max_new_tokens=9**9, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=4, top_k=50, diversity_penalty=1.0)
 
-# encode context the generation is conditioned on
-model_inputs = tokenizer('', return_tensors='pt')
-# transformers.set_seed(69)
-# no_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=False, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3)
-# do_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=True, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3, temperature=0.6, top_p=0.0001, top_k=1)
-group = model.generate(**model_inputs, max_new_tokens=9**9, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=4, top_k=50, diversity_penalty=1.0)
+    for beam_output in group:
+        print(tokenizer.decode(beam_output))
 
-for beam_output in group:
-    print(tokenizer.decode(beam_output))
 
-# I enjoy walking with my cute dog, but I don’t like it when it’s raining. I don’t want to get wet, so I’m not going to walk my dog in the rain. I’
+if '__main__' == __name__:
+    main()
