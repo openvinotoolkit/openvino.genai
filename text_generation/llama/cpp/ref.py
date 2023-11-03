@@ -1,4 +1,3 @@
-
 from transformers import LlamaTokenizer, LlamaForCausalLM
 import transformers
 import torch
@@ -310,7 +309,7 @@ def generate(self, inputs=None, **kwargs):
     beam_scores[:, ::num_sub_beams] = 0
     beam_scores = beam_scores.view((batch_size * num_beams,))
 
-    for _ in tqdm.tqdm(range(2044)):
+    for idx in tqdm.tqdm(range(2044)):
         # predicted tokens in cur_len step
         current_tokens = torch.zeros(batch_size * num_beams, dtype=input_ids.dtype, device=device)
 
@@ -435,9 +434,8 @@ def generate(self, inputs=None, **kwargs):
 
         # increase cur_len
         cur_len = cur_len + 1
-
         if beam_scorer.is_done or stopping_criteria(input_ids, scores):
-            raise "Break"
+            return idx
             break
 
     final_beam_indices = sum(beam_indices, ()) if beam_indices is not None else None
@@ -451,6 +449,7 @@ def generate(self, inputs=None, **kwargs):
         max_length=stopping_criteria.max_length,
         beam_indices=final_beam_indices,
     )
+    return 2044
     return sequence_outputs["sequences"]
 
 def main():
@@ -460,12 +459,16 @@ def main():
     # add the EOS token as PAD token to avoid warnings
     model = LlamaForCausalLM.from_pretrained(model_path, pad_token_id=tokenizer.eos_token_id)
     model.generate = generate.__get__(model, transformers.GenerationMixin)
-
+    minimum = 9**9
+    minimum = min(minimum, model.generate(**tokenizer('', return_tensors='pt'), max_new_tokens=9**9, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=4, top_k=50, diversity_penalty=1.0))
     for repeat in range(1, 9**9):
-        for prod in itertools.product(string.printable + string.whitespace, repeat=repeat):
-            print(f'{prod = }')
-            tokens = tokenizer(prod, return_tensors='pt')
-            model.generate(**tokens, max_new_tokens=9**9, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=4, top_k=50, diversity_penalty=1.0)
+        for prod in itertools.product(string.digits + string.ascii_letters + string.punctuation + string.whitespace, repeat=repeat):
+            try:
+                tokens = tokenizer(prod, return_tensors='pt')
+            except ValueError:
+                continue
+            minimum = min(minimum, model.generate(**tokens, max_new_tokens=9**9, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=4, top_k=50, diversity_penalty=1.0))
+            print(f'{minimum=}, {prod=}')
     # encode context the generation is conditioned on
     model_inputs = tokenizer('', return_tensors='pt')
     # transformers.set_seed(69)
