@@ -40,13 +40,7 @@ from transformers.generation.logits_process import (
     TypicalLogitsWarper,
     UnbatchedClassifierFreeGuidanceLogitsProcessor,
 )
-from transformers.generation.stopping_criteria import (
-    MaxLengthCriteria,
-    MaxTimeCriteria,
-    StoppingCriteria,
-    StoppingCriteriaList,
-    validate_stopping_criteria
-)
+
 
 @torch.inference_mode()
 def generate(self, input_ids, **kwargs):
@@ -66,11 +60,7 @@ def generate(self, input_ids, **kwargs):
         NoRepeatNGramLogitsProcessor(kwargs['no_repeat_ngram_size'])
     ])
 
-    # 9. prepare stopping criteria
-    stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(
-        max_length=kwargs['max_new_tokens'] + input_ids_length,
-        max_position_embeddings=2048,
-    )])
+    max_length = kwargs['max_new_tokens'] + input_ids_length
     beam_scorer = BeamSearchScorer(
         batch_size=batch_size,
         num_beams=kwargs['num_beams'],
@@ -194,10 +184,11 @@ def generate(self, input_ids, **kwargs):
 
         input_ids = torch.cat([input_ids, current_tokens.unsqueeze(-1)], dim=-1)
 
-        if beam_scorer.is_done or stopping_criteria(input_ids, None):
+        if input_ids.shape[-1] >= max_length:
+            break
+        if beam_scorer.is_done:
             break
 
-    max_length = stopping_criteria.max_length
     batch_size = len(beam_scorer._beam_hyps) // beam_scorer.num_beam_groups
 
     if isinstance(eos_token_id, int):
