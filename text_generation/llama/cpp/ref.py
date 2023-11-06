@@ -39,22 +39,18 @@ from transformers.generation.logits_process import (
 @torch.inference_mode()
 def generate(self, input_ids, **kwargs):
     batch_size = input_ids.shape[0]
-
-    # 6. Prepare `max_length` depending on other stopping criteria.
-    input_ids_length = input_ids.shape[-1]
-
     # 8. prepare distribution pre_processing samplers
     # instantiate processors list
     logits_processor = LogitsProcessorList([
         HammingDiversityLogitsProcessor(
-                diversity_penalty=kwargs['diversity_penalty'],
-                num_beams=kwargs['num_beams'],
-                num_beam_groups=kwargs['num_beam_groups'],
-            ),
+            diversity_penalty=kwargs['diversity_penalty'],
+            num_beams=kwargs['num_beams'],
+            num_beam_groups=kwargs['num_beam_groups'],
+        ),
         NoRepeatNGramLogitsProcessor(kwargs['no_repeat_ngram_size'])
     ])
 
-    max_length = kwargs['max_new_tokens'] + input_ids_length
+    max_length = kwargs['max_new_tokens'] + input_ids.shape[-1]
     beam_scorer = BeamSearchScorer(
         batch_size=batch_size,
         num_beams=kwargs['num_beams'],
@@ -63,7 +59,7 @@ def generate(self, input_ids, **kwargs):
         do_early_stopping=kwargs['early_stopping'],
         num_beam_hyps_to_keep=kwargs['num_return_sequences'],
         num_beam_groups=kwargs['num_beam_groups'],
-        max_length=kwargs['max_new_tokens'] + input_ids_length,
+        max_length=kwargs['max_new_tokens'] + input_ids.shape[-1],
     )
     # 12. interleave input_ids with `num_beams` additional sequences per batch
     input_ids = input_ids.repeat_interleave(kwargs['num_beams'], dim=0)
@@ -81,20 +77,19 @@ def generate(self, input_ids, **kwargs):
     num_beam_groups = beam_scorer.num_beam_groups
     num_sub_beams = num_beams // num_beam_groups
     batch_size = len(beam_scorer._beam_hyps) // num_beam_groups
-    device = input_ids.device
 
     # initialise score of first beam of each group with 0 and the rest with -1e9. This ensures that the beams in
     # the same group don't produce same tokens everytime.
-    beam_scores = torch.full((batch_size, num_beams), -1e9, dtype=torch.float, device=device)
+    beam_scores = torch.full((batch_size, num_beams), -1e9, dtype=torch.float)
     beam_scores[:, ::num_sub_beams] = 0
     beam_scores = beam_scores.view((batch_size * num_beams,))
 
     while True:
         # predicted tokens in cur_len step
-        current_tokens = torch.zeros(batch_size * num_beams, dtype=input_ids.dtype, device=device)
+        current_tokens = torch.zeros(batch_size * num_beams, dtype=input_ids.dtype)
 
         # indices which will form the beams in the next time step
-        reordering_indices = torch.zeros(batch_size * num_beams, dtype=torch.long, device=device)
+        reordering_indices = torch.zeros(batch_size * num_beams, dtype=torch.long)
 
         # do one decoder step on all beams of all sentences in batch
         model_inputs = self.prepare_inputs_for_generation(input_ids)
