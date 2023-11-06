@@ -49,10 +49,8 @@ from transformers.generation.stopping_criteria import (
 )
 
 @torch.inference_mode()
-def generate(self, inputs_tensor, **kwargs):
-    batch_size = inputs_tensor.shape[0]
-
-    input_ids = inputs_tensor
+def generate(self, input_ids, **kwargs):
+    batch_size = input_ids.shape[0]
 
     # 6. Prepare `max_length` depending on other stopping criteria.
     input_ids_length = input_ids.shape[-1]
