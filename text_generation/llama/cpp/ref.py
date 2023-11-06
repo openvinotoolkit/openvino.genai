@@ -90,8 +90,8 @@ def generate(self, inputs_tensor, **kwargs):
         is_encoder_decoder=False,
     )
     # 13. run beam search
-    eos_token_id = 1
-    pad_token_id = 2
+    eos_token_id = self.generation_config.eos_token_id
+    pad_token_id = self.generation_config.pad_token_id
     output_attentions = False
     output_hidden_states = False
 
