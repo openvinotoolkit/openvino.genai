@@ -2,14 +2,8 @@ from transformers import LlamaTokenizer, LlamaForCausalLM
 import transformers
 import torch
 
-import copy
-
 import torch
 from torch import nn
-
-import tqdm
-import itertools
-import string
 
 from transformers.generation.beam_search import BeamSearchScorer
 from transformers.generation.logits_process import (
@@ -72,11 +66,8 @@ def generate(self, input_ids, **kwargs):
         max_length=kwargs['max_new_tokens'] + input_ids_length,
     )
     # 12. interleave input_ids with `num_beams` additional sequences per batch
-    input_ids, _ = self._expand_inputs_for_generation(
-        input_ids=input_ids,
-        expand_size=kwargs['num_beams'],
-        is_encoder_decoder=False,
-    )
+    input_ids = input_ids.repeat_interleave(kwargs['num_beams'], dim=0)
+
     # 13. run beam search
     eos_token_id = self.generation_config.eos_token_id
     pad_token_id = self.generation_config.pad_token_id
