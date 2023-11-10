@@ -248,7 +248,7 @@ def main():
     # no_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=False, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3)
     # do_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=True, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3, temperature=0.6, top_p=0.0001, top_k=1)
     gts = ('<s>regöttivelyhrteitect bluecosatur Chineseʾ� тя Publicкаль header valueslets mehrere', '<s>IO attach населення GET unixkunftöldcalc toggle deux gatesoba alcune dem center Authcriptor {-', '<s>IO attach населення GET unixkunftöldcalc toggle deux gatesoba alcune dem center Authcriptorzioni', '<s>regöttivelyhrteitect bluecosatur Chineseʾ� тя Publicкаль header valuesletsшов')
-    for gt, beam_output in zip(gts, model.generate(tokenizer('', return_tensors='pt')['input_ids'], max_new_tokens=100, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, num_return_sequences=4, top_k=50, diversity_penalty=1.0, length_penalty=2.0)):  # default length_penalty is 1.0
+    for gt, beam_output in zip(gts, model.generate(tokenizer('', return_tensors='pt')['input_ids'], max_new_tokens=18, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, num_return_sequences=4, top_k=50, diversity_penalty=1.0, length_penalty=2.0)):  # default length_penalty is 1.0
         assert gt == tokenizer.decode(beam_output)
     print('OK')
     model_path = '/home/wov/r/open_llama_3b_v2/'  # r'C:\Users\vzlobin\r\open_llama_3b_v2/'
