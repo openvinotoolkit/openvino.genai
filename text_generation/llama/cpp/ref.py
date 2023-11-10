@@ -125,7 +125,6 @@ def generate(self, input_ids, **kwargs):
             next_token_scores_processed = logits_processor(
                 group_input_ids, next_token_scores, current_tokens=current_tokens, beam_group_idx=beam_group_idx
             )
-            assert (next_token_scores_processed == next_token_scores).all()
             next_token_scores = next_token_scores_processed + beam_scores[batch_group_indices].unsqueeze(-1)
             next_token_scores = next_token_scores.expand_as(next_token_scores_processed)
 
@@ -175,7 +174,6 @@ def generate(self, input_ids, **kwargs):
             break
         if beam_scorer.is_done:
             break
-        break
 
     batch_size = len(beam_scorer._beam_hyps) // beam_scorer.num_beam_groups
 
@@ -249,8 +247,8 @@ def main():
     # transformers.set_seed(69)
     # no_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=False, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3)
     # do_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=True, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3, temperature=0.6, top_p=0.0001, top_k=1)
-    gts = ('<s>IO attach населення GET unix', '<s>regöttivelyhrte MM', '<s>regöttivelyhrteitect', '<s>IO attach населення GETMill')
-    for gt, beam_output in zip(gts, model.generate(tokenizer('', return_tensors='pt')['input_ids'], max_new_tokens=5, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=4, top_k=50, diversity_penalty=1e-9, length_penalty=2.0)):  # default length_penalty is 1.0
+    gts = ('<s>regöttivelyhrteitect bluecosatur Chineseʾ� тя Publicкаль header valueslets mehrere', '<s>IO attach населення GET unixkunftöldcalc toggle deux gatesoba alcune dem center Authcriptor {-', '<s>IO attach населення GET unixkunftöldcalc toggle deux gatesoba alcune dem center Authcriptorzioni', '<s>regöttivelyhrteitect bluecosatur Chineseʾ� тя Publicкаль header valuesletsшов')
+    for gt, beam_output in zip(gts, model.generate(tokenizer('', return_tensors='pt')['input_ids'], max_new_tokens=100, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, num_return_sequences=4, top_k=50, diversity_penalty=1.0, length_penalty=2.0)):  # default length_penalty is 1.0
         assert gt == tokenizer.decode(beam_output)
     print('OK')
     model_path = '/home/wov/r/open_llama_3b_v2/'  # r'C:\Users\vzlobin\r\open_llama_3b_v2/'

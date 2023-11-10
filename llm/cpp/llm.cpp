@@ -22,6 +22,44 @@ void print_token(ov::InferRequest& detokenizer, int32_t out_token) {
     detokenizer.infer();
     std::cout << unpack_strings(detokenizer.get_output_tensor()).front() << std::flush;
 }
+
+// Modifyed Knuth–Morris–Pratt algorithm which returns a set of tokens following after every needle occurance in haystack
+std::vector<size_t> kmp_search(const std::vector<size_t>& haystack, std::vector<size_t> needle) {  // TODO: pass iters to haystack to avoid searchng last ngram symbols
+    std::vector<int> partial_match_table(needle.size() + 1, -1);
+    int cnd = 0;
+    for (size_t pos = 1; pos < needle.size(); ++pos) {
+        if (needle[pos] == needle[cnd]) {
+            partial_match_table[pos] = partial_match_table[cnd];
+        } else {
+            partial_match_table[pos] = cnd;
+            while (cnd >= 0 && needle[pos] != needle[cnd]) {
+                cnd = partial_match_table[cnd];
+            }
+        }
+        ++cnd;
+    }
+    partial_match_table.back() = cnd;
+    std::vector<size_t> res;
+    int j = 0;  // The position of the current character in haystack
+    int k = 0;  // The position of the current character in needle
+    while (j < haystack.size() - needle.size()) {
+        if (needle[k] == haystack[j]) {
+            ++j;
+            ++k;
+            if (k == needle.size()) {
+                res.push_back(haystack[j]);
+                k = partial_match_table[k];
+            }
+        } else {
+            k = partial_match_table[k];
+            if (k < 0) {
+                ++j;
+                ++k;
+            }
+        }
+    }
+    return res;
+}
 }
 
 int main(int argc, char* argv[]) try {
@@ -74,6 +112,7 @@ int main(int argc, char* argv[]) try {
     constexpr size_t N_GROUPS = 2;
     constexpr size_t GROUP_SIZE = 2;
     float DIVERSITY_PENALTY = 1.0f;
+    constexpr size_t NO_REPEAT_NGRAM_SIZE = 2;
     struct Beam {
         float log_prob;
         std::vector<size_t> tokens;
@@ -132,20 +171,19 @@ int main(int argc, char* argv[]) try {
                 }
                 for (size_t prev_group_idx = 0; prev_group_idx < group_idx; ++prev_group_idx) {  // TODO: range based for
                     for (size_t prev_beam_idx = 0; prev_beam_idx < GROUP_SIZE; ++prev_beam_idx) {
-                        topk[groups[prev_group_idx].beams[prev_beam_idx].tokens.back()] -= DIVERSITY_PENALTY;
+                        topk[groups[prev_group_idx].beams[prev_beam_idx].tokens.back()].log -= DIVERSITY_PENALTY;
 
                     }
                 }
-                if ()
-
-
-
+                std::vector<size_t>& tokens = groups[group_idx].beams[beam_idx].tokens;
+                if (tokens.size() >= NO_REPEAT_NGRAM_SIZE) {
+                    for (size_t ban_id : kmp_search(tokens, {tokens.end() - NO_REPEAT_NGRAM_SIZE + 1, tokens.end()})) {
+                        topk[ban_id].log = -std::numeric_limits<float>::infinity();
+                    }
+                }
                 std::partial_sort(topk.begin(), topk.begin() + GROUP_SIZE, topk.end());
             }
-
         }
-
-
     }
 
 
