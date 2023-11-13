@@ -6,6 +6,7 @@ import gc
 import time
 import logging as log
 from argparse import ArgumentParser
+from tempfile import TemporaryDirectory
 from enum import Enum
 from functools import wraps
 from pathlib import Path
@@ -23,6 +24,7 @@ from optimum.utils import (
     NormalizedTextConfig, NormalizedConfigManager, DEFAULT_DUMMY_SHAPES,
     DummyPastKeyValuesGenerator,
     DummyTextInputGenerator,
+    DummyInputGenerator
 )
 from optimum.exporters.onnx import get_encoder_decoder_models_for_export
 from optimum.exporters.openvino import export_models
@@ -45,6 +47,8 @@ except ImportError:
 
 from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoModel, PreTrainedModel
 
+from utils.nncf_utils import COMPRESSION_OPTIONS, get_compressed_path
+
 
 class BackendType(Enum):
     PYTORCH = 'pytorch'
@@ -58,8 +62,15 @@ def save_tokenizer(tokenizer, out_dir):
         log.error(f'tokenizer loading failed with {e}')
 
 
-def compress_ov_model_weights_helper(ov_model, tok, config, out_path, fp16=False):
-    compressed_ov_model = compress_weights(ov_model)
+def compress_ov_model_weights_helper(ov_model, tok, config, out_path, fp16=False, args={}):
+    compression_args = COMPRESSION_OPTIONS[args.compress_weights]
+    if args.ratio is not None:
+        compression_args["ratio"] = args.ratio
+    if args.group_size is not None:
+        compression_args["group_size"] = args.group_size
+    log.info("Compression options:")
+    log.info(compression_args)
+    compressed_ov_model = compress_weights(ov_model, **compression_args)
     save_ov_model_helper(compressed_ov_model, out_path, fp16=fp16, tok=tok, config=config)
 
 
@@ -116,12 +127,12 @@ def unpatch_gptq(orig_cuda_check, orig_post_init_model):
 
 @torch.jit.script_if_tracing
 def _chatglm2_get_context_layer(query_layer: torch.Tensor, key_layer: torch.Tensor, value_layer: torch.Tensor):
+    mask = torch.zeros((query_layer.shape[-2], key_layer.shape[-2]), dtype=query_layer.dtype)
     if query_layer.shape[2] == key_layer.shape[2]:
-        context_layer = torch.nn.functional.scaled_dot_product_attention(
-            query_layer, key_layer, value_layer, is_causal=True
-        )
-    else:
-        context_layer = torch.nn.functional.scaled_dot_product_attention(query_layer, key_layer, value_layer)
+        tmp_mask = torch.ones((query_layer.shape[-2], key_layer.shape[-2]), dtype=torch.bool).triu(diagonal=1)
+        mask.masked_fill_(tmp_mask, float("-inf"))
+
+    context_layer = torch.nn.functional.scaled_dot_product_attention(query_layer, key_layer, value_layer, attn_mask=mask)
     return context_layer
 
 
@@ -148,11 +159,74 @@ def _patch_chatglm_core_attention_forward(model: "PreTrainedModel"):
         )
 
 
+def _update_qwen_rotary_embedding_cache(model):
+    model.transformer.rotary_emb(model.config.seq_length)
+
+
+def _yi_prepare_decoder_attention_mask(attention_mask, input_ids, inputs_embeds, past_key_values_length):
+    input_shape = input_ids.shape if input_ids is not None else inputs_embeds.shape[:-1]
+    return _prepare_decoder_attention_mask(attention_mask, input_shape, inputs_embeds, past_key_values_length)
+
+
+# Modified from transformers.models.mistral.modeling_mistral._prepare_decoder_sliding_window_attention_mask
+def _prepare_decoder_sliding_window_attention_mask(
+    attention_mask: torch.Tensor,
+    input_shape: Tuple[int, int],
+    inputs_embeds: torch.Tensor,
+    past_key_values_length: int,
+    sliding_window: int,
+):
+    from transformers.models.mistral.modeling_mistral import _expand_mask, _make_sliding_window_causal_mask
+
+    # create causal mask
+    # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
+    combined_attention_mask = None
+
+    combined_attention_mask = _make_sliding_window_causal_mask(
+        input_shape,
+        device=inputs_embeds.device,
+        dtype=inputs_embeds.dtype,
+        past_key_values_length=past_key_values_length,
+        sliding_window=sliding_window,
+    )
+
+    if attention_mask is not None:
+        # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
+        expanded_attn_mask = _expand_mask(attention_mask, inputs_embeds.dtype, tgt_len=input_shape[-1]).to(
+            inputs_embeds.device
+        )
+        combined_attention_mask = (
+            expanded_attn_mask if combined_attention_mask is None else expanded_attn_mask + combined_attention_mask
+        )
+
+    return combined_attention_mask
+
+
+class TextDecoderWithPositionIdsOnnxConfig(TextDecoderOnnxConfig):
+    @property
+    def inputs(self) -> Dict[str, Dict[int, str]]:
+        common_inputs = super().inputs
+
+        # Decoders based on GPT2 require a position_ids input to avoid
+        # generating wrong position_ids in the model itself:
+        # https://github.com/huggingface/transformers/blob/v4.33.1/src/transformers/models/gpt2/modeling_gpt2.py#L802
+        if not self.no_position_ids and "text-generation" in self.task:
+            common_inputs["position_ids"] = {0: "batch_size", 1: "sequence_length"}
+
+        return common_inputs
+
+
 def patch_model_for_optimum_export(model):
     if model.config.model_type in ["stablelm_epoch", "baichuan"]:
         model.model._prepare_decoder_attention_mask = _prepare_decoder_attention_mask
     elif model.config.model_type == "chatglm":
         _patch_chatglm_core_attention_forward(model)
+    elif model.config.model_type == "qwen":
+        _update_qwen_rotary_embedding_cache(model)
+    elif model.config.model_type == "mistral":
+        model.model._prepare_decoder_attention_mask = _prepare_decoder_sliding_window_attention_mask
+    elif model.config.model_type == "Yi":
+        model.model._prepare_decoder_attention_mask = _yi_prepare_decoder_attention_mask
     return model
 
 
@@ -197,19 +271,25 @@ def convert_optimum_causallm_base(model, args):
     )
     save_tokenizer(tok, ov_out_dir)
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends and not gptq_applied:
-        ov_int8_dir = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'OV_{args.precision}-INT8'
-        model.config.save_pretrained(ov_int8_dir)
-        export_models(
-            models_and_onnx_configs=models_and_onnx_configs,
-            output_dir=ov_int8_dir,
-            output_names=files_subpaths,
-            input_shapes=dummy_shapes,
-            device="cpu",
-            fp16=args.precision == "FP16",
-            int8=True,
-            model_kwargs={},
-        )
-        save_tokenizer(tok, ov_int8_dir)
+        optimized_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+        model.config.save_pretrained(optimized_dir)
+        fp32_dir = ov_out_dir if precision != "FP16" else Path(TemporaryDirectory().name)
+        if precision == "FP16":
+            export_models(
+                models_and_onnx_configs=models_and_onnx_configs,
+                output_dir=fp32_dir,
+                output_names=files_subpaths,
+                input_shapes=dummy_shapes,
+                device="cpu",
+                fp16=False,
+                int8=False,
+                model_kwargs={}
+            )
+
+        ir_model = Core().read_model(fp32_dir / files_subpaths[0])
+
+        compress_ov_model_weights_helper(ir_model, tok, model.config, optimized_dir, args.precision == "FP16", args)
+
     if pt_compress_weights and not gptq_applied:
         compressed_model = compress_weights(model)
         onnx_config, models_and_onnx_configs = _get_submodels_and_export_configs(
@@ -289,10 +369,8 @@ def convert_causal_lm(args):
     log.info(f'Serialization total time {end1 - start1}s')
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends and not gptq_applied:
-        ov_int8_dir = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'OV_{args.precision}-INT8'
-        model.model = compress_weights(model.model)
-        model.save_pretrained(ov_int8_dir)
-        save_tokenizer(tok, ov_int8_dir)
+        optimized_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+        compress_ov_model_weights_helper(model.model, tok, model.config, optimized_dir, args.precision == "FP16", args)
 
     del model
     gc.collect()
@@ -357,13 +435,11 @@ def convert_seq2seq(args):
     save_tokenizer(tok, ov_out_dir)
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_int8_dir = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'OV_{args.precision}-INT8'
-        model.encoder.model = compress_weights(model.encoder.model)
-        model.decoder.model = compress_weights(model.decoder.model)
+        optimized_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+        compress_ov_model_weights_helper(model.encoder.model, tok, model.config, optimized_dir, args.precision == "FP16", args)
+        compress_ov_model_weights_helper(model.decoder.model, tok, model.config, optimized_dir, args.precision == "FP16", args)
         if model.decoder_with_past:
-            model.decoder_with_past.model = compress_weights(model.decoder_with_past.model)
-        model.save_pretrained(ov_int8_dir)
-        save_tokenizer(tok, ov_int8_dir)
+            compress_ov_model_weights_helper(model.decoder_with_past.model, tok, model.config, optimized_dir, args.precision == "FP16", args)
 
     del model
     gc.collect()
@@ -439,7 +515,7 @@ def convert_sd(args):
     log.info(f'Serialization total time {end1 - start1}s')
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_int8_dir = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'OV_{args.precision}-INT8'
+        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
         model.text_encoder.model = compress_weights(model.text_encoder.model)
         model.unet.model = compress_weights(model.unet.model)
         model.vae_decoder.model = compress_weights(model.vae_decoder.model)
@@ -509,7 +585,7 @@ def convert_ldm_super_res(args):
     pipeline.scheduler.save_config(save_dir)
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_int8_dir = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'OV_{args.precision}-INT8'
+        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
         compressed_ov_unet = compress_weights(ov_unet)
         save_model(compressed_ov_unet, ov_int8_dir / 'unet.xml', compress_to_fp16=compress_to_fp16)
         compressed_ov_decoder = compress_weights(ov_decoder)
@@ -593,8 +669,8 @@ def convert_mpt(args):
             convert_to_ov(compressed_pt_model, tok, pt_path, compress_to_fp16)
         if BackendType.OPENVINO.value in args.compress_weights_backends:
             ov_model = Core().read_model(ov_dir / 'openvino_model.xml')
-            ov_compressed_path = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'OV_{args.precision}-INT8'
-            compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16)
+            ov_compressed_path = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+            compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, args)
 
 
 def convert_stablelm(args):
@@ -724,8 +800,12 @@ def convert_chatglm2(args):
         args.model_id,
         trust_remote_code=True,
         config=config,
+        torch_dtype=torch.float32
     )
-    pt_model.to(torch.float32)
+    try:
+        pt_model.to(torch.float32)
+    except Exception:
+        pass
 
     NormalizedConfigManager._conf[pt_model.config.model_type] = NormalizedTextConfig.with_args(
         num_layers="num_hidden_layers", num_attention_heads="num_attention_heads"
@@ -793,8 +873,8 @@ def convert_chatglm(args):
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
         ov_model_path = ov_out_path / 'openvino_model.xml'
         ov_model = Core().read_model(ov_model_path)
-        ov_compressed_path = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'OV_{args.precision}-INT8'
-        compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16)
+        ov_compressed_path = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+        compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, args)
 
 
 def flattenize_inputs(inputs):
@@ -859,8 +939,8 @@ def convert_falcon(args):
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
         ov_model = Core().read_model(ov_out_path / 'openvino_model.xml')
-        ov_compressed_path = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'OV_{args.precision}-INT8'
-        compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16)
+        ov_compressed_path = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+        compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, args)
 
 
 def convert_jais(args):
@@ -884,8 +964,13 @@ def convert_baichaun(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     cuda, post_init = patch_gptq(config)
     normalized_config = NormalizedTextConfig.with_args(num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size')
-    model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True)
-    model.to(torch.float32)
+    model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, torch_dtype=torch.float32)
+    try:
+        model.to(torch.float32)
+        if post_init is None:
+            model(torch.ones([1, 10], dtype=torch.long))
+    except Exception:
+        pass
 
     class Baichaun2OpenVINOConfig(TextDecoderOnnxConfig):
         DEFAULT_ONNX_OPSET = 13
@@ -912,6 +997,278 @@ def convert_baichaun(args):
         unpatch_gptq(cuda, post_init)
 
 
+def convert_qwen(args):
+    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    cuda, post_init = patch_gptq(config)
+    normalized_config = NormalizedTextConfig.with_args(num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size')
+    model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, torch_dtype=torch.float32)
+    try:
+        model.to(torch.float32)
+    except Exception:
+        pass
+
+    class QwenDummyInputsGenerator(DummyTextInputGenerator):
+        SUPPORTED_INPUT_NAMES = {
+            "input_ids",
+            "attention_mask",
+            "token_type_ids",
+            "position_ids",
+        }
+
+        def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
+            input = super().generate(input_name, framework, int_dtype, float_dtype)
+            if input_name == "input_ids":
+                input = torch.tensor([[1583]])
+            if input_name == "attention_mask":
+                input = torch.ones((1, 7), dtype=input.dtype)
+            if input_name == "position_ids":
+                input = torch.tensor([[6]])
+            return input
+
+    class QwenDummyPastKeyValuesGenerator(DummyPastKeyValuesGenerator):
+        def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
+            shape = (
+                1,
+                6,
+                self.num_attention_heads,
+                self.hidden_size // self.num_attention_heads,
+            )
+            return [
+                (
+                    torch.zeros(shape, dtype=torch.float32),
+                    torch.zeros(shape, dtype=torch.float32),
+                )
+                for _ in range(self.num_layers)
+            ]
+
+    class QwenOpenVINOConfig(TextDecoderOnnxConfig):
+        DEFAULT_ONNX_OPSET = 13
+        NORMALIZED_CONFIG_CLASS = normalized_config
+        DUMMY_INPUT_GENERATOR_CLASSES = (QwenDummyInputsGenerator, QwenDummyPastKeyValuesGenerator)
+        DUMMY_PKV_GENERATOR_CLASS = QwenDummyPastKeyValuesGenerator
+
+        def generate_dummy_inputs(self, framework: str = "pt", **kwargs):
+            dummy_inputs_generators = self._create_dummy_input_generator_classes(**kwargs)
+
+            dummy_inputs = {}
+            input_names = [key for key in self.inputs.keys() if not key.startswith("past_key_values")]
+            if self.use_past_in_inputs and self.use_cache_branch is not False:
+                input_names.append("past_key_values")
+
+            for input_name in input_names:
+                input_was_inserted = False
+                for dummy_input_gen in dummy_inputs_generators:
+                    if dummy_input_gen.supports_input(input_name):
+                        dummy_inputs[input_name] = self.overwrite_shape_and_generate_input(
+                            dummy_input_gen,
+                            input_name,
+                            framework,
+                            input_shapes=kwargs,
+                        )
+                        input_was_inserted = True
+                        break
+                if not input_was_inserted:
+                    raise RuntimeError(
+                        f'Could not generate dummy input for "{input_name}". Try adding a proper dummy input generator to the model ONNX config.'
+                    )
+
+            # refer to https://github.com/huggingface/optimum/pull/764
+            cond1 = self.use_past_in_inputs
+            cond2 = self.PAD_ATTENTION_MASK_TO_PAST
+            cond3 = self.use_cache_branch is not False
+            cond4 = "attention_mask" in dummy_inputs
+            if (cond1 and cond2 and cond3 and cond4):
+                # Obtain the past sequence length from the value instead of the key (Bloom).
+                past_length = dummy_inputs["past_key_values"][0][1].shape[1]
+
+                dummy_inputs["attention_mask"] = DummyInputGenerator.pad_input_on_dim(
+                    dummy_inputs["attention_mask"],
+                    desired_length=past_length + 1,
+                    dim=1,
+                    dtype=dummy_inputs["attention_mask"].dtype,
+                )
+
+            return dummy_inputs
+
+        def add_past_key_values(self, inputs_or_outputs: Dict[str, Dict[int, str]], direction: str):
+            """
+            Fills `input_or_outputs` mapping with past_key_values dynamic axes considering the direction.
+
+            Args:
+                inputs_or_outputs (`Dict[str, Dict[int, str]]`): The mapping to fill.
+                direction (`str`):
+                    either "inputs" or "outputs", it specifies whether `input_or_outputs` is the input mapping or the
+                    output mapping, this is important for axes naming.
+            """
+            if direction not in ["inputs", "outputs"]:
+                raise ValueError(f'direction must either be "inputs" or "outputs", but {direction} was given')
+
+            if direction == "inputs":
+                decoder_sequence_name = "past_sequence_length"
+                name = "past_key_values"
+            else:
+                decoder_sequence_name = "past_sequence_length + 1"
+                name = "present"
+
+            for i in range(self._normalized_config.num_layers):
+                inputs_or_outputs[f"{name}.{i}.key"] = {0: "batch_size", 1: decoder_sequence_name}
+                inputs_or_outputs[f"{name}.{i}.value"] = {0: "batch_size", 1: decoder_sequence_name}
+
+    model_type = model.config.model_type.replace("-", "_")
+    export_config = QwenOpenVINOConfig
+    TasksManager._SUPPORTED_MODEL_TYPE[model_type] = {
+        'onnx': {
+            'text-generation': make_backend_config_constructor_for_task(export_config, 'text-generation'),
+            'text-generation-with-past': make_backend_config_constructor_for_task(export_config, 'text-generation-with-past'),
+        },
+        'openvino': {
+            'text-generation': make_backend_config_constructor_for_task(export_config, 'text-generation'),
+            'text-generation-with-past': make_backend_config_constructor_for_task(export_config, 'text-generation-with-past'),
+        },
+    }
+    NormalizedConfigManager._conf[model_type] = normalized_config
+    convert_optimum_causallm_base(model, args)
+    if post_init is not None:
+        unpatch_gptq(cuda, post_init)
+
+
+def convert_mistral(args):
+    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    cuda, post_init = patch_gptq(config)
+    model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True)
+    model.to(torch.float32)
+    normalized_config = NormalizedTextConfig.with_args(num_key_value_heads="num_key_value_heads", allow_new=True)
+
+    class MistralDummyTextInputGenerator(DummyTextInputGenerator):
+        SUPPORTED_INPUT_NAMES = {
+            "input_ids",
+            "attention_mask",
+            "token_type_ids",
+            "position_ids",
+        }
+
+        def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
+            input = super().generate(input_name, framework, int_dtype, float_dtype)
+            if input_name == "position_ids":
+                input = input[:, -1:]
+            return input
+
+    class MistralDummyPastKeyValuesGenerator(DummyPastKeyValuesGenerator):
+        def __init__(
+            self,
+            task: str,
+            normalized_config: NormalizedTextConfig,
+            batch_size: int = DEFAULT_DUMMY_SHAPES["batch_size"],
+            sequence_length: int = DEFAULT_DUMMY_SHAPES["sequence_length"],
+            random_batch_size_range: Optional[Tuple[int, int]] = None,
+            random_sequence_length_range: Optional[Tuple[int, int]] = None,
+            **kwargs,
+        ):
+            super().__init__(
+                task=task,
+                normalized_config=normalized_config,
+                batch_size=batch_size,
+                sequence_length=sequence_length,
+                random_batch_size_range=random_batch_size_range,
+                random_sequence_length_range=random_sequence_length_range,
+            )
+            self.num_key_value_heads = normalized_config.num_key_value_heads
+
+        def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
+            shape = (
+                self.batch_size,
+                self.num_key_value_heads,
+                self.sequence_length,
+                self.hidden_size // self.num_attention_heads,
+            )
+            return [
+                (
+                    self.random_float_tensor(shape, framework=framework, dtype=float_dtype),
+                    self.random_float_tensor(shape, framework=framework, dtype=float_dtype),
+                )
+                for _ in range(self.num_layers)
+            ]
+
+    class MistralOnnxConfig(TextDecoderWithPositionIdsOnnxConfig):
+        # The ONNX export of this architecture needs the Trilu operator support, available since opset 14
+        DEFAULT_ONNX_OPSET = 14
+        DUMMY_INPUT_GENERATOR_CLASSES = (
+            MistralDummyTextInputGenerator,
+            MistralDummyPastKeyValuesGenerator,
+        )
+        DUMMY_PKV_GENERATOR_CLASS = MistralDummyPastKeyValuesGenerator
+        NORMALIZED_CONFIG_CLASS = normalized_config
+        no_position_ids = False
+
+    export_config = MistralOnnxConfig
+    TasksManager._SUPPORTED_MODEL_TYPE[model.config.model_type] = {
+        'onnx': {
+            'text-generation': make_backend_config_constructor_for_task(export_config, 'text-generation'),
+            'text-generation-with-past': make_backend_config_constructor_for_task(export_config, 'text-generation-with-past'),
+        },
+        'openvino': {
+            'text-generation': make_backend_config_constructor_for_task(export_config, 'text-generation'),
+            'text-generation-with-past': make_backend_config_constructor_for_task(export_config, 'text-generation-with-past'),
+        },
+    }
+    NormalizedConfigManager._conf[model.config.model_type] = normalized_config
+    convert_optimum_causallm_base(model, args)
+    if post_init is not None:
+        unpatch_gptq(cuda, post_init)
+
+
+def convert_yi(args):
+    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    cuda, post_init = patch_gptq(config)
+    model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True)
+    model.to(torch.float32)
+    normalized_config = NormalizedTextConfig
+
+    class YIDummyTextInputGenerator(DummyTextInputGenerator):
+        SUPPORTED_INPUT_NAMES = {
+            "input_ids",
+            "attention_mask",
+            "token_type_ids",
+            "position_ids",
+        }
+
+        def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
+            input = super().generate(input_name, framework, int_dtype, float_dtype)
+            if input_name == "position_ids":
+                input = input[:, -1:]
+            return input
+
+    class YIOnnxConfig(TextDecoderWithPositionIdsOnnxConfig):
+        # The ONNX export of this architecture needs the Trilu operator support, available since opset 14
+        DEFAULT_ONNX_OPSET = 14
+        DUMMY_INPUT_GENERATOR_CLASSES = (
+            YIDummyTextInputGenerator,
+            DummyPastKeyValuesGenerator,
+        )
+        DUMMY_PKV_GENERATOR_CLASS = DummyPastKeyValuesGenerator
+        NORMALIZED_CONFIG_CLASS = normalized_config
+        no_position_ids = False
+
+    export_config = YIOnnxConfig
+    tasks = {
+        'onnx': {
+            'text-generation': make_backend_config_constructor_for_task(export_config, 'text-generation'),
+            'text-generation-with-past': make_backend_config_constructor_for_task(export_config, 'text-generation-with-past'),
+        },
+        'openvino': {
+            'text-generation': make_backend_config_constructor_for_task(export_config, 'text-generation'),
+            'text-generation-with-past': make_backend_config_constructor_for_task(export_config, 'text-generation-with-past'),
+        },
+    }
+    TasksManager._SUPPORTED_MODEL_TYPE[model.config.model_type] = tasks
+    TasksManager._SUPPORTED_MODEL_TYPE[model.config.model_type.lower()] = tasks
+    NormalizedConfigManager._conf[model.config.model_type] = normalized_config
+    NormalizedConfigManager._conf[model.config.model_type.lower()] = normalized_config
+    convert_optimum_causallm_base(model, args)
+    if post_init is not None:
+        unpatch_gptq(cuda, post_init)
+
+
 converters = {
     'decoder': convert_causal_lm,
     'blenderbot': convert_seq2seq,
@@ -928,7 +1285,11 @@ converters = {
     'falcon': convert_falcon,
     'stablelm': convert_stablelm,
     'jais': convert_jais,
-    "baichuan2": convert_baichaun,
+    'baichuan': convert_baichaun,
+    'qwen': convert_qwen,
+    'mistal': convert_mistral,
+    'zephyr': convert_mistral,
+    'yi': convert_yi,
 }
 
 
@@ -950,7 +1311,16 @@ def main():
     parser.add_argument('--precision', choices=['FP32', 'FP16'], default='FP32')
 
     compression_group = parser.add_argument_group('Weights compression parameters')
-    compression_group.add_argument('--compress_weights', action='store_true')
+    compression_group.add_argument(
+        '-c',
+        '--compress_weights',
+        type=str,
+        choices=['INT8', 'INT4_SYM', 'INT4_ASYM'],
+        default=None,
+        help=(
+            'The weight compression option, e.g. INT8 - INT8 weights, INT4_* - for INT4 compressed weights.'
+        ),
+    )
     compression_group.add_argument(
         '--compress_weights_backends',
         help='Backend names used to compress the input model weights separated by space.',
@@ -958,6 +1328,18 @@ def main():
         default=BackendType.OPENVINO.value,
         type=str.lower,
         nargs='+',
+    )
+    compression_group.add_argument(
+        '--ratio',
+        help='Compression ratio between primary and backup precision, e.g. INT4/INT8',
+        default=None,
+        type=float,
+    )
+    compression_group.add_argument(
+        '--group_size',
+        help='Size of the group of weights that share the same quantization parameters',
+        default=None,
+        type=int,
     )
 
     args = parser.parse_args()

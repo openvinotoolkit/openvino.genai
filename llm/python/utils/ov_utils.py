@@ -62,8 +62,13 @@ def forward_simplified(
     else:
         # past_key_values are not used explicitly, instead they should be handled inside the model
         if past_key_values is None:
-            past_key_values = ()  # something that is not None to differentiate the first iteration in the first condition in this function
-            # TODO: resent state?
+            # Need a marker to differentiate the first generate iteration from the others in
+            # the first condition at the function beginning above.
+            # It should be something that is not None and it should be True when converted to Boolean.
+            past_key_values = ((),)
+            # This is the first iteration in a sequence, reset all states
+            for state in self.request.query_state():
+                state.reset()
 
     inputs['input_ids'] = np.array(input_ids)
 
@@ -151,13 +156,14 @@ def patch_inter_processing(hf_model, **kwargs):
         hf_model._orig_generate = hf_model.generate
         hf_model.generate = types.MethodType(generate_simplified, hf_model)
 
-    num_beams = kwargs['num_beams']
+    num_beams = kwargs['num_beams'] if 'num_beams' in kwargs and kwargs['num_beams'] > 1 else 1
+    batch_size = kwargs['batch_size'] if 'batch_size' in kwargs and kwargs['batch_size'] > 1 else 1
 
     if kwargs['fuse_cache_reorder'] and num_beams > 1:
         # Should be run before make_stateful because of adding pre-processing on kv-cashe inputs
         # Make a new parameter for beam_idx
         # Adding a new parameter to make _reorder_cache inside the model in the beginning of each iteration
-        beam_idx = opset.parameter(name='beam_idx', dtype=ov.Type.i32, shape=ov.PartialShape([num_beams]))
+        beam_idx = opset.parameter(name='beam_idx', dtype=ov.Type.i32, shape=ov.PartialShape([num_beams * batch_size]))
         beam_idx.output(0).get_tensor().add_names({'beam_idx'})  # why list is not accepted?
         ov_model.add_parameters([beam_idx])
         # Go over all cache parameters and fuse _reorder_cache with indices provided by the new parameter beam_idx
@@ -172,12 +178,13 @@ def patch_inter_processing(hf_model, **kwargs):
 
         # override _reorder_cache to avoid cache manipulation outside of the model as it is already done inside
         def _reorder_cache_stub(self, past_key_values, beam_idx):
+            # TODO: Apply it differently based on model type
             self.next_beam_idx = np.array(beam_idx)  # save beam_idx to be used as an input in the next iteration
             return past_key_values
 
         hf_model._reorder_cache = types.MethodType(_reorder_cache_stub, hf_model)
         hf_model.forward = types.MethodType(forward_simplified, hf_model)  # need custom forward to set beam_idx input to OV model
-        hf_model.next_beam_idx = np.zeros([num_beams], dtype=int)  # initial value for beam_idx is all zeros
+        hf_model.next_beam_idx = np.zeros([num_beams * batch_size], dtype=int)  # initial value for beam_idx is all zeros
 
     if kwargs['make_stateful']:
         from openvino._offline_transformations import apply_make_stateful_transformation
@@ -185,10 +192,19 @@ def patch_inter_processing(hf_model, **kwargs):
         input_output_map = {}
         # TODO: Can we derive the dimensions from the model topology?
         num_attention_heads = hf_model.normalized_config.num_attention_heads if hf_model.config.model_type == 'bloom' else 1
-        num_beams = kwargs['num_beams'] if 'num_beams' in kwargs and kwargs['num_beams'] > 1 else 1
         beam_idx_exist = 'beam_idx' in [port.any_name for port in ov_model.inputs]
         assert num_beams == 1 or beam_idx_exist, 'Requested to make_stateful with num_beams > 1 but there is no beam_idx parameter for cache reorder fused'
         left_num_parameters = 2 + int(beam_idx_exist)
+        # Set batch size for input_ids and attention mask to avoid dynamic dimension got propagated from the end of the model back to ReadValue
+        for i in range(2):
+            input = ov_model.inputs[i]
+            shape = input.get_partial_shape()
+            if shape.rank.get_length() == 2:
+                shape[0] = batch_size * num_beams
+                input.get_node().set_partial_shape(shape)
+            else:
+                print(f'[ WARNING ] Rank of {i} input of the model is not 2, batch size is not set')
+
         for i in range(len(ov_model.inputs) - left_num_parameters):
             port = ov_model.inputs[2 + i]
             output = ov_model.outputs[1 + i]
@@ -197,7 +213,7 @@ def patch_inter_processing(hf_model, **kwargs):
 
             # suppose 0-th dimension is a batch
             # TODO: Deduce from a model via ordinal reshape
-            shape[0] = kwargs['batch_size'] * num_attention_heads * num_beams
+            shape[0] = batch_size * num_attention_heads * num_beams
 
             port.get_node().set_partial_shape(shape)
 
@@ -219,7 +235,7 @@ def patch_inter_processing(hf_model, **kwargs):
 def create_text_gen_model(model_path, device, **kwargs):
     """Create text generation model.
 
-    - model_path: can be model_id, model_path or IR path
+    - model_path: can be model_path or IR path
     - device: can be CPU or GPU
     - model_type:
     """
@@ -238,21 +254,7 @@ def create_text_gen_model(model_path, device, **kwargs):
     model_path_existed = Path(model_path).exists()
     # load model
     if not model_path_existed:
-        if model_type in ['mpt', 'falcon', 'replit', 'codegen2', 'chatglm', 'chatglm2']:
-            start = time.perf_counter()
-            ov_model = model_class.from_pretrained(
-                kwargs['model_id'],
-                device=device,
-                export=True,
-                ov_config=ov_config,
-                config=AutoConfig.from_pretrained(kwargs['model_id'], trust_remote_code=True),
-            )
-            end = time.perf_counter()
-        else:
-            start = time.perf_counter()
-            ov_model = model_class.from_pretrained(kwargs['model_id'], export=True, device=device, ov_config=ov_config)
-            end = time.perf_counter()
-        ov_model.save_pretrained(model_path)
+        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
         if model_type in ['mpt', 'falcon', 'replit', 'codegen2', 'chatglm', 'chatglm2']:
             start = time.perf_counter()
@@ -273,11 +275,7 @@ def create_text_gen_model(model_path, device, **kwargs):
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     # load token
-    if not model_path_existed:
-        tokenizer = token_class.from_pretrained(kwargs['model_id'])
-        tokenizer.save_pretrained(model_path)
-    else:
-        tokenizer = token_class.from_pretrained(model_path, trust_remote_code=True)
+    tokenizer = token_class.from_pretrained(model_path, trust_remote_code=True)
     return ov_model, tokenizer, from_pretrained_time
 
 
@@ -287,10 +285,7 @@ def create_image_gen_model(model_path, device, **kwargs):
     model_path = Path(model_path)
     ov_config = kwargs['config']
     if not Path(model_path).exists():
-        start = time.perf_counter()
-        ov_model = model_class.from_pretrained(kwargs['model_id'], from_transformers=True, device=device, ov_config=ov_config)
-        end = time.perf_counter()
-        ov_model.save_pretrained(model_path)
+        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
         log.info(f'model_path={model_path}')
         start = time.perf_counter()

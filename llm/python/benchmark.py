@@ -345,13 +345,6 @@ def num_iters_type(x):
 def get_argprser():
     parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-m', '--model', help='model folder including IR files or Pytorch files', required=TabError)
-    parser.add_argument(
-        '-id',
-        '--model_id',
-        default='',
-        help='model id of huggingface, if model folder is empty, will try to download model from Hugging Face with this model_id.\n'
-        'e.g. the model id of dolly-v2-12b which get from https://huggingface.co/databricks/dolly-v2-12b is databricks/dolly-v2-12b',
-    )
     parser.add_argument('-d', '--device', default='cpu', help='inference device')
     parser.add_argument('-r', '--report', help='report csv')
     parser.add_argument('-rj', '--report_json', help='report json')

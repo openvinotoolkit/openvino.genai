@@ -5,7 +5,7 @@ from transformers import AutoTokenizer
 from transformers import AutoModelForCausalLM, T5ForConditionalGeneration, BlenderbotForConditionalGeneration, AutoModel
 from diffusers.pipelines import DiffusionPipeline, LDMSuperResolutionPipeline
 from optimum.intel.openvino import OVModelForCausalLM, OVModelForSeq2SeqLM, OVStableDiffusionPipeline
-from utils.ov_model_classes import OVMPTModel, OVFalconModel, OVLDMSuperResolutionPipeline, OVChatGLMModel, OVChatGLM2Model
+from utils.ov_model_classes import OVMPTModel, OVFalconModel, OVLDMSuperResolutionPipeline, OVChatGLMModel, OVChatGLM2Model, OVQwenModel, OVMistralModel
 
 TOKENIZE_CLASSES_MAPPING = {
     'decoder': AutoTokenizer,
@@ -28,7 +28,11 @@ OV_MODEL_CLASSES_MAPPING = {
     'ldm_super_resolution': OVLDMSuperResolutionPipeline,
     'chatglm2': OVChatGLM2Model,
     'chatglm3': OVChatGLM2Model,
-    'chatglm': OVChatGLMModel
+    'chatglm': OVChatGLMModel,
+    'qwen': OVQwenModel,
+    'mistral': OVMistralModel,
+    'zephyr': OVMistralModel,
+    'yi': OVMistralModel,
 }
 
 PT_MODEL_CLASSES_MAPPING = {
@@ -43,7 +47,7 @@ PT_MODEL_CLASSES_MAPPING = {
 }
 
 USE_CASES = {
-    'image_gen': ['stable-diffusion-', 'deepfloyd-if', 'tiny-sd', "small-sd"],
+    'image_gen': ['stable-diffusion-', 'deepfloyd-if', 'tiny-sd', 'small-sd'],
     'text2speech': ['whisper'],
     'image_cls': ['vit'],
     'code_gen': ['replit', 'codegen2', 'codegen', 'codet5'],
@@ -70,6 +74,10 @@ USE_CASES = {
         'jais',
         'orca-mini',
         'baichuan',
+        'qwen',
+        'zephyr',
+        'mistral',
+        'yi',
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }

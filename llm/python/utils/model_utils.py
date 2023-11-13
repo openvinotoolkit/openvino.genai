@@ -53,7 +53,6 @@ def analyze_args(args):
     model_args = {}
     model_args['prompt'] = args.prompt
     model_args['prompt_file'] = args.prompt_file
-    model_args['model_id'] = args.model_id
     model_args['infer_count'] = args.infer_count
     model_args['images'] = args.images
     model_args['seed'] = args.seed
@@ -75,8 +74,6 @@ def analyze_args(args):
         model_names = args.model.split('/')
         use_case, model_name = get_use_case(model_names)
     elif model_framework == 'pt':
-        if len(model_args['model_id']) != 0:
-            model_args['model_id'] = args.model_id
         model_names = args.model.split('/')
         use_case, model_name = get_use_case(model_names)
     model_args['use_case'] = use_case
@@ -101,7 +98,7 @@ def get_use_case(model_name_list):
     for model_name in model_name_list:
         for case, model_ids in USE_CASES.items():
             for model_id in model_ids:
-                if model_id in model_name:
+                if model_id in model_name.lower():
                     log.info(f'==SUCCESS FOUND==: use_case: {case}, model_name: {model_name}')
                     return case, model_name
     raise RuntimeError('==Failure FOUND==: no use_case found')
@@ -144,6 +141,7 @@ def get_ir_conversion_frontend(cur_model_name, model_name_list):
 def get_model_precision(model_name_list):
     precision_list = ['FP32', 'FP16', 'FP16-INT8', 'INT8', 'INT8_compressed_weights', 'INT8_quantized', 'PT_compressed_weights']
     precision_list += ['OV_FP32-INT8', 'OV_FP16-INT8', 'PT_FP32-INT8', 'PT_FP16-INT8', 'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4']
+    precision_list += ['OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM']
     model_precision = 'unknown'
     # Search from right to left of model path
     for i in range(len(model_name_list) - 1, -1, -1):

@@ -1,19 +1,18 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 numpy
 openvino>=2023.1.0
-auto-gptq # int4 gptq
+auto-gptq<0.5.0 # int4 gptq
 pillow
 torch
-transformers>=4.28.0,<=4.33.3
-tokenizers<0.14.0    # for chatglm-6b and baichuan2
+transformers>=4.28.0,<4.35
 diffusers
-optimum
+optimum<1.14.0
 git+https://github.com/huggingface/optimum-intel.git@cadfab708a87bf677ed52b7e7752a2a5b736fa94
 git+https://github.com/openvinotoolkit/nncf.git
 packaging
 psutil
 timm
 tiktoken
-bitsandbytes # for baichuan2
 onnx
 einops
+transformers_stream_generator
