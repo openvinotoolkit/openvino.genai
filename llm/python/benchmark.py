@@ -23,6 +23,7 @@ import traceback
 from transformers import set_seed
 from PIL import Image
 from utils.memory_profile import MemConsumption
+from utils.hook_forward import OVForward
 import utils.output_json
 
 HOOK_UTILS = {'pt': utils.hook_transformers, 'ov': utils.hook_transformers}
@@ -34,6 +35,7 @@ DEFAULT_OUTPUT_TOKEN_SIZE = 512
 MAX_OUTPUT_TOKEN_SIZE = 64 * 1024
 
 mem_consumption = MemConsumption()
+ovForward = OVForward()
 
 
 def gen_iterate_data(
@@ -185,7 +187,7 @@ def run_image_generation(input_text, nsteps, num, image_id, pipe, args, iter_dat
         mem_consumption.clear_max_memory_consumption()
     for i in range(args['batch_size']):
         if num == 0:
-            rslt_img_fn = args['model_name'] + '_bs' + str(args['batch_size']) + '-' + str(i + 1) + '_img_warm-up.png'
+            rslt_img_fn = args['model_name'] + '_img' + str(image_id) + '_bs' + str(args['batch_size']) + '-' + str(i + 1) + '_img_warm-up.png'
         else:
             rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_img' + str(image_id) + '_bs' + str(args['batch_size']) + '-' + str(i + 1) + '.png'
         res[i].save(rslt_img_fn)
@@ -201,15 +203,18 @@ def run_image_generation(input_text, nsteps, num, image_id, pipe, args, iter_dat
         prompt_idx=image_id,
     )
     iter_data_list.append(iter_data)
+    tm_list = ovForward.get_tm_list()
     utils.metrics_print.print_metrics(
         num,
         iter_data,
-        [],
+        tm_list,
+        tms_infer=tm_list,
         generated=rslt_img_fn,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
     )
+    tm_list = ovForward.clear_tm_list()
 
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters):
@@ -220,7 +225,15 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     if len(input_text_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
 
-    log.info(f'num_iters={num_iters}, num_text_list={len(input_text_list)}')
+    if framework == "ov":
+        # count the time of the first infer
+        ovForward.new_text_encoder(pipe)
+        # count the time of the second infer
+        ovForward.new_unet(pipe)
+        ovForward.new_vae_decoder(pipe)
+
+    log.info(f"num_iters={num_iters}, num_text_list={len(input_text_list)}")
+
     # if num_iters == 0, just output warm-up data
     for num in range(num_iters + 1):
         image_id = 0
@@ -254,7 +267,7 @@ def run_image_classification(model_path, framework, device, args, num_iters=10):
     return iter_data_list
 
 
-def run_ldm_super_resolution(img, num, nsteps, pipe, args, framework, iter_data_list, image_id):
+def run_ldm_super_resolution(img, num, nsteps, pipe, args, framework, iter_data_list, image_id, tm_list):
     set_seed(args['seed'])
     log.info(f'Test {num} input image={img}')
     low_res_img = PIL.Image.open(img).convert('RGB')
@@ -264,7 +277,7 @@ def run_ldm_super_resolution(img, num, nsteps, pipe, args, framework, iter_data_
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
     start = time.perf_counter()
-    res = pipe(low_res_img, num_inference_steps=nsteps)
+    res = pipe(low_res_img, num_inference_steps=nsteps, tm_list=tm_list)
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
@@ -295,7 +308,8 @@ def run_ldm_super_resolution(img, num, nsteps, pipe, args, framework, iter_data_
     utils.metrics_print.print_metrics(
         num,
         iter_data,
-        [],
+        tm_list,
+        tms_infer=tm_list,
         generated=rslt_img_fn,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
@@ -306,6 +320,7 @@ def run_ldm_super_resolution(img, num, nsteps, pipe, args, framework, iter_data_
 def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_iters):
     pipe, pretrain_time = FW_UTILS[framework].create_ldm_super_resolution_model(model_path, device, **args)
     iter_data_list = []
+    tm_list = []
     input_prompts_list = utils.model_utils.get_prompts(args)
     if len(input_prompts_list) > 0:
         images = []
@@ -328,7 +343,8 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     for num in range(num_iters + 1):
         image_id = 0
         for img in images:
-            run_ldm_super_resolution(img, num, 1 if num == 0 else num_inference_steps, pipe, args, framework, iter_data_list, image_id)
+            run_ldm_super_resolution(img, num, 1 if num == 0 else num_inference_steps, pipe, args, framework, iter_data_list, image_id, tm_list)
+            tm_list.clear()
             image_id = image_id + 1
     utils.metrics_print.print_average(iter_data_list)
 

@@ -2,6 +2,7 @@
 # Copyright (C) 2018-2023 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 # flake8: noqa
+import time
 import inspect
 from pathlib import Path
 from typing import Optional, Union, Dict, List, Tuple, Callable, Iterable, Any
@@ -212,6 +213,7 @@ class OVLDMSuperResolutionPipeline(DiffusionPipeline):
         generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
         output_type: Optional[str] = 'pil',
         return_dict: bool = True,
+        tm_list: Optional[List] = None,
         **kwargs,
     ) -> Union[Tuple, ImagePipelineOutput]:
         r'''
@@ -272,12 +274,16 @@ class OVLDMSuperResolutionPipeline(DiffusionPipeline):
             latents_input = np.concatenate([latents, image], axis=1)
             latents_input = self.scheduler.scale_model_input(latents_input, t)
             # predict the noise residual
+            tic = time.perf_counter()
             noise_pred = self.unet([latents_input, t])[self._unet_output]
+            tm_list.append(time.perf_counter() - tic)
             # compute the previous noisy sample x_t -> x_t-1
             latents = self.scheduler.step(torch.from_numpy(noise_pred), t, torch.from_numpy(latents))['prev_sample'].numpy()
 
         # decode the image latents with the VQVAE
+        tic = time.perf_counter()
         image = self.vqvae(latents)[self._vqvae_output]
+        tm_list.append(time.perf_counter() - tic)
         image = image / 2 + 0.5
         image = image.transpose(0, 2, 3, 1)
 

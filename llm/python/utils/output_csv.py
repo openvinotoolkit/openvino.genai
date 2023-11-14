@@ -21,7 +21,14 @@ def output_comments(result, use_case, writer):
         comment_list.append('result_md5: MD5 of generated text')
         comment_list.append('prompt_idx: Index of prompts')
     elif use_case == 'image_gen':
-        comment_list.append("infer_count: specify the Tex2Image models' Inference(or Sampling) step size")
+        comment_list.append("infer_count: Tex2Image models' Inference(or Sampling) step size")
+        comment_list.append('1st_latency: Inference time of text_encoder (one inference)')
+        comment_list.append('2nd_avg_latency: Mean inference time of unet and vae_decoder')
+        comment_list.append('prompt_idx: Index of prompts')
+    elif use_case == 'ldm_super_resolution':
+        comment_list.append("infer_count: Tex2Image models' Inference(or Sampling) step size")
+        comment_list.append('1st_latency: First inference time of unet')
+        comment_list.append('2nd_avg_latency: Mean inference time of unet(exclude first infer time) and vqvae')
         comment_list.append('prompt_idx: Image Index')
     comment_list.append('pretrain_time: Total time of load model and compile model')
     comment_list.append('generation_time: Time for one interaction. (e.g. The duration of  answering one question or generating one picture)')
