@@ -1,4 +1,4 @@
-# Benchmarking script for large models
+# Benchmarking script for large language models
 
 This script provides unified approach to estimate performance for LLM. It is based on pipelines provided by Optimum-Intel and allows to estimate performance for pytorch and openvino models using almost the same code and precollected models.
 
