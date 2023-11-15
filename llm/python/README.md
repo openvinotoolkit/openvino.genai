@@ -8,6 +8,7 @@ This script provides unified approach to estimate performance for LLM. It is bas
 python3 -m venv python-env
 source python-env/bin/activate
 pip install update --upgrade
+pip install -r requirements.txt
 ```
 (2) Convert model to IRs
 ## Conversion script for preparing benchmarking models
@@ -16,10 +17,6 @@ pip install update --upgrade
 
 Prerequisites:
 install conversion dependencies using requirements.txt
-
-```bash
-pip install -r requirements.txt
-```
 
 Usage:
 
@@ -65,7 +62,7 @@ pip install -r requirements.txt
 notes: **You can specify the installed openvino version through pip install**
 ``` bash
 # e.g. 
-pip install openvino==2023.0.0 or pip install openvino-dev==2023.0.0
+pip install openvino==2023.2.0 or pip install openvino-dev==2023.2.0
 ```
 
 (4) Run the following command to test the performance of one LLM model
@@ -100,7 +97,7 @@ Prerequisites: install benchmarking dependencies using requirements.txt
 pip install -r requirements/requirements.txt
 ```
 
-In order to run the `torch.compile()` on GPU, install additionally the nightly PyTorch version:
+In order to run the `torch.compile()` on CUDA GPU, install additionally the nightly PyTorch version:
 
 ```bash
 pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu118
