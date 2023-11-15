@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/openvino.hpp>
-#include <utils.hpp>
+#include <openvino_extensions/strings.hpp>
 
 namespace {
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest&& tokenizer, std::string_view prompt) {
     constexpr size_t BATCH_SIZE = 1;
     ov::Tensor destination = tokenizer.get_input_tensor();
-    pack_strings(std::array<std::string_view, BATCH_SIZE>{prompt}, destination);
+    openvino_extensions::pack_strings(std::array<std::string_view, BATCH_SIZE>{prompt}, destination);
     tokenizer.infer();
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
 }
@@ -19,7 +19,7 @@ void print_token(ov::InferRequest& detokenizer, int32_t out_token) {
     inp.set_shape({BATCH_SIZE, 1});
     inp.data<int32_t>()[0] = out_token;
     detokenizer.infer();
-    std::cout << unpack_strings(detokenizer.get_output_tensor()).front() << std::flush;
+    std::cout << openvino_extensions::unpack_strings(detokenizer.get_output_tensor()).front() << std::flush;
 }
 }
 
@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) try {
     p3.input("input_ids").tensor().set_element_type(ov::element::i32);  // cast to the type of tokenyzer's output
     p3.input("attention_mask").tensor().set_element_type(ov::element::i32);
     model = p3.build();
-    ov::InferRequest ireq = core.compile_model(model, "CPU", {ov::cache_dir("llm-cache")}).create_infer_request();
+    ov::InferRequest ireq = core.compile_model(model, "CPU", ov::cache_dir("llm-cache")).create_infer_request();
     for (size_t idx = 2; idx < inputs.size(); ++idx) {
         ireq.get_input_tensor(idx).set_shape(inputs.at(idx).get_partial_shape().get_min_shape());
     }
