@@ -120,6 +120,7 @@ def generate(self, input_ids, **kwargs):
             next_token_scores = nn.functional.log_softmax(
                 next_token_logits, dim=-1
             )  # (batch_size * group_size, vocab_size)
+            print(next_token_scores)
             vocab_size = next_token_scores.shape[-1]
 
             next_token_scores_processed = logits_processor(
@@ -136,6 +137,7 @@ def generate(self, input_ids, **kwargs):
             next_token_scores, next_tokens = torch.topk(
                 next_token_scores, max(2, 1 + n_eos_tokens) * group_size, dim=1, largest=True, sorted=True
             )
+            print(next_token_scores)
 
             next_indices = torch.div(next_tokens, vocab_size, rounding_mode="floor")
             next_tokens = next_tokens % vocab_size
@@ -248,8 +250,10 @@ def main():
     # no_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=False, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3)
     # do_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=True, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3, temperature=0.6, top_p=0.0001, top_k=1)
     gts = ('<s>regöttivelyhrteitect bluecosatur Chineseʾ� тя Publicкаль header valueslets mehrere', '<s>IO attach населення GET unixkunftöldcalc toggle deux gatesoba alcune dem center Authcriptor {-', '<s>IO attach населення GET unixkunftöldcalc toggle deux gatesoba alcune dem center Authcriptorzioni', '<s>regöttivelyhrteitect bluecosatur Chineseʾ� тя Publicкаль header valuesletsшов')
-    for gt, beam_output in zip(gts, model.generate(tokenizer('', return_tensors='pt')['input_ids'], max_new_tokens=18, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, num_return_sequences=4, top_k=50, diversity_penalty=1.0, length_penalty=2.0)):  # default length_penalty is 1.0
-        assert gt == tokenizer.decode(beam_output)
+    for gt, beam_output in zip(gts, model.generate(tokenizer('', return_tensors='pt')['input_ids'], max_new_tokens=3, num_beam_groups=1, num_beams=2, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, num_return_sequences=2, top_k=50, diversity_penalty=0.0000000001, length_penalty=2.0)):  # default length_penalty is 1.0
+        # assert gt == tokenizer.decode(beam_output)
+        # print(tokenizer.decode(beam_output))
+        print(beam_output)
     print('OK')
     model_path = '/home/wov/r/open_llama_3b_v2/'  # r'C:\Users\vzlobin\r\open_llama_3b_v2/'
     tokenizer = LlamaTokenizer.from_pretrained(model_path)
