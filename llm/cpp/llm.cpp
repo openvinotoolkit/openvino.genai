@@ -222,8 +222,7 @@ int main(int argc, char* argv[]) try {
                     beam_ireq.set_input_tensor(tensor_idx, ireq.get_output_tensor(tensor_idx - 1));
                 }
                 beam_ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
-                beam_ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, 1});  // TODO all after fix is reelased
-                beam_ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, beam_ireq.get_tensor("attention_mask").get_size() + 1});
+                beam_ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_size() + 1});
                 std::fill_n(beam_ireq.get_tensor("attention_mask").data<int32_t>(), beam_ireq.get_tensor("attention_mask").get_size(), 1);
                 beam_ireq.get_tensor("input_ids").data<int32_t>()[0] = topk[idx].idx;  // TODO: don't allow EOS as first token?
                 beam_ireq.start_async();
