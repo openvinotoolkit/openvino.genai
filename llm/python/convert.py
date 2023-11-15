@@ -6,7 +6,6 @@ import gc
 import time
 import logging as log
 from argparse import ArgumentParser
-from tempfile import TemporaryDirectory
 from enum import Enum
 from functools import wraps
 from pathlib import Path
@@ -160,7 +159,7 @@ def _patch_chatglm_core_attention_forward(model: "PreTrainedModel"):
 
 
 def _update_qwen_rotary_embedding_cache(model):
-    model.transformer.rotary_emb(model.config.seq_length)
+    model.transformer.rotary_emb(2048)
 
 
 def _yi_prepare_decoder_attention_mask(attention_mask, input_ids, inputs_embeds, past_key_values_length):
@@ -273,20 +272,8 @@ def convert_optimum_causallm_base(model, args):
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends and not gptq_applied:
         optimized_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
         model.config.save_pretrained(optimized_dir)
-        fp32_dir = ov_out_dir if precision != "FP16" else Path(TemporaryDirectory().name)
-        if precision == "FP16":
-            export_models(
-                models_and_onnx_configs=models_and_onnx_configs,
-                output_dir=fp32_dir,
-                output_names=files_subpaths,
-                input_shapes=dummy_shapes,
-                device="cpu",
-                fp16=False,
-                int8=False,
-                model_kwargs={}
-            )
-
-        ir_model = Core().read_model(fp32_dir / files_subpaths[0])
+        fp_dir = ov_out_dir
+        ir_model = Core().read_model(fp_dir / files_subpaths[0])
 
         compress_ov_model_weights_helper(ir_model, tok, model.config, optimized_dir, args.precision == "FP16", args)
 
