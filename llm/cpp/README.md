@@ -29,7 +29,7 @@ The program loads a tokenizer, detokenizer and a model (`.xml` and `.bin`) to Op
 ### Download and convert the model and tokenizers
 
 ```sh
-python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx git+https://github.com/huggingface/optimum-intel.git
+python -m pip install --upgrade-strategy eager thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx "optimum[openvino]>=1.14.0" --extra-index-url https://download.pytorch.org/whl/cpu
 source <OpenVINO dir>/setupvars.sh
 optimum-cli export openvino -m meta-llama/Llama-2-7b-hf ./Llama-2-7b-hf/
 python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./Llama-2-7b-hf/
