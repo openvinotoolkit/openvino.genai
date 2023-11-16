@@ -46,7 +46,7 @@ except ImportError:
 
 from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoModel, PreTrainedModel
 
-from utils.nncf_utils import COMPRESSION_OPTIONS, get_compressed_path
+from utils.nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION, get_compressed_path
 
 
 class BackendType(Enum):
@@ -62,11 +62,21 @@ def save_tokenizer(tokenizer, out_dir):
 
 
 def compress_ov_model_weights_helper(ov_model, tok, config, out_path, fp16=False, args={}):
-    compression_args = COMPRESSION_OPTIONS[args.compress_weights]
-    if args.ratio is not None:
-        compression_args["ratio"] = args.ratio
-    if args.group_size is not None:
-        compression_args["group_size"] = args.group_size
+    compression_args = None
+    if "INT4" in args.compress_weights:
+        model_name = out_path.parents[3].name
+        if model_name in INT4_MODEL_CONFIGURATION and not args.override_config:
+            log.info(
+                "Model specifc configuration selected, ",
+                "if you want override it using command line parameters, please set --override_config"
+            )
+            compression_args = INT4_MODEL_CONFIGURATION[model_name]
+    if compression_args is None:
+        compression_args = COMPRESSION_OPTIONS[args.compress_weights]
+        if args.ratio is not None:
+            compression_args["ratio"] = args.ratio
+        if args.group_size is not None:
+            compression_args["group_size"] = args.group_size
     log.info("Compression options:")
     log.info(compression_args)
     compressed_ov_model = compress_weights(ov_model, **compression_args)
@@ -670,10 +680,11 @@ def convert_stablelm(args):
         trust_remote_code=True,
         config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
     )
-    NormalizedConfigManager._conf[config.model_type] = NormalizedTextConfig.with_args(
+    model_type = config.model_type.replace("_", "-")
+    NormalizedConfigManager._conf[model_type] = NormalizedTextConfig.with_args(
         num_layers="num_hidden_layers", num_attention_heads="num_attention_heads"
     )
-    TasksManager._SUPPORTED_MODEL_TYPE[config.model_type] = TasksManager._SUPPORTED_MODEL_TYPE['llama']
+    TasksManager._SUPPORTED_MODEL_TYPE[model_type] = TasksManager._SUPPORTED_MODEL_TYPE['llama']
     convert_optimum_causallm_base(pt_model, args)
     if post_init is not None:
         unpatch_gptq(cuda, post_init)
@@ -1327,6 +1338,9 @@ def main():
         help='Size of the group of weights that share the same quantization parameters',
         default=None,
         type=int,
+    )
+    compression_group.add_argument(
+        "--override_config", action='store_true', help="Override predefined weights compression configuration for model"
     )
 
     args = parser.parse_args()
