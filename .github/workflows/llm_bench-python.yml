@@ -10,11 +10,11 @@ on:
   push:
     branches: [ "master" ]
     paths:
-      - ${{ env.LLM_BENCH_PYPATH }}/**
+      - llm_bench/python/**
   pull_request:
     branches: [ "master" ]
     paths:
-      - ${{ env.LLM_BENCH_PYPATH }}/**
+      - llm_bench/python/**
     
 
 permissions:
