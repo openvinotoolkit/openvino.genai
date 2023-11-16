@@ -9,10 +9,12 @@ env:
 on:
   push:
     branches: [ "master" ]
+    paths:
+      - ${{ env.LLM_BENCH_PYPATH }}/**
   pull_request:
     branches: [ "master" ]
     paths:
-      - ${{ LLM_BENCH_PYPATH }}/**
+      - ${{ env.LLM_BENCH_PYPATH }}/**
     
 
 permissions:
@@ -38,16 +40,16 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest black
-        pip install -r ${{ LLM_BENCH_PYPATH }}/requirements.txt
+        pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt
 
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
-        python -m flake8 ${{ LLM_BENCH_PYPATH }} --config=${{ LLM_BENCH_PYPATH }}/setup.cfg
+        python -m flake8 ${{ env.LLM_BENCH_PYPATH }} --config=${{ env.LLM_BENCH_PYPATH }}/setup.cfg
     - name: Create code style diff for samples
       if: failure()
       run: |
-        python -m black -l 160 -S ${{ LLM_BENCH_PYPATH }}/
+        python -m black -l 160 -S ${{ env.LLM_BENCH_PYPATH }}/
         git diff > llm.bench_diff.diff
     - uses: actions/upload-artifact@v3
       if: failure()
