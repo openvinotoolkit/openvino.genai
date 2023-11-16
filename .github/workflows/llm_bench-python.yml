@@ -1,13 +1,18 @@
 # This workflow will install Python dependencies, run tests and lint with a single version of Python
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
-name: Python application
+name: llm_bench Python Test
+
+env:
+  LLM_BENCH_PYPATH: llm_bench/python
 
 on:
   push:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+    paths:
+      - ${{ LLM_BENCH_PYPATH }}/**
     
 
 permissions:
@@ -18,23 +23,34 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9"]
+
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python 3.10
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v3
       with:
-        python-version: "3.10"
+        python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install flake8 pytest
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        python -m pip install flake8 pytest black
+        pip install -r ${{ LLM_BENCH_PYPATH }}/requirements.txt
+
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    - name: Test with pytest
+        python -m flake8 ${{ LLM_BENCH_PYPATH }} --config=${{ LLM_BENCH_PYPATH }}/setup.cfg
+    - name: Create code style diff for samples
+      if: failure()
       run: |
-        pytest
+        python -m black -l 160 -S ${{ LLM_BENCH_PYPATH }}/
+        git diff > llm.bench_diff.diff
+    - uses: actions/upload-artifact@v3
+      if: failure()
+      with:
+        name: llm.bench_diff
+        path: llm.bench_diff.diff
