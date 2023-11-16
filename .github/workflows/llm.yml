@@ -4,6 +4,7 @@ on:
     paths-ignore:
       - '**/README.md'
       - llm_bench/python/**
+      - .github/**
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
