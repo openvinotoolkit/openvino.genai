@@ -3,6 +3,8 @@ on:
   pull_request:
     paths-ignore:
       - '**/README.md'
+      - 'llm_bench/python'
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
