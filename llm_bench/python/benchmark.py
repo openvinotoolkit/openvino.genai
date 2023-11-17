@@ -219,7 +219,8 @@ def run_image_generation(input_text, nsteps, num, image_id, pipe, args, iter_dat
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters):
     pipe, pretrain_time = FW_UTILS[framework].create_image_gen_model(model_path, device, **args)
-    nsteps = int(DEFAULT_INFERENCE_STEPS if args['infer_count'] is None else args['infer_count'])
+    default_inference_steps = DEFAULT_INFERENCE_STEPS if 'lcm' not in args["model_name"] else 4
+    nsteps = int(default_inference_steps if args['infer_count'] is None else args['infer_count'])
     iter_data_list = []
     input_text_list = utils.model_utils.get_prompts(args)
     if len(input_text_list) == 0:

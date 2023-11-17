@@ -12,7 +12,7 @@ from pathlib import Path
 import types
 from typing import Tuple, Dict, Optional
 import torch
-from diffusers import StableDiffusionPipeline, LDMSuperResolutionPipeline
+from diffusers import StableDiffusionPipeline, LDMSuperResolutionPipeline, DiffusionPipeline
 from nncf import compress_weights
 from openvino import Type, PartialShape, save_model, convert_model
 from openvino.runtime import Core
@@ -32,6 +32,7 @@ from optimum.intel.openvino import (
     OVModelForCausalLM,
     OVModelForSeq2SeqLM,
     OVStableDiffusionPipeline,
+    OVLatentConsistencyModelPipeline,
     OVQuantizer,
     OV_XML_FILE_NAME,
     OV_DECODER_NAME,
@@ -263,6 +264,7 @@ def convert_optimum_causallm_base(model, args):
         _variant="default",
         monolith=False
     )
+    print(models_and_onnx_configs)
     if "decoder_with_past_model" in models_and_onnx_configs:
         models_and_onnx_configs = {"model": models_and_onnx_configs["decoder_with_past_model"]}
     ov_out_dir = Path(args.output_dir) / 'pytorch/dldt' / precision
@@ -539,6 +541,103 @@ def convert_sd(args):
     gc.collect()
 
 
+def convert_lcm(args):
+    start = time.perf_counter()
+    pt_compress_weights = args.compress_weights and BackendType.PYTORCH.value in args.compress_weights_backends
+    if args.save_orig or pt_compress_weights:
+        pt_model = DiffusionPipeline.from_pretrained(args.model_id)
+        if args.save_orig:
+            pt_model.save_pretrained(Path(args.output_dir) / 'pytorch')
+        if pt_compress_weights:
+            wc_text_encoder = compress_weights(pt_model.text_encoder)
+            wc_unet = compress_weights(pt_model.unet)
+            wc_vae = compress_weights(pt_model.vae)
+            pt_model.text_encoder = wc_text_encoder
+            pt_model.unet = wc_unet
+            pt_model.vae = wc_vae
+            _, models_and_onnx_configs = optimum_main._get_submodels_and_onnx_configs(
+                model=pt_model,
+                task='stable-diffusion',
+                monolith=False,
+                custom_onnx_configs={},
+                custom_architecture=False,
+                _variant='default',
+            )
+            output = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'PT_{args.precision}-INT8'
+            for model_name in models_and_onnx_configs:
+                subcomponent = models_and_onnx_configs[model_name][0]
+                if hasattr(subcomponent, 'save_config'):
+                    subcomponent.save_config(output / model_name)
+                elif hasattr(subcomponent, 'config') and hasattr(subcomponent.config, 'save_pretrained'):
+                    subcomponent.config.save_pretrained(output / model_name)
+
+            files_subpaths = [Path(name_dir) / OV_XML_FILE_NAME for name_dir in models_and_onnx_configs]
+
+            # Saving the additional components needed to perform inference.
+            pt_model.scheduler.save_pretrained(output.joinpath('scheduler'))
+
+            feature_extractor = getattr(pt_model, 'feature_extractor', None)
+            if feature_extractor is not None:
+                feature_extractor.save_pretrained(output.joinpath('feature_extractor'))
+
+            tokenizer = getattr(pt_model, 'tokenizer', None)
+            if tokenizer is not None:
+                tokenizer.save_pretrained(output.joinpath('tokenizer'))
+
+            tokenizer_2 = getattr(pt_model, 'tokenizer_2', None)
+            if tokenizer_2 is not None:
+                tokenizer_2.save_pretrained(output.joinpath('tokenizer_2'))
+
+            pt_model.save_config(output)
+
+            export_models(
+                models_and_onnx_configs=models_and_onnx_configs,
+                output_dir=output,
+                output_names=files_subpaths,
+            )
+
+        del pt_model
+        gc.collect()
+
+    model = OVLatentConsistencyModelPipeline.from_pretrained(args.model_id, export=True, compile=False)
+    end = time.perf_counter()
+    log.info(f'Conversion total time {end - start}s')
+
+    if args.precision == 'FP16':
+        model.half()
+    start1 = time.perf_counter()
+    model.save_pretrained(Path(args.output_dir) / 'pytorch/dldt' / args.precision)
+    end1 = time.perf_counter()
+    log.info(f'Serialization total time {end1 - start1}s')
+
+    if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
+        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+        model.text_encoder.model = compress_weights(model.text_encoder.model)
+        model.unet.model = compress_weights(model.unet.model)
+        model.vae_decoder.model = compress_weights(model.vae_decoder.model)
+        model.save_pretrained(ov_int8_dir)
+
+        # Saving the additional components needed to perform inference.
+        model.scheduler.save_pretrained(ov_int8_dir.joinpath('scheduler'))
+
+        feature_extractor = getattr(model, 'feature_extractor', None)
+        if feature_extractor is not None:
+            feature_extractor.save_pretrained(ov_int8_dir.joinpath('feature_extractor'))
+
+        tokenizer = getattr(model, 'tokenizer', None)
+        if tokenizer is not None:
+            tokenizer.save_pretrained(ov_int8_dir.joinpath('tokenizer'))
+
+        tokenizer_2 = getattr(model, 'tokenizer_2', None)
+        if tokenizer_2 is not None:
+            tokenizer_2.save_pretrained(ov_int8_dir.joinpath('tokenizer_2'))
+
+        model.save_config(ov_int8_dir)
+
+    del model
+    gc.collect()
+
+
 def convert_ldm_super_res(args):
     pipeline = LDMSuperResolutionPipeline.from_pretrained(args.model_id)
     if args.save_orig:
@@ -706,9 +805,10 @@ def convert_chatglm2(args):
         def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
             input = super().generate(input_name, framework, int_dtype, float_dtype)
             if input_name == "attention_mask":
-                input = torch.ones((input.shape[0], input.shape[1] + 1), dtype=input.dtype)
+                input = torch.ones(input.shape, dtype=input.dtype)
             if input_name == "position_ids":
-                input = torch.range(0, input.shape[1] + 1, dtype=input.dtype).repeat(1, 1)
+                bs = input.shape[0]
+                input = torch.range(0, input.shape[1], dtype=input.dtype).repeat(bs, 1)
             return input
 
     class ChatGLM2DummyPastKeyValuesGenerator(DummyPastKeyValuesGenerator):
@@ -759,6 +859,52 @@ def convert_chatglm2(args):
         DUMMY_INPUT_GENERATOR_CLASSES = (ChatGLM2DummyTextInputGenerator, ChatGLM2DummyPastKeyValuesGenerator)
         DUMMY_PKV_GENERATOR_CLASS = ChatGLM2DummyPastKeyValuesGenerator
         no_position_ids = False
+
+        def generate_dummy_inputs(self, framework: str = "pt", **kwargs):
+            dummy_inputs_generators = self._create_dummy_input_generator_classes(**kwargs)
+
+            dummy_inputs = {}
+            input_names = [key for key in self.inputs.keys() if not key.startswith("past_key_values")]
+            if self.use_past_in_inputs and self.use_cache_branch is not False:
+                input_names.append("past_key_values")
+
+            for input_name in input_names:
+                input_was_inserted = False
+                for dummy_input_gen in dummy_inputs_generators:
+                    if dummy_input_gen.supports_input(input_name):
+                        dummy_inputs[input_name] = self.overwrite_shape_and_generate_input(
+                            dummy_input_gen,
+                            input_name,
+                            framework,
+                            input_shapes=kwargs,
+                        )
+                        input_was_inserted = True
+                        break
+                if not input_was_inserted:
+                    raise RuntimeError(
+                        f'Could not generate dummy input for "{input_name}". Try adding a proper dummy input generator to the model ONNX config.'
+                    )
+
+            # refer to https://github.com/huggingface/optimum/pull/764
+            cond1 = self.use_past_in_inputs
+            cond2 = self.PAD_ATTENTION_MASK_TO_PAST
+            cond3 = self.use_cache_branch is not False
+            cond4 = "attention_mask" in dummy_inputs
+            if (cond1 and cond2 and cond3 and cond4):
+                # Obtain the past sequence length from the value instead of the key (Bloom).
+                past_length = dummy_inputs["past_key_values"][0][1].shape[0]
+                for k, v in dummy_inputs.items():
+                    if k not in ["attention_mask", "past_key_values"]:
+                        dummy_inputs[k] = v[:, -1:]
+
+                dummy_inputs["attention_mask"] = DummyInputGenerator.pad_input_on_dim(
+                    dummy_inputs["attention_mask"],
+                    desired_length=past_length + 1,
+                    dim=1,
+                    dtype=dummy_inputs["attention_mask"].dtype,
+                )
+
+            return dummy_inputs
 
         @property
         def inputs(self) -> Dict[str, Dict[int, str]]:
@@ -1132,6 +1278,9 @@ def convert_qwen(args):
 
 def convert_mistral(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    if config.model_type in NormalizedConfigManager._conf:
+        return convert_causal_lm(args)
+
     cuda, post_init = patch_gptq(config)
     model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True)
     model.to(torch.float32)
@@ -1274,6 +1423,7 @@ converters = {
     'stable-diffusion': convert_sd,
     'tiny-sd': convert_sd,
     'small-sd': convert_sd,
+    'lcm': convert_lcm,
     'ldm': convert_ldm_super_res,
     'mpt': convert_mpt,
     'replit': convert_mpt,

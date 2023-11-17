@@ -4,7 +4,7 @@
 from transformers import AutoTokenizer
 from transformers import AutoModelForCausalLM, T5ForConditionalGeneration, BlenderbotForConditionalGeneration, AutoModel
 from diffusers.pipelines import DiffusionPipeline, LDMSuperResolutionPipeline
-from optimum.intel.openvino import OVModelForCausalLM, OVModelForSeq2SeqLM, OVStableDiffusionPipeline
+from optimum.intel.openvino import OVModelForCausalLM, OVModelForSeq2SeqLM, OVStableDiffusionPipeline, OVLatentConsistencyModelPipeline
 from utils.ov_model_classes import OVMPTModel, OVFalconModel, OVLDMSuperResolutionPipeline, OVChatGLMModel, OVChatGLM2Model, OVQwenModel, OVMistralModel
 
 TOKENIZE_CLASSES_MAPPING = {
@@ -22,6 +22,7 @@ OV_MODEL_CLASSES_MAPPING = {
     'mpt': OVMPTModel,
     'falcon': OVFalconModel,
     'stable_diffusion': OVStableDiffusionPipeline,
+    'lcm': OVLatentConsistencyModelPipeline,
     'replit': OVMPTModel,
     'codet5': OVModelForSeq2SeqLM,
     'codegen2': OVModelForCausalLM,
@@ -47,7 +48,7 @@ PT_MODEL_CLASSES_MAPPING = {
 }
 
 USE_CASES = {
-    'image_gen': ['stable-diffusion-', 'deepfloyd-if', 'tiny-sd', 'small-sd'],
+    'image_gen': ['stable-diffusion-', 'deepfloyd-if', 'tiny-sd', 'small-sd', 'lcm'],
     'text2speech': ['whisper'],
     'image_cls': ['vit'],
     'code_gen': ['replit', 'codegen2', 'codegen', 'codet5'],
