@@ -355,7 +355,7 @@ def convert_causal_lm(args):
         model = model.to_bettertransformer()
 
         onnx_config_constructor = TasksManager.get_exporter_config_constructor(model=model, exporter="onnx", task="text-generation")
-        config = onnx_config_constructor(model.config, use_past=True)
+        config = onnx_config_constructor(model.config, use_past=True, use_past_in_inputs=True)
 
         # for better transformers we need sequence lenght to be not 1 to make a correct trace
         # patch generate_dummy_inputs in the config
@@ -430,7 +430,6 @@ def convert_causal_lm(args):
                 export=False,
                 compile=False,
                 load_in_8bit=False,
-                use_cache=False,
                 config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
             )
         optimized_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
