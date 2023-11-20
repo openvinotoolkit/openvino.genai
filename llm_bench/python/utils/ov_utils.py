@@ -268,7 +268,7 @@ def create_text_gen_model(model_path, device, **kwargs):
         else:
             start = time.perf_counter()
             config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-            ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config, config=config, compile=False)
+            ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config, config=config, compile=False, use_cache=False)
             if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
                 patch_inter_processing(ov_model, **kwargs)
             end = time.perf_counter()

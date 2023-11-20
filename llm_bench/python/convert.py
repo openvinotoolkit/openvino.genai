@@ -405,6 +405,7 @@ def convert_causal_lm(args):
             export=False,
             compile=False,
             load_in_8bit=False,
+            use_cache=False,
             config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
         )
         optimized_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
