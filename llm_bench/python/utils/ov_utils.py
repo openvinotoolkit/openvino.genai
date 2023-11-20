@@ -280,7 +280,8 @@ def create_text_gen_model(model_path, device, **kwargs):
 
 
 def create_image_gen_model(model_path, device, **kwargs):
-    model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
+    default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
+    model_type = kwargs.get('model_type', default_model_type)
     model_class = OV_MODEL_CLASSES_MAPPING[model_type]
     model_path = Path(model_path)
     ov_config = kwargs['config']
