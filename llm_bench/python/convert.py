@@ -345,71 +345,100 @@ def convert_causal_lm(args):
         del pt_model
         gc.collect()
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_id,
-        trust_remote_code=True,
-        config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
-    )
+    if args.bettertransformer:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_id,
+            trust_remote_code=True,
+            config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+        )
 
-    model = model.to_bettertransformer()
+        model = model.to_bettertransformer()
 
-    onnx_config_constructor = TasksManager.get_exporter_config_constructor(model=model, exporter="onnx", task="text-generation")
-    config = onnx_config_constructor(model.config, use_past=True)
+        onnx_config_constructor = TasksManager.get_exporter_config_constructor(model=model, exporter="onnx", task="text-generation")
+        config = onnx_config_constructor(model.config, use_past=True)
 
-    # for better transformers we need sequence lenght to be not 1 to make a correct trace
-    # patch generate_dummy_inputs in the config
+        # for better transformers we need sequence lenght to be not 1 to make a correct trace
+        # patch generate_dummy_inputs in the config
 
-    def pathed_generate_dummy_inputs(self, *args, **kwargs):
-        dummy_inputs = self._original_generate_dummy_inputs(*args, **kwargs)
-        if 'input_ids' in dummy_inputs and dummy_inputs['input_ids'].shape[1] == 1:
-            dummy_inputs['input_ids'] = torch.cat([dummy_inputs['input_ids'], dummy_inputs['input_ids']], dim=-1)
-            attention_mask = dummy_inputs['attention_mask']
-            dummy_inputs['attention_mask'] = torch.cat([attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1)
-        return dummy_inputs
+        def pathed_generate_dummy_inputs(self, *args, **kwargs):
+            dummy_inputs = self._original_generate_dummy_inputs(*args, **kwargs)
+            if 'input_ids' in dummy_inputs and dummy_inputs['input_ids'].shape[1] == 1:
+                dummy_inputs['input_ids'] = torch.cat([dummy_inputs['input_ids'], dummy_inputs['input_ids']], dim=-1)
+                attention_mask = dummy_inputs['attention_mask']
+                dummy_inputs['attention_mask'] = torch.cat([attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1)
+            return dummy_inputs
 
-    # also as we are not using intel-optimimum model class for save/store the model we also need to patch inputs to
-    # have dynamic sequence length dimension in input_ids
+        # also as we are not using intel-optimimum model class for save/store the model we also need to patch inputs to
+        # have dynamic sequence length dimension in input_ids
 
-    def patched_ordered_inputs(self, *args, **kwargs):
-        inputs = self._original_ordered_inputs(*args, **kwargs)
-        if 'input_ids' in inputs and 1 not in inputs['input_ids']:
-            inputs['input_ids'][1] = 'sequence_length'
-        return inputs
+        def patched_ordered_inputs(self, *args, **kwargs):
+            inputs = self._original_ordered_inputs(*args, **kwargs)
+            if 'input_ids' in inputs and 1 not in inputs['input_ids']:
+                inputs['input_ids'][1] = 'sequence_length'
+            return inputs
 
-    import types
-    config._original_generate_dummy_inputs = config.generate_dummy_inputs
-    config.generate_dummy_inputs = types.MethodType(pathed_generate_dummy_inputs, config)
+        import types
+        config._original_generate_dummy_inputs = config.generate_dummy_inputs
+        config.generate_dummy_inputs = types.MethodType(pathed_generate_dummy_inputs, config)
 
-    config._original_ordered_inputs = config.ordered_inputs
-    config.ordered_inputs = types.MethodType(patched_ordered_inputs, config)
+        config._original_ordered_inputs = config.ordered_inputs
+        config.ordered_inputs = types.MethodType(patched_ordered_inputs, config)
 
-    from optimum.exporters.openvino import export
-    ov_out_dir = Path(args.output_dir) / "pytorch/dldt" / args.precision
-    export(model, config, ov_out_dir / "openvino_model.xml")  # TODO: How to control weights precision?
-    model.config.save_pretrained(ov_out_dir)
+        from optimum.exporters.openvino import export
+        ov_out_dir = Path(args.output_dir) / "pytorch/dldt" / args.precision
+        export(model, config, ov_out_dir / "openvino_model.xml")  # TODO: How to control weights precision?
+        model.config.save_pretrained(ov_out_dir)
 
-    end = time.perf_counter()
+        end = time.perf_counter()
 
-    print(f"Conversion and serialization total time {end - start}s")
-    save_tokenizer(tok, ov_out_dir)
+        print(f"Conversion and serialization total time {end - start}s")
+        save_tokenizer(tok, ov_out_dir)
 
-    del model
-    gc.collect()
-
-    if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends and not gptq_applied:
-        # Reload the model as OV model for further compression
-        # TODO: Better to reuse existing `model` object
-        # TODO: How to control precision (fp32 or fp16) of that part of weights that wouldn't be further compressed (e.g. to int8 or int4)?
+        del model
+        gc.collect()
+    else:
         model = OVModelForCausalLM.from_pretrained(
-            ov_out_dir,
-            export=False,
+            args.model_id,
+            export=True,
             compile=False,
+            trust_remote_code=True,
             load_in_8bit=False,
-            use_cache=False,
             config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
         )
+
+        end = time.perf_counter()
+
+        log.info(f'Conversion total time {end - start}s')
+        if args.precision == 'FP16':
+            model.half()
+        precision = args.precision if not gptq_applied else f"GPTQ_INT4-{args.precision}"
+        ov_out_dir = Path(args.output_dir) / 'pytorch/dldt' / precision
+        save_tokenizer(tok, ov_out_dir)
+
+        start1 = time.perf_counter()
+        model.save_pretrained(ov_out_dir)
+        end1 = time.perf_counter()
+        log.info(f'Serialization total time {end1 - start1}s')
+
+    if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends and not gptq_applied:
+        if args.bettertransformer:
+            # Reload the model as OV model for further compression
+            # TODO: Better to reuse existing `model` object
+            # TODO: How to control precision (fp32 or fp16) of that part of weights that wouldn't be further compressed (e.g. to int8 or int4)?
+            model = OVModelForCausalLM.from_pretrained(
+                ov_out_dir,
+                export=False,
+                compile=False,
+                load_in_8bit=False,
+                use_cache=False,
+                config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
+            )
         optimized_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
         compress_ov_model_weights_helper(model.model, tok, model.config, optimized_dir, args.precision == "FP16", args)
+
+    if not args.bettertransformer:
+        del model
+        gc.collect()
 
 
 def convert_seq2seq(args):
@@ -1494,6 +1523,8 @@ def main():
     parser.add_argument('--output_dir', required=True)
     parser.add_argument('--save_orig', action='store_true')
     parser.add_argument('--precision', choices=['FP32', 'FP16'], default='FP32')
+    parser.add_argument('--bettertransformer', action='store_true',
+                        help='Apply bettertransformer to enable ScaledDotProductAttention operation for a part of the models')
 
     compression_group = parser.add_argument_group('Weights compression parameters')
     compression_group.add_argument(
