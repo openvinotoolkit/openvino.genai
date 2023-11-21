@@ -254,21 +254,9 @@ def patch_model_with_bettertransformer(model, model_config):
             dummy_inputs['attention_mask'] = torch.cat([attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1)
         return dummy_inputs
 
-    # also as we are not using intel-optimimum model class for save/store the model we also need to patch inputs to
-    # have dynamic sequence length dimension in input_ids
-
-    def patched_ordered_inputs(self, *args, **kwargs):
-        inputs = self._original_ordered_inputs(*args, **kwargs)
-        if 'input_ids' in inputs and 1 not in inputs['input_ids']:
-            inputs['input_ids'][1] = 'sequence_length'
-        return inputs
-
     import types
     model_config._original_generate_dummy_inputs = model_config.generate_dummy_inputs
     model_config.generate_dummy_inputs = types.MethodType(pathed_generate_dummy_inputs, model_config)
-
-    model_config._original_ordered_inputs = model_config.ordered_inputs
-    model_config.ordered_inputs = types.MethodType(patched_ordered_inputs, model_config)
 
     return model
 
