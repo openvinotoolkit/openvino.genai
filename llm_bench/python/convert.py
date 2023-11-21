@@ -29,11 +29,9 @@ from optimum.exporters.onnx import get_encoder_decoder_models_for_export
 from optimum.exporters.openvino import export_models
 from optimum.intel.utils.modeling_utils import _prepare_decoder_attention_mask
 from optimum.intel.openvino import (
-    OVModelForCausalLM,
     OVModelForSeq2SeqLM,
     OVStableDiffusionPipeline,
     OVLatentConsistencyModelPipeline,
-    OVQuantizer,
     OV_XML_FILE_NAME,
     OV_DECODER_NAME,
     OV_DECODER_WITH_PAST_NAME,
@@ -240,6 +238,27 @@ def patch_model_for_optimum_export(model):
     return model
 
 
+def patch_model_with_bettertransformer(model, model_config):
+    model = model.to_bettertransformer()
+
+    # for better transformers we need sequence lenght to be not 1 to make a correct trace
+    # patch generate_dummy_inputs in the config
+
+    def pathed_generate_dummy_inputs(self, *args, **kwargs):
+        dummy_inputs = self._original_generate_dummy_inputs(*args, **kwargs)
+        if 'input_ids' in dummy_inputs and dummy_inputs['input_ids'].shape[1] == 1:
+            dummy_inputs['input_ids'] = torch.cat([dummy_inputs['input_ids'], dummy_inputs['input_ids']], dim=-1)
+            attention_mask = dummy_inputs['attention_mask']
+            dummy_inputs['attention_mask'] = torch.cat([attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1)
+        return dummy_inputs
+
+    import types
+    model_config._original_generate_dummy_inputs = model_config.generate_dummy_inputs
+    model_config.generate_dummy_inputs = types.MethodType(pathed_generate_dummy_inputs, model_config)
+
+    return model
+
+
 def convert_optimum_causallm_base(model, args):
     tok = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
     model = patch_model_for_optimum_export(model)
@@ -267,6 +286,8 @@ def convert_optimum_causallm_base(model, args):
     print(models_and_onnx_configs)
     if "decoder_with_past_model" in models_and_onnx_configs:
         models_and_onnx_configs = {"model": models_and_onnx_configs["decoder_with_past_model"]}
+    if args.bettertransformer:
+        models_and_onnx_configs["model"] = (patch_model_with_bettertransformer(*models_and_onnx_configs["model"]), models_and_onnx_configs["model"][1])
     ov_out_dir = Path(args.output_dir) / 'pytorch/dldt' / precision
     model.config.save_pretrained(ov_out_dir)
     files_subpaths = ["openvino_" + model_name + ".xml" for model_name in models_and_onnx_configs.keys()]
@@ -318,61 +339,16 @@ def convert_optimum_causallm_base(model, args):
 
 
 def convert_causal_lm(args):
-    tok = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
-    pt_compress_weights = args.compress_weights and BackendType.PYTORCH.value in args.compress_weights_backends
-    model_config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
-    gptq_applied = is_gptq(model_config)
-    precision = args.precision if not gptq_applied else f"GPTQ_INT4-{args.precision}"
-    if gptq_applied and args.compress_weights:
-        log.info("Weights compression will be skipped for GPTQ models")
-
-    start = time.perf_counter()
-    if args.save_orig or pt_compress_weights:
-        pt_model = AutoModelForCausalLM.from_pretrained(
-            args.model_id,
-            trust_remote_code=True,
-            config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
-        )
-        if args.save_orig:
-            pt_out_dir = Path(args.output_dir) / 'pytorch'
-            pt_model.save_pretrained(pt_out_dir)
-            save_tokenizer(tok, pt_out_dir)
-        if pt_compress_weights and not gptq_applied:
-            feature = 'text-generation'
-            quantizer = OVQuantizer.from_pretrained(pt_model, task=feature)
-            pt_out_dir = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'PT_{args.precision}-INT8'
-            quantizer.quantize(save_directory=pt_out_dir, weights_only=True)
-            save_tokenizer(tok, pt_out_dir)
-        del pt_model
-        gc.collect()
-
-    model = OVModelForCausalLM.from_pretrained(
+    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    cuda, post_init = patch_gptq(config)
+    model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
-        export=True,
-        compile=False,
         trust_remote_code=True,
-        load_in_8bit=False,
-        config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
+        config=config
     )
-    end = time.perf_counter()
-
-    log.info(f'Conversion total time {end - start}s')
-    if args.precision == 'FP16':
-        model.half()
-    ov_out_dir = Path(args.output_dir) / 'pytorch/dldt' / precision
-    save_tokenizer(tok, ov_out_dir)
-
-    start1 = time.perf_counter()
-    model.save_pretrained(ov_out_dir)
-    end1 = time.perf_counter()
-    log.info(f'Serialization total time {end1 - start1}s')
-
-    if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends and not gptq_applied:
-        optimized_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
-        compress_ov_model_weights_helper(model.model, tok, model.config, optimized_dir, args.precision == "FP16", args)
-
-    del model
-    gc.collect()
+    convert_optimum_causallm_base(model, args)
+    if post_init is not None:
+        unpatch_gptq(cuda, post_init)
 
 
 def convert_seq2seq(args):
@@ -1457,6 +1433,8 @@ def main():
     parser.add_argument('--output_dir', required=True)
     parser.add_argument('--save_orig', action='store_true')
     parser.add_argument('--precision', choices=['FP32', 'FP16'], default='FP32')
+    parser.add_argument('--bettertransformer', action='store_true',
+                        help='Apply bettertransformer to enable ScaledDotProductAttention operation for a part of the models')
 
     compression_group = parser.add_argument_group('Weights compression parameters')
     compression_group.add_argument(
