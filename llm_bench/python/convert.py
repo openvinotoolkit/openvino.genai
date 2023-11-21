@@ -342,12 +342,16 @@ def convert_optimum_causallm_base(model, args):
 
 
 def convert_causal_lm(args):
+    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    cuda, post_init = patch_gptq(config)
     model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
         trust_remote_code=True,
-        config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+        config=config
     )
     convert_optimum_causallm_base(model, args)
+    if post_init is not None:
+        unpatch_gptq(cuda, post_init)
 
 
 def convert_seq2seq(args):
