@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/openvino.hpp>
-#include <utils.hpp>
+#include <openvino_extensions/strings.hpp>
 #include <valarray>
 
 namespace {
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest&& tokenizer, std::string_view prompt) {
     constexpr size_t BATCH_SIZE = 1;
     ov::Tensor destination = tokenizer.get_input_tensor();
-    pack_strings(std::array<std::string_view, BATCH_SIZE>{prompt}, destination);
+    openvino_extensions::pack_strings(std::array<std::string_view, BATCH_SIZE>{prompt}, destination);
     tokenizer.infer();
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
 }
@@ -20,7 +20,7 @@ void print_token(ov::InferRequest& detokenizer, int32_t out_token) {
     inp.set_shape({BATCH_SIZE, 1});
     inp.data<int32_t>()[0] = out_token;
     detokenizer.infer();
-    std::cout << unpack_strings(detokenizer.get_output_tensor()).front() << std::flush;
+    std::cout << openvino_extensions::unpack_strings(detokenizer.get_output_tensor()).front() << std::flush;
 }
 
 // Modifyed Knuth–Morris–Pratt algorithm which returns a set of tokens following after every needle occurance in haystack
@@ -70,7 +70,7 @@ std::vector<size_t> kmp_search(const std::vector<size_t>& haystack, std::vector<
     struct Beam {
         float log_prob;
         std::vector<size_t> tokens;
-        std::reference_wrapper<ov::InferRequest> ireq;  // TODO: move to sep struct
+        ov::InferRequest ireq;  // TODO: move to sep struct
         bool operator<(const Beam& other) {
             return log_prob > other.log_prob;  // greater, not less to build min heap
         }
@@ -141,7 +141,6 @@ struct Hypotheses {
         struct Group {
         std::vector<Beam> beams;  // TODO: one contigous array with all beams?
         Hypotheses hypotheses;
-        std::array<ov::InferRequest, GROUP_SIZE> pool;
     };
 
 int main(int argc, char* argv[]) try {
@@ -213,9 +212,8 @@ int main(int argc, char* argv[]) try {
         for (size_t group_idx = 0; group_idx < N_GROUPS; ++group_idx) {
             std::partial_sort(topk.begin(), topk.begin() + GROUP_SIZE, topk.end());
             for (size_t idx = 0; idx < GROUP_SIZE; ++idx) {
-                groups[group_idx].pool[idx] = compiled.create_infer_request();
 
-                groups[group_idx].beams.push_back(Beam{topk[idx].log, {topk[idx].idx}, groups[group_idx].pool[idx]});
+                groups[group_idx].beams.push_back(Beam{topk[idx].log, {topk[idx].idx}, compiled.create_infer_request()});
                 topk[idx].log -= DIVERSITY_PENALTY;
                 ov::InferRequest& beam_ireq = groups[group_idx].beams.back().ireq;
                 for (size_t tensor_idx = 2; tensor_idx < inputs.size(); ++tensor_idx) {
@@ -283,14 +281,15 @@ int main(int argc, char* argv[]) try {
                 } else {
                     groups[group_idx].beams.push_back(std::move(candidates[cand_id]));
                     size_t cur_beam = groups[group_idx].beams.size() - 1;  // TODO: beter loop iteration
+                    auto ireq = compiled.create_infer_request();
                     for (size_t tensor_id = 2; tensor_id < inputs.size(); ++tensor_id) {
-                        groups[group_idx].pool[cur_beam].set_input_tensor(tensor_id, groups[group_idx].beams.back().ireq.get().get_output_tensor(tensor_id - 1));
+                        ireq.set_input_tensor(tensor_id, groups[group_idx].beams.back().ireq.get_output_tensor(tensor_id - 1));
                     }
-                    groups[group_idx].pool[cur_beam].get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
-                    groups[group_idx].pool[cur_beam].get_tensor("input_ids").data<int32_t>()[0] = groups[group_idx].beams.back().tokens.back();
-                    groups[group_idx].pool[cur_beam].get_tensor("attention_mask").set_shape({BATCH_SIZE, groups[group_idx].pool[cur_beam].get_tensor("attention_mask").get_size() + 1});
-                    std::fill_n( groups[group_idx].pool[cur_beam].get_tensor("attention_mask").data<int32_t>(),groups[group_idx].pool[cur_beam].get_tensor("attention_mask").get_size(), 1);
-                    groups[group_idx].beams.back().ireq = groups[group_idx].pool[cur_beam];
+                    ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
+                    ireq.get_tensor("input_ids").data<int32_t>()[0] = groups[group_idx].beams.back().tokens.back();
+                    ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_size() + 1});
+                    std::fill_n(ireq.get_tensor("attention_mask").data<int32_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
+                    groups[group_idx].beams.back().ireq = ireq;
                     if (groups[group_idx].beams.size() == GROUP_SIZE) {
                         break;
                     }
@@ -301,7 +300,7 @@ int main(int argc, char* argv[]) try {
             }
 
             for (Beam& beam : groups[group_idx].beams) {
-                beam.ireq.get().start_async();
+                beam.ireq.start_async();
             }
         }
     }

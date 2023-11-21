@@ -242,7 +242,7 @@ def generate(self, input_ids, **kwargs):
 
 
 def main():
-    model_path = '/home/wov/r/tiny-llama-fast-tokenizer/'  #r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer'
+    model_path = r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer'  #r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer' '/home/wov/r/tiny-llama-fast-tokenizer/'
     tokenizer = LlamaTokenizer.from_pretrained(model_path)
     model = LlamaForCausalLM.from_pretrained(model_path, pad_token_id=tokenizer.eos_token_id)
     model.generate = generate.__get__(model, transformers.GenerationMixin)
