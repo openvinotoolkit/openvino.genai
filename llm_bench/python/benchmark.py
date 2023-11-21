@@ -430,6 +430,14 @@ def get_argprser():
         help='Fuse ops related to cache reordering to the model, applied only when num_beams > 1',
     )
     parser.add_argument(
+        '--indirect_cache',
+        action='store_true',
+        help='Accumulate 2D beam_table for the indirect kv-cache in the model instead of reordeing past kv-cache values. '
+        'Expose beam_table it as an extra input/output or variable depending on whether --make_stateful is set. '
+        'Gather actual kv-cache values for processing at the current iteration based on beam_table. '
+        'Applicable when --fused_cache_reorder is set.',
+    )
+    parser.add_argument(
         '--torch_compile_backend',
         default='openvino',
         required=False,
