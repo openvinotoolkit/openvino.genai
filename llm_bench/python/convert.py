@@ -263,7 +263,6 @@ def convert_optimum_causallm_base(model, args):
     tok = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
     model = patch_model_for_optimum_export(model)
     model_config = model.config
-
     gptq_applied = is_gptq(model_config)
     precision = args.precision if not gptq_applied else f"GPTQ_INT4-{args.precision}"
     if gptq_applied and args.compress_weights:
