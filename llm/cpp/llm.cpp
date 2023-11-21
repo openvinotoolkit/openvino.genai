@@ -60,10 +60,10 @@ std::vector<size_t> kmp_search(const std::vector<size_t>& haystack, std::vector<
     }
     return res;
 }
-    constexpr size_t GROUP_SIZE = 2;
+    constexpr size_t GROUP_SIZE = 3;
     enum class StopCriteria {early, heuristic, never};
     StopCriteria stop_criteria = StopCriteria::never;
-    size_t MAX_NEW_TOKENS = 2;
+    size_t MAX_NEW_TOKENS = 20;
     constexpr float LENGTH_PENALTY = 2.0;  // TODO: align defaults with transformers
 }
 
@@ -148,11 +148,9 @@ int main(int argc, char* argv[]) try {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> '<prompt>'");
     }
     ov::Core core;
-    // core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
-    // auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
-    ov::Tensor input_ids{ov::element::i32, {1, 1}};
-    input_ids.data<int32_t>()[0] = 1;
-    // ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
+    core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
+    auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
+    ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
     std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
     constexpr size_t BATCH_SIZE = 1;
     std::map<size_t, ov::PartialShape> shapes = {
@@ -177,8 +175,8 @@ int main(int argc, char* argv[]) try {
     ov::CompiledModel compiled = core.compile_model(model, "CPU", {ov::cache_dir("llm-cache")});
 
     constexpr int32_t EOS_TOKEN = 1;  // There's no way to extract the value from the tokenizer for now  // TODO: 2 for llama2
-    constexpr size_t N_GROUPS = 1;
-    constexpr float DIVERSITY_PENALTY = 0.0000000001f;
+    constexpr size_t N_GROUPS = 2;
+    constexpr float DIVERSITY_PENALTY = 1.0f;
     constexpr size_t NO_REPEAT_NGRAM_SIZE = 3;
 
     struct Token {float log; size_t idx;
@@ -227,7 +225,7 @@ int main(int argc, char* argv[]) try {
             }
         }
     }
-    for (size_t length_count = 0; length_count < MAX_NEW_TOKENS; ++length_count) {
+    for (size_t length_count = 0; length_count < MAX_NEW_TOKENS - 1; ++length_count) {
         for (size_t group_idx = 0; group_idx < N_GROUPS; ++group_idx) {
             std::vector<Beam> candidates;
             candidates.reserve(2 * GROUP_SIZE);
