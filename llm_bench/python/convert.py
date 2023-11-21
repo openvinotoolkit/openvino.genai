@@ -29,11 +29,9 @@ from optimum.exporters.onnx import get_encoder_decoder_models_for_export
 from optimum.exporters.openvino import export_models
 from optimum.intel.utils.modeling_utils import _prepare_decoder_attention_mask
 from optimum.intel.openvino import (
-    OVModelForCausalLM,
     OVModelForSeq2SeqLM,
     OVStableDiffusionPipeline,
     OVLatentConsistencyModelPipeline,
-    OVQuantizer,
     OV_XML_FILE_NAME,
     OV_DECODER_NAME,
     OV_DECODER_WITH_PAST_NAME,
