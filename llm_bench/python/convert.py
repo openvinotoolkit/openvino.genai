@@ -60,17 +60,17 @@ def save_tokenizer(tokenizer, out_dir):
         log.error(f'tokenizer loading failed with {e}')
 
 
-def compress_ov_model_weights_helper(ov_model, tok, config, out_path, fp16=False, args={}):
+def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_weights_format="INT8", fp16=False, args={}, model_name="openvino_model"):
     compression_args = None
     if "4BIT_DEFAULT" in args.compress_weights:
         model_name = out_path.parents[3].name
-        if model_name in INT4_MODEL_CONFIGURATION and not args.override_config:
+        if model_name in INT4_MODEL_CONFIGURATION
             compression_args = INT4_MODEL_CONFIGURATION[model_name]
         else:
             compression_args = COMPRESSION_OPTIONS["INT4_SYM"]
 
     if compression_args is None:
-        compression_args = COMPRESSION_OPTIONS[args.compress_weights]
+        compression_args = COMPRESSION_OPTIONS[compress_weights_format]
         if args.ratio is not None:
             compression_args["ratio"] = args.ratio
         if args.group_size is not None:
@@ -78,10 +78,11 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, fp16=False
     log.info("Compression options:")
     log.info(compression_args)
     compressed_ov_model = compress_weights(ov_model, **compression_args)
-    save_ov_model_helper(compressed_ov_model, out_path, fp16=fp16, tok=tok, config=config)
+    save_ov_model_helper(compressed_ov_model, out_path, model_name, fp16=fp16, tok=tok, config=config)
 
 
 def save_ov_model_helper(ov_model, out_path, model_name='openvino_model', fp16=False, tok=None, config=None):
+    model_name = model_name or "openvino_model"
     save_model(ov_model, Path(out_path) / f'{model_name}.xml', compress_to_fp16=fp16)
     if tok is not None:
         save_tokenizer(tok, out_path)
@@ -282,7 +283,6 @@ def convert_optimum_causallm_base(model, args):
         _variant="default",
         monolith=False
     )
-    print(models_and_onnx_configs)
     if "decoder_with_past_model" in models_and_onnx_configs:
         models_and_onnx_configs = {"model": models_and_onnx_configs["decoder_with_past_model"]}
     if args.bettertransformer:
@@ -302,12 +302,14 @@ def convert_optimum_causallm_base(model, args):
     )
     save_tokenizer(tok, ov_out_dir)
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends and not gptq_applied:
-        optimized_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
-        model.config.save_pretrained(optimized_dir)
-        fp_dir = ov_out_dir
-        ir_model = Core().read_model(fp_dir / files_subpaths[0])
+        for compress_option in args.compress_weights:
+            log.info(f"Compress model weights to {compress_option}")
+            optimized_dir = get_compressed_path(args.output_dir, args.precision, compress_option)
+            model.config.save_pretrained(optimized_dir)
+            fp_dir = ov_out_dir
+            ir_model = Core().read_model(fp_dir / files_subpaths[0])
 
-        compress_ov_model_weights_helper(ir_model, tok, model.config, optimized_dir, args.precision == "FP16", args)
+            compress_ov_model_weights_helper(ir_model, tok, model.config, optimized_dir, compress_option, args.precision == "FP16", args)
 
     if pt_compress_weights and not gptq_applied:
         compressed_model = compress_weights(model)
@@ -409,11 +411,22 @@ def convert_seq2seq(args):
     save_tokenizer(tok, ov_out_dir)
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        optimized_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
-        compress_ov_model_weights_helper(model.encoder.model, tok, model.config, optimized_dir, args.precision == "FP16", args)
-        compress_ov_model_weights_helper(model.decoder.model, tok, model.config, optimized_dir, args.precision == "FP16", args)
-        if model.decoder_with_past:
-            compress_ov_model_weights_helper(model.decoder_with_past.model, tok, model.config, optimized_dir, args.precision == "FP16", args)
+        for compress_option in args.compress_weights:
+            log.info(f"Compress model weights to {compress_option}")
+            optimized_dir = get_compressed_path(args.output_dir, args.precision, compress_option)
+            compress_ov_model_weights_helper(
+                model.encoder.model, tok, model.config, optimized_dir, compress_option,
+                args.precision == "FP16", args, "openvino_encoder_model"
+            )
+            compress_ov_model_weights_helper(
+                model.decoder.model, tok, model.config, optimized_dir, compress_option,
+                args.precision == "FP16", args, "openvino_decoder_model"
+            )
+            if model.decoder_with_past:
+                compress_ov_model_weights_helper(
+                    model.decoder_with_past.model, tok, model.config, optimized_dir, compress_option,
+                    args.precision == "FP16", args, "openvino_decoder_with_past_model"
+                )
 
     del model
     gc.collect()
@@ -739,9 +752,11 @@ def convert_mpt(args):
             pt_path = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'PT_{args.precision}-INT8'
             convert_to_ov(compressed_pt_model, tok, pt_path, compress_to_fp16)
         if BackendType.OPENVINO.value in args.compress_weights_backends:
-            ov_model = Core().read_model(ov_dir / 'openvino_model.xml')
-            ov_compressed_path = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
-            compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, args)
+            for compress_option in args.compress_weights:
+                log.info(f"Compress model weights to {compress_option}")
+                ov_model = Core().read_model(ov_dir / 'openvino_model.xml')
+                ov_compressed_path = get_compressed_path(args.output_dir, args.precision, compress_option)
+                compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, compress_option, args)
 
 
 def convert_stablelm(args):
@@ -992,8 +1007,10 @@ def convert_chatglm(args):
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
         ov_model_path = ov_out_path / 'openvino_model.xml'
         ov_model = Core().read_model(ov_model_path)
-        ov_compressed_path = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
-        compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, args)
+        for compress_option in args.compress_weights:
+            log.info(f"Compress model weights to {compress_option}")
+            ov_compressed_path = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+            compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, compress_option, args)
 
 
 def flattenize_inputs(inputs):
@@ -1058,8 +1075,10 @@ def convert_falcon(args):
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
         ov_model = Core().read_model(ov_out_path / 'openvino_model.xml')
-        ov_compressed_path = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
-        compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, args)
+        for compress_option in args.compress_weights:
+            log.info(f"Compress model weights to {compress_option}")
+            ov_compressed_path = get_compressed_path(args.output_dir, args.precision, compress_option)
+            compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, compress_option, args)
 
 
 def convert_jais(args):
@@ -1441,7 +1460,7 @@ def main():
         '--compress_weights',
         type=str,
         choices=['INT8', '4BIT_DEFAULT', 'INT4_SYM', 'INT4_ASYM'],
-        default=None,
+        nargs='+',
         help=(
             'The weight compression option, e.g. INT8 - INT8 weights, '
             '4BIT_DEFAULT - for 4-bit compression with predefined configs, '
