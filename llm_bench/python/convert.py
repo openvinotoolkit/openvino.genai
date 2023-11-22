@@ -64,7 +64,7 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
     compression_args = None
     if "4BIT_DEFAULT" in args.compress_weights:
         model_name = out_path.parents[3].name
-        if model_name in INT4_MODEL_CONFIGURATION
+        if model_name in INT4_MODEL_CONFIGURATION:
             compression_args = INT4_MODEL_CONFIGURATION[model_name]
         else:
             compression_args = COMPRESSION_OPTIONS["INT4_SYM"]
