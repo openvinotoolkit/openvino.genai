@@ -74,7 +74,7 @@ std::vector<size_t> kmp_search(const std::vector<size_t>& haystack, std::vector<
         bool operator<(const Beam& other) {
             return log_prob > other.log_prob;  // greater, not less to build min heap
         }
-        Beam(float log_prob, const std::vector<size_t>& tokens, ov::InferRequest& ireq) : log_prob{log_prob}, tokens{tokens}, ireq{ireq} {}
+        Beam(float log_prob, const std::vector<size_t>& tokens, const ov::InferRequest& ireq) : log_prob{log_prob}, tokens{tokens}, ireq{ireq} {}
         Beam& operator=(Beam&& other) {
             log_prob = other.log_prob;
             tokens = std::move(other.tokens);
