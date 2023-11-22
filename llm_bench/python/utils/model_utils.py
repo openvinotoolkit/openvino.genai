@@ -63,6 +63,7 @@ def analyze_args(args):
     model_args['save_prepared_model'] = args.save_prepared_model
     model_args['num_beams'] = args.num_beams
     model_args['fuse_cache_reorder'] = args.fuse_cache_reorder
+    model_args['indirect_cache'] = args.indirect_cache
     model_args['torch_compile_backend'] = args.torch_compile_backend
 
     model_path = args.model
