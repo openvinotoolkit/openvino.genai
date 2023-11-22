@@ -159,6 +159,8 @@ def patch_inter_processing(hf_model, **kwargs):
     num_beams = kwargs['num_beams'] if 'num_beams' in kwargs and kwargs['num_beams'] > 1 else 1
     batch_size = kwargs['batch_size'] if 'batch_size' in kwargs and kwargs['batch_size'] > 1 else 1
 
+    not_kv_inputs = [input for input in ov_model.inputs if not any(name in hf_model.key_value_input_names for name in input.get_names())]
+
     if kwargs['fuse_cache_reorder'] and num_beams > 1:
         # Should be run before make_stateful because of adding pre-processing on kv-cashe inputs
         # Make a new parameter for beam_idx
@@ -166,9 +168,10 @@ def patch_inter_processing(hf_model, **kwargs):
         beam_idx = opset.parameter(name='beam_idx', dtype=ov.Type.i32, shape=ov.PartialShape([num_beams * batch_size]))
         beam_idx.output(0).get_tensor().add_names({'beam_idx'})  # why list is not accepted?
         ov_model.add_parameters([beam_idx])
+        not_kv_inputs.append(ov_model.inputs[-1])
         # Go over all cache parameters and fuse _reorder_cache with indices provided by the new parameter beam_idx
-        for i in range(len(ov_model.inputs) - 3):  # 3 == input_ids, attention_mask and new beam_idx
-            parameter_output_port = ov_model.inputs[2 + i]
+        for input_name in hf_model.key_value_input_names:  # 3 == input_ids, attention_mask and new beam_idx
+            parameter_output_port = ov_model.input(input_name)
             consumers = parameter_output_port.get_target_inputs()
             gather = opset.gather(parameter_output_port, beam_idx, opset.constant(0))
             for consumer in consumers:
@@ -194,28 +197,25 @@ def patch_inter_processing(hf_model, **kwargs):
         num_attention_heads = hf_model.normalized_config.num_attention_heads if hf_model.config.model_type == 'bloom' else 1
         beam_idx_exist = 'beam_idx' in [port.any_name for port in ov_model.inputs]
         assert num_beams == 1 or beam_idx_exist, 'Requested to make_stateful with num_beams > 1 but there is no beam_idx parameter for cache reorder fused'
-        left_num_parameters = 2 + int(beam_idx_exist)
         # Set batch size for input_ids and attention mask to avoid dynamic dimension got propagated from the end of the model back to ReadValue
-        for i in range(2):
-            input = ov_model.inputs[i]
+        for input in not_kv_inputs:
             shape = input.get_partial_shape()
-            if shape.rank.get_length() == 2:
+            if shape.rank.get_length() <= 2:  # == 1 for beam_index
                 shape[0] = batch_size * num_beams
                 input.get_node().set_partial_shape(shape)
             else:
-                print(f'[ WARNING ] Rank of {i} input of the model is not 2, batch size is not set')
+                print(f'[ WARNING ] Rank of {input.get_any_name()} input of the model is not 2, batch size is not set')
 
-        for i in range(len(ov_model.inputs) - left_num_parameters):
-            port = ov_model.inputs[2 + i]
-            output = ov_model.outputs[1 + i]
-            input_output_map[port.any_name] = output.any_name
-            shape = port.get_partial_shape()
+        for kv_name_pair in zip(hf_model.key_value_input_names, hf_model.key_value_output_names):
+            input_output_map[kv_name_pair[0]] = kv_name_pair[1]
+            input = ov_model.input(kv_name_pair[0])
+            shape = input.get_partial_shape()
 
             # suppose 0-th dimension is a batch
             # TODO: Deduce from a model via ordinal reshape
             shape[0] = batch_size * num_attention_heads * num_beams
 
-            port.get_node().set_partial_shape(shape)
+            input.get_node().set_partial_shape(shape)
 
         ov_model.validate_nodes_and_infer_types()
 
