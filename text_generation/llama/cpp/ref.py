@@ -245,7 +245,8 @@ def main():
     model = LlamaForCausalLM.from_pretrained(model_path, pad_token_id=tokenizer.eos_token_id)
     model.generate = generate.__get__(model, transformers.GenerationMixin)
     torch.set_printoptions(profile='full', linewidth=9**9)
-    print(model.generate(tokenizer('asdf', return_tensors='pt')['input_ids'], max_new_tokens=100, num_beam_groups=9, num_beams=99, num_return_sequences=99, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, diversity_penalty=1.0, length_penalty=1.0))  # default length_penalty is 1.0
+    print(tokens := tokenizer('asdf', return_tensors='pt')['input_ids'])
+    print(model.generate(tokens, max_new_tokens=100, num_beam_groups=9, num_beams=99, num_return_sequences=99, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, diversity_penalty=1.0, length_penalty=1.0))  # default length_penalty is 1.0
 
 
 if '__main__' == __name__:
