@@ -14,17 +14,17 @@ std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest&& tokenizer, std::st
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
 }
 
-void print_token(ov::InferRequest& detokenizer, int32_t out_token) {
+void print_token(ov::InferRequest& detokenizer, int64_t out_token) {
     constexpr size_t BATCH_SIZE = 1;
     ov::Tensor inp = detokenizer.get_input_tensor();
     inp.set_shape({BATCH_SIZE, 1});
-    inp.data<int32_t>()[0] = out_token;
+    inp.data<int64_t>()[0] = out_token;
     detokenizer.infer();
     std::cout << openvino_extensions::unpack_strings(detokenizer.get_output_tensor()).front() << std::flush;
 }
 
 // Modifyed Knuth–Morris–Pratt algorithm which returns a set of tokens following after every needle occurance in haystack
-std::vector<size_t> kmp_search(const std::vector<size_t>& haystack, std::vector<size_t> needle) {  // TODO: pass iters to haystack to avoid searchng last ngram symbols
+std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, std::vector<int64_t> needle) {  // TODO: pass iters to haystack to avoid searchng last ngram symbols
     std::vector<int> partial_match_table(needle.size() + 1, -1);
     int cnd = 0;
     for (size_t pos = 1; pos < needle.size(); ++pos) {
@@ -39,7 +39,7 @@ std::vector<size_t> kmp_search(const std::vector<size_t>& haystack, std::vector<
         ++cnd;
     }
     partial_match_table.back() = cnd;
-    std::vector<size_t> res;
+    std::vector<int64_t> res;
     size_t j = 0;  // The position of the current character in haystack
     int k = 0;  // The position of the current character in needle
     while (j < haystack.size() - needle.size()) {
@@ -60,21 +60,21 @@ std::vector<size_t> kmp_search(const std::vector<size_t>& haystack, std::vector<
     }
     return res;
 }
-    constexpr size_t GROUP_SIZE = 3;
+    constexpr size_t GROUP_SIZE = 1;
     enum class StopCriteria {early, heuristic, never};
     StopCriteria stop_criteria = StopCriteria::never;
-    size_t MAX_NEW_TOKENS = 20;
+    size_t MAX_NEW_TOKENS = 3;
     constexpr float LENGTH_PENALTY = 2.0;  // TODO: align defaults with transformers
 }
 
     struct Beam {
         float log_prob;
-        std::vector<size_t> tokens;
+        std::vector<int64_t> tokens;
         ov::InferRequest ireq;  // TODO: move to sep struct
         bool operator<(const Beam& other) {
             return log_prob > other.log_prob;  // greater, not less to build min heap
         }
-        Beam(float log_prob, const std::vector<size_t>& tokens, const ov::InferRequest& ireq) : log_prob{log_prob}, tokens{tokens}, ireq{ireq} {}
+        Beam(float log_prob, const std::vector<int64_t>& tokens, const ov::InferRequest& ireq) : log_prob{log_prob}, tokens{tokens}, ireq{ireq} {}
         Beam& operator=(Beam&& other) {
             log_prob = other.log_prob;
             tokens = std::move(other.tokens);
@@ -148,11 +148,12 @@ int main(int argc, char* argv[]) try {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> '<prompt>'");
     }
     ov::Core core;
-    // core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
-    // auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
-    // ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
-    ov::Tensor input_ids{ov::element::i32, {1, 1}};
-    input_ids.data<int32_t>()[0] = 1;
+    core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
+    auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
+    for (size_t idx = 0; idx < input_ids.get_size(); ++idx) {
+        std::cout << input_ids.data<int64_t>()[idx] << '\n';
+    }
+    ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
     std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
     constexpr size_t BATCH_SIZE = 1;
     std::map<size_t, ov::PartialShape> shapes = {
@@ -164,20 +165,16 @@ int main(int argc, char* argv[]) try {
         }}
     };
     std::vector<ov::Output<ov::Node>> inputs = model->inputs();
-    for (size_t idx = 2; idx < inputs.size(); ++idx) {
+    for (size_t idx = 3; idx < inputs.size(); ++idx) {
         ov::PartialShape shape = inputs.at(idx).get_partial_shape();
         shape[0] = BATCH_SIZE;
         shapes.emplace(idx, shape);
     }
     model->reshape(shapes);
-    ov::preprocess::PrePostProcessor p3(model);
-    p3.input("input_ids").tensor().set_element_type(ov::element::i32);  // cast to the type of tokenyzer's output
-    p3.input("attention_mask").tensor().set_element_type(ov::element::i32);
-    model = p3.build();
-    ov::CompiledModel compiled = core.compile_model(model, "CPU", {ov::cache_dir("llm-cache")});
+    ov::CompiledModel compiled = core.compile_model(model, "CPU");  // , ov::cache_dir("llm-cache"));
 
-    constexpr int32_t EOS_TOKEN = 1;  // There's no way to extract the value from the tokenizer for now  // TODO: 2 for llama2
-    constexpr size_t N_GROUPS = 2;
+    constexpr int64_t EOS_TOKEN = 1;  // There's no way to extract the value from the tokenizer for now  // TODO: 2 for llama2
+    constexpr size_t N_GROUPS = 1;
     constexpr float DIVERSITY_PENALTY = 1.0f;
     constexpr size_t NO_REPEAT_NGRAM_SIZE = 3;
 
@@ -194,8 +191,10 @@ int main(int argc, char* argv[]) try {
         }
         ireq.get_tensor("input_ids").set_shape(input_ids.get_shape());  // TODO: replace with ireq.set_tensor("input_ids", input_ids); after it's fixed
         ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("input_ids").get_size()});
-        std::copy_n(input_ids.data<const int32_t>(), input_ids.get_size(), ireq.get_tensor("input_ids").data<int32_t>());
-        std::fill_n(ireq.get_tensor("attention_mask").data<int32_t>(), input_ids.get_size(), 1);
+        std::copy_n(input_ids.data<const int64_t>(), input_ids.get_size(), ireq.get_tensor("input_ids").data<int64_t>());
+        std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), input_ids.get_size(), 1);
+        ireq.get_tensor("position_ids").set_shape(input_ids.get_shape());
+        std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
         ireq.infer();
 
         ov::Tensor logits_tensor = ireq.get_tensor("logits");
@@ -216,13 +215,15 @@ int main(int argc, char* argv[]) try {
                 groups[group_idx].beams.push_back(Beam{topk[idx].log, {topk[idx].idx}, compiled.create_infer_request()});
                 topk[idx].log -= DIVERSITY_PENALTY;
                 ov::InferRequest& beam_ireq = groups[group_idx].beams.back().ireq;
-                for (size_t tensor_idx = 2; tensor_idx < inputs.size(); ++tensor_idx) {
-                    beam_ireq.set_input_tensor(tensor_idx, ireq.get_output_tensor(tensor_idx - 1));
+                for (size_t tensor_idx = 3; tensor_idx < inputs.size(); ++tensor_idx) {
+                    beam_ireq.set_input_tensor(tensor_idx, ireq.get_output_tensor(tensor_idx - 2));
                 }
                 beam_ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
                 beam_ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_size() + 1});
-                std::fill_n(beam_ireq.get_tensor("attention_mask").data<int32_t>(), beam_ireq.get_tensor("attention_mask").get_size(), 1);
-                beam_ireq.get_tensor("input_ids").data<int32_t>()[0] = topk[idx].idx;  // TODO: don't allow EOS as first token?
+                std::fill_n(beam_ireq.get_tensor("attention_mask").data<int64_t>(), beam_ireq.get_tensor("attention_mask").get_size(), 1);
+                beam_ireq.get_tensor("input_ids").data<int64_t>()[0] = topk[idx].idx;  // TODO: don't allow EOS as first token?
+                beam_ireq.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
+                beam_ireq.get_tensor("position_ids").data<int64_t>()[0] = ireq.get_tensor("attention_mask").get_size() - 2;
                 beam_ireq.start_async();
             }
         }
@@ -236,11 +237,6 @@ int main(int argc, char* argv[]) try {
                 beam_ireq.wait();
                 ov::Tensor logits_tensor = beam_ireq.get_tensor("logits");
                 std::valarray<float> logits{logits_tensor.data<const float>(), logits_tensor.get_size()};  // TODO: maybe use valarray<Token>
-                if (1 == length_count && 1 == beam_idx) {
-                    ov::Tensor intp = beam_ireq.get_tensor("input_ids");
-                    std::cout << intp.data<int32_t>()[0] << '\n';
-                    std::cout << logits[0] << '\n';
-                }
                 float max_logit = logits.max();
                 float log_sum = std::log((std::exp(logits - max_logit)).sum());  // TODO: log(softmax) only for topk logits
                 std::valarray<float> log_prob = logits - max_logit - log_sum;
@@ -254,9 +250,9 @@ int main(int argc, char* argv[]) try {
                         tokens[groups[prev_group_idx].beams[prev_beam_idx].tokens.back()].log -= DIVERSITY_PENALTY;
                     }
                 }
-                std::vector<size_t>& other_tokens = groups[group_idx].beams[beam_idx].tokens;
+                std::vector<int64_t>& other_tokens = groups[group_idx].beams[beam_idx].tokens;
                 if (other_tokens.size() >= NO_REPEAT_NGRAM_SIZE) {
-                    for (size_t ban_id : kmp_search(other_tokens, {other_tokens.end() - NO_REPEAT_NGRAM_SIZE + 1, other_tokens.end()})) {
+                    for (int64_t ban_id : kmp_search(other_tokens, {other_tokens.end() - NO_REPEAT_NGRAM_SIZE + 1, other_tokens.end()})) {
                         tokens[ban_id].log = -std::numeric_limits<float>::infinity();
                     }
                 }
@@ -282,13 +278,15 @@ int main(int argc, char* argv[]) try {
                     groups[group_idx].beams.push_back(std::move(candidates[cand_id]));
                     size_t cur_beam = groups[group_idx].beams.size() - 1;  // TODO: beter loop iteration
                     auto ireq = compiled.create_infer_request();
-                    for (size_t tensor_id = 2; tensor_id < inputs.size(); ++tensor_id) {
-                        ireq.set_input_tensor(tensor_id, groups[group_idx].beams.back().ireq.get_output_tensor(tensor_id - 1));
+                    for (size_t tensor_id = 3; tensor_id < inputs.size(); ++tensor_id) {
+                        ireq.set_input_tensor(tensor_id, groups[group_idx].beams.back().ireq.get_output_tensor(tensor_id - 2));
                     }
                     ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
-                    ireq.get_tensor("input_ids").data<int32_t>()[0] = groups[group_idx].beams.back().tokens.back();
+                    ireq.get_tensor("input_ids").data<int64_t>()[0] = groups[group_idx].beams.back().tokens.back();
                     ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_size() + 1});
-                    std::fill_n(ireq.get_tensor("attention_mask").data<int32_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
+                    std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
+                    ireq.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
+                    ireq.get_tensor("position_ids").data<int64_t>()[0] = ireq.get_tensor("attention_mask").get_size() - 2;
                     groups[group_idx].beams.back().ireq = ireq;
                     if (groups[group_idx].beams.size() == GROUP_SIZE) {
                         break;
@@ -316,7 +314,7 @@ int main(int argc, char* argv[]) try {
         std::sort_heap(group.hypotheses.beams.begin(), group.hypotheses.beams.end());
         for (const Beam& beam: group.hypotheses.beams) {
             std::cout << "\nscore: " << beam.log_prob << " prediction: ";  // TODO: alight with transformers
-            for (size_t token : beam.tokens) {
+            for (int64_t token : beam.tokens) {
                 // print_token(detokenizer, token);
                 std::cout << token << ' ';
             }

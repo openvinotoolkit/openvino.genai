@@ -240,15 +240,16 @@ def generate(self, input_ids, **kwargs):
 
 
 def main():
-    model_path = r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer'  #r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer' '/home/wov/r/tiny-llama-fast-tokenizer/'
+    model_path = '/home/wov/r/tiny-llama-fast-tokenizer/'  #r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer' '/home/wov/r/tiny-llama-fast-tokenizer/'
     tokenizer = LlamaTokenizer.from_pretrained(model_path)
     model = LlamaForCausalLM.from_pretrained(model_path, pad_token_id=tokenizer.eos_token_id)
     model.generate = generate.__get__(model, transformers.GenerationMixin)
     # transformers.set_seed(69)
     # no_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=False, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3)
     # do_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=True, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3, temperature=0.6, top_p=0.0001, top_k=1)
+    print(tokenizer('Hi', return_tensors='pt')['input_ids'])
     gts = ('<s>regöttivelyhrteitect bluecosatur Chineseʾ� тя Publicкаль header valueslets mehrere', '<s>IO attach населення GET unixkunftöldcalc toggle deux gatesoba alcune dem center Authcriptor {-', '<sz>IO attach населення GET unixkunftöldcalc toggle deux gatesoba alcune dem center Authcriptorzioni', '<s>regöttivelyhrteitect bluecosatur Chineseʾ� тя Publicкаль header valuesletsшов')
-    for beam_output in zip(model.generate(tokenizer('A', return_tensors='pt')['input_ids'], max_new_tokens=20, num_beam_groups=2, num_beams=6, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, num_return_sequences=6, top_k=50, diversity_penalty=1.0, length_penalty=2.0)):  # default length_penalty is 1.0
+    for beam_output in zip(model.generate(tokenizer('Hi', return_tensors='pt')['input_ids'], max_new_tokens=4, num_beam_groups=1, num_beams=1, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, num_return_sequences=1, top_k=50, diversity_penalty=1.0, length_penalty=2.0)):  # default length_penalty is 1.0
         # assert gt == tokenizer.decode(beam_output)
         # print(tokenizer.decode(beam_output))
         print(beam_output)
