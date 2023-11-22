@@ -240,26 +240,12 @@ def generate(self, input_ids, **kwargs):
 
 
 def main():
-    model_path = '/home/wov/r/tiny-llama-fast-tokenizer/'  #r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer' '/home/wov/r/tiny-llama-fast-tokenizer/'
+    model_path = '/home/wov/r/tiny-llama-fast-tokenizer/' # '/home/wov/r/openvino.genai/tiny-llama-fast-tokenizer/ones'  #'/home/wov/r/tiny-llama-fast-tokenizer/'# '/home/wov/r/openvino.genai/TinyLlama-1.1B-intermediate-step-715k-1.5T/'  #r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer' '/home/wov/r/tiny-llama-fast-tokenizer/' '/home/wov/r/TinyLlama-1.1B-intermediate-step-715k-1.5T/'
     tokenizer = LlamaTokenizer.from_pretrained(model_path)
     model = LlamaForCausalLM.from_pretrained(model_path, pad_token_id=tokenizer.eos_token_id)
     model.generate = generate.__get__(model, transformers.GenerationMixin)
-    # transformers.set_seed(69)
-    # no_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=False, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3)
-    # do_sample = model.generate(**model_inputs, max_new_tokens=40, num_beams=3, do_sample=True, penalty_alpha=2.0, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=3, temperature=0.6, top_p=0.0001, top_k=1)
-    print(tokenizer('Hi', return_tensors='pt')['input_ids'])
-    gts = ('<s>regöttivelyhrteitect bluecosatur Chineseʾ� тя Publicкаль header valueslets mehrere', '<s>IO attach населення GET unixkunftöldcalc toggle deux gatesoba alcune dem center Authcriptor {-', '<sz>IO attach населення GET unixkunftöldcalc toggle deux gatesoba alcune dem center Authcriptorzioni', '<s>regöttivelyhrteitect bluecosatur Chineseʾ� тя Publicкаль header valuesletsшов')
-    for beam_output in zip(model.generate(tokenizer('Hi', return_tensors='pt')['input_ids'], max_new_tokens=4, num_beam_groups=1, num_beams=1, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, num_return_sequences=1, top_k=50, diversity_penalty=1.0, length_penalty=2.0)):  # default length_penalty is 1.0
-        # assert gt == tokenizer.decode(beam_output)
-        # print(tokenizer.decode(beam_output))
-        print(beam_output)
-    print('OK')
-    model_path = '/home/wov/r/open_llama_3b_v2/'  # r'C:\Users\vzlobin\r\open_llama_3b_v2/'
-    tokenizer = LlamaTokenizer.from_pretrained(model_path)
-    model = LlamaForCausalLM.from_pretrained(model_path, pad_token_id=tokenizer.eos_token_id)
-    model.generate = generate.__get__(model, transformers.GenerationMixin)
-    for beam_output in model.generate(tokenizer('return 0', return_tensors='pt')['input_ids'], max_new_tokens=9**9, num_beam_groups=2, num_beams=4, do_sample=False, early_stopping=True, no_repeat_ngram_size=2, num_return_sequences=4, top_k=50, diversity_penalty=1.0, length_penalty=1.0):
-        print(tokenizer.decode(beam_output))
+    torch.set_printoptions(profile='full', linewidth=9**9)
+    print(model.generate(tokenizer('asdf', return_tensors='pt')['input_ids'], max_new_tokens=100, num_beam_groups=9, num_beams=99, num_return_sequences=99, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, diversity_penalty=1.0, length_penalty=1.0))  # default length_penalty is 1.0
 
 
 if '__main__' == __name__:
