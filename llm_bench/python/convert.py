@@ -62,14 +62,13 @@ def save_tokenizer(tokenizer, out_dir):
 
 def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_weights_format="INT8", fp16=False, args={}, model_name="openvino_model"):
     compression_args = None
-    if "INT4" in compress_weights_format:
+    if "4BIT_DEFAULT" in args.compress_weights:
         model_name = out_path.parents[3].name
-        if model_name in INT4_MODEL_CONFIGURATION and not args.override_config:
-            log.info(
-                "Model specifc configuration selected, "
-                "if you want override it using command line parameters, please set --override_config"
-            )
+        if model_name in INT4_MODEL_CONFIGURATION:
             compression_args = INT4_MODEL_CONFIGURATION[model_name]
+        else:
+            compression_args = COMPRESSION_OPTIONS["INT4_SYM"]
+
     if compression_args is None:
         compression_args = COMPRESSION_OPTIONS[compress_weights_format]
         if args.ratio is not None:
@@ -1460,10 +1459,12 @@ def main():
         '-c',
         '--compress_weights',
         type=str,
-        choices=['INT8', 'INT4_SYM', 'INT4_ASYM'],
+        choices=['INT8', '4BIT_DEFAULT', 'INT4_SYM', 'INT4_ASYM'],
         nargs='+',
         help=(
-            'The weight compression option, e.g. INT8 - INT8 weights, INT4_* - for INT4 compressed weights.'
+            'The weight compression option, e.g. INT8 - INT8 weights, '
+            '4BIT_DEFAULT - for 4-bit compression with predefined configs, '
+            'INT4_* - for INT4 compressed weights.'
         ),
     )
     compression_group.add_argument(
@@ -1485,9 +1486,6 @@ def main():
         help='Size of the group of weights that share the same quantization parameters',
         default=None,
         type=int,
-    )
-    compression_group.add_argument(
-        "--override_config", action='store_true', help="Override predefined weights compression configuration for model"
     )
 
     args = parser.parse_args()
