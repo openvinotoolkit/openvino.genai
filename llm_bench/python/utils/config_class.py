@@ -78,7 +78,7 @@ USE_CASES = {
         'qwen',
         'zephyr',
         'mistral',
-        'yi-',
+        'yi',
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }
