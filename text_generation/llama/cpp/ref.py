@@ -240,13 +240,13 @@ def generate(self, input_ids, **kwargs):
 
 
 def main():
-    model_path = '/home/wov/r/tiny-llama-fast-tokenizer/' # '/home/wov/r/openvino.genai/tiny-llama-fast-tokenizer/ones'  #'/home/wov/r/tiny-llama-fast-tokenizer/'# '/home/wov/r/openvino.genai/TinyLlama-1.1B-intermediate-step-715k-1.5T/'  #r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer' '/home/wov/r/tiny-llama-fast-tokenizer/' '/home/wov/r/TinyLlama-1.1B-intermediate-step-715k-1.5T/'
+    model_path = r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer' # '/home/wov/r/openvino.genai/tiny-llama-fast-tokenizer/ones'  #'/home/wov/r/tiny-llama-fast-tokenizer/'# '/home/wov/r/openvino.genai/TinyLlama-1.1B-intermediate-step-715k-1.5T/'  #r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer' '/home/wov/r/tiny-llama-fast-tokenizer/' '/home/wov/r/TinyLlama-1.1B-intermediate-step-715k-1.5T/'
     tokenizer = LlamaTokenizer.from_pretrained(model_path)
     model = LlamaForCausalLM.from_pretrained(model_path, pad_token_id=tokenizer.eos_token_id)
     model.generate = generate.__get__(model, transformers.GenerationMixin)
     torch.set_printoptions(profile='full', linewidth=9**9)
     print(tokens := tokenizer('asdf', return_tensors='pt')['input_ids'])
-    print(model.generate(tokens, max_new_tokens=100, num_beam_groups=9, num_beams=99, num_return_sequences=99, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, diversity_penalty=1.0, length_penalty=1.0))  # default length_penalty is 1.0
+    print(model.generate(tokens, max_new_tokens=10, num_beam_groups=3, num_beams=3, num_return_sequences=3, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, diversity_penalty=9e9, length_penalty=1.0))  # default length_penalty is 1.0
 
 
 if '__main__' == __name__:

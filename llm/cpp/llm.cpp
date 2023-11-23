@@ -60,14 +60,14 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, std::vecto
     }
     return res;
 }
-constexpr size_t GROUP_SIZE = 9;
+constexpr size_t GROUP_SIZE = 1;
 enum class StopCriteria {early, heuristic, never};
 StopCriteria stop_criteria = StopCriteria::never;
-size_t MAX_NEW_TOKENS = 100;
+size_t MAX_NEW_TOKENS = 10;
 constexpr float LENGTH_PENALTY = 1.0;  // TODO: align defaults with transformers
 constexpr int64_t EOS_TOKEN = 1;  // There's no way to extract the value from the tokenizer for now  // TODO: 2 for llama2
-constexpr size_t N_GROUPS = 11;
-constexpr float DIVERSITY_PENALTY = 1.0f;
+constexpr size_t N_GROUPS = 3;
+constexpr float DIVERSITY_PENALTY = 9e9f;
 constexpr size_t NO_REPEAT_NGRAM_SIZE = 3;
 }
 
@@ -152,9 +152,13 @@ int main(int argc, char* argv[]) try {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> '<prompt>'");
     }
     ov::Core core;
-    core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
-    auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
-    ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
+    // core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
+    // auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
+    // ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
+    ov::Tensor input_ids{ov::element::i64, {1, 3}};
+    input_ids.data<int64_t>()[0] = 1;
+    input_ids.data<int64_t>()[1] = 408;
+    input_ids.data<int64_t>()[2] = 2176;
     std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
     constexpr size_t BATCH_SIZE = 1;
     std::map<size_t, ov::PartialShape> shapes = {
@@ -174,7 +178,7 @@ int main(int argc, char* argv[]) try {
     model->reshape(shapes);
     ov::CompiledModel compiled = core.compile_model(model, "CPU");  // , ov::cache_dir("llm-cache"));
 
-    struct Token {float log; size_t idx;
+    struct Token {float log; int64_t idx;
         bool operator<(Token indexed) {
             return log > indexed.log;  // greater, not less to pick most probable tokens
         }
@@ -203,7 +207,7 @@ int main(int argc, char* argv[]) try {
         std::vector<Token> topk;
         topk.reserve(log_prob.size());
         for (size_t idx = 0; idx < log_prob.size(); ++idx) {
-            topk.push_back({log_prob[idx], idx});
+            topk.push_back({log_prob[idx], int64_t(idx)});
         }
         for (size_t group_idx = 0; group_idx < N_GROUPS; ++group_idx) {
             std::partial_sort(topk.begin(), topk.begin() + GROUP_SIZE, topk.end());
@@ -239,7 +243,7 @@ int main(int argc, char* argv[]) try {
                 std::vector<Token> tokens;
                 tokens.reserve(log_prob.size());
                 for (size_t idx = 0; idx < log_prob.size(); ++idx) {
-                    tokens.push_back({log_prob[idx], idx});
+                    tokens.push_back({log_prob[idx], int64_t(idx)});
                 }
                 for (size_t prev_group_idx = 0; prev_group_idx < group_idx; ++prev_group_idx) {  // TODO: range based for
                     for (size_t prev_beam_idx = 0; prev_beam_idx < GROUP_SIZE; ++prev_beam_idx) {
