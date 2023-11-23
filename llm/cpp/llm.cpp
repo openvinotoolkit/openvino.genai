@@ -60,14 +60,14 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, std::vecto
     }
     return res;
 }
-constexpr size_t GROUP_SIZE = 1;
+constexpr size_t GROUP_SIZE = 3;
 enum class StopCriteria {early, heuristic, never};
 StopCriteria stop_criteria = StopCriteria::never;
-size_t MAX_NEW_TOKENS = 10;
+size_t MAX_NEW_TOKENS = 4;
 constexpr float LENGTH_PENALTY = 1.0;  // TODO: align defaults with transformers
 constexpr int64_t EOS_TOKEN = 1;  // There's no way to extract the value from the tokenizer for now  // TODO: 2 for llama2
 constexpr size_t N_GROUPS = 3;
-constexpr float DIVERSITY_PENALTY = 9e9f;
+constexpr float DIVERSITY_PENALTY = 1.0f;
 constexpr size_t NO_REPEAT_NGRAM_SIZE = 3;
 }
 
@@ -157,8 +157,8 @@ int main(int argc, char* argv[]) try {
     // ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
     ov::Tensor input_ids{ov::element::i64, {1, 3}};
     input_ids.data<int64_t>()[0] = 1;
-    input_ids.data<int64_t>()[1] = 408;
-    input_ids.data<int64_t>()[2] = 2176;
+    input_ids.data<int64_t>()[1] = 372;
+    input_ids.data<int64_t>()[2] = 3681;
     std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
     constexpr size_t BATCH_SIZE = 1;
     std::map<size_t, ov::PartialShape> shapes = {
@@ -186,7 +186,7 @@ int main(int argc, char* argv[]) try {
     std::vector<Group> groups{N_GROUPS};
     {
         ov::InferRequest ireq = compiled.create_infer_request();
-        for (size_t idx = 2; idx < inputs.size(); ++idx) {
+        for (size_t idx = 3; idx < inputs.size(); ++idx) {
             ireq.get_input_tensor(idx).set_shape(inputs.at(idx).get_partial_shape().get_min_shape());
         }
         ireq.get_tensor("input_ids").set_shape(input_ids.get_shape());  // TODO: replace with ireq.set_tensor("input_ids", input_ids); after it's fixed
@@ -223,7 +223,7 @@ int main(int argc, char* argv[]) try {
                 std::fill_n(beam_ireq.get_tensor("attention_mask").data<int64_t>(), beam_ireq.get_tensor("attention_mask").get_size(), 1);
                 beam_ireq.get_tensor("input_ids").data<int64_t>()[0] = topk[idx].idx;  // TODO: don't allow EOS as first token?
                 beam_ireq.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
-                beam_ireq.get_tensor("position_ids").data<int64_t>()[0] = ireq.get_tensor("attention_mask").get_size() - 2;
+                beam_ireq.get_tensor("position_ids").data<int64_t>()[0] = beam_ireq.get_tensor("attention_mask").get_size() - 1;
                 beam_ireq.infer();
             }
         }
@@ -251,8 +251,13 @@ int main(int argc, char* argv[]) try {
                     }
                 }
                 std::vector<int64_t>& other_tokens = groups[group_idx].beams[beam_idx].tokens;
-                if (other_tokens.size() >= NO_REPEAT_NGRAM_SIZE) {
-                    for (int64_t ban_id : kmp_search(other_tokens, {other_tokens.end() - NO_REPEAT_NGRAM_SIZE + 1, other_tokens.end()})) {
+                std::vector<int64_t> full_text;
+                for (size_t idx = 0; idx < input_ids.get_size(); ++idx) {
+                    full_text.push_back(input_ids.data<int64_t>()[idx]);
+                }
+                full_text.insert(full_text.end(), other_tokens.begin(), other_tokens.end());
+                if (full_text.size() >= NO_REPEAT_NGRAM_SIZE) {
+                    for (int64_t ban_id : kmp_search(full_text, {other_tokens.end() - NO_REPEAT_NGRAM_SIZE + 1, other_tokens.end()})) {
                         tokens[ban_id].log = -std::numeric_limits<float>::infinity();
                     }
                 }
@@ -262,6 +267,7 @@ int main(int argc, char* argv[]) try {
                     candidates.push_back(groups[group_idx].beams[beam_idx]);
                     candidates.back().log_prob += tokens[idx].log;
                     candidates.back().tokens.push_back(tokens[idx].idx);
+                    // std::cout << tokens[idx].idx << ' ' << tokens[idx].log << '\n';
                 }
             }
             std::sort(candidates.begin(), candidates.end());
@@ -283,10 +289,10 @@ int main(int argc, char* argv[]) try {
                     }
                     ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
                     ireq.get_tensor("input_ids").data<int64_t>()[0] = groups[group_idx].beams.back().tokens.back();
-                    ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_size() + 1});
+                    ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, groups[group_idx].beams.back().ireq.get_tensor("attention_mask").get_size() + 1});
                     std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
                     ireq.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
-                    ireq.get_tensor("position_ids").data<int64_t>()[0] = ireq.get_tensor("attention_mask").get_size() - 2;
+                    ireq.get_tensor("position_ids").data<int64_t>()[0] = ireq.get_tensor("attention_mask").get_size() - 1;
                     groups[group_idx].beams.back().ireq = ireq;
                     if (groups[group_idx].beams.size() == GROUP_SIZE) {
                         break;
