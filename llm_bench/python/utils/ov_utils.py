@@ -194,9 +194,17 @@ def patch_inter_processing(hf_model, **kwargs):
         num_attention_heads = hf_model.normalized_config.num_attention_heads if hf_model.config.model_type == 'bloom' else 1
         beam_idx_exist = 'beam_idx' in [port.any_name for port in ov_model.inputs]
         assert num_beams == 1 or beam_idx_exist, 'Requested to make_stateful with num_beams > 1 but there is no beam_idx parameter for cache reorder fused'
-        left_num_parameters = 2 + int(beam_idx_exist)
+
+        # assume inputs orders:
+        #   input_ids/attention_mask/position_ids/past_xxx...
+        for i in range(len(ov_model.inputs)):
+            if ov_model.inputs[i].any_name.startswith("past_"):
+                num_fixed_params = i
+                break
+        left_num_parameters = num_fixed_params + int(beam_idx_exist)
+
         # Set batch size for input_ids and attention mask to avoid dynamic dimension got propagated from the end of the model back to ReadValue
-        for i in range(2):
+        for i in range(num_fixed_params):
             input = ov_model.inputs[i]
             shape = input.get_partial_shape()
             if shape.rank.get_length() == 2:
@@ -206,7 +214,7 @@ def patch_inter_processing(hf_model, **kwargs):
                 print(f'[ WARNING ] Rank of {i} input of the model is not 2, batch size is not set')
 
         for i in range(len(ov_model.inputs) - left_num_parameters):
-            port = ov_model.inputs[2 + i]
+            port = ov_model.inputs[num_fixed_params + i]
             output = ov_model.outputs[1 + i]
             input_output_map[port.any_name] = output.any_name
             shape = port.get_partial_shape()
