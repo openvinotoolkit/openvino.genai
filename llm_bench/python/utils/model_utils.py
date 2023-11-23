@@ -98,7 +98,7 @@ def get_use_case(model_name_list):
     for model_name in model_name_list:
         for case, model_ids in USE_CASES.items():
             for model_id in model_ids:
-                if model_id in model_name.lower():
+                if model_name.lower().startswith(model_id):
                     log.info(f'==SUCCESS FOUND==: use_case: {case}, model_name: {model_name}')
                     return case, model_name
     raise RuntimeError('==Failure FOUND==: no use_case found')
