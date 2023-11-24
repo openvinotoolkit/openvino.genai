@@ -110,3 +110,18 @@ Add the option `--torch_compile_backend` with the desired backend: `pytorch` or 
 ```bash
 python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino
 ```
+
+## Fix tokenizer initialization issue AttributeError of chatglm2-6b: can't set attribute
+When running the chatglm2-6b downloaded from hugginface and converted to openvino IR, the following error may occur：
+```bash
+AttributeError: can't set attribute
+```
+The solution is to modify `tokenization_chatglm.py` in the openvino IR directory and insert the following code in `line 73`
+71          self.vocab_file = vocab_file
+72          self.tokenizer = SPTokenizer(vocab_file)
+73 +        kwargs.pop("eos_token", None)
+74 +        kwargs.pop("pad_token", None)
+75 +        kwargs.pop("unk_token", None)
+76          self.special_tokens = {
+77              "<bos>": self.tokenizer.bos_id,
+78              "<eos>": self.tokenizer.eos_id,
