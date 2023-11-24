@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) try {
 
     ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     ireq.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
-    constexpr int32_t SPECIAL_EOS_TOKEN = 2;  // There's no way to extract the value from the detokenizer for now
+    constexpr int64_t SPECIAL_EOS_TOKEN = 2;  // There's no way to extract the value from the detokenizer for now
     while (out_token != SPECIAL_EOS_TOKEN) {
         ireq.get_tensor("input_ids").data<int64_t>()[0] = out_token;
         ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1});

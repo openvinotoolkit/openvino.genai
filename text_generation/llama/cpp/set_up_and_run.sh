@@ -22,7 +22,7 @@ source ./ov/setupvars.sh
 optimum-cli export openvino -m openlm-research/open_llama_3b_v2 ./open_llama_3b_v2/ &
 mkdir ./build/
 cd ./build/
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Werror ../
+cmake -DCMAKE_BUILD_TYPE=Release ../
 cmake --build ./ --config Release -j
 cd ../
 wait

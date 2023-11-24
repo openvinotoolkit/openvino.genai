@@ -10,7 +10,7 @@ add_subdirectory(../../../thirdparty/openvino_contrib/modules/custom_operations/
 add_executable(llama llama.cpp)
 target_compile_definitions(llama PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
-target_link_libraries(llama PRIVATE openvino::runtime)
+target_link_libraries(llama PRIVATE openvino::runtime user_ov_extensions)
 set_target_properties(llama PROPERTIES CXX_STANDARD 17)
 set_target_properties(llama PROPERTIES CXX_STANDARD_REQUIRED ON)
 if(MSVC)
@@ -22,5 +22,4 @@ if(MSVC)
     )
 else()
     target_compile_options(llama PRIVATE -Wall)  # Display all warnings
-    target_compile_options(sentencepiece-static PRIVATE -Wno-stringop-overflow)  # Disable the warning from user_ov_extensions
 endif()
