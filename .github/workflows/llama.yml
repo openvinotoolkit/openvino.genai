@@ -4,7 +4,7 @@ on:
     paths:
       - text_generation/llama/cpp/**
       - '!text_generation/llama/cpp/README.md'
-      - thirdparty/**
+      - thirdparty/openvino_contrib
       - .github/workflows/llama.yml
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

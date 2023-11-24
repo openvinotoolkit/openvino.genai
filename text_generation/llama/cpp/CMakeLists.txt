@@ -1,7 +1,7 @@
 # Copyright (C) 2023 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 3.13)  # The requirement comes from ../../../thirdparty/openvino_contrib/modules/custom_operations/CMakeLists.txt
+cmake_minimum_required(VERSION 3.13)  # The requirement is from ../../../thirdparty/openvino_contrib/modules/custom_operations/CMakeLists.txt
 project(LLaMA)
 
 list(APPEND CUSTOM_OPERATIONS tokenizer)

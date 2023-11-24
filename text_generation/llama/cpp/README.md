@@ -7,14 +7,16 @@ This pipeline is not for production use.
 
 ## How it works
 
-The program loads a tokenizer, detokenizer and a model (`.xml` and `.bin`) to OpenVINO™. The model is reshaped to batch 1 and variable prompt length. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
+The program loads a tokenizer, detokenizer and a model (`.xml` and `.bin`) to OpenVINO. The model is reshaped to batch 1 and variable prompt length. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
 
 ## Install OpenVINO Runtime
 
-Install OpenVINO Runtime from an archive: [Linux](https://docs.openvino.ai/2023.1/openvino_docs_install_guides_installing_openvino_from_archive_linux.html).
-`<INSTALL_DIR>` refers to the extraction location below.
+Install OpenVINO Runtime from an archive: [Linux](https://docs.openvino.ai/2023.1/openvino_docs_install_guides_installing_openvino_from_archive_linux.html). `<INSTALL_DIR>` below refers to the extraction location.
 
 ## Build `LLaMA` and `user_ov_extensions`
+
+> Note  
+Windows isn't currently supported by `user_ov_extensions`.
 
 ```sh
 git submodule update --init
@@ -42,14 +44,11 @@ cmake -DCMAKE_BUILD_TYPE=Release ../ && cmake --build ./ --config Release -j
 
 ### Download and convert the model and tokenizers
 
-> Note  
-Windows isn't currently supported by `user_ov_extensions`.
-
 ```sh
 python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu ../../../thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx git+https://github.com/huggingface/optimum-intel.git
 source <INSTALL_DIR>/setupvars.sh
 optimum-cli export openvino -m meta-llama/Llama-2-7b-hf ./Llama-2-7b-hf/
-python ./convert_tokenizers.py ./custom_operations/user_ie_extensions/libuser_ov_extensions.so ./Llama-2-7b-hf/
+python ./convert_tokenizers.py ./build/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./Llama-2-7b-hf/
 ```
 
 ## Run
