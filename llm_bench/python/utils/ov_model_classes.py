@@ -324,32 +324,6 @@ class OVChatGLM2Model(OVModelForCausalLM):
         model.reshape(shapes)
         return model
 
-    def prepare_inputs_for_generation(
-        self,
-        input_ids: torch.LongTensor,
-        past_key_values: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        past: Optional[torch.Tensor] = None,
-        **kwargs,
-    ) -> dict:
-        batch_size, seq_length = input_ids.shape
-        position_ids = self.get_position_ids(input_ids, 'cpu')
-
-        # only last token for input_ids if past is not None
-        if past is not None or past_key_values is not None:
-            position_ids = position_ids[..., -1:] + 1
-            past = past_key_values if past_key_values is not None else past
-
-        return {
-            'input_ids': input_ids,
-            'past_key_values': past,
-            'position_ids': position_ids,
-            'attention_mask': attention_mask,
-            'use_cache': self.use_cache,
-            'token_type_ids': None,
-        }
-
     def forward(
         self,
         input_ids: torch.LongTensor,
