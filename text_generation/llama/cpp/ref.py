@@ -126,7 +126,6 @@ def generate(self, input_ids, **kwargs):
             next_token_scores_processed = logits_processor(
                 group_input_ids, next_token_scores, current_tokens=current_tokens, beam_group_idx=beam_group_idx
             )
-            tmp = next_token_scores_processed.clone()
             next_token_scores = next_token_scores_processed + beam_scores[batch_group_indices].unsqueeze(-1)
             # print(next_token_scores)
             next_token_scores = next_token_scores.expand_as(next_token_scores_processed)

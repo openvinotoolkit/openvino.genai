@@ -113,6 +113,7 @@ std::ostream& operator<<(std::ostream& os, const std::vector<Beam>& beams) {
 
 struct Hypotheses {
         std::vector<Beam> beams;
+        bool done = false;
         void push(Beam&& beam, size_t prompt_light) {
             beam.log_prob = double(beam.log_prob) / std::pow(beam.tokens.size() + prompt_light, LENGTH_PENALTY);
             beams.push_back(std::move(beam));
@@ -122,20 +123,22 @@ struct Hypotheses {
                 beams.pop_back();
             }
         }
-        bool is_done(double best_sum_logprobs, size_t cur_len) const {   // TODO: just done()?
+        bool is_done(double best_sum_logprobs, size_t cur_len) {   // TODO: just done()?
             if (beams.size() < GROUP_SIZE) {
                 return false;
             }
             switch (stop_criteria) {
-                case StopCriteria::early: return true;
+                case StopCriteria::early: done = true; return true;
                 case StopCriteria::heuristic: {
                     double worst_score = beams.front().log_prob;
                     double highest_attainable_score = best_sum_logprobs / std::pow(double(cur_len), LENGTH_PENALTY);
+                    done = worst_score >= highest_attainable_score;
                     return worst_score >= highest_attainable_score;
                 }
                 case StopCriteria::never: {
                     double worst_score = beams.front().log_prob;
                     double highest_attainable_score = LENGTH_PENALTY > 0.0f ? best_sum_logprobs / std::pow(double(MAX_NEW_TOKENS), LENGTH_PENALTY) : best_sum_logprobs / std::pow(double(cur_len), LENGTH_PENALTY);
+                    done = worst_score >= highest_attainable_score;
                     return worst_score >= highest_attainable_score;
                 }
                 default: throw std::runtime_error("Never reached");
@@ -236,8 +239,9 @@ int main(int argc, char* argv[]) try {
         group.beams.resize(GROUP_SIZE);
         group.beams.front().log_prob = 0.0;
     }
+    size_t incomplete_groups = N_GROUPS;
     for (size_t length_count = 0; length_count < MAX_NEW_TOKENS; ++length_count) {
-        for (size_t group_idx = 0; group_idx < N_GROUPS; ++group_idx) {
+        for (size_t group_idx = 0; group_idx < incomplete_groups; ++group_idx) {
             std::vector<Beam> candidates;
             candidates.reserve(2 * GROUP_SIZE);
             for (size_t beam_idx = 0; beam_idx < GROUP_SIZE; ++beam_idx) {
@@ -305,6 +309,10 @@ int main(int argc, char* argv[]) try {
                     candidates[cand_id].tokens.resize(candidates[cand_id].tokens.size() - 1);
                     groups[group_idx].hypotheses.push(std::move(candidates[cand_id]), prompt_length);
                 } else {
+                    // if (candidates[cand_id].tokens.size() > 1 && candidates[cand_id].tokens[candidates[cand_id].tokens.size() - 2] == 4030) {
+                    //     std::cout << candidates[cand_id].tokens.back() << ' ' << candidates[cand_id].log_prob << '\n';
+                    // }
+                    // std::cout << candidates[cand_id].log_prob << ", ";
                     groups[group_idx].beams.push_back(std::move(candidates[cand_id]));
                     size_t cur_beam = groups[group_idx].beams.size() - 1;  // TODO: beter loop iteration
                     auto ireq = compiled.create_infer_request();
@@ -323,12 +331,18 @@ int main(int argc, char* argv[]) try {
                     }
                 }
             }
-            if (std::all_of(groups.begin(), groups.end(), [cur_len, prompt_length](const Group& gr){return gr.hypotheses.is_done(cur_len + prompt_length, gr.beams.front().log_prob);})) {  // TODO: that requires groups[group_idx].beams to be not empty
+            if (std::all_of(groups.begin(), groups.end(), [cur_len, prompt_length](Group& gr){return gr.hypotheses.is_done(cur_len + prompt_length, gr.beams.front().log_prob);})) {  // TODO: that requires groups[group_idx].beams to be not empty
                 break;
             }
 
             for (Beam& beam : groups[group_idx].beams) {
                 beam.ireq.infer();
+            }
+        }
+        incomplete_groups = 0;
+        for (Group& group : groups) {
+            if (!group.hypotheses.done) {
+                ++incomplete_groups;
             }
         }
     }
