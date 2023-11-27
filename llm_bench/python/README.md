@@ -116,7 +116,8 @@ When running the chatglm2-6b downloaded from hugginface and converted to openvin
 ```bash
 AttributeError: can't set attribute
 ```
-The solution is to modify `tokenization_chatglm.py` in the openvino IR directory and insert the following code in `line 73`
+As on https://huggingface.co/THUDM/chatglm2-6b/discussions/99<br>
+Solution: update `tokenization_chatglm.py` as following:
 71          self.vocab_file = vocab_file
 72          self.tokenizer = SPTokenizer(vocab_file)
 73 +        kwargs.pop("eos_token", None)
