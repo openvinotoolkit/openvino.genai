@@ -12,7 +12,8 @@ from pathlib import Path
 import types
 from typing import Tuple, Dict, Optional
 import torch
-from diffusers import StableDiffusionPipeline, LDMSuperResolutionPipeline, DiffusionPipeline
+from diffusers import StableDiffusionPipeline, StableDiffusionXLImg2ImgPipeline, LDMSuperResolutionPipeline, DiffusionPipeline
+from diffusers import UNet2DConditionModel, AutoencoderTiny, LCMScheduler
 from nncf import compress_weights
 from openvino import Type, PartialShape, save_model, convert_model
 from openvino.runtime import Core
@@ -27,9 +28,11 @@ from optimum.utils import (
 )
 from optimum.exporters.onnx import get_encoder_decoder_models_for_export
 from optimum.exporters.openvino import export_models
+from optimum.utils.save_utils import maybe_load_preprocessors
 from optimum.intel.openvino import (
     OVModelForSeq2SeqLM,
     OVStableDiffusionPipeline,
+    OVStableDiffusionXLPipeline,
     OVLatentConsistencyModelPipeline,
     OV_XML_FILE_NAME,
     OV_DECODER_NAME,
@@ -565,29 +568,32 @@ def convert_sd(args):
     log.info(f'Serialization total time {end1 - start1}s')
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        compress_weight, = args.compress_weights
-        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, compress_weight)
-        model.text_encoder.model = compress_weights(model.text_encoder.model)
-        model.unet.model = compress_weights(model.unet.model)
-        model.vae_decoder.model = compress_weights(model.vae_decoder.model)
-        model.save_pretrained(ov_int8_dir)
+        for weigths_compression_option in args.compress_weights:
+            if weigths_compression_option != "INT8":
+                log.warning("Weights compression {weigths_compression_option} does not supported for SD, will be ignored")
+                continue
+            ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
+            model.text_encoder.model = compress_weights(model.text_encoder.model)
+            model.unet.model = compress_weights(model.unet.model)
+            model.vae_decoder.model = compress_weights(model.vae_decoder.model)
+            model.save_pretrained(ov_int8_dir)
 
-        # Saving the additional components needed to perform inference.
-        model.scheduler.save_pretrained(ov_int8_dir.joinpath('scheduler'))
+            # Saving the additional components needed to perform inference.
+            model.scheduler.save_pretrained(ov_int8_dir.joinpath('scheduler'))
 
-        feature_extractor = getattr(model, 'feature_extractor', None)
-        if feature_extractor is not None:
-            feature_extractor.save_pretrained(ov_int8_dir.joinpath('feature_extractor'))
+            feature_extractor = getattr(model, 'feature_extractor', None)
+            if feature_extractor is not None:
+                feature_extractor.save_pretrained(ov_int8_dir.joinpath('feature_extractor'))
 
-        tokenizer = getattr(model, 'tokenizer', None)
-        if tokenizer is not None:
-            tokenizer.save_pretrained(ov_int8_dir.joinpath('tokenizer'))
+            tokenizer = getattr(model, 'tokenizer', None)
+            if tokenizer is not None:
+                tokenizer.save_pretrained(ov_int8_dir.joinpath('tokenizer'))
 
-        tokenizer_2 = getattr(model, 'tokenizer_2', None)
-        if tokenizer_2 is not None:
-            tokenizer_2.save_pretrained(ov_int8_dir.joinpath('tokenizer_2'))
+            tokenizer_2 = getattr(model, 'tokenizer_2', None)
+            if tokenizer_2 is not None:
+                tokenizer_2.save_pretrained(ov_int8_dir.joinpath('tokenizer_2'))
 
-        model.save_config(ov_int8_dir)
+            model.save_config(ov_int8_dir)
 
     del model
     gc.collect()
@@ -663,32 +669,146 @@ def convert_lcm(args):
     log.info(f'Serialization total time {end1 - start1}s')
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        compress_weight, = args.compress_weights
-        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, compress_weight)
-        model.text_encoder.model = compress_weights(model.text_encoder.model)
-        model.unet.model = compress_weights(model.unet.model)
-        model.vae_decoder.model = compress_weights(model.vae_decoder.model)
-        model.save_pretrained(ov_int8_dir)
+        for weigths_compression_option in args.compress_weights:
+            if weigths_compression_option != "INT8":
+                log.warning("Weights compression {weigths_compression_option} does not supported for LCM, will be ignored")
+                continue
+            ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
+            model.text_encoder.model = compress_weights(model.text_encoder.model)
+            model.unet.model = compress_weights(model.unet.model)
+            model.vae_decoder.model = compress_weights(model.vae_decoder.model)
+            model.save_pretrained(ov_int8_dir)
 
-        # Saving the additional components needed to perform inference.
-        model.scheduler.save_pretrained(ov_int8_dir.joinpath('scheduler'))
+            # Saving the additional components needed to perform inference.
+            model.scheduler.save_pretrained(ov_int8_dir.joinpath('scheduler'))
 
-        feature_extractor = getattr(model, 'feature_extractor', None)
-        if feature_extractor is not None:
-            feature_extractor.save_pretrained(ov_int8_dir.joinpath('feature_extractor'))
+            feature_extractor = getattr(model, 'feature_extractor', None)
+            if feature_extractor is not None:
+                feature_extractor.save_pretrained(ov_int8_dir.joinpath('feature_extractor'))
 
-        tokenizer = getattr(model, 'tokenizer', None)
-        if tokenizer is not None:
-            tokenizer.save_pretrained(ov_int8_dir.joinpath('tokenizer'))
+            tokenizer = getattr(model, 'tokenizer', None)
+            if tokenizer is not None:
+                tokenizer.save_pretrained(ov_int8_dir.joinpath('tokenizer'))
 
-        tokenizer_2 = getattr(model, 'tokenizer_2', None)
-        if tokenizer_2 is not None:
-            tokenizer_2.save_pretrained(ov_int8_dir.joinpath('tokenizer_2'))
+            tokenizer_2 = getattr(model, 'tokenizer_2', None)
+            if tokenizer_2 is not None:
+                tokenizer_2.save_pretrained(ov_int8_dir.joinpath('tokenizer_2'))
 
-        model.save_config(ov_int8_dir)
+            model.save_config(ov_int8_dir)
 
     del model
     gc.collect()
+
+
+def convert_sdxl(args):
+    pt_compress_weights = args.compress_weights and BackendType.PYTORCH.value in args.compress_weights_backends
+    def build_pt_model(model_id):
+        model_ids = [idx.replace(" ", "") for idx in model_id.split(',')]
+        pt_model = StableDiffusionXLImg2ImgPipeline.from_pretrained(model_ids[0])
+        if len(model_ids) > 1:
+            for additional_model in model_ids[1:]:
+                if 'lora' in additional_model:
+                    pt_model.load_lora_weights(additional_model)
+                    pt_model.fuse_lora()
+                    if 'lcm' in additional_model:
+                        pt_model.scheduler = LCMScheduler.from_config(pt_model.scheduler.config)
+                    
+                    continue
+                if 'lcm' in additional_model and 'lora' not in additional_model:
+                    unet = UNet2DConditionModel.from_pretrained(additional_model)
+                    pt_model.unet = unet
+                    pt_model.scheduler = LCMScheduler.from_config(pt_model.scheduler.config)
+                    continue
+                if 'tae' in additional_model:
+                    vae = AutoencoderTiny.from_pretrained(additional_model)
+                    orig_encode = vae.encode
+                    vae.encode = lambda sample: {"latent_dist": orig_encode(x=sample)["latent"].sample()}
+                    pt_model.vae = vae
+                    continue
+        preprocessors = maybe_load_preprocessors(model_ids[0])
+        return pt_model, preprocessors
+
+    def convert_pt_to_ov(pt_model, preprocessors, output_dir, fp16):
+        _, models_and_onnx_configs = optimum_main._get_submodels_and_onnx_configs(
+            model=pt_model,
+            task='stable-diffusion-xl',
+            monolith=False,
+            custom_onnx_configs={},
+            custom_architecture=False,
+            _variant='default',
+            preprocessors=preprocessors,
+            legacy=False
+        )
+        for model_name in models_and_onnx_configs:
+            subcomponent = models_and_onnx_configs[model_name][0]
+            if hasattr(subcomponent, 'save_config'):
+                subcomponent.save_config(output_dir / model_name)
+            elif hasattr(subcomponent, 'config') and hasattr(subcomponent.config, 'save_pretrained'):
+                subcomponent.config.save_pretrained(output_dir / model_name)
+
+        files_subpaths = [Path(name_dir) / OV_XML_FILE_NAME for name_dir in models_and_onnx_configs]
+
+        # Saving the additional components needed to perform inference.
+        pt_model.scheduler.save_pretrained(output_dir.joinpath('scheduler'))
+
+        feature_extractor = getattr(pt_model, 'feature_extractor', None)
+        if feature_extractor is not None:
+            feature_extractor.save_pretrained(output_dir.joinpath('feature_extractor'))
+
+        tokenizer = getattr(pt_model, 'tokenizer', None)
+        if tokenizer is not None:
+            tokenizer.save_pretrained(output_dir.joinpath('tokenizer'))
+
+        tokenizer_2 = getattr(pt_model, 'tokenizer_2', None)
+        if tokenizer_2 is not None:
+            tokenizer_2.save_pretrained(output_dir.joinpath('tokenizer_2'))
+
+        pt_model.save_config(output_dir)
+
+        export_models(
+            models_and_onnx_configs=models_and_onnx_configs,
+            output_dir=output_dir,
+            output_names=files_subpaths,
+            fp16=fp16,
+            int8=False
+        )
+
+    pt_model, preprocessors = build_pt_model(args.model_id)
+    if args.save_orig:
+        pt_model.save_pretrained(Path(args.output_dir) / 'pytorch')
+    if pt_compress_weights:
+        output = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'PT_{args.precision}-INT8'
+        pt_model.text_encoder = compress_weights(pt_model.text_encoder)
+        pt_model.unet = compress_weights(pt_model.unet)
+        pt_model.vae = compress_weights(pt_model.vae)
+        if getattr(pt_model, 'text_encoder_2', None) is not None:
+            pt_model.text_encoder_2 = compress_weights(pt_model.text_encoder_2)
+        convert_pt_to_ov(pt_model, output, args.precision == "FP16")
+        del pt_model
+        gc.collect()
+        pt_model, preprocessors = build_pt_model(args.model_id)
+
+    fp_out_dir = Path(args.output_dir) / 'pytorch/dldt' / args.precision
+    convert_pt_to_ov(pt_model, preprocessors, fp_out_dir, args.precision == "FP16")
+
+    if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
+        for weigths_compression_option in args.compress_weights:
+            if weigths_compression_option != "INT8":
+                log.warning("Weights compression {weigths_compression_option} does not supported for SDXL, will be ignored")
+                continue
+            ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
+            model = OVStableDiffusionXLPipeline.from_pretrained(fp_out_dir, compile=False)
+            model.text_encoder.model = compress_weights(model.text_encoder.model)
+            if getattr(model, "text_encoder_2", None) is not None:
+                model.text_encoder_2.model = compress_weights(model.text_encoder_2.model)
+            model.unet.model = compress_weights(model.unet.model)
+            model.vae_decoder.model = compress_weights(model.vae_decoder.model)
+            if getattr(model, "vae_encoder", None) is not None:
+                model.vae_encoder.model = compress_weights(model.vae_encoder.model)
+            model.save_pretrained(ov_int8_dir)
+
+            del model
+            gc.collect()
 
 
 def convert_ldm_super_res(args):
@@ -734,13 +854,16 @@ def convert_ldm_super_res(args):
     pipeline.scheduler.save_config(save_dir)
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        compress_weight, = args.compress_weights
-        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, compress_weight)
-        compressed_ov_unet = compress_weights(ov_unet)
-        save_model(compressed_ov_unet, ov_int8_dir / 'unet.xml', compress_to_fp16=compress_to_fp16)
-        compressed_ov_decoder = compress_weights(ov_decoder)
-        save_model(compressed_ov_decoder, ov_int8_dir / 'vqvae.xml', compress_to_fp16=compress_to_fp16)
-        pipeline.scheduler.save_config(ov_int8_dir)
+        for weigths_compression_option in args.compress_weights:
+            if weigths_compression_option != "INT8":
+                log.warning("Weights compression {weigths_compression_option} does not supported for LDM, will be ignored")
+                continue
+            ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
+            compressed_ov_unet = compress_weights(ov_unet)
+            save_model(compressed_ov_unet, ov_int8_dir / 'unet.xml', compress_to_fp16=compress_to_fp16)
+            compressed_ov_decoder = compress_weights(ov_decoder)
+            save_model(compressed_ov_decoder, ov_int8_dir / 'vqvae.xml', compress_to_fp16=compress_to_fp16)
+            pipeline.scheduler.save_config(ov_int8_dir)
 
 
 def convert_mpt(args):
@@ -1480,6 +1603,8 @@ converters = {
     'decoder': convert_causal_lm,
     'blenderbot': convert_seq2seq,
     't5': convert_seq2seq,
+    'stable-diffusion-xl': convert_sdxl,
+    'ssd-1b': convert_sdxl,
     'stable-diffusion': convert_sd,
     'tiny-sd': convert_sd,
     'small-sd': convert_sd,
