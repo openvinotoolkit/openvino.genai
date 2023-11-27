@@ -110,7 +110,7 @@ Add the option `--torch_compile_backend` with the desired backend: `pytorch` or 
 ```bash
 python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino
 ```
-
+# Notes
 ## Fix tokenizer initialization issue AttributeError of chatglm2-6b: can't set attribute
 When running the chatglm2-6b downloaded from hugginface and converted to openvino IR, the following error may occur：
 ```bash
