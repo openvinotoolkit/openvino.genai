@@ -10,6 +10,13 @@ source python-env/bin/activate
 pip install update --upgrade
 pip install -r requirements.txt
 ```
+# Notes
+If need to convert the gptq model, execute the following commands
+``` bash
+pip uninstall auto-gptq
+pip install -r extra/requirements_gptq_conversion.txt
+```
+
 (2) Convert model to IRs
 ## Conversion script for preparing benchmarking models
 
