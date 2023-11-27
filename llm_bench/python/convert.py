@@ -565,7 +565,8 @@ def convert_sd(args):
     log.info(f'Serialization total time {end1 - start1}s')
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+        compress_weight, = args.compress_weights
+        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, compress_weight)
         model.text_encoder.model = compress_weights(model.text_encoder.model)
         model.unet.model = compress_weights(model.unet.model)
         model.vae_decoder.model = compress_weights(model.vae_decoder.model)
@@ -662,7 +663,8 @@ def convert_lcm(args):
     log.info(f'Serialization total time {end1 - start1}s')
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+        compress_weight, = args.compress_weights
+        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, compress_weight)
         model.text_encoder.model = compress_weights(model.text_encoder.model)
         model.unet.model = compress_weights(model.unet.model)
         model.vae_decoder.model = compress_weights(model.vae_decoder.model)
@@ -732,7 +734,8 @@ def convert_ldm_super_res(args):
     pipeline.scheduler.save_config(save_dir)
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+        compress_weight, = args.compress_weights
+        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, compress_weight)
         compressed_ov_unet = compress_weights(ov_unet)
         save_model(compressed_ov_unet, ov_int8_dir / 'unet.xml', compress_to_fp16=compress_to_fp16)
         compressed_ov_decoder = compress_weights(ov_decoder)
