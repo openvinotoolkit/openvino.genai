@@ -116,6 +116,7 @@ When running the chatglm2-6b downloaded from hugginface and converted to openvin
 ```bash
 AttributeError: can't set attribute
 ```
+Reproduced with https://huggingface.co/THUDM/chatglm2-6b 7fabe56db91e085c9c027f56f1c654d137bdba40
 As on https://huggingface.co/THUDM/chatglm2-6b/discussions/99<br>
 Solution: update `tokenization_chatglm.py` as following:
 71          self.vocab_file = vocab_file
