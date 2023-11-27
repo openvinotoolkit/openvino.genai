@@ -331,7 +331,7 @@ int main(int argc, char* argv[]) try {
                     }
                 }
             }
-            groups[group_idx].hypotheses.is_done(cur_len + prompt_length, gr.beams.front().log_prob);  // TODO: that requires groups[group_idx].beams to be not empty
+            groups[group_idx].hypotheses.is_done(cur_len + prompt_length, groups[group_idx].beams.front().log_prob);  // TODO: that requires groups[group_idx].beams to be not empty
             // if (std::all_of(groups.begin(), groups.end(), [cur_len, prompt_length](Group& gr){return gr.hypotheses.is_done(cur_len + prompt_length, gr.beams.front().log_prob);})) {  // TODO: that requires groups[group_idx].beams to be not empty
             //     break;
             // }
