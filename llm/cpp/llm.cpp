@@ -331,9 +331,10 @@ int main(int argc, char* argv[]) try {
                     }
                 }
             }
-            if (std::all_of(groups.begin(), groups.end(), [cur_len, prompt_length](Group& gr){return gr.hypotheses.is_done(cur_len + prompt_length, gr.beams.front().log_prob);})) {  // TODO: that requires groups[group_idx].beams to be not empty
-                break;
-            }
+            groups[group_idx].hypotheses.is_done(cur_len + prompt_length, gr.beams.front().log_prob);  // TODO: that requires groups[group_idx].beams to be not empty
+            // if (std::all_of(groups.begin(), groups.end(), [cur_len, prompt_length](Group& gr){return gr.hypotheses.is_done(cur_len + prompt_length, gr.beams.front().log_prob);})) {  // TODO: that requires groups[group_idx].beams to be not empty
+            //     break;
+            // }
 
             for (Beam& beam : groups[group_idx].beams) {
                 beam.ireq.infer();
@@ -344,6 +345,9 @@ int main(int argc, char* argv[]) try {
             if (!group.hypotheses.done) {
                 ++incomplete_groups;
             }
+        }
+        if (0 == incomplete_groups) {
+            break;
         }
     }
     // finalize
