@@ -62,10 +62,10 @@ def save_tokenizer(tokenizer, out_dir):
 
 def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_weights_format="INT8", fp16=False, args={}, model_name="openvino_model"):
     compression_args = None
-    if "4BIT_DEFAULT" in args.compress_weights:
-        model_name = out_path.parents[3].name
-        if model_name in INT4_MODEL_CONFIGURATION:
-            compression_args = INT4_MODEL_CONFIGURATION[model_name]
+    if "4BIT_DEFAULT" in compress_weights_format:
+        model_id = out_path.parents[3].name
+        if model_id in INT4_MODEL_CONFIGURATION:
+            compression_args = INT4_MODEL_CONFIGURATION[model_id]
         else:
             compression_args = COMPRESSION_OPTIONS["INT4_SYM"]
 
@@ -1426,6 +1426,7 @@ converters = {
     'chatglm': convert_chatglm,
     'falcon': convert_falcon,
     'stablelm': convert_stablelm,
+    'stable-': convert_stablelm,
     'jais': convert_jais,
     'baichuan': convert_baichaun,
     'qwen': convert_qwen,
