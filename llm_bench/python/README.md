@@ -120,7 +120,6 @@ Reproduced with https://huggingface.co/THUDM/chatglm2-6b 7fabe56db91e085c9c027f5
 As on https://huggingface.co/THUDM/chatglm2-6b/discussions/99 <br />
 Solution: update `tokenization_chatglm.py` as following: <br />
 ```Python
-{
           self.vocab_file = vocab_file
           self.tokenizer = SPTokenizer(vocab_file)
  +        kwargs.pop("eos_token", None)
@@ -129,4 +128,3 @@ Solution: update `tokenization_chatglm.py` as following: <br />
           self.special_tokens = {
               "<bos>": self.tokenizer.bos_id,
               "<eos>": self.tokenizer.eos_id,
-}
