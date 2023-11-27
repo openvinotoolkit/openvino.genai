@@ -112,7 +112,7 @@ python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_b
 ```
 # Notes
 ## chatglm2-6b - AttributeError: can't set attribute
-When running the chatglm2-6b downloaded from hugginface and converted to openvino IR, the following error may occur：
+Download chatglm2-6b from hugginface, convert to OpenVINO IR files and run with benchmark.py, the following error may occur：
 ```bash
 AttributeError: can't set attribute
 ```
@@ -128,3 +128,5 @@ Solution: update `tokenization_chatglm.py` as following: <br />
           self.special_tokens = {
               "<bos>": self.tokenizer.bos_id,
               "<eos>": self.tokenizer.eos_id,
+              
+> The solution works for chatglm3-6b as well.
