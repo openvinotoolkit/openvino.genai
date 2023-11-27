@@ -116,6 +116,7 @@ def generate(self, input_ids, **kwargs):
 
             # select outputs of beams of current group only
             next_token_logits = outputs.logits[batch_group_indices, -1, :]
+            # print(next_token_logits[0, [13, 298, 64013, 64298]])
 
             next_token_scores = nn.functional.log_softmax(
                 next_token_logits, dim=-1
@@ -125,7 +126,9 @@ def generate(self, input_ids, **kwargs):
             next_token_scores_processed = logits_processor(
                 group_input_ids, next_token_scores, current_tokens=current_tokens, beam_group_idx=beam_group_idx
             )
+            tmp = next_token_scores_processed.clone()
             next_token_scores = next_token_scores_processed + beam_scores[batch_group_indices].unsqueeze(-1)
+            # print(next_token_scores)
             next_token_scores = next_token_scores.expand_as(next_token_scores_processed)
 
             # reshape for beam search
@@ -140,6 +143,7 @@ def generate(self, input_ids, **kwargs):
             next_indices = torch.div(next_tokens, vocab_size, rounding_mode="floor")
             next_tokens = next_tokens % vocab_size
 
+            # print(next_tokens, next_token_scores)
             # stateless
             beam_indices = None
             beam_outputs = beam_scorer.process(
@@ -152,6 +156,9 @@ def generate(self, input_ids, **kwargs):
                 beam_indices=beam_indices,
                 group_index=beam_group_idx,
             )
+            # for idx in range(len(group_input_ids[:, -1])):
+            #     if group_input_ids[idx, -1] == 4030:
+            #         print(beam_scores[idx], "next:", next_tokens, tmp[beam_group_idx, next_tokens])
             beam_scores[batch_group_indices] = beam_outputs["next_beam_scores"]
             beam_next_tokens = beam_outputs["next_beam_tokens"]
             beam_idx = beam_outputs["next_beam_indices"]
@@ -204,7 +211,7 @@ def generate(self, input_ids, **kwargs):
     for i in range(batch_size):
         beam_hyps_in_batch = beam_scorer._beam_hyps[i * beam_scorer.num_beam_groups : (i + 1) * beam_scorer.num_beam_groups]
         candidate_beams = [beam for beam_hyp in beam_hyps_in_batch for beam in beam_hyp.beams]
-        sorted_hyps = sorted(candidate_beams, key=lambda x: x[0])
+        sorted_hyps = candidate_beams#sorted(candidate_beams, key=lambda x: x[0])
         for j in range(beam_scorer.num_beam_hyps_to_keep):
             best_hyp_tuple = sorted_hyps.pop()
             best_score = best_hyp_tuple[0]
@@ -244,11 +251,11 @@ def main():
     tokenizer = LlamaTokenizer.from_pretrained(model_path)
     model = LlamaForCausalLM.from_pretrained(model_path, pad_token_id=tokenizer.eos_token_id)
     model.generate = generate.__get__(model, transformers.GenerationMixin)
-    torch.set_printoptions(profile='full', linewidth=9**9)
-    print(tokens := tokenizer('asdf', return_tensors='pt')['input_ids'])
-    # tokens = torch.tensor([[1, 372, 3681, 13, 298, 3681]], dtype=torch.int64)
-    print(model.generate(tokens, max_new_tokens=100, num_beam_groups=9, num_beams=99, num_return_sequences=99, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, diversity_penalty=1.0, length_penalty=1.0))  # default length_penalty is 1.0
-
+    torch.set_printoptions(profile='short', threshold = 9**9, linewidth=9**9)
+    # print(tokens := tokenizer('asdf', return_tensors='pt')['input_ids'])
+    tokens = torch.tensor([[1, 372, 3681]], dtype=torch.int64)
+    print(model.generate(tokens, max_new_tokens=25, num_beam_groups=9, num_beams=99, num_return_sequences=99, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, diversity_penalty=1.0, length_penalty=1.0))  # default length_penalty is 1.0
+# reproducible with max_new_tokens=25, num_beam_groups=9, num_beams=99, num_return_sequences=99
 
 if '__main__' == __name__:
     main()
