@@ -116,14 +116,17 @@ When running the chatglm2-6b downloaded from hugginface and converted to openvin
 ```bash
 AttributeError: can't set attribute
 ```
-Reproduced with https://huggingface.co/THUDM/chatglm2-6b 7fabe56db91e085c9c027f56f1c654d137bdba40
-As on https://huggingface.co/THUDM/chatglm2-6b/discussions/99<br>
-Solution: update `tokenization_chatglm.py` as following:
-71          self.vocab_file = vocab_file
-72          self.tokenizer = SPTokenizer(vocab_file)
-73 +        kwargs.pop("eos_token", None)
-74 +        kwargs.pop("pad_token", None)
-75 +        kwargs.pop("unk_token", None)
-76          self.special_tokens = {
-77              "<bos>": self.tokenizer.bos_id,
-78              "<eos>": self.tokenizer.eos_id,
+Reproduced with https://huggingface.co/THUDM/chatglm2-6b 7fabe56db91e085c9c027f56f1c654d137bdba40 <br />
+As on https://huggingface.co/THUDM/chatglm2-6b/discussions/99 <br />
+Solution: update `tokenization_chatglm.py` as following: <br />
+```Python
+{
+          self.vocab_file = vocab_file
+          self.tokenizer = SPTokenizer(vocab_file)
+ +        kwargs.pop("eos_token", None)
+ +        kwargs.pop("pad_token", None)
+ +        kwargs.pop("unk_token", None)
+          self.special_tokens = {
+              "<bos>": self.tokenizer.bos_id,
+              "<eos>": self.tokenizer.eos_id,
+}
