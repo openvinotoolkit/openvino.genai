@@ -1,4 +1,3 @@
-from transformers import LlamaTokenizer, LlamaForCausalLM
 import transformers
 import torch
 
@@ -7,33 +6,11 @@ from torch import nn
 
 from transformers.generation.beam_search import BeamSearchScorer
 from transformers.generation.logits_process import (
-    EncoderNoRepeatNGramLogitsProcessor,
-    EncoderRepetitionPenaltyLogitsProcessor,
-    EpsilonLogitsWarper,
-    EtaLogitsWarper,
-    ExponentialDecayLengthPenalty,
-    ForcedBOSTokenLogitsProcessor,
-    ForcedEOSTokenLogitsProcessor,
-    ForceTokensLogitsProcessor,
     HammingDiversityLogitsProcessor,
-    InfNanRemoveLogitsProcessor,
-    LogitNormalization,
     LogitsProcessorList,
-    MinLengthLogitsProcessor,
-    MinNewTokensLengthLogitsProcessor,
-    NoBadWordsLogitsProcessor,
     NoRepeatNGramLogitsProcessor,
-    PrefixConstrainedLogitsProcessor,
-    RepetitionPenaltyLogitsProcessor,
-    SequenceBiasLogitsProcessor,
-    SuppressTokensAtBeginLogitsProcessor,
-    SuppressTokensLogitsProcessor,
-    TemperatureLogitsWarper,
-    TopKLogitsWarper,
-    TopPLogitsWarper,
-    TypicalLogitsWarper,
-    UnbatchedClassifierFreeGuidanceLogitsProcessor,
 )
+import sys
 
 
 @torch.inference_mode()
@@ -246,15 +223,14 @@ def generate(self, input_ids, **kwargs):
 
 
 def main():
-    model_path = '/home/wov/r/open_llama_3b_v2/'#'/home/wov/r/TinyLlama-1.1B-intermediate-step-955k-token-2T/'  #r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer' # '/home/wov/r/openvino.genai/tiny-llama-fast-tokenizer/ones'  #'/home/wov/r/tiny-llama-fast-tokenizer/'# '/home/wov/r/openvino.genai/TinyLlama-1.1B-intermediate-step-715k-1.5T/'  #r'C:\Users\vzlobin\r\tiny-llama-fast-tokenizer' '/home/wov/r/tiny-llama-fast-tokenizer/' '/home/wov/r/TinyLlama-1.1B-intermediate-step-715k-1.5T/'
-    tokenizer = LlamaTokenizer.from_pretrained(model_path)
-    model = LlamaForCausalLM.from_pretrained(model_path, pad_token_id=tokenizer.eos_token_id)
-    model.generate = generate.__get__(model, transformers.GenerationMixin)
-    torch.set_printoptions(profile='short', threshold = 9**9, linewidth=9**9)
-    # print(tokens := tokenizer('asdf', return_tensors='pt')['input_ids'])
-    tokens = torch.tensor([[1, 372, 3681]], dtype=torch.int64)
-    print(model.generate(tokens, max_new_tokens=25, num_beam_groups=9, num_beams=99, num_return_sequences=99, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, diversity_penalty=1.0, length_penalty=1.0))  # default length_penalty is 1.0
-# reproducible with max_new_tokens=25, num_beam_groups=9, num_beams=99, num_return_sequences=99
+    if len(sys.argv) != 4:
+        raise RuntimeError("Usage: {sys.argv[0]} <pred.txt> <MODEL_DIR> '<PROMPT>'")
+    tokenizer = transformers.LlamaTokenizer.from_pretrained(sys.argv[2])
+    assert 2 == tokenizer.eos_token_id
+    print(input_ids := tokenizer(sys.argv[3], return_tensors='pt')['input_ids'])
+    for beam in transformers.LlamaForCausalLM.from_pretrained(sys.argv[2]).generate(input_ids, max_new_tokens=10, num_beam_groups=9, num_beams=54, num_return_sequences=54, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, diversity_penalty=1.0, length_penalty=1.0):  # default length_penalty is 1.0
+        print(tokenizer.decode(beam, skip_special_tokens=True)[len(sys.argv[2]):], end='\n===\n')
+
 
 if '__main__' == __name__:
     main()

@@ -12,7 +12,7 @@ import transformers
 
 def main():
     if len(sys.argv) != 3:
-        raise RuntimeError("Usage: {sys.argv[0]} <user_ov_extensions lib> <source model dir>")
+        raise RuntimeError("Usage: {sys.argv[0]} <user_ov_extensions_LIB> <SOURCE_MODEL_DIR>")
     if hasattr(os, "add_dll_directory"):
         for path in os.environ.get("PATH", "").split(";"):
             if os.path.isdir(path):

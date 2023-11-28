@@ -17,3 +17,30 @@ jobs:
         with:
           python-version: 3.8
       - run: llm/cpp/set_up_and_run.sh
+  llm-cpp-beam-search:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14.0" ./thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu &
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.2/linux/l_openvino_toolkit_ubuntu20_2023.2.0.13089.cfd42bd2cb0_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+          wait
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          optimum-cli export openvino -m fxmarty/tiny-llama-fast-tokenizer ./tiny-llama-fast-tokenizer/ &
+          mkdir ./build/
+          cd ./build/
+          cmake -DCMAKE_BUILD_TYPE=Release ../
+          cmake --build ./ --config Release -j
+          wait
+      - run: python ./llm/cpp/convert_tokenizers.py ./build//thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./tiny-llama-fast-tokenizer/
+      - run ./build/llm/cpp/llm ./tiny-llama-fast-tokenizer/openvino_model.xml ./tokenizer.xml ./detokenizer.xml asdf
