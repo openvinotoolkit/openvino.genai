@@ -20,9 +20,10 @@ jobs:
         with:
           repository: fxmarty/tiny-llama-fast-tokenizer
           ref: 7777c406a0733db432517f89575b9b5a02e371ef
+          path: tiny-llama-fast-tokenizer
           lfs: true
           github-server-url: https://huggingface.co
-      - run: llm/cpp/set_up_and_run.sh
+      - run: ./llm/cpp/set_up_and_run.sh
   llm-cpp-beam-search:
     runs-on: ubuntu-20.04
     steps:
@@ -36,6 +37,7 @@ jobs:
         with:
           repository: fxmarty/tiny-llama-fast-tokenizer
           ref: 7777c406a0733db432517f89575b9b5a02e371ef
+          path: tiny-llama-fast-tokenizer
           lfs: true
           github-server-url: https://huggingface.co
       - name: Install dependencies
