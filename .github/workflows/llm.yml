@@ -61,7 +61,7 @@ jobs:
           source ./ov/setupvars.sh
           python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./tiny-llama-fast-tokenizer/
           ./llm/cpp/grid_search.sh
-  llm-cpp-beam-search:
+  llm-cpp-TinyLlama-1.1B-Chat-v0.6:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v4
