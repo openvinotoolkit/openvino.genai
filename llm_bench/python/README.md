@@ -16,6 +16,10 @@ If need to convert the gptq model, execute the following commands
 pip uninstall auto-gptq
 pip install -r extra/requirements_gptq_conversion.txt
 ```
+---
+***Warning***<br />
+Create another Python virtual environment to benchmark.py the converted models and do not install extra/requirements_gptq_conversion.txt (install requirement.txt only)
+---
 
 (2) Convert model to IRs
 ## Conversion script for preparing benchmarking models
