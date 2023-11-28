@@ -27,7 +27,6 @@ from optimum.utils import (
 )
 from optimum.exporters.onnx import get_encoder_decoder_models_for_export
 from optimum.exporters.openvino import export_models
-from optimum.intel.utils.modeling_utils import _prepare_decoder_attention_mask
 from optimum.intel.openvino import (
     OVModelForSeq2SeqLM,
     OVStableDiffusionPipeline,
@@ -62,10 +61,10 @@ def save_tokenizer(tokenizer, out_dir):
 
 def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_weights_format="INT8", fp16=False, args={}, model_name="openvino_model"):
     compression_args = None
-    if "4BIT_DEFAULT" in args.compress_weights:
-        model_name = out_path.parents[3].name
-        if model_name in INT4_MODEL_CONFIGURATION:
-            compression_args = INT4_MODEL_CONFIGURATION[model_name]
+    if "4BIT_DEFAULT" in compress_weights_format:
+        model_id = out_path.parents[3].name
+        if model_id in INT4_MODEL_CONFIGURATION:
+            compression_args = INT4_MODEL_CONFIGURATION[model_id]
         else:
             compression_args = COMPRESSION_OPTIONS["INT4_SYM"]
 
@@ -222,6 +221,70 @@ class TextDecoderWithPositionIdsOnnxConfig(TextDecoderOnnxConfig):
             common_inputs["position_ids"] = {0: "batch_size", 1: "sequence_length"}
 
         return common_inputs
+
+
+# Copied from transformers.models.bart.modeling_bart._expand_mask
+def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] = None):
+    """
+    Expands attention_mask from `[bsz, seq_len]` to `[bsz, 1, tgt_seq_len, src_seq_len]`.
+    """
+    bsz, src_len = mask.size()
+    tgt_len = tgt_len if tgt_len is not None else src_len
+
+    expanded_mask = mask[:, None, None, :].expand(bsz, 1, tgt_len, src_len).to(dtype)
+
+    inverted_mask = 1.0 - expanded_mask
+
+    return inverted_mask.masked_fill(inverted_mask.to(torch.bool), torch.finfo(dtype).min)
+
+
+# Modified from transformers.models.bloom.modeling_bloom._make_causal_mask
+def _make_causal_mask(
+    input_ids_shape: torch.Size,
+    device: torch.device,
+    past_key_values_length: int,
+    dtype: torch.dtype = torch.bool,
+) -> torch.BoolTensor:
+    """
+    Make causal mask used for bi-directional self-attention.
+    """
+    batch_size, target_length = input_ids_shape
+    mask = torch.zeros((target_length, target_length + past_key_values_length), dtype=dtype, device=device)
+    seq_ids = torch.arange(target_length, device=device)
+
+    mask[:, past_key_values_length:] = (
+        (seq_ids[:, None] < seq_ids[None, :]) * torch.finfo(dtype).min
+        if torch.is_floating_point(mask)
+        else seq_ids[:, None] < seq_ids[None, :]
+    )
+
+    return mask[None, None, :, :].expand(batch_size, 1, target_length, target_length + past_key_values_length)
+
+
+# Modified from transformers.models.llama.modeling_llama._prepare_decoder_attention_mask
+def _prepare_decoder_attention_mask(attention_mask, input_shape, inputs_embeds, past_key_values_length):
+
+    # create causal mask
+    # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
+    combined_attention_mask = None
+
+    combined_attention_mask = _make_causal_mask(
+        input_shape,
+        device=inputs_embeds.device,
+        past_key_values_length=past_key_values_length,
+        dtype=inputs_embeds.dtype,
+    )
+
+    if attention_mask is not None:
+        # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
+        expanded_attn_mask = _expand_mask(attention_mask, inputs_embeds.dtype, tgt_len=input_shape[-1]).to(
+            inputs_embeds.device
+        )
+        combined_attention_mask = (
+            expanded_attn_mask if combined_attention_mask is None else expanded_attn_mask + combined_attention_mask
+        )
+
+    return combined_attention_mask
 
 
 def patch_model_for_optimum_export(model):
@@ -502,7 +565,8 @@ def convert_sd(args):
     log.info(f'Serialization total time {end1 - start1}s')
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+        compress_weight, = args.compress_weights
+        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, compress_weight)
         model.text_encoder.model = compress_weights(model.text_encoder.model)
         model.unet.model = compress_weights(model.unet.model)
         model.vae_decoder.model = compress_weights(model.vae_decoder.model)
@@ -599,7 +663,8 @@ def convert_lcm(args):
     log.info(f'Serialization total time {end1 - start1}s')
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+        compress_weight, = args.compress_weights
+        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, compress_weight)
         model.text_encoder.model = compress_weights(model.text_encoder.model)
         model.unet.model = compress_weights(model.unet.model)
         model.vae_decoder.model = compress_weights(model.vae_decoder.model)
@@ -669,7 +734,8 @@ def convert_ldm_super_res(args):
     pipeline.scheduler.save_config(save_dir)
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
+        compress_weight, = args.compress_weights
+        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, compress_weight)
         compressed_ov_unet = compress_weights(ov_unet)
         save_model(compressed_ov_unet, ov_int8_dir / 'unet.xml', compress_to_fp16=compress_to_fp16)
         compressed_ov_decoder = compress_weights(ov_decoder)
@@ -1426,11 +1492,15 @@ converters = {
     'chatglm': convert_chatglm,
     'falcon': convert_falcon,
     'stablelm': convert_stablelm,
+    'stable-zephyr': convert_stablelm,
+    'rocket-': convert_stablelm,
     'jais': convert_jais,
     'baichuan': convert_baichaun,
     'qwen': convert_qwen,
     'mistal': convert_mistral,
     'zephyr': convert_mistral,
+    'openchat': convert_mistral,
+    'neural-chat': convert_mistral,
     'yi': convert_yi,
 }
 
