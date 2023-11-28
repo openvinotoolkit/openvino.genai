@@ -134,8 +134,6 @@ def unpatch_gptq(orig_cuda_check, orig_post_init_model):
 
 @torch.jit.script_if_tracing
 def _chatglm2_get_context_layer(query_layer: torch.Tensor, key_layer: torch.Tensor, value_layer: torch.Tensor):
-    print(f'q_len {query_layer.shape[-2]}, k_len {key_layer.shape[-2]}')
-    print(f'q_len {query_layer.shape[2]}, k_len {key_layer.shape[2]}')
     mask = torch.zeros((query_layer.shape[-2], key_layer.shape[-2]), dtype=query_layer.dtype)
     if query_layer.shape[2] == key_layer.shape[2]:
         tmp_mask = torch.ones((query_layer.shape[-2], key_layer.shape[-2]), dtype=torch.bool).triu(diagonal=1)
