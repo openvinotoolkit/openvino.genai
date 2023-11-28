@@ -702,9 +702,11 @@ def convert_lcm(args):
 
 def convert_sdxl(args):
     pt_compress_weights = args.compress_weights and BackendType.PYTORCH.value in args.compress_weights_backends
+
     def build_pt_model(model_id):
         model_ids = [idx.replace(" ", "") for idx in model_id.split(',')]
         pt_model = StableDiffusionXLImg2ImgPipeline.from_pretrained(model_ids[0])
+        tiny_vae = False
         if len(model_ids) > 1:
             for additional_model in model_ids[1:]:
                 if 'lora' in additional_model:
@@ -712,23 +714,24 @@ def convert_sdxl(args):
                     pt_model.fuse_lora()
                     if 'lcm' in additional_model:
                         pt_model.scheduler = LCMScheduler.from_config(pt_model.scheduler.config)
-                    
                     continue
+
                 if 'lcm' in additional_model and 'lora' not in additional_model:
                     unet = UNet2DConditionModel.from_pretrained(additional_model)
                     pt_model.unet = unet
                     pt_model.scheduler = LCMScheduler.from_config(pt_model.scheduler.config)
                     continue
+
                 if 'tae' in additional_model:
+                    tiny_vae = True
                     vae = AutoencoderTiny.from_pretrained(additional_model)
-                    orig_encode = vae.encode
-                    vae.encode = lambda sample: {"latent_dist": orig_encode(x=sample)["latent"].sample()}
                     pt_model.vae = vae
                     continue
-        preprocessors = maybe_load_preprocessors(model_ids[0])
-        return pt_model, preprocessors
 
-    def convert_pt_to_ov(pt_model, preprocessors, output_dir, fp16):
+        preprocessors = maybe_load_preprocessors(model_ids[0])
+        return pt_model, preprocessors, tiny_vae
+
+    def convert_pt_to_ov(pt_model, preprocessors, output_dir, fp16, tiny_vae):
         _, models_and_onnx_configs = optimum_main._get_submodels_and_onnx_configs(
             model=pt_model,
             task='stable-diffusion-xl',
@@ -739,8 +742,16 @@ def convert_sdxl(args):
             preprocessors=preprocessors,
             legacy=False
         )
+        if tiny_vae:
+            models_and_onnx_configs["vae_encoder"][0].forward = (
+                lambda sample: {"latent_sample": models_and_onnx_configs["vae_encoder"][0].encode(x=sample)["latents"]}
+            )
+            models_and_onnx_configs["vae_decoder"][0].forward = (
+                lambda latent_sample: models_and_onnx_configs["vae_decoder"][0].decode(latent_sample)
+            )
         for model_name in models_and_onnx_configs:
             subcomponent = models_and_onnx_configs[model_name][0]
+
             if hasattr(subcomponent, 'save_config'):
                 subcomponent.save_config(output_dir / model_name)
             elif hasattr(subcomponent, 'config') and hasattr(subcomponent.config, 'save_pretrained'):
@@ -773,7 +784,7 @@ def convert_sdxl(args):
             int8=False
         )
 
-    pt_model, preprocessors = build_pt_model(args.model_id)
+    pt_model, preprocessors, tiny_vae = build_pt_model(args.model_id)
     if args.save_orig:
         pt_model.save_pretrained(Path(args.output_dir) / 'pytorch')
     if pt_compress_weights:
@@ -783,13 +794,13 @@ def convert_sdxl(args):
         pt_model.vae = compress_weights(pt_model.vae)
         if getattr(pt_model, 'text_encoder_2', None) is not None:
             pt_model.text_encoder_2 = compress_weights(pt_model.text_encoder_2)
-        convert_pt_to_ov(pt_model, output, args.precision == "FP16")
+        convert_pt_to_ov(pt_model, output, args.precision == "FP16", tiny_vae)
         del pt_model
         gc.collect()
-        pt_model, preprocessors = build_pt_model(args.model_id)
+        pt_model, preprocessors, tiny_vae = build_pt_model(args.model_id)
 
     fp_out_dir = Path(args.output_dir) / 'pytorch/dldt' / args.precision
-    convert_pt_to_ov(pt_model, preprocessors, fp_out_dir, args.precision == "FP16")
+    convert_pt_to_ov(pt_model, preprocessors, fp_out_dir, args.precision == "FP16", tiny_vae)
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
         for weigths_compression_option in args.compress_weights:
