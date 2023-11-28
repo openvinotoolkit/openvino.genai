@@ -45,5 +45,5 @@ jobs:
       - name: Grid search
         run: |
           source ./ov/setupvars.sh
-          python ./llm/cpp/convert_tokenizers.py ./build//thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./tiny-llama-fast-tokenizer/
+          python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./tiny-llama-fast-tokenizer/
           ./llm/cpp/grid_search.sh
