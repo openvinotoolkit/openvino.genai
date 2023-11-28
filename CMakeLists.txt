@@ -6,9 +6,6 @@ project(GenAI)
 
 list(APPEND CUSTOM_OPERATIONS tokenizer)
 add_subdirectory(thirdparty/openvino_contrib/modules/custom_operations/)  # Build user_ov_extensions
-if(NOT MSVC)  # # Disable the warning from user_ov_extensions
-    target_compile_options(sentencepiece-static PRIVATE -Wno-stringop-overflow)
-endif()
 
 add_subdirectory(llm/cpp)
 target_compile_definitions(llm PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
