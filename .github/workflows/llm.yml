@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: openlm-research/open_llama_3b_v2
-          ref: 7bce5d60d3b0c68318862270ec4e794d83308d80a
+          ref: bce5d60d3b0c68318862270ec4e794d83308d80a
           path: tiny-llama-fast-tokenizer
           lfs: true
           github-server-url: https://huggingface.co
