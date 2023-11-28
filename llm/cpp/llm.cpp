@@ -25,6 +25,9 @@ void print_token(ov::InferRequest& detokenizer, int64_t out_token) {
 
 // Modifyed Knuth–Morris–Pratt algorithm which returns a set of tokens following after every needle occurance in haystack
 std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, std::vector<int64_t> needle) {  // TODO: pass iters to haystack to avoid searchng last ngram symbols
+    if (needle.empty()) {  // NO_REPEAT_NGRAM_SIZE == 1, ban every symbol
+        return {haystack.begin(), haystack.end()};
+    }
     std::vector<int> partial_match_table(needle.size() + 1, -1);
     int cnd = 0;
     for (size_t pos = 1; pos < needle.size(); ++pos) {
@@ -60,15 +63,15 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, std::vecto
     }
     return res;
 }
-constexpr size_t GROUP_SIZE = 11;
 enum class StopCriteria {early, heuristic, never};
-constexpr StopCriteria stop_criteria = StopCriteria::early;
-constexpr size_t MAX_NEW_TOKENS = 25;
-constexpr double LENGTH_PENALTY = 1.0;  // TODO: align defaults with transformers
-constexpr int64_t EOS_TOKEN = 2;  // There's no way to extract the value from the tokenizer for now  // TODO: 2 for llama2
-constexpr size_t N_GROUPS = 9;
-constexpr float DIVERSITY_PENALTY = 1.0f;
-constexpr size_t NO_REPEAT_NGRAM_SIZE = 3;
+size_t MAX_NEW_TOKENS;
+size_t N_GROUPS;
+size_t GROUP_SIZE;
+StopCriteria stop_criteria;
+size_t NO_REPEAT_NGRAM_SIZE;
+float DIVERSITY_PENALTY;
+double LENGTH_PENALTY;  // TODO: align defaults with transformers
+int64_t EOS_TOKEN;  // There's no way to extract the value from the tokenizer for now  // TODO: 2 for llama2
 }
 
     struct Beam {
@@ -151,17 +154,33 @@ struct Hypotheses {
     };
 
 int main(int argc, char* argv[]) try {
-    if (argc != 5) {
+    if (argc != 12) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> '<prompt>'");
     }
+    MAX_NEW_TOKENS = std::stoi(argv[5]);
+    N_GROUPS = std::stoi(argv[6]);
+    GROUP_SIZE = std::stoi(argv[7]);
+    if (std::string{"early"} == argv[8]) {
+        stop_criteria = StopCriteria::early;
+    } else if (std::string{"heuristic"} == argv[8]) {
+        stop_criteria = StopCriteria::heuristic;
+    } else if (std::string{"never"} == argv[8]) {
+        stop_criteria = StopCriteria::never;
+    } else {
+        throw std::runtime_error("Unknown stop_criteria value");
+    }
+    NO_REPEAT_NGRAM_SIZE = std::stoi(argv[9]);
+    DIVERSITY_PENALTY = std::stof(argv[10]);
+    LENGTH_PENALTY = std::stof(argv[11]);;  // TODO: align defaults with transformers
+    EOS_TOKEN = 2;  // There's no way to extract the value from the tokenizer for now  // TODO: 2 for llama2
     ov::Core core;
-    // core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
-    // auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
-    // ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
-    ov::Tensor input_ids{ov::element::i64, {1, 3}};
-    input_ids.data<int64_t>()[0] = 1;
-    input_ids.data<int64_t>()[1] = 372;
-    input_ids.data<int64_t>()[2] = 3681;
+    core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
+    auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
+    ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
+    // ov::Tensor input_ids{ov::element::i64, {1, 3}};
+    // input_ids.data<int64_t>()[0] = 1;
+    // input_ids.data<int64_t>()[1] = 372;
+    // input_ids.data<int64_t>()[2] = 3681;
     size_t prompt_length = input_ids.get_size();
     std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
     constexpr size_t BATCH_SIZE = 1;
@@ -279,7 +298,7 @@ int main(int argc, char* argv[]) try {
                     full_text.push_back(input_ids.data<int64_t>()[idx]);
                 }
                 full_text.insert(full_text.end(), other_tokens.begin(), other_tokens.end());
-                if (full_text.size() >= NO_REPEAT_NGRAM_SIZE) {
+                if (full_text.size() > 1 && full_text.size() >= NO_REPEAT_NGRAM_SIZE) {
                     for (int64_t ban_id : kmp_search(full_text, {full_text.end() - NO_REPEAT_NGRAM_SIZE + 1, full_text.end()})) {
                         tokens[ban_id].log = -std::numeric_limits<float>::infinity();
                     }
@@ -365,8 +384,8 @@ int main(int argc, char* argv[]) try {
         for (const Beam& beam: group.hypotheses.beams) {
             std::cout << "\nscore: " << beam.log_prob << " prediction: ";  // TODO: alight with transformers
             for (int64_t token : beam.tokens) {
-                // print_token(detokenizer, token);
-                std::cout << token << ", ";
+                print_token(detokenizer, token);
+                // std::cout << token << ", ";
             }
         }
     }

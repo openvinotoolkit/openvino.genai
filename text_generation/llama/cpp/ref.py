@@ -223,13 +223,32 @@ def generate(self, input_ids, **kwargs):
 
 
 def main():
-    if len(sys.argv) != 4:
-        raise RuntimeError("Usage: {sys.argv[0]} <pred.txt> <MODEL_DIR> '<PROMPT>'")
+    if len(sys.argv) != 11:
+        raise RuntimeError("Usage: {sys.argv[0]} <pred.txt> <MODEL_DIR> '<PROMPT>' ...")
+    with open(sys.argv[1], 'r') as file:
+        predictions = file.read()
     tokenizer = transformers.LlamaTokenizer.from_pretrained(sys.argv[2])
     assert 2 == tokenizer.eos_token_id
-    print(input_ids := tokenizer(sys.argv[3], return_tensors='pt')['input_ids'])
-    for beam in transformers.LlamaForCausalLM.from_pretrained(sys.argv[2]).generate(input_ids, max_new_tokens=10, num_beam_groups=9, num_beams=54, num_return_sequences=54, do_sample=False, early_stopping=True, no_repeat_ngram_size=3, diversity_penalty=1.0, length_penalty=1.0):  # default length_penalty is 1.0
-        print(tokenizer.decode(beam, skip_special_tokens=True)[len(sys.argv[2]):], end='\n===\n')
+    max_new_tokens = int(sys.argv[4])
+    n_groups = int(sys.argv[5])
+    group_size = int(sys.argv[6])
+    if 'early' == sys.argv[7]:
+        stop_criteria = True
+    elif 'heuristic' == sys.argv[7]:
+        stop_criteria = False
+    elif 'never' == sys.argv[7]:
+        stop_criteria = 'never'
+    else:
+        raise RuntimeError("Unknown stop_criteria value")
+    no_repeat_ngram_size = int(sys.argv[8])
+    diversity_penalty = float(sys.argv[9])
+    length_penalty = float(sys.argv[10])
+    for beam in transformers.LlamaForCausalLM.from_pretrained(sys.argv[2]).generate(tokenizer(sys.argv[3], return_tensors='pt')['input_ids'], max_new_tokens=max_new_tokens, num_beam_groups=n_groups, num_beams=n_groups*group_size, num_return_sequences=n_groups*group_size, do_sample=False, early_stopping=stop_criteria, no_repeat_ngram_size=no_repeat_ngram_size, diversity_penalty=diversity_penalty, length_penalty=length_penalty):  # default length_penalty is 1.0
+        ref = tokenizer.decode(beam, skip_special_tokens=True)[len(sys.argv[2]):]
+        idx = predictions.find(ref)
+        if -1 == idx:
+            raise RuntimeError(f'Missing "{ref}" from predictions')
+        predictions = predictions[:idx] + predictions[idx + len(ref):]
 
 
 if '__main__' == __name__:

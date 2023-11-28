@@ -28,4 +28,5 @@ cd ../
 wait
 
 python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./open_llama_3b_v2/
-./build/llm/cpp/llm open_llama_3b_v2/openvino_model.xml tokenizer.xml detokenizer.xml "return 0"
+./build/llm/cpp/llm open_llama_3b_v2/openvino_model.xml tokenizer.xml detokenizer.xml asdf 25 9 11 early 3 1.0 1.0 > pred.txt
+python3 ./text_generation/llama/cpp/ref.py pred.txt ./open_llama_3b_v2/ asdf 25 9 11 early 3 1.0 1.0
