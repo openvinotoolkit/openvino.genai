@@ -42,6 +42,8 @@ cmake -DCMAKE_BUILD_TYPE=Release ../ && cmake --build ./ --config Release -j
    5. https://huggingface.co/openlm-research/open_llama_7b_v2
 3. [Llama2-7b-WhoIsHarryPotter](https://huggingface.co/microsoft/Llama2-7b-WhoIsHarryPotter)
 
+This pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature.
+
 ### Download and convert the model and tokenizers
 
 ```sh
