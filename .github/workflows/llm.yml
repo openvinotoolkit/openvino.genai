@@ -16,6 +16,11 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
+      - uses: actions/checkout@v4
+        with:
+          repository: fxmarty/tiny-llama-fast-tokenizer
+          lfs: true
+          github-server-url: https://huggingface.co
       - run: llm/cpp/set_up_and_run.sh
   llm-cpp-beam-search:
     runs-on: ubuntu-20.04
@@ -26,8 +31,14 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
+      - uses: actions/checkout@v4
+        with:
+          repository: fxmarty/tiny-llama-fast-tokenizer
+          lfs: true
+          github-server-url: https://huggingface.co
       - name: Install dependencies
         run: |
+          ls
           python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14.0" ./thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu &
           mkdir ./ov/
           curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.2/linux/l_openvino_toolkit_ubuntu20_2023.2.0.13089.cfd42bd2cb0_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
@@ -36,7 +47,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          optimum-cli export openvino -m fxmarty/tiny-llama-fast-tokenizer ./tiny-llama-fast-tokenizer/ &
+          cd tiny-llama-fast-tokenizer && git lfs pull && cd .. && optimum-cli export openvino -m fxmarty/tiny-llama-fast-tokenizer ./tiny-llama-fast-tokenizer/ &
           mkdir ./build/
           cd ./build/
           cmake -DCMAKE_BUILD_TYPE=Release ../
