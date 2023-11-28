@@ -18,7 +18,7 @@ curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.1/l
 sudo ./ov/install_dependencies/install_openvino_dependencies.sh
 wait
 
-cd open_llama_3b_v2 open_llama_3b_v2 && git lfs pull &
+cd open_llama_3b_v2 && git lfs pull &
 source ./ov/setupvars.sh
 optimum-cli export openvino -m openlm-research/open_llama_3b_v2 open_llama_3b_v2/ &
 mkdir ./build/
