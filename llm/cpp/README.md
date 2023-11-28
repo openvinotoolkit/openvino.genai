@@ -2,8 +2,8 @@
 
 This application showcases inference of a large language model (LLM). It doesn't have much of configuration options to encourage the reader to explore and modify the source code. There's a Jupyter notebook which corresponds to this pipeline and discusses how to create an LLM-powered Chatbot: https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot.
 
-> Note  
-This pipeline is not for production use.
+> [!NOTE]
+> This pipeline is not for production use.
 
 ## How it works
 
@@ -24,7 +24,10 @@ The program loads a tokenizer, detokenizer and a model (`.xml` and `.bin`) to Op
    3. https://huggingface.co/openlm-research/open_llama_13b
    4. https://huggingface.co/openlm-research/open_llama_3b_v2
    5. https://huggingface.co/openlm-research/open_llama_7b_v2
-3. [Llama2-7b-WhoIsHarryPotter](https://huggingface.co/microsoft/Llama2-7b-WhoIsHarryPotter)
+4. TinyLlama
+   1. https://huggingface.co/TinyLlama/TinyLlama-1.1B-intermediate-step-955k-token-2T
+   2. https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v0.6
+4. [Llama2-7b-WhoIsHarryPotter](https://huggingface.co/microsoft/Llama2-7b-WhoIsHarryPotter)
 
 ### Download and convert the model and tokenizers
 

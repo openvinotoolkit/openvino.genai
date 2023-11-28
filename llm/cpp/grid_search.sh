@@ -12,7 +12,7 @@ for stop_criteria in early heuristic never; do
 for no_repeat_ngram_size in {1..3}; do
 for diversity_penalty in 1.0 999999; do
 for length_penalty in -1.0 0.0 1.5; do
-./build/llm/cpp/llm ./tiny-llama-fast-tokenizer/openvino_model.xml tokenizer.xml detokenizer.xml $promt $max_new_tokens $n_groups $group_size $stop_criteria $no_repeat_ngram_size $diversity_penalty $length_penalty > pred.txt && python3 ./text_generation/llama/cpp/ref.py pred.txt ./tiny-llama-fast-tokenizer/ $promt $max_new_tokens $n_groups $group_size $stop_criteria $no_repeat_ngram_size $diversity_penalty $length_penalty || { echo $promt $max_new_tokens $n_groups $group_size $stop_criteria $no_repeat_ngram_size $diversity_penalty $length_penalty && exit 1; };
+./build/llm/cpp/llm ./tiny-llama-fast-tokenizer/openvino_model.xml tokenizer.xml detokenizer.xml $promt $max_new_tokens $n_groups $group_size $stop_criteria $no_repeat_ngram_size $diversity_penalty $length_penalty > ./pred.txt && python3 ./text_generation/llama/cpp/ref.py ./pred.txt ./tiny-llama-fast-tokenizer/ $promt $max_new_tokens $n_groups $group_size $stop_criteria $no_repeat_ngram_size $diversity_penalty $length_penalty || { echo $promt $max_new_tokens $n_groups $group_size $stop_criteria $no_repeat_ngram_size $diversity_penalty $length_penalty && exit 1; };
 done
 done
 done

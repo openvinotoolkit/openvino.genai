@@ -18,8 +18,8 @@ jobs:
           python-version: 3.8
       - uses: actions/checkout@v4
         with:
-          repository: fxmarty/tiny-llama-fast-tokenizer
-          ref: 7777c406a0733db432517f89575b9b5a02e371ef
+          repository: openlm-research/open_llama_3b_v2
+          ref: 7bce5d60d3b0c68318862270ec4e794d83308d80a
           path: tiny-llama-fast-tokenizer
           lfs: true
           github-server-url: https://huggingface.co
@@ -42,7 +42,6 @@ jobs:
           github-server-url: https://huggingface.co
       - name: Install dependencies
         run: |
-          ls
           python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14.0" ./thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu &
           mkdir ./ov/
           curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.2/linux/l_openvino_toolkit_ubuntu20_2023.2.0.13089.cfd42bd2cb0_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
@@ -62,3 +61,42 @@ jobs:
           source ./ov/setupvars.sh
           python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./tiny-llama-fast-tokenizer/
           ./llm/cpp/grid_search.sh
+  llm-cpp-beam-search:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - uses: actions/checkout@v4
+        with:
+          repository: TinyLlama/TinyLlama-1.1B-Chat-v0.6
+          ref: bf9ae1c8bf026667e6f810768de259bb4a7f4777
+          path: TinyLlama-1.1B-Chat-v0.6
+          lfs: true
+          github-server-url: https://huggingface.co
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14.0" ./thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu &
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.2/linux/l_openvino_toolkit_ubuntu20_2023.2.0.13089.cfd42bd2cb0_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+          wait
+      - name: Download, convert and build
+        run: |
+          cd TinyLlama/TinyLlama-1.1B-Chat-v0.6 && git lfs pull &
+          source ./ov/setupvars.sh
+          optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-Chat-v0.6 ./TinyLlama-1.1B-Chat-v0.6/ &
+          mkdir ./build/
+          cd ./build/
+          cmake -DCMAKE_BUILD_TYPE=Release ../
+          cmake --build ./ --config Release -j
+          wait
+      - name: Grid search
+        run: |
+          source ./ov/setupvars.sh
+          python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./TinyLlama-1.1B-Chat-v0.6/
+          ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml asdf 25 9 11 early 3 1.0 1.0 > ./pred.txt
+          python3 ./text_generation/llama/cpp/ref.py ./pred.txt ./TinyLlama-1.1B-Chat-v0.6/ asdf 25 9 11 early 3 1.0 1.0
