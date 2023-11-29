@@ -4,7 +4,7 @@
 import logging as log
 
 
-def print_metrics(iter_num, iter_data, tms=None, tms_infer=None, generated=None, warm_up=False, max_rss_mem=-1, max_shared_mem=-1):
+def print_metrics(iter_num, iter_data, tms=None, tms_infer=None, generated=None, warm_up=False, max_rss_mem=-1, max_shared_mem=-1, ovForward=None):
     if tms is None:
         tms = []
     if tms_infer is None:
@@ -40,11 +40,36 @@ def print_metrics(iter_num, iter_data, tms=None, tms_infer=None, generated=None,
             f"[{iter_str}] First token infer time: {iter_data['first_token_infer_latency']:.2f} ms,"
             f"other tokens average infer time: {iter_data['other_tokens_infer_avg_latency']:.2f} ms/token, len of tokens: {len(tms_infer)}",
         )
+    if ovForward != None:
+        iter_data['first_token_latency'] = ovForward.get_text_encoder_time() * 1000
+        iter_data['other_tokens_avg_latency'] = ovForward.get_unet_vae_avg_time() * 1000
+        iter_data['first_token_infer_latency'] = iter_data['first_token_latency']
+        iter_data['other_tokens_infer_avg_latency'] = iter_data['other_tokens_avg_latency']
+        log.info(
+            f"[{iter_str}] First infer time: {iter_data['first_token_latency']:.2f} ms, "
+            f"other infer average time: {iter_data['other_tokens_avg_latency']:.2f} ms/infer, "
+            f"text encoder infer times: {ovForward.get_text_encoder_infer_time()}, "
+            f"unet infer times: {ovForward.get_unet_infer_time()}, "
+            f"vae decoder infer times: {ovForward.get_vae_decoder_infer_time()}",
+        )
+        log.info(f"[{iter_str}] text encoder time: {ovForward.get_text_encoder_time() * 1000:.2f} ms, "
+                 f"unet time: {ovForward.get_unet_time() * 1000:.2f} ms, "
+                 f"vae decoder time: {ovForward.get_vae_decoder_time() * 1000:.2f} ms")
     if max_rss_mem != '' and max_rss_mem > -1:
         log.info(f'[{iter_str}] max rss memory cost:\n{max_rss_mem}')
     if max_shared_mem != '' and max_shared_mem > -1:
         log.info(f'[{iter_str}] max shared memory cost:\n{max_shared_mem}')
 
+def print_ldm_unet_vae_infer_time(iter_num, tms=None, warm_up=False):
+    iter_str = str(iter_num)
+    if warm_up:
+        iter_str = 'warm-up'
+    len_tms = len(tms)
+    if len_tms > 1:
+        log.info(f"[{iter_str}] unet time: {sum(tms[0:(len_tms - 1)]) * 1000:.2f} ms, "
+                 f"vae decoder time: {tms[len_tms - 1] * 1000:.2f} ms, "
+                 f"unet infer times: {len_tms - 1}, "
+                 f"vae decoder infer times: 1",)
 
 def print_average(iter_data_list):
     if len(iter_data_list) <= 1:

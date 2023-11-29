@@ -206,18 +206,16 @@ def run_image_generation(input_text, nsteps, num, image_id, pipe, args, iter_dat
         prompt_idx=image_id,
     )
     iter_data_list.append(iter_data)
-    tm_list = ovForward.get_tm_list()
     utils.metrics_print.print_metrics(
         num,
         iter_data,
-        tm_list,
-        tms_infer=tm_list,
         generated=rslt_img_fn,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
+        ovForward=ovForward
     )
-    tm_list = ovForward.clear_tm_list()
+    ovForward.clear_image_time()
 
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters):
@@ -319,6 +317,7 @@ def run_ldm_super_resolution(img, num, nsteps, pipe, args, framework, iter_data_
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
     )
+    utils.metrics_print.print_ldm_unet_vae_infer_time(num, tm_list, warm_up=(num == 0),)
 
 
 def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_iters):

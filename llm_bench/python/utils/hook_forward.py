@@ -3,13 +3,44 @@ import time
 
 class OVForward:
     def __init__(self):
-        self.tm_list = []
+        self.text_encoder_time = 0
+        self.unet_time = 0
+        self.vae_decoder_time = 0
+        self.text_encoder_infer_times = 0
+        self.unet_infer_times = 0
+        self.vae_decoder_infer_times = 0
+    
+    def get_text_encoder_time(self):
+        return self.text_encoder_time
 
-    def clear_tm_list(self):
-        self.tm_list.clear()
+    def get_unet_time(self):
+        return self.unet_time
 
-    def get_tm_list(self):
-        return self.tm_list
+    def get_vae_decoder_time(self):
+        return self.vae_decoder_time
+    
+    def get_text_encoder_infer_time(self):
+        return self.text_encoder_infer_times
+
+    def get_unet_infer_time(self):
+        return self.unet_infer_times
+
+    def get_vae_decoder_infer_time(self):
+        return self.vae_decoder_infer_times    
+
+    def get_unet_vae_avg_time(self):
+        avg_time = 0
+        if self.unet_infer_times != 0 and self.vae_decoder_infer_times != 0:
+            avg_time = (self.unet_time + self.vae_decoder_time) / (self.unet_infer_times + self.vae_decoder_infer_times)
+        return avg_time
+
+    def clear_image_time(self):
+        self.text_encoder_time = 0
+        self.unet_time = 0
+        self.vae_decoder_time = 0
+        self.text_encoder_infer_times = 0
+        self.unet_infer_times = 0
+        self.vae_decoder_infer_times = 0
 
     def new_text_encoder(self, pipe):
         old_text_encoder = pipe.text_encoder.request
@@ -18,7 +49,9 @@ class OVForward:
             t1 = time.time()
             r = old_text_encoder(inputs, shared_memory=shared_memory, **kwargs)
             t2 = time.time()
-            self.tm_list.append(t2 - t1)
+            text_encoder_time = t2 - t1
+            self.text_encoder_time += text_encoder_time
+            self.text_encoder_infer_times += 1
             return r
         pipe.text_encoder.request = my_text_encoder
 
@@ -29,7 +62,9 @@ class OVForward:
             t1 = time.time()
             r = old_unet(inputs, shared_memory=shared_memory, **kwargs)
             t2 = time.time()
-            self.tm_list.append(t2 - t1)
+            unet_time = t2 - t1
+            self.unet_time += unet_time
+            self.unet_infer_times += 1
             return r
         pipe.unet.request = my_unet
 
@@ -40,6 +75,8 @@ class OVForward:
             t1 = time.time()
             r = old_vae_decoder(inputs, shared_memory=shared_memory, **kwargs)
             t2 = time.time()
-            self.tm_list.append(t2 - t1)
+            vae_decoder_time = t2 - t1
+            self.vae_decoder_time += vae_decoder_time
+            self.vae_decoder_infer_times += 1
             return r
         pipe.vae_decoder.request = my_vae_decoder
