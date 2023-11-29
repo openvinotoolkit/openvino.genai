@@ -78,6 +78,7 @@ int64_t EOS_TOKEN;  // There's no way to extract the value from the tokenizer fo
         float log_prob;
         std::vector<int64_t> tokens;
         size_t batch_id = 0;
+        size_t global_beam_id = 0;
         bool operator<(const Beam& other) {
             return log_prob > other.log_prob;  // greater, not less to build min heap
         }
@@ -86,16 +87,18 @@ int64_t EOS_TOKEN;  // There's no way to extract the value from the tokenizer fo
             log_prob = other.log_prob;
             tokens = std::move(other.tokens);
             batch_id = other.batch_id;
+            global_beam_id = other.global_beam_id;
             return *this;
         }
         Beam& operator=(const Beam& other) {
             log_prob = other.log_prob;
             tokens = other.tokens;
             batch_id = other.batch_id;
+            global_beam_id = other.global_beam_id;
             return *this;
         }
-        Beam(Beam&& other) : log_prob{other.log_prob}, tokens{std::move(other.tokens)}, batch_id{other.batch_id} {};
-        Beam(const Beam& other) : log_prob{other.log_prob}, tokens{other.tokens}, batch_id{other.batch_id} {};
+        Beam(Beam&& other) : log_prob{other.log_prob}, tokens{std::move(other.tokens)}, batch_id{other.batch_id}, global_beam_id{other.global_beam_id} {};
+        Beam(const Beam& other) : log_prob{other.log_prob}, tokens{other.tokens}, batch_id{other.batch_id}, global_beam_id{other.global_beam_id} {};
     };
 
 std::ostream& operator<<(std::ostream& os, const Beam& beam) {
@@ -148,9 +151,133 @@ struct Hypotheses {
         }
     }
 };
+
+struct Token {double log; int64_t idx;
+    bool operator<(Token indexed) {
+        return log > indexed.log;  // greater, not less to pick most probable tokens
+    }
+};
+
 struct Group {
     std::vector<Beam> beams;  // TODO: one contigous array with all beams?
     Hypotheses hypotheses;
+};
+
+struct TokenToBeam {int64_t token_id; size_t beam_id;};
+
+struct GroupBeamSearcher {
+    ov::Tensor input_ids;  // input_ids values are going to be used to prepend to beams, thus move it  in constructor to ensure it's not overriden
+    const size_t n_groups;
+    const size_t group_size;  // TODO: deduce group_size from process(ov::Tensor)
+    const StopCriteria stop_criteria;
+    const size_t no_repeat_ngram_size;
+    const float diversity_penalty;
+    const double length_penalty;
+    const int64_t eos_token;
+    std::function<void(void)> extra_beam_drop;
+    std::vector<Group> groups;
+
+    GroupBeamSearcher(ov::Tensor&& input_ids, size_t n_groups, size_t group_size, StopCriteria stop_criteria, size_t no_repeat_ngram_size, float diversity_penalty, double length_penalty, int64_t eos_token, std::function<void(void)> extra_beam_drop) : input_ids{input_ids}, n_groups{n_groups}, group_size{group_size}, stop_criteria{stop_criteria}, no_repeat_ngram_size{no_repeat_ngram_size}, diversity_penalty{diversity_penalty}, length_penalty{length_penalty}, eos_token{eos_token}, extra_beam_drop{extra_beam_drop}, groups{n_groups} {
+        for (Group & group : groups) {
+            group.beams.resize(GROUP_SIZE);
+            group.beams.front().log_prob = 0.0;
+        }
+        // TODO: assert input_ids batch 1
+    }
+
+    std::vector<TokenToBeam> process(ov::Tensor logits_tensor) {  // TODO: not type in name
+    //TODO: assert logits_tensor batch matches all beams
+        std::vector<TokenToBeam> next_tokens;
+        next_tokens.reserve(n_groups * group_size);
+        for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
+            if (groups[group_idx].hypotheses.done) {
+                continue;
+            }
+            std::vector<Beam> candidates;
+            candidates.reserve(2 * GROUP_SIZE);
+            for (size_t beam_idx = 0; beam_idx < GROUP_SIZE; ++beam_idx) {
+                size_t global_beam_id = 0;
+                for (size_t prev_group_id = 0; prev_group_id < group_idx; prev_group_id++) {
+                    if (!groups[prev_group_id].hypotheses.done) {
+                        global_beam_id += GROUP_SIZE;
+                    }
+                }
+                global_beam_id += beam_idx;
+                if (groups[group_idx].beams[beam_idx].tokens.empty()) {
+                    global_beam_id = 0;
+                }
+                size_t vocab_size = logits_tensor.get_shape().back();
+                std::vector<float> temp;
+                size_t batch_offset = global_beam_id * logits_tensor.get_shape()[1] * logits_tensor.get_shape()[2];
+                for (size_t logit_id = 0; logit_id < vocab_size; ++logit_id) {
+                    temp.push_back((logits_tensor.data<const float>() + batch_offset + (logits_tensor.get_shape()[1] - 1) * vocab_size)[logit_id]);
+                }
+                std::cout << temp[0] << '\n';
+                std::valarray<float> logits(temp.data(), temp.size());  // TODO: maybe use valarray<Token>
+                float max_logit = logits.max();
+                float log_sum = std::log((std::exp(logits - max_logit)).sum());  // TODO: log(softmax) only for topk logits
+                std::valarray<float> log_prob = logits - max_logit - log_sum;
+                std::vector<Token> tokens;
+                tokens.reserve(log_prob.size());
+                for (size_t idx = 0; idx < log_prob.size(); ++idx) {
+                    tokens.push_back({log_prob[idx], int64_t(idx)});
+                }
+                for (size_t prev_group_idx = 0; prev_group_idx < group_idx; ++prev_group_idx) {  // TODO: range based for
+                    for (size_t prev_beam_idx = 0; prev_beam_idx < GROUP_SIZE; ++prev_beam_idx) {
+                        tokens[groups[prev_group_idx].beams[prev_beam_idx].tokens.back()].log -= DIVERSITY_PENALTY;  // TODO: what if group is done long time ago
+                    }
+                }
+                std::vector<int64_t>& other_tokens = groups[group_idx].beams[beam_idx].tokens;
+                std::vector<int64_t> full_text;
+                for (size_t idx = 0; idx < input_ids.get_size(); ++idx) {
+                    full_text.push_back(input_ids.data<int64_t>()[idx]);
+                }
+                full_text.insert(full_text.end(), other_tokens.begin(), other_tokens.end());
+                if (full_text.size() > 1 && full_text.size() >= NO_REPEAT_NGRAM_SIZE) {
+                    for (int64_t ban_id : kmp_search(full_text, {full_text.end() - NO_REPEAT_NGRAM_SIZE + 1, full_text.end()})) {
+                        tokens[ban_id].log = -std::numeric_limits<float>::infinity();
+                    }
+                }
+                // Sample 2 * GROUP_SIZE next tokens to get at least 1 non EOS token per beam
+                std::nth_element(tokens.begin(), tokens.begin() + 2 * GROUP_SIZE, tokens.end());
+                std::cout << "cand: ";
+                for (size_t idx = 0; idx < 2 * GROUP_SIZE; ++idx) {
+                    candidates.push_back(groups[group_idx].beams[beam_idx]);
+                    candidates.back().log_prob += tokens[idx].log;
+                    candidates.back().tokens.push_back(tokens[idx].idx);
+                    candidates.back().global_beam_id = global_beam_id;
+                    std::cout << tokens[idx].idx << ' ' << global_beam_id << ';';
+                }
+                std::cout << '\n';
+            }
+            std::sort(candidates.begin(), candidates.end());  // TODO not sort
+            size_t cur_len = groups[group_idx].beams.front().tokens.size() + 1;
+            groups[group_idx].beams.clear();
+            // TODO callback
+            for (size_t cand_id = 0; cand_id < candidates.size(); ++cand_id) {
+                if (EOS_TOKEN == candidates[cand_id].tokens.back()) {  // TODO: idx->token_id
+                    // if beam_token does not belong to top num_beams tokens, it should not be added
+                    if (cand_id >= GROUP_SIZE) {
+                        continue;
+                    }
+                    candidates[cand_id].tokens.resize(candidates[cand_id].tokens.size() - 1);
+                    groups[group_idx].hypotheses.push(std::move(candidates[cand_id]), input_ids.get_size());
+                } else {
+                    groups[group_idx].beams.push_back(std::move(candidates[cand_id]));
+                    next_tokens.push_back({groups[group_idx].beams.back().tokens.back(), groups[group_idx].beams.back().global_beam_id});
+                    std::cout << groups[group_idx].beams.back().tokens.back() << ", " << groups[group_idx].beams.back().global_beam_id << '\n';
+                    if (groups[group_idx].beams.size() == GROUP_SIZE) {
+                        break;
+                    }
+                }
+            }
+            groups[group_idx].hypotheses.is_done(cur_len + input_ids.get_size(), groups[group_idx].beams.front().log_prob);  // TODO: that requires groups[group_idx].beams to be not empty
+            if (groups[group_idx].hypotheses.done) {
+                next_tokens.resize(next_tokens.size() - groups[group_idx].beams.size());
+            }
+        }
+        return next_tokens;
+    }
 };
 
 int main(int argc, char* argv[]) try {
@@ -200,12 +327,6 @@ int main(int argc, char* argv[]) try {
     model->reshape(shapes);
     ov::CompiledModel compiled = core.compile_model(model, "CPU");  // , ov::cache_dir("llm-cache"));
 
-    struct Token {double log; int64_t idx;
-        bool operator<(Token indexed) {
-            return log > indexed.log;  // greater, not less to pick most probable tokens
-        }
-    };
-    std::vector<Group> groups{N_GROUPS};
     ov::InferRequest ireq = compiled.create_infer_request();
     for (size_t idx = 3; idx < inputs.size(); ++idx) {
         ov::Shape shape = inputs.at(idx).get_partial_shape().get_min_shape();
@@ -218,137 +339,46 @@ int main(int argc, char* argv[]) try {
     std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), input_ids.get_size(), 1);
     ireq.get_tensor("position_ids").set_shape(input_ids.get_shape());
     std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
-    ireq.infer();
 
-    for (Group & group : groups) {
-        group.beams.resize(GROUP_SIZE);
-        group.beams.front().log_prob = 0.0;
-    }
-    size_t incomplete_groups = N_GROUPS;
+    GroupBeamSearcher group_beam_searcher{std::move(input_ids), N_GROUPS, GROUP_SIZE, stop_criteria, NO_REPEAT_NGRAM_SIZE, DIVERSITY_PENALTY, LENGTH_PENALTY, EOS_TOKEN, [](){}};
+    std::vector<Group>& groups = group_beam_searcher.groups;
     for (size_t length_count = 0; length_count < MAX_NEW_TOKENS; ++length_count) {
-        for (size_t group_idx = 0; group_idx < incomplete_groups; ++group_idx) {
-            if (groups[group_idx].hypotheses.done) {
-                continue;
-            }
-            std::vector<Beam> candidates;
-            candidates.reserve(2 * GROUP_SIZE);
-            for (size_t beam_idx = 0; beam_idx < GROUP_SIZE; ++beam_idx) {
-                ov::Tensor logits_tensor = ireq.get_tensor("logits");
-                size_t vocab_size = logits_tensor.get_shape().back();
-                std::vector<float> temp;
-                size_t batch_offset = groups[group_idx].beams[beam_idx].batch_id * logits_tensor.get_shape()[1] * logits_tensor.get_shape()[2];
-                for (size_t logit_id = 0; logit_id < vocab_size; ++logit_id) {
-                    temp.push_back((logits_tensor.data<const float>() + batch_offset + (logits_tensor.get_shape()[1] - 1) * vocab_size)[logit_id]);
-                }
-                std::valarray<float> logits(temp.data(), temp.size());  // TODO: maybe use valarray<Token>
-                float max_logit = logits.max();
-                float log_sum = std::log((std::exp(logits - max_logit)).sum());  // TODO: log(softmax) only for topk logits
-                std::valarray<float> log_prob = logits - max_logit - log_sum;
-                std::vector<Token> tokens;
-                tokens.reserve(log_prob.size());
-                for (size_t idx = 0; idx < log_prob.size(); ++idx) {
-                    tokens.push_back({log_prob[idx], int64_t(idx)});
-                }
-                for (size_t prev_group_idx = 0; prev_group_idx < group_idx; ++prev_group_idx) {  // TODO: range based for
-                    for (size_t prev_beam_idx = 0; prev_beam_idx < GROUP_SIZE; ++prev_beam_idx) {
-                        tokens[groups[prev_group_idx].beams[prev_beam_idx].tokens.back()].log -= DIVERSITY_PENALTY;
-                    }
-                }
-                std::vector<int64_t>& other_tokens = groups[group_idx].beams[beam_idx].tokens;
-                std::vector<int64_t> full_text;
-                for (size_t idx = 0; idx < input_ids.get_size(); ++idx) {
-                    full_text.push_back(input_ids.data<int64_t>()[idx]);
-                }
-                full_text.insert(full_text.end(), other_tokens.begin(), other_tokens.end());
-                if (full_text.size() > 1 && full_text.size() >= NO_REPEAT_NGRAM_SIZE) {
-                    for (int64_t ban_id : kmp_search(full_text, {full_text.end() - NO_REPEAT_NGRAM_SIZE + 1, full_text.end()})) {
-                        tokens[ban_id].log = -std::numeric_limits<float>::infinity();
-                    }
-                }
-                // Sample 2 * GROUP_SIZE next tokens to get at least 1 non EOS token per beam
-                std::nth_element(tokens.begin(), tokens.begin() + 2 * GROUP_SIZE, tokens.end());
-                for (size_t idx = 0; idx < 2 * GROUP_SIZE; ++idx) {
-                    candidates.push_back(groups[group_idx].beams[beam_idx]);
-                    candidates.back().log_prob += tokens[idx].log;
-                    candidates.back().tokens.push_back(tokens[idx].idx);
-                }
-            }
-            std::sort(candidates.begin(), candidates.end());  // TODO not sort
-            size_t cur_len = groups[group_idx].beams.front().tokens.size() + 1;
-            groups[group_idx].beams.clear();
-            for (size_t cand_id = 0; cand_id < candidates.size(); ++cand_id) {
-                if (EOS_TOKEN == candidates[cand_id].tokens.back()) {  // TODO: idx->token_id
-                    // if beam_token does not belong to top num_beams tokens, it should not be added
-                    if (cand_id >= GROUP_SIZE) {
-                        continue;
-                    }
-                    candidates[cand_id].tokens.resize(candidates[cand_id].tokens.size() - 1);
-                    groups[group_idx].hypotheses.push(std::move(candidates[cand_id]), prompt_length);
-                } else {
-                    groups[group_idx].beams.push_back(std::move(candidates[cand_id]));
-                    if (groups[group_idx].beams.size() == GROUP_SIZE) {
-                        break;
-                    }
-                }
-            }
-            groups[group_idx].hypotheses.is_done(cur_len + prompt_length, groups[group_idx].beams.front().log_prob);  // TODO: that requires groups[group_idx].beams to be not empty
-        }
-        size_t current_incomplete_groups = 0;
-        for (Group& group : groups) {
-            if (!group.hypotheses.done) {
-                ++current_incomplete_groups;
-            }
-        }
-        if (0 == current_incomplete_groups) {
+        ireq.infer();
+        std::vector<TokenToBeam> next_tokens = group_beam_searcher.process(ireq.get_tensor("logits"));
+        if (next_tokens.empty()) {
             break;
         }
-        size_t future_batch_size = 0;
-        for (Group& group : groups) {
-            if (group.hypotheses.done) {
-                continue;
-            }
-            for (size_t beam_idx = 0; beam_idx < group.beams.size(); ++beam_idx) {
-                ++future_batch_size;
-            }
-        }
-        ireq.get_tensor("input_ids").set_shape({future_batch_size, 1});
+        size_t batch_size = next_tokens.size();
+        ireq.get_tensor("input_ids").set_shape({batch_size, 1});
         ov::Shape att_shape = ireq.get_tensor("attention_mask").get_shape();
-        att_shape[0] = future_batch_size;
+        att_shape[0] = batch_size;
         ++att_shape[1];
         ireq.get_tensor("attention_mask").set_shape(att_shape);
-        ireq.get_tensor("position_ids").set_shape({future_batch_size, 1});
+        std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
+        ireq.get_tensor("position_ids").set_shape({batch_size, 1});
+        std::fill_n(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").get_size(), att_shape[1] - 1);
         for (size_t tensor_id = 3; tensor_id < inputs.size(); ++tensor_id) {
             ov::Tensor past = ireq.get_input_tensor(tensor_id);
             ov::Shape shape = ireq.get_output_tensor(tensor_id - 2).get_shape();
-            shape[0] = future_batch_size;
+            shape[0] = batch_size;
             past.set_shape(shape);
         }
 
-        size_t batch_idx = 0;
-        for (Group& group : groups) {
-            if (group.hypotheses.done) {
-                continue;
-            }
-            for (Beam& beam : group.beams) {
-                ireq.get_tensor("input_ids").data<int64_t>()[batch_idx] = beam.tokens.back();
-                std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
-                ireq.get_tensor("position_ids").data<int64_t>()[batch_idx] = prompt_length + beam.tokens.size() - 1;
-                for (size_t tensor_id = 3; tensor_id < inputs.size(); ++tensor_id) {
-                    ov::Tensor present = ireq.get_output_tensor(tensor_id - 2);
-                    ov::Shape present_begin = {beam.batch_id, 0, 0, 0};
-                    ov::Shape present_end = present.get_shape();
-                    present_end[0] = beam.batch_id + 1;
-                    ov::Tensor past = ireq.get_input_tensor(tensor_id);
-                    ov::Shape past_begin = {batch_idx, 0, 0, 0};
-                    ov::Shape past_end = past.get_shape();
-                    past_end[0] = batch_idx + 1;
-                    ov::Tensor{present, present_begin, present_end}.copy_to(ov::Tensor{past, past_begin, past_end});
-                }
-                beam.batch_id = batch_idx;
-                ++batch_idx;
+        for (size_t batch_id = 0; batch_id < next_tokens.size(); ++batch_id) {
+            ireq.get_tensor("input_ids").data<int64_t>()[batch_id] = next_tokens[batch_id].token_id;
+            std::cout << "set input: " << next_tokens[batch_id].token_id << ", beam_id: " << next_tokens[batch_id].beam_id << '\n';
+            for (size_t tensor_id = 3; tensor_id < inputs.size(); ++tensor_id) {
+                ov::Tensor present = ireq.get_output_tensor(tensor_id - 2);
+                ov::Shape present_begin = {next_tokens[batch_id].beam_id, 0, 0, 0};
+                ov::Shape present_end = present.get_shape();
+                present_end[0] = next_tokens[batch_id].beam_id + 1;
+                ov::Tensor past = ireq.get_input_tensor(tensor_id);
+                ov::Shape past_begin = {batch_id, 0, 0, 0};
+                ov::Shape past_end = past.get_shape();
+                past_end[0] = batch_id + 1;
+                ov::Tensor{present, present_begin, present_end}.copy_to(ov::Tensor{past, past_begin, past_end});
             }
         }
-        ireq.infer();
     }
     // finalize
     for (Group& group : groups) {
