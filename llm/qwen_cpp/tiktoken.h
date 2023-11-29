@@ -178,7 +178,9 @@ class tiktoken {
 				}
 
 				if (allowed_special.count(special) == 1) {
-					return { std::move(special), re2::StringPiece(start, input.begin() - start - special.size()) };
+					// Fix windows build based on https://github.com/QwenLM/qwen.cpp/issues/24
+					//return { std::move(special), re2::StringPiece(start, input.begin() - start - special.size()) };
+					return { std::move(special), re2::StringPiece( start, start + ( input.begin() - start - special.size()) ) };
 				}
 			}
 

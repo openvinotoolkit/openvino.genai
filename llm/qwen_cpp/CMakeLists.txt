@@ -91,3 +91,10 @@ target_link_libraries(main PRIVATE openvino::runtime)
 #  COMMAND clang-format -i ${CPP_SOURCES}
 #  COMMAND isort ${PY_SOURCES}
 #  COMMAND black ${PY_SOURCES} --line-length 120)
+
+if (MSVC)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
+    add_definitions("/wd4267 /wd4244 /wd4305 /Zc:strictStrings /utf-8")
+    add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/source-charset:utf-8>")
+endif ()
+
