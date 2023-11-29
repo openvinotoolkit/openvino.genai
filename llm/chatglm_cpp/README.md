@@ -15,10 +15,12 @@ The program loads a tokenizer, detokenizer and a model (`.xml` and `.bin`) to Op
    1. https://hf-mirror.com/THUDM/chatglm2-6b
    2. https://hf-mirror.com/THUDM/chatglm3-6b
 
-### Download and convert the tokenizers
+### Download and convert the model and tokenizers
 
 ```sh
 python -m pip install --upgrade-strategy eager thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx "optimum[openvino]>=1.14.0" --extra-index-url https://download.pytorch.org/whl/cpu
+pip install -r ./llm_bench/python/requirements.txt
+python ./llm_bench/python/convert.py --model_id --model_id <model_id_or_path> --output_dir <out_dir>
 source <OpenVINO dir>/setupvars.sh
 python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./chatglm3-6b/
 ```
