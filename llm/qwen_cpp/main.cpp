@@ -96,7 +96,7 @@ static auto parse_args(const std::vector<std::string> &argv) -> Args {
     } else if (arg == "-c" || arg == "--max_context_length") {
       args.max_context_length = std::stoi(argv[++i]);
     } else if (arg == "-d" || arg == "--device") {
-      args.device = std::stoi(argv[++i]);
+      args.device = argv[++i];
     //} else if (arg == "--top_k") {
     //  args.top_k = std::stoi(argv[++i]);
     //} else if (arg == "--top_p") {
