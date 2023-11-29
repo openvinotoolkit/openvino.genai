@@ -112,4 +112,4 @@ python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_b
 ```
 
 # Notes
-> If you encounter any issues, you can check out the **(./NOTES.md)**.
+If you encounter any error messages, you can check the **[NOTES.md](./NOTES.md)**  which includes solutions for some errors.
