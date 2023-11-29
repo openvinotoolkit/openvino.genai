@@ -51,7 +51,7 @@ int main(int argc, char* argv[]) try {
             BATCH_SIZE, -1
         }},
         {2, ov::PartialShape{
-	        BATCH_SIZE, -1
+	    BATCH_SIZE, -1
         }}
     };
 
@@ -122,8 +122,6 @@ int main(int argc, char* argv[]) try {
     if (count > 0) {
         std::cout << "Other Avg inference took total " << total_time << " ms token num " << count << " avg " << total_time / (count) << " ms" << std::endl;
     }
-
-
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;
