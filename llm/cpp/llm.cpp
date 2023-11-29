@@ -264,6 +264,9 @@ int main(int argc, char* argv[]) try {
     size_t incomplete_groups = N_GROUPS;
     for (size_t length_count = 0; length_count < MAX_NEW_TOKENS; ++length_count) {
         for (size_t group_idx = 0; group_idx < incomplete_groups; ++group_idx) {
+            if (groups[group_idx].hypotheses.done) {
+                continue;
+            }
             std::vector<Beam> candidates;
             candidates.reserve(2 * GROUP_SIZE);
             for (size_t beam_idx = 0; beam_idx < GROUP_SIZE; ++beam_idx) {
@@ -362,13 +365,13 @@ int main(int argc, char* argv[]) try {
                 beam.ireq.infer();
             }
         }
-        incomplete_groups = 0;
+        size_t current_incomplete_groups = 0;
         for (Group& group : groups) {
             if (!group.hypotheses.done) {
-                ++incomplete_groups;
+                ++current_incomplete_groups;
             }
         }
-        if (0 == incomplete_groups) {
+        if (0 == current_incomplete_groups) {
             break;
         }
     }

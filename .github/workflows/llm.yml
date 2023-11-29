@@ -20,7 +20,7 @@ jobs:
         with:
           repository: openlm-research/open_llama_3b_v2
           ref: bce5d60d3b0c68318862270ec4e794d83308d80a
-          path: tiny-llama-fast-tokenizer
+          path: open_llama_3b_v2
           lfs: true
           github-server-url: https://huggingface.co
       - run: ./llm/cpp/set_up_and_run.sh
@@ -94,9 +94,9 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Release ../
           cmake --build ./ --config Release -j
           wait
-      - name: Grid search
+      - name: Compare
         run: |
           source ./ov/setupvars.sh
           python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./TinyLlama-1.1B-Chat-v0.6/
-          ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml asdf 25 9 11 early 3 1.0 1.0 > ./pred.txt
-          python3 ./text_generation/llama/cpp/ref.py ./pred.txt ./TinyLlama-1.1B-Chat-v0.6/ asdf 25 9 11 early 3 1.0 1.0
+          ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml Hi 25 9 11 early 3 1.0 1.0 > ./pred.txt
+          python3 ./text_generation/llama/cpp/ref.py ./pred.txt ./TinyLlama-1.1B-Chat-v0.6/ Hi 25 9 11 early 3 1.0 1.0
