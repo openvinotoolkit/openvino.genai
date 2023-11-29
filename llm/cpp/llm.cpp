@@ -171,16 +171,12 @@ int main(int argc, char* argv[]) try {
     }
     NO_REPEAT_NGRAM_SIZE = std::stoi(argv[9]);
     DIVERSITY_PENALTY = std::stof(argv[10]);
-    LENGTH_PENALTY = std::stof(argv[11]);;  // TODO: align defaults with transformers
-    EOS_TOKEN = 2;  // There's no way to extract the value from the tokenizer for now  // TODO: 2 for llama2
+    LENGTH_PENALTY = std::stof(argv[11]);
+    EOS_TOKEN = 2;
     ov::Core core;
     core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
     auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
     ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
-    // ov::Tensor input_ids{ov::element::i64, {1, 3}};
-    // input_ids.data<int64_t>()[0] = 1;
-    // input_ids.data<int64_t>()[1] = 372;
-    // input_ids.data<int64_t>()[2] = 3681;
     size_t prompt_length = input_ids.get_size();
     std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
     constexpr size_t BATCH_SIZE = 1;
@@ -222,41 +218,6 @@ int main(int argc, char* argv[]) try {
         std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
         ireq.infer();
 
-    //     ov::Tensor logits_tensor = ireq.get_tensor("logits");
-    //     size_t vocab_size = logits_tensor.get_shape().back();
-    //     std::vector<double> temp;
-    //     for (size_t logit_id = 0; logit_id < vocab_size; ++logit_id) {
-    //         temp.push_back((logits_tensor.data<const float>() + (logits_tensor.get_shape()[1] - 1) * vocab_size)[logit_id]);
-    //     }
-    //     std::valarray<double> logits(temp.data(), vocab_size);  // TODO: maybe use valarray<Token>
-    //     double max_logit = logits.max();
-    //     double log_sum = std::log((std::exp(logits - max_logit)).sum());  // TODO: log(softmax) only for topk logits
-    //     std::valarray<double> log_prob = logits - max_logit - log_sum;
-    //     log_prob[EOS_TOKEN] = -std::numeric_limits<double>::infinity();
-
-    //     std::vector<Token> topk;
-    //     topk.reserve(log_prob.size());
-    //     for (size_t idx = 0; idx < log_prob.size(); ++idx) {
-    //         topk.push_back({log_prob[idx], int64_t(idx)});
-    //     }
-    //     for (size_t group_idx = 0; group_idx < N_GROUPS; ++group_idx) {
-    //         std::partial_sort(topk.begin(), topk.begin() + GROUP_SIZE, topk.end());
-    //         for (size_t idx = 0; idx < GROUP_SIZE; ++idx) {
-    //             groups[group_idx].beams.push_back(Beam{topk[idx].log, {topk[idx].idx}, compiled.create_infer_request()});
-    //             topk[idx].log -= DIVERSITY_PENALTY;
-    //             ov::InferRequest& beam_ireq = groups[group_idx].beams.back().ireq;
-    //             for (size_t tensor_idx = 3; tensor_idx < inputs.size(); ++tensor_idx) {
-    //                 beam_ireq.set_input_tensor(tensor_idx, ireq.get_output_tensor(tensor_idx - 2));
-    //             }
-    //             beam_ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
-    //             beam_ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_size() + 1});
-    //             std::fill_n(beam_ireq.get_tensor("attention_mask").data<int64_t>(), beam_ireq.get_tensor("attention_mask").get_size(), 1);
-    //             beam_ireq.get_tensor("input_ids").data<int64_t>()[0] = topk[idx].idx;  // TODO: don't allow EOS as first token?
-    //             beam_ireq.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
-    //             beam_ireq.get_tensor("position_ids").data<int64_t>()[0] = beam_ireq.get_tensor("attention_mask").get_size() - 1;
-    //             beam_ireq.infer();
-    //         }
-    //     }
     for (Group & group : groups) {
         group.beams.resize(GROUP_SIZE);
         group.beams.front().log_prob = 0.0;
@@ -274,14 +235,10 @@ int main(int argc, char* argv[]) try {
                     groups[group_idx].beams[beam_idx].ireq = ireq;
                 }
                 ov::InferRequest& beam_ireq = groups[group_idx].beams[beam_idx].ireq;
-                // beam_ireq.wait();  TODO: async
                 ov::Tensor logits_tensor = beam_ireq.get_tensor("logits");
                 size_t vocab_size = logits_tensor.get_shape().back();
                 std::vector<float> temp;
                 for (size_t logit_id = 0; logit_id < vocab_size; ++logit_id) {
-                    switch (logit_id) {
-                        // case 13: case 298: case 64013: case 64298: std::cout << (logits_tensor.data<const float>() + (logits_tensor.get_shape()[1] - 1) * vocab_size)[logit_id] << '\n';
-                    }
                     temp.push_back((logits_tensor.data<const float>() + (logits_tensor.get_shape()[1] - 1) * vocab_size)[logit_id]);
                 }
                 std::valarray<float> logits(temp.data(), temp.size());  // TODO: maybe use valarray<Token>
@@ -312,12 +269,7 @@ int main(int argc, char* argv[]) try {
                 // Sample 2 * GROUP_SIZE next tokens to get at least 1 non EOS token per beam
                 std::nth_element(tokens.begin(), tokens.begin() + 2 * GROUP_SIZE, tokens.end());
                 for (size_t idx = 0; idx < 2 * GROUP_SIZE; ++idx) {
-                    // std::cout << tokens[idx].idx << ' ' << tokens[idx].log << '\n';
                     candidates.push_back(groups[group_idx].beams[beam_idx]);
-                    // if (!candidates.back().tokens.empty() && 4030 == candidates.back().tokens.back()) {
-                    //     std::cout << length_count << '\n';
-                    //     std::cout << candidates.back().log_prob << ", next: " << tokens[idx].idx << ' ' << tokens[idx].log << '\n';
-                    // }
                     candidates.back().log_prob += tokens[idx].log;
                     candidates.back().tokens.push_back(tokens[idx].idx);
                 }
@@ -334,12 +286,7 @@ int main(int argc, char* argv[]) try {
                     candidates[cand_id].tokens.resize(candidates[cand_id].tokens.size() - 1);
                     groups[group_idx].hypotheses.push(std::move(candidates[cand_id]), prompt_length);
                 } else {
-                    // if (candidates[cand_id].tokens.size() > 1 && candidates[cand_id].tokens[candidates[cand_id].tokens.size() - 2] == 4030) {
-                    //     std::cout << candidates[cand_id].tokens.back() << ' ' << candidates[cand_id].log_prob << '\n';
-                    // }
-                    // std::cout << candidates[cand_id].log_prob << ", ";
                     groups[group_idx].beams.push_back(std::move(candidates[cand_id]));
-                    size_t cur_beam = groups[group_idx].beams.size() - 1;  // TODO: beter loop iteration
                     auto ireq = compiled.create_infer_request();
                     for (size_t tensor_id = 3; tensor_id < inputs.size(); ++tensor_id) {
                         ireq.set_input_tensor(tensor_id, groups[group_idx].beams.back().ireq.get_output_tensor(tensor_id - 2));
@@ -357,9 +304,6 @@ int main(int argc, char* argv[]) try {
                 }
             }
             groups[group_idx].hypotheses.is_done(cur_len + prompt_length, groups[group_idx].beams.front().log_prob);  // TODO: that requires groups[group_idx].beams to be not empty
-            // if (std::all_of(groups.begin(), groups.end(), [cur_len, prompt_length](Group& gr){return gr.hypotheses.is_done(cur_len + prompt_length, gr.beams.front().log_prob);})) {  // TODO: that requires groups[group_idx].beams to be not empty
-            //     break;
-            // }
 
             for (Beam& beam : groups[group_idx].beams) {
                 beam.ireq.infer();
@@ -391,23 +335,9 @@ int main(int argc, char* argv[]) try {
             std::cout << "\nscore: " << beam.log_prob << " prediction: ";  // TODO: alight with transformers
             for (int64_t token : beam.tokens) {
                 print_token(detokenizer, token);
-                // std::cout << token << ", ";
             }
         }
     }
-
-
-    // while (out_token != EOS_TOKEN) {
-    //     for (size_t idx = 2; idx < inputs.size(); ++idx) {
-    //          ireq.set_input_tensor(idx, ireq.get_output_tensor(idx - 1));
-    //     }
-    //     ireq.get_tensor("input_ids").data<int32_t>()[0] = out_token;
-    //     ireq.start_async();
-    //     print_token(detokenizer, out_token);
-    //     ireq.wait();
-    //     logits = ireq.get_tensor("logits").data<float>();
-    //     out_token = int32_t(std::max_element(logits, logits + vocab_size) - logits);
-    // }
     std::cout << '\n';
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
