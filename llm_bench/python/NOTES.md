@@ -25,6 +25,7 @@ Convert Qwen-7B-Chat-Int4 to OpenVINO IR files run with convert.py, the followin
 ```bash
 raise AssertionError("Torch not compiled with CUDA enabled")
 ```
+Reproduced with https://huggingface.co/Qwen/Qwen-7B-Chat-Int4 8750247cc50f2a7bb84bef322f7707159b700723 <br />
 Solution: update `modeling_qwen.py` as following: <br />
 ```Python
 -SUPPORT_CUDA = torch.cuda.is_available()
