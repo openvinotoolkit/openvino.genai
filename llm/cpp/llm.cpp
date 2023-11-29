@@ -115,43 +115,43 @@ std::ostream& operator<<(std::ostream& os, const std::vector<Beam>& beams) {
 
 
 struct Hypotheses {
-        std::vector<Beam> beams;
-        bool done = false;
-        void push(Beam&& beam, size_t prompt_light) {
-            beam.log_prob = double(beam.log_prob) / std::pow(beam.tokens.size() + prompt_light, LENGTH_PENALTY);
-            beams.push_back(std::move(beam));
-            std::push_heap(beams.begin(), beams.end());
-            if (beams.size() > GROUP_SIZE) {
-                std::pop_heap(beams.begin(), beams.end());
-                beams.pop_back();
-            }
+    std::vector<Beam> beams;
+    bool done = false;
+    void push(Beam&& beam, size_t prompt_light) {
+        beam.log_prob = double(beam.log_prob) / std::pow(beam.tokens.size() + prompt_light, LENGTH_PENALTY);
+        beams.push_back(std::move(beam));
+        std::push_heap(beams.begin(), beams.end());
+        if (beams.size() > GROUP_SIZE) {
+            std::pop_heap(beams.begin(), beams.end());
+            beams.pop_back();
         }
-        bool is_done(double best_sum_logprobs, size_t cur_len) {   // TODO: just done()?
-            if (beams.size() < GROUP_SIZE) {
-                return false;
-            }
-            switch (stop_criteria) {
-                case StopCriteria::early: done = true; return true;
-                case StopCriteria::heuristic: {
-                    double worst_score = beams.front().log_prob;
-                    double highest_attainable_score = best_sum_logprobs / std::pow(double(cur_len), LENGTH_PENALTY);
-                    done = worst_score >= highest_attainable_score;
-                    return worst_score >= highest_attainable_score;
-                }
-                case StopCriteria::never: {
-                    double worst_score = beams.front().log_prob;
-                    double highest_attainable_score = LENGTH_PENALTY > 0.0f ? best_sum_logprobs / std::pow(double(MAX_NEW_TOKENS), LENGTH_PENALTY) : best_sum_logprobs / std::pow(double(cur_len), LENGTH_PENALTY);
-                    done = worst_score >= highest_attainable_score;
-                    return worst_score >= highest_attainable_score;
-                }
-                default: throw std::runtime_error("Never reached");
-            }
+    }
+    bool is_done(double best_sum_logprobs, size_t cur_len) {   // TODO: just done()?
+        if (beams.size() < GROUP_SIZE) {
+            return false;
         }
-    };
-        struct Group {
-        std::vector<Beam> beams;  // TODO: one contigous array with all beams?
-        Hypotheses hypotheses;
-    };
+        switch (stop_criteria) {
+            case StopCriteria::early: done = true; return true;
+            case StopCriteria::heuristic: {
+                double worst_score = beams.front().log_prob;
+                double highest_attainable_score = best_sum_logprobs / std::pow(double(cur_len), LENGTH_PENALTY);
+                done = worst_score >= highest_attainable_score;
+                return worst_score >= highest_attainable_score;
+            }
+            case StopCriteria::never: {
+                double worst_score = beams.front().log_prob;
+                double highest_attainable_score = LENGTH_PENALTY > 0.0f ? best_sum_logprobs / std::pow(double(MAX_NEW_TOKENS), LENGTH_PENALTY) : best_sum_logprobs / std::pow(double(cur_len), LENGTH_PENALTY);
+                done = worst_score >= highest_attainable_score;
+                return worst_score >= highest_attainable_score;
+            }
+            default: throw std::runtime_error("Never reached");
+        }
+    }
+};
+struct Group {
+    std::vector<Beam> beams;  // TODO: one contigous array with all beams?
+    Hypotheses hypotheses;
+};
 
 int main(int argc, char* argv[]) try {
     if (argc != 12) {
@@ -206,19 +206,19 @@ int main(int argc, char* argv[]) try {
         }
     };
     std::vector<Group> groups{N_GROUPS};
-        ov::InferRequest ireq = compiled.create_infer_request();
-        for (size_t idx = 3; idx < inputs.size(); ++idx) {
-            ov::Shape shape = inputs.at(idx).get_partial_shape().get_min_shape();
-            shape[0] = 1;
-            ireq.get_input_tensor(idx).set_shape(shape);
-        }
-        ireq.get_tensor("input_ids").set_shape(input_ids.get_shape());  // TODO: replace with ireq.set_tensor("input_ids", input_ids); after it's fixed
-        ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("input_ids").get_size()});
-        std::copy_n(input_ids.data<const int64_t>(), input_ids.get_size(), ireq.get_tensor("input_ids").data<int64_t>());
-        std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), input_ids.get_size(), 1);
-        ireq.get_tensor("position_ids").set_shape(input_ids.get_shape());
-        std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
-        ireq.infer();
+    ov::InferRequest ireq = compiled.create_infer_request();
+    for (size_t idx = 3; idx < inputs.size(); ++idx) {
+        ov::Shape shape = inputs.at(idx).get_partial_shape().get_min_shape();
+        shape[0] = 1;
+        ireq.get_input_tensor(idx).set_shape(shape);
+    }
+    ireq.get_tensor("input_ids").set_shape(input_ids.get_shape());  // TODO: replace with ireq.set_tensor("input_ids", input_ids); after it's fixed
+    ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("input_ids").get_size()});
+    std::copy_n(input_ids.data<const int64_t>(), input_ids.get_size(), ireq.get_tensor("input_ids").data<int64_t>());
+    std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), input_ids.get_size(), 1);
+    ireq.get_tensor("position_ids").set_shape(input_ids.get_shape());
+    std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
+    ireq.infer();
 
     for (Group & group : groups) {
         group.beams.resize(GROUP_SIZE);
