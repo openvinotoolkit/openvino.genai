@@ -227,9 +227,9 @@ struct GroupBeamSearcher {
                 }
                 for (size_t prev_group_idx = 0; prev_group_idx < group_idx; ++prev_group_idx) {  // TODO: range based for
                     for (size_t prev_beam_idx = 0; prev_beam_idx < GROUP_SIZE; ++prev_beam_idx) {
-                        // if (groups[prev_group_idx].beams[prev_beam_idx].tokens.size() > groups[group_idx].beams[beam_idx].tokens.size()) {
+                        if (groups[prev_group_idx].beams[prev_beam_idx].tokens.size() > groups[group_idx].beams[beam_idx].tokens.size()) {
                             tokens[groups[prev_group_idx].beams[prev_beam_idx].tokens.back()].log -= DIVERSITY_PENALTY;
-                        // }
+                        }
                     }
                 }
                 std::vector<int64_t>& other_tokens = groups[group_idx].beams[beam_idx].tokens;
