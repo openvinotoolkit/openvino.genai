@@ -9,7 +9,7 @@ class OVForward:
         self.text_encoder_infer_times = 0
         self.unet_infer_times = 0
         self.vae_decoder_infer_times = 0
-    
+
     def get_text_encoder_time(self):
         return self.text_encoder_time
 
@@ -18,7 +18,7 @@ class OVForward:
 
     def get_vae_decoder_time(self):
         return self.vae_decoder_time
-    
+
     def get_text_encoder_infer_time(self):
         return self.text_encoder_infer_times
 
@@ -26,7 +26,7 @@ class OVForward:
         return self.unet_infer_times
 
     def get_vae_decoder_infer_time(self):
-        return self.vae_decoder_infer_times    
+        return self.vae_decoder_infer_times
 
     def get_unet_vae_avg_time(self):
         avg_time = 0
