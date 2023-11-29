@@ -28,6 +28,7 @@ OV_MODEL_CLASSES_MAPPING = {
     'mpt': OVMPTModel,
     'falcon': OVFalconModel,
     'stable-diffusion-xl': OVStableDiffusionXLPipeline,
+    'sdxl': OVStableDiffusionXLPipeline,
     'lcm-sdxl': OVStableDiffusionXLPipeline,
     'ssd-1b': OVStableDiffusionXLPipeline,
     'lcm-ssd-1b': OVStableDiffusionXLPipeline,
@@ -58,7 +59,7 @@ PT_MODEL_CLASSES_MAPPING = {
 }
 
 USE_CASES = {
-    'image_gen': ['stable-diffusion-', 'ssd-1b', 'deepfloyd-if', 'tiny-sd', 'small-sd', 'lcm-'],
+    'image_gen': ['stable-diffusion-', 'ssd-1b', 'deepfloyd-if', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl'],
     'text2speech': ['whisper'],
     'image_cls': ['vit'],
     'code_gen': ['replit', 'codegen2', 'codegen', 'codet5'],

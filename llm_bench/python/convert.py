@@ -1616,6 +1616,7 @@ converters = {
     't5': convert_seq2seq,
     'stable-diffusion-xl': convert_sdxl,
     'ssd-1b': convert_sdxl,
+    'sdxl': convert_sdxl,
     'stable-diffusion': convert_sd,
     'tiny-sd': convert_sd,
     'small-sd': convert_sd,
