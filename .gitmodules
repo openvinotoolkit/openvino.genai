@@ -1,3 +1,6 @@
 [submodule "thirdparty/openvino_contrib"]
     path = thirdparty/openvino_contrib
     url = https://github.com/openvinotoolkit/openvino_contrib.git
+[submodule "abseil-cpp"]
+	path = abseil-cpp
+	url = https://github.com/abseil/abseil-cpp.git
