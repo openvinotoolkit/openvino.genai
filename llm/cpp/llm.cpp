@@ -245,14 +245,13 @@ struct GroupBeamSearcher {
                     }
                 }
                 std::sort(tokens.begin(), tokens.end());
-                size_t idx = 0;
-                // Sample 2 * GROUP_SIZE next tokens to get at least 1 non EOS token per beam
+                size_t new_token_id = 0;
                 for (int added_count = 0; added_count < int(2 * GROUP_SIZE); ++added_count) {
                     candidates.push_back(groups[group_idx].beams[beam_idx]);
-                    candidates.back().log_prob += tokens[idx].log;
-                    candidates.back().tokens.push_back(tokens[idx].idx);
+                    candidates.back().log_prob += tokens[new_token_id].log;
+                    candidates.back().tokens.push_back(tokens[new_token_id].idx);
                     candidates.back().global_beam_id = global_beam_ids[group_idx][beam_idx];
-                    ++idx;
+                    ++new_token_id;
                     if (stopping_criteria(candidates.back())) {
                         groups[group_idx].hypotheses.push(std::move(candidates.back()), input_ids.get_size());
                         candidates.pop_back();
@@ -260,7 +259,8 @@ struct GroupBeamSearcher {
                     }
                 }
             }
-            std::sort(candidates.begin(), candidates.end());  // TODO not sort
+            // Sample 2 * GROUP_SIZE next tokens to get at least 1 non EOS token per beam
+            std::nth_element(candidates.begin(), candidates.begin() + 2 * GROUP_SIZE, candidates.end());  // TODO not sort
             size_t cur_len = groups[group_idx].beams.front().tokens.size() + 1;
             groups[group_idx].beams.clear();
             for (size_t cand_id = 0; cand_id < candidates.size(); ++cand_id) {
