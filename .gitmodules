@@ -1,6 +1,6 @@
 [submodule "thirdparty/openvino_contrib"]
-    path = thirdparty/openvino_contrib
-    url = https://github.com/openvinotoolkit/openvino_contrib.git
+        path = thirdparty/openvino_contrib
+        url = https://github.com/openvinotoolkit/openvino_contrib.git
 [submodule "llm/qwen_cpp/third_party/re2"]
 	path = llm/qwen_cpp/third_party/re2
 	url = https://github.com/google/re2.git
