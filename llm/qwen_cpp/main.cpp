@@ -179,13 +179,15 @@ int main(int argc, char **argv) {
     p3.input("attention_mask").tensor().set_element_type(ov::element::i32);
     model = p3.build();
     inputs = model->inputs();
-    
+
     // Compile model
     startTime = Time::now();
     ov::InferRequest ireq = core.compile_model(model, args.device, device_config).create_infer_request();
     duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Compile model and create infer request took " << duration_ms << " ms" << std::endl;
-
+    if (args.device.find("GPU") != std::string::npos) {
+	    model = nullptr; // Release system memory after model compiled on GPU
+    }
     int32_t out_token;
     int sentence_num = 0;
     std::vector<std::string> sentences;
