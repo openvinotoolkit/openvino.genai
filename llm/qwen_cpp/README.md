@@ -11,18 +11,27 @@ The program loads a tokenizer and a model (`.xml` and `.bin`) to OpenVINO™. Th
 
 ## Supported models
 
-1. Qwen
-   1. https://huggingface.co/Qwen/Qwen-7B
-   2. https://huggingface.co/Qwen/Qwen-7B-Chat
-   3. https://huggingface.co/Qwen/Qwen-7B-Chat-Int4
+Qwen
+1. https://huggingface.co/Qwen/Qwen-7B
+2. https://huggingface.co/Qwen/Qwen-7B-Chat
+3. https://huggingface.co/Qwen/Qwen-7B-Chat-Int4
 
 ### Download and convert the model
 
 ```sh
-source <OpenVINO dir>/setupvars.bat
+cd openvino.genai/llm_bench/python
+python -m pip install -r requirements.txt
 python convert.py --model_id Qwen/Qwen-7B-Chat-Int4 --output_dir Qwen-7B-Chat-GPTQ_INT4_FP16-2K --precision FP16
 ```
 
+### Build Qwen CPP pipeline
+```
+cd openvino.genai/llm/cpp/qwen_cpp
+git submodule update --init --recursive
+source <OpenVINO dir>/setupvars.bat
+cmake -B build
+cmake --build build -j --config Release
+```
 ## Run
 
 Usage: `./build/bin/main -m <openvino_model.xml> -t <qwen.tiktoken> -d <device> -p <prompt>"`
