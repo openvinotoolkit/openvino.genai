@@ -208,13 +208,9 @@ int main(int argc, char **argv) {
       std::string output_text = tokenizer->decode(input_ids);
       std::cout << "Build input prompt with prompt template: \n" << output_text << "\n";
 
-      if (text_streamer) {
-        text_streamer->put({input_ids});
-      }
-
       // Prepare input tensor for first infer
       startTime = Time::now();
-      for (size_t idx = 1; idx < inputs.size(); ++idx) {
+      for (size_t idx = 1; idx < inputs.size() - 1; ++idx) {
           ireq.get_input_tensor(idx).set_shape(inputs.at(idx).get_partial_shape().get_min_shape());
       }
       ireq.get_tensor("input_ids").set_shape({ BATCH_SIZE, input_ids.size() });
@@ -239,21 +235,15 @@ int main(int argc, char **argv) {
 
       ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
       total_time = 0;
-      int count = 0;
+      int count = 1;
       double second_time = 0;
-      while (out_token !=config.eos_token_id && out_token!=config.im_end_id) {
+      while (out_token !=config.eos_token_id && out_token!=config.im_end_id && count < args.max_context_length) {
           // Prepare input tensor for 2nd+ inference
           ireq.get_tensor("input_ids").data<int32_t>()[0] = out_token;
           ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1});
           std::fill_n(ireq.get_tensor("attention_mask").data<int32_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
-          for (const ov::Output<ov::Node>& input : inputs) {
-              for (const std::string& name : input.get_names()) {
-                  if (name.rfind("past_key_values", 0) == 0) {
-                      //std::cout << "name: " << name << "\n";
-                      ireq.set_tensor(input, ireq.get_tensor("present" + name.substr(15)));
-                      break;
-                  }
-              }
+          for (size_t idx = 1; idx < inputs.size() - 1; ++idx) {
+            ireq.set_input_tensor(idx, ireq.get_output_tensor(idx));
           }
           // 2nd+ inference
           startTime = Time::now();
@@ -261,40 +251,35 @@ int main(int argc, char **argv) {
           ireq.wait();
           duration_ms = get_duration_ms_until_now(startTime);
           count += 1;
-
           // Get 2nd+ inference results
           logits = ireq.get_tensor("logits").data<float>();
           out_token = std::max_element(logits, logits + vocab_size) - logits;
           if (text_streamer) {
             text_streamer->put({out_token});
           }
-          if (count != 1) {
+          if (count != 2) {
             total_time += duration_ms;
           }
           else {
             second_time = duration_ms;
           }
-
-          if (count + 1 > args.max_context_length) {
-            break;
-          }
-      }
-      if (text_streamer) {
-        text_streamer->end();
       }
       std::cout << '\n';
       std::cout << "Second inference latency: " << second_time << " ms" << std::endl;
       if (count > 2) {
-        std::cout << "Other inference tooks in total: " << total_time << " ms, Average other token latency: " << total_time / (count - 1) << " ms" << std::endl;
-        std::cout << "Input num tokens: " << input_ids.size() << ", output num tokens: " << count - 1 << ", Average inference speed: " << (count - 1) / total_time * 1000.0 << " token/s\n";
+        std::cout << "Other inference tooks in total: " << total_time << " ms, Average other token latency: " << total_time / (count - 2) << " ms" << std::endl;
+        std::cout << "Input num tokens: " << input_ids.size() << ", output num tokens: " << count - 1 << ", Average inference speed: " << (count - 2) / total_time * 1000.0 << " token/s\n";
       }
       std::cout << "******************************************* Text Sentence #" << sentence_num << " Finished ****************************************\n\n";
       sentence_num+=1;
+    }
+    if (text_streamer) {
+        text_streamer->end();
     }
   } catch (std::exception &e) {
     std::cerr << e.what() << std::endl;
     exit(EXIT_FAILURE);
   }
-  std::cout << "\n";
+
   return 0;
 }
