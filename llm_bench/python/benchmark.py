@@ -182,6 +182,8 @@ def run_image_generation(input_text, nsteps, num, image_id, pipe, args, iter_dat
     additional_args = {}
     if 'lcm-sdxl' in args['model_type']:
         additional_args["guidance_scale"] = 1.0
+    if 'turbo' in args['model_name']:
+        additional_args["guidance_scale"] = 0.0
     res = pipe([input_text] * args['batch_size'], num_inference_steps=nsteps, height=512, width=512, **additional_args).images
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
