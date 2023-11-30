@@ -50,7 +50,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          cd tiny-llama-fast-tokenizer && git lfs pull && cd .. && optimum-cli export openvino -m fxmarty/tiny-llama-fast-tokenizer ./tiny-llama-fast-tokenizer/ &
+          optimum-cli export openvino -m fxmarty/tiny-llama-fast-tokenizer ./tiny-llama-fast-tokenizer/ &
           mkdir ./build/
           cd ./build/
           cmake -DCMAKE_BUILD_TYPE=Release ../
@@ -86,7 +86,6 @@ jobs:
           wait
       - name: Download, convert and build
         run: |
-          # cd TinyLlama/TinyLlama-1.1B-Chat-v0.6 && git lfs pull &  TODO
           source ./ov/setupvars.sh
           optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-Chat-v0.6 ./TinyLlama-1.1B-Chat-v0.6/ &
           mkdir ./build/
@@ -98,5 +97,5 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./TinyLlama-1.1B-Chat-v0.6/
-          ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml Hi 15 9 7 early 3 1.0 1.0 0 > ./pred.txt
-          python3 ./text_generation/llama/cpp/ref.py ./pred.txt ./TinyLlama-1.1B-Chat-v0.6/ Hi 15 9 7 early 3 1.0 1.0 0
+          ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml Hi 25 9 11 early 3 1.0 1.0 0 > ./pred.txt
+          python3 ./text_generation/llama/cpp/ref.py ./pred.txt ./TinyLlama-1.1B-Chat-v0.6/ Hi 25 9 1 early 3 1.0 1.0 0

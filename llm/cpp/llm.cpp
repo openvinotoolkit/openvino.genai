@@ -31,12 +31,12 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, std::vecto
     std::vector<int> partial_match_table(needle.size() + 1, -1);
     int cnd = 0;
     for (size_t pos = 1; pos < needle.size(); ++pos) {
-        if (needle[pos] == needle[cnd]) {
-            partial_match_table[pos] = partial_match_table[cnd];
+        if (needle[pos] == needle[size_t(cnd)]) {
+            partial_match_table[pos] = partial_match_table[size_t(cnd)];
         } else {
             partial_match_table[pos] = cnd;
-            while (cnd >= 0 && needle[pos] != needle[cnd]) {
-                cnd = partial_match_table[cnd];
+            while (cnd >= 0 && needle[pos] != needle[size_t(cnd)]) {
+                cnd = partial_match_table[size_t(cnd)];
             }
         }
         ++cnd;
@@ -46,15 +46,15 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, std::vecto
     size_t j = 0;  // The position of the current character in haystack
     int k = 0;  // The position of the current character in needle
     while (j < haystack.size() - 1) {
-        if (needle[k] == haystack[j]) {
+        if (needle[size_t(k)] == haystack[j]) {
             ++j;
             ++k;
             if (k == int(needle.size())) {
                 res.push_back(haystack[j]);
-                k = partial_match_table[k];
+                k = partial_match_table[size_t(k)];
             }
         } else {
-            k = partial_match_table[k];
+            k = partial_match_table[size_t(k)];
             if (k < 0) {
                 ++j;
                 ++k;
@@ -74,36 +74,29 @@ double LENGTH_PENALTY;  // TODO: align defaults with transformers
 int64_t EOS_TOKEN;  // There's no way to extract the value from the tokenizer for now  // TODO: 2 for llama2
 }
 
-    struct Beam {
-        float log_prob;
-        std::vector<int64_t> tokens;
-        size_t batch_id = 0;
-        size_t global_beam_id = 0;
-        bool operator<(const Beam& other) {
-            return log_prob > other.log_prob;  // greater, not less to build min heap
-        }
-        Beam() : log_prob{-1e9} {}
-        Beam& operator=(Beam&& other) {
-            log_prob = other.log_prob;
-            tokens = std::move(other.tokens);
-            batch_id = other.batch_id;
-            global_beam_id = other.global_beam_id;
-            return *this;
-        }
-        Beam& operator=(const Beam& other) {
-            log_prob = other.log_prob;
-            tokens = other.tokens;
-            batch_id = other.batch_id;
-            global_beam_id = other.global_beam_id;
-            return *this;
-        }
-        Beam(Beam&& other) : log_prob{other.log_prob}, tokens{std::move(other.tokens)}, batch_id{other.batch_id}, global_beam_id{other.global_beam_id} {};
-        Beam(const Beam& other) : log_prob{other.log_prob}, tokens{other.tokens}, batch_id{other.batch_id}, global_beam_id{other.global_beam_id} {};
-    };
+struct Beam {
+    float log_prob;
+    std::vector<int64_t> tokens;
+    size_t batch_id = 0;
+    size_t global_beam_id = 0;
+    bool operator<(const Beam& other) {
+        return log_prob > other.log_prob;  // greater, not less to build min heap
+    }
+    Beam() : log_prob{-1e9} {}
+    Beam& operator=(Beam&& other) {
+        log_prob = other.log_prob;
+        tokens = std::move(other.tokens);
+        batch_id = other.batch_id;
+        global_beam_id = other.global_beam_id;
+        return *this;
+    }
+    Beam(Beam&& other) : log_prob{other.log_prob}, tokens{std::move(other.tokens)}, batch_id{other.batch_id}, global_beam_id{other.global_beam_id} {};
+    Beam(const Beam& other) : log_prob{other.log_prob}, tokens{other.tokens}, batch_id{other.batch_id}, global_beam_id{other.global_beam_id} {};
+};
 
 std::ostream& operator<<(std::ostream& os, const Beam& beam) {
     os << std::setprecision(6) << beam.log_prob << ": ";
-    for (size_t token : beam.tokens) {
+    for (int64_t token : beam.tokens) {
         os << token << ", ";
     }
     return os;
@@ -121,7 +114,7 @@ struct Hypotheses {
     std::vector<Beam> beams;
     bool done = false;
     void push(Beam&& beam, size_t prompt_light) {
-        beam.log_prob = double(beam.log_prob) / std::pow(beam.tokens.size() + prompt_light, LENGTH_PENALTY);
+        beam.log_prob = float(double(beam.log_prob) / std::pow(beam.tokens.size() + prompt_light, LENGTH_PENALTY));
         beams.push_back(std::move(beam));
         std::push_heap(beams.begin(), beams.end());
         if (beams.size() > GROUP_SIZE) {
@@ -227,10 +220,10 @@ struct GroupBeamSearcher {
                 for (size_t logit_id = 0; logit_id < vocab_size; ++logit_id) {
                     temp.push_back((logits.data<const float>() + batch_offset + (logits.get_shape()[1] - 1) * vocab_size)[logit_id]);
                 }
-                std::valarray<float> logits(temp.data(), temp.size());  // TODO: maybe use valarray<Token>
-                float max_logit = logits.max();
-                float log_sum = std::log((std::exp(logits - max_logit)).sum());  // TODO: log(softmax) only for topk logits
-                std::valarray<float> log_prob = logits - max_logit - log_sum;
+                std::valarray<float> logits_arr(temp.data(), temp.size());  // TODO: maybe use valarray<Token>
+                float max_logit = logits_arr.max();
+                float log_sum = std::log((std::exp(logits_arr - max_logit)).sum());  // TODO: log(softmax) only for topk logits
+                std::valarray<float> log_prob = logits_arr - max_logit - log_sum;
                 std::vector<Token> tokens;
                 tokens.reserve(log_prob.size());
                 for (size_t idx = 0; idx < log_prob.size(); ++idx) {
@@ -238,7 +231,7 @@ struct GroupBeamSearcher {
                 }
                 for (size_t prev_group_idx = 0; prev_group_idx < group_idx; ++prev_group_idx) {  // TODO: range based for
                     for (size_t prev_beam_idx = 0; prev_beam_idx < GROUP_SIZE; ++prev_beam_idx) {
-                        tokens[groups[prev_group_idx].beams[prev_beam_idx].tokens.back()].log -= diversity_penalty;
+                        tokens[size_t(groups[prev_group_idx].beams[prev_beam_idx].tokens.back())].log -= diversity_penalty;
                     }
                 }
                 std::vector<int64_t>& other_tokens = groups[group_idx].beams[beam_idx].tokens;
@@ -247,9 +240,9 @@ struct GroupBeamSearcher {
                     full_text.push_back(input_ids.data<int64_t>()[idx]);
                 }
                 full_text.insert(full_text.end(), other_tokens.begin(), other_tokens.end());
-                if (full_text.size() > 1 && full_text.size() >= NO_REPEAT_NGRAM_SIZE) {
-                    for (int64_t ban_id : kmp_search(full_text, {full_text.end() - NO_REPEAT_NGRAM_SIZE + 1, full_text.end()})) {
-                        tokens[ban_id].log = -std::numeric_limits<float>::infinity();
+                if (full_text.size() > 1 && full_text.size() >= no_repeat_ngram_size) {
+                    for (int64_t banned_token : kmp_search(full_text, {full_text.end() - ptrdiff_t(no_repeat_ngram_size) + 1, full_text.end()})) {
+                        tokens[size_t(banned_token)].log = -std::numeric_limits<float>::infinity();
                     }
                 }
                 std::sort(tokens.begin(), tokens.end());
