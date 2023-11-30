@@ -318,7 +318,7 @@ std::vector<std::vector<Beam>> finilize(GroupBeamSearcher&& group_beam_searcher)
 }
 
 int main(int argc, char* argv[]) try {
-    if (argc != 12) {
+    if (argc != 13) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> '<prompt>'");
     }
     MAX_NEW_TOKENS = std::stoi(argv[5]);
@@ -376,7 +376,7 @@ int main(int argc, char* argv[]) try {
     ireq.get_tensor("position_ids").set_shape(input_ids.get_shape());
     std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
 
-    int64_t pad_token = 0;
+    int64_t pad_token = std::stoi(argv[12]);
     GroupBeamSearcher group_beam_searcher{std::move(input_ids), N_GROUPS, GROUP_SIZE, stop_criteria, NO_REPEAT_NGRAM_SIZE, DIVERSITY_PENALTY, LENGTH_PENALTY, EOS_TOKEN, pad_token};
     for (size_t length_count = 0; length_count < MAX_NEW_TOKENS; ++length_count) {
         ireq.infer();
