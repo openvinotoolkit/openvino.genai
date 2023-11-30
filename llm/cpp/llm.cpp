@@ -78,8 +78,8 @@ int64_t EOS_TOKEN;  // There's no way to extract the value from the tokenizer fo
 struct Beam {
     float log_prob;
     std::vector<int64_t> tokens;
-    size_t batch_id = 0;
-    size_t global_beam_id = 0;
+    size_t batch_idx = 0;
+    size_t global_beam_idx = 0;
     bool operator<(const Beam& other) {
         return log_prob > other.log_prob;  // greater, not less to build min heap
     }
@@ -87,12 +87,12 @@ struct Beam {
     Beam& operator=(Beam&& other) {
         log_prob = other.log_prob;
         tokens = std::move(other.tokens);
-        batch_id = other.batch_id;
-        global_beam_id = other.global_beam_id;
+        batch_idx = other.batch_idx;
+        global_beam_idx = other.global_beam_idx;
         return *this;
     }
-    Beam(Beam&& other) : log_prob{other.log_prob}, tokens{std::move(other.tokens)}, batch_id{other.batch_id}, global_beam_id{other.global_beam_id} {};
-    Beam(const Beam& other) : log_prob{other.log_prob}, tokens{other.tokens}, batch_id{other.batch_id}, global_beam_id{other.global_beam_id} {};
+    Beam(Beam&& other) : log_prob{other.log_prob}, tokens{std::move(other.tokens)}, batch_idx{other.batch_idx}, global_beam_idx{other.global_beam_idx} {};
+    Beam(const Beam& other) : log_prob{other.log_prob}, tokens{other.tokens}, batch_idx{other.batch_idx}, global_beam_idx{other.global_beam_idx} {};
 };
 
 std::ostream& operator<<(std::ostream& os, const Beam& beam) {
@@ -157,7 +157,7 @@ struct Group {
     Hypotheses hypotheses;
 };
 
-struct TokenToBeam {int64_t token_id; size_t beam_id;};
+struct TokenToBeam {int64_t token_idx; size_t beam_idx;};
 
 struct GroupBeamSearcher {
     const ov::Tensor input_ids;  // input_ids is going to be used to prepend to beams, thus take rvalue in constructor to ensure it's not overriden
@@ -182,7 +182,7 @@ struct GroupBeamSearcher {
         }
     }
 
-    std::vector<TokenToBeam> process(ov::Tensor logits) {
+    std::vector<TokenToBeam> process(const ov::Tensor& logits) {
         std::vector<TokenToBeam> next_tokens;
         next_tokens.reserve(n_groups * group_size);
         std::vector<std::vector<size_t>> global_beam_ids{n_groups};
@@ -245,13 +245,13 @@ struct GroupBeamSearcher {
                     }
                 }
                 std::sort(tokens.begin(), tokens.end());
-                size_t new_token_id = 0;
+                size_t new_token_idx = 0;
                 for (int added_count = 0; added_count < int(2 * GROUP_SIZE); ++added_count) {
                     candidates.push_back(groups[group_idx].beams[beam_idx]);
-                    candidates.back().log_prob += tokens[new_token_id].log;
-                    candidates.back().tokens.push_back(tokens[new_token_id].idx);
-                    candidates.back().global_beam_id = global_beam_ids[group_idx][beam_idx];
-                    ++new_token_id;
+                    candidates.back().log_prob += tokens[new_token_idx].log;
+                    candidates.back().tokens.push_back(tokens[new_token_idx].idx);
+                    candidates.back().global_beam_idx = global_beam_ids[group_idx][beam_idx];
+                    ++new_token_idx;
                     if (stopping_criteria(candidates.back())) {
                         groups[group_idx].hypotheses.push(std::move(candidates.back()), input_ids.get_size());
                         candidates.pop_back();
@@ -263,17 +263,17 @@ struct GroupBeamSearcher {
             std::partial_sort(candidates.begin(), candidates.begin() + 2 * GROUP_SIZE, candidates.end());
             size_t cur_len = groups[group_idx].beams.front().tokens.size() + 1;
             groups[group_idx].beams.clear();
-            for (size_t cand_id = 0; cand_id < candidates.size(); ++cand_id) {
-                if (eos_token == candidates[cand_id].tokens.back()) {  // TODO: idx->token_id
+            for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
+                if (eos_token == candidates[cand_idx].tokens.back()) {  // TODO: idx->token_id
                     // if beam_token does not belong to top num_beams tokens, it should not be added
-                    if (cand_id >= GROUP_SIZE) {
+                    if (cand_idx >= GROUP_SIZE) {
                         continue;
                     }
-                    candidates[cand_id].tokens.resize(candidates[cand_id].tokens.size() - 1);
-                    groups[group_idx].hypotheses.push(std::move(candidates[cand_id]), input_ids.get_size());
+                    candidates[cand_idx].tokens.resize(candidates[cand_idx].tokens.size() - 1);
+                    groups[group_idx].hypotheses.push(std::move(candidates[cand_idx]), input_ids.get_size());
                 } else {
-                    groups[group_idx].beams.push_back(std::move(candidates[cand_id]));
-                    next_tokens.push_back({groups[group_idx].beams.back().tokens.back(), groups[group_idx].beams.back().global_beam_id});
+                    groups[group_idx].beams.push_back(std::move(candidates[cand_idx]));
+                    next_tokens.push_back({groups[group_idx].beams.back().tokens.back(), groups[group_idx].beams.back().global_beam_idx});
                     if (groups[group_idx].beams.size() == GROUP_SIZE) {
                         break;
                     }
@@ -353,12 +353,10 @@ int main(int argc, char* argv[]) try {
         shapes.emplace(idx, shape);
     }
     model->reshape(shapes);
-    ov::CompiledModel compiled = core.compile_model(model, "CPU", ov::cache_dir("llm-cache"));
-
-    ov::InferRequest ireq = compiled.create_infer_request();
+    ov::InferRequest ireq = core.compile_model(model, "CPU", ov::cache_dir("llm-cache")).create_infer_request();
     ireq.get_tensor("input_ids").set_shape(input_ids.get_shape());  // TODO: replace with ireq.set_tensor("input_ids", input_ids); after it's fixed
-    ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("input_ids").get_size()});
     std::copy_n(input_ids.data<const int64_t>(), input_ids.get_size(), ireq.get_tensor("input_ids").data<int64_t>());
+    ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("input_ids").get_size()});
     std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), input_ids.get_size(), 1);
     ireq.get_tensor("position_ids").set_shape(input_ids.get_shape());
     std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
@@ -378,31 +376,30 @@ int main(int argc, char* argv[]) try {
         }
         size_t batch_size = next_tokens.size();
         ireq.get_tensor("input_ids").set_shape({batch_size, 1});
-        ov::Shape att_shape = ireq.get_tensor("attention_mask").get_shape();
-        att_shape[0] = batch_size;
-        ++att_shape[1];
-        ireq.get_tensor("attention_mask").set_shape(att_shape);
-        std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
+        ov::Tensor attention_mask = ireq.get_tensor("attention_mask");
+        ov::Shape mask_shape = attention_mask.get_shape();
+        mask_shape[0] = batch_size;
+        ++mask_shape[1];
+        attention_mask.set_shape(mask_shape);
+        std::fill_n(attention_mask.data<int64_t>(), shape_size(mask_shape), 1);
         ireq.get_tensor("position_ids").set_shape({batch_size, 1});
-        std::fill_n(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").get_size(), att_shape[1] - 1);
-        for (size_t tensor_id = 3; tensor_id < inputs.size(); ++tensor_id) {
-            ov::Tensor past = ireq.get_input_tensor(tensor_id);
-            ov::Shape shape = ireq.get_output_tensor(tensor_id - 2).get_shape();
+        std::fill_n(ireq.get_tensor("position_ids").data<int64_t>(), batch_size, mask_shape[1] - 1);
+        for (size_t tensor_idx = 3; tensor_idx < inputs.size(); ++tensor_idx) {
+            ov::Shape shape = ireq.get_output_tensor(tensor_idx - 2).get_shape();
             shape[0] = batch_size;
-            past.set_shape(shape);
+            ireq.get_input_tensor(tensor_idx).set_shape(shape);
         }
-
-        for (size_t batch_id = 0; batch_id < next_tokens.size(); ++batch_id) {
-            ireq.get_tensor("input_ids").data<int64_t>()[batch_id] = next_tokens[batch_id].token_id;
-            for (size_t tensor_id = 3; tensor_id < inputs.size(); ++tensor_id) {
-                ov::Tensor present = ireq.get_output_tensor(tensor_id - 2);
-                ov::Shape present_begin = {next_tokens[batch_id].beam_id, 0, 0, 0};
+        for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+            ireq.get_tensor("input_ids").data<int64_t>()[batch_idx] = next_tokens[batch_idx].token_idx;
+            for (size_t tensor_idx = 3; tensor_idx < inputs.size(); ++tensor_idx) {
+                ov::Tensor present = ireq.get_output_tensor(tensor_idx - 2);
+                ov::Shape present_begin = {next_tokens[batch_idx].beam_idx, 0, 0, 0};
                 ov::Shape present_end = present.get_shape();
-                present_end[0] = next_tokens[batch_id].beam_id + 1;
-                ov::Tensor past = ireq.get_input_tensor(tensor_id);
-                ov::Shape past_begin = {batch_id, 0, 0, 0};
+                present_end[0] = next_tokens[batch_idx].beam_idx + 1;
+                ov::Tensor past = ireq.get_input_tensor(tensor_idx);
+                ov::Shape past_begin = {batch_idx, 0, 0, 0};
                 ov::Shape past_end = past.get_shape();
-                past_end[0] = batch_id + 1;
+                past_end[0] = batch_idx + 1;
                 ov::Tensor{present, present_begin, present_end}.copy_to(ov::Tensor{past, past_begin, past_end});
             }
         }
