@@ -260,7 +260,7 @@ struct GroupBeamSearcher {
                 }
             }
             // Sample 2 * GROUP_SIZE next tokens to get at least 1 non EOS token per beam
-            std::nth_element(candidates.begin(), candidates.begin() + 2 * GROUP_SIZE, candidates.end());  // TODO not sort
+            std::partial_sort(candidates.begin(), candidates.begin() + 2 * GROUP_SIZE, candidates.end());
             size_t cur_len = groups[group_idx].beams.front().tokens.size() + 1;
             groups[group_idx].beams.clear();
             for (size_t cand_id = 0; cand_id < candidates.size(); ++cand_id) {
@@ -356,17 +356,17 @@ int main(int argc, char* argv[]) try {
     ov::CompiledModel compiled = core.compile_model(model, "CPU", ov::cache_dir("llm-cache"));
 
     ov::InferRequest ireq = compiled.create_infer_request();
-    for (size_t idx = 3; idx < inputs.size(); ++idx) {
-        ov::Shape shape = inputs.at(idx).get_partial_shape().get_min_shape();
-        shape[0] = 1;
-        ireq.get_input_tensor(idx).set_shape(shape);
-    }
     ireq.get_tensor("input_ids").set_shape(input_ids.get_shape());  // TODO: replace with ireq.set_tensor("input_ids", input_ids); after it's fixed
     ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("input_ids").get_size()});
     std::copy_n(input_ids.data<const int64_t>(), input_ids.get_size(), ireq.get_tensor("input_ids").data<int64_t>());
     std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), input_ids.get_size(), 1);
     ireq.get_tensor("position_ids").set_shape(input_ids.get_shape());
     std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
+    for (size_t idx = 3; idx < inputs.size(); ++idx) {
+        ov::Shape shape = inputs.at(idx).get_partial_shape().get_min_shape();
+        shape[0] = 1;
+        ireq.get_input_tensor(idx).set_shape(shape);
+    }
 
     int64_t pad_token = std::stoi(argv[12]);  // There's no way to extract the value from the tokenizer for now
     GroupBeamSearcher group_beam_searcher{std::move(input_ids), N_GROUPS, GROUP_SIZE, stop_criteria, NO_REPEAT_NGRAM_SIZE, DIVERSITY_PENALTY, LENGTH_PENALTY, EOS_TOKEN, pad_token};
