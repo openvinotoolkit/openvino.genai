@@ -14,13 +14,15 @@ std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest&& tokenizer, std::st
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
 }
 
-void print_token(ov::InferRequest& detokenizer, int64_t out_token) {
+ov::Tensor detokenize(ov::InferRequest& detokenizer, std::vector<int64_t> tokens) {
     constexpr size_t BATCH_SIZE = 1;
     ov::Tensor inp = detokenizer.get_input_tensor();
-    inp.set_shape({BATCH_SIZE, 1});
-    inp.data<int64_t>()[0] = out_token;
+    inp.set_shape({BATCH_SIZE, tokens.size()});
+    for (size_t idx = 0; idx < tokens.size(); ++idx) {
+        inp.data<int64_t>()[idx] = tokens[idx];
+    }
     detokenizer.infer();
-    std::cout << openvino_extensions::unpack_strings(detokenizer.get_output_tensor()).front() << std::flush;
+    return detokenizer.get_output_tensor();
 }
 
 // Modifyed Knuth–Morris–Pratt algorithm which returns a set of tokens following after every needle occurance in haystack
@@ -409,12 +411,9 @@ int main(int argc, char* argv[]) try {
         }
     }
     for (const std::vector<Beam>& group : finilize(std::move(group_beam_searcher))) {
-        std::cout << "\nGroup:";
+        std::cout << "Group:\n";
         for (const Beam& beam : group) {
-            std::cout << "\nscore: " << beam.log_prob << " prediction: ";  // TODO: alight with transformers
-            for (int64_t token : beam.tokens) {
-                print_token(detokenizer, token);
-            }
+            std::cout << beam.log_prob << ": " << openvino_extensions::unpack_strings(detokenize(detokenizer, beam.tokens)).front() << '\n';
         }
     }
     std::cout << '\n';
