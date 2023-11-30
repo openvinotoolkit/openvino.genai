@@ -7,36 +7,23 @@ This pipeline is not for production use.
 
 ## How it works
 
-The program loads a tokenizer, detokenizer and a model (`.xml` and `.bin`) to OpenVINO™. The model is reshaped to batch 1 and variable prompt length. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
+The program loads a tokenizer and a model (`.xml` and `.bin`) to OpenVINO™. The model is reshaped to batch 1 and variable prompt length. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
 
 ## Supported models
 
-1. LLaMA 2
-   1. https://huggingface.co/meta-llama/Llama-2-7b-hf
-   2. https://huggingface.co/meta-llama/Llama-2-7b-chat-hf
-   3. https://huggingface.co/meta-llama/Llama-2-13b-hf
-   4. https://huggingface.co/meta-llama/Llama-2-13b-chat-hf
-   5. https://huggingface.co/meta-llama/Llama-2-70b-hf
-   6. https://huggingface.co/meta-llama/Llama-2-70b-chat-hf
-2. OpenLLaMA
-   1. https://huggingface.co/openlm-research/open_llama_3b
-   2. https://huggingface.co/openlm-research/open_llama_7b
-   3. https://huggingface.co/openlm-research/open_llama_13b
-   4. https://huggingface.co/openlm-research/open_llama_3b_v2
-   5. https://huggingface.co/openlm-research/open_llama_7b_v2
-3. [Llama2-7b-WhoIsHarryPotter](https://huggingface.co/microsoft/Llama2-7b-WhoIsHarryPotter)
+1. Qwen
+   1. https://huggingface.co/Qwen/Qwen-7B
+   2. https://huggingface.co/Qwen/Qwen-7B-Chat
+   3. https://huggingface.co/Qwen/Qwen-7B-Chat-Int4
 
-### Download and convert the model and tokenizers
+### Download and convert the model
 
 ```sh
-python -m pip install --upgrade-strategy eager thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx "optimum[openvino]>=1.14.0" --extra-index-url https://download.pytorch.org/whl/cpu
-source <OpenVINO dir>/setupvars.sh
-optimum-cli export openvino -m meta-llama/Llama-2-7b-hf ./Llama-2-7b-hf/
-python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./Llama-2-7b-hf/
+source <OpenVINO dir>/setupvars.bat
+python convert.py --model_id Qwen/Qwen-7B-Chat-Int4 --output_dir Qwen-7B-Chat-GPTQ_INT4_FP16-2K --precision FP16
 ```
 
 ## Run
 
-Usage: `llm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "<prompt>"`
-
-Example: `./build/llm/cpp/llm ./Llama-2-7b-hf/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
+Usage: `./build/bin/main -m <openvino_model.xml> -t <qwen.tiktoken> -d <device> -p <prompt>"`
+Example: `./build/bin/main -m Qwen-7B-Chat-GPTQ_INT4_FP16-2K/openvino_model.xml -t Qwen-7B-Chat-GPTQ_INT4_FP16-2K/qwen.tiktoken -p "介绍下清华大学"`
