@@ -11,10 +11,10 @@ The program loads a tokenizer and a model (`.xml` and `.bin`) to OpenVINO™. Th
 
 ## Supported models
 
-Qwen
-1. https://huggingface.co/Qwen/Qwen-7B
-2. https://huggingface.co/Qwen/Qwen-7B-Chat
-3. https://huggingface.co/Qwen/Qwen-7B-Chat-Int4
+1. Qwen
+    1. https://huggingface.co/Qwen/Qwen-7B
+    2. https://huggingface.co/Qwen/Qwen-7B-Chat
+    3. https://huggingface.co/Qwen/Qwen-7B-Chat-Int4
 
 ### Download and convert the model
 
