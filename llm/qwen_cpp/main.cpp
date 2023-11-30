@@ -1,8 +1,11 @@
 #include "qwen.h"
+#include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <openvino/openvino.hpp>
-#include <chrono>
+#include <openvino/runtime/properties.hpp>
+#include "openvino/runtime/intel_gpu/properties.hpp"
+
 
 typedef std::chrono::high_resolution_clock Time;
 typedef std::chrono::nanoseconds ns;
@@ -113,6 +116,23 @@ int main(int argc, char **argv) {
 
     // Init OpenVINO Runtime
     ov::Core core;
+    ov::AnyMap device_config = {};
+    if (args.device.find("CPU") != std::string::npos) {
+        device_config[ov::cache_dir.name()] = "llm-cache";
+        device_config[ov::hint::scheduling_core_type.name()] = ov::hint::SchedulingCoreType::PCORE_ONLY;
+        device_config[ov::hint::enable_hyper_threading.name()] = false;
+        device_config[ov::hint::enable_cpu_pinning.name()] = true;
+        device_config[ov::enable_profiling.name()] = false;
+    }
+
+    if (args.device.find("GPU") != std::string::npos) {
+        device_config[ov::cache_dir.name()] = "llm-cache";
+        device_config[ov::intel_gpu::hint::queue_throttle.name()] = ov::intel_gpu::hint::ThrottleLevel::MEDIUM;
+        device_config[ov::intel_gpu::hint::queue_priority.name()] = ov::hint::Priority::MEDIUM;
+        device_config[ov::intel_gpu::hint::host_task_priority.name()] = ov::hint::Priority::HIGH;
+        device_config[ov::hint::enable_cpu_pinning.name()] = true;
+        device_config[ov::enable_profiling.name()] = false;
+    }
 
     // Read OpenVINO Model
     std::shared_ptr<ov::Model> model = core.read_model(args.model_path);
@@ -150,7 +170,7 @@ int main(int argc, char **argv) {
     
     // Compile model
     startTime = Time::now();
-    ov::InferRequest ireq = core.compile_model(model, args.device, ov::cache_dir("llm-cache")).create_infer_request();
+    ov::InferRequest ireq = core.compile_model(model, args.device, device_config).create_infer_request();
     duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Compile model and create infer request took " << duration_ms << " ms" << std::endl;
 
@@ -240,7 +260,7 @@ int main(int argc, char **argv) {
     std::cout << '\n';
     std::cout << "Second inference latency: " << second_time << " ms" << std::endl;
     if (count > 2) {
-      std::cout << "Other inference tooks " << total_time << " ms, generated num tokens: " << count - 1 << ", Average other token latency: " << total_time / (count - 1) << " ms" << std::endl;
+      std::cout << "Other inference tooks in total: " << total_time << " ms, generated num tokens: " << count - 1 << ", Average other token latency: " << total_time / (count - 1) << " ms" << std::endl;
       std::cout << "Average inference speed: " << (count - 1) / total_time * 1000.0 << " token/s\n";
     }
   } catch (std::exception &e) {
