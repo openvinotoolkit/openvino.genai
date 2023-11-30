@@ -221,7 +221,7 @@ int main(int argc, char **argv) {
       ireq.get_tensor("attention_mask").set_shape({ BATCH_SIZE, input_ids.size() });
       std::copy_n(input_ids.data(), input_ids.size(), ireq.get_tensor("input_ids").data<int32_t>());
       std::fill_n(ireq.get_tensor("attention_mask").data<int32_t>(), input_ids.size(), 1);
-      std::cout << "Input token length: " << input_ids.size() << ", set first input tensor took " << duration_ms << " ms" << std::endl;
+      std::cout << "Input token length: " << input_ids.size() << "\n";
 
       // First inference
       startTime = Time::now();
@@ -242,7 +242,6 @@ int main(int argc, char **argv) {
       int count = 0;
       double second_time = 0;
       while (out_token !=config.eos_token_id && out_token!=config.im_end_id) {
-          startTime = Time::now();
           // Prepare input tensor for 2nd+ inference
           ireq.get_tensor("input_ids").data<int32_t>()[0] = out_token;
           ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1});
@@ -257,6 +256,7 @@ int main(int argc, char **argv) {
               }
           }
           // 2nd+ inference
+          startTime = Time::now();
           ireq.start_async();
           ireq.wait();
           duration_ms = get_duration_ms_until_now(startTime);
@@ -285,8 +285,8 @@ int main(int argc, char **argv) {
       std::cout << '\n';
       std::cout << "Second inference latency: " << second_time << " ms" << std::endl;
       if (count > 2) {
-        std::cout << "Other inference tooks in total: " << total_time << " ms, generated num tokens: " << count - 1 << ", Average other token latency: " << total_time / (count - 1) << " ms" << std::endl;
-        std::cout << "Average inference speed: " << (count - 1) / total_time * 1000.0 << " token/s\n";
+        std::cout << "Other inference tooks in total: " << total_time << " ms, Average other token latency: " << total_time / (count - 1) << " ms" << std::endl;
+        std::cout << "Input num tokens: " << input_ids.size() << ", output num tokens: " << count - 1 << ", Average inference speed: " << (count - 1) / total_time * 1000.0 << " token/s\n";
       }
       std::cout << "******************************************* Text Sentence #" << sentence_num << " Finished ****************************************\n\n";
       sentence_num+=1;
