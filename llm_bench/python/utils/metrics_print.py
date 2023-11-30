@@ -81,9 +81,9 @@ def print_ldm_unet_vqvae_infer_latency(iter_num, iter_data, tms=None, warm_up=Fa
     )
     if len_tms > 1:
         log.info(f"[{iter_str}] unet latency: {sum(tms[0:(len_tms - 1)]) * 1000:.2f} ms, "
-                f"vqvae decoder latency: {tms[len_tms - 1] * 1000:.2f} ms, "
-                f"unet infer numbers: {len_tms - 1}, "
-                f"vqvae decoder infer numbers: 1",)
+                 f"vqvae decoder latency: {tms[len_tms - 1] * 1000:.2f} ms, "
+                 f"unet infer numbers: {len_tms - 1}, "
+                 f"vqvae decoder infer numbers: 1",)
 
 
 def print_average(iter_data_list):
