@@ -244,7 +244,6 @@ def main():
     diversity_penalty = float(sys.argv[9])
     length_penalty = float(sys.argv[10])
     model = transformers.LlamaForCausalLM.from_pretrained(sys.argv[2])
-    print(model.generation_config.pad_token_id)
     assert int(sys.argv[11]) == model.generation_config.pad_token_id
     for beam in model.generate(tokenizer(sys.argv[3], return_tensors='pt')['input_ids'], max_new_tokens=max_new_tokens, num_beam_groups=n_groups, num_beams=n_groups*group_size, num_return_sequences=n_groups*group_size, do_sample=False, early_stopping=stop_criteria, no_repeat_ngram_size=no_repeat_ngram_size, diversity_penalty=diversity_penalty, length_penalty=length_penalty):  # default length_penalty is 1.0
         ref = tokenizer.decode(beam, skip_special_tokens=True)[len(sys.argv[2]):]

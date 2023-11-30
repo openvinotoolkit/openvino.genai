@@ -7,9 +7,8 @@
 
 namespace {
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest&& tokenizer, std::string_view prompt) {
-    constexpr size_t BATCH_SIZE = 1;
     ov::Tensor destination = tokenizer.get_input_tensor();
-    openvino_extensions::pack_strings(std::array<std::string_view, BATCH_SIZE>{prompt}, destination);
+    openvino_extensions::pack_strings(std::array{prompt}, destination);
     tokenizer.infer();
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
 }
@@ -27,7 +26,7 @@ ov::Tensor detokenize(ov::InferRequest& detokenizer, std::vector<int64_t> tokens
 
 // Modifyed Knuth–Morris–Pratt algorithm which returns a set of tokens following after every needle occurance in haystack
 std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, std::vector<int64_t> needle) {
-    if (needle.empty()) {  // NO_REPEAT_NGRAM_SIZE == 1, ban every symbol
+    if (needle.empty()) {  // NO_REPEAT_NGRAM_SIZE == 1, ban every token
         return {haystack.begin(), haystack.end()};
     }
     std::vector<int> partial_match_table(needle.size() + 1, -1);
@@ -73,7 +72,7 @@ StopCriteria stop_criteria;
 size_t NO_REPEAT_NGRAM_SIZE;
 float DIVERSITY_PENALTY;
 double LENGTH_PENALTY;  // TODO: align defaults with transformers
-int64_t EOS_TOKEN;  // There's no way to extract the value from the tokenizer for now  // TODO: 2 for llama2
+int64_t EOS_TOKEN;  // There's no way to extract the value from the tokenizer for now
 }
 
 struct Beam {
@@ -219,17 +218,15 @@ struct GroupBeamSearcher {
                 size_t vocab_size = logits.get_shape().back();
                 std::vector<float> temp;
                 size_t batch_offset = global_beam_ids[group_idx][beam_idx] * logits.get_shape()[1] * logits.get_shape()[2];
-                for (size_t logit_id = 0; logit_id < vocab_size; ++logit_id) {
-                    temp.push_back((logits.data<const float>() + batch_offset + (logits.get_shape()[1] - 1) * vocab_size)[logit_id]);
-                }
-                std::valarray<float> logits_arr(temp.data(), temp.size());  // TODO: maybe use valarray<Token>
-                float max_logit = logits_arr.max();
-                float log_sum = std::log((std::exp(logits_arr - max_logit)).sum());  // TODO: log(softmax) only for topk logits
-                std::valarray<float> log_prob = logits_arr - max_logit - log_sum;
+                const float* beam_logits = logits.data<const float>() + batch_offset + (logits.get_shape()[1] - 1) * vocab_size;
+                float max_logit = *std::max_element(beam_logits, beam_logits + vocab_size);
+                float log_sum = std::log(std::accumulate(beam_logits, beam_logits + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
+                    return accumulated + std::exp(to_add - max_logit);
+                }));
                 std::vector<Token> tokens;
-                tokens.reserve(log_prob.size());
-                for (size_t idx = 0; idx < log_prob.size(); ++idx) {
-                    tokens.push_back({log_prob[idx], int64_t(idx)});
+                tokens.reserve(vocab_size);
+                for (size_t idx = 0; idx < vocab_size; ++idx) {
+                    tokens.push_back({beam_logits[idx] - max_logit - log_sum, int64_t(idx)});
                 }
                 for (size_t prev_group_idx = 0; prev_group_idx < group_idx; ++prev_group_idx) {  // TODO: range based for
                     for (size_t prev_beam_idx = 0; prev_beam_idx < GROUP_SIZE; ++prev_beam_idx) {
@@ -356,7 +353,7 @@ int main(int argc, char* argv[]) try {
         shapes.emplace(idx, shape);
     }
     model->reshape(shapes);
-    ov::CompiledModel compiled = core.compile_model(model, "CPU");  // , ov::cache_dir("llm-cache"));
+    ov::CompiledModel compiled = core.compile_model(model, "CPU", ov::cache_dir("llm-cache"));
 
     ov::InferRequest ireq = compiled.create_infer_request();
     for (size_t idx = 3; idx < inputs.size(); ++idx) {
@@ -371,7 +368,7 @@ int main(int argc, char* argv[]) try {
     ireq.get_tensor("position_ids").set_shape(input_ids.get_shape());
     std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
 
-    int64_t pad_token = std::stoi(argv[12]);
+    int64_t pad_token = std::stoi(argv[12]);  // There's no way to extract the value from the tokenizer for now
     GroupBeamSearcher group_beam_searcher{std::move(input_ids), N_GROUPS, GROUP_SIZE, stop_criteria, NO_REPEAT_NGRAM_SIZE, DIVERSITY_PENALTY, LENGTH_PENALTY, EOS_TOKEN, pad_token};
     for (size_t length_count = 0; length_count < MAX_NEW_TOKENS; ++length_count) {
         ireq.infer();
