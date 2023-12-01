@@ -60,9 +60,11 @@ def analyze_args(args):
     model_args['batch_size'] = args.batch_size
     model_args['fuse_decoding_strategy'] = args.fuse_decoding_strategy
     model_args['make_stateful'] = args.make_stateful
+    model_args['no_state_initializer'] = args.no_state_initializer
     model_args['save_prepared_model'] = args.save_prepared_model
     model_args['num_beams'] = args.num_beams
     model_args['fuse_cache_reorder'] = args.fuse_cache_reorder
+    model_args['no_fuse_cache_reorder'] = args.no_fuse_cache_reorder
     model_args['torch_compile_backend'] = args.torch_compile_backend
 
     model_path = args.model

@@ -15,6 +15,7 @@ from .ov_model_classes import register_normalized_configs
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from openvino import Type, Tensor
 import numpy as np
+import openvino.runtime.opset13 as opset
 
 
 def forward_simplified(
@@ -133,11 +134,85 @@ def generate_simplified(self, *args, **kwargs):
     return input_ids
 
 
+def model_has_name(ov_model: ov.Model, name: str):
+    return name in sum([list(t.get_names()) for t in ov_model.inputs + ov_model.outputs], list())
+
+
+def model_has_input(ov_model: ov.Model, name: str):
+    return name in sum([list(t.get_names()) for t in ov_model.inputs], list())
+
+
+def model_has_cache_reorder(ov_model):
+    return model_has_input(ov_model, 'beam_idx')
+
+
+def model_has_state(ov_model):
+    # TODO: Provide a better way based on the variables availability, but OV Python API doesn't expose required methods
+    return len(ov_model.get_sinks()) > 0
+
+
+def fuse_cache_reorder(ov_model: ov.Model, not_kv_inputs, key_value_input_names, gather_dim: int):
+    """ Adds a new beam_idx parameter and Gather op per each kv-cache input in a given model.
+        Should be run before make_stateful. Implements optimumum's _reorder_cache
+        inside the model in the beginning of each iteration.
+        Gather works along given gather_dim dimension that may vary from model to model.
+        KV-cache inputs are identified based on names in key_value_input_names.
+        Append the new beam_idx parameter to not_kv_inputs.
+    """
+
+    assert not model_has_name(ov_model, 'beam_idx')
+    input_batch = ov_model.input('input_ids').get_partial_shape()[0]
+    beam_idx = opset.parameter(name='beam_idx', dtype=ov.Type.i32, shape=ov.PartialShape([input_batch]))
+    beam_idx.output(0).get_tensor().add_names({'beam_idx'})  # why list is not accepted?
+    ov_model.add_parameters([beam_idx])
+    not_kv_inputs.append(ov_model.inputs[-1])
+    # Go over all cache parameters and fuse _reorder_cache with indices provided by the new parameter beam_idx
+    for input_name in key_value_input_names:
+        parameter_output_port = ov_model.input(input_name)
+        consumers = parameter_output_port.get_target_inputs()
+        gather = opset.gather(parameter_output_port, beam_idx, opset.constant(gather_dim))
+        for consumer in consumers:
+            consumer.replace_source_output(gather.output(0))
+    ov_model.validate_nodes_and_infer_types()
+
+
+def make_stateful(ov_model: ov.Model, not_kv_inputs, key_value_input_names, key_value_output_names, batch_dim, num_attention_heads, num_beams_and_batch=None):
+    """ Hides kv-cache inputs and outputs inside the model as variables.
+    """
+    from openvino._offline_transformations import apply_make_stateful_transformation
+
+    input_output_map = {}
+    # TODO: Can we derive the dimensions from the model topology?
+
+
+    if num_beams_and_batch is not None:
+        # Set batch size for input_ids and attention mask to avoid dynamic dimension got propagated from the end of the model back to ReadValue
+        for input in not_kv_inputs:
+            shape = input.get_partial_shape()
+            if shape.rank.get_length() <= 2:  # == 1 for beam_index
+                shape[0] = num_beams_and_batch
+                input.get_node().set_partial_shape(shape)
+            else:
+                print(f'[ WARNING ] Rank of {input.get_any_name()} input of the model is not 2, batch size is not set')
+
+    for kv_name_pair in zip(key_value_input_names, key_value_output_names):
+        input_output_map[kv_name_pair[0]] = kv_name_pair[1]
+        if num_beams_and_batch is not None:
+            input = ov_model.input(kv_name_pair[0])
+            shape = input.get_partial_shape()
+            shape[batch_dim] = num_beams_and_batch * num_attention_heads
+            input.get_node().set_partial_shape(shape)
+        else:
+            raise Exception('[ NOT IMPLEMENTED ] Cannot build ShapeOf Expression in ReadValue initializer, provide --no_state_initializer argument')
+
+    ov_model.validate_nodes_and_infer_types()
+
+    apply_make_stateful_transformation(ov_model, input_output_map)
+
+
 def patch_inter_processing(hf_model, **kwargs):
     """Fuse post-processing as an extra ops into a model."""
     ov_model = hf_model.model
-
-    import openvino.runtime.opset12 as opset
 
     if kwargs['fuse_decoding_strategy']:
         ppp = ov.preprocess.PrePostProcessor(ov_model)
@@ -160,24 +235,31 @@ def patch_inter_processing(hf_model, **kwargs):
     batch_size = kwargs['batch_size'] if 'batch_size' in kwargs and kwargs['batch_size'] > 1 else 1
 
     not_kv_inputs = [input for input in ov_model.inputs if not any(name in hf_model.key_value_input_names for name in input.get_names())]
+    hf_model.use_cache_as_state = False
 
-    if kwargs['fuse_cache_reorder'] and num_beams > 1:
-        # Should be run before make_stateful because of adding pre-processing on kv-cashe inputs
-        # Make a new parameter for beam_idx
-        # Adding a new parameter to make _reorder_cache inside the model in the beginning of each iteration
-        beam_idx = opset.parameter(name='beam_idx', dtype=ov.Type.i32, shape=ov.PartialShape([num_beams * batch_size]))
-        beam_idx.output(0).get_tensor().add_names({'beam_idx'})  # why list is not accepted?
-        ov_model.add_parameters([beam_idx])
-        not_kv_inputs.append(ov_model.inputs[-1])
-        # Go over all cache parameters and fuse _reorder_cache with indices provided by the new parameter beam_idx
-        for input_name in hf_model.key_value_input_names:  # 3 == input_ids, attention_mask and new beam_idx
-            parameter_output_port = ov_model.input(input_name)
-            consumers = parameter_output_port.get_target_inputs()
-            gather = opset.gather(parameter_output_port, beam_idx, opset.constant(0))
-            for consumer in consumers:
-                consumer.replace_source_output(gather.output(0))
-        ov_model.validate_nodes_and_infer_types()
-        hf_model.use_cache_as_state = False
+    assert not (kwargs['no_fuse_cache_reorder'] and kwargs['fuse_cache_reorder']), (
+        'Both --no_fuse_cache_reorder and --fuse_cache_reorder cannot be used simultaneously')
+
+    if kwargs['no_fuse_cache_reorder']:
+        assert not model_has_cache_reorder(ov_model), (
+            'Argument --no_fuse_cache_reorder is provided but the model already has cache reorder fused, it cannot be removed. ' +
+            'Re-export model without cache reorder fused.')
+
+    if kwargs['no_fuse_cache_reorder'] and not kwargs['make_stateful']:
+        print('[ WARNING ] Argument --no_fuse_cache_reorder is ignored because model is not stateful.')
+
+    # Regardless of num of beams, always fuse cache reorder in case if a stateful model is requested
+    enable_fuse_cache_reorder = kwargs['make_stateful'] and not kwargs['no_fuse_cache_reorder'] or kwargs['fuse_cache_reorder']
+
+    # By default, batch is the 0-th but chatglm uses 1-st dimension as batch
+    # TODO: Deduce from a model via ordinal reshape (?) and topology
+    batch_dim = 1 if hf_model.config.model_type == 'chatglm' else 0
+
+    if enable_fuse_cache_reorder:
+        if not model_has_cache_reorder(ov_model):   # the transformation wasn't applied when model was exported
+            fuse_cache_reorder(ov_model, not_kv_inputs, hf_model.key_value_input_names, batch_dim)
+        else:
+            print('[ WARNING ] Model has "beam_idx" parameter which means that the cache reorder is already fused, skipping fuse transformation')
 
         # override _reorder_cache to avoid cache manipulation outside of the model as it is already done inside
         def _reorder_cache_stub(self, past_key_values, beam_idx):
@@ -190,37 +272,32 @@ def patch_inter_processing(hf_model, **kwargs):
         hf_model.next_beam_idx = np.zeros([num_beams * batch_size], dtype=int)  # initial value for beam_idx is all zeros
 
     if kwargs['make_stateful']:
-        from openvino._offline_transformations import apply_make_stateful_transformation
-
-        input_output_map = {}
-        # TODO: Can we derive the dimensions from the model topology?
-        num_attention_heads = hf_model.normalized_config.num_attention_heads if hf_model.config.model_type == 'bloom' else 1
-        beam_idx_exist = 'beam_idx' in [port.any_name for port in ov_model.inputs]
-        assert num_beams == 1 or beam_idx_exist, 'Requested to make_stateful with num_beams > 1 but there is no beam_idx parameter for cache reorder fused'
-        # Set batch size for input_ids and attention mask to avoid dynamic dimension got propagated from the end of the model back to ReadValue
-        for input in not_kv_inputs:
-            shape = input.get_partial_shape()
-            if shape.rank.get_length() <= 2:  # == 1 for beam_index
-                shape[0] = batch_size * num_beams
-                input.get_node().set_partial_shape(shape)
+        if not model_has_state(ov_model):
+            if num_beams > 1:
+                assert model_has_cache_reorder(ov_model), (
+                    'Requested to make_stateful with num_beams > 1 but there is no beam_idx parameter for cache reorder fused.' +
+                    (' Omit --no_fuse_cache_reorder to enable cache reorder in a model.' if kwargs['no_fuse_cache_reorder'] else ''))
+            if kwargs['no_state_initializer']:
+                # will require to make batch/beam dimension static in make_stateful,
+                # otherwise 2 dynamic dimension (batch/dim and sequence) will produce wrong initialization shape
+                num_beams_and_batch = num_beams * batch_size
             else:
-                print(f'[ WARNING ] Rank of {input.get_any_name()} input of the model is not 2, batch size is not set')
+                # will trigger building of state initializer based on dynamic dimensions as a ShapeOf Expression in make_stateful,
+                # requires special support from the plugins
+                num_beams_and_batch = None
 
-        for kv_name_pair in zip(hf_model.key_value_input_names, hf_model.key_value_output_names):
-            input_output_map[kv_name_pair[0]] = kv_name_pair[1]
-            input = ov_model.input(kv_name_pair[0])
-            shape = input.get_partial_shape()
+            num_attention_heads = hf_model.normalized_config.num_attention_heads if hf_model.config.model_type == 'bloom' else 1
 
-            # By default, batch is the 0-th but chatglm uses 1-st dimension as batch
-            # TODO: Deduce from a model via ordinal reshape
-            batch_idx = 1 if hf_model.config.model_type == 'chatglm' else 0
-            shape[batch_idx] = batch_size * num_attention_heads * num_beams
-
-            input.get_node().set_partial_shape(shape)
-
-        ov_model.validate_nodes_and_infer_types()
-
-        apply_make_stateful_transformation(ov_model, input_output_map)
+            make_stateful(
+                ov_model,
+                not_kv_inputs,
+                hf_model.key_value_input_names,
+                hf_model.key_value_output_names,
+                batch_dim,
+                num_attention_heads,
+                num_beams_and_batch)
+        else:
+            print('[ WARNING ] --make_stateful has no effect because it was detected that the states already exist in the model')
 
         hf_model.use_cache_as_state = True
         hf_model.forward = types.MethodType(forward_simplified, hf_model)  # override to avoid cache manipulation outside of the model
