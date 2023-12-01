@@ -173,7 +173,8 @@ def patch_inter_processing(hf_model, **kwargs):
         for input_name in hf_model.key_value_input_names:  # 3 == input_ids, attention_mask and new beam_idx
             parameter_output_port = ov_model.input(input_name)
             consumers = parameter_output_port.get_target_inputs()
-            gather = opset.gather(parameter_output_port, beam_idx, opset.constant(0))
+            batch_idx = 1 if hf_model.config.model_type == 'chatglm' else 0
+            gather = opset.gather(parameter_output_port, beam_idx, opset.constant(batch_idx))
             for consumer in consumers:
                 consumer.replace_source_output(gather.output(0))
         ov_model.validate_nodes_and_infer_types()
