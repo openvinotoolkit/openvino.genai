@@ -48,6 +48,186 @@ except ImportError:
 from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoModel, PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from utils.nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION, get_compressed_path
+from utils.model_utils import add_stateful_model_arguments
+
+# Imports required for export_pytorch override
+import inspect
+import functools
+from typing import Any, Dict, List, Optional, Tuple, Union
+from optimum.exporters.onnx.base import OnnxConfig
+from optimum.exporters.onnx.convert import check_dummy_inputs_are_allowed
+from optimum.exporters.onnx.convert import export_pytorch as export_pytorch_to_onnx
+from optimum.exporters.onnx.model_patcher import DecoderModelPatcher
+from openvino.runtime.utils.types import get_element_type
+
+from optimum.exporters.openvino.utils import (
+    OV_XML_FILE_NAME,
+    clear_class_registry,
+    flattenize_inputs,
+    get_input_shapes,
+    remove_none_from_dummy_inputs,
+)
+
+from optimum.exporters.openvino.convert import export_pytorch_via_onnx, _save_model
+
+import logging
+logger = logging.getLogger(__name__)
+
+
+
+# This function overrides optimum.intel function.
+# TODO: Move it to optimum.intel
+def export_pytorch(
+    model: Union["PreTrainedModel", "ModelMixin"],
+    config: OnnxConfig,
+    opset: int,
+    output: Path,
+    device: str = "cpu",
+    input_shapes: Optional[Dict] = None,
+    model_kwargs: Optional[Dict[str, Any]] = None,
+    fp16: bool = False,
+    int8: bool = False,
+) -> Tuple[List[str], List[str]]:
+    """
+    Exports a PyTorch model to an OpenVINO Intermediate Representation.
+
+    Args:
+        model ([`PreTrainedModel`]):
+            The model to export.
+        config ([`~exporters.onnx.config.OnnxConfig`]):
+            The configuration associated with the exported model.
+        opset (`int`):
+            The version of the ONNX operator set to use.
+        output (`Path`):
+            Directory to store the exported model.
+        device (`str`, defaults to `"cpu"`):
+            The device on which the model will be exported. Either `cpu` or `cuda`. Only PyTorch is supported for
+            export on CUDA devices.
+        input_shapes (`optional[Dict]`, defaults to `None`):
+            If specified, allows to use specific shapes for the example input provided to the exporter.
+        model_kwargs (optional[Dict[str, Any]], defaults to `None`):
+            Additional kwargs for model export
+
+    Returns:
+        `Tuple[List[str], List[str], bool]`: A tuple with an ordered list of the model's inputs, and the named inputs from
+        the ONNX configuration and boolean flag - was legacy ONNX path were applied to model or not.
+    """
+    print('[ INFO ] Overriden export_pytorch is called')
+    import torch
+    from torch.utils._pytree import tree_map
+
+    logger.info(f"Using framework PyTorch: {torch.__version__}")
+    output = Path(output)
+
+    with torch.no_grad():
+        model.config.torchscript = False
+        model.config.return_dict = True
+        model.eval()
+
+        # Check if we need to override certain configuration item
+        if config.values_override is not None:
+            logger.info(f"Overriding {len(config.values_override)} configuration item(s)")
+            for override_config_key, override_config_value in config.values_override.items():
+                logger.info(f"\t- {override_config_key} -> {override_config_value}")
+                setattr(model.config, override_config_key, override_config_value)
+
+        if input_shapes is None:
+            input_shapes = {}  # will use the defaults from DEFAULT_DUMMY_SHAPES
+
+        # Check that inputs match, and order them properly
+        dummy_inputs = config.generate_dummy_inputs(framework="pt", **input_shapes)
+        device = torch.device(device)
+        if device.type == "cuda" and torch.cuda.is_available():
+            model.to(device)
+            dummy_inputs = tree_map(
+                lambda value: value.to(device) if isinstance(value, torch.Tensor) else value, dummy_inputs
+            )
+        check_dummy_inputs_are_allowed(model, dummy_inputs)
+        inputs = config.ordered_inputs(model)
+        input_names = list(inputs.keys())
+        output_names = list(config.outputs.keys())
+        if hasattr(model, "forward"):
+            sig = inspect.signature(model.forward)
+        else:
+            sig = inspect.signature(model.call)
+
+        dummy_inputs, dict_inputs = remove_none_from_dummy_inputs(dummy_inputs)
+        input_info = get_input_shapes(dummy_inputs, inputs)
+        custom_patcher = type(config).patch_model_for_export != OnnxConfig.patch_model_for_export
+        patch_model_forward = False
+        orig_forward = model.forward
+        try:
+            # TorchScript used behind OpenVINO conversion. Optimum supports only return_dict=True models for patching,
+            # while TorchScript do not support dictionary with values of mixed types (e.g. Tensor and None) in model input/output
+            # To handle it, additional wrapper on patcher forward applied.
+            # model.config.torchscript = True can not be used for patching, because it overrides return_dict to Flase
+            if custom_patcher or dict_inputs:
+                patcher = config.patch_model_for_export(model, model_kwargs=model_kwargs)
+                # DecoderModelPatcher does not override model forward
+                if isinstance(patcher, DecoderModelPatcher) or patcher.orig_forward_name != "forward":
+                    patch_model_forward = True
+                    patched_forward = model.forward
+                else:
+                    patched_forward = patcher.patched_forward
+
+                @functools.wraps(patched_forward)
+                def ts_patched_forward(*args, **kwargs):
+                    for i in range(len(dict_inputs)):
+                        input_name = dict_inputs[i][0]
+                        keys = dict_inputs[i][1]
+                        tuple_input = kwargs[input_name]
+                        input_dict = dict(zip(keys, tuple_input))
+                        kwargs[input_name] = input_dict
+                    outputs = patched_forward(*args, **kwargs)
+                    return tuple(outputs.values())
+
+                if not patch_model_forward:
+                    patcher.patched_forward = ts_patched_forward
+                else:
+                    model.forward = ts_patched_forward
+                with patcher:
+                    ov_model = convert_model(model, example_input=dummy_inputs, input=input_info)
+            else:
+                model.config.torchscript = True
+                model.config.retun_dict = False
+                ov_model = convert_model(model, example_input=dummy_inputs, input=input_info)
+        except Exception as ex:
+            logger.warning(f"Export model to OpenVINO directly failed with: \n{ex}.\nModel will be exported to ONNX")
+            if patch_model_forward:
+                model.forward = orig_forward
+            return export_pytorch_via_onnx(
+                model, config, opset, output, device, input_shapes, model_kwargs, fp16=fp16, int8=int8
+            )
+        ordered_dummy_inputs = {param: dummy_inputs[param] for param in sig.parameters if param in dummy_inputs}
+        ordered_input_names = list(inputs)
+        flatten_inputs = flattenize_inputs(ordered_dummy_inputs.values())
+        ov_model.validate_nodes_and_infer_types()
+        for idx, out_tensor in enumerate(ov_model.outputs):
+            if idx < len(output_names):
+                out_tensor.get_tensor().set_names({output_names[idx]})
+
+        for idx, inp_tensor in enumerate(ov_model.inputs):
+            input_name = ordered_input_names[idx]
+            inp_tensor.get_tensor().set_names({input_name})
+            inp_data = flatten_inputs[idx]
+            static_shape = PartialShape(inp_data.shape)
+            dims = inputs[input_name]
+
+            for dim in dims:
+                static_shape[dim] = -1
+            inp_tensor.get_node().set_partial_shape(static_shape)
+            inp_tensor.get_node().set_element_type(get_element_type(inp_data.cpu().numpy().dtype))
+        ov_model.validate_nodes_and_infer_types()
+        _save_model(ov_model, output, compress_to_fp16=fp16, load_in_8bit=int8)
+        clear_class_registry()
+        del model
+        gc.collect()
+    return input_names, output_names, False
+
+
+import optimum.exporters.openvino.convert
+#TODO: Unpatch
+optimum.exporters.openvino.convert.export_pytorch = export_pytorch
 
 
 class BackendType(Enum):
@@ -1730,6 +1910,7 @@ def main():
     parser.add_argument('--precision', choices=['FP32', 'FP16'], default='FP32')
     parser.add_argument('--bettertransformer', action='store_true',
                         help='Apply bettertransformer to enable ScaledDotProductAttention operation for a part of the models')
+    add_stateful_model_arguments(parser)
 
     compression_group = parser.add_argument_group('Weights compression parameters')
     compression_group.add_argument(
