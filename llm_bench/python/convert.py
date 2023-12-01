@@ -49,6 +49,7 @@ from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM, AutoMo
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from utils.nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION, get_compressed_path
 from utils.model_utils import add_stateful_model_arguments
+from utils.ov_utils import patch_stateful
 
 # Imports required for export_pytorch override
 import inspect
@@ -218,6 +219,11 @@ def export_pytorch(
             inp_tensor.get_node().set_partial_shape(static_shape)
             inp_tensor.get_node().set_element_type(get_element_type(inp_data.cpu().numpy().dtype))
         ov_model.validate_nodes_and_infer_types()
+
+        # Patching model according to stateful parameters
+        model.key_value_input_names =  [name for name in input_names  if name.startswith('past_key_values.')]
+        model.key_value_output_names = [name for name in output_names if name.startswith('present.')]
+        patch_stateful(model, ov_model,  False, **export_pytorch.args)
         _save_model(ov_model, output, compress_to_fp16=fp16, load_in_8bit=int8)
         clear_class_registry()
         del model
@@ -1947,6 +1953,7 @@ def main():
     )
 
     args = parser.parse_args()
+    export_pytorch.args = vars(args)
     model_type = get_convert_model_type(args.model_id.lower())
     converter = converters[model_type]
     converter(args)

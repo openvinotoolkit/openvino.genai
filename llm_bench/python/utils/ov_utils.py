@@ -233,9 +233,8 @@ def patch_decoding_strategy(hf_model, patch_methods, **kwargs):
             hf_model.generate = types.MethodType(generate_simplified, hf_model)
 
 
-def patch_stateful(hf_model, patch_methods, **kwargs):
+def patch_stateful(hf_model, ov_model, patch_methods, **kwargs):
     """Fuse additional ops into the model and make it stateful."""
-    ov_model = hf_model.model
     num_beams = kwargs['num_beams'] if 'num_beams' in kwargs and kwargs['num_beams'] > 1 else 1
     batch_size = kwargs['batch_size'] if 'batch_size' in kwargs and kwargs['batch_size'] > 1 else 1
 
@@ -319,7 +318,7 @@ def save_model(hf_model, **kwargs):
 
 def patch_inter_processing_and_compile(hf_model, **kwargs):
     patch_decoding_strategy(hf_model, True, **kwargs)
-    patch_stateful(hf_model, True, **kwargs)
+    patch_stateful(hf_model, hf_model.ov_model, True, **kwargs)
     save_model(hf_model, **kwargs)
     hf_model.compile()
 
