@@ -1026,7 +1026,7 @@ def convert_mpt(args):
                 log.info(f"Compress model weights to {compress_option}")
                 ov_model = Core().read_model(ov_dir / 'openvino_model.xml')
                 ov_compressed_path = get_compressed_path(args.output_dir, args.precision, compress_option)
-                compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, compress_option, args)
+                compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_option, compress_to_fp16, args)
 
 
 def convert_stablelm(args):
