@@ -1,46 +1,46 @@
 import time
 
 
-class OVForward:
+class StableDiffusionHook:
     def __init__(self):
         self.text_encoder_time = 0
-        self.unet_time = 0
+        self.unet_time_list = []
         self.vae_decoder_time = 0
-        self.text_encoder_infer_nums = 0
-        self.unet_infer_nums = 0
-        self.vae_decoder_infer_nums = 0
+        self.text_encoder_infer_count = 0
+        self.unet_infer_count = 0
+        self.vae_decoder_infer_count = 0
 
-    def get_text_encoder_time(self):
-        return self.text_encoder_time
+    def get_text_encoder_latency(self):
+        return (self.text_encoder_time / self.text_encoder_infer_count) * 1000 if self.text_encoder_infer_count > 0 else 0
 
-    def get_unet_time(self):
-        return self.unet_time
+    def get_1st_unet_latency(self):
+        return self.unet_time_list[0] * 1000 if len(self.unet_time_list) > 0 else 0
 
-    def get_vae_decoder_time(self):
-        return self.vae_decoder_time
+    def get_2nd_unet_latency(self):
+        return sum(self.unet_time_list[1:]) / (len(self.unet_time_list) - 1) * 1000 if len(self.unet_time_list) > 1 else 0
+    
+    def get_unet_latency(self):
+        return (sum(self.unet_time_list) / len(self.unet_time_list)) * 1000 if len(self.unet_time_list) > 0 else 0
 
-    def get_text_encoder_infer_nums(self):
-        return self.text_encoder_infer_nums
+    def get_vae_decoder_latency(self):
+        return (self.vae_decoder_time / self.vae_decoder_infer_count) * 1000 if self.vae_decoder_infer_count > 0 else 0
 
-    def get_unet_infer_nums(self):
-        return self.unet_infer_nums
+    def get_text_encoder_infer_count(self):
+        return self.text_encoder_infer_count
 
-    def get_vae_decoder_infer_nums(self):
-        return self.vae_decoder_infer_nums
+    def get_unet_infer_count(self):
+        return self.unet_infer_count
 
-    def get_unet_vae_avg_time(self):
-        avg_time = 0
-        if self.unet_infer_nums != 0 and self.vae_decoder_infer_nums != 0:
-            avg_time = (self.unet_time + self.vae_decoder_time) / (self.unet_infer_nums + self.vae_decoder_infer_nums)
-        return avg_time
+    def get_vae_decoder_infer_count(self):
+        return self.vae_decoder_infer_count
 
-    def clear_image_time(self):
+    def clear_statistics(self):
         self.text_encoder_time = 0
-        self.unet_time = 0
+        self.unet_time_list = []
         self.vae_decoder_time = 0
-        self.text_encoder_infer_nums = 0
-        self.unet_infer_nums = 0
-        self.vae_decoder_infer_nums = 0
+        self.text_encoder_infer_count = 0
+        self.unet_infer_count = 0
+        self.vae_decoder_infer_count = 0
 
     def new_text_encoder(self, pipe):
         old_text_encoder = pipe.text_encoder.request
@@ -51,7 +51,7 @@ class OVForward:
             t2 = time.time()
             text_encoder_time = t2 - t1
             self.text_encoder_time += text_encoder_time
-            self.text_encoder_infer_nums += 1
+            self.text_encoder_infer_count += 1
             return r
         pipe.text_encoder.request = my_text_encoder
 
@@ -63,8 +63,8 @@ class OVForward:
             r = old_unet(inputs, shared_memory=shared_memory, **kwargs)
             t2 = time.time()
             unet_time = t2 - t1
-            self.unet_time += unet_time
-            self.unet_infer_nums += 1
+            self.unet_time_list.append(unet_time)
+            self.unet_infer_count += 1
             return r
         pipe.unet.request = my_unet
 
@@ -77,6 +77,6 @@ class OVForward:
             t2 = time.time()
             vae_decoder_time = t2 - t1
             self.vae_decoder_time += vae_decoder_time
-            self.vae_decoder_infer_nums += 1
+            self.vae_decoder_infer_count += 1
             return r
         pipe.vae_decoder.request = my_vae_decoder

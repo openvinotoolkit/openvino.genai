@@ -23,7 +23,7 @@ import traceback
 from transformers import set_seed
 from PIL import Image
 from utils.memory_profile import MemConsumption
-from utils.hook_forward import OVForward
+from utils.hook_forward import StableDiffusionHook
 import utils.output_json
 
 HOOK_UTILS = {'pt': utils.hook_transformers, 'ov': utils.hook_transformers}
@@ -35,7 +35,7 @@ DEFAULT_OUTPUT_TOKEN_SIZE = 512
 MAX_OUTPUT_TOKEN_SIZE = 64 * 1024
 
 mem_consumption = MemConsumption()
-ovForward = OVForward()
+stable_diffusion_hook = StableDiffusionHook()
 
 
 def gen_iterate_data(
@@ -213,9 +213,9 @@ def run_image_generation(input_text, nsteps, num, image_id, pipe, args, iter_dat
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
-        ovForward=ovForward
+        stable_diffusion=stable_diffusion_hook
     )
-    ovForward.clear_image_time()
+    stable_diffusion_hook.clear_statistics()
 
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters):
@@ -228,11 +228,9 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
         raise RuntimeError('==Failure prompts is empty ==')
 
     if framework == "ov":
-        # count the time of the first infer
-        ovForward.new_text_encoder(pipe)
-        # count the time of the second infer
-        ovForward.new_unet(pipe)
-        ovForward.new_vae_decoder(pipe)
+        stable_diffusion_hook.new_text_encoder(pipe)
+        stable_diffusion_hook.new_unet(pipe)
+        stable_diffusion_hook.new_vae_decoder(pipe)
 
     log.info(f"num_iters={num_iters}, num_text_list={len(input_text_list)}")
 
