@@ -418,41 +418,18 @@ def get_argprser():
         help='Add decoding postprocessing for next token selection to the model as an extra ops. Original hf_model.generate function will be patched.',
     )
     parser.add_argument(
-        '--make_stateful',
-        action='store_true',
-        help='Replace kv-cache inputs and outputs in the model by internal variables making a stateful model.'
-        'If --no_fuse_cache_reorder is provided, additional ops to handle cache reorder will be also fused in the model.',
-    )
-    parser.add_argument(
-        '--no_state_initializer',
-        action='store_true',
-        help='Disables build of ShapeOf Expression as the state initializer. Model will be statically reshaped by batch/beam dimension before the compilation.',
-    )
-    parser.add_argument(
         '--save_prepared_model',
         default=None,
         help='Path to .xml file to save IR used for inference with all pre-/post processing included',
     )
     parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
     parser.add_argument(
-        '--fuse_cache_reorder',
-        action='store_true',
-        help='Fuse ops related to cache reordering to the model. '
-        'This option is enabled by default when --make_stateful is used except when --no_fuse_cache_reorder is provided. '
-        'The option --fuse_cache_reorder is useful to be applied without --make_stateful to debug Gather logic without mix with states.',
-    )
-    parser.add_argument(
-        '--no_fuse_cache_reorder',
-        action='store_true',
-        help='Disable fusing of ops related to cache reordering (Gather op) to the model when --make_stateful is applied. '
-        'Otherwise the cache reordering is always fused in stateful models.',
-    )
-    parser.add_argument(
         '--torch_compile_backend',
         default='openvino',
         required=False,
         help='Enables running the torch.compile() with specified backend: pytorch or openvino (default)',
     )
+    utils.model_utils.add_stateful_model_arguments(parser)
 
     return parser.parse_args()
 

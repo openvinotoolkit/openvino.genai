@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2018-2023 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+import argparse
 import os
 import json
 import logging as log
@@ -47,6 +48,33 @@ def set_default_param_for_ov_config(ov_config):
     # OpenVINO self have default value 2 for nstreams on machine with 2 nodes. Reducing memory consumed via changing nstreams to 1.
     if 'NUM_STREAMS' not in ov_config:
         ov_config['NUM_STREAMS'] = '1'
+
+
+def add_stateful_model_arguments(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        '--make_stateful',
+        action='store_true',
+        help='Replace kv-cache inputs and outputs in the model by internal variables making a stateful model.'
+        'If --no_fuse_cache_reorder is provided, additional ops to handle cache reorder will be also fused in the model.',
+    )
+    parser.add_argument(
+        '--no_state_initializer',
+        action='store_true',
+        help='Disables build of ShapeOf Expression as the state initializer. Model will be statically reshaped by batch/beam dimension before the compilation.',
+    )
+    parser.add_argument(
+        '--fuse_cache_reorder',
+        action='store_true',
+        help='Fuse ops related to cache reordering to the model. '
+        'This option is enabled by default when --make_stateful is used except when --no_fuse_cache_reorder is provided. '
+        'The option --fuse_cache_reorder is useful to be applied without --make_stateful to debug Gather logic without mix with states.',
+    )
+    parser.add_argument(
+        '--no_fuse_cache_reorder',
+        action='store_true',
+        help='Disable fusing of ops related to cache reordering (Gather op) to the model when --make_stateful is applied. '
+        'Otherwise the cache reordering is always fused in stateful models.',
+    )
 
 
 def analyze_args(args):
