@@ -37,7 +37,7 @@ struct Args {
   std::string tiktoken_path = "qwen.tiktoken";
   std::string prompt = "你好";
   int max_length = 2048;
-  int max_context_length = 512;
+  int max_context_length = 256;
   std::string device = "CPU";
   bool verbose = false;
   std::string language = "chinese";
@@ -52,9 +52,9 @@ static auto usage(const std::string &prog) -> void {
             << "  -t, --tiktoken_path PATH    tokenizer path (default: qwen.tiktoken)\n"
             << "  -p, --prompt PROMPT     prompt to start generation with (default: 你好)\n"
             << "  -i, --interactive       run in interactive mode\n"
-            << "  -l, --max_length N      max total length including prompt and output (default: 2048)\n"
-            << "  -c, --max_context_length N\n"
-            << "                          max context length (default: 512)\n"
+            << "  -ml, --max_length N      max total length including prompt and output (default: 2048)\n"
+            << "  -mcl, --max_context_length N\n"
+            << "                          max context length (default: 256)\n"
             << "  -d, --device DEVICE     specify which device used for inference\n"
             << "  -l, --language LANGUAGE specify test sentencen language, either english or chinese\n"
             << "  -v, --verbose           display verbose output including config/system/performance info\n";
@@ -179,12 +179,9 @@ int main(int argc, char **argv) {
     ov::InferRequest ireq = core.compile_model(model, args.device, device_config).create_infer_request();
     duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Compile model and create infer request took " << duration_ms << " ms" << std::endl;
-    /*
     if (args.device.find("GPU") != std::string::npos) {
 	    model = nullptr; // Release system memory after model compiled on GPU
     }
-    */
-    model = nullptr; // Release system memory after model compiled on GPU
     int32_t out_token;
     int sentence_num = 0;
     std::vector<std::string> sentences;
@@ -234,9 +231,7 @@ int main(int argc, char **argv) {
       total_time = 0;
       int count = 1;
       double second_time = 0;
-      //while (out_token !=config.eos_token_id && out_token!=config.im_end_id && count < args.max_context_length) {
-      //while (count < args.max_context_length) {
-      while (out_token!=config.im_end_id && count < args.max_context_length) {
+      while (out_token != config.eos_token_id && out_token != config.im_end_id && count < args.max_context_length) {
           // Prepare input tensor for 2nd+ inference
           ireq.get_tensor("input_ids").data<int32_t>()[0] = out_token;
           ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1});
@@ -246,8 +241,6 @@ int main(int argc, char **argv) {
           }
           // 2nd+ inference
           startTime = Time::now();
-          //ireq.start_async();
-          //ireq.wait();
           ireq.infer();
           duration_ms = get_duration_ms_until_now(startTime);
           count += 1;
