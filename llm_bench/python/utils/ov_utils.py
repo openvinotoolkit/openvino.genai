@@ -210,7 +210,7 @@ def make_stateful(ov_model: ov.Model, not_kv_inputs, key_value_input_names, key_
     apply_make_stateful_transformation(ov_model, input_output_map)
 
 
-def patch_inter_processing(hf_model, **kwargs):
+def patch_decoding_strategy(hf_model, patch_methods, **kwargs):
     """Fuse post-processing as an extra ops into a model."""
     ov_model = hf_model.model
 
@@ -228,14 +228,18 @@ def patch_inter_processing(hf_model, **kwargs):
 
         ov_model = ppp.build()
         hf_model.model = ov_model
-        hf_model._orig_generate = hf_model.generate
-        hf_model.generate = types.MethodType(generate_simplified, hf_model)
+        if patch_methods:
+            hf_model._orig_generate = hf_model.generate
+            hf_model.generate = types.MethodType(generate_simplified, hf_model)
 
+
+def patch_stateful(hf_model, patch_methods, **kwargs):
+    """Fuse additional ops into the model and make it stateful."""
+    ov_model = hf_model.model
     num_beams = kwargs['num_beams'] if 'num_beams' in kwargs and kwargs['num_beams'] > 1 else 1
     batch_size = kwargs['batch_size'] if 'batch_size' in kwargs and kwargs['batch_size'] > 1 else 1
 
     not_kv_inputs = [input for input in ov_model.inputs if not any(name in hf_model.key_value_input_names for name in input.get_names())]
-    hf_model.use_cache_as_state = False
 
     assert not (kwargs['no_fuse_cache_reorder'] and kwargs['fuse_cache_reorder']), (
         'Both --no_fuse_cache_reorder and --fuse_cache_reorder cannot be used simultaneously')
@@ -261,15 +265,17 @@ def patch_inter_processing(hf_model, **kwargs):
         else:
             print('[ WARNING ] Model has "beam_idx" parameter which means that the cache reorder is already fused, skipping fuse transformation')
 
-        # override _reorder_cache to avoid cache manipulation outside of the model as it is already done inside
-        def _reorder_cache_stub(self, past_key_values, beam_idx):
-            # TODO: Apply it differently based on model type
-            self.next_beam_idx = np.array(beam_idx)  # save beam_idx to be used as an input in the next iteration
-            return past_key_values
+        if patch_methods:
+            # override _reorder_cache to avoid cache manipulation outside of the model as it is already done inside
+            def _reorder_cache_stub(self, past_key_values, beam_idx):
+                # TODO: Apply it differently based on model type
+                self.next_beam_idx = np.array(beam_idx)  # save beam_idx to be used as an input in the next iteration
+                return past_key_values
 
-        hf_model._reorder_cache = types.MethodType(_reorder_cache_stub, hf_model)
-        hf_model.forward = types.MethodType(forward_simplified, hf_model)  # need custom forward to set beam_idx input to OV model
-        hf_model.next_beam_idx = np.zeros([num_beams * batch_size], dtype=int)  # initial value for beam_idx is all zeros
+            hf_model.use_cache_as_state = False
+            hf_model._reorder_cache = types.MethodType(_reorder_cache_stub, hf_model)
+            hf_model.forward = types.MethodType(forward_simplified, hf_model)  # need custom forward to set beam_idx input to OV model
+            hf_model.next_beam_idx = np.zeros([num_beams * batch_size], dtype=int)  # initial value for beam_idx is all zeros
 
     if kwargs['make_stateful']:
         if not model_has_state(ov_model):
@@ -299,14 +305,22 @@ def patch_inter_processing(hf_model, **kwargs):
         else:
             print('[ WARNING ] --make_stateful has no effect because it was detected that the states already exist in the model')
 
-        hf_model.use_cache_as_state = True
-        hf_model.forward = types.MethodType(forward_simplified, hf_model)  # override to avoid cache manipulation outside of the model
+        if patch_methods:
+            hf_model.use_cache_as_state = True
+            hf_model.forward = types.MethodType(forward_simplified, hf_model)  # override to avoid cache manipulation outside of the model
 
+
+def save_model(hf_model, **kwargs):
     xml_file_name = kwargs['save_prepared_model']
     if xml_file_name is not None:
         log.info(f'Saving prepared OpenVINO model to {xml_file_name} ...')
-        ov.save_model(ov_model, xml_file_name)
+        ov.save_model(hf_model.model, xml_file_name)
 
+
+def patch_inter_processing_and_compile(hf_model, **kwargs):
+    patch_decoding_strategy(hf_model, True, **kwargs)
+    patch_stateful(hf_model, True, **kwargs)
+    save_model(hf_model, **kwargs)
     hf_model.compile()
 
 
@@ -348,7 +362,7 @@ def create_text_gen_model(model_path, device, **kwargs):
             config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
             ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config, config=config, compile=False)
             if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
-                patch_inter_processing(ov_model, **kwargs)
+                patch_inter_processing_and_compile(ov_model, **kwargs)
             end = time.perf_counter()
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
