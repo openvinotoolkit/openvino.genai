@@ -32,7 +32,13 @@ source <OpenVINO dir>/setupvars.bat
 cmake -B build
 cmake --build build -j --config Release
 ```
-## Run
 
-Usage: `./build/bin/main -m <openvino_model.xml> -t <qwen.tiktoken> -d <device> -p <prompt>"`
-Example: `./build/bin/main -m Qwen-7B-Chat-GPTQ_INT4_FP16-2K/openvino_model.xml -t Qwen-7B-Chat-GPTQ_INT4_FP16-2K/qwen.tiktoken -p "介绍下清华大学"`
+## Run on Windows
+Usage: `.\build\bin\Release\main.exe -m <openvino_model.xml> -t <qwen.tiktoken> -d <device>"`
+
+Example: `.\build\bin\Release\main.exe -m Qwen-7B-Chat-GPTQ_INT4_FP16-2K/openvino_model.xml -t Qwen-7B-Chat-GPTQ_INT4_FP16-2K/qwen.tiktoken -d CPU`
+
+## Run on Linux
+Usage: `./build/bin/main -m <openvino_model.xml> -t <qwen.tiktoken> -d <device>"`
+
+Example: `./build/bin/main -m Qwen-7B-Chat-GPTQ_INT4_FP16-2K/openvino_model.xml -t Qwen-7B-Chat-GPTQ_INT4_FP16-2K/qwen.tiktoken -d CPU`
