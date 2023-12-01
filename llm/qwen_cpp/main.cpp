@@ -167,12 +167,6 @@ int main(int argc, char **argv) {
     }
     model->reshape(shapes);
 
-    for (size_t idx = 0; idx < inputs.size(); ++idx) {
-        ov::PartialShape shape = inputs.at(idx).get_partial_shape();
-        shape[0] = BATCH_SIZE;
-        shapes.emplace(idx, shape);
-    }
-    
     // Modify model input type to algin with tokenizer outputs with PrePostProcessor
     ov::preprocess::PrePostProcessor p3(model);
     p3.input("input_ids").tensor().set_element_type(ov::element::i32);  // cast to the type of tokenizer's output
@@ -185,9 +179,12 @@ int main(int argc, char **argv) {
     ov::InferRequest ireq = core.compile_model(model, args.device, device_config).create_infer_request();
     duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Compile model and create infer request took " << duration_ms << " ms" << std::endl;
+    /*
     if (args.device.find("GPU") != std::string::npos) {
 	    model = nullptr; // Release system memory after model compiled on GPU
     }
+    */
+    model = nullptr; // Release system memory after model compiled on GPU
     int32_t out_token;
     int sentence_num = 0;
     std::vector<std::string> sentences;
@@ -237,7 +234,9 @@ int main(int argc, char **argv) {
       total_time = 0;
       int count = 1;
       double second_time = 0;
-      while (out_token !=config.eos_token_id && out_token!=config.im_end_id && count < args.max_context_length) {
+      //while (out_token !=config.eos_token_id && out_token!=config.im_end_id && count < args.max_context_length) {
+      //while (count < args.max_context_length) {
+      while (out_token!=config.im_end_id && count < args.max_context_length) {
           // Prepare input tensor for 2nd+ inference
           ireq.get_tensor("input_ids").data<int32_t>()[0] = out_token;
           ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1});
@@ -247,8 +246,9 @@ int main(int argc, char **argv) {
           }
           // 2nd+ inference
           startTime = Time::now();
-          ireq.start_async();
-          ireq.wait();
+          //ireq.start_async();
+          //ireq.wait();
+          ireq.infer();
           duration_ms = get_duration_ms_until_now(startTime);
           count += 1;
           // Get 2nd+ inference results
@@ -268,7 +268,7 @@ int main(int argc, char **argv) {
       std::cout << "Second inference latency: " << second_time << " ms" << std::endl;
       if (count > 2) {
         std::cout << "Other inference tooks in total: " << total_time << " ms, Average other token latency: " << total_time / (count - 2) << " ms" << std::endl;
-        std::cout << "Input num tokens: " << input_ids.size() << ", output num tokens: " << count - 1 << ", Average inference speed: " << (count - 2) / total_time * 1000.0 << " token/s\n";
+        std::cout << "Input num tokens: " << input_ids.size() << ", output num tokens: " << count << ", Average inference speed: " << (count - 2) / total_time * 1000.0 << " token/s\n";
       }
       std::cout << "******************************************* Text Sentence #" << sentence_num << " Finished ****************************************\n\n";
       sentence_num+=1;
