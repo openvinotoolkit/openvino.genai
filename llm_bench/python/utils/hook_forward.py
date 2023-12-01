@@ -18,7 +18,7 @@ class StableDiffusionHook:
 
     def get_2nd_unet_latency(self):
         return sum(self.unet_time_list[1:]) / (len(self.unet_time_list) - 1) * 1000 if len(self.unet_time_list) > 1 else 0
-    
+
     def get_unet_latency(self):
         return (sum(self.unet_time_list) / len(self.unet_time_list)) * 1000 if len(self.unet_time_list) > 0 else 0
 
