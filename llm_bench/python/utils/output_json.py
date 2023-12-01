@@ -1,8 +1,8 @@
 import json
 
 
-def write_result(report_file, model, framework, device, use_case, iter_data_list, pretrain_time, model_precision):
-    metadata = {'model': model, 'framework': framework, 'device': device, 'precision': model_precision}
+def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision):
+    metadata = {'model': model, 'framework': framework, 'device': device, 'precision': model_precision, 'num_beams': model_args['num_beams'], 'batch_size': model_args['batch_size']}
     result = []
     total_iters = len(iter_data_list)
     for i in range(total_iters):

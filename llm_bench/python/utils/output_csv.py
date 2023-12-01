@@ -46,7 +46,7 @@ def output_comments(result, use_case, writer):
         writer.writerow(result)
 
 
-def write_result(report_file, model, framework, device, use_case, iter_data_list, pretrain_time, model_precision):
+def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision):
     header = [
         'iteration',
         'model',
@@ -66,6 +66,8 @@ def write_result(report_file, model, framework, device, use_case, iter_data_list
         'prompt_idx',
         '1st_infer_latency(ms)',
         '2nd_infer_avg_latency(ms)',
+        'num_beams',
+        'batch_size',
         'result_md5',
     ]
     out_file = Path(report_file)
@@ -91,6 +93,8 @@ def write_result(report_file, model, framework, device, use_case, iter_data_list
             result['device'] = device
             result['pretrain_time(s)'] = round(pretrain_time, 5)
             result['precision'] = model_precision
+            result['num_beams'] = model_args['num_beams']
+            result['batch_size'] = model_args['batch_size']
             total_iters = len(iter_data_list)
 
             skip_iter_nums = 0
@@ -180,4 +184,4 @@ def write_result(report_file, model, framework, device, use_case, iter_data_list
                     result['max_shared_mem(MB)'] = total_max_shared_mem_consumption
                 writer.writerow(result)
 
-            output_comments(result, use_case, writer)
+            output_comments(result, model_args['use_case'], writer)
