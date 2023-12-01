@@ -25,8 +25,27 @@ source <OpenVINO dir>/setupvars.sh
 python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./chatglm3-6b/
 ```
 
-## Run
+### Run
 
+For Linux
 Usage: `chatglm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device" "<prompt>"`
 
 Example: `./build/llm/chatglm_cpp/chatglm ./chatglm3-6b/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "CPU" "Why is the Sun yellow?"`
+
+For Windows
+copy openvino dll and tbb12.dll to chatglm.exe directory
+```sh
+$copy <OpenVINO dir>\runtime\bin\intel64\Release\* build\llm\chatglm_cpp\Release\
+$copy <OpenVINO dir>\runtime\3rdparty\tbb\bin\tbb12.dll build\llm\chatglm_cpp\Release\
+```
+
+copy user_ov_extensions.dll and its dependent dll to chatglm.exe directory
+```sh
+$copy build\thirdparty\openvino_contrib\modules\custom_operations\user_ie_extensions\Release\user_ov_extensions.dll build\llm\chatglm_cpp\Release\
+$copy build\_deps\fast_tokenizer-src\third_party\lib\icudt70.dll build\llm\chatglm_cpp\Release\
+$copy build\_deps\fast_tokenizer-src\third_party\lib\icuuc70.dll build\llm\chatglm_cpp\Release\
+$copy build\_deps\fast_tokenizer-src\lib\core_tokenizers.dll build\llm\chatglm_cpp\Release\
+```
+Usage: `chatglm.exe <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device" "<prompt>"`
+
+Example: `build\llm\chatglm_cpp\Release\chatglm.exe .\chatglm3-6b\openvino_model.xml .\tokenizer.xml .\detokenizer.xml "CPU" "Why is the Sun yellow?"`
