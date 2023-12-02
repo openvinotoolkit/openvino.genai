@@ -37,16 +37,6 @@ class BaseStreamer{
     virtual auto end() -> void = 0;
 };
 
-class StreamerGroup : public BaseStreamer {
-  public:
-    StreamerGroup(std::vector<std::shared_ptr<BaseStreamer>> streamers) : streamers_(std::move(streamers)) {}
-    auto put(const std::vector<int> &output_ids) -> void override;
-    auto end() -> void override;
-
-  private:
-    std::vector<std::shared_ptr<BaseStreamer>> streamers_;
-};
-
 // reference: https://github.com/huggingface/transformers/blob/main/src/transformers/generation/streamers.py
 class TextStreamer : public BaseStreamer {
   public:

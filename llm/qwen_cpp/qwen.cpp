@@ -22,19 +22,6 @@
 
 namespace qwen {
 // ===== streamer =====
-
-auto StreamerGroup::put(const std::vector<int_least32_t> &output_ids) -> void {
-  for (auto &streamer : streamers_) {
-    streamer->put(output_ids);
-  }
-}
-
-auto StreamerGroup::end() -> void {
-  for (auto &streamer : streamers_) {
-    streamer->end();
-  }
-}
-
 auto TextStreamer::put(const std::vector<int> &output_ids) -> void {
   if (is_prompt_) {
     is_prompt_ = false;
