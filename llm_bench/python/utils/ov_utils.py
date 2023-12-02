@@ -176,7 +176,29 @@ def fuse_cache_reorder(ov_model: ov.Model, not_kv_inputs, key_value_input_names,
     ov_model.validate_nodes_and_infer_types()
 
 
-def make_stateful(ov_model: ov.Model, not_kv_inputs, key_value_input_names, key_value_output_names, batch_dim, num_attention_heads, num_beams_and_batch=None):
+def build_state_initializer(ov_model: ov.Model, batch_dim):
+    """Build initialization ShapeOf Expression for all ReadValue ops"""
+    input_ids = ov_model.input('input_ids')
+    batch = opset.gather(opset.shape_of(input_ids), opset.constant([0]), opset.constant(0))
+    for op in ov_model.get_ops():
+        if op.get_type_name() == 'ReadValue':
+            dims = [dim.min_length for dim in list(op.get_output_partial_shape(0))]
+            dims[batch_dim] = batch
+            dims = [opset.constant([dim]) if type(dim) is int else dim for dim in dims]
+            shape = opset.concat(dims, axis=0)
+            broadcast = opset.broadcast(opset.constant(0.0, dtype=op.get_output_element_type(0)), shape)
+            op.set_arguments([broadcast])
+    ov_model.validate_nodes_and_infer_types()
+
+
+def make_stateful(
+        ov_model: ov.Model,
+        not_kv_inputs,
+        key_value_input_names,
+        key_value_output_names,
+        batch_dim,
+        num_attention_heads,
+        num_beams_and_batch=None):
     """ Hides kv-cache inputs and outputs inside the model as variables.
     """
     from openvino._offline_transformations import apply_make_stateful_transformation
@@ -201,12 +223,14 @@ def make_stateful(ov_model: ov.Model, not_kv_inputs, key_value_input_names, key_
             shape = input.get_partial_shape()
             shape[batch_dim] = num_beams_and_batch * num_attention_heads
             input.get_node().set_partial_shape(shape)
-        else:
-            raise Exception('[ NOT IMPLEMENTED ] Cannot build ShapeOf Expression in ReadValue initializer, provide --no_state_initializer argument')
 
-    ov_model.validate_nodes_and_infer_types()
+    if num_beams_and_batch is not None:
+        # Re-validation model if shapes are altered above
+        ov_model.validate_nodes_and_infer_types()
 
     apply_make_stateful_transformation(ov_model, input_output_map)
+    if num_beams_and_batch is None:
+        build_state_initializer(ov_model, batch_dim)
 
 
 def patch_decoding_strategy(hf_model, patch_methods, **kwargs):
