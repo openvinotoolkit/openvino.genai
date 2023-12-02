@@ -184,7 +184,6 @@ def make_stateful(ov_model: ov.Model, not_kv_inputs, key_value_input_names, key_
     input_output_map = {}
     # TODO: Can we derive the dimensions from the model topology?
 
-
     if num_beams_and_batch is not None:
         # Set batch size for input_ids and attention mask to avoid dynamic dimension got propagated from the end of the model back to ReadValue
         for input in not_kv_inputs:
@@ -245,8 +244,8 @@ def patch_stateful(hf_model, ov_model, patch_methods, **kwargs):
 
     if kwargs['no_fuse_cache_reorder']:
         assert not model_has_cache_reorder(ov_model), (
-            'Argument --no_fuse_cache_reorder is provided but the model already has cache reorder fused, it cannot be removed. ' +
-            'Re-export model without cache reorder fused.')
+            'Argument --no_fuse_cache_reorder is provided but the model already has cache reorder fused, it cannot be removed. '
+            + 'Re-export model without cache reorder fused.')
 
     if kwargs['no_fuse_cache_reorder'] and not kwargs['make_stateful']:
         print('[ WARNING ] Argument --no_fuse_cache_reorder is ignored because model is not stateful.')
@@ -280,8 +279,8 @@ def patch_stateful(hf_model, ov_model, patch_methods, **kwargs):
         if not model_has_state(ov_model):
             if num_beams > 1:
                 assert model_has_cache_reorder(ov_model), (
-                    'Requested to make_stateful with num_beams > 1 but there is no beam_idx parameter for cache reorder fused.' +
-                    (' Omit --no_fuse_cache_reorder to enable cache reorder in a model.' if kwargs['no_fuse_cache_reorder'] else ''))
+                    'Requested to make_stateful with num_beams > 1 but there is no beam_idx parameter for cache reorder fused.'
+                    + (' Omit --no_fuse_cache_reorder to enable cache reorder in a model.' if kwargs['no_fuse_cache_reorder'] else ''))
             if kwargs['no_state_initializer']:
                 # will require to make batch/beam dimension static in make_stateful,
                 # otherwise 2 dynamic dimension (batch/dim and sequence) will produce wrong initialization shape

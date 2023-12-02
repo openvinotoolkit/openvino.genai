@@ -54,15 +54,13 @@ from utils.ov_utils import patch_stateful
 # Imports required for export_pytorch override
 import inspect
 import functools
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Union
 from optimum.exporters.onnx.base import OnnxConfig
 from optimum.exporters.onnx.convert import check_dummy_inputs_are_allowed
-from optimum.exporters.onnx.convert import export_pytorch as export_pytorch_to_onnx
 from optimum.exporters.onnx.model_patcher import DecoderModelPatcher
 from openvino.runtime.utils.types import get_element_type
 
 from optimum.exporters.openvino.utils import (
-    OV_XML_FILE_NAME,
     clear_class_registry,
     flattenize_inputs,
     get_input_shapes,
@@ -70,10 +68,15 @@ from optimum.exporters.openvino.utils import (
 )
 
 from optimum.exporters.openvino.convert import export_pytorch_via_onnx, _save_model
+from optimum.utils import is_diffusers_available
+
+import optimum.exporters.openvino.convert
+
+if is_diffusers_available():
+    from diffusers import ModelMixin
 
 import logging
 logger = logging.getLogger(__name__)
-
 
 
 # This function overrides optimum.intel function.
@@ -221,9 +224,9 @@ def export_pytorch(
         ov_model.validate_nodes_and_infer_types()
 
         # Patching model according to stateful parameters
-        model.key_value_input_names =  [name for name in input_names  if name.startswith('past_key_values.')]
+        model.key_value_input_names = [name for name in input_names if name.startswith('past_key_values.')]
         model.key_value_output_names = [name for name in output_names if name.startswith('present.')]
-        patch_stateful(model, ov_model,  False, **export_pytorch.args)
+        patch_stateful(model, ov_model, False, **export_pytorch.args)
         _save_model(ov_model, output, compress_to_fp16=fp16, load_in_8bit=int8)
         clear_class_registry()
         del model
@@ -231,8 +234,7 @@ def export_pytorch(
     return input_names, output_names, False
 
 
-import optimum.exporters.openvino.convert
-#TODO: Unpatch
+# TODO: Unpatch
 optimum.exporters.openvino.convert.export_pytorch = export_pytorch
 
 
@@ -1467,18 +1469,6 @@ def convert_chatglm(args):
             log.info(f"Compress model weights to {compress_option}")
             ov_compressed_path = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
             compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, compress_option, args)
-
-
-def flattenize_inputs(inputs):
-    flatten_inputs = []
-    for input_data in inputs:
-        if input_data is None:
-            continue
-        if isinstance(input_data, (list, tuple)):
-            flatten_inputs.extend(flattenize_inputs(input_data))
-        else:
-            flatten_inputs.append(input_data)
-    return flatten_inputs
 
 
 def convert_falcon(args):
