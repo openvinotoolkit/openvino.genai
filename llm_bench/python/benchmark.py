@@ -297,7 +297,6 @@ def run_ldm_super_resolution(img, num, nsteps, pipe, args, framework, iter_data_
     result_md5_list = []
     if framework == 'ov':
         res[0].save(rslt_img_fn)
-        #md5hash = hashlib.md5(Image.open(rslt_img_fn).tobytes())
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
 
     generation_time = end - start
