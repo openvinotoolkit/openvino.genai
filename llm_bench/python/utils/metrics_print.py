@@ -53,14 +53,14 @@ def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion):
     iter_data['other_tokens_avg_latency'] = stable_diffusion.get_2nd_unet_latency()
     iter_data['first_token_infer_latency'] = iter_data['first_token_latency']
     iter_data['other_tokens_infer_avg_latency'] = iter_data['other_tokens_avg_latency']
-    log.info(f"[{iter_str}] First infer of unet latency: {iter_data['first_token_latency']:.2f} ms/infer, "
-             f"other infers of unet latency: {iter_data['other_tokens_avg_latency']:.2f} ms/infer",)
-    log.info(f"[{iter_str}] text encoder latency: {stable_diffusion.get_text_encoder_latency():.2f} ms/infer, "
-             f"unet latency: {stable_diffusion.get_unet_latency():.2f} ms/infer, "
-             f"vae decoder latency: {stable_diffusion.get_vae_decoder_latency():.2f} ms/infer, "
-             f"text encoder infer count: {stable_diffusion.get_text_encoder_infer_count()}, "
-             f"unet infer count: {stable_diffusion.get_unet_infer_count()}, "
-             f"vae decoder infer count: {stable_diffusion.get_vae_decoder_infer_count()}",)
+    log.info(f"[{iter_str}] First iteration of unet latency: {iter_data['first_token_latency']:.2f} ms/iteration, "
+             f"other iterations of unet latency: {iter_data['other_tokens_avg_latency']:.2f} ms/iteration",)
+    log.info(f"[{iter_str}] text encoder latency: {stable_diffusion.get_text_encoder_latency():.2f} ms/iteration, "
+             f"unet latency: {stable_diffusion.get_unet_latency():.2f} ms/iteration, "
+             f"vae decoder latency: {stable_diffusion.get_vae_decoder_latency():.2f} ms/iteration, "
+             f"text encoder iteration count: {stable_diffusion.get_text_encoder_iter_count()}, "
+             f"unet iteration count: {stable_diffusion.get_unet_iter_count()}, "
+             f"vae decoder iteration count: {stable_diffusion.get_vae_decoder_iter_count()}",)
 
 
 def print_ldm_unet_vqvae_infer_latency(iter_num, iter_data, tms=None, warm_up=False):
@@ -73,13 +73,13 @@ def print_ldm_unet_vqvae_infer_latency(iter_num, iter_data, tms=None, warm_up=Fa
     iter_data['first_token_infer_latency'] = iter_data['first_token_latency']
     iter_data['other_tokens_infer_avg_latency'] = iter_data['other_tokens_avg_latency']
 
-    log.info(f"[{iter_str}] First infer of unet latency: {iter_data['first_token_latency']:.2f} ms/infer, "
-             f"other infers of unet latency: {iter_data['other_tokens_avg_latency']:.2f} ms/infer",)
+    log.info(f"[{iter_str}] First iteration of unet latency: {iter_data['first_token_latency']:.2f} ms/iteration, "
+             f"other iterations of unet latency: {iter_data['other_tokens_avg_latency']:.2f} ms/iteration",)
     if len_tms > 1:
-        log.info(f"[{iter_str}] unet latency: {(sum(tms[0:(len_tms - 1)]) / (len_tms - 1)) * 1000:.2f} ms/infer, "
-                 f"vqvae decoder latency: {tms[len_tms - 1] * 1000:.2f} ms/infer, "
-                 f"unet infer count: {len_tms - 1}, "
-                 f"vqvae decoder infer count: 1",)
+        log.info(f"[{iter_str}] unet latency: {(sum(tms[0:(len_tms - 1)]) / (len_tms - 1)) * 1000:.2f} ms/iteration, "
+                 f"vqvae decoder latency: {tms[len_tms - 1] * 1000:.2f} ms/iteration, "
+                 f"unet iteration count: {len_tms - 1}, "
+                 f"vqvae decoder iteration count: 1",)
 
 
 def print_average(iter_data_list):
