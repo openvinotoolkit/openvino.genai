@@ -211,9 +211,10 @@ def patch_inter_processing(hf_model, **kwargs):
             input = ov_model.input(kv_name_pair[0])
             shape = input.get_partial_shape()
 
-            # suppose 0-th dimension is a batch
+            # By default, batch is the 0-th but chatglm uses 1-st dimension as batch
             # TODO: Deduce from a model via ordinal reshape
-            shape[0] = batch_size * num_attention_heads * num_beams
+            batch_idx = 1 if hf_model.config.model_type == 'chatglm' else 0
+            shape[batch_idx] = batch_size * num_attention_heads * num_beams
 
             input.get_node().set_partial_shape(shape)
 
@@ -256,7 +257,7 @@ def create_text_gen_model(model_path, device, **kwargs):
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if model_type in ['mpt', 'falcon', 'replit', 'codegen2', 'chatglm', 'chatglm2']:
+        if model_type in ['mpt', 'falcon', 'replit', 'codegen2', 'chatglm']:
             start = time.perf_counter()
             ov_model = model_class.from_pretrained(
                 model_path,
