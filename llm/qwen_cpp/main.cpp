@@ -111,7 +111,7 @@ static auto get_utf8_line(std::string &line) -> bool {
   return !!std::getline(std::cin, line);
 }
 
-#define COMPILE_FROM_XML 1
+#define COMPILE_FROM_XML 0
 
 int main(int argc, char **argv) {
   try {
