@@ -5,6 +5,7 @@
 #include <openvino/openvino.hpp>
 #include <openvino/runtime/properties.hpp>
 #include "openvino/runtime/intel_gpu/properties.hpp"
+#include "openvino/pass/serialize.hpp"
 
 
 typedef std::chrono::high_resolution_clock Time;
@@ -110,6 +111,8 @@ static auto get_utf8_line(std::string &line) -> bool {
   return !!std::getline(std::cin, line);
 }
 
+#define COMPILE_FROM_XML 1
+
 int main(int argc, char **argv) {
   try {
     Args args = parse_args(argc, argv);
@@ -125,6 +128,7 @@ int main(int argc, char **argv) {
     // Init Text Streamer
     auto text_streamer = std::make_shared<qwen::TextStreamer>(std::cout, tokenizer.get());
     startTime = Time::now();
+
 
     // Init OpenVINO Runtime
     ov::Core core;
@@ -147,11 +151,13 @@ int main(int argc, char **argv) {
     }
 
     // Read OpenVINO Model
+#if !COMPILE_FROM_XML
     std::shared_ptr<ov::Model> model = core.read_model(args.model_path);
     duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Read Qwen Model took " << duration_ms << " ms" << std::endl;
+#endif
     constexpr size_t BATCH_SIZE = 1;
-
+#if !COMPILE_FROM_XML
     // Reshape model
     std::map<size_t, ov::PartialShape> shapes = {
         {0, ov::PartialShape{
@@ -166,22 +172,38 @@ int main(int argc, char **argv) {
         shapes.emplace(idx, shape);
     }
     model->reshape(shapes);
-
     // Modify model input type to algin with tokenizer outputs with PrePostProcessor
     ov::preprocess::PrePostProcessor p3(model);
     p3.input("input_ids").tensor().set_element_type(ov::element::i32);  // cast to the type of tokenizer's output
     p3.input("attention_mask").tensor().set_element_type(ov::element::i32);
     model = p3.build();
-    inputs = model->inputs();
-
+    std::string modifiled_file = std::regex_replace(args.model_path, std::regex("openvino_model"), "modified_openvino_model"); // replace 'def' -> 'klm'
+    std::cout << "Save modified model in " << modifiled_file << "\n";
+    ov::serialize(compiled_model.get_runtime_model(), modifiled_file);
+    //inputs = model->inputs();
+#endif
     // Compile model
     startTime = Time::now();
-    ov::InferRequest ireq = core.compile_model(model, args.device, device_config).create_infer_request();
+#if !COMPILE_FROM_XML
+    ov::CompiledModel compiled_model = core.compile_model(model, args.device, device_config);
+#else
+    ov::CompiledModel compiled_model = core.compile_model(args.model_path, args.device, device_config);
+#endif
     duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Compile model and create infer request took " << duration_ms << " ms" << std::endl;
+    ov::InferRequest ireq = compiled_model.create_infer_request();
+
+#if !COMPILE_FROM_XML
+        auto model_inputs = model->inputs();
+        model = nullptr;
+#else
+        auto model_inputs = compiled_model.inputs();
+#endif
+    /*
     if (args.device.find("GPU") != std::string::npos) {
 	    model = nullptr; // Release system memory after model compiled on GPU
     }
+    */
     int32_t out_token;
     int sentence_num = 0;
     std::vector<std::string> sentences;
@@ -204,9 +226,11 @@ int main(int argc, char **argv) {
 
       // Prepare input tensor for first infer
       startTime = Time::now();
-      for (size_t idx = 1; idx < inputs.size() - 1; ++idx) {
-          ireq.get_input_tensor(idx).set_shape(inputs.at(idx).get_partial_shape().get_min_shape());
+
+      for (size_t idx = 1; idx < model_inputs.size() - 1; ++idx) {
+          ireq.get_input_tensor(idx).set_shape(model_inputs.at(idx).get_partial_shape().get_min_shape());
       }
+
       ireq.get_tensor("input_ids").set_shape({ BATCH_SIZE, input_ids.size() });
       ireq.get_tensor("attention_mask").set_shape({ BATCH_SIZE, input_ids.size() });
       std::copy_n(input_ids.data(), input_ids.size(), ireq.get_tensor("input_ids").data<int32_t>());
@@ -236,7 +260,7 @@ int main(int argc, char **argv) {
           ireq.get_tensor("input_ids").data<int32_t>()[0] = out_token;
           ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1});
           std::fill_n(ireq.get_tensor("attention_mask").data<int32_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
-          for (size_t idx = 1; idx < inputs.size() - 1; ++idx) {
+          for (size_t idx = 1; idx < model_inputs.size() - 1; ++idx) {
             ireq.set_input_tensor(idx, ireq.get_output_tensor(idx));
           }
           // 2nd+ inference
