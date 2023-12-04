@@ -179,7 +179,7 @@ int main(int argc, char **argv) {
     model = p3.build();
     std::string modifiled_file = std::regex_replace(args.model_path, std::regex("openvino_model"), "modified_openvino_model"); // replace 'def' -> 'klm'
     std::cout << "Save modified model in " << modifiled_file << "\n";
-    ov::serialize(compiled_model.get_runtime_model(), modifiled_file);
+    ov::serialize(model, modifiled_file);
     //inputs = model->inputs();
 #endif
     // Compile model
