@@ -3,7 +3,6 @@
 
 #include <openvino/openvino.hpp>
 #include <openvino_extensions/strings.hpp>
-#include <valarray>
 
 namespace {
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest&& tokenizer, std::string_view prompt) {
@@ -128,19 +127,17 @@ struct Hypotheses {
             return false;
         }
         switch (stop_criteria) {
-            case StopCriteria::early: done = true; return true;
+            case StopCriteria::early: return done = true;
             case StopCriteria::heuristic: {
                 double worst_score = beams.front().log_prob;
                 double highest_attainable_score = best_sum_logprobs / std::pow(double(cur_len), LENGTH_PENALTY);
-                done = worst_score >= highest_attainable_score;
-                return worst_score >= highest_attainable_score;
+                return done = worst_score >= highest_attainable_score;
             }
             case StopCriteria::never: {
                 double worst_score = beams.front().log_prob;
                 double length = LENGTH_PENALTY > 0.0f ? MAX_NEW_TOKENS : cur_len;
                 double highest_attainable_score = best_sum_logprobs / std::pow(length, LENGTH_PENALTY);
-                done = worst_score >= highest_attainable_score;
-                return worst_score >= highest_attainable_score;
+                return done = worst_score >= highest_attainable_score;
             }
             default: throw std::runtime_error("Never reached");
         }
@@ -192,20 +189,22 @@ struct GroupBeamSearcher {
         }
         size_t temp_count = 0;
         for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
-            if (groups[group_idx].hypotheses.done) {
+            Group& group = groups[group_idx];
+            if (group.hypotheses.done) {
                 continue;
             }
             for (size_t beam_idx = 0; beam_idx < GROUP_SIZE; ++beam_idx) {
                 global_beam_ids[group_idx][beam_idx] = temp_count;
-                if (!groups[group_idx].beams[beam_idx].tokens.empty() && logits.get_shape()[0] != 1) {  // TODO: all of beams
+                if (!group.beams[beam_idx].tokens.empty() && logits.get_shape()[0] != 1) {  // TODO: all of beams
                     ++temp_count;
                 }
             }
         }
 
         for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
-            if (groups[group_idx].hypotheses.done) {
-                for (Beam& beam : groups[group_idx].beams) {
+            Group& group = groups[group_idx];
+            if (group.hypotheses.done) {
+                for (Beam& beam : group.beams) {
                     beam.tokens.push_back(pad_token);
                 }
                 continue;
@@ -234,7 +233,7 @@ struct GroupBeamSearcher {
                         tokens[size_t(groups[prev_group_idx].beams[prev_beam_idx].tokens.back())].log -= diversity_penalty;
                     }
                 }
-                std::vector<int64_t>& other_tokens = groups[group_idx].beams[beam_idx].tokens;
+                std::vector<int64_t>& other_tokens = group.beams[beam_idx].tokens;
                 std::vector<int64_t> full_text;
                 for (size_t idx = 0; idx < input_ids.get_size(); ++idx) {
                     full_text.push_back(input_ids.data<int64_t>()[idx]);
@@ -248,22 +247,23 @@ struct GroupBeamSearcher {
                 std::sort(tokens.begin(), tokens.end());
                 size_t new_token_idx = 0;
                 for (int added_count = 0; added_count < int(2 * GROUP_SIZE); ++added_count) {
-                    candidates.push_back(groups[group_idx].beams[beam_idx]);
-                    candidates.back().log_prob += tokens[new_token_idx].log;
-                    candidates.back().tokens.push_back(tokens[new_token_idx].idx);
-                    candidates.back().global_beam_idx = global_beam_ids[group_idx][beam_idx];
+                    Beam new_candidate = group.beams[beam_idx];
+                    new_candidate.log_prob += tokens[new_token_idx].log;
+                    new_candidate.tokens.push_back(tokens[new_token_idx].idx);
+                    new_candidate.global_beam_idx = global_beam_ids[group_idx][beam_idx];
                     ++new_token_idx;
-                    if (stopping_criteria(candidates.back())) {
-                        groups[group_idx].hypotheses.push(std::move(candidates.back()), input_ids.get_size());
-                        candidates.pop_back();
+                    if (stopping_criteria(new_candidate)) {
+                        group.hypotheses.push(std::move(new_candidate), input_ids.get_size());
                         --added_count;
+                    } else {
+                        candidates.push_back(std::move(new_candidate));
                     }
                 }
             }
             // Sample 2 * GROUP_SIZE next tokens to get at least 1 non EOS token per beam
             std::partial_sort(candidates.begin(), candidates.begin() + 2 * GROUP_SIZE, candidates.end());
-            size_t cur_len = groups[group_idx].beams.front().tokens.size() + 1;
-            groups[group_idx].beams.clear();
+            size_t cur_len = candidates.front().tokens.size();
+            group.beams.clear();
             for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
                 if (eos_token == candidates[cand_idx].tokens.back()) {  // TODO: idx->token_id
                     // if beam_token does not belong to top num_beams tokens, it should not be added
@@ -271,18 +271,18 @@ struct GroupBeamSearcher {
                         continue;
                     }
                     candidates[cand_idx].tokens.resize(candidates[cand_idx].tokens.size() - 1);
-                    groups[group_idx].hypotheses.push(std::move(candidates[cand_idx]), input_ids.get_size());
+                    group.hypotheses.push(std::move(candidates[cand_idx]), input_ids.get_size());
                 } else {
-                    groups[group_idx].beams.push_back(std::move(candidates[cand_idx]));
-                    next_tokens.push_back({groups[group_idx].beams.back().tokens.back(), groups[group_idx].beams.back().global_beam_idx});
-                    if (groups[group_idx].beams.size() == GROUP_SIZE) {
+                    group.beams.push_back(std::move(candidates[cand_idx]));
+                    next_tokens.push_back({group.beams.back().tokens.back(), group.beams.back().global_beam_idx});
+                    if (group.beams.size() == GROUP_SIZE) {
                         break;
                     }
                 }
             }
-            groups[group_idx].hypotheses.is_done(cur_len + input_ids.get_size(), groups[group_idx].beams.front().log_prob);  // TODO: that requires groups[group_idx].beams to be not empty
-            if (groups[group_idx].hypotheses.done) {
-                next_tokens.resize(next_tokens.size() - groups[group_idx].beams.size());
+            group.hypotheses.is_done(cur_len + input_ids.get_size(), group.beams.front().log_prob);  // TODO: that requires group.beams to be not empty
+            if (group.hypotheses.done) {
+                next_tokens.resize(next_tokens.size() - group.beams.size());
             }
         }
         return next_tokens;
