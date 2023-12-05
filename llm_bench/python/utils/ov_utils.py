@@ -287,17 +287,17 @@ def patch_stateful(hf_model, ov_model, patch_methods, **kwargs):
         else:
             print('[ WARNING ] Model has "beam_idx" parameter which means that the cache reorder is already fused, skipping fuse transformation')
 
-        if patch_methods:
-            # override _reorder_cache to avoid cache manipulation outside of the model as it is already done inside
-            def _reorder_cache_stub(self, past_key_values, beam_idx):
-                # TODO: Apply it differently based on model type
-                self.next_beam_idx = np.array(beam_idx)  # save beam_idx to be used as an input in the next iteration
-                return past_key_values
+    if patch_methods and model_has_cache_reorder(ov_model):
+        # override _reorder_cache to avoid cache manipulation outside of the model as it is already done inside
+        def _reorder_cache_stub(self, past_key_values, beam_idx):
+            # TODO: Apply it differently based on model type
+            self.next_beam_idx = np.array(beam_idx)  # save beam_idx to be used as an input in the next iteration
+            return past_key_values
 
-            hf_model.use_cache_as_state = False
-            hf_model._reorder_cache = types.MethodType(_reorder_cache_stub, hf_model)
-            hf_model.forward = types.MethodType(forward_simplified, hf_model)  # need custom forward to set beam_idx input to OV model
-            hf_model.next_beam_idx = np.zeros([num_beams * batch_size], dtype=int)  # initial value for beam_idx is all zeros
+        hf_model.use_cache_as_state = False
+        hf_model._reorder_cache = types.MethodType(_reorder_cache_stub, hf_model)
+        hf_model.forward = types.MethodType(forward_simplified, hf_model)  # need custom forward to set beam_idx input to OV model
+        hf_model.next_beam_idx = np.zeros([num_beams * batch_size], dtype=int)  # initial value for beam_idx is all zeros
 
     if kwargs['make_stateful']:
         if not model_has_state(ov_model):
@@ -327,9 +327,9 @@ def patch_stateful(hf_model, ov_model, patch_methods, **kwargs):
         else:
             print('[ WARNING ] --make_stateful has no effect because it was detected that the states already exist in the model')
 
-        if patch_methods:
-            hf_model.use_cache_as_state = True
-            hf_model.forward = types.MethodType(forward_simplified, hf_model)  # override to avoid cache manipulation outside of the model
+    if patch_methods and model_has_state(ov_model):
+        hf_model.use_cache_as_state = True
+        hf_model.forward = types.MethodType(forward_simplified, hf_model)  # override to avoid cache manipulation outside of the model
 
 
 def save_model(hf_model, **kwargs):
@@ -341,7 +341,7 @@ def save_model(hf_model, **kwargs):
 
 def patch_inter_processing_and_compile(hf_model, **kwargs):
     patch_decoding_strategy(hf_model, True, **kwargs)
-    patch_stateful(hf_model, hf_model.ov_model, True, **kwargs)
+    patch_stateful(hf_model, hf_model.model, True, **kwargs)
     save_model(hf_model, **kwargs)
     hf_model.compile()
 
