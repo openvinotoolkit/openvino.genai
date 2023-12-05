@@ -223,7 +223,6 @@ def generate(self, input_ids, **kwargs):
 
 
 def main():
-    assert False
     if len(sys.argv) != 12:
         raise RuntimeError("Usage: {sys.argv[0]} <pred.txt> <MODEL_DIR> '<PROMPT>' ...")
     with open(sys.argv[1], 'r') as file:
