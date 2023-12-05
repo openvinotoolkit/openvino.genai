@@ -137,7 +137,8 @@ struct Hypotheses {
             }
             case StopCriteria::never: {
                 double worst_score = beams.front().log_prob;
-                double highest_attainable_score = LENGTH_PENALTY > 0.0f ? best_sum_logprobs / std::pow(double(MAX_NEW_TOKENS), LENGTH_PENALTY) : best_sum_logprobs / std::pow(double(cur_len), LENGTH_PENALTY);
+                double length = LENGTH_PENALTY > 0.0f ? MAX_NEW_TOKENS : cur_len;
+                double highest_attainable_score = best_sum_logprobs / std::pow(length, LENGTH_PENALTY);
                 done = worst_score >= highest_attainable_score;
                 return worst_score >= highest_attainable_score;
             }
