@@ -23,7 +23,7 @@ ov::Tensor detokenize(ov::InferRequest& detokenizer, std::vector<int64_t> tokens
     return detokenizer.get_output_tensor();
 }
 
-// Modifyed Knuth–Morris–Pratt algorithm which returns a set of tokens following after every needle occurance in haystack
+// Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
 std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, std::vector<int64_t> needle) {
     if (needle.empty()) {  // NO_REPEAT_NGRAM_SIZE == 1, ban every token
         return {haystack.begin(), haystack.end()};
@@ -75,66 +75,52 @@ int64_t EOS_TOKEN;  // There's no way to extract the value from the tokenizer fo
 }
 
 struct Beam {
-    float log_prob;
+    float score = -1e9;  // The bigger, the better
     std::vector<int64_t> tokens;
     size_t batch_idx = 0;
     size_t global_beam_idx = 0;
-    bool operator<(const Beam& other) {
-        return log_prob > other.log_prob;  // greater, not less to build min heap
-    }
-    Beam() : log_prob{-1e9} {}
+    Beam() = default;
     Beam& operator=(Beam&& other) {
-        log_prob = other.log_prob;
+        score = other.score;
         tokens = std::move(other.tokens);
         batch_idx = other.batch_idx;
         global_beam_idx = other.global_beam_idx;
         return *this;
     }
-    Beam(Beam&& other) : log_prob{other.log_prob}, tokens{std::move(other.tokens)}, batch_idx{other.batch_idx}, global_beam_idx{other.global_beam_idx} {};
-    Beam(const Beam& other) : log_prob{other.log_prob}, tokens{other.tokens}, batch_idx{other.batch_idx}, global_beam_idx{other.global_beam_idx} {};
+    Beam(Beam&& other) : score{other.score}, tokens{std::move(other.tokens)}, batch_idx{other.batch_idx}, global_beam_idx{other.global_beam_idx} {};
+    Beam(const Beam& other) : score{other.score}, tokens{other.tokens}, batch_idx{other.batch_idx}, global_beam_idx{other.global_beam_idx} {};
 };
 
-std::ostream& operator<<(std::ostream& os, const Beam& beam) {
-    os << std::setprecision(6) << beam.log_prob << ": ";
-    for (int64_t token : beam.tokens) {
-        os << token << ", ";
-    }
-    return os;
+bool greater(const Beam& left, const Beam& right) {
+    return left.score > right.score;
 }
 
-std::ostream& operator<<(std::ostream& os, const std::vector<Beam>& beams) {
-    for (const Beam& beam : beams) {
-        os << beam << '\n';
-    }
-    return os;
-}
-
-
-struct Hypotheses {
-    std::vector<Beam> beams;
+struct Group {
+    std::vector<Beam> ongoing;  // TODO: one contigous array with all beams?
+    std::vector<Beam> completed;
     bool done = false;
-    void push(Beam&& beam, size_t prompt_light) {
-        beam.log_prob = float(double(beam.log_prob) / std::pow(beam.tokens.size() + prompt_light, LENGTH_PENALTY));
-        beams.push_back(std::move(beam));
-        std::push_heap(beams.begin(), beams.end());
-        if (beams.size() > GROUP_SIZE) {
-            std::pop_heap(beams.begin(), beams.end());
-            beams.pop_back();
+    void finish(Beam&& beam, size_t prompt_light) {
+        beam.score = float(double(beam.score) / std::pow(beam.tokens.size() + prompt_light, LENGTH_PENALTY));
+        completed.push_back(std::move(beam));
+        std::push_heap(completed.begin(), completed.end(), greater);  // Min heap
+        if (completed.size() > GROUP_SIZE) {
+            std::pop_heap(completed.begin(), completed.end(), greater);
+            completed.pop_back();
         }
     }
     bool is_done(double best_sum_logprobs, size_t cur_len) {
-        if (beams.size() < GROUP_SIZE) {
+        if (completed.size() < GROUP_SIZE) {
             return false;
         }
         switch (stop_criteria) {
             case StopCriteria::early: return done = true;
             case StopCriteria::heuristic: {
-                double worst_score = beams.front().log_prob;
+                double worst_score = completed.front().score;
                 double highest_attainable_score = best_sum_logprobs / std::pow(double(cur_len), LENGTH_PENALTY);
                 return done = worst_score >= highest_attainable_score;
             }
             case StopCriteria::never: {
-                double worst_score = beams.front().log_prob;
+                double worst_score = completed.front().score;
                 double length = LENGTH_PENALTY > 0.0f ? MAX_NEW_TOKENS : cur_len;
                 double highest_attainable_score = best_sum_logprobs / std::pow(length, LENGTH_PENALTY);
                 return done = worst_score >= highest_attainable_score;
@@ -142,17 +128,6 @@ struct Hypotheses {
             default: throw std::runtime_error("Never reached");
         }
     }
-};
-
-struct Token {double log; int64_t idx;
-    bool operator<(Token indexed) {
-        return log > indexed.log;  // greater, not less to pick most probable tokens
-    }
-};
-
-struct Group {
-    std::vector<Beam> beams;  // TODO: one contigous array with all beams?
-    Hypotheses hypotheses;
 };
 
 struct TokenToBeam {int64_t token_idx; size_t beam_idx;};
@@ -175,8 +150,8 @@ struct GroupBeamSearcher {
             throw std::runtime_error("input_ids batch size must be 1");
         }
         for (Group & group : groups) {
-            group.beams.resize(GROUP_SIZE);
-            group.beams.front().log_prob = 0.0;
+            group.ongoing.resize(GROUP_SIZE);
+            group.ongoing.front().score = 0.0;
         }
     }
 
@@ -190,12 +165,12 @@ struct GroupBeamSearcher {
         size_t temp_count = 0;
         for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
             Group& group = groups[group_idx];
-            if (group.hypotheses.done) {
+            if (group.done) {
                 continue;
             }
             for (size_t beam_idx = 0; beam_idx < GROUP_SIZE; ++beam_idx) {
                 global_beam_ids[group_idx][beam_idx] = temp_count;
-                if (!group.beams[beam_idx].tokens.empty() && logits.get_shape()[0] != 1) {  // TODO: all of beams
+                if (!group.ongoing[beam_idx].tokens.empty() && logits.get_shape()[0] != 1) {  // TODO: all of beams
                     ++temp_count;
                 }
             }
@@ -203,8 +178,8 @@ struct GroupBeamSearcher {
 
         for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
             Group& group = groups[group_idx];
-            if (group.hypotheses.done) {
-                for (Beam& beam : group.beams) {
+            if (group.done) {
+                for (Beam& beam : group.ongoing) {
                     beam.tokens.push_back(pad_token);
                 }
                 continue;
@@ -223,6 +198,7 @@ struct GroupBeamSearcher {
                 float log_sum = std::log(std::accumulate(beam_logits, beam_logits + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
                     return accumulated + std::exp(to_add - max_logit);
                 }));
+                struct Token {double log_prob; int64_t idx;};
                 std::vector<Token> tokens;
                 tokens.reserve(vocab_size);
                 for (size_t idx = 0; idx < vocab_size; ++idx) {
@@ -230,10 +206,10 @@ struct GroupBeamSearcher {
                 }
                 for (size_t prev_group_idx = 0; prev_group_idx < group_idx; ++prev_group_idx) {  // TODO: range based for
                     for (size_t prev_beam_idx = 0; prev_beam_idx < GROUP_SIZE; ++prev_beam_idx) {
-                        tokens[size_t(groups[prev_group_idx].beams[prev_beam_idx].tokens.back())].log -= diversity_penalty;
+                        tokens[size_t(groups[prev_group_idx].ongoing[prev_beam_idx].tokens.back())].log_prob -= diversity_penalty;
                     }
                 }
-                std::vector<int64_t>& other_tokens = group.beams[beam_idx].tokens;
+                std::vector<int64_t>& other_tokens = group.ongoing[beam_idx].tokens;
                 std::vector<int64_t> full_text;
                 for (size_t idx = 0; idx < input_ids.get_size(); ++idx) {
                     full_text.push_back(input_ids.data<int64_t>()[idx]);
@@ -241,19 +217,21 @@ struct GroupBeamSearcher {
                 full_text.insert(full_text.end(), other_tokens.begin(), other_tokens.end());
                 if (full_text.size() > 1 && full_text.size() >= no_repeat_ngram_size) {
                     for (int64_t banned_token : kmp_search(full_text, {full_text.end() - ptrdiff_t(no_repeat_ngram_size) + 1, full_text.end()})) {
-                        tokens[size_t(banned_token)].log = -std::numeric_limits<float>::infinity();
+                        tokens[size_t(banned_token)].log_prob = -std::numeric_limits<float>::infinity();
                     }
                 }
-                std::sort(tokens.begin(), tokens.end());
+                std::sort(tokens.begin(), tokens.end(), [](Token left, Token right) {
+                    return left.log_prob > right.log_prob;  // Most probable tokens in front
+                });
                 size_t new_token_idx = 0;
                 for (int added_count = 0; added_count < int(2 * GROUP_SIZE); ++added_count) {
-                    Beam new_candidate = group.beams[beam_idx];
-                    new_candidate.log_prob += tokens[new_token_idx].log;
+                    Beam new_candidate = group.ongoing[beam_idx];
+                    new_candidate.score += tokens[new_token_idx].log_prob;
                     new_candidate.tokens.push_back(tokens[new_token_idx].idx);
                     new_candidate.global_beam_idx = global_beam_ids[group_idx][beam_idx];
                     ++new_token_idx;
                     if (stopping_criteria(new_candidate)) {
-                        group.hypotheses.push(std::move(new_candidate), input_ids.get_size());
+                        group.finish(std::move(new_candidate), input_ids.get_size());
                         --added_count;
                     } else {
                         candidates.push_back(std::move(new_candidate));
@@ -261,9 +239,9 @@ struct GroupBeamSearcher {
                 }
             }
             // Sample 2 * GROUP_SIZE next tokens to get at least 1 non EOS token per beam
-            std::partial_sort(candidates.begin(), candidates.begin() + 2 * GROUP_SIZE, candidates.end());
+            std::partial_sort(candidates.begin(), candidates.begin() + 2 * GROUP_SIZE, candidates.end(), greater);  // Highest score beams in front
             size_t cur_len = candidates.front().tokens.size();
-            group.beams.clear();
+            group.ongoing.clear();
             for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
                 if (eos_token == candidates[cand_idx].tokens.back()) {  // TODO: idx->token_id
                     // if beam_token does not belong to top num_beams tokens, it should not be added
@@ -271,18 +249,18 @@ struct GroupBeamSearcher {
                         continue;
                     }
                     candidates[cand_idx].tokens.resize(candidates[cand_idx].tokens.size() - 1);
-                    group.hypotheses.push(std::move(candidates[cand_idx]), input_ids.get_size());
+                    group.finish(std::move(candidates[cand_idx]), input_ids.get_size());
                 } else {
-                    group.beams.push_back(std::move(candidates[cand_idx]));
-                    next_tokens.push_back({group.beams.back().tokens.back(), group.beams.back().global_beam_idx});
-                    if (group.beams.size() == GROUP_SIZE) {
+                    group.ongoing.push_back(std::move(candidates[cand_idx]));
+                    next_tokens.push_back({group.ongoing.back().tokens.back(), group.ongoing.back().global_beam_idx});
+                    if (group.ongoing.size() == GROUP_SIZE) {
                         break;
                     }
                 }
             }
-            group.hypotheses.is_done(cur_len + input_ids.get_size(), group.beams.front().log_prob);  // TODO: that requires group.beams to be not empty
-            if (group.hypotheses.done) {
-                next_tokens.resize(next_tokens.size() - group.beams.size());
+            group.is_done(cur_len + input_ids.get_size(), group.ongoing.front().score);  // TODO: that requires group.ongoing to be not empty
+            if (group.done) {
+                next_tokens.resize(next_tokens.size() - group.ongoing.size());
             }
         }
         return next_tokens;
@@ -293,17 +271,17 @@ struct GroupBeamSearcher {
 std::vector<std::vector<Beam>> finilize(GroupBeamSearcher&& group_beam_searcher) {
     std::vector<std::vector<Beam>> finalized;
     for (Group& group : group_beam_searcher.groups) {
-        if (group.hypotheses.is_done(group.beams.front().tokens.size() + group_beam_searcher.input_ids.get_size(), group.beams.front().log_prob)) {
+        if (group.is_done(group.ongoing.front().tokens.size() + group_beam_searcher.input_ids.get_size(), group.ongoing.front().score)) {
             continue;
         }
-        for (Beam& beam: group.beams) {  // TODO: &&  // TODO: iterator based push
-            group.hypotheses.push(std::move(beam), group_beam_searcher.input_ids.get_size());
+        for (Beam& beam: group.ongoing) {  // TODO: &&  // TODO: iterator based push
+            group.finish(std::move(beam), group_beam_searcher.input_ids.get_size());
         }
     }
     for (Group& group: group_beam_searcher.groups) {
         finalized.emplace_back();
-        std::sort_heap(group.hypotheses.beams.begin(), group.hypotheses.beams.end());
-        for (const Beam& beam: group.hypotheses.beams) {
+        std::sort_heap(group.completed.begin(), group.completed.end(), greater);
+        for (const Beam& beam: group.completed) {
             finalized.back().push_back(beam);
         }
     }
@@ -408,7 +386,7 @@ int main(int argc, char* argv[]) try {
     for (const std::vector<Beam>& group : finilize(std::move(group_beam_searcher))) {
         std::cout << "Group:\n";
         for (const Beam& beam : group) {
-            std::cout << beam.log_prob << ": " << openvino_extensions::unpack_strings(detokenize(detokenizer, beam.tokens)).front() << '\n';
+            std::cout << beam.score << ": " << openvino_extensions::unpack_strings(detokenize(detokenizer, beam.tokens)).front() << '\n';
         }
     }
     std::cout << '\n';
