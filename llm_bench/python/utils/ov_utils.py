@@ -74,7 +74,7 @@ def forward_simplified(
                 state.reset()
             # Set initial value for the next beam_idx input that will be used at the current iteration
             # and will be optionally updated by _reorder_cache at the next iterations if beam_search is used
-            self.next_beam_idx = np.array(range(shape_input_ids[0] * num_attention_heads), dtype=int)
+            self.next_beam_idx = np.array(range(state_batch_size), dtype=int)
 
     inputs['input_ids'] = np.array(input_ids)
 
