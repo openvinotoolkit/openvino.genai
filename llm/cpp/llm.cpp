@@ -89,7 +89,7 @@ struct Group {
             min_heap.pop_back();
         }
     }
-    bool is_done(float best_sum_logprobs, size_t cur_len, float length_penalty, size_t max_new_tokens, size_t group_size, StopCriteria stop_criteria) {  // TODO: take parameters
+    bool is_done(size_t cur_len, float best_sum_logprobs, float length_penalty, size_t max_new_tokens, size_t group_size, StopCriteria stop_criteria) {  // TODO: take parameters
         if (min_heap.size() < group_size) {
             return false;
         }
@@ -115,7 +115,7 @@ struct TokenToBeam {int64_t token_idx; size_t beam_idx;};
 
 struct GroupBeamSearcher {
     struct Parameters {
-        ov::Tensor input_ids;
+        std::vector<int64_t> prompt;
         size_t max_new_tokens;
         size_t n_groups;
         size_t group_size;
@@ -131,10 +131,7 @@ struct GroupBeamSearcher {
     const Parameters parameters;
     std::vector<Group> groups;
 
-    GroupBeamSearcher(Parameters parameters) : parameters{parameters}, groups{parameters.n_groups} {  // TODO: move parameters after the bug is fixed
-        if (1 != parameters.input_ids.get_shape()[0]) {
-            throw std::runtime_error("input_ids batch size must be 1");
-        }
+    GroupBeamSearcher(Parameters parameters) : parameters{std::move(parameters)}, groups{parameters.n_groups} {
         for (Group& group : groups) {
             group.ongoing.resize(parameters.group_size);
             group.ongoing.front().score = 0.0;
@@ -196,10 +193,7 @@ struct GroupBeamSearcher {
                     }
                 }
                 std::vector<int64_t>& other_tokens = group.ongoing[beam_idx].tokens;
-                std::vector<int64_t> full_text;
-                for (size_t idx = 0; idx < parameters.input_ids.get_size(); ++idx) {
-                    full_text.push_back(parameters.input_ids.data<int64_t>()[idx]);
-                }
+                std::vector<int64_t> full_text{parameters.prompt};
                 full_text.insert(full_text.end(), other_tokens.begin(), other_tokens.end());
                 if (full_text.size() > 1 && full_text.size() >= parameters.no_repeat_ngram_size) {
                     for (int64_t banned_token : kmp_search(full_text, {full_text.end() - ptrdiff_t(parameters.no_repeat_ngram_size) + 1, full_text.end()})) {
@@ -217,7 +211,7 @@ struct GroupBeamSearcher {
                     new_candidate.global_beam_idx = global_beam_ids[group_idx][beam_idx];
                     ++new_token_idx;
                     if (parameters.stopping_criteria(new_candidate)) {
-                        group.finish(std::move(new_candidate), parameters.input_ids.get_size(), parameters.length_penalty, parameters.group_size);
+                        group.finish(std::move(new_candidate), parameters.prompt.size(), parameters.length_penalty, parameters.group_size);
                         --added_count;
                     } else {
                         candidates.push_back(std::move(new_candidate));
@@ -235,7 +229,7 @@ struct GroupBeamSearcher {
                         continue;
                     }
                     candidates[cand_idx].tokens.resize(candidates[cand_idx].tokens.size() - 1);
-                    group.finish(std::move(candidates[cand_idx]), parameters.input_ids.get_size(), parameters.length_penalty, parameters.group_size);
+                    group.finish(std::move(candidates[cand_idx]), parameters.prompt.size(), parameters.length_penalty, parameters.group_size);
                 } else {
                     group.ongoing.push_back(std::move(candidates[cand_idx]));
                     next_tokens.push_back({group.ongoing.back().tokens.back(), group.ongoing.back().global_beam_idx});
@@ -244,7 +238,7 @@ struct GroupBeamSearcher {
                     }
                 }
             }
-            group.is_done(cur_len + parameters.input_ids.get_size(), group.ongoing.front().score, parameters.length_penalty, parameters.max_new_tokens, parameters.group_size, parameters.stop_criteria);  // TODO: that requires group.ongoing to be not empty
+            group.is_done(cur_len + parameters.prompt.size(), group.ongoing.front().score, parameters.length_penalty, parameters.max_new_tokens, parameters.group_size, parameters.stop_criteria);  // TODO: that requires group.ongoing to be not empty
             if (group.done) {
                 next_tokens.resize(next_tokens.size() - group.ongoing.size());
             }
@@ -282,10 +276,8 @@ int main(int argc, char* argv[]) try {
     }
     model->reshape(shapes);
     ov::InferRequest ireq = core.compile_model(model, "CPU", ov::cache_dir("llm-cache")).create_infer_request();
-    ireq.get_tensor("input_ids").set_shape(input_ids.get_shape());  // TODO: replace with ireq.set_tensor("input_ids", input_ids); after it's fixed
-    std::copy_n(input_ids.data<const int64_t>(), input_ids.get_size(), ireq.get_tensor("input_ids").data<int64_t>());
-    ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("input_ids").get_size()});
-    std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), input_ids.get_size(), 1);
+    ireq.set_tensor("input_ids", input_ids);
+    ireq.set_tensor("attention_mask", attention_mask);
     ireq.get_tensor("position_ids").set_shape(input_ids.get_shape());
     std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
     for (size_t idx = 3; idx < inputs.size(); ++idx) {
@@ -294,8 +286,7 @@ int main(int argc, char* argv[]) try {
         ireq.get_input_tensor(idx).set_shape(shape);
     }
     GroupBeamSearcher::Parameters parameters;
-    parameters.input_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};  // TODO just vector since I copy anyway
-    input_ids.copy_to(parameters.input_ids);
+    parameters.prompt = std::vector<int64_t>{input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size()};
     parameters.max_new_tokens = std::stol(argv[5]);
     parameters.n_groups = std::stoi(argv[6]);
     parameters.group_size = std::stoi(argv[7]);
@@ -351,9 +342,9 @@ int main(int argc, char* argv[]) try {
         }
     }
     for (Group& group : group_beam_searcher.groups) {
-        if (!group.is_done(group.ongoing.front().tokens.size() + group_beam_searcher.parameters.input_ids.get_size(), group.ongoing.front().score, parameters.length_penalty, parameters.max_new_tokens, parameters.group_size, parameters.stop_criteria)) {
+        if (!group.is_done(group.ongoing.front().tokens.size() + group_beam_searcher.parameters.prompt.size(), group.ongoing.front().score, parameters.length_penalty, parameters.max_new_tokens, parameters.group_size, parameters.stop_criteria)) {
             for (Beam& beam : group.ongoing) {
-                group.finish(std::move(beam), group_beam_searcher.parameters.input_ids.get_size(), group_beam_searcher.parameters.length_penalty, parameters.group_size);
+                group.finish(std::move(beam), group_beam_searcher.parameters.prompt.size(), group_beam_searcher.parameters.length_penalty, parameters.group_size);
             }
         }
         std::cout << "Group:\n";
