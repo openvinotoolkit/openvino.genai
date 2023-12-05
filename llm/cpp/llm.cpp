@@ -76,34 +76,51 @@ bool greater(const Beam& left, const Beam& right) {
     return left.score > right.score;
 }
 
+struct Parameters {
+    std::vector<int64_t> prompt;
+    size_t max_new_tokens;
+    size_t n_groups;
+    size_t group_size;
+    StopCriteria stop_criteria;
+    size_t no_repeat_ngram_size;
+    float diversity_penalty;
+    float length_penalty;
+    // There's no way to extract special token values from the tokenizer for now
+    int64_t eos_token;
+    int64_t pad_token;
+    std::function<bool(const Beam&)> early_finish = [](const Beam&){return false;};
+};
+
 struct Group {
-    std::vector<Beam> ongoing;
-    std::vector<Beam> min_heap;  // The smallest beam is the first
+    std::vector<Beam> ongoing;  // best beams in front
+    std::vector<Beam> min_heap;  // The worst beam is the first
     bool done = false;
-    void finish(Beam&& beam, size_t prompt_light, float length_penalty, size_t group_size) {
-        beam.score /= std::pow(float(beam.tokens.size() + prompt_light), length_penalty);
+    void finish(Beam&& beam, const Parameters& parameters) {
+        beam.score /= std::pow(float(parameters.prompt.size() + beam.tokens.size()), parameters.length_penalty);
         min_heap.push_back(std::move(beam));
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
-        if (min_heap.size() > group_size) {
+        if (min_heap.size() > parameters.group_size) {
             std::pop_heap(min_heap.begin(), min_heap.end(), greater);
             min_heap.pop_back();
         }
     }
-    bool is_done(size_t cur_len, float best_sum_logprobs, float length_penalty, size_t max_new_tokens, size_t group_size, StopCriteria stop_criteria) {  // TODO: take parameters
-        if (min_heap.size() < group_size) {
+    bool is_done(const Parameters& parameters) {
+        if (min_heap.size() < parameters.group_size) {
             return false;
         }
-        switch (stop_criteria) {
+        size_t cur_len = parameters.prompt.size() + ongoing.front().tokens.size();
+        float best_sum_logprobs = ongoing.front().score;
+        switch (parameters.stop_criteria) {
             case StopCriteria::early: return done = true;
             case StopCriteria::heuristic: {
                 float worst_score = min_heap.front().score;
-                float highest_attainable_score = best_sum_logprobs / std::pow(float(cur_len), length_penalty);
+                float highest_attainable_score = best_sum_logprobs / std::pow(float(cur_len), parameters.length_penalty);
                 return done = worst_score >= highest_attainable_score;
             }
             case StopCriteria::never: {
                 float worst_score = min_heap.front().score;
-                float length = length_penalty > 0.0f ? max_new_tokens : cur_len;
-                float highest_attainable_score = best_sum_logprobs / std::pow(length, length_penalty);
+                float length = parameters.length_penalty > 0.0f ? parameters.max_new_tokens : cur_len;
+                float highest_attainable_score = best_sum_logprobs / std::pow(length, parameters.length_penalty);
                 return done = worst_score >= highest_attainable_score;
             }
             default: throw std::runtime_error("Never reached");
@@ -114,21 +131,7 @@ struct Group {
 struct TokenToBeam {int64_t token_idx; size_t beam_idx;};
 
 struct GroupBeamSearcher {
-    struct Parameters {
-        std::vector<int64_t> prompt;
-        size_t max_new_tokens;
-        size_t n_groups;
-        size_t group_size;
-        StopCriteria stop_criteria;
-        size_t no_repeat_ngram_size;
-        float diversity_penalty;
-        float length_penalty;
-        // There's no way to extract special token values from the tokenizer for now
-        int64_t eos_token;
-        int64_t pad_token;
-        std::function<bool(const Beam&)> stopping_criteria = [](const Beam&){return false;};
-    };
-    const Parameters parameters;
+    Parameters parameters;
     std::vector<Group> groups;
 
     GroupBeamSearcher(Parameters parameters) : parameters{std::move(parameters)}, groups{parameters.n_groups} {
@@ -210,8 +213,8 @@ struct GroupBeamSearcher {
                     new_candidate.tokens.push_back(tokens[new_token_idx].idx);
                     new_candidate.global_beam_idx = global_beam_ids[group_idx][beam_idx];
                     ++new_token_idx;
-                    if (parameters.stopping_criteria(new_candidate)) {
-                        group.finish(std::move(new_candidate), parameters.prompt.size(), parameters.length_penalty, parameters.group_size);
+                    if (parameters.early_finish(new_candidate)) {
+                        group.finish(std::move(new_candidate), parameters);
                         --added_count;
                     } else {
                         candidates.push_back(std::move(new_candidate));
@@ -219,6 +222,9 @@ struct GroupBeamSearcher {
                 }
             }
             // Sample 2 * group_size highest score tokens to get at least 1 non EOS token per beam
+            if (candidates.size() < 2 * parameters.group_size) {
+                throw std::runtime_error("No beams left to search");
+            }
             std::partial_sort(candidates.begin(), candidates.begin() + 2 * parameters.group_size, candidates.end(), greater);
             size_t cur_len = candidates.front().tokens.size();
             group.ongoing.clear();
@@ -229,7 +235,7 @@ struct GroupBeamSearcher {
                         continue;
                     }
                     candidates[cand_idx].tokens.resize(candidates[cand_idx].tokens.size() - 1);
-                    group.finish(std::move(candidates[cand_idx]), parameters.prompt.size(), parameters.length_penalty, parameters.group_size);
+                    group.finish(std::move(candidates[cand_idx]), parameters);
                 } else {
                     group.ongoing.push_back(std::move(candidates[cand_idx]));
                     next_tokens.push_back({group.ongoing.back().tokens.back(), group.ongoing.back().global_beam_idx});
@@ -238,7 +244,7 @@ struct GroupBeamSearcher {
                     }
                 }
             }
-            group.is_done(cur_len + parameters.prompt.size(), group.ongoing.front().score, parameters.length_penalty, parameters.max_new_tokens, parameters.group_size, parameters.stop_criteria);  // TODO: that requires group.ongoing to be not empty
+            group.is_done(parameters);
             if (group.done) {
                 next_tokens.resize(next_tokens.size() - group.ongoing.size());
             }
@@ -285,7 +291,7 @@ int main(int argc, char* argv[]) try {
         shape[0] = 1;
         ireq.get_input_tensor(idx).set_shape(shape);
     }
-    GroupBeamSearcher::Parameters parameters;
+    Parameters parameters;
     parameters.prompt = std::vector<int64_t>{input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size()};
     parameters.max_new_tokens = std::stol(argv[5]);
     parameters.n_groups = std::stoi(argv[6]);
@@ -342,9 +348,9 @@ int main(int argc, char* argv[]) try {
         }
     }
     for (Group& group : group_beam_searcher.groups) {
-        if (!group.is_done(group.ongoing.front().tokens.size() + group_beam_searcher.parameters.prompt.size(), group.ongoing.front().score, parameters.length_penalty, parameters.max_new_tokens, parameters.group_size, parameters.stop_criteria)) {
+        if (!group.is_done(parameters)) {
             for (Beam& beam : group.ongoing) {
-                group.finish(std::move(beam), group_beam_searcher.parameters.prompt.size(), group_beam_searcher.parameters.length_penalty, parameters.group_size);
+                group.finish(std::move(beam), parameters);
             }
         }
         std::cout << "Group:\n";
