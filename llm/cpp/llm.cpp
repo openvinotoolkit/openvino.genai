@@ -193,9 +193,9 @@ struct GroupBeamSearcher {
                 for (size_t idx = 0; idx < vocab_size; ++idx) {
                     tokens.push_back({beam_logits[idx] - max_logit - log_sum, int64_t(idx)});
                 }
-                for (size_t prev_group_idx = 0; prev_group_idx < group_idx; ++prev_group_idx) {  // TODO: range based for
-                    for (size_t prev_beam_idx = 0; prev_beam_idx < GROUP_SIZE; ++prev_beam_idx) {
-                        tokens[size_t(groups[prev_group_idx].ongoing[prev_beam_idx].tokens.back())].log_prob -= diversity_penalty;
+                for (size_t prev_group_idx = 0; prev_group_idx < group_idx; ++prev_group_idx) {
+                    for (const Beam& prev_beam : groups[prev_group_idx].ongoing) {
+                        tokens[size_t(prev_beam.tokens.back())].log_prob -= diversity_penalty;
                     }
                 }
                 std::vector<int64_t>& other_tokens = group.ongoing[beam_idx].tokens;
@@ -227,8 +227,8 @@ struct GroupBeamSearcher {
                     }
                 }
             }
-            // Sample 2 * GROUP_SIZE next tokens to get at least 1 non EOS token per beam
-            std::partial_sort(candidates.begin(), candidates.begin() + 2 * GROUP_SIZE, candidates.end(), greater);  // Highest score beams in front
+            // Sample 2 * GROUP_SIZE highest score tokens to get at least 1 non EOS token per beam
+            std::partial_sort(candidates.begin(), candidates.begin() + 2 * GROUP_SIZE, candidates.end(), greater);
             size_t cur_len = candidates.front().tokens.size();
             group.ongoing.clear();
             for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
@@ -264,13 +264,13 @@ std::vector<std::vector<Beam>> finilize(GroupBeamSearcher&& group_beam_searcher)
         if (group.is_done(group.ongoing.front().tokens.size() + group_beam_searcher.input_ids.get_size(), group.ongoing.front().score, LENGTH_PENALTY)) {
             continue;
         }
-        for (Beam& beam: group.ongoing) {  // TODO: &&  // TODO: iterator based push
+        for (Beam& beam : group.ongoing) {  // TODO: &&
             group.finish(std::move(beam), group_beam_searcher.input_ids.get_size(), LENGTH_PENALTY);
         }
     }
-    for (Group& group: group_beam_searcher.groups) {
+    for (Group& group : group_beam_searcher.groups) {
         finalized.emplace_back();
-        std::sort_heap(group.min_heap.begin(), group.min_heap.end(), greater);
+        // std::sort_heap(group.min_heap.begin(), group.min_heap.end(), greater);
         for (const Beam& beam: group.min_heap) {
             finalized.back().push_back(beam);
         }
