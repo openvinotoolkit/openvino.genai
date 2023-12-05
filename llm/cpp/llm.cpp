@@ -104,24 +104,27 @@ struct Group {
             min_heap.pop_back();
         }
     }
-    bool is_done(const Parameters& parameters) {
+    void is_done(const Parameters& parameters) {
         if (min_heap.size() < parameters.group_size) {
-            return false;
+            return;
         }
         size_t cur_len = parameters.prompt.size() + ongoing.front().tokens.size();
         float best_sum_logprobs = ongoing.front().score;
+        float worst_score = min_heap.front().score;
         switch (parameters.stop_criteria) {
-            case StopCriteria::early: return done = true;
+            case StopCriteria::early:
+                done = true;
+                return;
             case StopCriteria::heuristic: {
-                float worst_score = min_heap.front().score;
                 float highest_attainable_score = best_sum_logprobs / std::pow(float(cur_len), parameters.length_penalty);
-                return done = worst_score >= highest_attainable_score;
+                done = worst_score >= highest_attainable_score;
+                return;
             }
             case StopCriteria::never: {
-                float worst_score = min_heap.front().score;
                 float length = parameters.length_penalty > 0.0f ? parameters.max_new_tokens : cur_len;
                 float highest_attainable_score = best_sum_logprobs / std::pow(length, parameters.length_penalty);
-                return done = worst_score >= highest_attainable_score;
+                done = worst_score >= highest_attainable_score;
+                return;
             }
             default: throw std::runtime_error("Never reached");
         }
@@ -133,14 +136,12 @@ struct TokenToBeam {int64_t token_idx; size_t beam_idx;};
 struct GroupBeamSearcher {
     Parameters parameters;
     std::vector<Group> groups;
-
     GroupBeamSearcher(Parameters parameters) : parameters{std::move(parameters)}, groups{parameters.n_groups} {
         for (Group& group : groups) {
             group.ongoing.resize(parameters.group_size);
             group.ongoing.front().score = 0.0;
         }
     }
-
     std::vector<TokenToBeam> process(const ov::Tensor& logits) {
         std::vector<TokenToBeam> next_tokens;
         next_tokens.reserve(parameters.n_groups * parameters.group_size);
@@ -156,7 +157,7 @@ struct GroupBeamSearcher {
             }
             for (size_t beam_idx = 0; beam_idx < parameters.group_size; ++beam_idx) {
                 global_beam_ids[group_idx][beam_idx] = temp_count;
-                if (!group.ongoing[beam_idx].tokens.empty() && logits.get_shape()[0] != 1) {  // TODO: all of beams
+                if (!group.ongoing[beam_idx].tokens.empty() && logits.get_shape()[0] != 1) {
                     ++temp_count;
                 }
             }
@@ -238,15 +239,16 @@ struct GroupBeamSearcher {
                     group.finish(std::move(candidates[cand_idx]), parameters);
                 } else {
                     group.ongoing.push_back(std::move(candidates[cand_idx]));
-                    next_tokens.push_back({group.ongoing.back().tokens.back(), group.ongoing.back().global_beam_idx});
                     if (group.ongoing.size() == parameters.group_size) {
                         break;
                     }
                 }
             }
             group.is_done(parameters);
-            if (group.done) {
-                next_tokens.resize(next_tokens.size() - group.ongoing.size());
+            if (!group.done) {
+                for (const Beam& beam : group.ongoing) {
+                    next_tokens.push_back({beam.tokens.back(), beam.global_beam_idx});
+                }
             }
         }
         return next_tokens;
@@ -348,13 +350,13 @@ int main(int argc, char* argv[]) try {
         }
     }
     for (Group& group : group_beam_searcher.groups) {
-        if (!group.is_done(parameters)) {
+        if (!group.done) {
             for (Beam& beam : group.ongoing) {
                 group.finish(std::move(beam), parameters);
             }
         }
         std::cout << "Group:\n";
-        for (const Beam& beam: group.min_heap) {
+        for (const Beam& beam : group.min_heap) {
             std::cout << beam.score << ": " << detokenize(detokenizer, beam.tokens) << '\n';
         }
     }
