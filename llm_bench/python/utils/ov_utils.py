@@ -32,6 +32,9 @@ def forward_simplified(
         input_ids = input_ids[:, -1:]
 
     inputs = {}
+    shape_input_ids = input_ids.shape
+    num_attention_heads = self.normalized_config.num_attention_heads if self.config.model_type == 'bloom' else 1
+    state_batch_size = shape_input_ids[0] * num_attention_heads
     if not self.use_cache_as_state:
         if past_key_values is not None:
             if self._pkv_precision == Type.bf16:
@@ -47,12 +50,11 @@ def forward_simplified(
 
         # Create empty past_key_values for decoder_with_past first generation step
         elif self.use_cache:
-            shape_input_ids = input_ids.shape
-            num_attention_heads = self.normalized_config.num_attention_heads if self.config.model_type == 'bloom' else 1
+
             for input_name in self.key_value_input_names:
                 model_inputs = self.model.input(input_name)
                 shape = model_inputs.get_partial_shape()
-                shape[0] = shape_input_ids[0] * num_attention_heads
+                shape[0] = state_batch_size
                 if shape[2].is_dynamic:
                     shape[2] = 0
                 if shape[1].is_dynamic:
@@ -70,6 +72,9 @@ def forward_simplified(
             # This is the first iteration in a sequence, reset all states
             for state in self.request.query_state():
                 state.reset()
+            # Set initial value for the next beam_idx input that will be used at the current iteration
+            # and will be optionally updated by _reorder_cache at the next iterations if beam_search is used
+            self.next_beam_idx = np.array(range(shape_input_ids[0] * num_attention_heads), dtype=int)
 
     inputs['input_ids'] = np.array(input_ids)
 
@@ -81,7 +86,7 @@ def forward_simplified(
         inputs['position_ids'] = np.array(position_ids)
 
     if hasattr(self, 'next_beam_idx'):
-        inputs['beam_idx'] = np.array(self.next_beam_idx)
+        inputs['beam_idx'] = self.next_beam_idx
 
     # Run inference
     self.request.start_async(inputs, share_inputs=True)
@@ -291,13 +296,13 @@ def patch_stateful(hf_model, ov_model, patch_methods, **kwargs):
         # override _reorder_cache to avoid cache manipulation outside of the model as it is already done inside
         def _reorder_cache_stub(self, past_key_values, beam_idx):
             # TODO: Apply it differently based on model type
+            # TODO: At least for bloom we need to replicate values for each attention head
             self.next_beam_idx = np.array(beam_idx)  # save beam_idx to be used as an input in the next iteration
             return past_key_values
 
         hf_model.use_cache_as_state = False
         hf_model._reorder_cache = types.MethodType(_reorder_cache_stub, hf_model)
         hf_model.forward = types.MethodType(forward_simplified, hf_model)  # need custom forward to set beam_idx input to OV model
-        hf_model.next_beam_idx = np.zeros([num_beams * batch_size], dtype=int)  # initial value for beam_idx is all zeros
 
     if kwargs['make_stateful']:
         if not model_has_state(ov_model):
