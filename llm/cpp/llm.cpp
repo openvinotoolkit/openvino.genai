@@ -75,20 +75,10 @@ int64_t EOS_TOKEN;  // There's no way to extract the value from the tokenizer fo
 }
 
 struct Beam {
-    float score = -1e9;  // The bigger, the better
+    float score = -std::numeric_limits<float>::infinity();  // The bigger, the better
     std::vector<int64_t> tokens;
     size_t batch_idx = 0;
     size_t global_beam_idx = 0;
-    Beam() = default;
-    Beam& operator=(Beam&& other) {
-        score = other.score;
-        tokens = std::move(other.tokens);
-        batch_idx = other.batch_idx;
-        global_beam_idx = other.global_beam_idx;
-        return *this;
-    }
-    Beam(Beam&& other) : score{other.score}, tokens{std::move(other.tokens)}, batch_idx{other.batch_idx}, global_beam_idx{other.global_beam_idx} {};
-    Beam(const Beam& other) : score{other.score}, tokens{other.tokens}, batch_idx{other.batch_idx}, global_beam_idx{other.global_beam_idx} {};
 };
 
 bool greater(const Beam& left, const Beam& right) {
@@ -96,31 +86,31 @@ bool greater(const Beam& left, const Beam& right) {
 }
 
 struct Group {
-    std::vector<Beam> ongoing;  // TODO: one contigous array with all beams?
-    std::vector<Beam> completed;
+    std::vector<Beam> ongoing;
+    std::vector<Beam> min_heap;  // The smallest beam is the first
     bool done = false;
     void finish(Beam&& beam, size_t prompt_light) {
         beam.score = float(double(beam.score) / std::pow(beam.tokens.size() + prompt_light, LENGTH_PENALTY));
-        completed.push_back(std::move(beam));
-        std::push_heap(completed.begin(), completed.end(), greater);  // Min heap
-        if (completed.size() > GROUP_SIZE) {
-            std::pop_heap(completed.begin(), completed.end(), greater);
-            completed.pop_back();
+        min_heap.push_back(std::move(beam));
+        std::push_heap(min_heap.begin(), min_heap.end(), greater);
+        if (min_heap.size() > GROUP_SIZE) {
+            std::pop_heap(min_heap.begin(), min_heap.end(), greater);
+            min_heap.pop_back();
         }
     }
     bool is_done(double best_sum_logprobs, size_t cur_len) {
-        if (completed.size() < GROUP_SIZE) {
+        if (min_heap.size() < GROUP_SIZE) {
             return false;
         }
         switch (stop_criteria) {
             case StopCriteria::early: return done = true;
             case StopCriteria::heuristic: {
-                double worst_score = completed.front().score;
+                double worst_score = min_heap.front().score;
                 double highest_attainable_score = best_sum_logprobs / std::pow(double(cur_len), LENGTH_PENALTY);
                 return done = worst_score >= highest_attainable_score;
             }
             case StopCriteria::never: {
-                double worst_score = completed.front().score;
+                double worst_score = min_heap.front().score;
                 double length = LENGTH_PENALTY > 0.0f ? MAX_NEW_TOKENS : cur_len;
                 double highest_attainable_score = best_sum_logprobs / std::pow(length, LENGTH_PENALTY);
                 return done = worst_score >= highest_attainable_score;
@@ -267,7 +257,8 @@ struct GroupBeamSearcher {
     }
 };
 
-// Consume GroupBeamSearcher to prohibit usage after because beams overpopulate hypotheses while merging
+// Consume GroupBeamSearcher to prohibit usage after because ongoing
+// beams are moved and hypotheses are overpopulated while merging
 std::vector<std::vector<Beam>> finilize(GroupBeamSearcher&& group_beam_searcher) {
     std::vector<std::vector<Beam>> finalized;
     for (Group& group : group_beam_searcher.groups) {
@@ -280,8 +271,7 @@ std::vector<std::vector<Beam>> finilize(GroupBeamSearcher&& group_beam_searcher)
     }
     for (Group& group: group_beam_searcher.groups) {
         finalized.emplace_back();
-        std::sort_heap(group.completed.begin(), group.completed.end(), greater);
-        for (const Beam& beam: group.completed) {
+        for (const Beam& beam: group.min_heap) {
             finalized.back().push_back(beam);
         }
     }
