@@ -271,6 +271,7 @@ std::vector<std::vector<Beam>> finilize(GroupBeamSearcher&& group_beam_searcher)
     }
     for (Group& group: group_beam_searcher.groups) {
         finalized.emplace_back();
+        std::sort_heap(group.min_heap.begin(), group.min_heap.end(), greater);
         for (const Beam& beam: group.min_heap) {
             finalized.back().push_back(beam);
         }
