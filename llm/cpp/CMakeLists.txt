@@ -10,6 +10,7 @@ if(MSVC)
     target_compile_options(
         llm PRIVATE
         /Wall  # Display all warnings
+        /wd4820  # Disable the padding addeddition warning after data members
         /wd4710 /wd4711  # Disable the inline warnings
         /EHsc  # Enable standard C++ stack unwinding, assume functions with extern "C" never throw
     )
