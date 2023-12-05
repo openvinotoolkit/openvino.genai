@@ -131,12 +131,11 @@ struct GroupBeamSearcher {
     const Parameters parameters;
     std::vector<Group> groups;
 
-    GroupBeamSearcher(Parameters parameters) : parameters{parameters} {  // TODO: move parameters after the bug is fixed
-        parameters.input_ids.get_shape();
+    GroupBeamSearcher(Parameters parameters) : parameters{parameters}, groups{parameters.n_groups} {  // TODO: move parameters after the bug is fixed
         if (1 != parameters.input_ids.get_shape()[0]) {
             throw std::runtime_error("input_ids batch size must be 1");
         }
-        for (Group & group : groups) {
+        for (Group& group : groups) {
             group.ongoing.resize(parameters.group_size);
             group.ongoing.front().score = 0.0;
         }
