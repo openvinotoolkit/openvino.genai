@@ -12,7 +12,7 @@ std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest&& tokenizer, std::st
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
 }
 
-ov::Tensor detokenize(ov::InferRequest& detokenizer, std::vector<int64_t> tokens) {
+std::string detokenize(ov::InferRequest& detokenizer, const std::vector<int64_t>& tokens) {
     constexpr size_t BATCH_SIZE = 1;
     ov::Tensor inp = detokenizer.get_input_tensor();
     inp.set_shape({BATCH_SIZE, tokens.size()});
@@ -20,7 +20,7 @@ ov::Tensor detokenize(ov::InferRequest& detokenizer, std::vector<int64_t> tokens
         inp.data<int64_t>()[idx] = tokens[idx];
     }
     detokenizer.infer();
-    return detokenizer.get_output_tensor();
+    return openvino_extensions::unpack_strings(detokenizer.get_output_tensor()).front();
 }
 
 // Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
@@ -64,14 +64,6 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, std::vecto
     return res;
 }
 enum class StopCriteria {early, heuristic, never};
-size_t MAX_NEW_TOKENS;
-size_t N_GROUPS;
-size_t GROUP_SIZE;
-StopCriteria stop_criteria;
-size_t NO_REPEAT_NGRAM_SIZE;
-float DIVERSITY_PENALTY;
-float LENGTH_PENALTY;  // TODO: align defaults with transformers
-int64_t EOS_TOKEN;  // There's no way to extract the value from the tokenizer for now
 }
 
 struct Beam {
@@ -88,17 +80,17 @@ struct Group {
     std::vector<Beam> ongoing;
     std::vector<Beam> min_heap;  // The smallest beam is the first
     bool done = false;
-    void finish(Beam&& beam, size_t prompt_light, float length_penalty) {
+    void finish(Beam&& beam, size_t prompt_light, float length_penalty, size_t group_size) {
         beam.score /= std::pow(float(beam.tokens.size() + prompt_light), length_penalty);
         min_heap.push_back(std::move(beam));
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
-        if (min_heap.size() > GROUP_SIZE) {
+        if (min_heap.size() > group_size) {
             std::pop_heap(min_heap.begin(), min_heap.end(), greater);
             min_heap.pop_back();
         }
     }
-    bool is_done(float best_sum_logprobs, size_t cur_len, float length_penalty) {
-        if (min_heap.size() < GROUP_SIZE) {
+    bool is_done(float best_sum_logprobs, size_t cur_len, float length_penalty, size_t max_new_tokens, size_t group_size, StopCriteria stop_criteria) {  // TODO: take parameters
+        if (min_heap.size() < group_size) {
             return false;
         }
         switch (stop_criteria) {
@@ -110,7 +102,7 @@ struct Group {
             }
             case StopCriteria::never: {
                 float worst_score = min_heap.front().score;
-                float length = length_penalty > 0.0f ? MAX_NEW_TOKENS : cur_len;
+                float length = length_penalty > 0.0f ? max_new_tokens : cur_len;
                 float highest_attainable_score = best_sum_logprobs / std::pow(length, length_penalty);
                 return done = worst_score >= highest_attainable_score;
             }
@@ -122,42 +114,48 @@ struct Group {
 struct TokenToBeam {int64_t token_idx; size_t beam_idx;};
 
 struct GroupBeamSearcher {
-    const ov::Tensor input_ids;  // input_ids is going to be used to prepend to beams, thus take rvalue in constructor to ensure it's not overriden
-    const size_t n_groups;
-    const size_t group_size;
-    const StopCriteria stop_criteria;
-    const size_t no_repeat_ngram_size;
-    const float diversity_penalty;
-    const float length_penalty;
-    const int64_t eos_token;
-    const int64_t pad_token;
-    std::function<bool(const Beam&)> stopping_criteria;
+    struct Parameters {
+        ov::Tensor input_ids;
+        size_t max_new_tokens;
+        size_t n_groups;
+        size_t group_size;
+        StopCriteria stop_criteria;
+        size_t no_repeat_ngram_size;
+        float diversity_penalty;
+        float length_penalty;
+        // There's no way to extract special token values from the tokenizer for now
+        int64_t eos_token;
+        int64_t pad_token;
+        std::function<bool(const Beam&)> stopping_criteria = [](const Beam&){return false;};
+    };
+    const Parameters parameters;
     std::vector<Group> groups;
 
-    GroupBeamSearcher(ov::Tensor&& input_ids, size_t n_groups, size_t group_size, StopCriteria stop_criteria, size_t no_repeat_ngram_size, float diversity_penalty, float length_penalty, int64_t eos_token, int64_t pad_token, std::function<bool(const Beam&)> stopping_criteria=[](const Beam&){return false;}) : input_ids{input_ids}, n_groups{n_groups}, group_size{group_size}, stop_criteria{stop_criteria}, no_repeat_ngram_size{no_repeat_ngram_size}, diversity_penalty{diversity_penalty}, length_penalty{length_penalty}, eos_token{eos_token}, pad_token{pad_token}, stopping_criteria{stopping_criteria}, groups{n_groups} {
-        if (1 != input_ids.get_shape()[0]) {
+    GroupBeamSearcher(Parameters parameters) : parameters{parameters} {  // TODO: move parameters after the bug is fixed
+        parameters.input_ids.get_shape();
+        if (1 != parameters.input_ids.get_shape()[0]) {
             throw std::runtime_error("input_ids batch size must be 1");
         }
         for (Group & group : groups) {
-            group.ongoing.resize(GROUP_SIZE);
+            group.ongoing.resize(parameters.group_size);
             group.ongoing.front().score = 0.0;
         }
     }
 
     std::vector<TokenToBeam> process(const ov::Tensor& logits) {
         std::vector<TokenToBeam> next_tokens;
-        next_tokens.reserve(n_groups * group_size);
-        std::vector<std::vector<size_t>> global_beam_ids{n_groups};
+        next_tokens.reserve(parameters.n_groups * parameters.group_size);
+        std::vector<std::vector<size_t>> global_beam_ids{parameters.n_groups};
         for (std::vector<size_t>& vec : global_beam_ids) {
-            vec.resize(GROUP_SIZE);
+            vec.resize(parameters.group_size);
         }
         size_t temp_count = 0;
-        for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
+        for (size_t group_idx = 0; group_idx < parameters.n_groups; ++group_idx) {
             Group& group = groups[group_idx];
             if (group.done) {
                 continue;
             }
-            for (size_t beam_idx = 0; beam_idx < GROUP_SIZE; ++beam_idx) {
+            for (size_t beam_idx = 0; beam_idx < parameters.group_size; ++beam_idx) {
                 global_beam_ids[group_idx][beam_idx] = temp_count;
                 if (!group.ongoing[beam_idx].tokens.empty() && logits.get_shape()[0] != 1) {  // TODO: all of beams
                     ++temp_count;
@@ -165,17 +163,17 @@ struct GroupBeamSearcher {
             }
         }
 
-        for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
+        for (size_t group_idx = 0; group_idx < parameters.n_groups; ++group_idx) {
             Group& group = groups[group_idx];
             if (group.done) {
                 for (Beam& beam : group.ongoing) {
-                    beam.tokens.push_back(pad_token);
+                    beam.tokens.push_back(parameters.pad_token);
                 }
                 continue;
             }
             std::vector<Beam> candidates;
-            candidates.reserve(2 * GROUP_SIZE);
-            for (size_t beam_idx = 0; beam_idx < GROUP_SIZE; ++beam_idx) {
+            candidates.reserve(2 * parameters.group_size);
+            for (size_t beam_idx = 0; beam_idx < parameters.group_size; ++beam_idx) {
                 if (logits.get_shape()[0] <= global_beam_ids[group_idx][beam_idx]) {
                     throw std::runtime_error("logits batch size doesn't match the number of beams");
                 }
@@ -195,17 +193,17 @@ struct GroupBeamSearcher {
                 }
                 for (size_t prev_group_idx = 0; prev_group_idx < group_idx; ++prev_group_idx) {
                     for (const Beam& prev_beam : groups[prev_group_idx].ongoing) {
-                        tokens[size_t(prev_beam.tokens.back())].log_prob -= diversity_penalty;
+                        tokens[size_t(prev_beam.tokens.back())].log_prob -= parameters.diversity_penalty;
                     }
                 }
                 std::vector<int64_t>& other_tokens = group.ongoing[beam_idx].tokens;
                 std::vector<int64_t> full_text;
-                for (size_t idx = 0; idx < input_ids.get_size(); ++idx) {
-                    full_text.push_back(input_ids.data<int64_t>()[idx]);
+                for (size_t idx = 0; idx < parameters.input_ids.get_size(); ++idx) {
+                    full_text.push_back(parameters.input_ids.data<int64_t>()[idx]);
                 }
                 full_text.insert(full_text.end(), other_tokens.begin(), other_tokens.end());
-                if (full_text.size() > 1 && full_text.size() >= no_repeat_ngram_size) {
-                    for (int64_t banned_token : kmp_search(full_text, {full_text.end() - ptrdiff_t(no_repeat_ngram_size) + 1, full_text.end()})) {
+                if (full_text.size() > 1 && full_text.size() >= parameters.no_repeat_ngram_size) {
+                    for (int64_t banned_token : kmp_search(full_text, {full_text.end() - ptrdiff_t(parameters.no_repeat_ngram_size) + 1, full_text.end()})) {
                         tokens[size_t(banned_token)].log_prob = -std::numeric_limits<float>::infinity();
                     }
                 }
@@ -213,41 +211,41 @@ struct GroupBeamSearcher {
                     return left.log_prob > right.log_prob;  // Most probable tokens in front
                 });
                 size_t new_token_idx = 0;
-                for (int added_count = 0; added_count < int(2 * GROUP_SIZE); ++added_count) {
+                for (int added_count = 0; added_count < int(2 * parameters.group_size); ++added_count) {
                     Beam new_candidate = group.ongoing[beam_idx];
                     new_candidate.score += tokens[new_token_idx].log_prob;
                     new_candidate.tokens.push_back(tokens[new_token_idx].idx);
                     new_candidate.global_beam_idx = global_beam_ids[group_idx][beam_idx];
                     ++new_token_idx;
-                    if (stopping_criteria(new_candidate)) {
-                        group.finish(std::move(new_candidate), input_ids.get_size(), length_penalty);
+                    if (parameters.stopping_criteria(new_candidate)) {
+                        group.finish(std::move(new_candidate), parameters.input_ids.get_size(), parameters.length_penalty, parameters.group_size);
                         --added_count;
                     } else {
                         candidates.push_back(std::move(new_candidate));
                     }
                 }
             }
-            // Sample 2 * GROUP_SIZE highest score tokens to get at least 1 non EOS token per beam
-            std::partial_sort(candidates.begin(), candidates.begin() + 2 * GROUP_SIZE, candidates.end(), greater);
+            // Sample 2 * group_size highest score tokens to get at least 1 non EOS token per beam
+            std::partial_sort(candidates.begin(), candidates.begin() + 2 * parameters.group_size, candidates.end(), greater);
             size_t cur_len = candidates.front().tokens.size();
             group.ongoing.clear();
             for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
-                if (eos_token == candidates[cand_idx].tokens.back()) {  // TODO: idx->token_id
+                if (parameters.eos_token == candidates[cand_idx].tokens.back()) {
                     // if beam_token does not belong to top num_beams tokens, it should not be added
-                    if (cand_idx >= GROUP_SIZE) {
+                    if (cand_idx >= parameters.group_size) {
                         continue;
                     }
                     candidates[cand_idx].tokens.resize(candidates[cand_idx].tokens.size() - 1);
-                    group.finish(std::move(candidates[cand_idx]), input_ids.get_size(), length_penalty);
+                    group.finish(std::move(candidates[cand_idx]), parameters.input_ids.get_size(), parameters.length_penalty, parameters.group_size);
                 } else {
                     group.ongoing.push_back(std::move(candidates[cand_idx]));
                     next_tokens.push_back({group.ongoing.back().tokens.back(), group.ongoing.back().global_beam_idx});
-                    if (group.ongoing.size() == GROUP_SIZE) {
+                    if (group.ongoing.size() == parameters.group_size) {
                         break;
                     }
                 }
             }
-            group.is_done(cur_len + input_ids.get_size(), group.ongoing.front().score, length_penalty);  // TODO: that requires group.ongoing to be not empty
+            group.is_done(cur_len + parameters.input_ids.get_size(), group.ongoing.front().score, parameters.length_penalty, parameters.max_new_tokens, parameters.group_size, parameters.stop_criteria);  // TODO: that requires group.ongoing to be not empty
             if (group.done) {
                 next_tokens.resize(next_tokens.size() - group.ongoing.size());
             }
@@ -256,48 +254,10 @@ struct GroupBeamSearcher {
     }
 };
 
-// Consume GroupBeamSearcher to prohibit usage after because ongoing
-// beams are moved and hypotheses are overpopulated while merging
-std::vector<std::vector<Beam>> finilize(GroupBeamSearcher&& group_beam_searcher) {
-    std::vector<std::vector<Beam>> finalized;
-    for (Group& group : group_beam_searcher.groups) {
-        if (group.is_done(group.ongoing.front().tokens.size() + group_beam_searcher.input_ids.get_size(), group.ongoing.front().score, LENGTH_PENALTY)) {
-            continue;
-        }
-        for (Beam& beam : group.ongoing) {  // TODO: &&
-            group.finish(std::move(beam), group_beam_searcher.input_ids.get_size(), LENGTH_PENALTY);
-        }
-    }
-    for (Group& group : group_beam_searcher.groups) {
-        finalized.emplace_back();
-        // std::sort_heap(group.min_heap.begin(), group.min_heap.end(), greater);
-        for (const Beam& beam: group.min_heap) {
-            finalized.back().push_back(beam);
-        }
-    }
-    return finalized;
-}
-
 int main(int argc, char* argv[]) try {
     if (argc != 13) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> '<prompt>'");
     }
-    MAX_NEW_TOKENS = std::stoi(argv[5]);
-    N_GROUPS = std::stoi(argv[6]);
-    GROUP_SIZE = std::stoi(argv[7]);
-    if (std::string{"early"} == argv[8]) {
-        stop_criteria = StopCriteria::early;
-    } else if (std::string{"heuristic"} == argv[8]) {
-        stop_criteria = StopCriteria::heuristic;
-    } else if (std::string{"never"} == argv[8]) {
-        stop_criteria = StopCriteria::never;
-    } else {
-        throw std::runtime_error("Unknown stop_criteria value");
-    }
-    NO_REPEAT_NGRAM_SIZE = std::stoi(argv[9]);
-    DIVERSITY_PENALTY = std::stof(argv[10]);
-    LENGTH_PENALTY = std::stod(argv[11]);
-    EOS_TOKEN = 2;
     ov::Core core;
     core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
     auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
@@ -334,10 +294,28 @@ int main(int argc, char* argv[]) try {
         shape[0] = 1;
         ireq.get_input_tensor(idx).set_shape(shape);
     }
-
-    int64_t pad_token = std::stoi(argv[12]);  // There's no way to extract the value from the tokenizer for now
-    GroupBeamSearcher group_beam_searcher{std::move(input_ids), N_GROUPS, GROUP_SIZE, stop_criteria, NO_REPEAT_NGRAM_SIZE, DIVERSITY_PENALTY, LENGTH_PENALTY, EOS_TOKEN, pad_token};
-    for (size_t length_count = 0; length_count < MAX_NEW_TOKENS; ++length_count) {
+    GroupBeamSearcher::Parameters parameters;
+    parameters.input_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};  // TODO just vector since I copy anyway
+    input_ids.copy_to(parameters.input_ids);
+    parameters.max_new_tokens = std::stol(argv[5]);
+    parameters.n_groups = std::stoi(argv[6]);
+    parameters.group_size = std::stoi(argv[7]);
+    if (std::string{"early"} == argv[8]) {
+        parameters.stop_criteria = StopCriteria::early;
+    } else if (std::string{"heuristic"} == argv[8]) {
+        parameters.stop_criteria = StopCriteria::heuristic;
+    } else if (std::string{"never"} == argv[8]) {
+        parameters.stop_criteria = StopCriteria::never;
+    } else {
+        throw std::runtime_error("Unknown stop_criteria value");
+    }
+    parameters.no_repeat_ngram_size = std::stoi(argv[9]);
+    parameters.diversity_penalty = std::stof(argv[10]);
+    parameters.length_penalty = std::stof(argv[11]);
+    parameters.eos_token = 2;
+    parameters.pad_token = std::stoi(argv[12]);
+    GroupBeamSearcher group_beam_searcher{parameters};
+    for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
         ireq.infer();
         std::vector<TokenToBeam> next_tokens = group_beam_searcher.process(ireq.get_tensor("logits"));
         if (next_tokens.empty()) {
@@ -373,13 +351,17 @@ int main(int argc, char* argv[]) try {
             }
         }
     }
-    for (const std::vector<Beam>& group : finilize(std::move(group_beam_searcher))) {
+    for (Group& group : group_beam_searcher.groups) {
+        if (!group.is_done(group.ongoing.front().tokens.size() + group_beam_searcher.parameters.input_ids.get_size(), group.ongoing.front().score, parameters.length_penalty, parameters.max_new_tokens, parameters.group_size, parameters.stop_criteria)) {
+            for (Beam& beam : group.ongoing) {
+                group.finish(std::move(beam), group_beam_searcher.parameters.input_ids.get_size(), group_beam_searcher.parameters.length_penalty, parameters.group_size);
+            }
+        }
         std::cout << "Group:\n";
-        for (const Beam& beam : group) {
-            std::cout << beam.score << ": " << openvino_extensions::unpack_strings(detokenize(detokenizer, beam.tokens)).front() << '\n';
+        for (const Beam& beam: group.min_heap) {
+            std::cout << beam.score << ": " << detokenize(detokenizer, beam.tokens) << '\n';
         }
     }
-    std::cout << '\n';
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;
