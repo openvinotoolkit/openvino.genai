@@ -28,4 +28,4 @@ cd ../
 wait
 
 python ./convert_tokenizers.py ./build/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./open_llama_3b_v2/
-./build/llama ./open_llama_3b_v2/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "return 0"
+./build/casual_lm ./open_llama_3b_v2/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "return 0"

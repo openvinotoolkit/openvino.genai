@@ -1,9 +1,9 @@
-# LLaMA
+# Casual LM
 
-This application showcases inference of LLaMA. It doesn't have much of configuration options to encourage the reader to explore and modify the source code. There's a Jupyter notebook which corresponds to this pipeline and discusses how to create an LLM-powered Chatbot: https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot.
+This application showcases inference of casual language model (LM). It doesn't have much of configuration options to encourage the reader to explore and modify the source code. There's a Jupyter notebook which corresponds to this pipeline and discusses how to create an LLM-powered Chatbot: https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot.
 
-> Note  
-This pipeline is not for production use.
+> [!NOTE]
+> This project is not for production use.
 
 ## How it works
 
@@ -13,10 +13,7 @@ The program loads a tokenizer, detokenizer and a model (`.xml` and `.bin`) to Op
 
 Install OpenVINO Runtime from an archive: [Linux](https://docs.openvino.ai/2023.1/openvino_docs_install_guides_installing_openvino_from_archive_linux.html). `<INSTALL_DIR>` below refers to the extraction location.
 
-## Build `LLaMA` and `user_ov_extensions`
-
-> Note  
-Windows isn't currently supported by `user_ov_extensions`.
+## Build `Casual LM` and `user_ov_extensions`
 
 ```sh
 git submodule update --init
@@ -55,8 +52,8 @@ python ./convert_tokenizers.py ./build/custom_operations/user_ie_extensions/libu
 
 ## Run
 
-Usage: `llama <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "<prompt>"`
+Usage: `casual_lm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "<prompt>"`
 
-Example: `./build/llama ./Llama-2-7b-hf/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
+Example: `./build/casual_lm ./Llama-2-7b-hf/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
 
 To enable non ASCII characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
