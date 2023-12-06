@@ -24,7 +24,7 @@ std::string detokenize(ov::InferRequest& detokenizer, const std::vector<int64_t>
 }
 
 // Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
-std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, std::vector<int64_t> needle) {
+std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std::vector<int64_t>& needle) {
     if (needle.empty()) {  // NO_REPEAT_NGRAM_SIZE == 1, ban every token
         return {haystack.begin(), haystack.end()};
     }
@@ -145,24 +145,17 @@ struct GroupBeamSearcher {
     std::vector<TokenToBeam> process(const ov::Tensor& logits) {
         std::vector<TokenToBeam> next_tokens;
         next_tokens.reserve(parameters.n_groups * parameters.group_size);
-        std::vector<std::vector<size_t>> global_beam_ids{parameters.n_groups};
-        for (std::vector<size_t>& vec : global_beam_ids) {
-            vec.resize(parameters.group_size);
-        }
-        size_t temp_count = 0;
-        for (size_t group_idx = 0; group_idx < parameters.n_groups; ++group_idx) {
-            Group& group = groups[group_idx];
-            if (group.done) {
-                continue;
-            }
-            for (size_t beam_idx = 0; beam_idx < parameters.group_size; ++beam_idx) {
-                global_beam_ids[group_idx][beam_idx] = temp_count;
-                if (!group.ongoing[beam_idx].tokens.empty() && logits.get_shape()[0] != 1) {
-                    ++temp_count;
+        size_t beam_count = 0;
+        for (Group& group : groups) {
+            if (!group.done) {
+                for (Beam& beam : group.ongoing) {
+                    beam.global_beam_idx = beam_count;
+                    if (!beam.tokens.empty() && logits.get_shape()[0] != 1) {
+                        ++beam_count;
+                    }
                 }
             }
         }
-
         for (size_t group_idx = 0; group_idx < parameters.n_groups; ++group_idx) {
             Group& group = groups[group_idx];
             if (group.done) {
@@ -174,12 +167,12 @@ struct GroupBeamSearcher {
             std::vector<Beam> candidates;
             candidates.reserve(2 * parameters.group_size);
             for (size_t beam_idx = 0; beam_idx < parameters.group_size; ++beam_idx) {
-                if (logits.get_shape()[0] <= global_beam_ids[group_idx][beam_idx]) {
+                if (logits.get_shape()[0] <= group.ongoing[beam_idx].global_beam_idx) {
                     throw std::runtime_error("logits batch size doesn't match the number of beams");
                 }
                 size_t vocab_size = logits.get_shape().back();
                 std::vector<float> temp;
-                size_t batch_offset = global_beam_ids[group_idx][beam_idx] * logits.get_shape()[1] * logits.get_shape()[2];
+                size_t batch_offset = group.ongoing[beam_idx].global_beam_idx * logits.get_shape()[1] * logits.get_shape()[2];
                 const float* beam_logits = logits.data<const float>() + batch_offset + (logits.get_shape()[1] - 1) * vocab_size;
                 float max_logit = *std::max_element(beam_logits, beam_logits + vocab_size);
                 float log_sum = std::log(std::accumulate(beam_logits, beam_logits + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
@@ -212,7 +205,6 @@ struct GroupBeamSearcher {
                     Beam new_candidate = group.ongoing[beam_idx];
                     new_candidate.score += tokens[new_token_idx].log_prob;
                     new_candidate.tokens.push_back(tokens[new_token_idx].idx);
-                    new_candidate.global_beam_idx = global_beam_ids[group_idx][beam_idx];
                     ++new_token_idx;
                     if (parameters.early_finish(new_candidate)) {
                         group.finish(std::move(new_candidate), parameters);
