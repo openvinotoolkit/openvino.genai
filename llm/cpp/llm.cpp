@@ -17,7 +17,7 @@ std::string detokenize(ov::InferRequest& detokenizer, const std::vector<int64_t>
     ov::Tensor inp = detokenizer.get_input_tensor();
     inp.set_shape({BATCH_SIZE, tokens.size()});
     for (size_t idx = 0; idx < tokens.size(); ++idx) {
-        inp.data<int64_t>()[idx] = tokens[idx];
+        inp.data<int64_t>()[idx] = tokens.at(idx);
     }
     detokenizer.infer();
     return openvino_extensions::unpack_strings(detokenizer.get_output_tensor()).front();
@@ -31,12 +31,12 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std:
     std::vector<int> partial_match_table(needle.size() + 1, -1);
     int cnd = 0;
     for (size_t pos = 1; pos < needle.size(); ++pos) {
-        if (needle[pos] == needle[size_t(cnd)]) {
-            partial_match_table[pos] = partial_match_table[size_t(cnd)];
+        if (needle.at(pos) == needle.at(size_t(cnd))) {
+            partial_match_table.at(pos) = partial_match_table.at(size_t(cnd));
         } else {
-            partial_match_table[pos] = cnd;
-            while (cnd >= 0 && needle[pos] != needle[size_t(cnd)]) {
-                cnd = partial_match_table[size_t(cnd)];
+            partial_match_table.at(pos) = cnd;
+            while (cnd >= 0 && needle.at(pos) != needle.at(size_t(cnd))) {
+                cnd = partial_match_table.at(size_t(cnd));
             }
         }
         ++cnd;
@@ -46,15 +46,15 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std:
     size_t j = 0;  // The position of the current character in haystack
     int k = 0;  // The position of the current character in needle
     while (j < haystack.size() - 1) {
-        if (needle[size_t(k)] == haystack[j]) {
+        if (needle.at(size_t(k)) == haystack.at(j)) {
             ++j;
             ++k;
             if (k == int(needle.size())) {
-                res.push_back(haystack[j]);
-                k = partial_match_table[size_t(k)];
+                res.push_back(haystack.at(j));
+                k = partial_match_table.at(size_t(k));
             }
         } else {
-            k = partial_match_table[size_t(k)];
+            k = partial_match_table.at(size_t(k));
             if (k < 0) {
                 ++j;
                 ++k;
@@ -150,7 +150,7 @@ struct GroupBeamSearcher {
             if (!group.done) {
                 for (Beam& beam : group.ongoing) {
                     beam.global_beam_idx = beam_count;
-                    if (!beam.tokens.empty() && logits.get_shape()[0] != 1) {
+                    if (!beam.tokens.empty() && logits.get_shape().at(0) != 1) {
                         ++beam_count;
                     }
                 }
@@ -166,12 +166,12 @@ struct GroupBeamSearcher {
             std::vector<Beam> candidates;
             candidates.reserve(2 * parameters.group_size);
             for (const Beam& beam : group->ongoing) {
-                if (logits.get_shape()[0] <= beam.global_beam_idx) {
+                if (logits.get_shape().at(0) <= beam.global_beam_idx) {
                     throw std::runtime_error("logits batch size doesn't match the number of beams");
                 }
                 size_t vocab_size = logits.get_shape().back();
-                size_t batch_offset = beam.global_beam_idx * logits.get_shape()[1] * vocab_size;
-                const float* beam_logits = logits.data<const float>() + batch_offset + (logits.get_shape()[1] - 1) * vocab_size;
+                size_t batch_offset = beam.global_beam_idx * logits.get_shape().at(1) * vocab_size;
+                const float* beam_logits = logits.data<const float>() + batch_offset + (logits.get_shape().at(1) - 1) * vocab_size;
                 float max_logit = *std::max_element(beam_logits, beam_logits + vocab_size);
                 float log_sum = std::log(std::accumulate(beam_logits, beam_logits + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
                     return accumulated + std::exp(to_add - max_logit);
@@ -184,7 +184,7 @@ struct GroupBeamSearcher {
                 }
                 for (auto prev_group = groups.begin(); prev_group != group; ++prev_group) {
                     for (const Beam& prev_beam : prev_group->ongoing) {
-                        tokens[size_t(prev_beam.tokens.back())].log_prob -= parameters.diversity_penalty;
+                        tokens.at(size_t(prev_beam.tokens.back())).log_prob -= parameters.diversity_penalty;
                     }
                 }
                 std::vector<int64_t> full_text{parameters.prompt};
@@ -192,13 +192,13 @@ struct GroupBeamSearcher {
                 if (full_text.size() > 1 && full_text.size() >= parameters.no_repeat_ngram_size) {
                     std::vector<int64_t> tail{full_text.end() - ptrdiff_t(parameters.no_repeat_ngram_size) + 1, full_text.end()};
                     for (int64_t banned_token : kmp_search(full_text, tail)) {
-                        tokens[size_t(banned_token)].log_prob = -std::numeric_limits<float>::infinity();
+                        tokens.at(size_t(banned_token)).log_prob = -std::numeric_limits<float>::infinity();
                     }
                 }
                 std::sort(tokens.begin(), tokens.end(), [](Token left, Token right) {
                     return left.log_prob > right.log_prob;  // Most probable tokens in front
                 });
-                size_t added_count = 0;
+                size_t add_count = 0;
                 for (Token token : tokens) {
                     Beam new_candidate = beam;
                     new_candidate.score += token.log_prob;
@@ -207,8 +207,8 @@ struct GroupBeamSearcher {
                         group->finish(std::move(new_candidate), parameters);
                     } else {
                         candidates.push_back(std::move(new_candidate));
-                        ++added_count;
-                        if (added_count == 2 * parameters.group_size) {
+                        ++add_count;
+                        if (add_count == 2 * parameters.group_size) {
                             break;
                         }
                     }
@@ -221,15 +221,15 @@ struct GroupBeamSearcher {
             std::partial_sort(candidates.begin(), candidates.begin() + 2 * parameters.group_size, candidates.end(), greater);
             group->ongoing.clear();
             for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
-                if (parameters.eos_token == candidates[cand_idx].tokens.back()) {
+                if (parameters.eos_token == candidates.at(cand_idx).tokens.back()) {
                     // if beam_token does not belong to top num_beams tokens, it should not be added
                     if (cand_idx >= parameters.group_size) {
                         continue;
                     }
-                    candidates[cand_idx].tokens.resize(candidates[cand_idx].tokens.size() - 1);
-                    group->finish(std::move(candidates[cand_idx]), parameters);
+                    candidates.at(cand_idx).tokens.resize(candidates.at(cand_idx).tokens.size() - 1);
+                    group->finish(std::move(candidates.at(cand_idx)), parameters);
                 } else {
-                    group->ongoing.push_back(std::move(candidates[cand_idx]));
+                    group->ongoing.push_back(std::move(candidates.at(cand_idx)));
                     if (group->ongoing.size() == parameters.group_size) {
                         break;
                     }
@@ -281,7 +281,7 @@ int main(int argc, char* argv[]) try {
     std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
     for (size_t idx = 3; idx < inputs.size(); ++idx) {
         ov::Shape shape = inputs.at(idx).get_partial_shape().get_min_shape();
-        shape[0] = 1;
+        shape.at(0) = 1;
         ireq.get_input_tensor(idx).set_shape(shape);
     }
     Parameters parameters;
@@ -314,28 +314,28 @@ int main(int argc, char* argv[]) try {
         ireq.get_tensor("input_ids").set_shape({batch_size, 1});
         ov::Tensor attention_mask = ireq.get_tensor("attention_mask");
         ov::Shape mask_shape = attention_mask.get_shape();
-        mask_shape[0] = batch_size;
-        ++mask_shape[1];
+        mask_shape.at(0) = batch_size;
+        ++mask_shape.at(1);
         attention_mask.set_shape(mask_shape);
         std::fill_n(attention_mask.data<int64_t>(), shape_size(mask_shape), 1);
         ireq.get_tensor("position_ids").set_shape({batch_size, 1});
-        std::fill_n(ireq.get_tensor("position_ids").data<int64_t>(), batch_size, mask_shape[1] - 1);
+        std::fill_n(ireq.get_tensor("position_ids").data<int64_t>(), batch_size, mask_shape.at(1) - 1);
         for (size_t tensor_idx = 3; tensor_idx < inputs.size(); ++tensor_idx) {
             ov::Shape shape = ireq.get_output_tensor(tensor_idx - 2).get_shape();
-            shape[0] = batch_size;
+            shape.at(0) = batch_size;
             ireq.get_input_tensor(tensor_idx).set_shape(shape);
         }
         for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-            ireq.get_tensor("input_ids").data<int64_t>()[batch_idx] = next_tokens[batch_idx].token_idx;
+            ireq.get_tensor("input_ids").data<int64_t>()[batch_idx] = next_tokens.at(batch_idx).token_idx;
             for (size_t tensor_idx = 3; tensor_idx < inputs.size(); ++tensor_idx) {
                 ov::Tensor present = ireq.get_output_tensor(tensor_idx - 2);
-                ov::Shape present_begin = {next_tokens[batch_idx].beam_idx, 0, 0, 0};
+                ov::Shape present_begin = {next_tokens.at(batch_idx).beam_idx, 0, 0, 0};
                 ov::Shape present_end = present.get_shape();
-                present_end[0] = next_tokens[batch_idx].beam_idx + 1;
+                present_end.at(0) = next_tokens.at(batch_idx).beam_idx + 1;
                 ov::Tensor past = ireq.get_input_tensor(tensor_idx);
                 ov::Shape past_begin = {batch_idx, 0, 0, 0};
                 ov::Shape past_end = past.get_shape();
-                past_end[0] = batch_idx + 1;
+                past_end.at(0) = batch_idx + 1;
                 ov::Tensor{present, present_begin, present_end}.copy_to(ov::Tensor{past, past_begin, past_end});
             }
         }
