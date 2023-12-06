@@ -117,19 +117,21 @@ jobs:
           lfs: true
           github-server-url: https://huggingface.co
       - name: Install dependencies
+        shell: bash
         run: |
           python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14.0" ./thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu &
           curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13432-a6ea22ad0e6/w_openvino_toolkit_windows_2023.3.0.dev20231129_x86_64.zip
           unzip ov.zip
           wait
       - name: Download, convert and build
-        shell: cmd
+        shell: bash
         run: |
-          optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-Chat-v0.6 .\TinyLlama-1.1B-Chat-v0.6\
-          mkdir .\build\
-          cd .\build\
-          cmake -DCMAKE_BUILD_TYPE=Release -DOpenVINO_DIR=w_openvino_toolkit_windows_2023.3.0.dev20231129_x86_64\runtime\cmake\ ..\
-          cmake --build .\ --config Release -j
+          optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-Chat-v0.6 ./TinyLlama-1.1B-Chat-v0.6/ &
+          mkdir ./build/
+          cd ./build/
+          cmake -DCMAKE_BUILD_TYPE=Release -DOpenVINO_DIR=w_openvino_toolkit_windows_2023.3.0.dev20231129_x86_64/runtime/cmake/ ../
+          cmake --build ./ --config Release -j
+          wait
       - name: Compare
         shell: cmd
         run: |
