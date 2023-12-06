@@ -101,8 +101,8 @@ struct Group {
                 return;
             }
             case StopCriteria::never: {
-                float length = parameters.length_penalty > 0.0f ? parameters.max_new_tokens : cur_len;
-                float highest_attainable_score = best_sum_logprobs / std::pow(length, parameters.length_penalty);
+                size_t length = parameters.length_penalty > 0.0f ? parameters.max_new_tokens : cur_len;
+                float highest_attainable_score = best_sum_logprobs / std::pow(float(length), parameters.length_penalty);
                 done = worst_score >= highest_attainable_score;
                 return;
             }
@@ -144,9 +144,7 @@ struct GroupBeamSearcher {
                 continue;
             }
             std::vector<Beam> candidates;
-            // Sample 2 * group_size highest score tokens to get at least 1 non EOS token per beam
-            size_t n_candidates = 2 * parameters.group_size;
-            candidates.reserve(n_candidates);
+            candidates.reserve(2 * parameters.group_size);
             for (const Beam& beam : group->ongoing) {
                 if (logits.get_shape().at(0) <= beam.global_beam_idx) {
                     throw std::runtime_error("logits batch size doesn't match the number of beams");
@@ -192,16 +190,18 @@ struct GroupBeamSearcher {
                     } else {
                         candidates.push_back(std::move(new_candidate));
                         ++add_count;
-                        if (add_count == n_candidates) {
+                        if (add_count == 2 * parameters.group_size) {
                             break;
                         }
                     }
                 }
             }
-            if (candidates.size() < n_candidates) {
+            // Sample 2 * group_size highest score tokens to get at least 1 non EOS token per beam
+            if (candidates.size() < 2 * parameters.group_size) {
                 throw std::runtime_error("No beams left to search");
             }
-            std::partial_sort(candidates.begin(), candidates.begin() + n_candidates, candidates.end(), greater);
+            auto to_sort = candidates.begin() + ptrdiff_t(2 * parameters.group_size);
+            std::partial_sort(candidates.begin(), to_sort, candidates.end(), greater);
             group->ongoing.clear();
             for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
                 if (parameters.eos_token == candidates.at(cand_idx).tokens.back()) {

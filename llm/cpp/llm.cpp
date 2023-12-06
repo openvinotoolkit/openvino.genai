@@ -32,10 +32,9 @@ int main(int argc, char* argv[]) try {
     }
     ov::Core core;
     core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
-    auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
+    auto [input_ids, mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
     ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
     std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
-    constexpr size_t BATCH_SIZE = 1;
     std::map<size_t, ov::PartialShape> shapes = {
         {0, ov::PartialShape{
             -1, -1
@@ -56,7 +55,7 @@ int main(int argc, char* argv[]) try {
     model->reshape(shapes);
     ov::InferRequest ireq = core.compile_model(model, "CPU", ov::cache_dir("llm-cache")).create_infer_request();
     ireq.set_tensor("input_ids", input_ids);
-    ireq.set_tensor("attention_mask", attention_mask);
+    ireq.set_tensor("attention_mask", mask);
     ov::Tensor position_ids = ireq.get_tensor("position_ids");
     position_ids.set_shape(input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
@@ -68,9 +67,9 @@ int main(int argc, char* argv[]) try {
     Parameters parameters;
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     parameters.prompt = std::vector<int64_t>{prompt_data, prompt_data + input_ids.get_size()};
-    parameters.max_new_tokens = std::stol(argv[5]);
-    parameters.n_groups = std::stoi(argv[6]);
-    parameters.group_size = std::stoi(argv[7]);
+    parameters.max_new_tokens = std::stoul(argv[5]);
+    parameters.n_groups = std::stoul(argv[6]);
+    parameters.group_size = std::stoul(argv[7]);
     if (std::string{"early"} == argv[8]) {
         parameters.stop_criteria = StopCriteria::early;
     } else if (std::string{"heuristic"} == argv[8]) {
@@ -80,7 +79,7 @@ int main(int argc, char* argv[]) try {
     } else {
         throw std::runtime_error("Unknown stop_criteria value");
     }
-    parameters.no_repeat_ngram_size = std::stoi(argv[9]);
+    parameters.no_repeat_ngram_size = std::stoul(argv[9]);
     parameters.diversity_penalty = std::stof(argv[10]);
     parameters.length_penalty = std::stof(argv[11]);
     parameters.eos_token = 2;
