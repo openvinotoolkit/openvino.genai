@@ -86,8 +86,8 @@ struct Parameters {
     float diversity_penalty = 1.0;
     size_t max_new_tokens = 20;
     StopCriteria stop_criteria = StopCriteria::heuristic;
-    size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
     float length_penalty = 0.0;
+    size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
     // There's no way to extract special token values from the tokenizer for now
     int64_t eos_token = 2;
     int64_t pad_token = 0;
