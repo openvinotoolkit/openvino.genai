@@ -165,13 +165,12 @@ struct GroupBeamSearcher {
             }
             std::vector<Beam> candidates;
             candidates.reserve(2 * parameters.group_size);
-            for (size_t beam_idx = 0; beam_idx < parameters.group_size; ++beam_idx) {
-                if (logits.get_shape()[0] <= group->ongoing[beam_idx].global_beam_idx) {
+            for (const Beam& beam : group->ongoing) {
+                if (logits.get_shape()[0] <= beam.global_beam_idx) {
                     throw std::runtime_error("logits batch size doesn't match the number of beams");
                 }
                 size_t vocab_size = logits.get_shape().back();
-                std::vector<float> temp;
-                size_t batch_offset = group->ongoing[beam_idx].global_beam_idx * logits.get_shape()[1] * logits.get_shape()[2];
+                size_t batch_offset = beam.global_beam_idx * logits.get_shape()[1] * vocab_size;
                 const float* beam_logits = logits.data<const float>() + batch_offset + (logits.get_shape()[1] - 1) * vocab_size;
                 float max_logit = *std::max_element(beam_logits, beam_logits + vocab_size);
                 float log_sum = std::log(std::accumulate(beam_logits, beam_logits + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
@@ -188,28 +187,30 @@ struct GroupBeamSearcher {
                         tokens[size_t(prev_beam.tokens.back())].log_prob -= parameters.diversity_penalty;
                     }
                 }
-                std::vector<int64_t>& other_tokens = group->ongoing[beam_idx].tokens;
                 std::vector<int64_t> full_text{parameters.prompt};
-                full_text.insert(full_text.end(), other_tokens.begin(), other_tokens.end());
+                full_text.insert(full_text.end(), beam.tokens.begin(), beam.tokens.end());
                 if (full_text.size() > 1 && full_text.size() >= parameters.no_repeat_ngram_size) {
-                    for (int64_t banned_token : kmp_search(full_text, {full_text.end() - ptrdiff_t(parameters.no_repeat_ngram_size) + 1, full_text.end()})) {
+                    std::vector<int64_t> tail{full_text.end() - ptrdiff_t(parameters.no_repeat_ngram_size) + 1, full_text.end()};
+                    for (int64_t banned_token : kmp_search(full_text, tail)) {
                         tokens[size_t(banned_token)].log_prob = -std::numeric_limits<float>::infinity();
                     }
                 }
                 std::sort(tokens.begin(), tokens.end(), [](Token left, Token right) {
                     return left.log_prob > right.log_prob;  // Most probable tokens in front
                 });
-                size_t new_token_idx = 0;
-                for (int added_count = 0; added_count < int(2 * parameters.group_size); ++added_count) {
-                    Beam new_candidate = group->ongoing[beam_idx];
-                    new_candidate.score += tokens[new_token_idx].log_prob;
-                    new_candidate.tokens.push_back(tokens[new_token_idx].idx);
-                    ++new_token_idx;
+                size_t add_count = 0;
+                for (Token token : tokens) {
+                    Beam new_candidate = beam;
+                    new_candidate.score += token.log_prob;
+                    new_candidate.tokens.push_back(token.idx);
                     if (parameters.early_finish(new_candidate)) {
                         group->finish(std::move(new_candidate), parameters);
-                        --added_count;
                     } else {
                         candidates.push_back(std::move(new_candidate));
+                        ++add_count;
+                        if (add_count < 2 * parameters.group_size) {
+                            break;
+                        }
                     }
                 }
             }
