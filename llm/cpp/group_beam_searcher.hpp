@@ -156,7 +156,9 @@ struct GroupBeamSearcher {
             if (!group.done) {
                 for (Beam& beam : group.ongoing) {
                     beam.global_beam_idx = beam_count;
-                    if (!beam.tokens.empty() && logits.get_shape().at(0) != 1) {
+                    // beam.tokens.empty() holds for the first process() call.
+                    // Every beam should be constructed from the single batch
+                    if (!beam.tokens.empty()) {
                         ++beam_count;
                     }
                 }
@@ -165,6 +167,8 @@ struct GroupBeamSearcher {
         for (auto group = groups.begin(); group != groups.end(); ++group) {
             if (group->done) {
                 for (Beam& beam : group->ongoing) {
+                    // pad_token addition affects how diversity_penalty is applyed.
+                    // Required to stay aligned with Python transformers implementation
                     beam.tokens.push_back(parameters.pad_token);
                 }
                 continue;
