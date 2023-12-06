@@ -1,5 +1,4 @@
 from typing import Union, Optional, Any, List, Dict
-from transformers import CLIPTokenizer, CLIPImageProcessor
 from diffusers.pipelines.stable_diffusion.safety_checker import (
     StableDiffusionSafetyChecker,
 )
@@ -14,11 +13,11 @@ class OVLatentConsistencyModelPipeline(DiffusionPipeline):
         self,
         vae_decoder: ov.Model,
         text_encoder: ov.Model,
-        tokenizer: CLIPTokenizer,
+        tokenizer: None,
         unet: ov.Model,
         scheduler: None,
         safety_checker: StableDiffusionSafetyChecker,
-        feature_extractor: CLIPImageProcessor,
+        feature_extractor: None,
         requires_safety_checker: bool = True,
     ):
         super().__init__()

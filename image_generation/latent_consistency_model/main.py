@@ -33,10 +33,8 @@ ov_pipe = OVLatentConsistencyModelPipeline(
     unet=unet_model,
     vae_decoder=vae_decoder,
     scheduler=scheduler,
-    feature_extractor=tokenizer, #feature_extractor,
-    safety_checker=None
-    #safety_checker=safety_checker,
-)
+    feature_extractor=tokenizer,
+    safety_checker=None)
 
 print("Running inference")
 
