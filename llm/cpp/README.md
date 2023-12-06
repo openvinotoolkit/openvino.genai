@@ -7,7 +7,7 @@ This application showcases inference of a large language model (LLM). It doesn't
 
 ## How it works
 
-The program loads a tokenizer, detokenizer and a model (`.xml` and `.bin`) to OpenVINO™. The model is reshaped to batch 1 and variable prompt length. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
+The program loads a model a tokenizer, and a detokenizer (`.xml` and `.bin`) to OpenVINO™. The model is reshaped to variable batch size and prompt length. A prompt is tokenized and passed to the model. The model predicts a distribution over the next tokens and group beam search samples from that distribution to explore possible sequesnses. The result is converted to chars and printed.
 
 ## Supported models
 

@@ -5,7 +5,7 @@
 
 // Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
 std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std::vector<int64_t>& needle) {
-    if (needle.empty()) {  // NO_REPEAT_NGRAM_SIZE == 1, ban every token
+    if (needle.empty()) {  // no_repeat_ngram_size == 1, ban every token
         return {haystack.begin(), haystack.end()};
     }
     std::vector<int> partial_match_table(needle.size() + 1, -1);
@@ -44,6 +44,29 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std:
     return res;
 }
 
+struct Token {float log_prob; int64_t idx;};
+
+std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
+    if (logits.get_shape().at(0) <= batch_idx) {
+        throw std::runtime_error("logits batch size doesn't match the number of beams");
+    }
+    size_t vocab_size = logits.get_shape().back();
+    size_t batch_offset = batch_idx * logits.get_shape().at(1) * vocab_size;
+    size_t sequence_offset = (logits.get_shape().at(1) - 1) * vocab_size;
+    const float* beam_logits = logits.data<const float>() + batch_offset + sequence_offset;
+    float max_logit = *std::max_element(beam_logits, beam_logits + vocab_size);
+    float log_sum = std::log(std::accumulate(
+        beam_logits, beam_logits + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
+            return accumulated + std::exp(to_add - max_logit);
+    }));
+    std::vector<Token> tokens;
+    tokens.reserve(vocab_size);
+    for (size_t idx = 0; idx < vocab_size; ++idx) {
+        tokens.push_back({beam_logits[idx] - max_logit - log_sum, int64_t(idx)});
+    }
+    return tokens;
+}
+
 struct Beam {
     float score = -std::numeric_limits<float>::infinity();  // The bigger, the better
     std::vector<int64_t> tokens;
@@ -72,8 +95,8 @@ struct Parameters {
 };
 
 struct Group {
-    std::vector<Beam> ongoing;  // best beams in front
-    std::vector<Beam> min_heap;  // The worst beam is the first
+    std::vector<Beam> ongoing;  // Best beams in front
+    std::vector<Beam> min_heap;  // The worst of the best completed beams is the first
     bool done = false;
     void finish(Beam&& beam, const Parameters& parameters) {
         beam.score /= std::pow(float(parameters.prompt.size() + beam.tokens.size()), parameters.length_penalty);
@@ -146,24 +169,7 @@ struct GroupBeamSearcher {
             std::vector<Beam> candidates;
             candidates.reserve(2 * parameters.group_size);
             for (const Beam& beam : group->ongoing) {
-                if (logits.get_shape().at(0) <= beam.global_beam_idx) {
-                    throw std::runtime_error("logits batch size doesn't match the number of beams");
-                }
-                size_t vocab_size = logits.get_shape().back();
-                size_t batch_offset = beam.global_beam_idx * logits.get_shape().at(1) * vocab_size;
-                size_t sequence_offset = (logits.get_shape().at(1) - 1) * vocab_size;
-                const float* beam_logits = logits.data<const float>() + batch_offset + sequence_offset;
-                float max_logit = *std::max_element(beam_logits, beam_logits + vocab_size);
-                float log_sum = std::log(std::accumulate(
-                    beam_logits, beam_logits + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
-                        return accumulated + std::exp(to_add - max_logit);
-                }));
-                struct Token {float log_prob; int64_t idx;};
-                std::vector<Token> tokens;
-                tokens.reserve(vocab_size);
-                for (size_t idx = 0; idx < vocab_size; ++idx) {
-                    tokens.push_back({beam_logits[idx] - max_logit - log_sum, int64_t(idx)});
-                }
+                std::vector<Token> tokens = log_softmax(logits, beam.global_beam_idx);
                 for (auto prev_group = groups.begin(); prev_group != group; ++prev_group) {
                     for (const Beam& prev_beam : prev_group->ongoing) {
                         tokens.at(size_t(prev_beam.tokens.back())).log_prob -= parameters.diversity_penalty;
@@ -205,7 +211,7 @@ struct GroupBeamSearcher {
             group->ongoing.clear();
             for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
                 if (parameters.eos_token == candidates.at(cand_idx).tokens.back()) {
-                    // if beam_token does not belong to top num_beams tokens, it should not be added
+                    // If beam_token does not belong to top num_beams tokens, it should not be added
                     if (cand_idx >= parameters.group_size) {
                         continue;
                     }
