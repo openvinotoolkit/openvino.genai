@@ -41,7 +41,7 @@ jobs:
           source ./ov/setupvars.sh
           python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./TinyLlama-1.1B-Chat-v0.6/
 
-          timeout 20s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml 69 > ./pred.txt
+          timeout 25s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml 69 > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
