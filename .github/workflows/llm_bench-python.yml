@@ -38,7 +38,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: add label
       run: |
-        gh pr edit "$NUMBER" --add-label "llm_bench" --repo "$GH_REPO"
+        gh pr edit "$NUMBER" --add-label "llm_bench" --repo "$GH_REPO" -B master
       env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
