@@ -111,13 +111,20 @@ static auto get_utf8_line(std::string &line) -> bool {
   return !!std::getline(std::cin, line);
 }
 
-#define COMPILE_FROM_XML 0
+ov::Tensor prepare_input_ids_ov_tensor(std::vector<int> &input_ids, size_t batch_size) {
+    auto tensor = ov::Tensor(ov::element::i64, {batch_size, input_ids.size() });
+    int64_t* input_ids_int64 = tensor.data<int64_t>();
+    for (size_t i = 0; i < input_ids.size(); i++) {
+        (input_ids_int64)[i] = input_ids[i];
+    }
+
+    return tensor;
+}
 
 int main(int argc, char **argv) {
   try {
     Args args = parse_args(argc, argv);
     qwen::QwenConfig config;
-    double total_time;
 
     // Init Tokenizer
     auto startTime = Time::now();
@@ -127,8 +134,6 @@ int main(int argc, char **argv) {
 
     // Init Text Streamer
     auto text_streamer = std::make_shared<qwen::TextStreamer>(std::cout, tokenizer.get());
-    startTime = Time::now();
-
 
     // Init OpenVINO Runtime
     ov::Core core;
@@ -150,62 +155,19 @@ int main(int argc, char **argv) {
         device_config[ov::enable_profiling.name()] = false;
     }
 
-    // Read OpenVINO Model
-#if !COMPILE_FROM_XML
-    std::shared_ptr<ov::Model> model = core.read_model(args.model_path);
-    duration_ms = get_duration_ms_until_now(startTime);
-    std::cout << "Read Qwen Model took " << duration_ms << " ms" << std::endl;
-#endif
     constexpr size_t BATCH_SIZE = 1;
-#if !COMPILE_FROM_XML
-    // Reshape model
-    std::map<size_t, ov::PartialShape> shapes = {
-        {0, ov::PartialShape{
-            BATCH_SIZE, -1
-        }}
-    };
-    
-    std::vector<ov::Output<ov::Node>> inputs = model->inputs();
-    for (size_t idx = 1; idx < inputs.size(); ++idx) {
-        ov::PartialShape shape = inputs.at(idx).get_partial_shape();
-        shape[0] = BATCH_SIZE;
-        shapes.emplace(idx, shape);
-    }
-    model->reshape(shapes);
-    // Modify model input type to algin with tokenizer outputs with PrePostProcessor
-    ov::preprocess::PrePostProcessor p3(model);
-    p3.input("input_ids").tensor().set_element_type(ov::element::i32);  // cast to the type of tokenizer's output
-    p3.input("attention_mask").tensor().set_element_type(ov::element::i32);
-    model = p3.build();
-    std::string modifiled_file = std::regex_replace(args.model_path, std::regex("openvino_model"), "modified_openvino_model"); // replace 'def' -> 'klm'
-    std::cout << "Save modified model in " << modifiled_file << "\n";
-    ov::serialize(model, modifiled_file);
-    //inputs = model->inputs();
-#endif
     // Compile model
     startTime = Time::now();
-#if !COMPILE_FROM_XML
-    ov::CompiledModel compiled_model = core.compile_model(model, args.device, device_config);
-#else
     ov::CompiledModel compiled_model = core.compile_model(args.model_path, args.device, device_config);
-#endif
+    auto model_inputs = compiled_model.inputs();
+    ov::InferRequest ireq = compiled_model.create_infer_request();
     duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Compile model and create infer request took " << duration_ms << " ms" << std::endl;
-    ov::InferRequest ireq = compiled_model.create_infer_request();
-
-#if !COMPILE_FROM_XML
-        auto model_inputs = model->inputs();
-        model = nullptr;
-#else
-        auto model_inputs = compiled_model.inputs();
-#endif
-    /*
-    if (args.device.find("GPU") != std::string::npos) {
-	    model = nullptr; // Release system memory after model compiled on GPU
-    }
-    */
-    int32_t out_token;
+    int64_t out_token;
     int sentence_num = 0;
+    int gen_token_count = 0;
+    double total_time = 0;
+    double second_time = 0;
     std::vector<std::string> sentences;
     if (args.language.find("ch") != std::string::npos){
       sentences = chinese_sentences;
@@ -216,26 +178,29 @@ int main(int argc, char **argv) {
     for (std::string input_text : sentences) {
       // Build input prompt with prompt template
       std::cout << "******************************************* Text Sentence #" << sentence_num << " Start *******************************************\n";
-      std::cout << "Input text: " << input_text << "\n";
       startTime = Time::now();
       std::vector<int> input_ids = tokenizer->encode_history({input_text}, args.max_length);
       duration_ms = get_duration_ms_until_now(startTime);
-      std::cout << "Input prompt encode using tokenizer took " << duration_ms << " ms" << std::endl;
-      std::string output_text = tokenizer->decode(input_ids);
-      std::cout << "Build input prompt with prompt template: \n" << output_text << "\n";
-
+      if (args.verbose){
+        std::cout << "Input text: " << input_text << "\n";
+        std::cout << "Input prompt encode using tokenizer took " << duration_ms << " ms" << std::endl;
+        std::cout << "Input with prompt template token length: " << input_ids.size() << "\n";
+      }
+      text_streamer->put(input_ids);
       // Prepare input tensor for first infer
       startTime = Time::now();
 
-      for (size_t idx = 1; idx < model_inputs.size() - 1; ++idx) {
-          ireq.get_input_tensor(idx).set_shape(model_inputs.at(idx).get_partial_shape().get_min_shape());
-      }
-
-      ireq.get_tensor("input_ids").set_shape({ BATCH_SIZE, input_ids.size() });
+      ireq.get_tensor("input_ids").set_shape({ BATCH_SIZE, input_ids.size() });        // TODO: Fix input ids with [-1,1] issue
       ireq.get_tensor("attention_mask").set_shape({ BATCH_SIZE, input_ids.size() });
-      std::copy_n(input_ids.data(), input_ids.size(), ireq.get_tensor("input_ids").data<int32_t>());
-      std::fill_n(ireq.get_tensor("attention_mask").data<int32_t>(), input_ids.size(), 1);
-      std::cout << "Input token length: " << input_ids.size() << "\n";
+      auto input_ids_tensor = prepare_input_ids_ov_tensor(input_ids, BATCH_SIZE);      // WA for input ids with int32 type
+      ireq.set_tensor("input_ids", input_ids_tensor);
+      std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), input_ids.size(), 1);
+
+      for (size_t idx = 1; idx < model_inputs.size() - 1; ++idx) {
+          ov::PartialShape shape = model_inputs.at(idx).get_partial_shape().get_min_shape();
+          shape[0] = BATCH_SIZE;
+          ireq.get_tensor(model_inputs[idx]).set_shape(shape.get_shape());
+      }
 
       // First inference
       startTime = Time::now();
@@ -246,20 +211,17 @@ int main(int argc, char **argv) {
       // Get first inference results
       size_t vocab_size = ireq.get_tensor("logits").get_shape().back();
       float* logits = ireq.get_tensor("logits").data<float>() + (input_ids.size() - 1) * vocab_size;
-      out_token = int32_t(std::max_element(logits, logits + vocab_size) - logits);
-      if (text_streamer) {
-        text_streamer->put({out_token});
-      }
-
+      out_token = std::max_element(logits, logits + vocab_size) - logits;
+      text_streamer->put({(int32_t)out_token});
       ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
       total_time = 0;
-      int count = 1;
-      double second_time = 0;
-      while (out_token != config.eos_token_id && out_token != config.im_end_id && count < args.max_context_length) {
+      gen_token_count = 1;
+      second_time = 0;
+      while (out_token != config.eos_token_id && out_token != config.im_end_id && gen_token_count < args.max_context_length) {
           // Prepare input tensor for 2nd+ inference
-          ireq.get_tensor("input_ids").data<int32_t>()[0] = out_token;
+          ireq.get_tensor("input_ids").data<int64_t>()[0] = out_token;
           ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1});
-          std::fill_n(ireq.get_tensor("attention_mask").data<int32_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
+          std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
           for (size_t idx = 1; idx < model_inputs.size() - 1; ++idx) {
             ireq.set_input_tensor(idx, ireq.get_output_tensor(idx));
           }
@@ -267,14 +229,12 @@ int main(int argc, char **argv) {
           startTime = Time::now();
           ireq.infer();
           duration_ms = get_duration_ms_until_now(startTime);
-          count += 1;
+          gen_token_count += 1;
           // Get 2nd+ inference results
           logits = ireq.get_tensor("logits").data<float>();
           out_token = std::max_element(logits, logits + vocab_size) - logits;
-          if (text_streamer) {
-            text_streamer->put({out_token});
-          }
-          if (count != 2) {
+          text_streamer->put({(int32_t)out_token});
+          if (gen_token_count != 2) {
             total_time += duration_ms;
           }
           else {
@@ -283,9 +243,9 @@ int main(int argc, char **argv) {
       }
       std::cout << '\n';
       std::cout << "Second inference latency: " << second_time << " ms" << std::endl;
-      if (count > 2) {
-        std::cout << "Other inference tooks in total: " << total_time << " ms, Average other token latency: " << total_time / (count - 2) << " ms" << std::endl;
-        std::cout << "Input num tokens: " << input_ids.size() << ", output num tokens: " << count << ", Average inference speed: " << (count - 2) / total_time * 1000.0 << " token/s\n";
+      if (gen_token_count > 2) {
+        std::cout << "Other inference tooks in total: " << total_time << " ms, Average other token latency: " << total_time / (gen_token_count - 2) << " ms" << std::endl;
+        std::cout << "Input num tokens: " << input_ids.size() << ", output num tokens: " << gen_token_count << ", Average inference speed: " << (gen_token_count - 2) / total_time * 1000.0 << " token/s\n";
       }
       std::cout << "******************************************* Text Sentence #" << sentence_num << " Finished ****************************************\n\n";
       sentence_num+=1;
@@ -297,6 +257,5 @@ int main(int argc, char **argv) {
     std::cerr << e.what() << std::endl;
     exit(EXIT_FAILURE);
   }
-
   return 0;
 }
