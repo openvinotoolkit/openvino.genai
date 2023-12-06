@@ -83,7 +83,7 @@ Parameters:
 * `-f` - framework (default=ov)
 * `-p` - interactive prompt text
 * `-pf` - path of JSONL file including interactive prompts
-* `-n` - number of benchmarking iterations, if the value greater 0, will exclude the first iteration. (default=0)
+* `-n` - number of benchmarking iterations. 0 means execute warm-up iteration only. >0 value means warm-up iteration plus @number iterations. (default=0)
 
 ``` bash
 python ./benchmark.py -h # for more information
