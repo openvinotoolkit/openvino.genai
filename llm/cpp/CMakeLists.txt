@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 add_executable(llm llm.cpp)
+target_include_directories(llm PRIVATE ./)
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 target_link_libraries(llm PRIVATE openvino::runtime)
 set_target_properties(llm PROPERTIES CXX_STANDARD 17)
