@@ -156,10 +156,9 @@ struct GroupBeamSearcher {
                 }
             }
         }
-        for (size_t group_idx = 0; group_idx < parameters.n_groups; ++group_idx) {
-            Group& group = groups[group_idx];
-            if (group.done) {
-                for (Beam& beam : group.ongoing) {
+        for (auto group = groups.begin(); group != groups.end(); ++group) {
+            if (group->done) {
+                for (Beam& beam : group->ongoing) {
                     beam.tokens.push_back(parameters.pad_token);
                 }
                 continue;
@@ -167,12 +166,12 @@ struct GroupBeamSearcher {
             std::vector<Beam> candidates;
             candidates.reserve(2 * parameters.group_size);
             for (size_t beam_idx = 0; beam_idx < parameters.group_size; ++beam_idx) {
-                if (logits.get_shape()[0] <= group.ongoing[beam_idx].global_beam_idx) {
+                if (logits.get_shape()[0] <= group->ongoing[beam_idx].global_beam_idx) {
                     throw std::runtime_error("logits batch size doesn't match the number of beams");
                 }
                 size_t vocab_size = logits.get_shape().back();
                 std::vector<float> temp;
-                size_t batch_offset = group.ongoing[beam_idx].global_beam_idx * logits.get_shape()[1] * logits.get_shape()[2];
+                size_t batch_offset = group->ongoing[beam_idx].global_beam_idx * logits.get_shape()[1] * logits.get_shape()[2];
                 const float* beam_logits = logits.data<const float>() + batch_offset + (logits.get_shape()[1] - 1) * vocab_size;
                 float max_logit = *std::max_element(beam_logits, beam_logits + vocab_size);
                 float log_sum = std::log(std::accumulate(beam_logits, beam_logits + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
@@ -184,12 +183,12 @@ struct GroupBeamSearcher {
                 for (size_t idx = 0; idx < vocab_size; ++idx) {
                     tokens.push_back({beam_logits[idx] - max_logit - log_sum, int64_t(idx)});
                 }
-                for (size_t prev_group_idx = 0; prev_group_idx < group_idx; ++prev_group_idx) {
-                    for (const Beam& prev_beam : groups[prev_group_idx].ongoing) {
+                for (auto prev_group = groups.begin(); prev_group != group; ++prev_group) {
+                    for (const Beam& prev_beam : prev_group->ongoing) {
                         tokens[size_t(prev_beam.tokens.back())].log_prob -= parameters.diversity_penalty;
                     }
                 }
-                std::vector<int64_t>& other_tokens = group.ongoing[beam_idx].tokens;
+                std::vector<int64_t>& other_tokens = group->ongoing[beam_idx].tokens;
                 std::vector<int64_t> full_text{parameters.prompt};
                 full_text.insert(full_text.end(), other_tokens.begin(), other_tokens.end());
                 if (full_text.size() > 1 && full_text.size() >= parameters.no_repeat_ngram_size) {
@@ -202,12 +201,12 @@ struct GroupBeamSearcher {
                 });
                 size_t new_token_idx = 0;
                 for (int added_count = 0; added_count < int(2 * parameters.group_size); ++added_count) {
-                    Beam new_candidate = group.ongoing[beam_idx];
+                    Beam new_candidate = group->ongoing[beam_idx];
                     new_candidate.score += tokens[new_token_idx].log_prob;
                     new_candidate.tokens.push_back(tokens[new_token_idx].idx);
                     ++new_token_idx;
                     if (parameters.early_finish(new_candidate)) {
-                        group.finish(std::move(new_candidate), parameters);
+                        group->finish(std::move(new_candidate), parameters);
                         --added_count;
                     } else {
                         candidates.push_back(std::move(new_candidate));
@@ -220,7 +219,7 @@ struct GroupBeamSearcher {
             }
             std::partial_sort(candidates.begin(), candidates.begin() + 2 * parameters.group_size, candidates.end(), greater);
             size_t cur_len = candidates.front().tokens.size();
-            group.ongoing.clear();
+            group->ongoing.clear();
             for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
                 if (parameters.eos_token == candidates[cand_idx].tokens.back()) {
                     // if beam_token does not belong to top num_beams tokens, it should not be added
@@ -228,17 +227,17 @@ struct GroupBeamSearcher {
                         continue;
                     }
                     candidates[cand_idx].tokens.resize(candidates[cand_idx].tokens.size() - 1);
-                    group.finish(std::move(candidates[cand_idx]), parameters);
+                    group->finish(std::move(candidates[cand_idx]), parameters);
                 } else {
-                    group.ongoing.push_back(std::move(candidates[cand_idx]));
-                    if (group.ongoing.size() == parameters.group_size) {
+                    group->ongoing.push_back(std::move(candidates[cand_idx]));
+                    if (group->ongoing.size() == parameters.group_size) {
                         break;
                     }
                 }
             }
-            group.is_done(parameters);
-            if (!group.done) {
-                for (const Beam& beam : group.ongoing) {
+            group->is_done(parameters);
+            if (!group->done) {
+                for (const Beam& beam : group->ongoing) {
                     next_tokens.push_back({beam.tokens.back(), beam.global_beam_idx});
                 }
             }
