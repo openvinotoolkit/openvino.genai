@@ -11,11 +11,11 @@ on:
     branches: [ "master" ]
     paths:
       - llm_bench/python/**
+      - .github/workflows/llm_bench-python.yml
   pull_request:
     branches: [ "master" ]
     paths:
-      - llm_bench/python/**
-    
+      - llm_bench/python/**    
 
 permissions:
   contents: read
