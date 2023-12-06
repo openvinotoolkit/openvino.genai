@@ -39,6 +39,9 @@ jobs:
     - name: add label
       run: |
         gh pr edit "$NUMBER" --add-label "llm_bench"
+      env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
