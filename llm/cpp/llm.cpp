@@ -198,7 +198,7 @@ struct GroupBeamSearcher {
                 std::sort(tokens.begin(), tokens.end(), [](Token left, Token right) {
                     return left.log_prob > right.log_prob;  // Most probable tokens in front
                 });
-                size_t add_count = 0;
+                size_t added_count = 0;
                 for (Token token : tokens) {
                     Beam new_candidate = beam;
                     new_candidate.score += token.log_prob;
@@ -207,8 +207,8 @@ struct GroupBeamSearcher {
                         group->finish(std::move(new_candidate), parameters);
                     } else {
                         candidates.push_back(std::move(new_candidate));
-                        ++add_count;
-                        if (add_count < 2 * parameters.group_size) {
+                        ++added_count;
+                        if (added_count == 2 * parameters.group_size) {
                             break;
                         }
                     }
@@ -219,7 +219,6 @@ struct GroupBeamSearcher {
                 throw std::runtime_error("No beams left to search");
             }
             std::partial_sort(candidates.begin(), candidates.begin() + 2 * parameters.group_size, candidates.end(), greater);
-            size_t cur_len = candidates.front().tokens.size();
             group->ongoing.clear();
             for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
                 if (parameters.eos_token == candidates[cand_idx].tokens.back()) {
