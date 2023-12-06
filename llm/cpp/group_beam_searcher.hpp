@@ -81,16 +81,16 @@ enum class StopCriteria {early, heuristic, never};
 
 struct Parameters {
     std::vector<int64_t> prompt;
-    size_t max_new_tokens;
-    size_t n_groups;
-    size_t group_size;
-    StopCriteria stop_criteria;
-    size_t no_repeat_ngram_size;
-    float diversity_penalty;
-    float length_penalty;
+    size_t n_groups = 3;
+    size_t group_size = 5;
+    float diversity_penalty = 1.0;
+    size_t max_new_tokens = 20;
+    StopCriteria stop_criteria = StopCriteria::heuristic;
+    size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
+    float length_penalty = 0.0;
     // There's no way to extract special token values from the tokenizer for now
-    int64_t eos_token;
-    int64_t pad_token;
+    int64_t eos_token = 2;
+    int64_t pad_token = 0;
     std::function<bool(const Beam&)> early_finish = [](const Beam&){return false;};
 };
 
@@ -124,7 +124,7 @@ struct Group {
                 return;
             }
             case StopCriteria::never: {
-                size_t length = parameters.length_penalty > 0.0f ? parameters.max_new_tokens : cur_len;
+                size_t length = parameters.length_penalty > 0.0 ? parameters.max_new_tokens : cur_len;
                 float highest_attainable_score = best_sum_logprobs / std::pow(float(length), parameters.length_penalty);
                 done = worst_score >= highest_attainable_score;
                 return;
@@ -140,6 +140,9 @@ struct GroupBeamSearcher {
     Parameters parameters;
     std::vector<Group> groups;
     GroupBeamSearcher(Parameters parameters) : parameters{std::move(parameters)}, groups{parameters.n_groups} {
+        if (parameters.no_repeat_ngram_size == 0) {
+            throw std::runtime_error("no_repeat_ngram_size must be positive");
+        }
         for (Group& group : groups) {
             group.ongoing.resize(parameters.group_size);
             group.ongoing.front().score = 0.0;

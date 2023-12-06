@@ -99,3 +99,5 @@ jobs:
           python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./TinyLlama-1.1B-Chat-v0.6/
           ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml Hi 25 9 11 early 3 1.0 1.0 0 > ./pred.txt
           python ./text_generation/llama/cpp/ref.py ./pred.txt ./TinyLlama-1.1B-Chat-v0.6/ Hi 25 9 11 early 3 1.0 1.0 0
+          ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml 69 20 3 5 heuristic 99 1.0 0.0 0 > ./pred.txt
+          python ./text_generation/llama/cpp/ref.py ./pred.txt ./TinyLlama-1.1B-Chat-v0.6/ 69 20 3 5 heuristic 99 1.0 0.0 0
