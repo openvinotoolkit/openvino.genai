@@ -104,8 +104,8 @@ jobs:
 import transformers
 with open('pred.txt', 'r') as file:
     predictions = file.read()
-tokenizer = transformers.LlamaTokenizer.from_pretrained(r'C:\Users\vzlobin\r\TinyLlama-1.1B-Chat-v0.6')
-for beam in transformers.LlamaForCausalLM.from_pretrained(r'C:\Users\vzlobin\r\TinyLlama-1.1B-Chat-v0.6').generate(tokenizer('69', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20):
+tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
+for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('69', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20):
     print(beam)
     ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('69'):] + '\n'
     idx = predictions.find(ref)
