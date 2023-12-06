@@ -26,7 +26,7 @@ std::string detokenize(ov::InferRequest& detokenizer, const std::vector<int64_t>
 }
 
 int main(int argc, char* argv[]) try {
-    if (argc != 13) {
+    if (argc != 5) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0]
             + " <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> '<prompt>'");
     }
@@ -67,23 +67,6 @@ int main(int argc, char* argv[]) try {
     Parameters parameters;
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     parameters.prompt = std::vector<int64_t>{prompt_data, prompt_data + input_ids.get_size()};
-    parameters.max_new_tokens = std::stoul(argv[5]);
-    parameters.n_groups = std::stoul(argv[6]);
-    parameters.group_size = std::stoul(argv[7]);
-    if (std::string{"early"} == argv[8]) {
-        parameters.stop_criteria = StopCriteria::early;
-    } else if (std::string{"heuristic"} == argv[8]) {
-        parameters.stop_criteria = StopCriteria::heuristic;
-    } else if (std::string{"never"} == argv[8]) {
-        parameters.stop_criteria = StopCriteria::never;
-    } else {
-        throw std::runtime_error("Unknown stop_criteria value");
-    }
-    parameters.no_repeat_ngram_size = std::stoul(argv[9]);
-    parameters.diversity_penalty = std::stof(argv[10]);
-    parameters.length_penalty = std::stof(argv[11]);
-    parameters.eos_token = 2;
-    parameters.pad_token = std::stoi(argv[12]);
     GroupBeamSearcher group_beam_searcher{parameters};
     for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
         ireq.infer();
