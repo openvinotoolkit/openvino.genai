@@ -3,9 +3,6 @@ on:
   pull_request:
     paths-ignore:
       - '**/README.md'
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 jobs:
   llm-cpp:
     runs-on: ubuntu-20.04
@@ -47,7 +44,8 @@ jobs:
           timeout 20s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml 69 > ./pred.txt
           python -c "
           import transformers
-          predictions = open('pred.txt', 'r').read()
+          with open('pred.txt', 'r') as file:
+              predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
           for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('69', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20):
               ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('69'):] + '\n'
@@ -61,7 +59,8 @@ jobs:
           timeout 40s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "return 0" > ./pred.txt
           python -c "
           import transformers
-          predictions = open('pred.txt', 'r').read()
+          with open('pred.txt', 'r') as file:
+              predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
           for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('return 0', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20):
               ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('return 0'):] + '\n'
@@ -75,7 +74,8 @@ jobs:
           timeout 40s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml Hi > ./pred.txt
           python -c "
           import transformers
-          predictions = open('pred.txt', 'r').read()
+          with open('pred.txt', 'r') as file:
+              predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
           for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('Hi', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20):
               ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('Hi'):] + '\n'
@@ -89,7 +89,8 @@ jobs:
           timeout 40s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "" > ./pred.txt
           python -c "
           import transformers
-          predictions = open('pred.txt', 'r').read()
+          with open('pred.txt', 'r') as file:
+              predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
           for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20):
               ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len(''):] + '\n'
@@ -103,7 +104,8 @@ jobs:
           timeout 40s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
-          predictions = open('pred.txt', 'r').read()
+          with open('pred.txt', 'r') as file:
+              predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
           for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('你好！ 你好嗎？', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20):
               ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('你好！ 你好嗎？'):] + '\n'
@@ -136,7 +138,7 @@ jobs:
           unzip ov.zip
           wait
       - name: Download, convert and build
-        shell: bash
+        shell: sh
         run: |
           optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-Chat-v0.6 ./TinyLlama-1.1B-Chat-v0.6/ &
           mkdir ./build/
@@ -147,21 +149,19 @@ jobs:
       - name: Compare
         shell: cmd
         run: |
-          ./w_openvino_toolkit_windows_2023.3.0.dev20231129_x86_64/
-          source ./ov/setupvars.sh
-          python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./TinyLlama-1.1B-Chat-v0.6/
+          .\w_openvino_toolkit_windows_2023.3.0.dev20231129_x86_64\setupvars.bat
+          python ./llm/cpp/convert_tokenizers.py ${{ github.workspace }}\build\thirdparty\openvino_contrib\modules\custom_operations\user_ie_extensions\Release\user_ov_extensions.dll .\TinyLlama-1.1B-Chat-v0.6\
 
-          timeout 25s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml 69 > ./pred.txt
-          echo infered
+          .\build\llm\cpp\llm .\TinyLlama-1.1B-Chat-v0.6\openvino_model.xml .\tokenizer.xml .\detokenizer.xml 69 > .\pred.txt
           python -c "
           import transformers
-          predictions = open('pred.txt', 'r').read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('69', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20):
+          with open('pred.txt', 'r') as file:
+              predictions = file.read()
+          tokenizer = transformers.LlamaTokenizer.from_pretrained(r'.\TinyLlama-1.1B-Chat-v0.6\')
+          for beam in transformers.LlamaForCausalLM.from_pretrained(r'.\TinyLlama-1.1B-Chat-v0.6\').generate(tokenizer('69', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20):
               ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('69'):] + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo 69 passed
