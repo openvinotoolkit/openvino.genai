@@ -38,6 +38,8 @@ Convert Baichuan2-7B-Chat to OpenVINO IR files run with convert.py, the followin
 ```bash
 AttributeError: 'BaichuanTokenizer' object has no attribute 'sp_model'
 ```
+Reproduced with https://huggingface.co/baichuan-inc/Baichuan2-7B-Chat 84603cde5ebffb6084e476cfaeceaf0b8b91fe54 <br />
+Reference to https://huggingface.co/baichuan-inc/Baichuan2-7B-Base/discussions/2 <br />
 Solution: update `tokenization_baichuan.py` as following: <br />
 ```Python
          eos_token = AddedToken(eos_token, lstrip=False, rstrip=False) if isinstance(eos_token, str) else eos_token
