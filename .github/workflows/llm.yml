@@ -100,16 +100,16 @@ jobs:
           ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml Hi 25 9 11 early 3 1.0 1.0 0 > ./pred.txt
           python ./text_generation/llama/cpp/ref.py ./pred.txt ./TinyLlama-1.1B-Chat-v0.6/ Hi 25 9 11 early 3 1.0 1.0 0
           ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml 69 20 3 5 heuristic 99 1.0 0.0 0 > ./pred.txt
-          python "
-import transformers
-with open('pred.txt', 'r') as file:
-    predictions = file.read()
-tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
-for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('69', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20):
-    print(beam)
-    ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('69'):] + '\n'
-    idx = predictions.find(ref)
-    if -1 == idx:
-        raise RuntimeError(f'Missing "{ref}" from predictions')
-    predictions = predictions[:idx] + predictions[idx + len(ref):]
-"
+          python -c "
+          import transformers
+          with open('pred.txt', 'r') as file:
+              predictions = file.read()
+          tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
+          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('69', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20):
+              print(beam)
+              ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('69'):] + '\n'
+              idx = predictions.find(ref)
+              if -1 == idx:
+                  raise RuntimeError(f'Missing "{ref}" from predictions')
+              predictions = predictions[:idx] + predictions[idx + len(ref):]
+          "
