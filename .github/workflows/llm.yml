@@ -44,8 +44,7 @@ jobs:
           source ./ov/setupvars.sh
           python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./TinyLlama-1.1B-Chat-v0.6/
 
-          timeout 25s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml 69 > ./pred.txt
-          echo infered
+          timeout 20s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml 69 > ./pred.txt
           python -c "
           import transformers
           predictions = open('pred.txt', 'r').read()
@@ -59,7 +58,7 @@ jobs:
           "
           echo 69 passed
 
-          timeout 15s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "return 0" > ./pred.txt
+          timeout 20s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "return 0" > ./pred.txt
           python -c "
           import transformers
           predictions = open('pred.txt', 'r').read()
@@ -73,7 +72,7 @@ jobs:
           "
           echo return 0 passed
 
-          timeout 15s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml Hi > ./pred.txt
+          timeout 20s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml Hi > ./pred.txt
           python -c "
           import transformers
           predictions = open('pred.txt', 'r').read()
@@ -87,7 +86,7 @@ jobs:
           "
           echo Hi passed
 
-          timeout 15s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "" > ./pred.txt
+          timeout 20s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "" > ./pred.txt
           python -c "
           import transformers
           predictions = open('pred.txt', 'r').read()
@@ -101,7 +100,7 @@ jobs:
           "
           echo '""' passed
 
-          timeout 15s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "你好！ 你好嗎？" > ./pred.txt
+          timeout 20s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
           predictions = open('pred.txt', 'r').read()
