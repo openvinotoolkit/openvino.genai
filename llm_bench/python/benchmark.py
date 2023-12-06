@@ -18,7 +18,8 @@ import PIL
 import hashlib
 import utils.metrics_print
 import utils.output_csv
-import utils.hook_transformers
+import utils.hook_greedy_search
+import utils.hook_beam_search
 import traceback
 from transformers import set_seed
 from PIL import Image
@@ -26,7 +27,8 @@ from utils.memory_profile import MemConsumption
 from utils.hook_forward import OVForward
 import utils.output_json
 
-HOOK_UTILS = {'pt': utils.hook_transformers, 'ov': utils.hook_transformers}
+HOOK_BEAM_SEARCH_UTILS = {'pt': utils.hook_beam_search, 'ov': utils.hook_beam_search}
+HOOK_GREEDY_SEARCH_UTILS = {'pt': utils.hook_greedy_search, 'ov': utils.hook_greedy_search}
 FW_UTILS = {'pt': utils.pt_utils, 'ov': utils.ov_utils}
 
 DEFAULT_INFERENCE_STEPS = 20
@@ -145,11 +147,15 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
 
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
-    bench_hook = HOOK_UTILS[framework].BenchHook()
     model, tokenizer, pretrain_time = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
     # Override forward for statistic each forward time.
     default_model_type = DEFAULT_MODEL_CLASSES[args['use_case']]
     model_type = args.get('model_type', default_model_type)
+
+    if args['num_beams'] > 1:
+        bench_hook = HOOK_BEAM_SEARCH_UTILS[framework].BeamSearchHook()
+    else:
+        bench_hook = HOOK_GREEDY_SEARCH_UTILS[framework].GreedySearchHook()
     bench_hook.new_forward(model, model_type)
 
     iter_data_list = []
