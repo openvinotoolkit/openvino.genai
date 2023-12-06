@@ -12,8 +12,8 @@ if(MSVC)
         llm PRIVATE
         /Wall  # Display all warnings
         /wd4626 /wd5027  # Disable the implicit definition of assignment operator as deleted warings
-        /wd4820  # Disable the padding addeddition warning after data members
         /wd4710 /wd4711  # Disable the inline warnings
+        /wd4820  # Disable the padding addeddition warning after data members
         /EHsc  # Enable standard C++ stack unwinding, assume functions with extern "C" never throw
     )
 else()
