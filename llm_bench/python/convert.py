@@ -12,7 +12,8 @@ from pathlib import Path
 import types
 from typing import Tuple, Dict, Optional
 import torch
-from diffusers import StableDiffusionPipeline, LDMSuperResolutionPipeline, DiffusionPipeline
+from diffusers import StableDiffusionPipeline, StableDiffusionXLImg2ImgPipeline, LDMSuperResolutionPipeline, DiffusionPipeline
+from diffusers import UNet2DConditionModel, AutoencoderTiny, LCMScheduler
 from nncf import compress_weights
 from openvino import Type, PartialShape, save_model, convert_model
 from openvino.runtime import Core
@@ -27,10 +28,11 @@ from optimum.utils import (
 )
 from optimum.exporters.onnx import get_encoder_decoder_models_for_export
 from optimum.exporters.openvino import export_models
-from optimum.intel.utils.modeling_utils import _prepare_decoder_attention_mask
+from optimum.utils.save_utils import maybe_load_preprocessors
 from optimum.intel.openvino import (
     OVModelForSeq2SeqLM,
     OVStableDiffusionPipeline,
+    OVStableDiffusionXLPipeline,
     OVLatentConsistencyModelPipeline,
     OV_XML_FILE_NAME,
     OV_DECODER_NAME,
@@ -44,7 +46,7 @@ except ImportError:
     from optimum.exporters.onnx.__main__ import _get_submodels_and_onnx_configs as _get_submodels_and_export_configs
 
 from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoModel, PreTrainedModel
-
+from transformers.modeling_outputs import BaseModelOutputWithPast
 from utils.nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION, get_compressed_path
 
 
@@ -62,10 +64,10 @@ def save_tokenizer(tokenizer, out_dir):
 
 def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_weights_format="INT8", fp16=False, args={}, model_name="openvino_model"):
     compression_args = None
-    if "4BIT_DEFAULT" in args.compress_weights:
-        model_name = out_path.parents[3].name
-        if model_name in INT4_MODEL_CONFIGURATION:
-            compression_args = INT4_MODEL_CONFIGURATION[model_name]
+    if "4BIT_DEFAULT" in compress_weights_format:
+        model_id = out_path.parents[3].name
+        if model_id in INT4_MODEL_CONFIGURATION:
+            compression_args = INT4_MODEL_CONFIGURATION[model_id]
         else:
             compression_args = COMPRESSION_OPTIONS["INT4_SYM"]
 
@@ -149,7 +151,6 @@ def _core_attention_forward(self, query_layer, key_layer, value_layer, attention
     if attention_mask is None:
         context_layer = _chatglm2_get_context_layer(query_layer, key_layer, value_layer)
     else:
-        attention_mask = ~attention_mask
         context_layer = torch.nn.functional.scaled_dot_product_attention(
             query_layer, key_layer, value_layer, attention_mask
         )
@@ -160,7 +161,78 @@ def _core_attention_forward(self, query_layer, key_layer, value_layer, attention
     return context_layer
 
 
+@torch.jit.script_if_tracing
+def _get_chatglm_attention_mask(input_ids, past_key):
+    mask = torch.zeros((input_ids.shape[1], past_key.shape[0] + input_ids.shape[1]), dtype=past_key.dtype)
+    if past_key.shape[0] == 0:
+        tmp_mask = torch.ones((input_ids.shape[1], past_key.shape[0] + input_ids.shape[1]), dtype=torch.bool).triu(diagonal=1)
+        mask.masked_fill_(tmp_mask, float("-inf"))
+    return mask
+
+
+def _chatglm_transformer_forward(
+        self,
+        input_ids,
+        position_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.BoolTensor] = None,
+        full_attention_mask: Optional[torch.BoolTensor] = None,
+        past_key_values: Optional[Tuple[Tuple[torch.Tensor, torch.Tensor], ...]] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        use_cache: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None
+):
+    output_hidden_states = (
+        output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+    )
+    use_cache = use_cache if use_cache is not None else self.config.use_cache
+    return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+    batch_size, seq_length = input_ids.shape
+
+    if inputs_embeds is None:
+        inputs_embeds = self.embedding(input_ids)
+
+    if self.pre_seq_len is not None:
+        if past_key_values is None:
+            past_key_values = self.get_prompt(batch_size=batch_size, device=input_ids.device,
+                                              dtype=inputs_embeds.dtype)
+        if attention_mask is not None:
+            attention_mask = torch.cat([attention_mask.new_ones((batch_size, self.pre_seq_len)), attention_mask], dim=-1)
+
+    if full_attention_mask is None:
+        if (attention_mask is not None and not attention_mask.all()) or (past_key_values and seq_length != 1):
+            full_attention_mask = self.get_masks(input_ids, past_key_values, padding_mask=attention_mask)
+        elif past_key_values is not None:
+            full_attention_mask = _get_chatglm_attention_mask(input_ids, past_key_values[0][0])
+
+    # Rotary positional embeddings
+    rotary_pos_emb = self.rotary_pos_emb(self.seq_length)
+    if position_ids is not None:
+        rotary_pos_emb = rotary_pos_emb[position_ids]
+    else:
+        rotary_pos_emb = rotary_pos_emb[None, :seq_length]
+    rotary_pos_emb = rotary_pos_emb.transpose(0, 1).contiguous()
+
+    # Run encoder.
+    hidden_states, presents, all_hidden_states, all_self_attentions = self.encoder(
+        inputs_embeds, full_attention_mask, rotary_pos_emb=rotary_pos_emb,
+        kv_caches=past_key_values, use_cache=use_cache, output_hidden_states=output_hidden_states
+    )
+
+    if not return_dict:
+        return tuple(v for v in [hidden_states, presents, all_hidden_states, all_self_attentions] if v is not None)
+
+    return BaseModelOutputWithPast(
+        last_hidden_state=hidden_states,
+        past_key_values=presents,
+        hidden_states=all_hidden_states,
+        attentions=all_self_attentions,
+    )
+
+
 def _patch_chatglm_core_attention_forward(model: "PreTrainedModel"):
+    model.transformer.forward = types.MethodType(_chatglm_transformer_forward, model.transformer)
     for block in model.transformer.encoder.layers:
         block.self_attention.core_attention.forward = types.MethodType(
             _core_attention_forward, block.self_attention.core_attention
@@ -222,6 +294,70 @@ class TextDecoderWithPositionIdsOnnxConfig(TextDecoderOnnxConfig):
             common_inputs["position_ids"] = {0: "batch_size", 1: "sequence_length"}
 
         return common_inputs
+
+
+# Copied from transformers.models.bart.modeling_bart._expand_mask
+def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] = None):
+    """
+    Expands attention_mask from `[bsz, seq_len]` to `[bsz, 1, tgt_seq_len, src_seq_len]`.
+    """
+    bsz, src_len = mask.size()
+    tgt_len = tgt_len if tgt_len is not None else src_len
+
+    expanded_mask = mask[:, None, None, :].expand(bsz, 1, tgt_len, src_len).to(dtype)
+
+    inverted_mask = 1.0 - expanded_mask
+
+    return inverted_mask.masked_fill(inverted_mask.to(torch.bool), torch.finfo(dtype).min)
+
+
+# Modified from transformers.models.bloom.modeling_bloom._make_causal_mask
+def _make_causal_mask(
+    input_ids_shape: torch.Size,
+    device: torch.device,
+    past_key_values_length: int,
+    dtype: torch.dtype = torch.bool,
+) -> torch.BoolTensor:
+    """
+    Make causal mask used for bi-directional self-attention.
+    """
+    batch_size, target_length = input_ids_shape
+    mask = torch.zeros((target_length, target_length + past_key_values_length), dtype=dtype, device=device)
+    seq_ids = torch.arange(target_length, device=device)
+
+    mask[:, past_key_values_length:] = (
+        (seq_ids[:, None] < seq_ids[None, :]) * torch.finfo(dtype).min
+        if torch.is_floating_point(mask)
+        else seq_ids[:, None] < seq_ids[None, :]
+    )
+
+    return mask[None, None, :, :].expand(batch_size, 1, target_length, target_length + past_key_values_length)
+
+
+# Modified from transformers.models.llama.modeling_llama._prepare_decoder_attention_mask
+def _prepare_decoder_attention_mask(attention_mask, input_shape, inputs_embeds, past_key_values_length):
+
+    # create causal mask
+    # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
+    combined_attention_mask = None
+
+    combined_attention_mask = _make_causal_mask(
+        input_shape,
+        device=inputs_embeds.device,
+        past_key_values_length=past_key_values_length,
+        dtype=inputs_embeds.dtype,
+    )
+
+    if attention_mask is not None:
+        # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
+        expanded_attn_mask = _expand_mask(attention_mask, inputs_embeds.dtype, tgt_len=input_shape[-1]).to(
+            inputs_embeds.device
+        )
+        combined_attention_mask = (
+            expanded_attn_mask if combined_attention_mask is None else expanded_attn_mask + combined_attention_mask
+        )
+
+    return combined_attention_mask
 
 
 def patch_model_for_optimum_export(model):
@@ -502,28 +638,32 @@ def convert_sd(args):
     log.info(f'Serialization total time {end1 - start1}s')
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
-        model.text_encoder.model = compress_weights(model.text_encoder.model)
-        model.unet.model = compress_weights(model.unet.model)
-        model.vae_decoder.model = compress_weights(model.vae_decoder.model)
-        model.save_pretrained(ov_int8_dir)
+        for weigths_compression_option in args.compress_weights:
+            if weigths_compression_option != "INT8":
+                log.warning("Weights compression {weigths_compression_option} does not supported for SD, will be ignored")
+                continue
+            ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
+            model.text_encoder.model = compress_weights(model.text_encoder.model)
+            model.unet.model = compress_weights(model.unet.model)
+            model.vae_decoder.model = compress_weights(model.vae_decoder.model)
+            model.save_pretrained(ov_int8_dir)
 
-        # Saving the additional components needed to perform inference.
-        model.scheduler.save_pretrained(ov_int8_dir.joinpath('scheduler'))
+            # Saving the additional components needed to perform inference.
+            model.scheduler.save_pretrained(ov_int8_dir.joinpath('scheduler'))
 
-        feature_extractor = getattr(model, 'feature_extractor', None)
-        if feature_extractor is not None:
-            feature_extractor.save_pretrained(ov_int8_dir.joinpath('feature_extractor'))
+            feature_extractor = getattr(model, 'feature_extractor', None)
+            if feature_extractor is not None:
+                feature_extractor.save_pretrained(ov_int8_dir.joinpath('feature_extractor'))
 
-        tokenizer = getattr(model, 'tokenizer', None)
-        if tokenizer is not None:
-            tokenizer.save_pretrained(ov_int8_dir.joinpath('tokenizer'))
+            tokenizer = getattr(model, 'tokenizer', None)
+            if tokenizer is not None:
+                tokenizer.save_pretrained(ov_int8_dir.joinpath('tokenizer'))
 
-        tokenizer_2 = getattr(model, 'tokenizer_2', None)
-        if tokenizer_2 is not None:
-            tokenizer_2.save_pretrained(ov_int8_dir.joinpath('tokenizer_2'))
+            tokenizer_2 = getattr(model, 'tokenizer_2', None)
+            if tokenizer_2 is not None:
+                tokenizer_2.save_pretrained(ov_int8_dir.joinpath('tokenizer_2'))
 
-        model.save_config(ov_int8_dir)
+            model.save_config(ov_int8_dir)
 
     del model
     gc.collect()
@@ -599,31 +739,157 @@ def convert_lcm(args):
     log.info(f'Serialization total time {end1 - start1}s')
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
-        model.text_encoder.model = compress_weights(model.text_encoder.model)
-        model.unet.model = compress_weights(model.unet.model)
-        model.vae_decoder.model = compress_weights(model.vae_decoder.model)
-        model.save_pretrained(ov_int8_dir)
+        for weigths_compression_option in args.compress_weights:
+            if weigths_compression_option != "INT8":
+                log.warning("Weights compression {weigths_compression_option} does not supported for LCM, will be ignored")
+                continue
+            ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
+            model.text_encoder.model = compress_weights(model.text_encoder.model)
+            model.unet.model = compress_weights(model.unet.model)
+            model.vae_decoder.model = compress_weights(model.vae_decoder.model)
+            model.save_pretrained(ov_int8_dir)
 
-        # Saving the additional components needed to perform inference.
-        model.scheduler.save_pretrained(ov_int8_dir.joinpath('scheduler'))
+            # Saving the additional components needed to perform inference.
+            model.scheduler.save_pretrained(ov_int8_dir.joinpath('scheduler'))
 
-        feature_extractor = getattr(model, 'feature_extractor', None)
-        if feature_extractor is not None:
-            feature_extractor.save_pretrained(ov_int8_dir.joinpath('feature_extractor'))
+            feature_extractor = getattr(model, 'feature_extractor', None)
+            if feature_extractor is not None:
+                feature_extractor.save_pretrained(ov_int8_dir.joinpath('feature_extractor'))
 
-        tokenizer = getattr(model, 'tokenizer', None)
-        if tokenizer is not None:
-            tokenizer.save_pretrained(ov_int8_dir.joinpath('tokenizer'))
+            tokenizer = getattr(model, 'tokenizer', None)
+            if tokenizer is not None:
+                tokenizer.save_pretrained(ov_int8_dir.joinpath('tokenizer'))
 
-        tokenizer_2 = getattr(model, 'tokenizer_2', None)
-        if tokenizer_2 is not None:
-            tokenizer_2.save_pretrained(ov_int8_dir.joinpath('tokenizer_2'))
+            tokenizer_2 = getattr(model, 'tokenizer_2', None)
+            if tokenizer_2 is not None:
+                tokenizer_2.save_pretrained(ov_int8_dir.joinpath('tokenizer_2'))
 
-        model.save_config(ov_int8_dir)
+            model.save_config(ov_int8_dir)
 
     del model
     gc.collect()
+
+
+def convert_sdxl(args):
+    pt_compress_weights = args.compress_weights and BackendType.PYTORCH.value in args.compress_weights_backends
+
+    def build_pt_model(model_id):
+        model_ids = [idx.replace(" ", "") for idx in model_id.split(',')]
+        pt_model = StableDiffusionXLImg2ImgPipeline.from_pretrained(model_ids[0])
+        tiny_vae = False
+        if len(model_ids) > 1:
+            for additional_model in model_ids[1:]:
+                if 'lora' in additional_model:
+                    pt_model.load_lora_weights(additional_model)
+                    pt_model.fuse_lora()
+                    if 'lcm' in additional_model:
+                        pt_model.scheduler = LCMScheduler.from_config(pt_model.scheduler.config)
+                    continue
+
+                if 'lcm' in additional_model and 'lora' not in additional_model:
+                    unet = UNet2DConditionModel.from_pretrained(additional_model)
+                    pt_model.unet = unet
+                    pt_model.scheduler = LCMScheduler.from_config(pt_model.scheduler.config)
+                    continue
+
+                if 'tae' in additional_model:
+                    tiny_vae = True
+                    vae = AutoencoderTiny.from_pretrained(additional_model)
+                    pt_model.vae = vae
+                    continue
+
+        preprocessors = maybe_load_preprocessors(model_ids[0])
+        return pt_model, preprocessors, tiny_vae
+
+    def convert_pt_to_ov(pt_model, preprocessors, output_dir, fp16, tiny_vae):
+        _, models_and_onnx_configs = optimum_main._get_submodels_and_onnx_configs(
+            model=pt_model,
+            task='stable-diffusion-xl',
+            monolith=False,
+            custom_onnx_configs={},
+            custom_architecture=False,
+            _variant='default',
+            preprocessors=preprocessors,
+            legacy=False
+        )
+        if tiny_vae:
+            models_and_onnx_configs["vae_encoder"][0].forward = (
+                lambda sample: {"latent_sample": models_and_onnx_configs["vae_encoder"][0].encode(x=sample)["latents"]}
+            )
+            models_and_onnx_configs["vae_decoder"][0].forward = (
+                lambda latent_sample: models_and_onnx_configs["vae_decoder"][0].decode(latent_sample)
+            )
+        for model_name in models_and_onnx_configs:
+            subcomponent = models_and_onnx_configs[model_name][0]
+
+            if hasattr(subcomponent, 'save_config'):
+                subcomponent.save_config(output_dir / model_name)
+            elif hasattr(subcomponent, 'config') and hasattr(subcomponent.config, 'save_pretrained'):
+                subcomponent.config.save_pretrained(output_dir / model_name)
+
+        files_subpaths = [Path(name_dir) / OV_XML_FILE_NAME for name_dir in models_and_onnx_configs]
+
+        # Saving the additional components needed to perform inference.
+        pt_model.scheduler.save_pretrained(output_dir.joinpath('scheduler'))
+
+        feature_extractor = getattr(pt_model, 'feature_extractor', None)
+        if feature_extractor is not None:
+            feature_extractor.save_pretrained(output_dir.joinpath('feature_extractor'))
+
+        tokenizer = getattr(pt_model, 'tokenizer', None)
+        if tokenizer is not None:
+            tokenizer.save_pretrained(output_dir.joinpath('tokenizer'))
+
+        tokenizer_2 = getattr(pt_model, 'tokenizer_2', None)
+        if tokenizer_2 is not None:
+            tokenizer_2.save_pretrained(output_dir.joinpath('tokenizer_2'))
+
+        pt_model.save_config(output_dir)
+
+        export_models(
+            models_and_onnx_configs=models_and_onnx_configs,
+            output_dir=output_dir,
+            output_names=files_subpaths,
+            fp16=fp16,
+            int8=False
+        )
+
+    pt_model, preprocessors, tiny_vae = build_pt_model(args.model_id)
+    if args.save_orig:
+        pt_model.save_pretrained(Path(args.output_dir) / 'pytorch')
+    if pt_compress_weights:
+        output = Path(args.output_dir) / 'pytorch/dldt/compressed_weights' / f'PT_{args.precision}-INT8'
+        pt_model.text_encoder = compress_weights(pt_model.text_encoder)
+        pt_model.unet = compress_weights(pt_model.unet)
+        pt_model.vae = compress_weights(pt_model.vae)
+        if getattr(pt_model, 'text_encoder_2', None) is not None:
+            pt_model.text_encoder_2 = compress_weights(pt_model.text_encoder_2)
+        convert_pt_to_ov(pt_model, output, args.precision == "FP16", tiny_vae)
+        del pt_model
+        gc.collect()
+        pt_model, preprocessors, tiny_vae = build_pt_model(args.model_id)
+
+    fp_out_dir = Path(args.output_dir) / 'pytorch/dldt' / args.precision
+    convert_pt_to_ov(pt_model, preprocessors, fp_out_dir, args.precision == "FP16", tiny_vae)
+
+    if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
+        for weigths_compression_option in args.compress_weights:
+            if weigths_compression_option != "INT8":
+                log.warning("Weights compression {weigths_compression_option} does not supported for SDXL, will be ignored")
+                continue
+            ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
+            model = OVStableDiffusionXLPipeline.from_pretrained(fp_out_dir, compile=False)
+            model.text_encoder.model = compress_weights(model.text_encoder.model)
+            if getattr(model, "text_encoder_2", None) is not None:
+                model.text_encoder_2.model = compress_weights(model.text_encoder_2.model)
+            model.unet.model = compress_weights(model.unet.model)
+            model.vae_decoder.model = compress_weights(model.vae_decoder.model)
+            if getattr(model, "vae_encoder", None) is not None:
+                model.vae_encoder.model = compress_weights(model.vae_encoder.model)
+            model.save_pretrained(ov_int8_dir)
+
+            del model
+            gc.collect()
 
 
 def convert_ldm_super_res(args):
@@ -669,12 +935,16 @@ def convert_ldm_super_res(args):
     pipeline.scheduler.save_config(save_dir)
 
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends:
-        ov_int8_dir = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
-        compressed_ov_unet = compress_weights(ov_unet)
-        save_model(compressed_ov_unet, ov_int8_dir / 'unet.xml', compress_to_fp16=compress_to_fp16)
-        compressed_ov_decoder = compress_weights(ov_decoder)
-        save_model(compressed_ov_decoder, ov_int8_dir / 'vqvae.xml', compress_to_fp16=compress_to_fp16)
-        pipeline.scheduler.save_config(ov_int8_dir)
+        for weigths_compression_option in args.compress_weights:
+            if weigths_compression_option != "INT8":
+                log.warning("Weights compression {weigths_compression_option} does not supported for LDM, will be ignored")
+                continue
+            ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
+            compressed_ov_unet = compress_weights(ov_unet)
+            save_model(compressed_ov_unet, ov_int8_dir / 'unet.xml', compress_to_fp16=compress_to_fp16)
+            compressed_ov_decoder = compress_weights(ov_decoder)
+            save_model(compressed_ov_decoder, ov_int8_dir / 'vqvae.xml', compress_to_fp16=compress_to_fp16)
+            pipeline.scheduler.save_config(ov_int8_dir)
 
 
 def convert_mpt(args):
@@ -756,7 +1026,7 @@ def convert_mpt(args):
                 log.info(f"Compress model weights to {compress_option}")
                 ov_model = Core().read_model(ov_dir / 'openvino_model.xml')
                 ov_compressed_path = get_compressed_path(args.output_dir, args.precision, compress_option)
-                compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, compress_option, args)
+                compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_option, compress_to_fp16, args)
 
 
 def convert_stablelm(args):
@@ -1138,8 +1408,9 @@ def convert_baichaun(args):
 def convert_qwen(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     cuda, post_init = patch_gptq(config)
+    revision = "c02ede58c0ab0045f5e4788c35842bec6a7baa0a" if post_init is not None else "2abd8e5777bb4ce9c8ab4be7dbbd0fe4526db78d"
     normalized_config = NormalizedTextConfig.with_args(num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size')
-    model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, torch_dtype=torch.float32)
+    model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, torch_dtype=torch.float32, revision=revision)
     try:
         model.to(torch.float32)
     except Exception:
@@ -1414,6 +1685,9 @@ converters = {
     'decoder': convert_causal_lm,
     'blenderbot': convert_seq2seq,
     't5': convert_seq2seq,
+    'stable-diffusion-xl': convert_sdxl,
+    'ssd-1b': convert_sdxl,
+    'sdxl': convert_sdxl,
     'stable-diffusion': convert_sd,
     'tiny-sd': convert_sd,
     'small-sd': convert_sd,
@@ -1426,11 +1700,15 @@ converters = {
     'chatglm': convert_chatglm,
     'falcon': convert_falcon,
     'stablelm': convert_stablelm,
+    'stable-zephyr': convert_stablelm,
+    'rocket-': convert_stablelm,
     'jais': convert_jais,
     'baichuan': convert_baichaun,
     'qwen': convert_qwen,
     'mistal': convert_mistral,
     'zephyr': convert_mistral,
+    'openchat': convert_mistral,
+    'neural-chat': convert_mistral,
     'yi': convert_yi,
 }
 

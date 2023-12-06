@@ -67,14 +67,14 @@ def analyze_args(args):
 
     model_path = args.model
     model_framework = args.framework
+    path = os.path.normpath(model_path)
+    model_names = path.split(os.sep)
     model_path = Path(model_path)
     if not model_path.exists():
         raise RuntimeError(f'==Failure FOUND==: Incorrect model path:{model_path}')
     if model_framework == 'ov':
-        model_names = args.model.split('/')
         use_case, model_name = get_use_case(model_names)
     elif model_framework == 'pt':
-        model_names = args.model.split('/')
         use_case, model_name = get_use_case(model_names)
     model_args['use_case'] = use_case
     if use_case == 'code_gen' and not model_args['prompt'] and not model_args['prompt_file']:
@@ -95,10 +95,10 @@ def analyze_args(args):
 
 
 def get_use_case(model_name_list):
-    for model_name in model_name_list:
+    for model_name in reversed(model_name_list):
         for case, model_ids in USE_CASES.items():
             for model_id in model_ids:
-                if model_id in model_name.lower():
+                if model_name.lower().startswith(model_id):
                     log.info(f'==SUCCESS FOUND==: use_case: {case}, model_name: {model_name}')
                     return case, model_name
     raise RuntimeError('==Failure FOUND==: no use_case found')
@@ -117,11 +117,11 @@ def get_model_type(model_name, use_case, model_framework):
     default_model_type = DEFAULT_MODEL_CLASSES.get(use_case)
     if model_framework == 'ov':
         for cls in OV_MODEL_CLASSES_MAPPING:
-            if cls in model_name:
+            if cls in model_name.lower():
                 return cls
     elif model_framework == 'pt':
         for cls in PT_MODEL_CLASSES_MAPPING:
-            if cls in model_name:
+            if cls in model_name.lower():
                 return cls
     return default_model_type
 
