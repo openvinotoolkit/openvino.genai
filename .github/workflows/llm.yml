@@ -1,8 +1,11 @@
 name: llm-cpp
 on:
   pull_request:
-    paths-ignore:
-      - '**/README.md'
+    paths:
+      - llm/cpp/**
+      - '!llm/cpp/README.md'
+      - .github/workflows/llm.yml
+      - thirdparty/**
 jobs:
   llm-cpp:
     runs-on: ubuntu-20.04

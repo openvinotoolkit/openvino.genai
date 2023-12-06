@@ -179,7 +179,12 @@ def run_image_generation(input_text, nsteps, num, image_id, pipe, args, iter_dat
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
     start = time.perf_counter()
-    res = pipe([input_text] * args['batch_size'], num_inference_steps=nsteps, height=512, width=512).images
+    additional_args = {}
+    if 'lcm-sdxl' in args['model_type']:
+        additional_args["guidance_scale"] = 1.0
+    if 'turbo' in args['model_name']:
+        additional_args["guidance_scale"] = 0.0
+    res = pipe([input_text] * args['batch_size'], num_inference_steps=nsteps, height=512, width=512, **additional_args).images
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
@@ -289,18 +294,17 @@ def run_ldm_super_resolution(img, num, nsteps, pipe, args, framework, iter_data_
     else:
         rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_' + img.name
     log.info(f'Result will be saved to {rslt_img_fn}')
+    result_md5_list = []
     if framework == 'ov':
         res[0].save(rslt_img_fn)
-        md5hash = hashlib.md5(Image.open(rslt_img_fn).tobytes())
-    else:
-        md5hash = ''
+        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
 
     generation_time = end - start
     iter_data = gen_iterate_data(
         iter_idx=num,
         infer_count=nsteps,
         gen_time=generation_time,
-        res_md5=md5hash.hexdigest() if md5hash != '' else '',
+        res_md5=result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         prompt_idx=image_id,
@@ -480,7 +484,7 @@ def main():
                     model_name,
                     framework,
                     args.device,
-                    model_args['use_case'],
+                    model_args,
                     iter_data_list,
                     pretrain_time,
                     model_precision,
@@ -491,7 +495,7 @@ def main():
                     model_name,
                     framework,
                     args.device,
-                    model_args['use_case'],
+                    model_args,
                     iter_data_list,
                     pretrain_time,
                     model_precision,

@@ -83,7 +83,7 @@ Parameters:
 * `-f` - framework (default=ov)
 * `-p` - interactive prompt text
 * `-pf` - path of JSONL file including interactive prompts
-* `-n` - number of benchmarking iterations, if the value greater 0, will exclude the first iteration. (default=0)
+* `-n` - number of benchmarking iterations. 0 means execute warm-up iteration only. >0 value means warm-up iteration plus @number iterations. (default=0)
 
 ``` bash
 python ./benchmark.py -h # for more information
@@ -110,24 +110,6 @@ Add the option `--torch_compile_backend` with the desired backend: `pytorch` or 
 ```bash
 python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino
 ```
-# Notes
-## chatglm2-6b - AttributeError: can't set attribute
-Download chatglm2-6b from hugginface, convert to OpenVINO IR files and run with benchmark.py, the following error may occur：
-```bash
-AttributeError: can't set attribute
-```
-Reproduced with https://huggingface.co/THUDM/chatglm2-6b 7fabe56db91e085c9c027f56f1c654d137bdba40 <br />
-As on https://huggingface.co/THUDM/chatglm2-6b/discussions/99 <br />
-Solution: update `tokenization_chatglm.py` as following: <br />
-```Python
-          self.vocab_file = vocab_file
-          self.tokenizer = SPTokenizer(vocab_file)
- +        kwargs.pop("eos_token", None)
- +        kwargs.pop("pad_token", None)
- +        kwargs.pop("unk_token", None)
-          self.special_tokens = {
-              "<bos>": self.tokenizer.bos_id,
-              "<eos>": self.tokenizer.eos_id,
-```              
 
-> The solution works for chatglm3-6b as well.
+# Notes
+If you encounter any error messages, please check **[NOTES.md](./NOTES.md)**  which provides solutions to some known errors.

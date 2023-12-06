@@ -173,7 +173,8 @@ def patch_inter_processing(hf_model, **kwargs):
         for input_name in hf_model.key_value_input_names:  # 3 == input_ids, attention_mask and new beam_idx
             parameter_output_port = ov_model.input(input_name)
             consumers = parameter_output_port.get_target_inputs()
-            gather = opset.gather(parameter_output_port, beam_idx, opset.constant(0))
+            batch_idx = 1 if hf_model.config.model_type == 'chatglm' else 0
+            gather = opset.gather(parameter_output_port, beam_idx, opset.constant(batch_idx))
             for consumer in consumers:
                 consumer.replace_source_output(gather.output(0))
         ov_model.validate_nodes_and_infer_types()
@@ -211,9 +212,10 @@ def patch_inter_processing(hf_model, **kwargs):
             input = ov_model.input(kv_name_pair[0])
             shape = input.get_partial_shape()
 
-            # suppose 0-th dimension is a batch
+            # By default, batch is the 0-th but chatglm uses 1-st dimension as batch
             # TODO: Deduce from a model via ordinal reshape
-            shape[0] = batch_size * num_attention_heads * num_beams
+            batch_idx = 1 if hf_model.config.model_type == 'chatglm' else 0
+            shape[batch_idx] = batch_size * num_attention_heads * num_beams
 
             input.get_node().set_partial_shape(shape)
 
@@ -256,7 +258,7 @@ def create_text_gen_model(model_path, device, **kwargs):
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if model_type in ['mpt', 'falcon', 'replit', 'codegen2', 'chatglm', 'chatglm2']:
+        if model_type in ['mpt', 'falcon', 'replit', 'codegen2', 'chatglm']:
             start = time.perf_counter()
             ov_model = model_class.from_pretrained(
                 model_path,
@@ -282,6 +284,7 @@ def create_text_gen_model(model_path, device, **kwargs):
 def create_image_gen_model(model_path, device, **kwargs):
     default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
     model_type = kwargs.get('model_type', default_model_type)
+    print(model_type)
     model_class = OV_MODEL_CLASSES_MAPPING[model_type]
     model_path = Path(model_path)
     ov_config = kwargs['config']

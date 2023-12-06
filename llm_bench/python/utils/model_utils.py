@@ -117,11 +117,11 @@ def get_model_type(model_name, use_case, model_framework):
     default_model_type = DEFAULT_MODEL_CLASSES.get(use_case)
     if model_framework == 'ov':
         for cls in OV_MODEL_CLASSES_MAPPING:
-            if cls in model_name:
+            if cls in model_name.lower():
                 return cls
     elif model_framework == 'pt':
         for cls in PT_MODEL_CLASSES_MAPPING:
-            if cls in model_name:
+            if cls in model_name.lower():
                 return cls
     return default_model_type
 
