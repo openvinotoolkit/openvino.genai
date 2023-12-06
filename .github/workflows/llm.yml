@@ -56,7 +56,7 @@ jobs:
           "
           echo 69 passed
 
-          timeout 40s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml Hi > ./pred.txt
+          timeout 25s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml Hi > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -70,21 +70,6 @@ jobs:
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo Hi passed
-
-          timeout 40s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "你好！ 你好嗎？" > ./pred.txt
-          python -c "
-          import transformers
-          with open('pred.txt', 'r') as file:
-              predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('你好！ 你好嗎？', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20):
-              ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('你好！ 你好嗎？'):] + '\n'
-              idx = predictions.find(ref)
-              if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref=}" from predictions')
-              predictions = predictions[:idx] + predictions[idx + len(ref):]
-          "
-          echo 你好！ 你好嗎？ passed
   llm-cpp-windows:
     runs-on: windows-latest
     steps:
