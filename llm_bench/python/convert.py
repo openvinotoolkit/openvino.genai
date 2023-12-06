@@ -1408,8 +1408,9 @@ def convert_baichaun(args):
 def convert_qwen(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     cuda, post_init = patch_gptq(config)
+    revision = "c02ede58c0ab0045f5e4788c35842bec6a7baa0a" if post_init is not None else "2abd8e5777bb4ce9c8ab4be7dbbd0fe4526db78d"
     normalized_config = NormalizedTextConfig.with_args(num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size')
-    model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, torch_dtype=torch.float32)
+    model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, torch_dtype=torch.float32, revision=revision)
     try:
         model.to(torch.float32)
     except Exception:
