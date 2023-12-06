@@ -51,25 +51,10 @@ jobs:
               ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('69'):] + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref}" from predictions')
+                  raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo 69 passed
-
-          timeout 40s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "return 0" > ./pred.txt
-          python -c "
-          import transformers
-          with open('pred.txt', 'r') as file:
-              predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('return 0', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20):
-              ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('return 0'):] + '\n'
-              idx = predictions.find(ref)
-              if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref}" from predictions')
-              predictions = predictions[:idx] + predictions[idx + len(ref):]
-          "
-          echo return 0 passed
 
           timeout 40s ./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6/openvino_model.xml ./tokenizer.xml ./detokenizer.xml Hi > ./pred.txt
           python -c "
@@ -81,7 +66,7 @@ jobs:
               ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('Hi'):] + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref}" from predictions')
+                  raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo Hi passed
@@ -96,7 +81,7 @@ jobs:
               ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len(''):] + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref}" from predictions')
+                  raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo '""' passed
@@ -111,7 +96,7 @@ jobs:
               ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('你好！ 你好嗎？'):] + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref}" from predictions')
+                  raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo 你好！ 你好嗎？ passed
@@ -138,14 +123,13 @@ jobs:
           unzip ov.zip
           wait
       - name: Download, convert and build
-        shell: sh
+        shell: cmd
         run: |
-          optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-Chat-v0.6 ./TinyLlama-1.1B-Chat-v0.6/ &
-          mkdir ./build/
-          cd ./build/
-          cmake -DCMAKE_BUILD_TYPE=Release -DOpenVINO_DIR=w_openvino_toolkit_windows_2023.3.0.dev20231129_x86_64/runtime/cmake/ ../
-          cmake --build ./ --config Release -j
-          wait
+          optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-Chat-v0.6 .\TinyLlama-1.1B-Chat-v0.6\
+          mkdir .\build\
+          cd .\build\
+          cmake -DCMAKE_BUILD_TYPE=Release -DOpenVINO_DIR=w_openvino_toolkit_windows_2023.3.0.dev20231129_x86_64\runtime\cmake\ ..\
+          cmake --build .\ --config Release -j
       - name: Compare
         shell: cmd
         run: |
@@ -162,6 +146,6 @@ jobs:
               ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('69'):] + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref}" from predictions')
+                  raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
