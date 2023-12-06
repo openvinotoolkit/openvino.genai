@@ -22,9 +22,9 @@ permissions:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
+    permissions:
+      issues: write
     strategy:
       fail-fast: false
       matrix:
@@ -41,6 +41,7 @@ jobs:
         gh pr edit "$NUMBER" --add-label "llm_bench"
       env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           NUMBER: ${{ github.event.issue.number }}
     - name: Install dependencies
       run: |
