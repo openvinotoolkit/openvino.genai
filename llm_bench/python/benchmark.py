@@ -300,18 +300,17 @@ def run_ldm_super_resolution(img, num, nsteps, pipe, args, framework, iter_data_
     else:
         rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_' + img.name
     log.info(f'Result will be saved to {rslt_img_fn}')
+    result_md5_list = []
     if framework == 'ov':
         res[0].save(rslt_img_fn)
-        md5hash = hashlib.md5(Image.open(rslt_img_fn).tobytes())
-    else:
-        md5hash = ''
+        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
 
     generation_time = end - start
     iter_data = gen_iterate_data(
         iter_idx=num,
         infer_count=nsteps,
         gen_time=generation_time,
-        res_md5=md5hash.hexdigest() if md5hash != '' else '',
+        res_md5=result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         prompt_idx=image_id,
@@ -491,7 +490,7 @@ def main():
                     model_name,
                     framework,
                     args.device,
-                    model_args['use_case'],
+                    model_args,
                     iter_data_list,
                     pretrain_time,
                     model_precision,
@@ -502,7 +501,7 @@ def main():
                     model_name,
                     framework,
                     args.device,
-                    model_args['use_case'],
+                    model_args,
                     iter_data_list,
                     pretrain_time,
                     model_precision,

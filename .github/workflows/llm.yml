@@ -1,8 +1,11 @@
 name: llm-cpp
 on:
   pull_request:
-    paths-ignore:
-      - '**/README.md'
+    paths:
+      - llm/cpp/**
+      - .github/workflows/llm.yml
+      - thirdparty/**
+      
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
