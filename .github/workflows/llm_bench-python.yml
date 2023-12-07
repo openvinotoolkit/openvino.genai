@@ -11,20 +11,20 @@ on:
     branches: [ "master" ]
     paths:
       - llm_bench/python/**
-      - .github/workflows/llm_bench-python.yml
   pull_request:
     branches: [ "master" ]
     paths:
-      - llm_bench/python/**    
+      - llm_bench/python/**
+    
 
 permissions:
   contents: read
 
 jobs:
   build:
+
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
+
     strategy:
       fail-fast: false
       matrix:
@@ -36,13 +36,6 @@ jobs:
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
-    - name: add label
-      run: |
-        gh pr edit "$NUMBER" --add-label "llm_bench"
-      env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          NUMBER: ${{ github.event.number }}
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
