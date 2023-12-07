@@ -12,9 +12,6 @@ import types
 
 from utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
 from .ov_model_classes import register_normalized_configs
-from transformers.modeling_outputs import CausalLMOutputWithPast
-from openvino import Type, Tensor
-import numpy as np
 import openvino.runtime.opset13 as opset
 
 
@@ -122,7 +119,14 @@ def create_text_gen_model(model_path, device, **kwargs):
         else:
             start = time.perf_counter()
             config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-            ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config, config=config, compile=False, stateful=(True if kwargs['make_stateful'] else None))
+            ov_model = model_class.from_pretrained(
+                model_path,
+                device=device,
+                ov_config=ov_config,
+                config=config,
+                compile=False,
+                stateful=(True if kwargs['make_stateful'] else None)
+            )
             if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
                 patch_inter_processing_and_compile(ov_model, **kwargs)
             end = time.perf_counter()
