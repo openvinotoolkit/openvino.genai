@@ -28,9 +28,9 @@ python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modul
 ### Run
 
 For Linux
-Usage: `chatglm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device" "<prompt>"`
+Usage: `chatglm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device"`
 
-Example: `./build/llm/chatglm_cpp/chatglm ./chatglm3-6b/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "CPU" "Why is the Sun yellow?"`
+Example: `./build/llm/chatglm_cpp/chatglm ./chatglm3-6b/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "CPU"`
 
 For Windows
 copy openvino dll and tbb12.dll to chatglm.exe directory
@@ -46,6 +46,6 @@ $copy build\_deps\fast_tokenizer-src\third_party\lib\icudt70.dll build\llm\chatg
 $copy build\_deps\fast_tokenizer-src\third_party\lib\icuuc70.dll build\llm\chatglm_cpp\Release\
 $copy build\_deps\fast_tokenizer-src\lib\core_tokenizers.dll build\llm\chatglm_cpp\Release\
 ```
-Usage: `chatglm.exe <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device" "<prompt>"`
+Usage: `chatglm.exe <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device"`
 
-Example: `build\llm\chatglm_cpp\Release\chatglm.exe .\chatglm3-6b\openvino_model.xml .\tokenizer.xml .\detokenizer.xml "CPU" "Why is the Sun yellow?"`
+Example: `build\llm\chatglm_cpp\Release\chatglm.exe .\chatglm3-6b\openvino_model.xml .\tokenizer.xml .\detokenizer.xml "CPU"`
