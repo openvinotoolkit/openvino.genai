@@ -17,8 +17,28 @@ from transformers.generation.stopping_criteria import (
 )
 from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.beam_search import BeamScorer
-from transformers.generation.utils import BeamSearchEncoderDecoderOutput
-from transformers.generation.utils import BeamSearchDecoderOnlyOutput
+from transformers.utils import ModelOutput
+
+
+class BeamSearchEncoderDecoderOutput(ModelOutput):
+    sequences: torch.LongTensor = None
+    sequences_scores: Optional[torch.FloatTensor] = None
+    scores: Optional[Tuple[torch.FloatTensor]] = None
+    beam_indices: Optional[torch.LongTensor] = None
+    encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    decoder_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    cross_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    decoder_hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+
+
+class BeamSearchDecoderOnlyOutput(ModelOutput):
+    sequences: torch.LongTensor = None
+    sequences_scores: Optional[torch.FloatTensor] = None
+    scores: Optional[Tuple[torch.FloatTensor]] = None
+    beam_indices: Optional[torch.LongTensor] = None
+    attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
 
 
 BeamSearchOutput = Union[BeamSearchEncoderDecoderOutput, BeamSearchDecoderOnlyOutput]
