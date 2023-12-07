@@ -24,7 +24,7 @@ import traceback
 from transformers import set_seed
 from PIL import Image
 from utils.memory_profile import MemConsumption
-from utils.hook_forward import OVForward
+from utils.hook_forward import StableDiffusionHook
 import utils.output_json
 
 HOOK_BEAM_SEARCH_UTILS = {'pt': utils.hook_beam_search, 'ov': utils.hook_beam_search}
@@ -37,7 +37,7 @@ DEFAULT_OUTPUT_TOKEN_SIZE = 512
 MAX_OUTPUT_TOKEN_SIZE = 64 * 1024
 
 mem_consumption = MemConsumption()
-ovForward = OVForward()
+stable_diffusion_hook = StableDiffusionHook()
 
 
 def gen_iterate_data(
@@ -214,18 +214,16 @@ def run_image_generation(input_text, nsteps, num, image_id, pipe, args, iter_dat
         prompt_idx=image_id,
     )
     iter_data_list.append(iter_data)
-    tm_list = ovForward.get_tm_list()
     utils.metrics_print.print_metrics(
         num,
         iter_data,
-        tm_list,
-        tms_infer=tm_list,
         generated=rslt_img_fn,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
+        stable_diffusion=stable_diffusion_hook
     )
-    tm_list = ovForward.clear_tm_list()
+    stable_diffusion_hook.clear_statistics()
 
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters):
@@ -238,11 +236,9 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
         raise RuntimeError('==Failure prompts is empty ==')
 
     if framework == "ov":
-        # count the time of the first infer
-        ovForward.new_text_encoder(pipe)
-        # count the time of the second infer
-        ovForward.new_unet(pipe)
-        ovForward.new_vae_decoder(pipe)
+        stable_diffusion_hook.new_text_encoder(pipe)
+        stable_diffusion_hook.new_unet(pipe)
+        stable_diffusion_hook.new_vae_decoder(pipe)
 
     log.info(f"num_iters={num_iters}, num_text_list={len(input_text_list)}")
 
@@ -319,13 +315,12 @@ def run_ldm_super_resolution(img, num, nsteps, pipe, args, framework, iter_data_
     utils.metrics_print.print_metrics(
         num,
         iter_data,
-        tm_list,
-        tms_infer=tm_list,
         generated=rslt_img_fn,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
     )
+    utils.metrics_print.print_ldm_unet_vqvae_infer_latency(num, iter_data, tm_list, warm_up=(num == 0),)
 
 
 def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_iters):
