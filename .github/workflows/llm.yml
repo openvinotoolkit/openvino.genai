@@ -25,11 +25,11 @@ jobs:
           github-server-url: https://huggingface.co
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14.0" ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu &
           mkdir ./ov/
           curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13432-a6ea22ad0e6/l_openvino_toolkit_ubuntu20_2023.3.0.dev20231129_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-          wait
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14.0" ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
@@ -135,12 +135,12 @@ jobs:
           lfs: true
           github-server-url: https://huggingface.co
       - name: Install dependencies
-        shell: bash
+        shell: cmd
         run: |
-          python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14.0" ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu &
           curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13432-a6ea22ad0e6/w_openvino_toolkit_windows_2023.3.0.dev20231129_x86_64.zip
           unzip ov.zip
-          wait
+          .\w_openvino_toolkit_windows_2023.3.0.dev20231129_x86_64\setupvars.bat
+          python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14.0" .\thirdparty\openvino_contrib\modules\custom_operations\[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
       - name: Download, convert and build
         shell: cmd
         run: |
