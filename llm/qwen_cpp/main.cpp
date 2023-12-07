@@ -115,7 +115,7 @@ ov::Tensor prepare_input_ids_ov_tensor(std::vector<int> &input_ids, size_t batch
     auto tensor = ov::Tensor(ov::element::i64, {batch_size, input_ids.size() });
     int64_t* input_ids_int64 = tensor.data<int64_t>();
     for (size_t i = 0; i < input_ids.size(); i++) {
-        (input_ids_int64)[i] = input_ids[i];
+        (input_ids_int64)[i] = (int64_t)input_ids[i];
     }
 
     return tensor;
@@ -137,6 +137,7 @@ int main(int argc, char **argv) {
 
     // Init OpenVINO Runtime
     ov::Core core;
+    std::cout << "Init OpenVINO with version: \n" << ov::get_openvino_version() << std::endl;
     ov::AnyMap device_config = {};
     if (args.device.find("CPU") != std::string::npos) {
         device_config[ov::cache_dir.name()] = "llm-cache";
@@ -159,10 +160,11 @@ int main(int argc, char **argv) {
     // Compile model
     startTime = Time::now();
     ov::CompiledModel compiled_model = core.compile_model(args.model_path, args.device, device_config);
-    auto model_inputs = compiled_model.inputs();
     ov::InferRequest ireq = compiled_model.create_infer_request();
     duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Compile model and create infer request took " << duration_ms << " ms" << std::endl;
+
+    auto model_inputs = compiled_model.inputs();
     int64_t out_token;
     int sentence_num = 0;
     int gen_token_count = 0;
@@ -187,13 +189,12 @@ int main(int argc, char **argv) {
         std::cout << "Input with prompt template token length: " << input_ids.size() << "\n";
       }
       text_streamer->put(input_ids);
-      // Prepare input tensor for first infer
-      startTime = Time::now();
 
-      ireq.get_tensor("input_ids").set_shape({ BATCH_SIZE, input_ids.size() });        // TODO: Fix input ids with [-1,1] issue
+      // Prepare input tensor for first infer
+      auto input_ids_tensor = prepare_input_ids_ov_tensor(input_ids, BATCH_SIZE);      // (TODO) WA for input ids with int32 type, will remove after OV tokenizer enabled
+      ireq.get_tensor("input_ids").set_shape(input_ids_tensor.get_shape());
       ireq.get_tensor("attention_mask").set_shape({ BATCH_SIZE, input_ids.size() });
-      auto input_ids_tensor = prepare_input_ids_ov_tensor(input_ids, BATCH_SIZE);      // WA for input ids with int32 type
-      ireq.set_tensor("input_ids", input_ids_tensor);
+      std::copy_n(input_ids_tensor.data<const int64_t>(), input_ids_tensor.get_size(), ireq.get_tensor("input_ids").data<int64_t>());
       std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), input_ids.size(), 1);
 
       for (size_t idx = 1; idx < model_inputs.size() - 1; ++idx) {
