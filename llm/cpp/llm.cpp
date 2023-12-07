@@ -32,7 +32,8 @@ int main(int argc, char* argv[]) try {
     }
     ov::Core core;
     core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
-    auto [input_ids, mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
+    std::string_view prompt = argv[4];
+    auto [input_ids, mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), prompt);
     ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
     std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
     std::map<size_t, ov::PartialShape> shapes = {
@@ -112,7 +113,12 @@ int main(int argc, char* argv[]) try {
         }
         std::cout << "Group:\n";
         for (const Beam& beam : group.min_heap) {
-            std::cout << beam.score << ": " << detokenize(detokenizer, beam.tokens) << '\n';
+            std::string detokenized = detokenize(detokenizer, beam.tokens);
+            if (detokenized.size() < prompt.size()) {
+                throw std::runtime_error("Detokenized sequence became smaller than the prompt which must be included");
+            }
+            std::string_view generated{detokenized.data() + prompt.size(), detokenized.size() - prompt.size()};
+            std::cout << beam.score << ": " << generated << '\n';
         }
     }
 } catch (const std::exception& error) {

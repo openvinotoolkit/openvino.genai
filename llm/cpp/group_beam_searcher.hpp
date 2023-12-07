@@ -86,7 +86,7 @@ struct Parameters {
     float diversity_penalty = 1.0;
     size_t max_new_tokens = 20;
     StopCriteria stop_criteria = StopCriteria::heuristic;
-    float length_penalty = 0.0;
+    float length_penalty = 1.0;
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
     // There's no way to extract special token values from the tokenizer for now
     int64_t eos_token = 2;
@@ -99,7 +99,7 @@ struct Group {
     std::vector<Beam> min_heap;  // The worst of the best completed beams is the first
     bool done = false;
     void finish(Beam&& beam, const Parameters& parameters) {
-        beam.score /= std::pow(float(parameters.prompt.size() + beam.tokens.size()), parameters.length_penalty);
+        beam.score /= std::pow(float(beam.tokens.size()), parameters.length_penalty);
         min_heap.push_back(std::move(beam));
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
         if (min_heap.size() > parameters.group_size) {
@@ -111,7 +111,7 @@ struct Group {
         if (min_heap.size() < parameters.group_size) {
             return;
         }
-        size_t cur_len = parameters.prompt.size() + ongoing.front().tokens.size();
+        size_t cur_len = ongoing.front().tokens.size();
         float best_sum_logprobs = ongoing.front().score;
         float worst_score = min_heap.front().score;
         switch (parameters.stop_criteria) {
@@ -146,6 +146,7 @@ struct GroupBeamSearcher {
         for (Group& group : groups) {
             group.ongoing.resize(parameters.group_size);
             group.ongoing.front().score = 0.0;
+            group.ongoing.front().tokens = this->parameters.prompt;
         }
     }
     std::vector<TokenToBeam> process(const ov::Tensor& logits) {
@@ -156,9 +157,9 @@ struct GroupBeamSearcher {
             if (!group.done) {
                 for (Beam& beam : group.ongoing) {
                     beam.global_beam_idx = beam_count;
-                    // beam.tokens.empty() holds for the first process() call.
-                    // Every beam should be constructed from the single batch
-                    if (!beam.tokens.empty()) {
+                    // Every beam should be constructed from the single batch on first process() call
+                    if (group.ongoing.front().tokens.size() != parameters.prompt.size()) {
+                        // It's not the first process() call
                         ++beam_count;
                     }
                 }
@@ -182,11 +183,9 @@ struct GroupBeamSearcher {
                         tokens.at(size_t(prev_beam.tokens.back())).log_prob -= parameters.diversity_penalty;
                     }
                 }
-                std::vector<int64_t> full_text{parameters.prompt};
-                full_text.insert(full_text.end(), beam.tokens.begin(), beam.tokens.end());
-                if (full_text.size() > 1 && full_text.size() >= parameters.no_repeat_ngram_size) {
-                    auto tail_start = full_text.end() - ptrdiff_t(parameters.no_repeat_ngram_size) + 1;
-                    for (int64_t banned_token : kmp_search(full_text, {tail_start, full_text.end()})) {
+                if (beam.tokens.size() > 1 && beam.tokens.size() >= parameters.no_repeat_ngram_size) {
+                    auto tail_start = beam.tokens.end() - ptrdiff_t(parameters.no_repeat_ngram_size) + 1;
+                    for (int64_t banned_token : kmp_search(beam.tokens, {tail_start, beam.tokens.end()})) {
                         tokens.at(size_t(banned_token)).log_prob = -std::numeric_limits<float>::infinity();
                     }
                 }
