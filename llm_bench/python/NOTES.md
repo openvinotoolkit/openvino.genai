@@ -32,3 +32,33 @@ Solution: update `modeling_qwen.py` as following: <br />
 +SUPPORT_CUDA = False
  SUPPORT_BF16 = SUPPORT_CUDA and torch.cuda.is_bf16_supported()
  ```
+
+## Baichuan2-7B-Chat - AttributeError: 'BaichuanTokenizer' object has no attribute 'sp_model'
+Convert Baichuan2-7B-Chat to OpenVINO IR files run with convert.py, the following error may occur：
+```bash
+AttributeError: 'BaichuanTokenizer' object has no attribute 'sp_model'
+```
+Reproduced with https://huggingface.co/baichuan-inc/Baichuan2-7B-Chat 84603cde5ebffb6084e476cfaeceaf0b8b91fe54 <br />
+Reference to https://huggingface.co/baichuan-inc/Baichuan2-7B-Base/discussions/2 <br />
+Solution: update `tokenization_baichuan.py` as following: <br />
+```Python
+         eos_token = AddedToken(eos_token, lstrip=False, rstrip=False) if isinstance(eos_token, str) else eos_token
+         unk_token = AddedToken(unk_token, lstrip=False, rstrip=False) if isinstance(unk_token, str) else unk_token
+         pad_token = AddedToken(pad_token, lstrip=False, rstrip=False) if isinstance(pad_token, str) else pad_token
++        self.vocab_file = vocab_file
++        self.add_bos_token = add_bos_token
++        self.add_eos_token = add_eos_token
++        self.sp_model = spm.SentencePieceProcessor(**self.sp_model_kwargs)
++        self.sp_model.Load(vocab_file)
+         super().__init__(
+             bos_token=bos_token,
+             eos_token=eos_token,
+             clean_up_tokenization_spaces=clean_up_tokenization_spaces,
+             **kwargs,
+         )
+-        self.vocab_file = vocab_file
+-        self.add_bos_token = add_bos_token
+-        self.add_eos_token = add_eos_token
+-        self.sp_model = spm.SentencePieceProcessor(**self.sp_model_kwargs)
+-        self.sp_model.Load(vocab_file)
+```

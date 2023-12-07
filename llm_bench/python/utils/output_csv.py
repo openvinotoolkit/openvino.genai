@@ -16,19 +16,25 @@ def output_comments(result, use_case, writer):
         comment_list.append('output_size: Text/Code generation models: generated text token size')
         comment_list.append("infer_count: Limit the Text/Code generation models' output token size")
         comment_list.append('latency: Text/Code generation models: ms/token. Output token size / generation time')
-        comment_list.append('1st_latency: Text/Code generation models: fisrt token time')
-        comment_list.append('2nd_avg_latency: Text/Code generation models: other tokens (exclude first token) mean time')
+        comment_list.append('1st_latency: Text/Code generation models: Fisrt token latency')
+        comment_list.append('2nd_avg_latency: Text/Code generation models: Other tokens (exclude first token) latency')
+        comment_list.append('1st_infer_latency: Text/Code generation models: Fisrt inference latency')
+        comment_list.append('2nd_infer_avg_latency: Text/Code generation models: Other inferences (exclude first inference) latency')
         comment_list.append('result_md5: MD5 of generated text')
         comment_list.append('prompt_idx: Index of prompts')
     elif use_case == 'image_gen':
         comment_list.append("infer_count: Tex2Image models' Inference(or Sampling) step size")
-        comment_list.append('1st_latency: Inference time of text_encoder (one inference)')
-        comment_list.append('2nd_avg_latency: Mean inference time of unet and vae_decoder')
+        comment_list.append('1st_latency: First step lantency of unet')
+        comment_list.append('2nd_avg_latency: Other steps latency of unet(exclude first step)')
+        comment_list.append('1st_infer_latency: Same as 1st_latency')
+        comment_list.append('2nd_infer_avg_latency: Same as 2nd_avg_latency')
         comment_list.append('prompt_idx: Index of prompts')
     elif use_case == 'ldm_super_resolution':
         comment_list.append("infer_count: Tex2Image models' Inference(or Sampling) step size")
-        comment_list.append('1st_latency: First inference time of unet')
-        comment_list.append('2nd_avg_latency: Mean inference time of unet(exclude first infer time) and vqvae')
+        comment_list.append('1st_latency: First step lantency of unet')
+        comment_list.append('2nd_avg_latency: Other steps lantency of unet(exclude first step)')
+        comment_list.append('1st_infer_latency: Same as 1st_latency')
+        comment_list.append('2nd_infer_avg_latency: Same as 2nd_avg_latency')
         comment_list.append('prompt_idx: Image Index')
     comment_list.append('pretrain_time: Total time of load model and compile model')
     comment_list.append('generation_time: Time for one interaction. (e.g. The duration of  answering one question or generating one picture)')
@@ -46,7 +52,7 @@ def output_comments(result, use_case, writer):
         writer.writerow(result)
 
 
-def write_result(report_file, model, framework, device, use_case, iter_data_list, pretrain_time, model_precision):
+def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision):
     header = [
         'iteration',
         'model',
@@ -66,6 +72,8 @@ def write_result(report_file, model, framework, device, use_case, iter_data_list
         'prompt_idx',
         '1st_infer_latency(ms)',
         '2nd_infer_avg_latency(ms)',
+        'num_beams',
+        'batch_size',
         'result_md5',
     ]
     out_file = Path(report_file)
@@ -91,6 +99,8 @@ def write_result(report_file, model, framework, device, use_case, iter_data_list
             result['device'] = device
             result['pretrain_time(s)'] = round(pretrain_time, 5)
             result['precision'] = model_precision
+            result['num_beams'] = model_args['num_beams']
+            result['batch_size'] = model_args['batch_size']
             total_iters = len(iter_data_list)
 
             skip_iter_nums = 0
@@ -180,4 +190,4 @@ def write_result(report_file, model, framework, device, use_case, iter_data_list
                     result['max_shared_mem(MB)'] = total_max_shared_mem_consumption
                 writer.writerow(result)
 
-            output_comments(result, use_case, writer)
+            output_comments(result, model_args['use_case'], writer)
