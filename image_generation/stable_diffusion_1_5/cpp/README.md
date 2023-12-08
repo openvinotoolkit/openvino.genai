@@ -1,4 +1,4 @@
-# OV_SD_CPP
+# OpenVINO Stable Diffuison (with LoRA) C++ pipeline
 The pure C++ text-to-image pipeline, driven by the OpenVINO native API for Stable Diffusion v1.5 with LMS Discrete Scheduler, supports both static and dynamic model inference. It includes advanced features like Lora integration with safetensors and OpenVINO extension for tokenizer. This demo has been tested on the Windows platform.
 ## Step 1: Prepare environment
 
