@@ -50,8 +50,9 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('69', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9):
-              ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('69'):] + '\n'
+          input_ids = tokenizer('69', return_tensors='pt')['input_ids']
+          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(input_ids, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9):
+              ref = ': ' + tokenizer.decode(beam[input_ids.numel():], skip_special_tokens=True) + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
@@ -65,8 +66,9 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('Hi', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9):
-              ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('Hi'):] + '\n'
+          input_ids = tokenizer('Hi', return_tensors='pt')['input_ids']
+          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(input_ids, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9):
+              ref = ': ' + tokenizer.decode(beam[input_ids.numel():], skip_special_tokens=True) + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
@@ -80,8 +82,9 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('return 0', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9):
-              ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('return 0'):] + '\n'
+          input_ids = tokenizer('return 0', return_tensors='pt')['input_ids']
+          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(input_ids, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9):
+              ref = ': ' + tokenizer.decode(beam[input_ids.numel():], skip_special_tokens=True) + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
@@ -95,8 +98,9 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9):
-              ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len(''):] + '\n'
+          input_ids = tokenizer('', return_tensors='pt')['input_ids']
+          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(input_ids, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9):
+              ref = ': ' + tokenizer.decode(beam[input_ids.numel():], skip_special_tokens=True) + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
@@ -110,8 +114,9 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(tokenizer('你好！ 你好嗎？', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9):
-              ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('你好！ 你好嗎？'):] + '\n'
+          input_ids = tokenizer('你好！ 你好嗎？', return_tensors='pt')['input_ids']
+          for beam in transformers.LlamaForCausalLM.from_pretrained('./TinyLlama-1.1B-Chat-v0.6/').generate(input_ids, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9):
+              ref = ': ' + tokenizer.decode(beam[input_ids.numel():], skip_special_tokens=True) + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
@@ -162,8 +167,9 @@ jobs:
           with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained(r'.\TinyLlama-1.1B-Chat-v0.6\')
-          for beam in transformers.LlamaForCausalLM.from_pretrained(r'.\TinyLlama-1.1B-Chat-v0.6\').generate(tokenizer('69', return_tensors='pt')['input_ids'], num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9):
-              ref = ': ' + tokenizer.decode(beam, skip_special_tokens=True)[len('69'):] + '\n'
+          input_ids = tokenizer('69', return_tensors='pt')['input_ids']
+          for beam in transformers.LlamaForCausalLM.from_pretrained(r'.\TinyLlama-1.1B-Chat-v0.6\').generate(input_ids, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9):
+              ref = ': ' + tokenizer.decode(beam[input_ids.numel():], skip_special_tokens=True) + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
