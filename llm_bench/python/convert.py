@@ -190,7 +190,8 @@ def convert_optimum_causallm_base(model, args):
         device="cpu",
         fp16=args.precision == "FP16",
         int8=False,
-        model_kwargs={"stateful": args.make_stateful} if hasattr(args, "make_stateful") else {},
+        model_kwargs={},
+        stateful=args.make_stateful if hasattr(args, "make_stateful") else False
     )
     save_tokenizer(tok, ov_out_dir)
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends and not gptq_applied:
@@ -225,7 +226,8 @@ def convert_optimum_causallm_base(model, args):
             device="cpu",
             fp16=args.precision == "FP16",
             int8=False,
-            model_kwargs={"stateful": args.make_stateful} if hasattr(args, "make_stateful") else {},
+            model_kwargs={},
+            stateful=args.make_stateful if hasattr(args, "make_stateful") else False
         )
         save_tokenizer(tok, pt_out_dir)
     return
