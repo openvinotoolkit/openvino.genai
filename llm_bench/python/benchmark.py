@@ -74,7 +74,10 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
     log.info(f'input_text={input_text}')
+    tok_encode_start = time.perf_counter()
     input_data = tokenizer(input_text_list, return_tensors='pt')
+    tok_encode_end = time.perf_counter()
+    tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
     input_data.pop('token_type_ids', None)
     # Remove `token_type_ids` from inputs
     input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
@@ -102,7 +105,10 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         mem_consumption.clear_max_memory_consumption()
 
     generation_time = end - start
+    tok_decode_start = time.perf_counter()
     generated_text = tokenizer.batch_decode(result)
+    tok_decode_end = time.perf_counter()
+    tok_decode_time = (tok_decode_end - tok_decode_start) * 1000
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
@@ -141,6 +147,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
+        tokenization_time=(tok_encode_time, tok_decode_time)
     )
     bench_hook.clear_time_list()
     bench_hook.clear_time_infer_list()
@@ -439,6 +446,9 @@ def get_argprser():
         default='openvino',
         required=False,
         help='Enables running the torch.compile() with specified backend: pytorch or openvino (default)',
+    )
+    parser.add_argument(
+        '--convert_tokenizer', action='store_true', help='Convert tokenizer to OpenVINO format'
     )
 
     return parser.parse_args()
