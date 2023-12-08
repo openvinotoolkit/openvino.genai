@@ -15,7 +15,7 @@ on:
     branches: [ "master" ]
     paths:
       - llm_bench/python/**
-    
+      - .github/workflows/llm_bench-python.yml
 
 permissions:
   contents: read
