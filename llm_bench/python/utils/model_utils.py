@@ -54,26 +54,8 @@ def add_stateful_model_arguments(parser: argparse.ArgumentParser):
     parser.add_argument(
         '--make_stateful',
         action='store_true',
-        help='Replace kv-cache inputs and outputs in the model by internal variables making a stateful model.'
-        'If --no_fuse_cache_reorder is provided, additional ops to handle cache reorder will be also fused in the model.',
-    )
-    parser.add_argument(
-        '--no_state_initializer',
-        action='store_true',
-        help='Disables build of ShapeOf Expression as the state initializer. Model will be statically reshaped by batch/beam dimension before the compilation.',
-    )
-    parser.add_argument(
-        '--fuse_cache_reorder',
-        action='store_true',
-        help='Fuse ops related to cache reordering to the model. '
-        'This option is enabled by default when --make_stateful is used except when --no_fuse_cache_reorder is provided. '
-        'The option --fuse_cache_reorder is useful to be applied without --make_stateful to debug Gather logic without mix with states.',
-    )
-    parser.add_argument(
-        '--no_fuse_cache_reorder',
-        action='store_true',
-        help='Disable fusing of ops related to cache reordering (Gather op) to the model when --make_stateful is applied. '
-        'Otherwise the cache reordering is always fused in stateful models.',
+        help='Replace kv-cache inputs and outputs in the model by internal variables making a stateful model. '
+        'Additional operations are inserted into the model to handle cache state (Gathers, ShapeOf, etc.)',
     )
 
 
@@ -88,11 +70,8 @@ def analyze_args(args):
     model_args['batch_size'] = args.batch_size
     model_args['fuse_decoding_strategy'] = args.fuse_decoding_strategy
     model_args['make_stateful'] = args.make_stateful
-    model_args['no_state_initializer'] = args.no_state_initializer
     model_args['save_prepared_model'] = args.save_prepared_model
     model_args['num_beams'] = args.num_beams
-    model_args['fuse_cache_reorder'] = args.fuse_cache_reorder
-    model_args['no_fuse_cache_reorder'] = args.no_fuse_cache_reorder
     model_args['torch_compile_backend'] = args.torch_compile_backend
 
     model_path = args.model
