@@ -55,9 +55,7 @@ int main(int argc, char* argv[]) try {
         size_t batch_size = next_tokens.size();
         ireq.get_tensor("input_ids").set_shape({batch_size, 1});
         ov::Tensor attention_mask = ireq.get_tensor("attention_mask");
-        ov::Shape mask_shape = attention_mask.get_shape();
-        mask_shape.at(0) = batch_size;
-        ++mask_shape.at(1);
+        ov::Shape mask_shape{batch_size, attention_mask.get_shape().at(1) + 1};
         attention_mask.set_shape(mask_shape);
         std::fill_n(attention_mask.data<int64_t>(), shape_size(mask_shape), 1);
         ireq.get_tensor("position_ids").set_shape({batch_size, 1});
@@ -65,8 +63,8 @@ int main(int argc, char* argv[]) try {
         ireq.get_tensor("beam_idx").set_shape({batch_size});
         int32_t* beam_idx = ireq.get_tensor("beam_idx").data<int32_t>();
         for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-            beam_idx[batch_idx] = next_tokens.at(batch_idx).beam_idx;
             ireq.get_tensor("input_ids").data<int64_t>()[batch_idx] = next_tokens.at(batch_idx).token_idx;
+            beam_idx[batch_idx] = next_tokens.at(batch_idx).beam_idx;
         }
     }
     for (Group& group : group_beam_searcher.groups) {
