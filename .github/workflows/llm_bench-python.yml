@@ -12,7 +12,6 @@ on:
     paths:
       - llm_bench/python/**
   pull_request:
-    branches: [ "master" ]
     paths:
       - llm_bench/python/**
       - .github/workflows/llm_bench-python.yml
@@ -66,4 +65,7 @@ jobs:
       - name: Test stateful
         run: |
           python -m pip install -r llm_bench/python/requirements.txt optimum==1.14
+          python -m pip uninstall --yes openvino
+          python -m pip install openvino-nightly==2023.3.0.dev20231206
           python llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir . --bettertransformer --make_stateful
+          grep beam_idx pytorch/dldt/FP32/openvino_model.xml
