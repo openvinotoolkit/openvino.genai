@@ -61,9 +61,10 @@ int main(int argc, char* argv[]) try {
         ireq.get_tensor("position_ids").set_shape({batch_size, 1});
         std::fill_n(ireq.get_tensor("position_ids").data<int64_t>(), batch_size, mask_shape.at(1) - 1);
         ireq.get_tensor("beam_idx").set_shape({batch_size});
+        int64_t* input_tokens = ireq.get_tensor("input_ids").data<int64_t>();
         int32_t* beam_idx = ireq.get_tensor("beam_idx").data<int32_t>();
         for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-            ireq.get_tensor("input_ids").data<int64_t>()[batch_idx] = next_tokens.at(batch_idx).token_idx;
+            input_tokens[batch_idx] = next_tokens.at(batch_idx).token_idx;
             beam_idx[batch_idx] = next_tokens.at(batch_idx).beam_idx;
         }
     }
