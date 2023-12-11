@@ -134,7 +134,7 @@ struct Group {
     }
 };
 
-struct TokenToBeam {int64_t token_idx; size_t beam_idx;};
+struct TokenToBeam {int64_t token_idx; int32_t beam_idx;};
 
 struct GroupBeamSearcher {
     Parameters parameters;
@@ -234,7 +234,7 @@ struct GroupBeamSearcher {
             group->is_done(parameters);
             if (!group->done) {
                 for (const Beam& beam : group->ongoing) {
-                    next_tokens.push_back({beam.tokens.back(), beam.global_beam_idx});
+                    next_tokens.push_back({beam.tokens.back(), int32_t(beam.global_beam_idx)});
                 }
             }
         }

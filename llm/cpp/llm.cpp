@@ -34,36 +34,14 @@ int main(int argc, char* argv[]) try {
     core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
     auto [input_ids, mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
     ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
-    std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
-    std::map<size_t, ov::PartialShape> shapes = {
-        {0, ov::PartialShape{
-            -1, -1
-        }},
-        {1, ov::PartialShape{
-            -1, -1
-        }},
-        {2, ov::PartialShape{
-            -1, -1
-        }}
-    };
-    std::vector<ov::Output<ov::Node>> inputs = model->inputs();
-    for (size_t idx = 3; idx < inputs.size(); ++idx) {
-        ov::PartialShape shape = inputs.at(idx).get_partial_shape();
-        shape[0] = -1;
-        shapes.emplace(idx, shape);
-    }
-    model->reshape(shapes);
-    ov::InferRequest ireq = core.compile_model(model, "CPU", ov::cache_dir("llm-cache")).create_infer_request();
+    ov::InferRequest ireq = core.compile_model(argv[1], "CPU").create_infer_request();
     ireq.set_tensor("input_ids", input_ids);
     ireq.set_tensor("attention_mask", mask);
     ov::Tensor position_ids = ireq.get_tensor("position_ids");
     position_ids.set_shape(input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
-    for (size_t idx = 3; idx < inputs.size(); ++idx) {
-        ov::Shape shape = inputs.at(idx).get_partial_shape().get_min_shape();
-        shape.at(0) = 1;
-        ireq.get_input_tensor(idx).set_shape(shape);
-    }
+    ireq.get_tensor("beam_idx").set_shape({1});
+    ireq.get_tensor("beam_idx").data<int32_t>()[0] = 0;
     Parameters parameters;
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     parameters.prompt = std::vector<int64_t>{prompt_data, prompt_data + input_ids.get_size()};
@@ -84,24 +62,11 @@ int main(int argc, char* argv[]) try {
         std::fill_n(attention_mask.data<int64_t>(), shape_size(mask_shape), 1);
         ireq.get_tensor("position_ids").set_shape({batch_size, 1});
         std::fill_n(ireq.get_tensor("position_ids").data<int64_t>(), batch_size, mask_shape.at(1) - 1);
-        for (size_t tensor_idx = 3; tensor_idx < inputs.size(); ++tensor_idx) {
-            ov::Shape shape = ireq.get_output_tensor(tensor_idx - 2).get_shape();
-            shape.at(0) = batch_size;
-            ireq.get_input_tensor(tensor_idx).set_shape(shape);
-        }
+        ireq.get_tensor("beam_idx").set_shape({batch_size});
+        int32_t* beam_idx = ireq.get_tensor("beam_idx").data<int32_t>();
         for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+            beam_idx[batch_idx] = next_tokens.at(batch_idx).beam_idx;
             ireq.get_tensor("input_ids").data<int64_t>()[batch_idx] = next_tokens.at(batch_idx).token_idx;
-            for (size_t tensor_idx = 3; tensor_idx < inputs.size(); ++tensor_idx) {
-                ov::Tensor present = ireq.get_output_tensor(tensor_idx - 2);
-                ov::Shape present_begin = {next_tokens.at(batch_idx).beam_idx, 0, 0, 0};
-                ov::Shape present_end = present.get_shape();
-                present_end.at(0) = next_tokens.at(batch_idx).beam_idx + 1;
-                ov::Tensor past = ireq.get_input_tensor(tensor_idx);
-                ov::Shape past_begin = {batch_idx, 0, 0, 0};
-                ov::Shape past_end = past.get_shape();
-                past_end.at(0) = batch_idx + 1;
-                ov::Tensor{present, present_begin, present_end}.copy_to(ov::Tensor{past, past_begin, past_end});
-            }
         }
     }
     for (Group& group : group_beam_searcher.groups) {
