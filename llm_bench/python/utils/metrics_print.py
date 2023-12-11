@@ -4,7 +4,10 @@
 import logging as log
 
 
-def print_metrics(iter_num, iter_data, tms=None, tms_infer=None, generated=None, warm_up=False, max_rss_mem=-1, max_shared_mem=-1, stable_diffusion=None):
+def print_metrics(
+        iter_num, iter_data, tms=None, tms_infer=None, generated=None, warm_up=False, max_rss_mem=-1, max_shared_mem=-1,
+        stable_diffusion=None, tokenization_time=None
+):
     if tms is None:
         tms = []
     if tms_infer is None:
@@ -18,6 +21,12 @@ def print_metrics(iter_num, iter_data, tms=None, tms_infer=None, generated=None,
         log.info(f"[{iter_str}] Output size: {iter_data['output_size']}")
     if iter_data['infer_count'] != '':
         log.info(f"[{iter_str}] Infer count: {iter_data['infer_count']}")
+    if tokenization_time:
+        encode_time = tokenization_time[0]
+        log.info(f"[{iter_str}] Tokenization Time: {encode_time:.2f}ms")
+        if len(tokenization_time) > 1:
+            decode_time = tokenization_time[1]
+            log.info(f"[{iter_str}] Detokenization Time: {decode_time:.2f}ms")
     if iter_data['generation_time'] != '':
         log.info(f"[{iter_str}] Generation Time: {iter_data['generation_time']:.2f}s")
     if iter_data['latency'] != '':
