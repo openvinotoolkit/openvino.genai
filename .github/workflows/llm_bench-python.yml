@@ -15,7 +15,7 @@ on:
     branches: [ "master" ]
     paths:
       - llm_bench/python/**
-    
+      - .github/workflows/llm_bench-python.yml
 
 permissions:
   contents: read
@@ -56,3 +56,14 @@ jobs:
       with:
         name: llm.bench_diff
         path: llm.bench_diff.diff
+  stateful:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Test stateful
+        run: |
+          python -m pip install -r llm_bench/python/requirements.txt optimum==1.14
+          python llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir . --bettertransformer --make_stateful
