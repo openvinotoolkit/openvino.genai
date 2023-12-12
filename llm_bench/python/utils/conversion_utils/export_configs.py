@@ -4,17 +4,17 @@
 
 import torch
 from typing import Callable, Dict, Type, Optional, Tuple
-from copy import deepcopy
 
 from optimum.exporters.onnx import TextDecoderOnnxConfig
 from optimum.exporters.tasks import TasksManager, make_backend_config_constructor_for_task
-from optimum.utils.normalized_config import NormalizedConfigManager, NormalizedTextConfig
+from optimum.utils.normalized_config import NormalizedTextConfig
 from optimum.utils import (
-    NormalizedTextConfig, NormalizedConfigManager, DEFAULT_DUMMY_SHAPES,
+    NormalizedTextConfig, DEFAULT_DUMMY_SHAPES,
     DummyPastKeyValuesGenerator,
     DummyTextInputGenerator,
     DummyInputGenerator
 )
+
 
 class TextDecoderWithPositionIdsOnnxConfig(TextDecoderOnnxConfig):
     @property
@@ -60,12 +60,6 @@ register_in_tasks_manager = create_register()
 register_in_tasks_manager_with_override = create_register(True)
 
 
-def register_normalized_config(model_type: str, config_cls):
-    if model_type not in NormalizedConfigManager._conf:
-        NormalizedConfigManager._conf[model_type] = config_cls
-
-
-
 class YIDummyTextInputGenerator(DummyTextInputGenerator):
     SUPPORTED_INPUT_NAMES = {
             "input_ids",
@@ -79,6 +73,7 @@ class YIDummyTextInputGenerator(DummyTextInputGenerator):
         if input_name == "position_ids":
             input = input[:, -1:]
         return input
+
 
 @register_in_tasks_manager('yi', *["text-generation", "text-generation-with-past"])
 class YIOnnxConfig(TextDecoderWithPositionIdsOnnxConfig):
@@ -106,6 +101,7 @@ class MistralDummyTextInputGenerator(DummyTextInputGenerator):
         if input_name == "position_ids":
             input = input[:, -1:]
         return input
+
 
 class MistralDummyPastKeyValuesGenerator(DummyPastKeyValuesGenerator):
     def __init__(
@@ -143,6 +139,7 @@ class MistralDummyPastKeyValuesGenerator(DummyPastKeyValuesGenerator):
             for _ in range(self.num_layers)
         ]
 
+
 @register_in_tasks_manager('mistral', *["text-generation", "text-generation-with-past"])
 class MistralOnnxConfig(TextDecoderWithPositionIdsOnnxConfig):
     # The ONNX export of this architecture needs the Trilu operator support, available since opset 14
@@ -154,7 +151,6 @@ class MistralOnnxConfig(TextDecoderWithPositionIdsOnnxConfig):
     DUMMY_PKV_GENERATOR_CLASS = MistralDummyPastKeyValuesGenerator
     NORMALIZED_CONFIG_CLASS = NormalizedTextConfig.with_args(num_key_value_heads="num_key_value_heads", allow_new=True)
     no_position_ids = False
-
 
 
 class QwenDummyInputsGenerator(DummyTextInputGenerator):
@@ -174,6 +170,7 @@ class QwenDummyInputsGenerator(DummyTextInputGenerator):
         if input_name == "position_ids":
             input = torch.tensor([[6]])
         return input
+
 
 class QwenDummyPastKeyValuesGenerator(DummyPastKeyValuesGenerator):
     def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
@@ -195,7 +192,9 @@ class QwenDummyPastKeyValuesGenerator(DummyPastKeyValuesGenerator):
 @register_in_tasks_manager("qwen", *["text-generation", "text-generation-with-past"])
 class QwenOpenVINOConfig(TextDecoderOnnxConfig):
     DEFAULT_ONNX_OPSET = 13
-    NORMALIZED_CONFIG_CLASS = NormalizedTextConfig.with_args(num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size')
+    NORMALIZED_CONFIG_CLASS = NormalizedTextConfig.with_args(
+        num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size'
+    )
     DUMMY_INPUT_GENERATOR_CLASSES = (QwenDummyInputsGenerator, QwenDummyPastKeyValuesGenerator)
     DUMMY_PKV_GENERATOR_CLASS = QwenDummyPastKeyValuesGenerator
 
@@ -234,10 +233,10 @@ class QwenOpenVINOConfig(TextDecoderOnnxConfig):
             past_length = dummy_inputs["past_key_values"][0][1].shape[1]
 
             dummy_inputs["attention_mask"] = DummyInputGenerator.pad_input_on_dim(
-            dummy_inputs["attention_mask"],
-            desired_length=past_length + 1,
-            dim=1,
-            dtype=dummy_inputs["attention_mask"].dtype,
+                dummy_inputs["attention_mask"],
+                desired_length=past_length + 1,
+                dim=1,
+                dtype=dummy_inputs["attention_mask"].dtype,
             )
 
         return dummy_inputs
@@ -270,7 +269,9 @@ class QwenOpenVINOConfig(TextDecoderOnnxConfig):
 @register_in_tasks_manager("baichuan", *["text-generation", "text-generation-with-past"])
 class Baichaun2OpenVINOConfig(TextDecoderOnnxConfig):
     DEFAULT_ONNX_OPSET = 13
-    NORMALIZED_CONFIG_CLASS = NormalizedTextConfig.with_args(num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size')
+    NORMALIZED_CONFIG_CLASS = NormalizedTextConfig.with_args(
+        num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size'
+    )
 
 
 @register_in_tasks_manager("jais", *["text-generation", "text-generation-with-past"])
@@ -280,8 +281,9 @@ class JaisOpenVINOConfig(TextDecoderOnnxConfig):
 
 
 class ChatGLM2NormalizedConfig(NormalizedTextConfig):
-        NUM_LAYERS = "num_layers"
-        VOCAB_SIZE = "padded_vocab_size"
+    NUM_LAYERS = "num_layers"
+    VOCAB_SIZE = "padded_vocab_size"
+
 
 class ChatGLM2DummyTextInputGenerator(DummyTextInputGenerator):
     SUPPORTED_INPUT_NAMES = {
@@ -299,6 +301,7 @@ class ChatGLM2DummyTextInputGenerator(DummyTextInputGenerator):
             bs = input.shape[0]
             input = torch.range(0, input.shape[1], dtype=input.dtype).repeat(bs, 1)
         return input
+
 
 class ChatGLM2DummyPastKeyValuesGenerator(DummyPastKeyValuesGenerator):
     def __init__(
@@ -342,6 +345,7 @@ class ChatGLM2DummyPastKeyValuesGenerator(DummyPastKeyValuesGenerator):
             )
             for _ in range(self.num_layers)
         ]
+
 
 @register_in_tasks_manager("chatglm", *["text-generation", "text-generation-with-past"])
 class ChatGLM2OpenVINOConfig(TextDecoderOnnxConfig):
