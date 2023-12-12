@@ -12,7 +12,7 @@ function abs_path() {
 }
 cd "`abs_path`"
 
-python -m pip install --upgrade-strategy eager onnx "optimum[openvino]>=1.14.0" ../../../thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu &
+python -m pip install --upgrade-strategy eager transformers==4.35.2 onnx "optimum[openvino]>=1.14.0" ../../../thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu &
 mkdir ./ov/
 curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.1/linux/l_openvino_toolkit_ubuntu20_2023.1.0.12185.47b736f63ed_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
 sudo ./ov/install_dependencies/install_openvino_dependencies.sh

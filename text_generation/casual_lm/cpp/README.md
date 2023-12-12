@@ -44,7 +44,7 @@ This pipeline can work with other similar topologies produced by `optimum-intel`
 ### Download and convert the model and tokenizers
 
 ```sh
-python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu ../../../thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] onnx git+https://github.com/huggingface/optimum-intel.git
+python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu ../../../thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] transformers==4.35.2 onnx git+https://github.com/huggingface/optimum-intel.git
 source <INSTALL_DIR>/setupvars.sh
 optimum-cli export openvino -m meta-llama/Llama-2-7b-hf ./Llama-2-7b-hf/
 python ./convert_tokenizers.py ./build/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./Llama-2-7b-hf/
