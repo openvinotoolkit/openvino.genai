@@ -207,7 +207,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
         guidance_scale = image_param['guidance_scale']
     else:
         guidance_scale = ''
-    log.info(f'batch_size={args["batch_size"]}, steps={nsteps}, width={image_width}, height={image_height}')
+    log.info(f'batch_size={args["batch_size"]}, steps={nsteps}, width={image_width}, height={image_height}, guidance_scale={guidance_scale}')
     result_md5_list = []
     max_rss_mem_consumption = ''
     max_shared_mem_consumption = ''
