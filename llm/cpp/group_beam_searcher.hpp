@@ -90,7 +90,6 @@ struct Parameters {
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
     // There's no way to extract special token values from the tokenizer for now
     int64_t eos_token = 2;
-    int64_t pad_token = 0;
     std::function<bool(const Beam&)> early_finish = [](const Beam&){return false;};
 };
 
@@ -166,11 +165,6 @@ struct GroupBeamSearcher {
         }
         for (auto group = groups.begin(); group != groups.end(); ++group) {
             if (group->done) {
-                for (Beam& beam : group->ongoing) {
-                    // pad_token addition affects how diversity_penalty is applyed.
-                    // Required to stay aligned with Python transformers implementation
-                    beam.tokens.push_back(parameters.pad_token);
-                }
                 continue;
             }
             std::vector<Beam> candidates;
@@ -179,7 +173,9 @@ struct GroupBeamSearcher {
                 std::vector<Token> tokens = log_softmax(logits, beam.global_beam_idx);
                 for (auto prev_group = groups.begin(); prev_group != group; ++prev_group) {
                     for (const Beam& prev_beam : prev_group->ongoing) {
-                        tokens.at(size_t(prev_beam.tokens.back())).log_prob -= parameters.diversity_penalty;
+                        if (prev_beam.tokens.size() > beam.tokens.size()) {
+                            tokens.at(size_t(prev_beam.tokens.back())).log_prob -= parameters.diversity_penalty;
+                        }
                     }
                 }
                 std::vector<int64_t> full_text{parameters.prompt};

@@ -53,7 +53,7 @@ int main(int argc, char* argv[]) try {
         shapes.emplace(idx, shape);
     }
     model->reshape(shapes);
-    ov::InferRequest ireq = core.compile_model(model, "CPU", ov::cache_dir("llm-cache")).create_infer_request();
+    ov::InferRequest ireq = core.compile_model(model, "CPU").create_infer_request();
     ireq.set_tensor("input_ids", input_ids);
     ireq.set_tensor("attention_mask", mask);
     ov::Tensor position_ids = ireq.get_tensor("position_ids");

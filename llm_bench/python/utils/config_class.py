@@ -75,6 +75,8 @@ USE_CASES = {
         'openchat',
         'neural-chat',
         'llama',
+        'tiny-llama',
+        'tinyllama',
         'opt-',
         'pythia-',
         'stablelm-',
