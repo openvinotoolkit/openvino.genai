@@ -12,9 +12,8 @@ import transformers
 def main():
     if len(sys.argv) != 3:
         raise RuntimeError("Usage: {sys.argv[0]} <user_ov_extensions lib> <source model dir>")
-    ov_tokenizer.init_extension(sys.argv[1])
     tokenizer, detokenizer = ov_tokenizer.convert_tokenizer(
-        transformers.AutoTokenizer.from_pretrained(sys.argv[2]), with_decoder=True, streaming_decoder=True)
+        transformers.AutoTokenizer.from_pretrained(sys.argv[1]), with_decoder=True, streaming_decoder=True)
     openvino.save_model(tokenizer, "tokenizer.xml")
     openvino.save_model(detokenizer, "detokenizer.xml")
 

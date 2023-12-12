@@ -13,13 +13,12 @@ The program loads a tokenizer, detokenizer and a model (`.xml` and `.bin`) to Op
 
 Install OpenVINO Runtime from an archive: [Linux](https://docs.openvino.ai/2023.1/openvino_docs_install_guides_installing_openvino_from_archive_linux.html). `<INSTALL_DIR>` below refers to the extraction location.
 
-## Build `Casual LM` and `user_ov_extensions`
+## Build `Casual LM` and `openvino-tokenizers`
 
 ```sh
 git submodule update --init
-mkdir ./build/ && cd ./build/
 source <OpenVINO dir>/setupvars.sh
-cmake -DCMAKE_BUILD_TYPE=Release ../ && cmake --build ./ --config Release -j
+cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/ && cmake --build ./build/ --config Release -j
 ```
 
 ## Supported models
@@ -43,11 +42,13 @@ This pipeline can work with other similar topologies produced by `optimum-intel`
 
 ### Download and convert the model and tokenizers
 
+The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
+
 ```sh
-python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu ../../../thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] transformers==4.35.2 onnx git+https://github.com/huggingface/optimum-intel.git
 source <INSTALL_DIR>/setupvars.sh
+python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
 optimum-cli export openvino -m meta-llama/Llama-2-7b-hf ./Llama-2-7b-hf/
-python ./convert_tokenizers.py ./build/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./Llama-2-7b-hf/
+python ./convert_tokenizers.py ./Llama-2-7b-hf/
 ```
 
 ## Run
@@ -56,4 +57,4 @@ Usage: `casual_lm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "<promp
 
 Example: `./build/casual_lm ./Llama-2-7b-hf/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
 
-To enable non ASCII characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
+To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.

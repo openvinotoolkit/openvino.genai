@@ -12,20 +12,15 @@ function abs_path() {
 }
 cd "`abs_path`"
 
-python -m pip install --upgrade-strategy eager transformers==4.35.2 onnx "optimum[openvino]>=1.14.0" ../../../thirdparty/openvino_contrib/modules/custom_operations/user_ie_extensions/tokenizer/python/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu &
 mkdir ./ov/
 curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.1/linux/l_openvino_toolkit_ubuntu20_2023.1.0.12185.47b736f63ed_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
 sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-wait
 
 source ./ov/setupvars.sh
-optimum-cli export openvino -m openlm-research/open_llama_3b_v2 ./open_llama_3b_v2/ &
-mkdir ./build/
-cd ./build/
-cmake -DCMAKE_BUILD_TYPE=Release ../
-cmake --build ./ --config Release -j
-cd ../
+python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && optimum-cli export openvino -m openlm-research/open_llama_3b_v2 ./open_llama_3b_v2/ &
+cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+cmake --build ./build/ --config Release -j
 wait
 
-python ./convert_tokenizers.py ./build/custom_operations/user_ie_extensions/libuser_ov_extensions.so ./open_llama_3b_v2/
+python ./convert_tokenizers.py ./open_llama_3b_v2/
 ./build/casual_lm ./open_llama_3b_v2/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "return 0"
