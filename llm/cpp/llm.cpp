@@ -46,27 +46,23 @@ int main(int argc, char* argv[]) try {
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     parameters.prompt = std::vector<int64_t>{prompt_data, prompt_data + input_ids.get_size()};
     GroupBeamSearcher group_beam_searcher{parameters};
+    std::vector<int64_t> next_tokens;
+    std::vector<int32_t> next_beams;
     for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
         ireq.infer();
-        std::vector<TokenToBeam> next_tokens = group_beam_searcher.process(ireq.get_tensor("logits"));
+        std::tie(next_tokens, next_beams) = group_beam_searcher.process(ireq.get_tensor("logits"));
         if (next_tokens.empty()) {
             break;
         }
         size_t batch_size = next_tokens.size();
-        ireq.get_tensor("input_ids").set_shape({batch_size, 1});
+        ireq.set_tensor("input_ids", ov::Tensor{ov::element::i64, {batch_size, 1}, next_tokens.data()});
         ov::Tensor attention_mask = ireq.get_tensor("attention_mask");
         ov::Shape mask_shape{batch_size, attention_mask.get_shape().at(1) + 1};
         attention_mask.set_shape(mask_shape);
         std::fill_n(attention_mask.data<int64_t>(), shape_size(mask_shape), 1);
-        ireq.get_tensor("position_ids").set_shape({batch_size, 1});
-        std::fill_n(ireq.get_tensor("position_ids").data<int64_t>(), batch_size, mask_shape.at(1) - 1);
-        ireq.get_tensor("beam_idx").set_shape({batch_size});
-        int64_t* input_tokens = ireq.get_tensor("input_ids").data<int64_t>();
-        int32_t* beam_idx = ireq.get_tensor("beam_idx").data<int32_t>();
-        for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-            input_tokens[batch_idx] = next_tokens.at(batch_idx).token_idx;
-            beam_idx[batch_idx] = next_tokens.at(batch_idx).beam_idx;
-        }
+        position_ids.set_shape({batch_size, 1});
+        std::fill_n(position_ids.data<int64_t>(), batch_size, mask_shape.at(1) - 1);
+        ireq.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
     }
     for (Group& group : group_beam_searcher.groups) {
         if (!group.done) {

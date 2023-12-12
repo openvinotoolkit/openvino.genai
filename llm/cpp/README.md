@@ -49,13 +49,14 @@ This pipeline can work with other similar topologies produced by `optimum-intel`
 source <OpenVINO dir>/setupvars.sh
 python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" ../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
 python -m pip uninstall --yes optimum-intel
-python -m pip install git+https://github.com/huggingface/optimum-intel.git@5dac93d6e8d15c96fe061c653d82b7afd54954db
-optimum-cli export openvino -m meta-llama/Llama-2-7b-hf ./Llama-2-7b-hf/
-python ./llm/cpp/convert_tokenizers.py ./Llama-2-7b-hf/
+python -m pip install git+https://github.com/slyalin/optimum-intel.git@stateful
+optimum-cli export openvino -m TinyLlama/TinyLlama-1.1B-Chat-v0.6 ./TinyLlama-1.1B-Chat-v0.6/
+python ../../llm_bench/python/convert.py --model_id ./TinyLlama-1.1B-Chat-v0.6/ --make_stateful --bettertransformer --output_dir ./TinyLlama-1.1B-Chat-v0.6/
+python ./llm/cpp/convert_tokenizers.py ./TinyLlama-1.1B-Chat-v0.6/
 ```
 
 ## Run
 
 Usage: `llm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "<prompt>"`
 
-Example: `./build/llm/cpp/llm ./Llama-2-7b-hf/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
+Example: `./build/llm/cpp/llm ./TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP32\openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
