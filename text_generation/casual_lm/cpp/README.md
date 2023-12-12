@@ -11,13 +11,13 @@ The program loads a tokenizer, detokenizer and a model (`.xml` and `.bin`) to Op
 
 ## Install OpenVINO Runtime
 
-Install OpenVINO Runtime from an archive: [Linux](https://docs.openvino.ai/2023.1/openvino_docs_install_guides_installing_openvino_from_archive_linux.html). `<INSTALL_DIR>` below refers to the extraction location.
+Install OpenVINO Runtime from an archive: [Linux](https://docs.openvino.ai/2023.2/openvino_docs_install_guides_installing_openvino_from_archive_linux.html). `<INSTALL_DIR>` below refers to the extraction location.
 
 ## Build `Casual LM` and `user_ov_extensions`
 
 ```sh
 git submodule update --init
-source <OpenVINO dir>/setupvars.sh
+source <INSTALL_DIR>/setupvars.sh
 cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/ && cmake --build ./build/ --config Release -j
 ```
 
