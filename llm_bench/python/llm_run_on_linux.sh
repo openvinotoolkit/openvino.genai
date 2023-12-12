@@ -9,11 +9,11 @@ echo ${git_clone_bloomz_560m}
 eval ${git_clone_bloomz_560m}
 wait
 
-convert_model="python ./llm_bench/python/convert.py --model_id bloomz-560m/  --output_dir ./ov_models/bloomz-560m --precision FP16"
+convert_model="python ./llm_bench/python/convert.py --model_id bloomz-560m/ --output_dir ./ov_models/bloomz-560m --precision FP16"
 echo ${convert_model}
 eval ${convert_model}
 wait
 
-bemchmaking="python ./llm_bench/python/benchmark.py -m ./ov_models/bloomz-560m/pytorch/dldt/FP16/"
-echo ${bemchmaking}
-eval ${bemchmaking}
+bemchmarking="python ./llm_bench/python/benchmark.py -m ./ov_models/bloomz-560m/pytorch/dldt/FP16/ -d cpu -n 1"
+echo ${bemchmarking}
+eval ${bemchmarking}
