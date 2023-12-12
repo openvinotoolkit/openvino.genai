@@ -15,13 +15,14 @@ def get_prompts(args):
             prompts_list.append('What is OpenVINO?')
         elif args['use_case'] == 'code_gen':
             prompts_list.append('def print_hello_world():')
-        elif args['use_case'] == 'image_gen':
-            prompts_list.append('sailing ship in storm by Leonardo da Vinci')
     elif args['prompt'] is not None and args['prompt_file'] is not None:
         raise RuntimeError('== prompt and prompt file should not exist together ==')
     else:
         if args['prompt'] is not None:
-            prompts_list.append(args['prompt'])
+            if args['prompt'] != '':
+                prompts_list.append(args['prompt'])
+            else:
+                raise RuntimeError('== prompt should not be empty string ==')
         else:
             input_prompt = args['prompt_file']
             if input_prompt.endswith('.jsonl'):
@@ -30,12 +31,70 @@ def get_prompts(args):
                     with open(input_prompt, 'r', encoding='utf-8') as f:
                         for line in f:
                             data = json.loads(line)
-                            prompts_list.append(data['prompt'])
+                            if 'prompt' in data:
+                                if data['prompt'] != '':
+                                    prompts_list.append(data['prompt'])
+                                else:
+                                    raise RuntimeError('== prompt should not be empty string ==')
+                            else:
+                                raise RuntimeError('== key word "prompt" does not exist in prompt file ==')
                 else:
                     raise RuntimeError('== The prompt file does not exist ==')
             else:
-                prompts_list.append(input_prompt)
+                raise RuntimeError('== The prompt file should be ended with .jsonl ==')
     return prompts_list
+
+
+def init_image_param():
+    return {'prompt':'', 'width':0, 'height':0, 'steps':0, 'guidance_scale':''}
+
+
+
+def get_image_param_from_prompt_file(args):
+    image_param_list = []
+    image_param = init_image_param()
+    if args['prompt'] is None and args['prompt_file'] is None:
+            image_param['prompt'] = 'sailing ship in storm by Leonardo da Vinci'
+            image_param_list.append(image_param)
+    elif args['prompt'] is not None and args['prompt_file'] is not None:
+        raise RuntimeError('== prompt and prompt file should not exist together ==')
+    else:
+        if args['prompt'] is not None:
+            if args['prompt'] != '':
+                image_param['prompt'] = args['prompt']
+                image_param_list.append(image_param)
+            else:
+                raise RuntimeError('== prompt should not be empty string ==')
+        else:
+            input_prompt = args['prompt_file']
+            if input_prompt.endswith('.jsonl'):
+                if os.path.exists(input_prompt):
+                    log.info(f'Read prompts from {input_prompt}')
+                    with open(input_prompt, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            image_param = init_image_param()
+                            data = json.loads(line)
+                            if 'prompt' in data:
+                                if data['prompt'] != '':
+                                    image_param['prompt'] = data['prompt']
+                                else:
+                                    raise RuntimeError('== prompt should not be empty string ==')
+                            else:
+                                raise RuntimeError('== key word "prompt" does not exist in prompt file ==')
+                            if 'width' in data:
+                                image_param['width'] = int(data['width'])
+                            if 'height' in data:
+                                image_param['height'] = int(data['height'])
+                            if 'steps' in data:
+                                image_param['steps'] = int(data['steps'])
+                            if 'guidance_scale' in data:
+                                image_param['guidance_scale'] = float(data['guidance_scale'])
+                            image_param_list.append(image_param)
+                else:
+                    raise RuntimeError('== The prompt file does not exist ==')
+            else:
+                raise RuntimeError('== The prompt file should be ended with .jsonl ==')
+    return image_param_list
 
 
 def set_default_param_for_ov_config(ov_config):
