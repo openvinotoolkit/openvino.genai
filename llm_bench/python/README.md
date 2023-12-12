@@ -70,7 +70,6 @@ pip install openvino==2023.2.0
 (4) Run the following command to test the performance of one LLM model
 ``` bash
 python benchmark.py -m <model> -d <device> -r <report_csv> -f <framework> -p <prompt text> -n <num_iters>
-```x
 # e.g.
 python benchmark.py -m models/llama-2-7b-chat/pytorch/dldt/FP32 -n 2
 python benchmark.py -m models/llama-2-7b-chat/pytorch/dldt/FP32 -p "What is openvino?" -n 2
@@ -83,7 +82,7 @@ Parameters:
 * `-f` - framework (default=ov)
 * `-p` - interactive prompt text
 * `-pf` - path of JSONL file including interactive prompts
-* `-n` - number of benchmarking iterations. 0 means execute warm-up iteration only. >0 value means warm-up iteration plus @number iterations. (default=0)
+* `-n` - number of benchmarking iterations, if the value greater 0, will exclude the first iteration. (default=0)
 
 ``` bash
 python ./benchmark.py -h # for more information
@@ -112,4 +111,4 @@ python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_b
 ```
 
 # Notes
-If you encounter any error messages, please check **[NOTES.md](./NOTES.md)**  which provides solutions to some known errors.
+If you encounter `AttributeError`, please check **[NOTES.md](./NOTES.md)** which provides solutions to the known errors.
