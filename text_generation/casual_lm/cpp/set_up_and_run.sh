@@ -17,7 +17,7 @@ curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.1/l
 sudo ./ov/install_dependencies/install_openvino_dependencies.sh
 
 source ./ov/setupvars.sh
-python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python -m pip uninstall --yes optimum-intel && python -m pip install git+https://github.com/huggingface/optimum-intel.git@5dac93d6e8d15c96fe061c653d82b7afd54954db && optimum-cli export openvino -m openlm-research/open_llama_3b_v2 ./open_llama_3b_v2/ &
+python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && optimum-cli export openvino -m openlm-research/open_llama_3b_v2 ./open_llama_3b_v2/ &
 cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
 cmake --build ./build/ --config Release -j
 wait

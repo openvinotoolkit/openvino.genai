@@ -7,4 +7,4 @@ The project includes the following pipelines:
 
 1. [Benchmarking script for large language models](./llm_bench/python/)
 2. [Casual LM](./text_generation/casual_lm/cpp/)
-3. [OpenVINO Stable Diffuison (with LoRA) C++ pipeline](./image_generation/stable_diffusion_1_5/)
+3. [OpenVINO Stable Diffuison (with LoRA) C++ pipeline](./image_generation/stable_diffusion_1_5/cpp/)
