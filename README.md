@@ -6,6 +6,7 @@
 -->
 ## GenAI Pipeline Repository
 
+
 The GenAI repository contains pipelines that implement image and text generation tasks.
 The implementation uses OpenVINO capabilities to optimize the pipelines. Each sample covers
 a family of models and suggests certain modifications to adapt the code to specific needs.
