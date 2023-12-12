@@ -3,7 +3,7 @@ GenAI contains pipelines that implement image and text generation tasks. The imp
 > [!NOTE]
 > This project is not for production use.
 
-The project include the following pipelines:
+The project includes the following pipelines:
 
 1. [Benchmarking script for large language models](./llm_bench/python/)
 2. [Casual LM](./text_generation/casual_lm/cpp/)

@@ -13,7 +13,7 @@ The program loads a tokenizer, detokenizer and a model (`.xml` and `.bin`) to Op
 
 Install OpenVINO Runtime from an archive: [Linux](https://docs.openvino.ai/2023.1/openvino_docs_install_guides_installing_openvino_from_archive_linux.html). `<INSTALL_DIR>` below refers to the extraction location.
 
-## Build `Casual LM` and `openvino-tokenizers`
+## Build `Casual LM` and `user_ov_extensions`
 
 ```sh
 git submodule update --init
@@ -47,6 +47,8 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 ```sh
 source <INSTALL_DIR>/setupvars.sh
 python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
+python -m pip uninstall --yes optimum-intel
+python -m pip install git+https://github.com/huggingface/optimum-intel.git@5dac93d6e8d15c96fe061c653d82b7afd54954db
 optimum-cli export openvino -m meta-llama/Llama-2-7b-hf ./Llama-2-7b-hf/
 python ./convert_tokenizers.py ./Llama-2-7b-hf/
 ```

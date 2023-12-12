@@ -51,7 +51,7 @@ int main(int argc, char* argv[]) try {
         shapes.emplace(idx, shape);
     }
     model->reshape(shapes);
-    ov::InferRequest ireq = core.compile_model(model, "CPU", ov::cache_dir("casual_lm_cache")).create_infer_request();
+    ov::InferRequest ireq = core.compile_model(model, "CPU").create_infer_request();
     for (size_t idx = 2; idx < inputs.size(); ++idx) {
         ireq.get_input_tensor(idx).set_shape(inputs.at(idx).get_partial_shape().get_min_shape());
     }
