@@ -269,7 +269,7 @@ class OVLDMSuperResolutionPipeline(DiffusionPipeline):
         if 'eta' in set(inspect.signature(self.scheduler.step).parameters.keys()):
             extra_kwargs['eta'] = eta
 
-        for t in self.progress_bar(timesteps_tensor):
+        for t in timesteps_tensor:
             # concat latents and low resolution image in the channel dimension.
             latents_input = np.concatenate([latents, image], axis=1)
             latents_input = self.scheduler.scale_model_input(latents_input, t)

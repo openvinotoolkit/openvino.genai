@@ -139,7 +139,7 @@ def patch_inter_processing(hf_model, **kwargs):
 
     import openvino.runtime.opset12 as opset
 
-    if kwargs['fuse_decoding_strategy']:
+    if kwargs.get('fuse_decoding_strategy', False):
         ppp = ov.preprocess.PrePostProcessor(ov_model)
 
         assert kwargs['num_beams'] == 1, "Parameter fuse_decoding_strategy doesn't support beam_search, set num_beams to 1"
@@ -156,12 +156,12 @@ def patch_inter_processing(hf_model, **kwargs):
         hf_model._orig_generate = hf_model.generate
         hf_model.generate = types.MethodType(generate_simplified, hf_model)
 
-    num_beams = kwargs['num_beams'] if 'num_beams' in kwargs and kwargs['num_beams'] > 1 else 1
-    batch_size = kwargs['batch_size'] if 'batch_size' in kwargs and kwargs['batch_size'] > 1 else 1
+    num_beams = kwargs.get('num_beams', 1)
+    batch_size = kwargs.get('batch_size', 1)
 
     not_kv_inputs = [input for input in ov_model.inputs if not any(name in hf_model.key_value_input_names for name in input.get_names())]
 
-    if kwargs['fuse_cache_reorder'] and num_beams > 1:
+    if kwargs.get('fuse_cache_reorder', False) and num_beams > 1:
         # Should be run before make_stateful because of adding pre-processing on kv-cashe inputs
         # Make a new parameter for beam_idx
         # Adding a new parameter to make _reorder_cache inside the model in the beginning of each iteration
@@ -190,7 +190,7 @@ def patch_inter_processing(hf_model, **kwargs):
         hf_model.forward = types.MethodType(forward_simplified, hf_model)  # need custom forward to set beam_idx input to OV model
         hf_model.next_beam_idx = np.zeros([num_beams * batch_size], dtype=int)  # initial value for beam_idx is all zeros
 
-    if kwargs['make_stateful']:
+    if kwargs.get('make_stateful', False):
         from openvino._offline_transformations import apply_make_stateful_transformation
 
         input_output_map = {}
@@ -232,6 +232,38 @@ def patch_inter_processing(hf_model, **kwargs):
         ov.save_model(ov_model, xml_file_name)
 
     hf_model.compile()
+
+
+def build_ov_tokenizer(hf_tokenizer):
+    try:
+        from ov_tokenizer import convert_tokenizer, pack_strings, unpack_strings
+    except ImportError:
+        log.warn("OV Tokenizer is unavailable, tokenizer conversion will be skipped")
+        return hf_tokenizer
+
+    ov_tokenizer, ov_detokenizer = convert_tokenizer(hf_tokenizer, with_decoder=True)
+    ov_compiled_tokenizer = ov.compile_model(ov_tokenizer)
+    ov_compiled_detokenizer = ov.compile_model(ov_detokenizer)
+
+    def encode_ov_tokenizer(self, text, *args, **kwargs):
+        if isinstance(text, str):
+            text = [text]
+        input_tensor = pack_strings(text)
+        return ov_compiled_tokenizer(input_tensor)
+
+    def batch_decode_ov_tokenizer(self, sequences, *args, **kwargs):
+        result = unpack_strings(ov_compiled_detokenizer(sequences)["string_output"])
+        return result
+
+    def decode_ov_tokenizer(self, token_ids, *args, **kwargs):
+        return self.batch_decode([token_ids])[0]
+
+    hf_tokenizer.encode = types.MethodType(encode_ov_tokenizer, hf_tokenizer)
+    hf_tokenizer.batch_encode = types.MethodType(encode_ov_tokenizer, hf_tokenizer)
+    hf_tokenizer.__call__ = types.MethodType(encode_ov_tokenizer, hf_tokenizer)
+    hf_tokenizer.batch_decode = types.MethodType(batch_decode_ov_tokenizer, hf_tokenizer)
+    hf_tokenizer.decode = types.MethodType(decode_ov_tokenizer, hf_tokenizer)
+    return hf_tokenizer
 
 
 def create_text_gen_model(model_path, device, **kwargs):
@@ -278,6 +310,8 @@ def create_text_gen_model(model_path, device, **kwargs):
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     # load token
     tokenizer = token_class.from_pretrained(model_path, trust_remote_code=True)
+    if kwargs.get("convert_tokenizer", False):
+        tokenizer = build_ov_tokenizer(tokenizer)
     return ov_model, tokenizer, from_pretrained_time
 
 
