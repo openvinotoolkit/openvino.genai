@@ -14,6 +14,6 @@ echo ${convert_model}
 eval ${convert_model}
 wait
 
-bemchmarking="python ./llm_bench/python/benchmark.py -m ./ov_models/bloomz-560m/pytorch/dldt/FP16/ -d cpu -n 1"
+bemchmarking="python ./llm_bench/python/benchmark.py -m ./ov_models/bloomz-560m/pytorch/dldt/FP16/ -d cpu -n 1 -error"
 echo ${bemchmarking}
 eval ${bemchmarking}
