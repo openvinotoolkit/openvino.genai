@@ -222,7 +222,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
         model_config = model.config
         model = patch_model_for_optimum_export(model)
         precision = precision if not gptq_applied else f"GPTQ_INT4-{args.precision}"
-        ov_out_dir = ov_out_dir / precision
+        ov_out_dir = Path(args.output_dir) / 'pytorch/dldt' / precision
         if gptq_applied and args.compress_weights:
             log.info("Weights compression will be skipped for GPTQ models")
         if args.save_orig:
@@ -305,13 +305,21 @@ def convert_causal_lm(args):
     compression_only = (
         args.compress_weights and not BackendType.PYTORCH.value in args.compress_weights_backends and is_ov_model_provided(args.model_id, ov_out_dir, precision)
     )
+    model_kwargs = {}
+    if post_init is not None:
+        model_kwargs['torch_dtype'] = torch.float32
     model = None
     if not compression_only:
         model = AutoModelForCausalLM.from_pretrained(
             args.model_id,
             trust_remote_code=True,
-            config=config
+            config=config,
+            **model_kwargs
         )
+        try:
+            model.to(torch.float32)
+        except Exception:
+            pass
     convert_optimum_causallm_base(model, args, config, compression_only)
     if post_init is not None:
         unpatch_gptq(cuda, post_init)
@@ -1168,7 +1176,7 @@ def convert_falcon(args):
     cuda, post_init = patch_gptq(config)
     model_kwargs = {}
     precision = args.precision
-    compression_only = ( config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     cuda, post_init = patch_gptq(config)
     model_kwargs = {}
     precision = args.precision
@@ -1183,8 +1191,6 @@ def convert_falcon(args):
     tokenizer_id = args.tokenizer_id or args.model_id
     tok = AutoTokenizer.from_pretrained(tokenizer_id, trust_remote_code=True)
     compress_to_fp16 = args.precision == 'FP16'
-        args.compress_weights and not BackendType.PYTORCH.value in args.compress_weights_backends and is_ov_model_provided(args.model_id, args.output_dir, args.precision)
-    )
     gptq_applied = is_gptq(config)
     precision = precision if not gptq_applied else f"GPTQ_INT4-{args.precision}"
     if post_init is not None:
@@ -1325,6 +1331,8 @@ converters = {
     'ldm': convert_ldm_super_res,
     'mpt': convert_mpt,
     'replit': convert_mpt,
+    'chatglm2': convert_causal_lm,
+    'chatglm3': convert_causal_lm,
     'chatglm': convert_chatglm,
     "chatglm2": convert_causal_lm,
     "chatglm3": convert_causal_lm,
