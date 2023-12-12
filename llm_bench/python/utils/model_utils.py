@@ -46,16 +46,15 @@ def get_prompts(args):
 
 
 def init_image_param():
-    return {'prompt':'', 'width':0, 'height':0, 'steps':0, 'guidance_scale':''}
-
+    return {'prompt': '', 'width': 0, 'height': 0, 'steps': 0, 'guidance_scale': ''}
 
 
 def get_image_param_from_prompt_file(args):
     image_param_list = []
     image_param = init_image_param()
     if args['prompt'] is None and args['prompt_file'] is None:
-            image_param['prompt'] = 'sailing ship in storm by Leonardo da Vinci'
-            image_param_list.append(image_param)
+        image_param['prompt'] = 'sailing ship in storm by Leonardo da Vinci'
+        image_param_list.append(image_param)
     elif args['prompt'] is not None and args['prompt_file'] is not None:
         raise RuntimeError('== prompt and prompt file should not exist together ==')
     else:
