@@ -78,7 +78,17 @@ def _chatglm_transformer_forward(
         if (attention_mask is not None and not attention_mask.all()) or (past_key_values and seq_length != 1):
             full_attention_mask = self.get_masks(input_ids, past_key_values, padding_mask=attention_mask)
         elif past_key_values is not None:
-            full_attention_mask = _get_chatglm_attention_mask(input_ids, past_key_values[0][0])
+            full_attention_mask = torch.ones(batch_size, seq_length, seq_length,
+                                             device=input_ids.device,
+                                             dtype=torch.float) * float("-inf")
+            full_attention_mask.triu_(diagonal=1)
+            past_length = 0
+            if past_key_values:
+                past_length = past_key_values[0][0].shape[0]
+            if past_length:
+                full_attention_mask = torch.cat((torch.zeros(batch_size, seq_length, past_length,
+                                                             device=input_ids.device), full_attention_mask), dim=-1)
+            full_attention_mask.unsqueeze_(1)
 
     # Rotary positional embeddings
     rotary_pos_emb = self.rotary_pos_emb(self.seq_length)
