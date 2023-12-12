@@ -26,12 +26,21 @@ python convert.py --model_id Qwen/Qwen-7B-Chat-Int4 --output_dir Qwen-7B-Chat-GP
 ```
 
 ### Step 2: [Download archives](https://storage.openvinotoolkit.org/repositories/openvino/packages/) with latest OpenVINO™ release
+### Setup OpenVINO Environment on Windows
+```sh
+<OpenVINO_DIR/setupvars.bat
+cd openvino.genai\llm\qwen_cpp
+```
+
+### Setup OpenVINO Environment on Linux
+```
+source <OpenVINO dir>/setupvars.sh
+cd openvino.genai/llm/qwen_cpp
+```
 
 ### Step 3: Build Qwen CPP pipeline
 ```sh
-cd openvino.genai/llm/cpp/qwen_cpp
 git submodule update --init --recursive
-<OpenVINO dir>/setupvars.bat
 cmake -B build
 cmake --build build -j --config Release
 ```
