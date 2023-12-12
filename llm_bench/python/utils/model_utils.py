@@ -73,6 +73,7 @@ def analyze_args(args):
     model_args['save_prepared_model'] = args.save_prepared_model
     model_args['num_beams'] = args.num_beams
     model_args['torch_compile_backend'] = args.torch_compile_backend
+    model_args['convert_tokenizer'] = args.convert_tokenizer
 
     model_path = args.model
     model_framework = args.framework

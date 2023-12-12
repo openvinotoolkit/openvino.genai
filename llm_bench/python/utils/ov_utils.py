@@ -51,7 +51,7 @@ def patch_decoding_strategy(hf_model, patch_methods, **kwargs):
     """Fuse post-processing as an extra ops into a model."""
     ov_model = hf_model.model
 
-    if kwargs['fuse_decoding_strategy']:
+    if kwargs.get('fuse_decoding_strategy', False):
         ppp = ov.preprocess.PrePostProcessor(ov_model)
 
         assert kwargs['num_beams'] == 1, "Parameter fuse_decoding_strategy doesn't support beam_search, set num_beams to 1"
@@ -81,6 +81,38 @@ def patch_inter_processing_and_compile(hf_model, **kwargs):
     patch_decoding_strategy(hf_model, True, **kwargs)
     save_model(hf_model, **kwargs)
     hf_model.compile()
+
+
+def build_ov_tokenizer(hf_tokenizer):
+    try:
+        from ov_tokenizer import convert_tokenizer, pack_strings, unpack_strings
+    except ImportError:
+        log.warn("OV Tokenizer is unavailable, tokenizer conversion will be skipped")
+        return hf_tokenizer
+
+    ov_tokenizer, ov_detokenizer = convert_tokenizer(hf_tokenizer, with_decoder=True)
+    ov_compiled_tokenizer = ov.compile_model(ov_tokenizer)
+    ov_compiled_detokenizer = ov.compile_model(ov_detokenizer)
+
+    def encode_ov_tokenizer(self, text, *args, **kwargs):
+        if isinstance(text, str):
+            text = [text]
+        input_tensor = pack_strings(text)
+        return ov_compiled_tokenizer(input_tensor)
+
+    def batch_decode_ov_tokenizer(self, sequences, *args, **kwargs):
+        result = unpack_strings(ov_compiled_detokenizer(sequences)["string_output"])
+        return result
+
+    def decode_ov_tokenizer(self, token_ids, *args, **kwargs):
+        return self.batch_decode([token_ids])[0]
+
+    hf_tokenizer.encode = types.MethodType(encode_ov_tokenizer, hf_tokenizer)
+    hf_tokenizer.batch_encode = types.MethodType(encode_ov_tokenizer, hf_tokenizer)
+    hf_tokenizer.__call__ = types.MethodType(encode_ov_tokenizer, hf_tokenizer)
+    hf_tokenizer.batch_decode = types.MethodType(batch_decode_ov_tokenizer, hf_tokenizer)
+    hf_tokenizer.decode = types.MethodType(decode_ov_tokenizer, hf_tokenizer)
+    return hf_tokenizer
 
 
 def create_text_gen_model(model_path, device, **kwargs):
@@ -134,6 +166,8 @@ def create_text_gen_model(model_path, device, **kwargs):
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     # load token
     tokenizer = token_class.from_pretrained(model_path, trust_remote_code=True)
+    if kwargs.get("convert_tokenizer", False):
+        tokenizer = build_ov_tokenizer(tokenizer)
     return ov_model, tokenizer, from_pretrained_time
 
 
