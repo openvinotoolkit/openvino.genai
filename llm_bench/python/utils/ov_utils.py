@@ -85,20 +85,24 @@ def patch_inter_processing_and_compile(hf_model, **kwargs):
 
 def build_ov_tokenizer(hf_tokenizer):
     try:
-        from ov_tokenizer import convert_tokenizer, pack_strings, unpack_strings
+        from openvino_tokenizers import convert_tokenizer, pack_strings, unpack_strings
     except ImportError:
         log.warn("OV Tokenizer is unavailable, tokenizer conversion will be skipped")
         return hf_tokenizer
 
-    ov_tokenizer, ov_detokenizer = convert_tokenizer(hf_tokenizer, with_decoder=True)
+    ov_tokenizer, ov_detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
     ov_compiled_tokenizer = ov.compile_model(ov_tokenizer)
     ov_compiled_detokenizer = ov.compile_model(ov_detokenizer)
 
-    def encode_ov_tokenizer(self, text, *args, **kwargs):
+    def encode_ov_tokenizer_full(self, text, *args, **kwargs):
         if isinstance(text, str):
             text = [text]
         input_tensor = pack_strings(text)
         return ov_compiled_tokenizer(input_tensor)
+
+    def encode_ov_tokenizer(self, text, *args, **kwargs):
+        results = encode_ov_tokenizer_full(self, text, *args, **kwargs)
+        return results["input_ids"]
 
     def batch_decode_ov_tokenizer(self, sequences, *args, **kwargs):
         result = unpack_strings(ov_compiled_detokenizer(sequences)["string_output"])
@@ -108,8 +112,7 @@ def build_ov_tokenizer(hf_tokenizer):
         return self.batch_decode([token_ids])[0]
 
     hf_tokenizer.encode = types.MethodType(encode_ov_tokenizer, hf_tokenizer)
-    hf_tokenizer.batch_encode = types.MethodType(encode_ov_tokenizer, hf_tokenizer)
-    hf_tokenizer.__call__ = types.MethodType(encode_ov_tokenizer, hf_tokenizer)
+    hf_tokenizer.__call__ = types.MethodType(encode_ov_tokenizer_full, hf_tokenizer)
     hf_tokenizer.batch_decode = types.MethodType(batch_decode_ov_tokenizer, hf_tokenizer)
     hf_tokenizer.decode = types.MethodType(decode_ov_tokenizer, hf_tokenizer)
     return hf_tokenizer
