@@ -56,3 +56,6 @@ jobs:
       with:
         name: llm.bench_diff
         path: llm.bench_diff.diff
+    
+    - name: Run llm_bench test on linux
+      run: llm_bench/python/llm_run_on_linux.sh
