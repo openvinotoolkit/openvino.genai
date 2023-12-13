@@ -1,5 +1,6 @@
-# OpenVINO Stable Diffuison (with LoRA) C++ pipeline
+# OpenVINO Stable Diffusion (with LoRA) C++ pipeline
 The pure C++ text-to-image pipeline, driven by the OpenVINO native API for Stable Diffusion v1.5 with LMS Discrete Scheduler, supports both static and dynamic model inference. It includes advanced features like Lora integration with safetensors and OpenVINO extension for tokenizer. This demo has been tested on the Windows platform.
+
 ## Step 1: Prepare environment
 
 C++ Packages:
@@ -7,7 +8,11 @@ C++ Packages:
 * OpenVINO: Model inference
 * Eigen3: Lora enabling
 
-SD Preparation could be auto implemented with `build_dependencies.sh`. This script provides 2 ways to install `OpenVINO 2023.1.0`: [conda-forge](https://anaconda.org/conda-forge/openvino) and [Download archives](https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.1/windows/).
+SD Preparation can be auto implemented with the `build_dependencies.sh` script. 
+It provides 2 ways to install `OpenVINO 2023.1.0`: 
+[conda-forge](https://anaconda.org/conda-forge/openvino) and 
+[Download archives](https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.1/windows/).
+
 ```shell
 cd scripts
 chmod +x build_dependencies.sh
@@ -16,10 +21,13 @@ chmod +x build_dependencies.sh
 "use conda-forge to install OpenVINO Toolkit 2023.1.0 (C++), or download from archives? (yes/no): "
 ```
 
-Notice: Use Intel sample [writeOutputBmp function](https://github.com/openvinotoolkit/openvino/blob/539b5a83ba7fcbbd348e4dc308e4a0f2dee8343c/samples/cpp/common/utils/include/samples/common.hpp#L155) instead of OpenCV for image saving.
+Notice: Use Intel sample 
+[writeOutputBmp function](https://github.com/openvinotoolkit/openvino/blob/539b5a83ba7fcbbd348e4dc308e4a0f2dee8343c/samples/cpp/common/utils/include/samples/common.hpp#L155)
+instead of OpenCV for image saving.
 
 
-## Step 2: Prepare SD model and Tokenizer model
+## Step 2: Prepare a SD model and Tokenizer model
+
 #### SD v1.5 model:
 1. Prepare a conda python env and install dependencies:
     ```shell
@@ -27,9 +35,9 @@ Notice: Use Intel sample [writeOutputBmp function](https://github.com/openvinoto
     conda create -n SD-CPP python==3.10
     pip install -r requirements.txt
     ```
-2. Download a huggingface SD v1.5 model like [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5), here another model [dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0) is used to test for the lora enabling. Ref to the official website for [model downloading](https://huggingface.co/docs/hub/models-downloading).
+2. Download a huggingface SD v1.5 model like [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5). Here, another model, [dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0), is used to test for the lora enabling. Ref to the official website for [model downloading](https://huggingface.co/docs/hub/models-downloading).
 
-3. Model conversion from PyTorch model to OpenVINO IR via [optimum-intel](https://github.com/huggingface/optimum-intel). Please use  the script convert_model.py to convert the model into `FP16_static` or `FP16_dyn`, which will be saved into the SD folder.  
+3. Convert the model from PyTorch to OpenVINO IR via [optimum-intel](https://github.com/huggingface/optimum-intel). Use the `convert_model.py` script to convert the model into `FP16_static` or `FP16_dyn`, which will be saved into the SD folder.  
     ```shell
     cd scripts
     python -m convert_model.py -b 1 -t FP16 -sd Path_to_your_SD_model
@@ -39,7 +47,9 @@ Notice: Use Intel sample [writeOutputBmp function](https://github.com/openvinoto
 
 #### Lora enabling with safetensors
 
-Refer [this blog for python pipeline](https://blog.openvino.ai/blog-posts/enable-lora-weights-with-stable-diffusion-controlnet-pipeline), the safetensor model is loaded via [src/safetensors.h](https://github.com/hsnyder/safetensors.h). The layer name and weight are modified with `Eigen Lib` and inserted into the SD model with `ov::pass::MatcherPass` in the file `src/lora_cpp.hpp`. 
+Refer to [python pipeline blog](https://blog.openvino.ai/blog-posts/enable-lora-weights-with-stable-diffusion-controlnet-pipeline).
+The safetensor model is loaded via [src/safetensors.h](https://github.com/hsnyder/safetensors.h). The layer name and weight are modified with
+`Eigen Lib` and inserted into the SD model with `ov::pass::MatcherPass` in the file `src/lora_cpp.hpp`. 
 
 SD model [dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0) and Lora [soulcard](https://civitai.com/models/67927?modelVersionId=72591) are tested in this pipeline. Here, Lora enabling only for FP16. 
 
@@ -47,11 +57,11 @@ Download and put safetensors and model IR into the models folder.
 
 #### Tokenizer model:
 3 steps for OpenVINO extension for tokenizer:
-  1. The script `convert_sd_tokenizer.py` in the scripts folder could serialize the tokenizer model IR
+  1. `convert_sd_tokenizer.py` in the scripts folder can serialize the tokenizer model IR
   2. Build OV extension:
       ```git clone https://github.com/apaniukov/openvino_contrib/  -b tokenizer-fix-decode```
-      Refer to PR OpenVINO [custom extension](https://github.com/openvinotoolkit/openvino_contrib/pull/687) ( new feature still in experiments )
-  3. Read model with extension in the SD pipeline 
+      Refer to this PR with [custom extension](https://github.com/openvinotoolkit/openvino_contrib/pull/687) for OpenVINO (still an experimental feature).
+  3. Read the model with extension in the SD pipeline 
 
 Important Notes:  
 - Ensure you are using the same OpenVINO environment as the tokenizer extension.
