@@ -22,7 +22,8 @@ chmod +x build_dependencies.sh
 ```
 
 Notice: Use Intel sample 
-[writeOutputBmp function](https://github.com/openvinotoolkit/openvino/blob/539b5a83ba7fcbbd348e4dc308e4a0f2dee8343c/samples/cpp/common/utils/include/samples/common.hpp#L155) instead of OpenCV for image saving.
+[writeOutputBmp function](https://github.com/openvinotoolkit/openvino/blob/539b5a83ba7fcbbd348e4dc308e4a0f2dee8343c/samples/cpp/common/utils/include/samples/common.hpp#L155)
+instead of OpenCV for image saving.
 
 
 ## Step 2: Prepare a SD model and Tokenizer model
