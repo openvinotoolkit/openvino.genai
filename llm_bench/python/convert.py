@@ -51,16 +51,12 @@ from transformers import (
     AutoModelForSeq2SeqLM,
     AutoModel,
 )
-from utils.nncf_utils import (
-    COMPRESSION_OPTIONS,
-    INT4_MODEL_CONFIGURATION,
-    get_compressed_path,
-)
+from utils.nncf_utils import get_compressed_path
 from utils.model_utils import add_stateful_model_arguments
 from optimum.exporters.openvino.utils import flattenize_inputs
 from utils.conversion_utils.convert_patch import patch_model_for_optimum_export
 from utils.conversion_utils.better_transformer_patch import register_bettertransformer_config
-from utils.conversion_utils.export_configs import *
+from utils.conversion_utils.export_configs import *  # noqa: F401,F403
 from utils.ov_model_classes import register_normalized_configs
 from utils.conversion_utils.helpers import (
     PYTORCH_DIR,
@@ -84,6 +80,7 @@ from utils.conversion_utils.helpers import (
 register_normalized_configs()
 register_bettertransformer_config()
 
+
 def convert_optimum_causallm_base(model, args, model_config=None, compress_only=False):
     tokenizer_id = args.tokenizer_id or args.model_id
     tok = AutoTokenizer.from_pretrained(tokenizer_id, trust_remote_code=True)
@@ -105,6 +102,11 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
         onnx_config, models_and_onnx_configs = _get_submodels_and_export_configs(
             model=model,
             task="text-generation-with-past",
+            custom_onnx_configs={},
+            custom_architecture=None,
+            fn_get_submodels=None,
+            preprocessors=None,
+            _variant="default",
             monolith=False
         )
         if "decoder_with_past_model" in models_and_onnx_configs:
@@ -919,7 +921,7 @@ def convert_chatglm(args):
             log.info(f"Compress model weights to {compress_option}")
             ov_compressed_path = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
             compress_ov_model_weights_helper(ov_model, tok, config, ov_compressed_path, compress_to_fp16, compress_option, args)
-    
+
     if post_init is not None:
         unpatch_gptq(cuda, post_init)
 
@@ -1074,7 +1076,7 @@ def convert_codegen2(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     if config.model_type == "codegen":
         config.model_type = "codegen2"
-    
+
     cuda, post_init = patch_gptq(config)
     pt_model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
@@ -1101,6 +1103,7 @@ def convert_aquilachat(args):
     convert_optimum_causallm_base(pt_model, args)
     if post_init is not None:
         unpatch_gptq(cuda, post_init)
+
 
 converters = {
     'decoder': convert_causal_lm,

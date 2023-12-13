@@ -7,7 +7,6 @@ from typing import Callable, Dict, Type, Optional, Tuple
 
 from optimum.exporters.onnx import TextDecoderOnnxConfig
 from optimum.exporters.tasks import TasksManager, make_backend_config_constructor_for_task
-from optimum.utils.normalized_config import NormalizedTextConfig
 from optimum.utils import (
     NormalizedTextConfig, DEFAULT_DUMMY_SHAPES,
     DummyPastKeyValuesGenerator,
@@ -17,6 +16,8 @@ from optimum.utils import (
 
 
 class TextDecoderWithPositionIdsOnnxConfig(TextDecoderOnnxConfig):
+    no_position_ids = False
+
     @property
     def inputs(self) -> Dict[str, Dict[int, str]]:
         common_inputs = super().inputs
@@ -62,10 +63,10 @@ register_in_tasks_manager_with_override = create_register(True)
 
 class YIDummyTextInputGenerator(DummyTextInputGenerator):
     SUPPORTED_INPUT_NAMES = {
-            "input_ids",
-            "attention_mask",
-            "token_type_ids",
-            "position_ids",
+        "input_ids",
+        "attention_mask",
+        "token_type_ids",
+        "position_ids",
     }
 
     def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
@@ -437,3 +438,8 @@ TasksManager._SUPPORTED_MODEL_TYPE['stablelm_epoch'] = TasksManager._SUPPORTED_M
 TasksManager._SUPPORTED_MODEL_TYPE['stablelm-epoch'] = TasksManager._SUPPORTED_MODEL_TYPE['llama']
 TasksManager._SUPPORTED_MODEL_TYPE["aquila"] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
 TasksManager._SUPPORTED_MODEL_TYPE["codegen2"] = TasksManager._SUPPORTED_MODEL_TYPE["codegen"]
+
+
+@register_in_tasks_manager('phi', *["text-generation", "text-generation-with-past"])
+class PhiOnnxConfig(TextDecoderWithPositionIdsOnnxConfig):
+    NORMALIZED_CONFIG_CLASS = NormalizedTextConfig

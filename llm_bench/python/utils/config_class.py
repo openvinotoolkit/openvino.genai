@@ -94,6 +94,7 @@ USE_CASES = {
         'zephyr',
         'mistral',
         'yi-',
+        'phi-'
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }
