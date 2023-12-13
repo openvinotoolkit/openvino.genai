@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) try {
         }}
     };
     std::vector<ov::Output<ov::Node>> inputs = model->inputs();
-    for (size_t idx = 2; idx < inputs.size(); ++idx){
+    for (size_t idx = 2; idx < inputs.size(); ++idx) {
         ov::PartialShape shape = inputs.at(idx).get_partial_shape();
         shape[0] = BATCH_SIZE;
         shapes.emplace(idx, shape);
