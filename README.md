@@ -24,17 +24,6 @@ your contribution under these terms.
 Requirements may vary for different samples. See respective readme files for more details,
 and make sure to install the OpenVINO version listed there. Refer to documentation to see
 [how to install OpenVINO](docs.openvino.ai/install).
-supporting C++ or Python APIs.
-
-To build the pipelines, including the `user_ov_extensions` submodule, you can use commands
-like these:
-
-```sh
-git submodule update --init
-mkdir ./build/ && cd ./build/
-source <OpenVINO dir>/setupvars.sh
-cmake -DCMAKE_BUILD_TYPE=Release ../ && cmake --build ./ --config Release -j
-```
 
 To enable non ASCII characters for Windows cmd open `Region` settings from `Control panel`.
 `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`.
