@@ -40,8 +40,8 @@ def generate_simplified(self, *args, **kwargs):
         # avoid doing it by passible next_tokens (without cat) directly to the next forward
         input_ids = torch.cat([input_ids, next_tokens], dim=-1)
         attention_mask = torch.cat([attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1)
-        # Depending on whether we applied make_stateful, past_key_values may or may not represent meaningful values,
-        # need to pass them anyway to differentiate the first iteration
+        # Depending on whether we are in stateful mode, past_key_values may or may not represent meaningful values,
+        # need to pass them anyway to identify the first iteration
         past_key_values = outputs.past_key_values
 
     return input_ids
@@ -149,6 +149,7 @@ def create_text_gen_model(model_path, device, **kwargs):
                 device=device,
                 ov_config=ov_config,
                 config=AutoConfig.from_pretrained(model_path, trust_remote_code=True),
+                stateful=kwargs.get("stateful", False)
             )
             end = time.perf_counter()
         else:
@@ -160,7 +161,7 @@ def create_text_gen_model(model_path, device, **kwargs):
                 ov_config=ov_config,
                 config=config,
                 compile=False,
-                stateful=(True if kwargs['make_stateful'] else None)
+                stateful=kwargs.get("stateful", False)
             )
             if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
                 patch_inter_processing_and_compile(ov_model, **kwargs)

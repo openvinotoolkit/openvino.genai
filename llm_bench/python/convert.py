@@ -177,7 +177,7 @@ def convert_optimum_causallm_base(model, args):
     )
     if "decoder_with_past_model" in models_and_onnx_configs:
         models_and_onnx_configs = {"model": models_and_onnx_configs["decoder_with_past_model"]}
-    if args.make_stateful:
+    if args.stateful:
         register_bettertransformer_config()
     ov_out_dir = Path(args.output_dir) / 'pytorch/dldt' / precision
     model.config.save_pretrained(ov_out_dir)
@@ -191,7 +191,7 @@ def convert_optimum_causallm_base(model, args):
         fp16=args.precision == "FP16",
         int8=False,
         model_kwargs={},
-        stateful=args.make_stateful if hasattr(args, "make_stateful") else False
+        stateful=args.stateful
     )
     save_tokenizer(tok, ov_out_dir)
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends and not gptq_applied:
@@ -227,7 +227,7 @@ def convert_optimum_causallm_base(model, args):
             fp16=args.precision == "FP16",
             int8=False,
             model_kwargs={},
-            stateful=args.make_stateful if hasattr(args, "make_stateful") else False
+            stateful=args.stateful
         )
         save_tokenizer(tok, pt_out_dir)
     return

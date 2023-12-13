@@ -52,7 +52,7 @@ def set_default_param_for_ov_config(ov_config):
 
 def add_stateful_model_arguments(parser: argparse.ArgumentParser):
     parser.add_argument(
-        '--make_stateful',
+        '--stateful',
         action='store_true',
         help='Replace kv-cache inputs and outputs in the model by internal variables making a stateful model. '
         'Additional operations are inserted into the model to handle cache state (Gathers, ShapeOf, etc.)',
@@ -69,7 +69,7 @@ def analyze_args(args):
     model_args['mem_consumption'] = args.memory_consumption
     model_args['batch_size'] = args.batch_size
     model_args['fuse_decoding_strategy'] = args.fuse_decoding_strategy
-    model_args['make_stateful'] = args.make_stateful
+    model_args['stateful'] = args.stateful
     model_args['save_prepared_model'] = args.save_prepared_model
     model_args['num_beams'] = args.num_beams
     model_args['torch_compile_backend'] = args.torch_compile_backend
