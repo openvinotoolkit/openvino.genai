@@ -1,8 +1,14 @@
 // Copyright (C) 2023 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+
+#include <regex>
+
 #include <openvino/openvino.hpp>
 #include <openvino_extensions/strings.hpp>
+#include <openvino/runtime/properties.hpp>
+#include "openvino/runtime/intel_gpu/properties.hpp"
+#include "openvino/pass/serialize.hpp"
 
 typedef std::chrono::high_resolution_clock Time;
 typedef std::chrono::nanoseconds ns;
@@ -59,11 +65,11 @@ int main(int argc, char* argv[]) try {
     ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
     auto duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Load chatglm tokenizer took " << duration_ms << " ms" << std::endl;
-
+    std::string device = argv[4];
     constexpr size_t BATCH_SIZE = 1;
 	
     ov::AnyMap device_config = {};
-    if (args.device.find("CPU") != std::string::npos) {
+    if (device.find("CPU") != std::string::npos) {
         device_config[ov::cache_dir.name()] = "llm-cache";
         device_config[ov::hint::scheduling_core_type.name()] = ov::hint::SchedulingCoreType::PCORE_ONLY;
         device_config[ov::hint::enable_hyper_threading.name()] = false;
@@ -71,7 +77,7 @@ int main(int argc, char* argv[]) try {
         device_config[ov::enable_profiling.name()] = false;
     }
 
-    if (args.device.find("GPU") != std::string::npos) {
+    if (device.find("GPU") != std::string::npos) {
         device_config[ov::cache_dir.name()] = "llm-cache";
         device_config[ov::intel_gpu::hint::queue_throttle.name()] = ov::intel_gpu::hint::ThrottleLevel::MEDIUM;
         device_config[ov::intel_gpu::hint::queue_priority.name()] = ov::hint::Priority::MEDIUM;
@@ -85,8 +91,8 @@ int main(int argc, char* argv[]) try {
     
     // Read OpenVINO Model
 #if !COMPILE_FROM_XML
-    startTime = Time::now()
-    std::shared_ptr<ov::Model> model = core.read_model(args.model_path);
+    startTime = Time::now();
+    std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
     duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Read chatglm Model took " << duration_ms << " ms" << std::endl;
 #endif
@@ -98,27 +104,36 @@ int main(int argc, char* argv[]) try {
     ov::preprocess::PrePostProcessor p3(model);
     for (size_t idx = 3; idx < inputs.size(); ++idx) {
 	    p3.input(idx).tensor().set_element_type(ov::element::f16);
-	    p3.output(idx).tensor().set_element_type(ov::element::f16);
+	    p3.output(idx - 2).tensor().set_element_type(ov::element::f16);
     }
 
     model = p3.build();
-    std::string modifiled_file = std::regex_replace(args.model_path, std::regex("openvino_model"), "modified_openvino_model");
+    std::string modifiled_file = std::regex_replace(argv[1], std::regex("openvino_model"), "modified_openvino_model");
     std::cout << "Save modified model in " << modifiled_file << "\n";
     ov::serialize(model, modifiled_file);
 #endif
+
     //Compile model
-    startTime = Time::now()
+    startTime = Time::now();
 #if !COMPILE_FROM_XML
-    ov::CompiledModel compiled_model = core.compile_model(model, args.device, device_config);
+    ov::CompiledModel compiled_model = core.compile_model(model, device, device_config);
+    ov::InferRequest ireq = compiled_model.create_infer_request();
 #else
-    ov::CompiledModel compilemodel = core.compile_model(argv[1], argv[4], device_config);
+    ov::CompiledModel compilemodel = core.compile_model(argv[1], device, device_config);
     ov::InferRequest ireq = compilemodel.create_infer_request();
-    auto inputs = compilemodel.inputs();
 #endif
    
     duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Compile LLM model took " << duration_ms << " ms" << std::endl;
    
+#if !COMPILE_FROM_XML
+    auto model_inputs = model->inputs();
+    model = nullptr;
+#else
+    auto model_inputs = compilemodel.inputs();
+    auto inputs = compilemodel.inputs();
+#endif
+
     for (std::string input_text : sentences) {
         total_time = 0;
         count = 0;
@@ -129,16 +144,10 @@ int main(int argc, char* argv[]) try {
         attention_mask = tokenizer.get_tensor("attention_mask");
         std::cout << "input lenghth " << input_ids.get_size() << std::endl;
 
-        for (auto &input : inputs) {
-            for (const std::string& name : input.get_names()) {
-                if (name.rfind("past_key_values", 0) == 0)
-                {
-                    ov::PartialShape shape = input.get_partial_shape().get_min_shape();
-                    shape[1] = BATCH_SIZE;
-                    ireq.get_tensor(input).set_shape(shape.get_shape());
-                    break;
-                }
-            }
+        for (size_t idx = 3; idx < model_inputs.size(); ++idx) {
+            ov::PartialShape shape = model_inputs.at(idx).get_partial_shape().get_min_shape();
+            shape[1] = BATCH_SIZE;
+            ireq.get_input_tensor(idx).set_shape(shape.get_shape());
         }
 
         ireq.get_tensor("input_ids").set_shape(input_ids.get_shape());  // TODO: replace with ireq.set_tensor("input_ids", input_ids); after it's fixed
@@ -167,14 +176,9 @@ int main(int argc, char* argv[]) try {
             ireq.get_tensor("attention_mask").set_shape({ BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1 });
             std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
             ireq.get_tensor("position_ids").data<int64_t>()[0] = ireq.get_tensor("attention_mask").get_size() - 2;
-            for (auto& input : inputs) {
-                for (const std::string& name : input.get_names()) {
-                    if (name.rfind("past_key_values", 0) == 0)
-                    {
-                        ireq.set_tensor(input, ireq.get_tensor("present" + name.substr(15)));
-                        break;
-                    }
-                }
+            
+            for (size_t idx = 3; idx < model_inputs.size(); ++idx) {
+                ireq.set_input_tensor(idx, ireq.get_output_tensor(idx - 2));
             }
 
             ireq.start_async();
