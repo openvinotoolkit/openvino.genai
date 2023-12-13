@@ -54,6 +54,7 @@ def add_stateful_model_arguments(parser: argparse.ArgumentParser):
     parser.add_argument(
         '--stateful',
         action='store_true',
+        default=None,
         help='Replace kv-cache inputs and outputs in the model by internal variables making a stateful model. '
         'Additional operations are inserted into the model to handle cache state (Gathers, ShapeOf, etc.)',
     )

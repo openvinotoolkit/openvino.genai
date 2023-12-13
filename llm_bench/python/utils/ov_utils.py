@@ -149,7 +149,7 @@ def create_text_gen_model(model_path, device, **kwargs):
                 device=device,
                 ov_config=ov_config,
                 config=AutoConfig.from_pretrained(model_path, trust_remote_code=True),
-                stateful=kwargs.get("stateful", False)
+                stateful=kwargs.get("stateful", None)
             )
             end = time.perf_counter()
         else:
@@ -161,7 +161,7 @@ def create_text_gen_model(model_path, device, **kwargs):
                 ov_config=ov_config,
                 config=config,
                 compile=False,
-                stateful=kwargs.get("stateful", False)
+                stateful=kwargs.get("stateful", None)
             )
             if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
                 patch_inter_processing_and_compile(ov_model, **kwargs)
