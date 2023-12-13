@@ -49,7 +49,7 @@ int main(int argc, char* argv[]) try {
     }
     model->reshape(shapes);
     ov::InferRequest ireq = core.compile_model(model, "CPU").create_infer_request();
-    for (size_t idx = 3; idx < inputs.size(); ++idx) {
+    for (size_t idx = 2; idx < inputs.size(); ++idx) {
         ireq.get_input_tensor(idx).set_shape(inputs.at(idx).get_partial_shape().get_min_shape());
     }
     ireq.get_tensor("input_ids").set_shape(input_ids.get_shape());  // TODO: replace with ireq.set_tensor("input_ids", input_ids); after it's fixed
