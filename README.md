@@ -21,8 +21,9 @@ your contribution under these terms.
 
 ## Requirements
 
-Requirements may vary for different samples. See respective readme files for more details.
-To use the pipelines install a [proper OpenVINO version](docs.openvino.ai/install), 
+Requirements may vary for different samples. See respective readme files for more details,
+and make sure to install the OpenVINO version listed there. Refer to documentation to see
+[how to install OpenVINO](docs.openvino.ai/install).
 supporting C++ or Python APIs.
 
 To build the pipelines, including the `user_ov_extensions` submodule, you can use commands
