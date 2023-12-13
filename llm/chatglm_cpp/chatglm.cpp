@@ -52,20 +52,71 @@ int main(int argc, char* argv[]) try {
 	
     ov::Core core;
     core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
+    auto startTime = Time::now();
     ov::InferRequest tokenizer = core.compile_model(argv[2], "CPU").create_infer_request();
     auto input_ids = tokenizer.get_tensor("input_ids");
     auto attention_mask = tokenizer.get_tensor("attention_mask");
     ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
+    auto duration_ms = get_duration_ms_until_now(startTime);
+    std::cout << "Load chatglm tokenizer took " << duration_ms << " ms" << std::endl;
+
     constexpr size_t BATCH_SIZE = 1;
-#if !COMPILE_FROM_XML
-#endif
+	
+    ov::AnyMap device_config = {};
+    if (args.device.find("CPU") != std::string::npos) {
+        device_config[ov::cache_dir.name()] = "llm-cache";
+        device_config[ov::hint::scheduling_core_type.name()] = ov::hint::SchedulingCoreType::PCORE_ONLY;
+        device_config[ov::hint::enable_hyper_threading.name()] = false;
+        device_config[ov::hint::enable_cpu_pinning.name()] = true;
+        device_config[ov::enable_profiling.name()] = false;
+    }
+
+    if (args.device.find("GPU") != std::string::npos) {
+        device_config[ov::cache_dir.name()] = "llm-cache";
+        device_config[ov::intel_gpu::hint::queue_throttle.name()] = ov::intel_gpu::hint::ThrottleLevel::MEDIUM;
+        device_config[ov::intel_gpu::hint::queue_priority.name()] = ov::hint::Priority::MEDIUM;
+        device_config[ov::intel_gpu::hint::host_task_priority.name()] = ov::hint::Priority::HIGH;
+        device_config[ov::hint::enable_cpu_pinning.name()] = true;
+        device_config[ov::enable_profiling.name()] = false;
+    }
+
     double total_time = 0;
     int count = 0;
-    auto startTime = Time::now();
-    ov::CompiledModel compilemodel = core.compile_model(argv[1], argv[4], ov::cache_dir("llm-cache"));
+    
+    // Read OpenVINO Model
+#if !COMPILE_FROM_XML
+    startTime = Time::now()
+    std::shared_ptr<ov::Model> model = core.read_model(args.model_path);
+    duration_ms = get_duration_ms_until_now(startTime);
+    std::cout << "Read chatglm Model took " << duration_ms << " ms" << std::endl;
+#endif
+	
+#if !COMPILE_FROM_XML
+    std::vector<ov::Output<ov::Node>> inputs = model->inputs();
+
+    // Change input past key value and output present key value with FP16
+    ov::preprocess::PrePostProcessor p3(model);
+    for (size_t idx = 3; idx < inputs.size(); ++idx) {
+	    p3.input(idx).tensor().set_element_type(ov::element::f16);
+	    p3.output(idx).tensor().set_element_type(ov::element::f16);
+    }
+
+    model = p3.build();
+    std::string modifiled_file = std::regex_replace(args.model_path, std::regex("openvino_model"), "modified_openvino_model");
+    std::cout << "Save modified model in " << modifiled_file << "\n";
+    ov::serialize(model, modifiled_file);
+#endif
+    //Compile model
+    startTime = Time::now()
+#if !COMPILE_FROM_XML
+    ov::CompiledModel compiled_model = core.compile_model(model, args.device, device_config);
+#else
+    ov::CompiledModel compilemodel = core.compile_model(argv[1], argv[4], device_config);
     ov::InferRequest ireq = compilemodel.create_infer_request();
     auto inputs = compilemodel.inputs();
-    auto duration_ms = get_duration_ms_until_now(startTime);
+#endif
+   
+    duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Compile LLM model took " << duration_ms << " ms" << std::endl;
    
     for (std::string input_text : sentences) {
