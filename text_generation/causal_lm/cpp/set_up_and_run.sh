@@ -23,4 +23,4 @@ cmake --build ./build/ --config Release -j
 wait
 
 python ./convert_tokenizers.py ./open_llama_3b_v2/
-./build/causal_lm ./open_llama_3b_v2/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"
+./build/causal_lm ./open_llama_3b_v2/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "return 0"
