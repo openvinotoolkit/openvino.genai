@@ -49,7 +49,7 @@ from utils.nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION, get_
 from utils.model_utils import add_stateful_model_arguments
 from optimum.exporters.openvino.utils import flattenize_inputs
 from utils.conversion_utils.convert_patch import patch_model_for_optimum_export
-from utils.conversion_utils.better_transformer_patch import patch_model_with_bettertransformer
+from utils.conversion_utils.better_transformer_patch import register_bettertransformer_config
 
 
 class BackendType(Enum):
@@ -177,8 +177,8 @@ def convert_optimum_causallm_base(model, args):
     )
     if "decoder_with_past_model" in models_and_onnx_configs:
         models_and_onnx_configs = {"model": models_and_onnx_configs["decoder_with_past_model"]}
-    if args.bettertransformer:
-        models_and_onnx_configs["model"] = (patch_model_with_bettertransformer(*models_and_onnx_configs["model"]), models_and_onnx_configs["model"][1])
+    if args.make_stateful:
+        register_bettertransformer_config()
     ov_out_dir = Path(args.output_dir) / 'pytorch/dldt' / precision
     model.config.save_pretrained(ov_out_dir)
     files_subpaths = ["openvino_" + model_name + ".xml" for model_name in models_and_onnx_configs.keys()]
@@ -1475,8 +1475,6 @@ def main():
     parser.add_argument('--output_dir', required=True)
     parser.add_argument('--save_orig', action='store_true')
     parser.add_argument('--precision', choices=['FP32', 'FP16'], default='FP32')
-    parser.add_argument('--bettertransformer', action='store_true',
-                        help='Apply bettertransformer to enable ScaledDotProductAttention operation for a part of the models')
     add_stateful_model_arguments(parser)
 
     compression_group = parser.add_argument_group('Weights compression parameters')
