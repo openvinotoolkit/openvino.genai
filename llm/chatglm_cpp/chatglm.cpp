@@ -57,7 +57,8 @@ int main(int argc, char* argv[]) try {
     auto attention_mask = tokenizer.get_tensor("attention_mask");
     ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
     constexpr size_t BATCH_SIZE = 1;
-
+#if !COMPILE_FROM_XML
+#endif
     double total_time = 0;
     int count = 0;
     auto startTime = Time::now();
