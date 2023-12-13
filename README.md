@@ -1,9 +1,3 @@
-<!---
-- [Repository Description](#repository-description))
-   - [Pipeline Samples](#pipeline-samples)
-   - [License](#license)
-- [Requirements](#requirements)
--->
 ## GenAI Pipeline Repository
 
 
