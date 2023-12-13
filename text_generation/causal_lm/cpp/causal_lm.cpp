@@ -39,10 +39,13 @@ int main(int argc, char* argv[]) try {
         }},
         {1, ov::PartialShape{
             BATCH_SIZE, -1
+        }},
+        {2, ov::PartialShape{
+	    BATCH_SIZE, -1
         }}
     };
     std::vector<ov::Output<ov::Node>> inputs = model->inputs();
-    for (size_t idx = 2; idx < inputs.size(); ++idx) {
+    for (size_t idx = 3; idx < inputs.size(); ++idx) {
         ov::PartialShape shape = inputs.at(idx).get_partial_shape();
         shape[0] = BATCH_SIZE;
         shapes.emplace(idx, shape);
@@ -56,18 +59,23 @@ int main(int argc, char* argv[]) try {
     std::copy_n(input_ids.data<const int64_t>(), input_ids.get_size(), ireq.get_tensor("input_ids").data<int64_t>());
     ireq.get_tensor("attention_mask").set_shape(attention_mask.get_shape());
     std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), attention_mask.get_size(), 1);
+    ireq.get_tensor("position_ids").set_shape(input_ids.get_shape());
+    std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
     ireq.infer();
     size_t vocab_size = ireq.get_tensor("logits").get_shape().back();
     float* logits = ireq.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
     int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
+
     ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
+    ireq.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
     constexpr int64_t SPECIAL_EOS_TOKEN = 2;  // There's no way to extract the value from the detokenizer for now
     while (out_token != SPECIAL_EOS_TOKEN) {
         ireq.get_tensor("input_ids").data<int64_t>()[0] = out_token;
         ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1});
         std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
-        for (size_t idx = 2; idx < inputs.size(); ++idx) {
-            ireq.set_input_tensor(idx, ireq.get_output_tensor(idx - 1));
+        ireq.get_tensor("position_ids").data<int64_t>()[0] = ireq.get_tensor("attention_mask").get_size() - 2;
+        for (size_t idx = 3; idx < inputs.size(); ++idx) {
+            ireq.set_input_tensor(idx, ireq.get_output_tensor(idx - 2));
         }
         ireq.start_async();
         print_token(detokenizer, out_token);
