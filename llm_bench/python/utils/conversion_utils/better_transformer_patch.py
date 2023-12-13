@@ -6,7 +6,6 @@ import math
 import torch
 from torch import nn
 from typing import Optional, Tuple
-import types
 from transformers import PretrainedConfig
 from .convert_patch import _make_causal_mask, _expand_mask
 
