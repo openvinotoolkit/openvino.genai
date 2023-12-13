@@ -57,7 +57,7 @@ Download and put safetensors and model IR into the models folder.
 
 #### Tokenizer model:
 3 steps for OpenVINO extension for tokenizer:
-  1. The `convert_sd_tokenizer.py` script in the scripts folder can serialize the tokenizer model IR
+  1. `convert_sd_tokenizer.py` in the scripts folder can serialize the tokenizer model IR
   2. Build OV extension:
       ```git clone https://github.com/apaniukov/openvino_contrib/  -b tokenizer-fix-decode```
       Refer to this PR with [custom extension](https://github.com/openvinotoolkit/openvino_contrib/pull/687) for OpenVINO (still an experimental feature).
