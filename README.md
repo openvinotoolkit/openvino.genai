@@ -25,6 +25,3 @@ Requirements may vary for different samples. See respective readme files for mor
 and make sure to install the OpenVINO version listed there. Refer to documentation to see
 [how to install OpenVINO](docs.openvino.ai/install).
 
-To enable non ASCII characters for Windows cmd open `Region` settings from `Control panel`.
-`Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`.
-Reboot for the change to take effect.
