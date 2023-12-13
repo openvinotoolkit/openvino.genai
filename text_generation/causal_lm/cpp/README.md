@@ -47,7 +47,9 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 ```sh
 source <INSTALL_DIR>/setupvars.sh
 python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-optimum-cli export openvino -m meta-llama/Llama-2-7b-hf ./Llama-2-7b-hf/
+python -m pip uninstall --yes optimum-intel
+python -m pip install git+https://github.com/slyalin/optimum-intel.git@stateful
+python ../../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --stateful --bettertransformer --output_dir ./Llama-2-7b-hf/  # switch to https://github.com/openvinotoolkit/openvino.genai/pull/52 before running this line. And switch back after
 python ./convert_tokenizers.py ./Llama-2-7b-hf/
 ```
 
