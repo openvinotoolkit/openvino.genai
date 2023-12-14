@@ -1,10 +1,27 @@
-GenAI contains pipelines that implement image and text generation tasks. The implementation exploits OpenVINO capabilities to optimize the pipelines. Each sample covers a family of models and suggests that its implementation can be modified to adapt for a specific need.
+## GenAI Pipeline Repository
 
-> [!NOTE]
-> This project is not for production use.
 
-The project includes the following pipelines:
+The GenAI repository contains pipelines that implement image and text generation tasks.
+The implementation uses OpenVINO capabilities to optimize the pipelines. Each sample covers
+a family of models and suggests certain modifications to adapt the code to specific needs.
+It includes the following pipelines:
 
 1. [Benchmarking script for large language models](./llm_bench/python/)
 2. [Casual LM](./text_generation/casual_lm/cpp/)
 3. [OpenVINO Stable Diffuison (with LoRA) C++ pipeline](./image_generation/stable_diffusion_1_5/cpp/)
+
+> [!NOTE]
+> This project is not for production use.
+
+### License
+
+The GenAI repository is licensed under [Apache License Version 2.0](LICENSE).
+By contributing to the project, you agree to the license and copyright terms therein and release
+your contribution under these terms.
+
+## Requirements
+
+Requirements may vary for different samples. See respective readme files for more details,
+and make sure to install the OpenVINO version listed there. Refer to documentation to see
+[how to install OpenVINO](docs.openvino.ai/install).
+
