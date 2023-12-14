@@ -47,11 +47,9 @@ static double get_duration_ms_until_now(Time::time_point& startTime) {
 
 }
 
-#define COMPILE_FROM_XML 1
-
 int main(int argc, char* argv[]) try {
-    if (argc != 5) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> '<device>' ");
+    if (argc != 6) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> '<device>' '<convert_kv_fp16>' ");
     }
 	
     std::cout << ov::get_openvino_version() << std::endl;
@@ -67,6 +65,15 @@ int main(int argc, char* argv[]) try {
     std::cout << "Load chatglm tokenizer took " << duration_ms << " ms" << std::endl;
     std::string device = argv[4];
     constexpr size_t BATCH_SIZE = 1;
+    std::string convert_kv_fp16 = "convert_kv_fp16";
+    size_t convert_model;
+
+    if (convert_kv_fp16.compare(argv[5]) == 0){
+        convert_model = 1;
+    }
+    else {
+        convert_model = 0;
+    }
 	
     ov::AnyMap device_config = {};
     if (device.find("CPU") != std::string::npos) {
@@ -90,49 +97,40 @@ int main(int argc, char* argv[]) try {
     int count = 0;
     
     // Read OpenVINO Model
-#if !COMPILE_FROM_XML
-    startTime = Time::now();
-    std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
-    duration_ms = get_duration_ms_until_now(startTime);
-    std::cout << "Read chatglm Model took " << duration_ms << " ms" << std::endl;
-#endif
-	
-#if !COMPILE_FROM_XML
-    std::vector<ov::Output<ov::Node>> inputs = model->inputs();
+    if (1 == convert_model) {
+        startTime = Time::now();
+        std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
+        duration_ms = get_duration_ms_until_now(startTime);
+        std::cout << "Read chatglm Model took " << duration_ms << " ms" << std::endl;
 
-    // Change input past key value and output present key value with FP16
-    ov::preprocess::PrePostProcessor p3(model);
-    for (size_t idx = 3; idx < inputs.size(); ++idx) {
-	    p3.input(idx).tensor().set_element_type(ov::element::f16);
-	    p3.output(idx - 2).tensor().set_element_type(ov::element::f16);
+        std::vector<ov::Output<ov::Node>> inputs = model->inputs();
+
+        // Change input past key value and output present key value with FP16
+        ov::preprocess::PrePostProcessor p3(model);
+        for (size_t idx = 3; idx < inputs.size(); ++idx) {
+            p3.input(idx).tensor().set_element_type(ov::element::f16);
+            p3.output(idx - 2).tensor().set_element_type(ov::element::f16);
+        }
+
+        model = p3.build();
+        std::string modifiled_file = std::regex_replace(argv[1], std::regex("openvino_model"), "modified_openvino_model");
+        std::cout << "Save modified model in " << modifiled_file << "\n";
+        ov::serialize(model, modifiled_file);
+
+        ov::CompiledModel compilemodel = core.compile_model(modifiled_file, device, device_config);
+
+        return 0;
     }
-
-    model = p3.build();
-    std::string modifiled_file = std::regex_replace(argv[1], std::regex("openvino_model"), "modified_openvino_model");
-    std::cout << "Save modified model in " << modifiled_file << "\n";
-    ov::serialize(model, modifiled_file);
-#endif
 
     //Compile model
     startTime = Time::now();
-#if !COMPILE_FROM_XML
-    ov::CompiledModel compiled_model = core.compile_model(model, device, device_config);
-    ov::InferRequest ireq = compiled_model.create_infer_request();
-#else
     ov::CompiledModel compilemodel = core.compile_model(argv[1], device, device_config);
     ov::InferRequest ireq = compilemodel.create_infer_request();
-#endif
-   
     duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Compile LLM model took " << duration_ms << " ms" << std::endl;
-   
-#if !COMPILE_FROM_XML
-    auto model_inputs = model->inputs();
-    model = nullptr;
-#else
+ 
     auto model_inputs = compilemodel.inputs();
     auto inputs = compilemodel.inputs();
-#endif
 
     for (std::string input_text : sentences) {
         total_time = 0;
