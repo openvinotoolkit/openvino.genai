@@ -253,7 +253,7 @@ def build_ov_tokenizer(hf_tokenizer):
 
     def encode_ov_tokenizer(self, text, *args, **kwargs):
         results = encode_ov_tokenizer_full(self, text, *args, **kwargs)
-        return results["input_ids"]
+        return results["input_ids"].squeeze(0).tolist()
 
     def batch_decode_ov_tokenizer(self, sequences, *args, **kwargs):
         result = unpack_strings(ov_compiled_detokenizer(sequences)["string_output"])
