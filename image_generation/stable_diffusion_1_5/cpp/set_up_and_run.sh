@@ -21,11 +21,12 @@ source ./openvino/setupvars.sh
 # download extra dependencies
 sudo -E apt install libeigen3-dev -y
 
-# convert model and tokenizer
+# download / convert model and tokenizer
 cd scripts
 python -m pip install -U pip
 python -m pip install -r ./requirements.txt
-python convert_model.py -sd ../runwayml/stable-diffusion-v1-5 -b 1 -t FP16 -dyn True
+huggingface-cli download --resume-download --local-dir-use-symlinks False dreamlike-art/dreamlike-anime1.0 --local-dir ../models
+python convert_model.py -sd ../dreamlike-art/dreamlike-anime1.0 -b 1 -t FP16 -dyn True
 cd ..
 
 # build app
@@ -34,4 +35,4 @@ cmake --build ./build/ --config Release --parallel
 
 # run app
 cd build
-./SD-generate -m ../runwayml/stable-diffusion-v1-5 -t FP16_dyn
+./SD-generate -m ../dreamlike-art/dreamlike-anime1.0 -t FP16_dyn
