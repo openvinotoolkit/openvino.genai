@@ -2,3 +2,4 @@
 torch
 diffusers
 optimum-intel[nncf,openvino]
+huggingface_hub[cli]
