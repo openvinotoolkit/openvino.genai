@@ -110,10 +110,10 @@ def get_use_case(model_name_or_path):
 
     if config is not None:
         for case, model_ids in USE_CASES.items():
-            for model_id in model_ids:
+            for idx, model_id in enumerate(normalize_model_ids(model_ids)):
                 if config.get("model_type").lower().replace('_', '-').startswith(model_id):
                     log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_id}')
-                    return case, model_id
+                    return case, model_ids[idx]
 
     raise RuntimeError('==Failure FOUND==: no use_case found')
 
@@ -138,6 +138,10 @@ def get_model_type(model_name, use_case, model_framework):
             if cls in model_name.lower():
                 return cls
     return default_model_type
+
+
+def normalize_model_ids(model_ids_list):
+    return [m_id[:-1] if m_id.ends_with('_') else m_id for m_id in model_ids_list]
 
 
 def get_ir_conversion_frontend(cur_model_name, model_name_list):
