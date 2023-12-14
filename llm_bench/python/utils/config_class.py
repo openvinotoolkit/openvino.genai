@@ -11,7 +11,7 @@ from optimum.intel.openvino import (
     OVLatentConsistencyModelPipeline,
     OVStableDiffusionXLPipeline
 )
-from utils.ov_model_classes import OVMPTModel, OVFalconModel, OVLDMSuperResolutionPipeline, OVChatGLMModel, OVChatGLM2Model, OVQwenModel, OVMistralModel
+from utils.ov_model_classes import OVMPTModel, OVFalconModel, OVLDMSuperResolutionPipeline, OVChatGLMModel, OVChatGLM2Model, OVQwenModel
 
 TOKENIZE_CLASSES_MAPPING = {
     'decoder': AutoTokenizer,
@@ -42,9 +42,6 @@ OV_MODEL_CLASSES_MAPPING = {
     'chatglm3': OVChatGLM2Model,
     'chatglm': OVChatGLMModel,
     'qwen': OVQwenModel,
-    'mistral': OVMistralModel,
-    'zephyr': OVMistralModel,
-    'yi': OVMistralModel,
 }
 
 PT_MODEL_CLASSES_MAPPING = {
