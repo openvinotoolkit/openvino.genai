@@ -51,6 +51,7 @@ def gen_iterate_data(
     max_rss_mem='',
     max_shared_mem='',
     prompt_idx='',
+    tokenization_time=[],
 ):
     iter_data = {}
     iter_data['iteration'] = iter_idx
@@ -67,6 +68,8 @@ def gen_iterate_data(
     iter_data['max_rss_mem_consumption'] = max_rss_mem
     iter_data['max_shared_mem_consumption'] = max_shared_mem
     iter_data['prompt_idx'] = prompt_idx
+    iter_data['tokenization_time'] = tokenization_time[0] if len(tokenization_time) > 0 else ''
+    iter_data['detokenization_time'] = tokenization_time[1] if len(tokenization_time) > 1 else ''
     return iter_data
 
 
@@ -134,6 +137,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         prompt_idx=prompt_index,
+        tokenization_time=(tok_encode_time, tok_decode_time)
     )
     iter_data_list.append(iter_data)
     tm_list = bench_hook.get_time_list()
