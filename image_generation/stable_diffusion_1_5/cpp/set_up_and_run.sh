@@ -13,19 +13,25 @@ abs_path() {
 cd "`abs_path`"
 
 # initialize OpenVINO
-mkdir ./ov/
-curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.2/linux/l_openvino_toolkit_ubuntu20_2023.2.0.13089.cfd42bd2cb0_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
-sudo -E  ./ov/install_dependencies/install_openvino_dependencies.sh
-source ./ov/setupvars.sh
+mkdir ./openvino
+curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.2/linux/l_openvino_toolkit_ubuntu20_2023.2.0.13089.cfd42bd2cb0_x86_64.tgz | tar --directory ./openvino/ --strip-components 1 -xz
+sudo -E ./openvino/install_dependencies/install_openvino_dependencies.sh
+source ./openvino/setupvars.sh
 
 # download extra dependencies
 sudo -E apt install libeigen3-dev -y
 
-# convert model and build SD application
-python -m pip install -r ./scripts/requirements.txt && python -m convert_model.py -sd runwayml/stable-diffusion-v1-5 -b 1 -t FP16 -dyn True &
+# convert model and tokenizer
+cd scripts
+python -m pip install -U pip
+python -m pip install -r ./requirements.txt
+python convert_model.py -sd runwayml/stable-diffusion-v1-5 -b 1 -t FP16 -dyn True
+cd ..
+
+# build app
 cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
 cmake --build ./build/ --config Release --parallel
-wait
 
 # run app
-./build/SD-generate -m runwayml/stable-diffusion-v1-5 -t FP16_dyn
+cd build
+./SD-generate -m runwayml/stable-diffusion-v1-5 -t FP16_dyn
