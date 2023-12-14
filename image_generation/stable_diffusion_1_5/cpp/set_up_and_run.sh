@@ -21,11 +21,10 @@ source ./openvino/setupvars.sh
 # download extra dependencies
 sudo -E apt install libeigen3-dev -y
 
-# download / convert model and tokenizer
+# download / convert a model
 cd scripts
 python -m pip install -U pip
 python -m pip install -r ./requirements.txt
-# python -m pip install ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers]
 python convert_model.py -sd runwayml/stable-diffusion-v1-5 -b 1 -t FP16 -dyn True
 cd ..
 
