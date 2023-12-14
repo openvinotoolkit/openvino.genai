@@ -12,13 +12,20 @@ abs_path() {
 }
 cd "`abs_path`"
 
+# initialize OpenVINO
 mkdir ./ov/
 curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.2/linux/l_openvino_toolkit_ubuntu20_2023.2.0.13089.cfd42bd2cb0_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
-sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+sudo -E  ./ov/install_dependencies/install_openvino_dependencies.sh
 source ./ov/setupvars.sh
+
+# download extra dependencies
+sudo -E apt install libeigen3-dev -y
+
+# convert model and build SD application
 python -m pip install -r ./scripts/requirements.txt && python -m convert_model.py -sd runwayml/stable-diffusion-v1-5 -b 1 -t FP16 -dyn True &
 cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-cmake --build ./build/ --config Release -j
+cmake --build ./build/ --config Release --parallel
 wait
 
+# run app
 ./build/SD-generate -m runwayml/stable-diffusion-v1-5 -t FP16_dyn
