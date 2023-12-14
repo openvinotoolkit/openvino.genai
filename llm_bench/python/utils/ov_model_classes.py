@@ -324,67 +324,6 @@ class OVChatGLM2Model(OVModelForCausalLM):
         model.reshape(shapes)
         return model
 
-    def forward(
-        self,
-        input_ids: torch.LongTensor,
-        attention_mask: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        **kwargs,
-    ) -> CausalLMOutputWithPast:
-        self.compile()
-
-        if self.use_cache and past_key_values is not None:
-            input_ids = input_ids[:, -1:]
-
-        inputs = {}
-        if past_key_values is not None:
-            if self._pkv_precision == Type.bf16:
-                # numpy does not support bf16, pretending f16, should change to bf16
-                past_key_values = tuple(
-                    Tensor(past_key_value, past_key_value.shape, Type.bf16) for pkv_per_layer in past_key_values for past_key_value in pkv_per_layer
-                )
-            else:
-                # Flatten the past_key_values
-                past_key_values = tuple(past_key_value for pkv_per_layer in past_key_values for past_key_value in pkv_per_layer)
-            # Add the past_key_values to the decoder inputs
-            inputs = dict(zip(self.key_value_input_names, past_key_values))
-
-        # Create empty past_key_values for decoder_with_past first generation step
-        elif self.use_cache:
-            for input_name in self.key_value_input_names:
-                model_inputs = self.model.input(input_name)
-                shape = model_inputs.get_partial_shape()
-                shape[0] = 0
-                if shape[1].is_dynamic:
-                    shape[1] = 1
-                inputs[input_name] = Tensor(model_inputs.get_element_type(), shape.get_shape())
-
-        inputs['input_ids'] = np.array(input_ids)
-
-        if 'position_ids' in self.input_names and position_ids is not None:
-            inputs['position_ids'] = np.array(position_ids)
-
-        # Add the attention_mask inputs when needed
-        if 'attention_mask' in self.input_names and attention_mask is not None:
-            inputs['attention_mask'] = np.array(attention_mask)
-
-        # Run inference
-        self.request.start_async(inputs, shared_memory=True)
-        self.request.wait()
-
-        logits = torch.from_numpy(self.request.get_tensor('logits').data).to(self.device)
-
-        if self.use_cache:
-            # Tuple of length equal to : number of layer * number of past_key_value per decoder layer (2 corresponds to the self-attention layer)
-            past_key_values = tuple(self.request.get_tensor(key).data for key in self.key_value_output_names)
-            # Tuple of tuple of length `n_layers`, with each tuple of length equal to 2 (k/v of self-attention)
-            past_key_values = tuple(past_key_values[i : i + self.num_pkv] for i in range(0, len(past_key_values), self.num_pkv))
-        else:
-            past_key_values = None
-
-        return CausalLMOutputWithPast(logits=logits, past_key_values=past_key_values)
-
     def get_position_ids(self, input_ids, device):
         batch_size, seq_length = input_ids.shape
         position_ids = torch.arange(seq_length, dtype=torch.long, device=device).unsqueeze(0).repeat(batch_size, 1)
