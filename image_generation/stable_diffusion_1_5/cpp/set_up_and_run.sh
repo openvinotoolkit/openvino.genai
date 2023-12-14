@@ -25,7 +25,7 @@ sudo -E apt install libeigen3-dev -y
 cd scripts
 python -m pip install -U pip
 python -m pip install -r ./requirements.txt
-python -m pip install ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers]
+# python -m pip install ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers]
 optimum-cli export openvino -m dreamlike-art/dreamlike-anime1.0 ../models/dreamlike-anime-1.0
 python convert_model.py -sd ../models/dreamlike-anime-1.0 -b 1 -t FP16 -dyn True
 cd ..
