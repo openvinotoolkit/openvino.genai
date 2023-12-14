@@ -35,4 +35,4 @@ cmake --build ./build/ --config Release --parallel
 
 # run app
 cd build
-./SD-generate -m scripts/runwayml/stable-diffusion-v1-5 -t FP16_dyn
+./SD-generate -m ../scripts/runwayml/stable-diffusion-v1-5 -t FP16_dyn
