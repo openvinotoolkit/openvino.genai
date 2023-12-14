@@ -1,22 +1,26 @@
 # Benchmarking script for large language models
 
-This script provides unified approach to estimate performance for LLM. It is based on pipelines provided by Optimum-Intel and allows to estimate performance for pytorch and openvino models using almost the same code and precollected models.
+This script provides a unified approach to estimate performance for Large Language Models.
+It is based on pipelines provided by Optimum-Intel and allows to estimate performance for
+pytorch and openvino models, using almost the same code and precollected models.
 
-## Usage
-(1) Need to start the virtual environment of python
+## Usage 
+
+### 1. Start a Python virtual environment
+   
 ``` bash
 python3 -m venv python-env
 source python-env/bin/activate
 pip install update --upgrade
 pip install -r requirements.txt
 ```
-(2) Convert model to IRs
-## Conversion script for preparing benchmarking models
-
-`convert.py` allow to reproduce IRs stored on shared drive.
+### 2. Convert a model to OpenVINO IR
+   
+The conversion script for preparing benchmarking models,
+`convert.py` allows to reproduce IRs stored on shared drive.
 
 Prerequisites:
-install conversion dependencies using requirements.txt
+install conversion dependencies using `requirements.txt`
 
 Usage:
 
@@ -39,7 +43,7 @@ Usage example:
 python convert.py --model_id meta-llama/Llama-2-7b-chat-hf --output_dir models/llama-2-7b-chat
 ```
 
-the result of running command will have following file structure:
+the result of running the command will have the following file structure:
 
     |-llama-2-7b-chat
       |-pytorch
@@ -54,20 +58,21 @@ the result of running command will have following file structure:
               |-tokenizer.model
               |-special_tokens_map.json
 
-(3) Bechmarking
+### 3. Bechmarking
+
 Prerequisites:
-install benchmarking dependencies using requirements.txt
+install benchmarking dependencies using `requirements.txt`
 
 ``` bash
 pip install -r requirements.txt
 ```
-notes: **You can specify the installed openvino version through pip install**
+note: **You can specify the installed openvino version through pip install**
 ``` bash
 # e.g. 
 pip install openvino==2023.2.0
 ```
 
-(4) Run the following command to test the performance of one LLM model
+### 4. Run the following command to test the performance of one LLM model
 ``` bash
 python benchmark.py -m <model> -d <device> -r <report_csv> -f <framework> -p <prompt text> -n <num_iters>
 # e.g.
@@ -90,7 +95,8 @@ python ./benchmark.py -h # for more information
 
 ## Running `torch.compile()`
 
-The option `--torch_compile_backend` uses `torch.compile()` to speed up the PyTorch code by compiling it into optimized kernels using a selected backend.
+The option `--torch_compile_backend` uses `torch.compile()` to speed up
+the PyTorch code by compiling it into optimized kernels using a selected backend.
 
 Prerequisites: install benchmarking dependencies using requirements.txt
 
@@ -110,5 +116,5 @@ Add the option `--torch_compile_backend` with the desired backend: `pytorch` or 
 python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino
 ```
 
-# Notes
-If you encounter `AttributeError`, please check **[NOTES.md](./NOTES.md)** which provides solutions to the known errors.
+> [!NOTE]
+> If you encounter `AttributeError`, please check **[NOTES.md](./NOTES.md)** which provides solutions to the known errors.

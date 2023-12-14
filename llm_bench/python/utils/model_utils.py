@@ -66,17 +66,12 @@ def analyze_args(args):
     model_args['torch_compile_backend'] = args.torch_compile_backend
     model_args['convert_tokenizer'] = args.convert_tokenizer
 
-    model_path = args.model
     model_framework = args.framework
-    path = os.path.normpath(model_path)
-    model_names = path.split(os.sep)
-    model_path = Path(model_path)
+    model_path = Path(args.model)
     if not model_path.exists():
         raise RuntimeError(f'==Failure FOUND==: Incorrect model path:{model_path}')
-    if model_framework == 'ov':
-        use_case, model_name = get_use_case(model_names)
-    elif model_framework == 'pt':
-        use_case, model_name = get_use_case(model_names)
+    if model_framework in ('ov', 'pt'):
+        use_case, model_name = get_use_case(args.model)
     model_args['use_case'] = use_case
     if use_case == 'code_gen' and not model_args['prompt'] and not model_args['prompt_file']:
         model_args['prompt'] = 'def print_hello_world():'
@@ -95,13 +90,31 @@ def analyze_args(args):
     return model_path, model_framework, model_args, model_name
 
 
-def get_use_case(model_name_list):
-    for model_name in reversed(model_name_list):
+def get_use_case(model_name_or_path):
+    # 1. try to get use_case from model name
+    path = os.path.normpath(model_name_or_path)
+    model_names = path.split(os.sep)
+    for model_name in reversed(model_names):
         for case, model_ids in USE_CASES.items():
             for model_id in model_ids:
                 if model_name.lower().startswith(model_id):
-                    log.info(f'==SUCCESS FOUND==: use_case: {case}, model_name: {model_name}')
+                    log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_name}')
                     return case, model_name
+
+    # 2. try to get use_case from model config
+    try:
+        config_file = Path(model_name_or_path) / "config.json"
+        config = json.loads(config_file.read_text())
+    except Exception:
+        config = None
+
+    if config is not None:
+        for case, model_ids in USE_CASES.items():
+            for model_id in model_ids:
+                if config.get("model_type").lower().replace('_', '-').startswith(model_id):
+                    log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_id}')
+                    return case, model_id
+
     raise RuntimeError('==Failure FOUND==: no use_case found')
 
 
