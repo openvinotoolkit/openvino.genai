@@ -67,11 +67,11 @@ For Linux
 
 Convert KV cache to FP16: `chatglm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device" "convert_kv_fp16"`
 
-Example: `./build/llm/chatglm_cpp/chatglm ./chatglm3-6b/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "CPU" "convert_kv_fp16"`
+Example: `./build/llm/chatglm_cpp/chatglm ./chatglm3-6b/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "OCL_GPU" "convert_kv_fp16"`
 
 Usage: `chatglm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device" "disable_convert_kv_fp16"`
 
-Example: `./build/llm/chatglm_cpp/chatglm ./chatglm3-6b/modified_openvino_model.xml ./tokenizer.xml ./detokenizer.xml "CPU" "disable_convert_kv_fp16"`
+Example: `./build/llm/chatglm_cpp/chatglm ./chatglm3-6b/modified_openvino_model.xml ./tokenizer.xml ./detokenizer.xml "OCL_GPU" "disable_convert_kv_fp16"`
 
 For Windows
 
@@ -85,11 +85,11 @@ $copy build\_deps\fast_tokenizer-src\lib\core_tokenizers.dll build\llm\chatglm_c
 ```
 Convert KV cache to FP16: `chatglm.exe <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device" "convert_kv_fp16"`
 
-Example: `build\llm\chatglm_cpp\Release\chatglm.exe .\chatglm3-6b\openvino_model.xml .\tokenizer.xml .\detokenizer.xml "CPU"`
+Example: `build\llm\chatglm_cpp\Release\chatglm.exe .\chatglm3-6b\openvino_model.xml .\tokenizer.xml .\detokenizer.xml "OCL_GPU" "convert_kv_fp16"`
 
 Usage: `chatglm.exe <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device"`
 
-Example: `build\llm\chatglm_cpp\Release\chatglm.exe .\chatglm3-6b\modified_openvino_model.xml .\tokenizer.xml .\detokenizer.xml "CPU" "disable_convert_kv_fp16"`
+Example: `build\llm\chatglm_cpp\Release\chatglm.exe .\chatglm3-6b\modified_openvino_model.xml .\tokenizer.xml .\detokenizer.xml "OCL_GPU" "disable_convert_kv_fp16"`
 
 To enable non ASCII characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
 
