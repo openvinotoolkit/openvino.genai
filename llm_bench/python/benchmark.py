@@ -429,22 +429,11 @@ def get_argprser():
         help='Add decoding postprocessing for next token selection to the model as an extra ops. Original hf_model.generate function will be patched.',
     )
     parser.add_argument(
-        '--make_stateful',
-        action='store_true',
-        help='Replace kv-cache inputs and outputs in the model by internal variables making a stateful model.'
-        'Original hf_model.forward function will be patched.',
-    )
-    parser.add_argument(
         '--save_prepared_model',
         default=None,
         help='Path to .xml file to save IR used for inference with all pre-/post processing included',
     )
     parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
-    parser.add_argument(
-        '--fuse_cache_reorder',
-        action='store_true',
-        help='Fuse ops related to cache reordering to the model, applied only when num_beams > 1',
-    )
     parser.add_argument(
         '--torch_compile_backend',
         default='openvino',
@@ -454,6 +443,7 @@ def get_argprser():
     parser.add_argument(
         '--convert_tokenizer', action='store_true', help='Convert tokenizer to OpenVINO format'
     )
+    utils.model_utils.add_stateful_model_arguments(parser)
 
     return parser.parse_args()
 
