@@ -46,8 +46,10 @@ except ImportError:
 
 from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoModel
 from utils.nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION, get_compressed_path
+from utils.model_utils import add_stateful_model_arguments
+from optimum.exporters.openvino.utils import flattenize_inputs
 from utils.conversion_utils.convert_patch import patch_model_for_optimum_export
-from utils.conversion_utils.better_transformer_patch import patch_model_with_bettertransformer
+from utils.conversion_utils.better_transformer_patch import register_bettertransformer_config
 
 
 class BackendType(Enum):
@@ -175,8 +177,8 @@ def convert_optimum_causallm_base(model, args):
     )
     if "decoder_with_past_model" in models_and_onnx_configs:
         models_and_onnx_configs = {"model": models_and_onnx_configs["decoder_with_past_model"]}
-    if args.bettertransformer:
-        models_and_onnx_configs["model"] = (patch_model_with_bettertransformer(*models_and_onnx_configs["model"]), models_and_onnx_configs["model"][1])
+    if args.stateful:
+        register_bettertransformer_config()
     ov_out_dir = Path(args.output_dir) / 'pytorch/dldt' / precision
     model.config.save_pretrained(ov_out_dir)
     files_subpaths = ["openvino_" + model_name + ".xml" for model_name in models_and_onnx_configs.keys()]
@@ -189,6 +191,7 @@ def convert_optimum_causallm_base(model, args):
         fp16=args.precision == "FP16",
         int8=False,
         model_kwargs={},
+        stateful=args.stateful
     )
     save_tokenizer(tok, ov_out_dir)
     if args.compress_weights and BackendType.OPENVINO.value in args.compress_weights_backends and not gptq_applied:
@@ -224,6 +227,7 @@ def convert_optimum_causallm_base(model, args):
             fp16=args.precision == "FP16",
             int8=False,
             model_kwargs={},
+            stateful=args.stateful
         )
         save_tokenizer(tok, pt_out_dir)
     return
@@ -1037,18 +1041,6 @@ def convert_chatglm(args):
             compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, compress_option, args)
 
 
-def flattenize_inputs(inputs):
-    flatten_inputs = []
-    for input_data in inputs:
-        if input_data is None:
-            continue
-        if isinstance(input_data, (list, tuple)):
-            flatten_inputs.extend(flattenize_inputs(input_data))
-        else:
-            flatten_inputs.append(input_data)
-    return flatten_inputs
-
-
 def convert_falcon(args):
     def convert_to_ov(pt_model, tok, out_path, compress_to_fp16=False):
         outs = pt_model(input_ids=torch.ones((1, 10), dtype=torch.long))
@@ -1483,8 +1475,7 @@ def main():
     parser.add_argument('--output_dir', required=True)
     parser.add_argument('--save_orig', action='store_true')
     parser.add_argument('--precision', choices=['FP32', 'FP16'], default='FP32')
-    parser.add_argument('--bettertransformer', action='store_true',
-                        help='Apply bettertransformer to enable ScaledDotProductAttention operation for a part of the models')
+    add_stateful_model_arguments(parser)
 
     compression_group = parser.add_argument_group('Weights compression parameters')
     compression_group.add_argument(

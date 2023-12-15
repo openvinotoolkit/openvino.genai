@@ -1,16 +1,16 @@
-name: casual_lm_cpp
+name: causal_lm_cpp
 on:
   pull_request:
     paths:
-      - text_generation/casual_lm/cpp/**
-      - '!text_generation/casual_lm/cpp/README.md'
+      - text_generation/causal_lm/cpp/**
+      - '!text_generation/causal_lm/cpp/README.md'
       - thirdparty/openvino_contrib
-      - .github/workflows/casual_lm_cpp.yml
+      - .github/workflows/causal_lm_cpp.yml
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  casual_lm_cpp:
+  causal_lm_cpp:
     runs-on: ubuntu-20.04-8-cores
     steps:
       - uses: actions/checkout@v4
@@ -19,4 +19,4 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: ./text_generation/casual_lm/cpp/set_up_and_run.sh
+      - run: ./text_generation/causal_lm/cpp/set_up_and_run.sh
