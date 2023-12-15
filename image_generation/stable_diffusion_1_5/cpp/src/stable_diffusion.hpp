@@ -349,7 +349,7 @@ void convertBGRtoRGB(std::vector<unsigned char>& image, int width, int height) {
     }
 }
 
-std::vector<float> diffusion_function(ov::CompiledModel& unet_compiled_model,
+std::vector<float> diffusion_function(ov::CompiledModel unet_compiled_model,
                                       uint32_t seed,
                                       int32_t step,
                                       uint32_t d_h,
@@ -528,60 +528,41 @@ std::vector<float> diffusion_function(ov::CompiledModel& unet_compiled_model,
     return latent_vector_1d_new;
 }
 
-std::vector<std::vector<int32_t>> tokenizer_infer_function(ov::CompiledModel& tokenizer_model, std::string prompt) {
+ov::Tensor tokenizer_infer_function(ov::CompiledModel tokenizer_model, const std::string& prompt) {
     constexpr int32_t BATCH_SIZE = 1, MAX_LENGTH = 77, EOS = 49407, DEFAULT_INPUT_IDS = EOS;
     const ov::Shape input_ids_shape({BATCH_SIZE, MAX_LENGTH});
 
-    auto tokenizer_request = tokenizer_model.create_infer_request();
-    auto input_ids_tensor = tokenizer_request.get_tensor("input_ids");
+    auto req = tokenizer_model.create_infer_request();
+    auto input_ids_tensor = req.get_tensor("input_ids");
 
     // we need to pre-fill 'input_ids' with default tokens value
     input_ids_tensor.set_shape(input_ids_shape);
     std::fill_n(input_ids_tensor.data<int32_t>(), MAX_LENGTH, DEFAULT_INPUT_IDS);
 
-    ov::Tensor packed_string = tokenizer_request.get_input_tensor();
-    openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{prompt}, tokenizer_request.get_input_tensor());
+    ov::Tensor packed_strings = req.get_input_tensor();
+    openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{prompt}, packed_strings);
 
-    tokenizer_request.infer();
+    req.infer();
 
     // restore shape to CLIP expected input shape
     input_ids_tensor.set_shape(input_ids_shape);
 
-    const int32_t* input_ids_data = input_ids_tensor.data<const int32_t>();
-    std::vector<int32_t> input_ids(input_ids_tensor.get_shape()[1]);
-
-    std::copy(input_ids_data,
-              input_ids_data + input_ids.size(),
-              input_ids.begin());
-
-    return std::vector<std::vector<int32_t>>{input_ids};
+    return input_ids_tensor;
 }
 
-std::vector<float> clip_infer_function(ov::CompiledModel& prompt_model, std::vector<int32_t> current_tokens)
+std::vector<float> clip_infer_function(ov::CompiledModel text_encoder_model, ov::Tensor input_ids) {
+    ov::InferRequest req = text_encoder_model.create_infer_request();
+    req.set_input_tensor(input_ids);
+    req.infer();
 
-{
-    ov::InferRequest infer_request = prompt_model.create_infer_request();
-    auto clip_input_port = prompt_model.input();
-    auto shape = clip_input_port.get_partial_shape();
-    logger.log_value(LogLevel::DEBUG, "clip_input_port.get_partial_shape(): ", shape);
-    ov::Shape clip_input_shape = {1, current_tokens.size()};
-    ov::Tensor text_embeddings_input_tensor(clip_input_port.get_element_type(),
-                                            clip_input_shape,
-                                            current_tokens.data());
-    infer_request.set_tensor(clip_input_port, text_embeddings_input_tensor);
-    // infer_request.start_async();
-    // infer_request.wait();
-    infer_request.infer();
-
-    auto output_port_0 = prompt_model.outputs()[0];
-
-    ov::Tensor text_embeddings_tensor = infer_request.get_tensor(output_port_0);
-    auto text_em_ptr = text_embeddings_tensor.data<float>();
+    ov::Tensor text_embeddings_tensor = req.get_output_tensor(0);
+    auto text_em_ptr = text_embeddings_tensor.data<const float>();
+    
     std::vector<float> text_embeddings;
-    for (size_t i = 0; i < 77 * 768; i++) {
+    text_embeddings.reserve(text_embeddings_tensor.get_size());
+    for (size_t i = 0; i < text_embeddings_tensor.get_size(); i++) {
         text_embeddings.push_back(text_em_ptr[i]);
     }
-    logger.log_vector(LogLevel::DEBUG, "text_embeddings: ", text_embeddings, 0, 5);
 
     return text_embeddings;
 }
@@ -656,14 +637,14 @@ void stable_diffusion(const std::string& positive_prompt = std::string{},
     std::vector<float> text_embeddings;
     logger.log_string(LogLevel::INFO, "----------------[tokenizer]------------------");
     std::cout << "----------------[tokenizer]------------------" << std::endl;
-    std::vector<std::vector<int32_t>> pos_infered_token = tokenizer_infer_function(models.tokenizer, positive_prompt);
-    std::vector<std::vector<int32_t>> neg_infered_token = tokenizer_infer_function(models.tokenizer, negative_prompt);
+    ov::Tensor pos_infered_token = tokenizer_infer_function(models.tokenizer, positive_prompt);
+    ov::Tensor neg_infered_token = tokenizer_infer_function(models.tokenizer, negative_prompt);
 
     logger.log_string(LogLevel::INFO, "----------------[text embedding]------------------");
     std::cout << "----------------[text embedding]------------------" << std::endl;
 
-    std::vector<float> text_embeddings_pos = clip_infer_function(models.text_encoder, pos_infered_token[0]);
-    std::vector<float> text_embeddings_neg = clip_infer_function(models.text_encoder, neg_infered_token[0]);
+    std::vector<float> text_embeddings_pos = clip_infer_function(models.text_encoder, pos_infered_token);
+    std::vector<float> text_embeddings_neg = clip_infer_function(models.text_encoder, neg_infered_token);
     text_embeddings = std::vector<float>(text_embeddings_neg);
     text_embeddings.insert(text_embeddings.end(), text_embeddings_pos.begin(), text_embeddings_pos.end());
 
