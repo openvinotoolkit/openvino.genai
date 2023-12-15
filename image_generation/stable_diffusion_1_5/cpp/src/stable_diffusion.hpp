@@ -528,51 +528,47 @@ std::vector<float> diffusion_function(ov::CompiledModel unet_compiled_model,
     return latent_vector_1d_new;
 }
 
-ov::Tensor tokenizer_infer_function(ov::CompiledModel tokenizer_model, const std::string& prompt) {
-    constexpr int32_t BATCH_SIZE = 1, MAX_LENGTH = 77, EOS = 49407, DEFAULT_INPUT_IDS = EOS;
-    const ov::Shape input_ids_shape({BATCH_SIZE, MAX_LENGTH});
-
-    auto req = tokenizer_model.create_infer_request();
-    auto input_ids_tensor = req.get_tensor("input_ids");
-
-    // we need to pre-fill 'input_ids' with default tokens value
-    input_ids_tensor.set_shape(input_ids_shape);
-    std::fill_n(input_ids_tensor.data<int32_t>(), MAX_LENGTH, DEFAULT_INPUT_IDS);
-
-    ov::Tensor packed_strings = req.get_input_tensor();
-    openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{prompt}, packed_strings);
-
-    req.infer();
-
-    // restore shape to CLIP expected input shape
-    input_ids_tensor.set_shape(input_ids_shape);
-
-    return input_ids_tensor;
-}
-
-std::vector<float> clip_infer_function(ov::CompiledModel text_encoder_model, ov::Tensor input_ids) {
-    ov::InferRequest req = text_encoder_model.create_infer_request();
-    req.set_input_tensor(input_ids);
-    req.infer();
-
-    ov::Tensor text_embeddings_tensor = req.get_output_tensor(0);
-    auto text_em_ptr = text_embeddings_tensor.data<const float>();
-    
-    std::vector<float> text_embeddings;
-    text_embeddings.reserve(text_embeddings_tensor.get_size());
-    for (size_t i = 0; i < text_embeddings_tensor.get_size(); i++) {
-        text_embeddings.push_back(text_em_ptr[i]);
-    }
-
-    return text_embeddings;
-}
-
 struct StableDiffusionModels {
     ov::CompiledModel text_encoder;
     ov::CompiledModel unet;
     ov::CompiledModel vae_decoder;
     ov::CompiledModel tokenizer;
 };
+
+std::vector<float> text_encoder_infer_function(StableDiffusionModels models, const std::string& prompt) {
+    const size_t MAX_LENGTH = models.text_encoder.input().get_shape()[1], BATCH_SIZE = 1;
+    const ov::Shape input_ids_shape({BATCH_SIZE, MAX_LENGTH});
+
+    // Tokenization
+
+    ov::InferRequest tokenizer_req = models.tokenizer.create_infer_request();
+    ov::Tensor input_ids_tensor = tokenizer_req.get_tensor("input_ids");
+
+    input_ids_tensor.set_shape(input_ids_shape);
+    std::fill_n(input_ids_tensor.data<int32_t>(), ov::shape_size(input_ids_shape), 49407);
+
+    ov::Tensor packed_strings = tokenizer_req.get_input_tensor();
+    openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{prompt}, packed_strings);
+
+    tokenizer_req.infer();
+    // restore shape to CLIP expected input shape
+    input_ids_tensor.set_shape(input_ids_shape);
+
+    // Text embedding
+
+    std::vector<float> text_embeddings;
+    text_embeddings.reserve(ov::shape_size(input_ids_shape));
+
+    ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
+    text_encoder_req.set_input_tensor(input_ids_tensor);
+    text_encoder_req.infer();
+
+    ov::Tensor text_embeddings_tensor = text_encoder_req.get_output_tensor(0);
+    for (size_t i = 0; i < text_embeddings_tensor.get_size(); i++)
+        text_embeddings.push_back(text_embeddings_tensor.data<const float>()[i]);
+
+    return text_embeddings;
+}
 
 StableDiffusionModels compile_models(const std::string& model_path,
                                      const std::string& device,
@@ -634,19 +630,9 @@ void stable_diffusion(const std::string& positive_prompt = std::string{},
     logger.log_value(LogLevel::DEBUG, "duration of SD_init(s): ", duration_SDinit.count());
     auto start_tokenizer = std::chrono::steady_clock::now();
 
-    std::vector<float> text_embeddings;
-    logger.log_string(LogLevel::INFO, "----------------[tokenizer]------------------");
-    std::cout << "----------------[tokenizer]------------------" << std::endl;
-    ov::Tensor pos_infered_token = tokenizer_infer_function(models.tokenizer, positive_prompt);
-    ov::Tensor neg_infered_token = tokenizer_infer_function(models.tokenizer, negative_prompt);
-
-    logger.log_string(LogLevel::INFO, "----------------[text embedding]------------------");
-    std::cout << "----------------[text embedding]------------------" << std::endl;
-
-    std::vector<float> text_embeddings_pos = clip_infer_function(models.text_encoder, pos_infered_token);
-    std::vector<float> text_embeddings_neg = clip_infer_function(models.text_encoder, neg_infered_token);
-    text_embeddings = std::vector<float>(text_embeddings_neg);
-    text_embeddings.insert(text_embeddings.end(), text_embeddings_pos.begin(), text_embeddings_pos.end());
+    std::vector<float> text_embeddings_pos = text_encoder_infer_function(models, positive_prompt);
+    std::vector<float> text_embeddings = text_encoder_infer_function(models, negative_prompt);
+    std::copy_n(text_embeddings_pos.begin(), text_embeddings_pos.size(), std::back_inserter(text_embeddings));
 
     auto end_tokenizer = std::chrono::steady_clock::now();
     auto duration_tokenizer = std::chrono::duration_cast<std::chrono::duration<float>>(end_tokenizer - start_tokenizer);
