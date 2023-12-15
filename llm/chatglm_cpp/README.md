@@ -65,8 +65,8 @@ python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modul
 
 Paramters:
 * `-m, --model` PATH        Chatglm OpenVINO model path (default: openvino_model.xml)
-* `-token` PATH             Tokenizer model path (tokenizer.xml)
-* `-detoken` PATH           DeTokenizer model path (detokenizer.xml)
+* `-token` PATH             Tokenizer model path (default: tokenizer.xml)
+* `-detoken` PATH           DeTokenizer model path (default: detokenizer.xml)
 * `-d, --device`            Device (default: GPU)
 * `--convert_kv_fp16`       Convert kvcache fp16 (default: False)
 * `--do_sample`             Search (default: False)
