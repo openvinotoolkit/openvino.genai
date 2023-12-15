@@ -24,6 +24,19 @@ const std::string sentences[] =
 };
 
 namespace {
+struct Args {
+    std::string ov_model_path = "openvino_model.xml";
+    std::string token_model_path = "tokenizer.xml";
+    std::string detoken_model_path = "detokenizer.xml";
+    std::string device = "GPU";
+    bool convert_kv_fp16 = false;
+    bool do_sample = false;
+    int top_k = 0;
+    float top_p = 0.7;
+    float temp = 0.95;
+    float repeat_penalty = 1.0;
+};
+
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest & tokenizer, std::string_view prompt) {
     constexpr size_t BATCH_SIZE = 1;
     ov::Tensor destination = tokenizer.get_input_tensor();
