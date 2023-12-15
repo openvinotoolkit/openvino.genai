@@ -27,6 +27,8 @@
 
 #include "openvino/openvino.hpp"
 
+#include <openvino_extensions/strings.hpp>
+
 #include "lora_cpp.hpp"
 
 #include "logger.hpp"
@@ -526,190 +528,31 @@ std::vector<float> diffusion_function(ov::CompiledModel& unet_compiled_model,
     return latent_vector_1d_new;
 }
 
-std::vector<std::pair<std::string, float>> parse_prompt_attention(std::string& texts) {
-    std::vector<std::pair<std::string, float>> res;
-    std::stack<int> round_brackets;
-    std::stack<int> square_brackets;
-    const float round_bracket_multiplier = 1.1;
-    const float square_bracket_multiplier = 1 / 1.1;
-    std::vector<std::string> ms;
-
-    for (char c : texts) {
-        std::string s = std::string(1, c);
-
-        if (s == "(" || s == "[" || s == ")" || s == "]") {
-            ms.push_back(s);
-        }
-
-        else {
-            if (ms.size() < 1)
-                ms.push_back("");
-
-            std::string last = ms[ms.size() - 1];
-
-            if (last == "(" || last == "[" || last == ")" || last == "]") {
-                ms.push_back("");
-            }
-
-            ms[ms.size() - 1] += s;
-        }
-    }
-
-    for (std::string text : ms) {
-        if (text == "(") {
-            round_brackets.push(res.size());
-        }
-
-        else if (text == "[") {
-            square_brackets.push(res.size());
-        }
-
-        else if (text == ")" && round_brackets.size() > 0) {
-            for (unsigned long p = round_brackets.top(); p < res.size(); p++) {
-                res[p].second *= round_bracket_multiplier;
-            }
-
-            round_brackets.pop();
-        }
-
-        else if (text == "]" && square_brackets.size() > 0) {
-            for (unsigned long p = square_brackets.top(); p < res.size(); p++) {
-                res[p].second *= square_bracket_multiplier;
-            }
-
-            square_brackets.pop();
-        }
-
-        else {
-            res.push_back(make_pair(text, 1.0));
-        }
-    }
-
-    while (!round_brackets.empty()) {
-        for (unsigned long p = round_brackets.top(); p < res.size(); p++) {
-            res[p].second *= round_bracket_multiplier;
-        }
-
-        round_brackets.pop();
-    }
-
-    while (!square_brackets.empty()) {
-        for (unsigned long p = square_brackets.top(); p < res.size(); p++) {
-            res[p].second *= square_bracket_multiplier;
-        }
-
-        square_brackets.pop();
-    }
-
-    unsigned long i = 0;
-
-    while (i + 1 < res.size()) {
-        if (res[i].second == res[i + 1].second) {
-            res[i].first += res[i + 1].first;
-            auto it = res.begin();
-            res.erase(it + i + 1);
-        }
-
-        else {
-            i += 1;
-        }
-    }
-
-    return res;
-}
-
-// splid and add </w>
-std::vector<std::string> split(std::string str) {
-    // ys: erase all the "."
-    while (str.find(".") != std::string::npos) {
-        str.erase(str.find("."), 1);
-    }
-    logger.log_value(LogLevel::DEBUG, "DEBUG-erased prompt: ", str);
-
-    std::string::size_type pos;
-    std::vector<std::string> result;
-    str += " ";
-    int32_t size = str.size();
-
-    for (int32_t i = 0; i < size; i++) {
-        pos = std::min(str.find(" ", i), str.find(",", i));
-
-        if (pos < str.size()) {
-            std::string s = str.substr(i, pos - i);
-            std::string pat = std::string(1, str[pos]);
-
-            if (s.length() > 0)
-                result.push_back(s + "</w>");
-
-            if (pat != " ")
-                result.push_back(pat + "</w>");
-
-            i = pos;
-        }
-    }
-
-    return result;
-}
-
 std::vector<std::vector<int32_t>> tokenizer_infer_function(ov::CompiledModel& tokenizer_model, std::string prompt) {
-    logger.log_value(LogLevel::DEBUG, "DEBUG-prompt: ", prompt);
+    constexpr int32_t BATCH_SIZE = 1, MAX_LENGTH = 77, EOS = 49407, DEFAULT_INPUT_IDS = EOS;
+    const ov::Shape input_ids_shape({BATCH_SIZE, MAX_LENGTH});
 
-    auto tokenizer_encoder_infer_request = tokenizer_model.create_infer_request();
+    auto tokenizer_request = tokenizer_model.create_infer_request();
+    auto input_ids_tensor = tokenizer_request.get_tensor("input_ids");
 
-    int32_t batch_size = 1;
-    int32_t offset = 0;
-    int32_t length = prompt.length();
+    // we need to pre-fill 'input_ids' with default tokens value
+    input_ids_tensor.set_shape(input_ids_shape);
+    std::fill_n(input_ids_tensor.data<int32_t>(), MAX_LENGTH, DEFAULT_INPUT_IDS);
 
-    int32_t eos = 49407;
-    int32_t max_token_length = 77;
-    int32_t default_input_ids = eos;
-    int32_t default_attention_mask = 0;
+    ov::Tensor packed_string = tokenizer_request.get_input_tensor();
+    openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{prompt}, tokenizer_request.get_input_tensor());
 
-    unsigned long total_byte_length = 4 + 4 + 4 + prompt.length();
-    // unsigned char bytes[total_byte_length];
-    std::vector<uint8_t> bytes_vec(total_byte_length);
-    StringToByteArray_vec(prompt, bytes_vec, batch_size, offset, length);
-    // std::string str = ByteArrayToString(bytes+4+4+4, length);
-    // std::cout << "str: " << str << "\n";
+    tokenizer_request.infer();
 
-    // Get input port for model with one input
-    auto tokenizer_encoder_input_port = tokenizer_model.input();
-    logger.log_value(LogLevel::DEBUG,
-                     "tokenizer_encoder_input_port.get_partial_shape(): ",
-                     tokenizer_encoder_input_port.get_partial_shape());
+    // restore shape to CLIP expected input shape
+    input_ids_tensor.set_shape(input_ids_shape);
 
-    auto tokenizer_encoder_output_ports = tokenizer_model.outputs();
+    const int32_t* input_ids_data = input_ids_tensor.data<const int32_t>();
+    std::vector<int32_t> input_ids(input_ids_tensor.get_shape()[1]);
 
-    ov::Tensor input_tensor(tokenizer_encoder_input_port.get_element_type(), {total_byte_length}, bytes_vec.data());
-
-    // Set input tensor for model with one input
-    tokenizer_encoder_infer_request.set_input_tensor(input_tensor);
-    // tokenizer_encoder_infer_request.start_async();
-    // tokenizer_encoder_infer_request.wait();
-    tokenizer_encoder_infer_request.infer();
-
-    // Get output tensor by tensor name
-    auto tokenizer_encoder_output_1 = tokenizer_encoder_infer_request.get_tensor(tokenizer_encoder_output_ports[0]);
-    auto tokenizer_encoder_output_2 = tokenizer_encoder_infer_request.get_tensor(tokenizer_encoder_output_ports[1]);
-
-    logger.log_value(LogLevel::DEBUG, "tokenzier_output_1.get_shape(): ", tokenizer_encoder_output_1.get_shape());
-    logger.log_value(LogLevel::DEBUG, "tokenzier_output_2.get_shape(): ", tokenizer_encoder_output_2.get_shape());
-
-    const int32_t* tokenizer_encoder_output_buffer_1 = tokenizer_encoder_output_1.data<const int32_t>();
-    const int32_t* tokenizer_encoder_output_buffer_2 = tokenizer_encoder_output_2.data<const int32_t>();
-
-    std::vector<int32_t> input_ids(max_token_length, default_input_ids);
-    std::vector<int32_t> attention_mask(max_token_length, default_attention_mask);
-
-    // std::vector<int32_t> input_ids(output_buffer_1, output_buffer_1 + tokenizer_output_1.get_shape()[1]);
-    // std::vector<int32_t> attention_mask(output_buffer_2, output_buffer_2 + tokenizer_output_2.get_shape()[1]);
-    std::copy(tokenizer_encoder_output_buffer_1,
-              tokenizer_encoder_output_buffer_1 + tokenizer_encoder_output_1.get_shape()[1],
+    std::copy(input_ids_data,
+              input_ids_data + input_ids.size(),
               input_ids.begin());
-
-    std::copy(tokenizer_encoder_output_buffer_2,
-              tokenizer_encoder_output_buffer_2 + tokenizer_encoder_output_2.get_shape()[1],
-              attention_mask.begin());
 
     return std::vector<std::vector<int32_t>>{input_ids};
 }
@@ -743,269 +586,86 @@ std::vector<float> clip_infer_function(ov::CompiledModel& prompt_model, std::vec
     return text_embeddings;
 }
 
-std::vector<int32_t> pre_process_function(std::unordered_map<std::string, int>& tokenizer_token2idx,
-                                          std::string prompt) {
-    // parse attention, `()` to improve and `[]` to reduce
-    std::vector<std::pair<std::string, float>> parsed = parse_prompt_attention(prompt);
-    logger.log_value(LogLevel::DEBUG, "DEBUG-prompt: ", prompt);
+struct StableDiffusionModels {
+    ov::CompiledModel text_encoder;
+    ov::CompiledModel unet;
+    ov::CompiledModel vae_decoder;
+    ov::CompiledModel tokenizer;
+};
 
-    // token2ids
-    std::vector<std::vector<int>> tokenized;
-    {
-        for (auto p : parsed) {
-            std::vector<std::string> tokens = split(p.first);
-            std::vector<int> ids;
+StableDiffusionModels compile_models(const std::string& model_path,
+                                     const std::string& device,
+                                     const std::string& type,
+                                     const std::string& lora_path,
+                                     float alpha,
+                                     bool use_cache) {
+    StableDiffusionModels models;
 
-            for (std::string token : tokens) {
-                // vocab.txt is lower only
-                std::transform(token.begin(), token.end(), token.begin(), ::tolower);
-                ids.push_back(tokenizer_token2idx[token]);
-                // std::cout << "DEBUG: " << token << " - " << tokenizer_token2idx[token] << std::endl;
-            }
-            tokenized.push_back(ids);
-        }
-    }
-
-    logger.log_value(LogLevel::DEBUG, "DEBUG-tokenized.size(): ", tokenized[0].size());
-
-    std::vector<int> remade_tokens;
-    std::vector<float> multipliers;
-    {
-        int32_t last_comma = -1;
-
-        for (unsigned long it_tokenized = 0; it_tokenized < tokenized.size(); it_tokenized++) {
-            std::vector<int> tokens = tokenized[it_tokenized];
-            float weight = parsed[it_tokenized].second;
-            unsigned long i = 0;
-
-            while (i < tokens.size()) {
-                int32_t token = tokens[i];
-
-                if (token == 267) {
-                    last_comma = remade_tokens.size();
-                }
-
-                else if ((std::max(int(remade_tokens.size()), 1) % 75 == 0) && (last_comma != -1) &&
-                         (remade_tokens.size() - last_comma <= 20)) {
-                    last_comma += 1;
-                    std::vector<int> reloc_tokens(remade_tokens.begin() + last_comma, remade_tokens.end());
-                    std::vector<float> reloc_mults(multipliers.begin() + last_comma, multipliers.end());
-                    std::vector<int> _remade_tokens_(remade_tokens.begin(), remade_tokens.begin() + last_comma);
-                    remade_tokens = _remade_tokens_;
-                    int32_t length = remade_tokens.size();
-                    int32_t rem = std::ceil(length / 75.0) * 75 - length;
-                    std::vector<int> tmp_token(rem, 49407);
-                    remade_tokens.insert(remade_tokens.end(), tmp_token.begin(), tmp_token.end());
-                    remade_tokens.insert(remade_tokens.end(), reloc_tokens.begin(), reloc_tokens.end());
-                    std::vector<float> _multipliers_(multipliers.begin(), multipliers.end() + last_comma);
-                    std::vector<int> tmp_multipliers(rem, 1.0f);
-                    _multipliers_.insert(_multipliers_.end(), tmp_multipliers.begin(), tmp_multipliers.end());
-                    _multipliers_.insert(_multipliers_.end(), reloc_mults.begin(), reloc_mults.end());
-                    multipliers = _multipliers_;
-                }
-
-                remade_tokens.push_back(token);
-                multipliers.push_back(weight);
-                i += 1;
-            }
-        }
-
-        int32_t prompt_target_length = std::ceil(std::max(int(remade_tokens.size()), 1) / 75.0) * 75;
-        int32_t tokens_to_add = prompt_target_length - remade_tokens.size();
-        std::vector<int> tmp_token(tokens_to_add, 49407);
-        remade_tokens.insert(remade_tokens.end(), tmp_token.begin(), tmp_token.end());
-        std::vector<int> tmp_multipliers(tokens_to_add, 1.0f);
-        multipliers.insert(multipliers.end(), tmp_multipliers.begin(), tmp_multipliers.end());
-    }
-
-    std::vector<int32_t> current_tokens;
-    current_tokens.insert(current_tokens.begin(), 49406);
-    current_tokens.insert(current_tokens.begin() + 1, remade_tokens.begin(), remade_tokens.end());
-    current_tokens.insert(current_tokens.end(), 49407);
-    logger.log_vector(LogLevel::DEBUG, "DEBUG-current_tokens.values: ", current_tokens, 0, 77);
-
-    return current_tokens;
-}
-
-std::vector<float> prompt_function(ov::CompiledModel& text_encoder_compiled_model,
-                                   std::string const& prompt_positive_str,
-                                   std::string const& prompt_negative_str) {
-    // read vocab
-
-    std::unordered_map<std::string, int> tokenizer_token2idx;
-    {
-        std::ifstream vocab_file;
-        std::string vocab_path = "../models/vocab.txt";
-        vocab_file.open(vocab_path.data());
-        if (vocab_file.is_open()) {
-            std::string s;
-            int32_t idx = 0;
-
-            while (getline(vocab_file, s)) {
-                tokenizer_token2idx.insert(std::pair<std::string, int>(s, idx));
-                idx++;
-            }
-        } else {
-            std::cout << "could not find the vocab.txt" << std::endl;
-            exit(0);
-        }
-        vocab_file.close();
-        // std::cout << "DEBUG-tokenizer_token2idx.size(): " << tokenizer_token2idx.size() << std::endl;
-    }
-
-    // without OVTokenizer
-    std::vector<int32_t> prompt_positive_vec = pre_process_function(tokenizer_token2idx, prompt_positive_str);
-    std::vector<int32_t> prompt_negative_vec = pre_process_function(tokenizer_token2idx, prompt_negative_str);
-
-    std::vector<float> text_embeddings_pos = clip_infer_function(text_encoder_compiled_model, prompt_positive_vec);
-    std::vector<float> text_embeddings_neg = clip_infer_function(text_encoder_compiled_model, prompt_negative_vec);
-    text_embeddings_neg.insert(text_embeddings_neg.end(), text_embeddings_pos.begin(), text_embeddings_pos.end());
-
-    logger.log_value(LogLevel::DEBUG, "DEBUG-text_embeddings_pos.size(): ", text_embeddings_neg.size());  // 118272
-
-    return text_embeddings_neg;
-}
-
-std::vector<ov::CompiledModel> SD_init(const std::string& model_path,
-                                       const std::string& device,
-                                       const std::string& type,
-                                       const std::map<std::string, float>& lora_models,
-                                       bool use_ov_extension,
-                                       bool use_cache) {
     ov::Core core;
-
-    if (use_cache) {
+    if (use_cache)
         core.set_property(ov::cache_dir("./cache_dir"));
-    }
+    core.add_extension(TOKENIZERS_LIBRARY_PATH);
 
-    std::vector<ov::CompiledModel> SD_compiled_models;
+    std::map<std::string, float> lora_models;
+    lora_models[lora_path] = alpha;
 
-    std::shared_ptr<ov::Model> text_encoder_model =
-        core.read_model((model_path + "/" + type + "/text_encoder/openvino_model.xml").c_str());
-    std::shared_ptr<ov::Model> unet_model =
-        core.read_model((model_path + "/" + type + "/unet/openvino_model.xml").c_str());
-    std::shared_ptr<ov::Model> decoder_model =
-        core.read_model((model_path + "/" + type + "/vae_decoder/openvino_model.xml").c_str());
+    // CLIP and UNet
+    auto text_encoder_model = core.read_model((model_path + "/" + type + "/text_encoder/openvino_model.xml").c_str());
+    auto unet_model = core.read_model((model_path + "/" + type + "/unet/openvino_model.xml").c_str());
+    auto text_encoder_and_unet = load_lora_weights_cpp(core, text_encoder_model, unet_model, device, lora_models);
+    models.text_encoder = text_encoder_and_unet[0];
+    models.unet = text_encoder_and_unet[1];
 
-    SD_compiled_models = load_lora_weights_cpp(core, text_encoder_model, unet_model, device, lora_models);
-
-    ov::preprocess::PrePostProcessor ppp(decoder_model);
+    // VAE decoder
+    auto vae_decoder_model = core.read_model((model_path + "/" + type + "/vae_decoder/openvino_model.xml").c_str());
+    ov::preprocess::PrePostProcessor ppp(vae_decoder_model);
     ppp.output().model().set_layout("NCHW");
     ppp.output().tensor().set_layout("NHWC");
-    decoder_model = ppp.build();
+    models.vae_decoder = core.compile_model(vae_decoder_model = ppp.build(), device);
 
-    ov::CompiledModel decoder_compiled_model = core.compile_model(decoder_model, device);
-    SD_compiled_models.push_back(decoder_compiled_model);
+    // tokenizer
+    std::string tokenizer_model_path = "../models/tokenizer/tokenizer_encoder.xml";
+    models.tokenizer = core.compile_model(tokenizer_model_path, device);
 
-    if (use_ov_extension) {
-        std::string tokenizer_encoder_model_path = "../models/tokenizer/tokenizer_encoder.xml";
-        std::string extention_path = "../extensions/libuser_ov_extensions.so";
-        std::cout << "Initialize SDTokenizer Model from path: " << tokenizer_encoder_model_path << std::endl;
-        std::cout << "Load OpenVINO Extension for Tokenzier from path: " << extention_path << "\n";
-        core.add_extension(extention_path.c_str());
-        ov::CompiledModel compiled_tokenizer_encoder = core.compile_model(tokenizer_encoder_model_path, device);
-        SD_compiled_models.push_back(compiled_tokenizer_encoder);
-    }
-
-    return SD_compiled_models;
+    return models;
 }
 
 void stable_diffusion(const std::string& positive_prompt = std::string{},
-                      const std::vector<std::string>& output_vec = {},
+                      const std::vector<std::string>& output_images = {},
                       const std::string& device = std::string{},
-                      int32_t step = 20,
+                      int32_t steps = 20,
                       const std::vector<uint32_t>& seed_vec = {},
-                      uint32_t num = 1,
+                      uint32_t num_images = 1,
                       uint32_t height = 512,
                       uint32_t width = 512,
                       std::string negative_prompt = std::string{},
                       bool use_logger = false,
                       bool use_cache = false,
-                      const std::string& model_path = std::string{},
-                      const std::string& type = std::string{},
+                      const std::string& model_base_path = std::string{},
+                      const std::string& model_type = std::string{},
                       const std::string& lora_path = std::string{},
-                      float alpha = 0.75,
-                      bool use_ov_extension = false,
+                      float alpha = 0.75f,
                       bool read_np_latent = false) {
-    logger.set_logging_enabled(use_logger);
-    logger.log_time(LogLevel::DEBUG);
-    logger.log_string(LogLevel::DEBUG, "Welcome to use Stable-Diffusion-OV.");
-    logger.log_string(LogLevel::INFO, "----------------[start]------------------");
-    logger.log_value(LogLevel::INFO, "positive_prompt: ", positive_prompt);
-    logger.log_value(LogLevel::INFO, "negative_prompt: ", negative_prompt);
-    logger.log_value(LogLevel::INFO, "Device: ", device);
-    logger.log_value(LogLevel::INFO, "step: ", step);
-    logger.log_value(LogLevel::INFO, "num: ", num);
-    logger.log_value(LogLevel::INFO, "height: ", height);
-    logger.log_value(LogLevel::INFO, "width: ", width);
-    logger.log_value(LogLevel::INFO, "model_path: ", model_path);
-    logger.log_value(LogLevel::INFO, "type: ", type);
-    logger.log_value(LogLevel::INFO, "lora_path: ", lora_path);
-    logger.log_value(LogLevel::INFO, "use_ov_extension: ", use_ov_extension);
-    logger.log_value(LogLevel::INFO, "read_np_latent: ", read_np_latent);
-    logger.log_value(LogLevel::INFO, "use_logger: ", use_logger);
-    logger.log_value(LogLevel::INFO, "use_cache: ", use_cache);
-
-    std::cout << "----------------[start]------------------" << std::endl;
-
-    std::cout << "openvino version: " << ov::get_openvino_version() << std::endl;
-    std::cout << "positive_prompt: " << positive_prompt << std::endl;
-    std::cout << "negative_prompt: " << negative_prompt << std::endl;
-    std::cout << "Device: " << device << std::endl;
-    std::cout << "output_png_path: ./build/images/" << std::endl;
-    std::cout << "step: " << step << std::endl;
-    std::cout << "num: " << num << std::endl;
-    std::cout << "height: " << height << std::endl;
-    std::cout << "width: " << width << std::endl;
-    std::cout << "model_path: " << model_path << std::endl;
-    std::cout << "type: " << type << std::endl;
-    std::cout << "lora_path: " << lora_path << std::endl;
-    std::cout << "alpha: " << alpha << std::endl;
-    std::cout << std::boolalpha << "use_ov_extension: " << use_ov_extension << std::endl;
-    std::cout << std::boolalpha << "read_np_latent: " << read_np_latent << std::endl;
-    std::cout << std::boolalpha << "use_logger: " << use_logger << std::endl;
-    std::cout << std::boolalpha << "use_cache: " << use_cache << std::endl;
-
-    logger.log_string(LogLevel::INFO, "----------------[Model Init]------------------");
-    std::cout << "----------------[Model Init]------------------" << std::endl;
-
-    std::map<std::string, float> lora_models;
-    lora_models.insert(std::pair<std::string, float>(lora_path, alpha));
-
     auto start_SDinit = std::chrono::steady_clock::now();
-    std::vector<ov::CompiledModel> SD_models =
-        SD_init(model_path, device, type, lora_models, use_ov_extension, use_cache);
-    auto end_SDinit = std::chrono::steady_clock::now();
-    auto duration_SDinit = std::chrono::duration_cast<std::chrono::duration<float>>(end_SDinit - start_SDinit);
+    StableDiffusionModels models = compile_models(model_base_path, device, model_type, lora_path, alpha, use_cache);
+    auto duration_SDinit = std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::steady_clock::now() - start_SDinit);
 
     logger.log_value(LogLevel::DEBUG, "duration of SD_init(s): ", duration_SDinit.count());
     auto start_tokenizer = std::chrono::steady_clock::now();
 
     std::vector<float> text_embeddings;
-    if (use_ov_extension) {
-        // OVTokenizer (WIP)
-        logger.log_string(LogLevel::INFO, "----------------[tokenizer]------------------");
-        std::cout << "----------------[tokenizer]------------------" << std::endl;
-        std::vector<std::vector<int32_t>> pos_infered_token = tokenizer_infer_function(SD_models[3], positive_prompt);
-        std::vector<std::vector<int32_t>> neg_infered_token = tokenizer_infer_function(SD_models[3], negative_prompt);
+    logger.log_string(LogLevel::INFO, "----------------[tokenizer]------------------");
+    std::cout << "----------------[tokenizer]------------------" << std::endl;
+    std::vector<std::vector<int32_t>> pos_infered_token = tokenizer_infer_function(models.tokenizer, positive_prompt);
+    std::vector<std::vector<int32_t>> neg_infered_token = tokenizer_infer_function(models.tokenizer, negative_prompt);
 
-        logger.log_string(LogLevel::INFO, "----------------[text embedding]------------------");
-        std::cout << "----------------[text embedding]------------------" << std::endl;
+    logger.log_string(LogLevel::INFO, "----------------[text embedding]------------------");
+    std::cout << "----------------[text embedding]------------------" << std::endl;
 
-        // auto start_clip = std::chrono::steady_clock::now();
-        std::vector<float> text_embeddings_pos = clip_infer_function(SD_models[0], pos_infered_token[0]);
-        std::vector<float> text_embeddings_neg = clip_infer_function(SD_models[0], neg_infered_token[0]);
-        text_embeddings = std::vector<float>(text_embeddings_neg);
-        text_embeddings.insert(text_embeddings.end(), text_embeddings_pos.begin(), text_embeddings_pos.end());
-        // auto end_clip = std::chrono::steady_clock::now();
-        // auto duration_clip = std::chrono::duration_cast<std::chrono::duration<float>>(end_clip - start_clip);
-        // std::cout << "duration (pos + neg prompt): " << duration_clip.count() << " s" << std::endl;
-    } else {
-        // not use OVTokenizer
-        logger.log_string(LogLevel::INFO, "----------------[prompt_function]------------------");
-        std::cout << "----------------[prompt_function]------------------" << std::endl;
-        text_embeddings = prompt_function(SD_models[0], positive_prompt, negative_prompt);
-    }
+    std::vector<float> text_embeddings_pos = clip_infer_function(models.text_encoder, pos_infered_token[0]);
+    std::vector<float> text_embeddings_neg = clip_infer_function(models.text_encoder, neg_infered_token[0]);
+    text_embeddings = std::vector<float>(text_embeddings_neg);
+    text_embeddings.insert(text_embeddings.end(), text_embeddings_pos.begin(), text_embeddings_pos.end());
 
     auto end_tokenizer = std::chrono::steady_clock::now();
     auto duration_tokenizer = std::chrono::duration_cast<std::chrono::duration<float>>(end_tokenizer - start_tokenizer);
@@ -1014,31 +674,25 @@ void stable_diffusion(const std::string& positive_prompt = std::string{},
     logger.log_string(LogLevel::INFO, "----------------[diffusion]------------------");
     std::cout << "----------------[diffusion]---------------" << std::endl;
 
-    for (uint32_t n = 0; n < num; n++) {
+    for (uint32_t n = 0; n < num_images; n++) {
         logger.log_value(LogLevel::INFO, "seed: ", seed_vec[n]);
         std::cout << "image No." << n << ", seed = " << seed_vec[n] << std::endl;
 
-        std::vector<float> latent_vector_1d;
-        if (read_np_latent) {
-            latent_vector_1d = np_randn_function();
-        } else {
-            latent_vector_1d = std_randn_function(seed_vec[n], height, width);
-        }
+        std::vector<float> latent_vector_1d = read_np_latent ? np_randn_function() : std_randn_function(seed_vec[n], height, width);
         logger.log_vector(LogLevel::DEBUG, "randn output: ", latent_vector_1d, 0, 20);
 
         auto start_diffusion = std::chrono::steady_clock::now();
-        auto sample =
-            diffusion_function(SD_models[1], seed_vec[n], step, height, width, latent_vector_1d, text_embeddings);
+        auto sample = diffusion_function(models.unet, seed_vec[n], steps, height, width, latent_vector_1d, text_embeddings);
         auto end_diffusion = std::chrono::steady_clock::now();
         auto duration_diffusion =
             std::chrono::duration_cast<std::chrono::duration<float>>(end_diffusion - start_diffusion);
-        std::cout << "duration (all " << step << " steps): " << duration_diffusion.count()
-                  << " s, each step: " << duration_diffusion.count() / step << " s" << std::endl;
+        std::cout << "duration (all " << steps << " steps): " << duration_diffusion.count()
+                  << " s, each step: " << duration_diffusion.count() / steps << " s" << std::endl;
 
         logger.log_string(LogLevel::INFO, "----------------[decode]------------------");
         std::cout << "----------------[decode]------------------" << std::endl;
         auto start_decode = std::chrono::steady_clock::now();
-        auto output_decoder = vae_decoder_function(SD_models[2], sample, height, width);
+        auto output_decoder = vae_decoder_function(models.vae_decoder, sample, height, width);
         auto end_decode = std::chrono::steady_clock::now();
         auto duration_decode = std::chrono::duration_cast<std::chrono::duration<float>>(end_decode - start_decode);
         std::cout << "duration: " << duration_decode.count() << " s" << std::endl;
@@ -1051,7 +705,7 @@ void stable_diffusion(const std::string& positive_prompt = std::string{},
 
         convertBGRtoRGB(output_decoder_int, width, height);
 
-        imwrite(output_vec[n], output_decoder_int.data(), height, width);
+        imwrite(output_images[n], output_decoder_int.data(), height, width);
 
         auto end_save = std::chrono::steady_clock::now();
         auto duration_save = std::chrono::duration_cast<std::chrono::duration<float>>(end_save - start_save);

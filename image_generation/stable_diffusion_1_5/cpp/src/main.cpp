@@ -11,7 +11,7 @@ int32_t main(int32_t argc, char* argv[]) {
         "p,posPrompt",
         "Initial positive prompt for SD ",
         cxxopts::value<std::string>()->default_value(
-            "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"))(
+        "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"))(
         "n,negPrompt",
         "Defaut is empty with space",
         cxxopts::value<std::string>()->default_value(" "))(
@@ -19,7 +19,7 @@ int32_t main(int32_t argc, char* argv[]) {
         "AUTO, CPU, or GPU",
         cxxopts::value<std::string>()->default_value("CPU"))(
         "step",
-        "Number of diffusion step",
+        "Number of diffusion steps",
         cxxopts::value<size_t>()->default_value("20"))(
         "s,seed",
         "Number of random seed to generate latent for one image output",
@@ -38,9 +38,6 @@ int32_t main(int32_t argc, char* argv[]) {
         cxxopts::value<bool>()->default_value("false"))(
         "c,useCache",
         "use model caching",
-        cxxopts::value<bool>()->default_value("false"))(
-        "e,useOVExtension",
-        "use OpenVINO extension for tokenizer",
         cxxopts::value<bool>()->default_value("false"))(
         "r,readNPLatent",
         "read numpy generated latents from file",
@@ -75,26 +72,21 @@ int32_t main(int32_t argc, char* argv[]) {
     const std::string positive_prompt = result["posPrompt"].as<std::string>();
     const std::string negative_prompt = result["negPrompt"].as<std::string>();
     const std::string device = result["device"].as<std::string>();
-    uint32_t step = result["step"].as<size_t>();
+    uint32_t steps = result["step"].as<size_t>();
     uint32_t seed = result["seed"].as<size_t>();
     uint32_t num_images = result["num"].as<size_t>();
     uint32_t height = result["height"].as<size_t>();
     uint32_t width = result["width"].as<size_t>();
     const bool use_logger = result["log"].as<bool>();
     const bool use_cache = result["useCache"].as<bool>();
-    const bool use_OV_extension = result["useOVExtension"].as<bool>();
     const bool read_NP_latent = result["readNPLatent"].as<bool>();
     const std::string model_path = result["modelPath"].as<std::string>();
-    const std::string precision = result["type"].as<std::string>();
+    const std::string model_type = result["type"].as<std::string>();
     const std::string lora_path = result["loraPath"].as<std::string>();
     float alpha = result["alpha"].as<float>();
 
-    if ((negative_prompt == " ") && (use_OV_extension == true)) {
-        std::cout << "Please, use the OpenVINO extension tokenizer with non-empty negative prompt.\n";
-        return EXIT_FAILURE;
-    }
-    if (!std::filesystem::exists(model_path + "/" + precision)) {
-        std::cout << "Model path: " << model_path + "/" + precision << " does not exist\n";
+    if (!std::filesystem::exists(model_path + "/" + model_type)) {
+        std::cout << "Model path: " << model_path + "/" + model_type << " does not exist\n";
         return EXIT_FAILURE;
     }
 
@@ -123,7 +115,7 @@ int32_t main(int32_t argc, char* argv[]) {
     stable_diffusion(positive_prompt,
                      output_images_paths,
                      device,
-                     step,
+                     steps,
                      seed_vec,
                      num_images,
                      height,
@@ -132,10 +124,9 @@ int32_t main(int32_t argc, char* argv[]) {
                      use_logger,
                      use_cache,
                      model_path,
-                     precision,
+                     model_type,
                      lora_path,
                      alpha,
-                     use_OV_extension,
                      read_NP_latent);
     auto end_total = std::chrono::steady_clock::now();
     auto duration_total = std::chrono::duration_cast<std::chrono::duration<float>>(end_total - start_total);
