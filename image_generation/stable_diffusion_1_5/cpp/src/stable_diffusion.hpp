@@ -130,6 +130,91 @@ std::vector<float> std_randn_function(uint32_t seed, uint32_t h, uint32_t w) {
     return noise;
 }
 
+std::vector<int64_t> sigma_to_t(std::vector<float>& log_sigmas, float sigma) {
+    double log_sigma = std::log(sigma);
+    std::vector<float> dists(1000);
+    for (int32_t i = 0; i < 1000; i++) {
+        if (log_sigma - log_sigmas[i] >= 0)
+            dists[i] = 1;
+        else
+            dists[i] = 0;
+        if (i == 0)
+            continue;
+        dists[i] += dists[i - 1];
+    }
+
+    // get sigmas range
+    int32_t low_idx = std::min(int(std::max_element(dists.begin(), dists.end()) - dists.begin()), 1000 - 2);
+    int32_t high_idx = low_idx + 1;
+    float low = log_sigmas[low_idx];
+    float high = log_sigmas[high_idx];
+    // interpolate sigmas
+    double w = (low - log_sigma) / (low - high);
+    w = std::max(0.0, std::min(1.0, w));
+
+    int64_t t = std::llround((1 - w) * low_idx + w * high_idx);
+    std::vector<int64_t> vector_t{t};
+    return vector_t;
+}
+
+
+float lms_derivative_function(float tau, int32_t order, int32_t curr_order, std::vector<float> sigma_vec, int32_t t) {
+    float prod = 1.0;
+
+    for (int32_t k = 0; k < order; k++) {
+        if (curr_order == k) {
+            continue;
+        }
+        prod *= (tau - sigma_vec[t - k]) / (sigma_vec[t - curr_order] - sigma_vec[t - k]);
+    }
+    return prod;
+}
+
+std::vector<float> np_randn_function() {
+    // read np generated latents with defaut seed 42
+    std::vector<float> latent_vector_1d;
+    std::ifstream latent_copy_file;
+    latent_copy_file.open("../scripts/np_latents_512x512.txt");
+    std::vector<std::string> latent_vector_new;
+    if (latent_copy_file.is_open()) {
+        std::string word;
+        while (latent_copy_file >> word)
+            latent_vector_new.push_back(word);
+        latent_copy_file.close();
+    } else {
+        std::cout << "could not find the np_latents_512x512.txt" << std::endl;
+        exit(0);
+    }
+
+    latent_vector_new.insert(latent_vector_new.begin(), latent_vector_new.begin(), latent_vector_new.end());
+
+    for (int i = 0; i < (int)latent_vector_new.size() / 2; i++) {
+        latent_vector_1d.push_back(std::stof(latent_vector_new[i]));
+    }
+
+    return latent_vector_1d;
+}
+
+void convertBGRtoRGB(std::vector<unsigned char>& image, int width, int height) {
+    for (int i = 0; i < width * height; i++) {
+        // Swap the red and blue components (BGR to RGB)
+        unsigned char temp = image[i * 3];
+        image[i * 3] = image[i * 3 + 2];
+        image[i * 3 + 2] = temp;
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct StableDiffusionModels {
+    ov::CompiledModel text_encoder;
+    ov::CompiledModel unet;
+    ov::CompiledModel vae_decoder;
+    ov::CompiledModel tokenizer;
+};
+
 std::vector<uint8_t> vae_decoder_function(ov::CompiledModel& decoder_compiled_model,
                                           std::vector<float>& sample,
                                           uint32_t h,
@@ -191,33 +276,6 @@ std::vector<uint8_t> vae_decoder_function(ov::CompiledModel& decoder_compiled_mo
     }
 
     return output_vec;
-}
-
-std::vector<int64_t> sigma_to_t(std::vector<float>& log_sigmas, float sigma) {
-    double log_sigma = std::log(sigma);
-    std::vector<float> dists(1000);
-    for (int32_t i = 0; i < 1000; i++) {
-        if (log_sigma - log_sigmas[i] >= 0)
-            dists[i] = 1;
-        else
-            dists[i] = 0;
-        if (i == 0)
-            continue;
-        dists[i] += dists[i - 1];
-    }
-
-    // get sigmas range
-    int32_t low_idx = std::min(int(std::max_element(dists.begin(), dists.end()) - dists.begin()), 1000 - 2);
-    int32_t high_idx = low_idx + 1;
-    float low = log_sigmas[low_idx];
-    float high = log_sigmas[high_idx];
-    // interpolate sigmas
-    double w = (low - log_sigma) / (low - high);
-    w = std::max(0.0, std::min(1.0, w));
-
-    int64_t t = std::llround((1 - w) * low_idx + w * high_idx);
-    std::vector<int64_t> vector_t{t};
-    return vector_t;
 }
 
 std::vector<float> unet_infer_function(ov::CompiledModel& unet_model,
@@ -301,52 +359,6 @@ std::vector<float> unet_infer_function(ov::CompiledModel& unet_model,
     logger.log_vector(LogLevel::DEBUG, "noise_pred with post_process: ", noise_pred_vec, 0, 5);
 
     return noise_pred_vec;
-}
-
-float lms_derivative_function(float tau, int32_t order, int32_t curr_order, std::vector<float> sigma_vec, int32_t t) {
-    float prod = 1.0;
-
-    for (int32_t k = 0; k < order; k++) {
-        if (curr_order == k) {
-            continue;
-        }
-        prod *= (tau - sigma_vec[t - k]) / (sigma_vec[t - curr_order] - sigma_vec[t - k]);
-    }
-    return prod;
-}
-
-std::vector<float> np_randn_function() {
-    // read np generated latents with defaut seed 42
-    std::vector<float> latent_vector_1d;
-    std::ifstream latent_copy_file;
-    latent_copy_file.open("../scripts/np_latents_512x512.txt");
-    std::vector<std::string> latent_vector_new;
-    if (latent_copy_file.is_open()) {
-        std::string word;
-        while (latent_copy_file >> word)
-            latent_vector_new.push_back(word);
-        latent_copy_file.close();
-    } else {
-        std::cout << "could not find the np_latents_512x512.txt" << std::endl;
-        exit(0);
-    }
-
-    latent_vector_new.insert(latent_vector_new.begin(), latent_vector_new.begin(), latent_vector_new.end());
-
-    for (int i = 0; i < (int)latent_vector_new.size() / 2; i++) {
-        latent_vector_1d.push_back(std::stof(latent_vector_new[i]));
-    }
-
-    return latent_vector_1d;
-}
-
-void convertBGRtoRGB(std::vector<unsigned char>& image, int width, int height) {
-    for (int i = 0; i < width * height; i++) {
-        // Swap the red and blue components (BGR to RGB)
-        unsigned char temp = image[i * 3];
-        image[i * 3] = image[i * 3 + 2];
-        image[i * 3 + 2] = temp;
-    }
 }
 
 std::vector<float> diffusion_function(ov::CompiledModel unet_compiled_model,
@@ -527,13 +539,6 @@ std::vector<float> diffusion_function(ov::CompiledModel unet_compiled_model,
     bar.finish();
     return latent_vector_1d_new;
 }
-
-struct StableDiffusionModels {
-    ov::CompiledModel text_encoder;
-    ov::CompiledModel unet;
-    ov::CompiledModel vae_decoder;
-    ov::CompiledModel tokenizer;
-};
 
 std::vector<float> text_encoder_infer_function(StableDiffusionModels models, const std::string& prompt) {
     const size_t MAX_LENGTH = models.text_encoder.input().get_shape()[1], BATCH_SIZE = 1;
