@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     args.add_argument('-t', '--type', type = str, default = "FP32", required = True,
                       help='Required. data type, FP32, FP16, and compressed type INT8.')
     args.add_argument('-dyn', '--dynamic', type = bool, default = False, required = False,
-                      help='Sepcify the model input shape to use dynamic shape.')
+                      help='Specify the model input shape to use dynamic shape.')
     args.add_argument('-sd','--sd_weights', type = str, default="", required = True,
                       help='Specify the path of stable diffusion model')
     # fmt: on

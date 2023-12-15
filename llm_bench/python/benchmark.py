@@ -51,6 +51,7 @@ def gen_iterate_data(
     max_rss_mem='',
     max_shared_mem='',
     prompt_idx='',
+    tokenization_time=[],
 ):
     iter_data = {}
     iter_data['iteration'] = iter_idx
@@ -67,6 +68,8 @@ def gen_iterate_data(
     iter_data['max_rss_mem_consumption'] = max_rss_mem
     iter_data['max_shared_mem_consumption'] = max_shared_mem
     iter_data['prompt_idx'] = prompt_idx
+    iter_data['tokenization_time'] = tokenization_time[0] if len(tokenization_time) > 0 else ''
+    iter_data['detokenization_time'] = tokenization_time[1] if len(tokenization_time) > 1 else ''
     return iter_data
 
 
@@ -134,6 +137,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         prompt_idx=prompt_index,
+        tokenization_time=(tok_encode_time, tok_decode_time)
     )
     iter_data_list.append(iter_data)
     tm_list = bench_hook.get_time_list()
@@ -425,22 +429,11 @@ def get_argprser():
         help='Add decoding postprocessing for next token selection to the model as an extra ops. Original hf_model.generate function will be patched.',
     )
     parser.add_argument(
-        '--make_stateful',
-        action='store_true',
-        help='Replace kv-cache inputs and outputs in the model by internal variables making a stateful model.'
-        'Original hf_model.forward function will be patched.',
-    )
-    parser.add_argument(
         '--save_prepared_model',
         default=None,
         help='Path to .xml file to save IR used for inference with all pre-/post processing included',
     )
     parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
-    parser.add_argument(
-        '--fuse_cache_reorder',
-        action='store_true',
-        help='Fuse ops related to cache reordering to the model, applied only when num_beams > 1',
-    )
     parser.add_argument(
         '--torch_compile_backend',
         default='openvino',
@@ -450,6 +443,7 @@ def get_argprser():
     parser.add_argument(
         '--convert_tokenizer', action='store_true', help='Convert tokenizer to OpenVINO format'
     )
+    utils.model_utils.add_stateful_model_arguments(parser)
 
     return parser.parse_args()
 
@@ -475,7 +469,7 @@ def main():
         os.system('echo OPENVINO_TORCH_BACKEND_DEVICE=$OPENVINO_TORCH_BACKEND_DEVICE')
 
     if framework == 'ov':
-        log.info(f'model_path={model_path}, openvino runtime version:{get_version()}')
+        log.info(f'model_path={model_path}, openvino runtime version: {get_version()}')
         if model_args['config'].get('PREC_BF16') and model_args['config']['PREC_BF16'] is True:
             log.warning('[Warning] Param bf16/prec_bf16 only work for framework pt. It will be disabled.')
     if args.memory_consumption:

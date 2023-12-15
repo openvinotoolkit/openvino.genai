@@ -11,7 +11,7 @@ from optimum.intel.openvino import (
     OVLatentConsistencyModelPipeline,
     OVStableDiffusionXLPipeline
 )
-from utils.ov_model_classes import OVMPTModel, OVFalconModel, OVLDMSuperResolutionPipeline, OVChatGLMModel, OVChatGLM2Model, OVQwenModel, OVMistralModel
+from utils.ov_model_classes import OVMPTModel, OVFalconModel, OVLDMSuperResolutionPipeline, OVChatGLMModel, OVChatGLM2Model, OVQwenModel
 
 TOKENIZE_CLASSES_MAPPING = {
     'decoder': AutoTokenizer,
@@ -30,8 +30,8 @@ OV_MODEL_CLASSES_MAPPING = {
     'stable-diffusion-xl': OVStableDiffusionXLPipeline,
     'sdxl': OVStableDiffusionXLPipeline,
     'lcm-sdxl': OVStableDiffusionXLPipeline,
-    'ssd-1b': OVStableDiffusionXLPipeline,
-    'lcm-ssd-1b': OVStableDiffusionXLPipeline,
+    'ssd-': OVStableDiffusionXLPipeline,
+    'lcm-ssd-': OVStableDiffusionXLPipeline,
     'stable_diffusion': OVStableDiffusionPipeline,
     'lcm': OVLatentConsistencyModelPipeline,
     'replit': OVMPTModel,
@@ -42,9 +42,6 @@ OV_MODEL_CLASSES_MAPPING = {
     'chatglm3': OVChatGLM2Model,
     'chatglm': OVChatGLMModel,
     'qwen': OVQwenModel,
-    'mistral': OVMistralModel,
-    'zephyr': OVMistralModel,
-    'yi': OVMistralModel,
 }
 
 PT_MODEL_CLASSES_MAPPING = {
@@ -59,7 +56,7 @@ PT_MODEL_CLASSES_MAPPING = {
 }
 
 USE_CASES = {
-    'image_gen': ['stable-diffusion-', 'ssd-1b', 'deepfloyd-if', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl'],
+    'image_gen': ['stable-diffusion-', 'ssd-', 'deepfloyd-if', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl'],
     'text2speech': ['whisper'],
     'image_cls': ['vit'],
     'code_gen': ['replit', 'codegen2', 'codegen', 'codet5'],
