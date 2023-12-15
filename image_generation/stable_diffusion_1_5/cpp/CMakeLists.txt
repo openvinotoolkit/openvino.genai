@@ -31,6 +31,10 @@ FetchContent_Declare(cxxopts
 
 FetchContent_MakeAvailable(cxxopts)
 
+add_subdirectory(../../../common/progress_bar progress_bar)
+add_subdirectory(../../../common/logger logger)
+add_subdirectory(../../../common/imwrite imwrite)
+
 # create executable
 
 add_executable(SD-generate ${PROJECT_SOURCE_DIR}/src/main.cpp)
@@ -42,7 +46,10 @@ target_include_directories(SD-generate PRIVATE
 target_link_libraries(SD-generate PRIVATE
     openvino::runtime
     Eigen3::Eigen
-    cxxopts::cxxopts)
+    cxxopts::cxxopts
+    progress_bar::progress_bar
+    imwrite::imwrite
+    logger::logger)
 
 if(CMAKE_COMPILER_IS_GNUCXX)
     target_compile_options(SD-generate PRIVATE -march=native -Wall)

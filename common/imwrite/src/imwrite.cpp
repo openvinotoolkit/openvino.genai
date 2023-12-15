@@ -1,73 +1,34 @@
 // Copyright (C) 2023 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-/**
- * @brief a header file with writeOutputBmp func from
- * samples/common.hpp
- * @file write_bmp.hpp
- */
-
-#pragma once
-
-#include <algorithm>
-#include <cctype>
 #include <fstream>
-#include <functional>
-#include <iomanip>
-#include <iostream>
 #include <limits>
-#include <list>
-#include <map>
-#include <random>
 #include <string>
-#include <utility>
-#include <vector>
 
-// clang-format off
-#include <openvino/openvino.hpp>
-// clang-format on
+#include "imwrite.hpp"
 
-/**
- * @brief Writes output data to BMP image
- * @param name - image name
- * @param data - output data
- * @param height - height of the target image
- * @param width - width of the target image
- * @return false if error else true
- */
+#include "openvino/core/except.hpp"
 
-#ifndef UNUSED
-#    if defined(_MSC_VER) && !defined(__clang__)
-#        define UNUSED
-#    else
-#        define UNUSED __attribute__((unused))
-#    endif
-#endif
+namespace {
 
-static UNUSED void writeOutputBmp(std::string name, unsigned char* data, size_t height, size_t width) {
-    std::ofstream outFile;
-    outFile.open(name, std::ofstream::binary);
-    if (!outFile.is_open()) {
-        std::cout << "fail to open the output BMP image path\n";
-    }
+unsigned char file[14] = {
+    'B',
+    'M',  // magic
+    0,
+    0,
+    0,
+    0,  // size in bytes
+    0,
+    0,  // app data
+    0,
+    0,  // app data
+    40 + 14,
+    0,
+    0,
+    0  // start of data offset
+};
 
-    unsigned char file[14] = {
-        'B',
-        'M',  // magic
-        0,
-        0,
-        0,
-        0,  // size in bytes
-        0,
-        0,  // app data
-        0,
-        0,  // app data
-        40 + 14,
-        0,
-        0,
-        0  // start of data offset
-    };
-    unsigned char info[40] = {
+unsigned char info[40] = {
         40,
         0,
         0,
@@ -110,6 +71,14 @@ static UNUSED void writeOutputBmp(std::string name, unsigned char* data, size_t 
         0,
         0,  // #important colors
     };
+
+}
+
+void imwrite(std::string name, unsigned char* data, size_t height, size_t width) {
+    std::ofstream outFile;
+
+    outFile.open(name, std::ofstream::binary);
+    OPENVINO_ASSERT(outFile.is_open(), "Failed to open the output BMP image path");
 
     OPENVINO_ASSERT(
         height < (size_t)std::numeric_limits<int32_t>::max && width < (size_t)std::numeric_limits<int32_t>::max,

@@ -17,7 +17,6 @@
 #include <iostream>
 #include <map>
 #include <numeric>
-#include <openvino/openvino.hpp>
 #include <random>
 #include <regex>
 #include <stack>
@@ -26,10 +25,13 @@
 #include <utils.hpp>
 #include <vector>
 
-#include "logger.hpp"
+#include "openvino/openvino.hpp"
+
 #include "lora_cpp.hpp"
-#include "process_bar.hpp"
-#include "write_bmp.hpp"
+
+#include "logger.hpp"
+#include "progress_bar.hpp"
+#include "imwrite.hpp"
 
 Logger logger("log.txt");
 
@@ -381,7 +383,7 @@ std::vector<float> diffusion_function(ov::CompiledModel& unet_compiled_model,
 
     std::vector<std::vector<float>> derivative_list;
 
-    process_bar bar(sigma.size());
+    ProgressBar bar(sigma.size());
 
     for (int32_t i = 0; i < step; i++) {
         bar.progress(i);
@@ -925,7 +927,7 @@ void stable_diffusion(const std::string& positive_prompt = std::string{},
                       float alpha = 0.75,
                       bool use_ov_extension = false,
                       bool read_np_latent = false) {
-    logger.setLoggingEnabled(use_logger);
+    logger.set_logging_enabled(use_logger);
     logger.log_time(LogLevel::DEBUG);
     logger.log_string(LogLevel::DEBUG, "Welcome to use Stable-Diffusion-OV.");
     logger.log_string(LogLevel::INFO, "----------------[start]------------------");
@@ -1049,7 +1051,7 @@ void stable_diffusion(const std::string& positive_prompt = std::string{},
 
         convertBGRtoRGB(output_decoder_int, width, height);
 
-        writeOutputBmp(output_vec[n], output_decoder_int.data(), height, width);
+        imwrite(output_vec[n], output_decoder_int.data(), height, width);
 
         auto end_save = std::chrono::steady_clock::now();
         auto duration_save = std::chrono::duration_cast<std::chrono::duration<float>>(end_save - start_save);
