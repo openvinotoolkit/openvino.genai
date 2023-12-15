@@ -65,13 +65,14 @@ python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modul
    
 For Linux
 
-Convert KV cache to FP16: `chatglm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device" "convert_kv_fp16"`
+Convert KV cache to FP16: `chatglm -m <openvino_model.xml> -token <tokenizer.xml> -detoken <detokenizer.xml> -d --convert_kv_fp16`
 
-Example: `./build/llm/chatglm_cpp/chatglm ./chatglm3-6b/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "OCL_GPU" "convert_kv_fp16"`
+Example: `./build/llm/chatglm_cpp/chatglm -m .\chatglm3-6b\openvino_model.xml -token .\tokenizer.xml  -detoken .\detokenizer.xml -d 
+ "OCL_GPU" --convert_kv_fp16`
 
-Usage: `chatglm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device" "disable_convert_kv_fp16"`
+Usage: `chatglm -m <openvino_model.xml> -token <tokenizer.xml> -detoken <detokenizer.xml> -d`
 
-Example: `./build/llm/chatglm_cpp/chatglm ./chatglm3-6b/modified_openvino_model.xml ./tokenizer.xml ./detokenizer.xml "OCL_GPU" "disable_convert_kv_fp16"`
+Example: `./build/llm/chatglm_cpp/chatglm -m .\chatglm3-6b\modified_openvino_model.xml -token .\tokenizer.xml -detoken  .\detokenizer.xml -d "OCL_GPU"`
 
 For Windows
 
@@ -83,13 +84,14 @@ $copy build\_deps\fast_tokenizer-src\third_party\lib\icudt70.dll build\llm\chatg
 $copy build\_deps\fast_tokenizer-src\third_party\lib\icuuc70.dll build\llm\chatglm_cpp\Release\
 $copy build\_deps\fast_tokenizer-src\lib\core_tokenizers.dll build\llm\chatglm_cpp\Release\
 ```
-Convert KV cache to FP16: `chatglm.exe <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device" "convert_kv_fp16"`
+Convert KV cache to FP16: `chatglm.exe -m <openvino_model.xml> -token <tokenizer.xml>  -detoken <detokenizer.xml> -d --convert_kv_fp16`
 
-Example: `build\llm\chatglm_cpp\Release\chatglm.exe .\chatglm3-6b\openvino_model.xml .\tokenizer.xml .\detokenizer.xml "OCL_GPU" "convert_kv_fp16"`
+Example: `build\llm\chatglm_cpp\Release\chatglm.exe -m .\chatglm3-6b\openvino_model.xml -token .\tokenizer.xml  -detoken .\detokenizer.xml -d 
+ "OCL_GPU" --convert_kv_fp16`
 
-Usage: `chatglm.exe <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "device"`
+Usage: `chatglm.exe -m <openvino_model.xml> -token <tokenizer.xml> -detoken <detokenizer.xml> -d`
 
-Example: `build\llm\chatglm_cpp\Release\chatglm.exe .\chatglm3-6b\modified_openvino_model.xml .\tokenizer.xml .\detokenizer.xml "OCL_GPU" "disable_convert_kv_fp16"`
+Example: `build\llm\chatglm_cpp\Release\chatglm.exe -m .\chatglm3-6b\modified_openvino_model.xml -token .\tokenizer.xml -detoken  .\detokenizer.xml -d "OCL_GPU"`
 
 To enable non ASCII characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
 
