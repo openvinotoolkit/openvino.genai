@@ -1513,7 +1513,6 @@ def main():
 
     args = parser.parse_args()
     log.info(f'openvino runtime version: {get_version()}')
-    return
     model_type = get_convert_model_type(args.model_id.lower())
     converter = converters[model_type]
     converter(args)
