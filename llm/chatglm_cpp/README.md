@@ -64,16 +64,16 @@ python ./llm/cpp/convert_tokenizers.py ./build/thirdparty/openvino_contrib/modul
 4. Run
 
 Paramters:
-* `-m, --model` PATH        Chatglm OpenVINO model path (default: openvino_model.xml)\n"
-* `-token` PATH             Tokenizer model path (tokenizer.xml)\n"
-* `-detoken` PATH           DeTokenizer model path (detokenizer.xml)\n"
-* `-d, --device`            Device (default: GPU)\n"
-* `--convert_kv_fp16`       Convert kvcache fp16 (default: False)\n"
-* `--do_sample`             Search (default: False)\n"
-* `--top_k` N               top-k sampling (default: 0)\n"
-* `--top_p` N               top-p sampling (default: 0.7)\n"
-* `--temp` N                temperature (default: 0.95)\n"
-* `--repeat_penalty` N      penalize repeat sequence of tokens (default: 1.0, 1.0 = disabled)\n";
+* `-m, --model` PATH        Chatglm OpenVINO model path (default: openvino_model.xml)
+* `-token` PATH             Tokenizer model path (tokenizer.xml)
+* `-detoken` PATH           DeTokenizer model path (detokenizer.xml)
+* `-d, --device`            Device (default: GPU)
+* `--convert_kv_fp16`       Convert kvcache fp16 (default: False)
+* `--do_sample`             Search (default: False)
+* `--top_k` N               top-k sampling (default: 0)
+* `--top_p` N               top-p sampling (default: 0.7)
+* `--temp` N                temperature (default: 0.95)
+* `--repeat_penalty` N      penalize repeat sequence of tokens (default: 1.0, 1.0 = disabled)
    
 For Linux
 
