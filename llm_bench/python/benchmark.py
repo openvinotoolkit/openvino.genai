@@ -469,7 +469,7 @@ def main():
         os.system('echo OPENVINO_TORCH_BACKEND_DEVICE=$OPENVINO_TORCH_BACKEND_DEVICE')
 
     if framework == 'ov':
-        log.info(f'model_path={model_path}, openvino runtime version:{get_version()}')
+        log.info(f'model_path={model_path}, openvino runtime version: {get_version()}')
         if model_args['config'].get('PREC_BF16') and model_args['config']['PREC_BF16'] is True:
             log.warning('[Warning] Param bf16/prec_bf16 only work for framework pt. It will be disabled.')
     if args.memory_consumption:
