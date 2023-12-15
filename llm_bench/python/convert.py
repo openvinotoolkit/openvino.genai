@@ -15,7 +15,7 @@ from diffusers import StableDiffusionPipeline, StableDiffusionXLImg2ImgPipeline,
 from diffusers import UNet2DConditionModel, AutoencoderTiny, LCMScheduler
 from nncf import compress_weights
 from openvino import Type, PartialShape, save_model, convert_model
-from openvino.runtime import Core
+from openvino.runtime import Core, get_version
 from optimum.exporters import TasksManager
 from optimum.exporters.tasks import make_backend_config_constructor_for_task
 from optimum.exporters.onnx.config import TextDecoderOnnxConfig
@@ -1512,6 +1512,8 @@ def main():
     )
 
     args = parser.parse_args()
+    log.info(f'openvino runtime version: {get_version()}')
+    return
     model_type = get_convert_model_type(args.model_id.lower())
     converter = converters[model_type]
     converter(args)
