@@ -278,69 +278,36 @@ std::vector<uint8_t> vae_decoder_function(ov::CompiledModel& decoder_compiled_mo
     return output_vec;
 }
 
-std::vector<float> unet_infer_function(ov::CompiledModel& unet_model,
-                                       ov::Tensor timestemp,
-                                       ov::Tensor latent_input_1d,
-                                       ov::Tensor text_embedding_1d,
-                                       uint32_t u_h,
-                                       uint32_t u_w) {
+ov::Tensor unet_infer_function(ov::CompiledModel& unet_model,
+                               ov::Tensor timestemp,
+                               ov::Tensor latent_input_1d,
+                               ov::Tensor text_embedding_1d,
+                               const uint32_t u_h,
+                               const uint32_t u_w) {
     ov::InferRequest unet_infer_request = unet_model.create_infer_request();
 
-    auto input_port = unet_model.inputs();
-    uint32_t latent_h = u_h / 8;
-    uint32_t latent_w = u_w / 8;
-
-    std::cout << "latent_input_1d shape " << latent_input_1d.get_shape() << std::endl;
-    std::cout << "timestemp shape " << timestemp.get_shape() << std::endl;
-    std::cout << "text_embedding_1d shape " << text_embedding_1d.get_shape() << std::endl;
+    const uint32_t latent_h = u_h / 8;
+    const uint32_t latent_w = u_w / 8;
 
     unet_infer_request.set_tensor("sample", latent_input_1d);
     unet_infer_request.set_tensor("timestep", timestemp);
     unet_infer_request.set_tensor("encoder_hidden_states", text_embedding_1d);
 
-    // for (auto input : unet_model.inputs()) {
-    //     const ov::element::Type type = input.get_element_type();
-    //     const std::string name = input.get_names().empty() ? "NONE" : input.get_any_name();
-
-    //     if (name == "sample") {  // latent_model_input
-    //         ov::Shape latent_shape = {2, 4, latent_h, latent_w};
-    //         ov::Tensor input_tensor_0 = ov::Tensor(type, latent_shape, (void *)latent_input_1d.data());
-
-    //         unet_infer_request.set_tensor(name, input_tensor_0);
-    //     }
-    //     if (name == "timestep") {  // t
-    //         ov::Shape ts_shape = {1};
-    //         ov::Tensor input_tensor_1 = ov::Tensor(type, ts_shape, (void *)vector_t.data());
-
-    //         unet_infer_request.set_tensor(name, input_tensor_1);
-    //     }
-    //     if (name == "encoder_hidden_states") {
-    //         ov::Shape encoder_shape = {2, 77, 768};
-    //         ov::Tensor input_tensor_2 = ov::Tensor(type, encoder_shape, (void *)text_embedding_1d.data());
-
-    //         unet_infer_request.set_tensor(name, input_tensor_2);
-    //     }
-    // }
-
     unet_infer_request.infer();
 
     ov::Tensor noise_pred_tensor = unet_infer_request.get_output_tensor();
+    ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
+    noise_pred_shape[0] = 1;
 
-    auto noise_pred_ptr = noise_pred_tensor.data<float>();
+    const float guidance_scale = 7.5f;
+    auto noise_pred_uncond = noise_pred_tensor.data<const float>();
+    auto noise_pred_text = noise_pred_uncond + ov::shape_size(noise_pred_shape);
 
-    std::vector<float> noise_pred_uncond_vec(noise_pred_ptr, noise_pred_ptr + (latent_h * latent_w * 4));
-    std::vector<float> noise_pred_text_vec(noise_pred_ptr + (latent_h * latent_w * 4),
-                                           noise_pred_ptr + (latent_h * latent_w * 4 * 2));
-    std::vector<float> noise_pred_vec;
+    ov::Tensor noise_pred(noise_pred_tensor.get_element_type(), noise_pred_shape);
+    for (size_t i = 0; i < ov::shape_size(noise_pred_shape); ++i)
+        noise_pred.data<float>()[i] = noise_pred_uncond[i] + guidance_scale * (noise_pred_text[i] - noise_pred_uncond[i]);
 
-    float guidance_scale = 7.5f;
-
-    for (int32_t i = 0; i < (int)noise_pred_uncond_vec.size(); i++) {
-        float result = noise_pred_uncond_vec[i] + guidance_scale * (noise_pred_text_vec[i] - noise_pred_uncond_vec[i]);
-        noise_pred_vec.push_back(result);
-    }
-
-    return noise_pred_vec;
+    return noise_pred;
 }
 
 ov::Tensor diffusion_function(ov::CompiledModel unet_compiled_model,
@@ -381,60 +348,45 @@ ov::Tensor diffusion_function(ov::CompiledModel unet_compiled_model,
 
     ProgressBar bar(sigma.size());
 
-    for (int32_t i = 0; i < step; i++) {
+    for (size_t i = 0; i < step; i++) {
         bar.progress(i);
 
-        // scale_model_input
+        // 'sample'
         double scale = 1.0 / sqrt((sigma[i] * sigma[i] + 1));
         for (size_t j = 0, lanent_size = latent_vector_1d_new.get_size(); j < lanent_size; j++) {
             latent_model_input.data<float>()[j + lanent_size] = latent_model_input.data<float>()[j] = latent_vector_1d_new.data<float>()[j] * scale;
         }
 
+        // 'timestep'
         ov::Tensor timestemp = sigma_to_t(log_sigma_vec, sigma[i]);
 
-        std::vector<float> noise_pred_1d =
-            unet_infer_function(unet_compiled_model, timestemp, latent_model_input, text_embeddings_2_77_768, d_h, d_w);
+        ov::Tensor noise_pred_1d = unet_infer_function(unet_compiled_model, timestemp, latent_model_input, text_embeddings_2_77_768, d_h, d_w);
 
-        auto end = std::chrono::steady_clock::now();
-
-        auto start_post = std::chrono::steady_clock::now();
         // LMS step function:
         std::vector<float> derivative_vec_1d;
-        int32_t order = 4;
-        for (int32_t j = 0; j < static_cast<int>(latent_vector_1d.get_size()); j++) {
-            // 1. compute predicted original sample (x_0) from sigma-scaled predicted noise
-            // defaut "epsilon"
-            float pred_latent = latent_vector_1d.data<float>()[j] - sigma[i] * noise_pred_1d[j];
-
+        size_t order = 4;
+        for (size_t j = 0; j < latent_vector_1d.get_size(); j++) {
+            // 1. compute predicted original sample (x_0) from sigma-scaled predicted noise defaut "epsilon"
+            float pred_latent = latent_vector_1d.data<float>()[j] - sigma[i] * noise_pred_1d.data<float>()[j];
             // 2. Convert to an ODE derivative
             derivative_vec_1d.push_back((latent_vector_1d.data<float>()[j] - pred_latent) / sigma[i]);
         }
 
         derivative_list.push_back(derivative_vec_1d);
         // keep the list size within 4
-        if ((int)derivative_list.size() > order) {
+        if (order < derivative_list.size()) {
             derivative_list.erase(derivative_list.begin());
-        }
-
-        for (int32_t m = 0; m < (int32_t)derivative_list.size(); m++) {
-            logger.log_vector(LogLevel::DEBUG, "DEBUG-derivative_list: ", derivative_list[m], 0, 5);
         }
 
         // 3. Compute linear multistep coefficients
         order = std::min(i + 1, order);
-        logger.log_value(LogLevel::DEBUG, "Debug-order: ", order);
 
         std::vector<float> lms_coeffs;
         for (int32_t curr_order = 0; curr_order < order; curr_order++) {
-            auto f = [order, curr_order, sigma, i](float tau) {
+            auto functor = [order, curr_order, sigma, i](float tau) {
                 return lms_derivative_function(tau, order, curr_order, sigma, i);
             };
-            auto start2 = std::chrono::steady_clock::now();
-            auto integrated_coeff_new =
-                trapezoidal(f, static_cast<double>(sigma[i]), static_cast<double>(sigma[i + 1]), 1e-4);
-            auto end2 = std::chrono::steady_clock::now();
-            auto duration2 = std::chrono::duration_cast<std::chrono::duration<float>>(end2 - start2);
-
+            auto integrated_coeff_new = trapezoidal(functor, static_cast<double>(sigma[i]), static_cast<double>(sigma[i + 1]), 1e-4);
             lms_coeffs.push_back(integrated_coeff_new);
         }
 
@@ -564,68 +516,25 @@ void stable_diffusion(const std::string& positive_prompt = std::string{},
                       const std::string& lora_path = std::string{},
                       float alpha = 0.75f,
                       bool read_np_latent = false) {
-    auto start_SDinit = std::chrono::steady_clock::now();
     StableDiffusionModels models = compile_models(model_base_path, device, model_type, lora_path, alpha, use_cache);
-    auto duration_SDinit = std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::steady_clock::now() - start_SDinit);
-
-    logger.log_value(LogLevel::DEBUG, "duration of SD_init(s): ", duration_SDinit.count());
-    auto start_tokenizer = std::chrono::steady_clock::now();
 
     std::vector<float> text_embeddings_pos = text_encoder_infer_function(models, positive_prompt);
     std::vector<float> text_embeddings = text_encoder_infer_function(models, negative_prompt);
     std::copy_n(text_embeddings_pos.begin(), text_embeddings_pos.size(), std::back_inserter(text_embeddings));
     ov::Tensor text_embeddings_(ov::element::f32, {2,77,768}, text_embeddings.data());
 
-    auto end_tokenizer = std::chrono::steady_clock::now();
-    auto duration_tokenizer = std::chrono::duration_cast<std::chrono::duration<float>>(end_tokenizer - start_tokenizer);
-    std::cout << "duration (pos + neg prompt): " << duration_tokenizer.count() << " s" << std::endl;
-
-    logger.log_string(LogLevel::INFO, "----------------[diffusion]------------------");
-    std::cout << "----------------[diffusion]---------------" << std::endl;
-
     for (uint32_t n = 0; n < num_images; n++) {
-        logger.log_value(LogLevel::INFO, "seed: ", seed_vec[n]);
-        std::cout << "image No." << n << ", seed = " << seed_vec[n] << std::endl;
-
         std::vector<float> latent_vector_1d = read_np_latent ? np_randn_function() : std_randn_function(seed_vec[n], height, width);
-        logger.log_vector(LogLevel::DEBUG, "randn output: ", latent_vector_1d, 0, 20);
-        ov::Tensor latent_vector_1d_(ov::element::f32, {1,4,64,64}, latent_vector_1d.data());
+        ov::Shape latent_shape = models.unet.input("sample").get_shape();
+        latent_shape[0] = 1;
+        ov::Tensor latent_vector_1d_(ov::element::f32, latent_shape, latent_vector_1d.data());
 
-        auto start_diffusion = std::chrono::steady_clock::now();
         ov::Tensor sample = diffusion_function(models.unet, seed_vec[n], steps, height, width, latent_vector_1d_, text_embeddings_);
-        auto end_diffusion = std::chrono::steady_clock::now();
-        auto duration_diffusion =
-            std::chrono::duration_cast<std::chrono::duration<float>>(end_diffusion - start_diffusion);
-        std::cout << "duration (all " << steps << " steps): " << duration_diffusion.count()
-                  << " s, each step: " << duration_diffusion.count() / steps << " s" << std::endl;
-
-        logger.log_string(LogLevel::INFO, "----------------[decode]------------------");
-        std::cout << "----------------[decode]------------------" << std::endl;
-        auto start_decode = std::chrono::steady_clock::now();
         auto output_decoder = vae_decoder_function(models.vae_decoder, sample, height, width);
-        auto end_decode = std::chrono::steady_clock::now();
-        auto duration_decode = std::chrono::duration_cast<std::chrono::duration<float>>(end_decode - start_decode);
-        std::cout << "duration: " << duration_decode.count() << " s" << std::endl;
-
-        logger.log_string(LogLevel::INFO, "----------------[save]------------------");
-        std::cout << "----------------[save]--------------------" << std::endl;
-        auto start_save = std::chrono::steady_clock::now();
 
         std::vector<uint8_t> output_decoder_int = std::vector<uint8_t>(output_decoder.begin(), output_decoder.end());
 
         convertBGRtoRGB(output_decoder_int, width, height);
-
         imwrite(output_images[n], output_decoder_int.data(), height, width);
-
-        auto end_save = std::chrono::steady_clock::now();
-        auto duration_save = std::chrono::duration_cast<std::chrono::duration<float>>(end_save - start_save);
-
-        auto duration_total = std::chrono::duration_cast<std::chrono::duration<float>>(end_decode - start_diffusion +
-                                                                                       end_tokenizer - start_tokenizer);
-        std::cout << "duration of one image generation without model compiling: " << duration_total.count() << " s\n\n"
-                  << std::endl;
     }
-
-    logger.log_string(LogLevel::INFO, "----------------[close]------------------");
-    std::cout << "----------------[close]-------------------" << std::endl;
 }
