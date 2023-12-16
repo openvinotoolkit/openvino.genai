@@ -150,6 +150,8 @@ struct GroupBeamSearcher {
     std::pair<std::vector<int64_t>, std::vector<int32_t>> process(const ov::Tensor& logits) {
         std::vector<int64_t> next_tokens;
         std::vector<int32_t> next_beams;
+        next_tokens.reserve(parameters.n_groups * parameters.group_size);
+        next_beams.reserve(parameters.n_groups * parameters.group_size);
         size_t beam_count = 0;
         for (Group& group : groups) {
             if (!group.done) {
@@ -163,9 +165,7 @@ struct GroupBeamSearcher {
                 }
             }
         }
-        next_tokens.reserve(beam_count);
-        next_beams.reserve(beam_count);
-        for (auto group = groups.begin(); group != groups.end(); ++group) {
+        for (groups.iterator group = groups.begin(); group != groups.end(); ++group) {
             if (group->done) {
                 continue;
             }
@@ -173,7 +173,7 @@ struct GroupBeamSearcher {
             candidates.reserve(2 * parameters.group_size);
             for (const Beam& beam : group->ongoing) {
                 std::vector<Token> tokens = log_softmax(logits, beam.global_beam_idx);
-                for (auto prev_group = groups.begin(); prev_group != group; ++prev_group) {
+                for (auto prev_group = groups.cbegin(); prev_group != group; ++prev_group) {
                     for (const Beam& prev_beam : prev_group->ongoing) {
                         if (prev_beam.tokens.size() > beam.tokens.size()) {
                             tokens.at(size_t(prev_beam.tokens.back())).log_prob -= parameters.diversity_penalty;
