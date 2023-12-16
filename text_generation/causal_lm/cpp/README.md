@@ -54,7 +54,7 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 source <INSTALL_DIR>/setupvars.sh
 python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
 python ../../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir ./Llama-2-7b-hf/ --stateful
-python ./convert_tokenizers.py ./Llama-2-7b-hf/
+python ./convert_tokenizers.py ./Llama-2-7b-hf/  # --streaming-decoder for beam_search_causal_lm
 ```
 
 ## Run

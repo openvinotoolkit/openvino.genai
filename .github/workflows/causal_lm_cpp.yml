@@ -40,7 +40,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13432-a6ea22ad0e6/l_openvino_toolkit_ubuntu20_2023.3.0.dev20231129_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13649-bbddb891712/l_openvino_toolkit_ubuntu20_2023.3.0.dev20231214_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -52,7 +52,7 @@ jobs:
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          python ./text_generation/causal_lm/cpp/convert_tokenizers.py ./TinyLlama-1.1B-Chat-v0.6/
+          python ./text_generation/causal_lm/cpp/convert_tokenizers.py ./TinyLlama-1.1B-Chat-v0.6/ --streaming-decoder
 
           timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP32/openvino_model.xml ./tokenizer.xml ./detokenizer.xml 69 > ./pred.txt
           python -c "
@@ -152,15 +152,15 @@ jobs:
       - name: Install OpenVINO
         shell: bash
         run: |
-          curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13570-402d251483c/w_openvino_toolkit_windows_2023.3.0.dev20231211_x86_64.zip
+          curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13649-bbddb891712/w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64.zip
           unzip ov.zip
       - name: Download, convert and build
         shell: bash
         run: |
-          export OpenVINO_DIR=$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231211_x86_64/runtime/cmake
-          export OPENVINO_LIB_PATHS=$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231211_x86_64/runtime/3rdparty/tbb/bin\;$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231211_x86_64/runtime/bin/intel64/Release
+          export OpenVINO_DIR=$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/runtime/cmake
+          export OPENVINO_LIB_PATHS=$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/runtime/3rdparty/tbb/bin\;$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/runtime/bin/intel64/Release
           export PATH=$OPENVINO_LIB_PATHS:$PATH
-          export PYTHONPATH=./w_openvino_toolkit_windows_2023.3.0.dev20231211_x86_64/python:./w_openvino_toolkit_windows_2023.3.0.dev20231211_x86_64/python/python3
+          export PYTHONPATH=./w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/python:./w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/python/python3
           python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir ./TinyLlama-1.1B-Chat-v0.6/ --stateful &
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -168,8 +168,8 @@ jobs:
       - name: Compare
         shell: cmd
         run: |
-          call w_openvino_toolkit_windows_2023.3.0.dev20231211_x86_64\setupvars.bat
-          python .\text_generation\causal_lm\cpp\convert_tokenizers.py .\TinyLlama-1.1B-Chat-v0.6\
+          call w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64\setupvars.bat
+          python .\text_generation\causal_lm\cpp\convert_tokenizers.py .\TinyLlama-1.1B-Chat-v0.6\ --streaming-decoder
 
           .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP32\openvino_model.xml .\tokenizer.xml .\detokenizer.xml 69 > .\pred.txt
           echo import transformers > ref.py
