@@ -52,7 +52,7 @@ jobs:
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          python ./text_generation/causal_lm/cpp/convert_tokenizers.py ./TinyLlama-1.1B-Chat-v0.6/ --streaming-decoder
+          python ./text_generation/causal_lm/cpp/convert_tokenizers.py ./TinyLlama-1.1B-Chat-v0.6/
 
           timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP32/openvino_model.xml ./tokenizer.xml ./detokenizer.xml 69 > ./pred.txt
           python -c "
@@ -169,7 +169,7 @@ jobs:
         shell: cmd
         run: |
           call w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64\setupvars.bat
-          python .\text_generation\causal_lm\cpp\convert_tokenizers.py .\TinyLlama-1.1B-Chat-v0.6\ --streaming-decoder
+          python .\text_generation\causal_lm\cpp\convert_tokenizers.py .\TinyLlama-1.1B-Chat-v0.6\
 
           .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP32\openvino_model.xml .\tokenizer.xml .\detokenizer.xml 69 > .\pred.txt
           echo import transformers > ref.py
