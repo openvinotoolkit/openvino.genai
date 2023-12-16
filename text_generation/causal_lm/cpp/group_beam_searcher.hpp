@@ -165,7 +165,7 @@ struct GroupBeamSearcher {
                 }
             }
         }
-        for (groups.iterator group = groups.begin(); group != groups.end(); ++group) {
+        for (auto group = groups.begin(); group != groups.end(); ++group) {
             if (group->done) {
                 continue;
             }
