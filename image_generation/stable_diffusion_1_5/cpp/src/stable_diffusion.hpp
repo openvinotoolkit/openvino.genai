@@ -9,20 +9,12 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstdint>
-#include <cstdio>
 #include <ctime>
-#include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <map>
 #include <numeric>
 #include <random>
-#include <regex>
-#include <stack>
 #include <string>
-#include <unordered_map>
-#include <utils.hpp>
 #include <vector>
 
 #include "openvino/openvino.hpp"
@@ -81,7 +73,7 @@ std::vector<float> LMSDiscreteScheduler(int32_t num_train_timesteps = 1000,
                                         float beta_end = 0.012f,
                                         std::string beta_schedule = "scaled_linear",
                                         std::string prediction_type = "epsilon",
-                                        std::vector<float> trained_betas = std::vector<float>{}) {
+                                        std::vector<float> trained_betas = {}) {
     std::string _predictionType = prediction_type;
     auto Derivatives = std::vector<std::vector<float>>{};
     auto Timesteps = std::vector<int>();
@@ -117,19 +109,6 @@ std::vector<float> LMSDiscreteScheduler(int32_t num_train_timesteps = 1000,
     return log_sigma_vec;
 }
 
-std::vector<float> std_randn_function(uint32_t seed, uint32_t h, uint32_t w) {
-    std::vector<float> noise;
-    {
-        std::mt19937 gen{static_cast<unsigned long>(seed)};
-        std::normal_distribution<float> normal{0.0f, 1.0f};
-        noise.resize(h / 8 * w / 8 * 4 * 1);
-        std::for_each(noise.begin(), noise.end(), [&](float& x) {
-            x = normal(gen);
-        });
-    }
-    return noise;
-}
-
 ov::Tensor sigma_to_timestemp(std::vector<float>& log_sigmas, float sigma) {
     ov::Tensor timestemp(ov::element::i64, {1});
 
@@ -159,7 +138,7 @@ ov::Tensor sigma_to_timestemp(std::vector<float>& log_sigmas, float sigma) {
     return timestemp;
 }
 
-float lms_derivative_function(float tau, int32_t order, int32_t curr_order, std::vector<float> sigma_vec, int32_t t) {
+float lms_derivative_function(float tau, int32_t order, int32_t curr_order, const std::vector<float>& sigma_vec, int32_t t) {
     float prod = 1.0;
 
     for (int32_t k = 0; k < order; k++) {
@@ -169,6 +148,19 @@ float lms_derivative_function(float tau, int32_t order, int32_t curr_order, std:
         prod *= (tau - sigma_vec[t - k]) / (sigma_vec[t - curr_order] - sigma_vec[t - k]);
     }
     return prod;
+}
+
+std::vector<float> std_randn_function(uint32_t seed, uint32_t h, uint32_t w) {
+    std::vector<float> noise;
+    {
+        std::mt19937 gen{static_cast<unsigned long>(seed)};
+        std::normal_distribution<float> normal{0.0f, 1.0f};
+        noise.resize(h / 8 * w / 8 * 4 * 1);
+        std::for_each(noise.begin(), noise.end(), [&](float& x) {
+            x = normal(gen);
+        });
+    }
+    return noise;
 }
 
 std::vector<float> np_randn_function() {
@@ -400,7 +392,7 @@ std::vector<float> text_encoder_infer_function(StableDiffusionModels models, con
     openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{prompt}, packed_strings);
 
     tokenizer_req.infer();
-    // restore shape to CLIP expected input shape
+    // restore shape to CLIP's expected input shape
     input_ids_tensor.set_shape(input_ids_shape);
 
     // Text embedding
@@ -449,7 +441,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
     ppp.output().tensor().set_layout("NHWC");
     models.vae_decoder = core.compile_model(vae_decoder_model = ppp.build(), device);
 
-    // tokenizer
+    // Tokenizer
     std::string tokenizer_model_path = "../models/tokenizer/tokenizer_encoder.xml";
     models.tokenizer = core.compile_model(tokenizer_model_path, device);
 
@@ -486,9 +478,7 @@ void stable_diffusion(const std::string& positive_prompt = std::string{},
         ov::Tensor latent_vector_1d_(ov::element::f32, latent_shape, latent_vector_1d.data());
 
         ov::Tensor sample = diffusion_function(models.unet, seed_vec[n], steps, latent_vector_1d_, text_embeddings_);
-        std::cout << "!!!" << std::endl;
         ov::Tensor generated_image = vae_decoder_function(models.vae_decoder, sample);
-        std::cout << "!!!" << std::endl;
 
         convertBGRtoRGB(generated_image);
         imwrite(output_images[n], generated_image);
