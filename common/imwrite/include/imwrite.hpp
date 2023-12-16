@@ -5,4 +5,6 @@
 
 #include <string>
 
-void imwrite(std::string name, unsigned char* data, size_t height, size_t width);
+#include "openvino/runtime/tensor.hpp"
+
+void imwrite(const std::string& name, ov::Tensor image);

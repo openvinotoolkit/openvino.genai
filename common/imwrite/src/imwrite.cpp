@@ -4,6 +4,7 @@
 #include <fstream>
 #include <limits>
 #include <string>
+#include <iostream>
 
 #include "imwrite.hpp"
 
@@ -74,21 +75,19 @@ unsigned char info[40] = {
 
 }
 
-void imwrite(std::string name, unsigned char* data, size_t height, size_t width) {
-    std::ofstream outFile;
+void imwrite(const std::string& name, ov::Tensor image) {
+    std::ofstream output_file(name, std::ofstream::binary);
+    OPENVINO_ASSERT(output_file.is_open(), "Failed to open the output BMP image path");
 
-    outFile.open(name, std::ofstream::binary);
-    OPENVINO_ASSERT(outFile.is_open(), "Failed to open the output BMP image path");
+    const ov::Shape shape = image.get_shape();
+    std::cout << shape << std::endl;
+    const size_t width = shape[2], height = shape[1], channels = shape[3];
+    OPENVINO_ASSERT(image.get_element_type() == ov::element::u8 &&
+        shape.size() == 4 && shape[0] == 1 && channels == 3,
+        "Image of u8 type and [1, H, W, 3] shape is expected");
 
-    OPENVINO_ASSERT(
-        height < (size_t)std::numeric_limits<int32_t>::max && width < (size_t)std::numeric_limits<int32_t>::max,
-        "File size is too big: ",
-        height,
-        " X ",
-        width);
-
-    int padSize = static_cast<int>(4 - (width * 3) % 4) % 4;
-    int sizeData = static_cast<int>(width * height * 3 + height * padSize);
+    int padSize = static_cast<int>(4 - (width * channels) % 4) % 4;
+    int sizeData = static_cast<int>(width * height * channels + height * padSize);
     int sizeAll = sizeData + sizeof(file) + sizeof(info);
 
     file[2] = (unsigned char)(sizeAll);
@@ -101,7 +100,7 @@ void imwrite(std::string name, unsigned char* data, size_t height, size_t width)
     info[6] = (unsigned char)(width >> 16);
     info[7] = (unsigned char)(width >> 24);
 
-    int32_t negativeHeight = -(int32_t)height;
+    std::int32_t negativeHeight = -(int32_t)height;
     info[8] = (unsigned char)(negativeHeight);
     info[9] = (unsigned char)(negativeHeight >> 8);
     info[10] = (unsigned char)(negativeHeight >> 16);
@@ -112,20 +111,15 @@ void imwrite(std::string name, unsigned char* data, size_t height, size_t width)
     info[22] = (unsigned char)(sizeData >> 16);
     info[23] = (unsigned char)(sizeData >> 24);
 
-    outFile.write(reinterpret_cast<char*>(file), sizeof(file));
-    outFile.write(reinterpret_cast<char*>(info), sizeof(info));
+    output_file.write(reinterpret_cast<char*>(file), sizeof(file));
+    output_file.write(reinterpret_cast<char*>(info), sizeof(info));
 
-    unsigned char pad[3] = {0, 0, 0};
+    const std::uint8_t pad[3] = {0, 0, 0};
+    const std::uint8_t* data = image.data<const std::uint8_t>();
 
     for (size_t y = 0; y < height; y++) {
-        for (size_t x = 0; x < width; x++) {
-            unsigned char pixel[3];
-            pixel[0] = data[y * width * 3 + x * 3];
-            pixel[1] = data[y * width * 3 + x * 3 + 1];
-            pixel[2] = data[y * width * 3 + x * 3 + 2];
-
-            outFile.write(reinterpret_cast<char*>(pixel), 3);
-        }
-        outFile.write(reinterpret_cast<char*>(pad), padSize);
+        const std::uint8_t* current_row = data + y * width * channels;
+        output_file.write(reinterpret_cast<const char*>(current_row), width * channels);
+        output_file.write(reinterpret_cast<const char*>(pad), padSize);
     }
 }

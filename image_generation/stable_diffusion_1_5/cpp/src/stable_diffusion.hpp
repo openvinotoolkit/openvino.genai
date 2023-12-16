@@ -130,7 +130,7 @@ std::vector<float> std_randn_function(uint32_t seed, uint32_t h, uint32_t w) {
     return noise;
 }
 
-ov::Tensor sigma_to_t(std::vector<float>& log_sigmas, float sigma) {
+ov::Tensor sigma_to_timestemp(std::vector<float>& log_sigmas, float sigma) {
     ov::Tensor timestemp(ov::element::i64, {1});
 
     double log_sigma = std::log(sigma);
@@ -196,12 +196,16 @@ std::vector<float> np_randn_function() {
     return latent_vector_1d;
 }
 
-void convertBGRtoRGB(std::vector<unsigned char>& image, int width, int height) {
-    for (int i = 0; i < width * height; i++) {
+void convertBGRtoRGB(ov::Tensor image) {
+    auto shape = image.get_shape();
+    OPENVINO_ASSERT(image.get_element_type() == ov::element::u8 &&
+        shape.size() == 4 && shape[0] == 1 && shape[3] == 3,
+        "Image of u8 type and [1, H, W, 3] shape is expected");
+
+    auto image_data = image.data<std::uint8_t>();
+    for (size_t i = 0, spatial_dims = shape[1] * shape[2]; i < spatial_dims; ++i) {
         // Swap the red and blue components (BGR to RGB)
-        unsigned char temp = image[i * 3];
-        image[i * 3] = image[i * 3 + 2];
-        image[i * 3 + 2] = temp;
+        std::swap(image_data[i * 3], image_data[i * 3 + 2]);
     }
 }
 
@@ -216,78 +220,33 @@ struct StableDiffusionModels {
     ov::CompiledModel tokenizer;
 };
 
-std::vector<uint8_t> vae_decoder_function(ov::CompiledModel& decoder_compiled_model,
-                                          ov::Tensor sample,
-                                          uint32_t h, uint32_t w) {
-    auto decoder_input_port = decoder_compiled_model.input();
-    auto decoder_output_port = decoder_compiled_model.output();
-    auto shape = decoder_input_port.get_partial_shape();
-    logger.log_value(LogLevel::DEBUG, "decoder_input_port.get_partial_shape(): ", shape);
-
-    const ov::element::Type type = decoder_input_port.get_element_type();
-
-    float coeffs_const{1 / 0.18215};
-    for (size_t i = 0; i < sample.get_size(); ++i) {
+ov::Tensor vae_decoder_function(ov::CompiledModel& decoder_compiled_model, ov::Tensor sample) {
+    const float coeffs_const{1 / 0.18215};
+    for (size_t i = 0; i < sample.get_size(); ++i)
         sample.data<float>()[i] *= coeffs_const;
+
+    ov::InferRequest req = decoder_compiled_model.create_infer_request();
+    req.set_input_tensor(sample);
+    req.infer();
+
+    ov::Tensor decoded_image = req.get_output_tensor();
+    ov::Tensor generated_image(ov::element::u8, decoded_image.get_shape());
+
+    // convert to u8 image
+    const float* decoded_data = decoded_image.data<const float>();
+    std::uint8_t* generated_data = generated_image.data<std::uint8_t>();
+    for (size_t i = 0; i < decoded_image.get_size(); ++i) {
+        generated_data[i] = static_cast<std::uint8_t>(std::clamp(decoded_data[i] * 0.5f + 0.5f, 0.0f, 1.0f) * 255);
     }
 
-    ov::Shape sample_shape = {1, 4, h / 8, w / 8};
-    ov::Tensor decoder_input_tensor(type, sample_shape, sample.data());
-
-    std::cout << "samples shape " << sample.get_shape() << std::endl;
-    std::cout << "sample_shape " << sample_shape << std::endl;
-
-    ov::InferRequest infer_request = decoder_compiled_model.create_infer_request();
-    infer_request.set_tensor(decoder_input_port, decoder_input_tensor);
-    infer_request.infer();
-    ov::Tensor decoder_output_tensor = infer_request.get_tensor(decoder_output_port);
-    auto decoder_output_ptr = decoder_output_tensor.data<float>();
-    std::vector<float> decoder_output_vec;
-    std::vector<uint8_t> output_vec;
-
-    for (size_t i = 0; i < 3 * h * w; i++) {
-        decoder_output_vec.push_back(decoder_output_ptr[i]);
-    }
-
-    // np.clip(image / 2 + 0.5, 0, 1)
-    logger.log_vector(LogLevel::DEBUG, "decoder_output_vec: ", decoder_output_vec, 0, 5);
-    float mul_const{0.5};
-    std::transform(decoder_output_vec.begin(),
-                   decoder_output_vec.end(),
-                   decoder_output_vec.begin(),
-                   [&mul_const](auto& c) {
-                       return c * mul_const;
-                   });
-    float add_const{0.5};
-    std::transform(decoder_output_vec.begin(),
-                   decoder_output_vec.end(),
-                   decoder_output_vec.begin(),
-                   [&add_const](auto& c) {
-                       return c + add_const;
-                   });
-    std::transform(decoder_output_vec.begin(), decoder_output_vec.end(), decoder_output_vec.begin(), [=](auto i) {
-        return std::clamp(i, 0.0f, 1.0f);
-    });
-
-    logger.log_vector(LogLevel::DEBUG, "image post-process to set values [0,1]: ", decoder_output_vec, 0, 5);
-
-    for (size_t i = 0; i < decoder_output_vec.size(); i++) {
-        output_vec.push_back(static_cast<uint8_t>(decoder_output_vec[i] * 255.0f));
-    }
-
-    return output_vec;
+    return generated_image;
 }
 
 ov::Tensor unet_infer_function(ov::CompiledModel& unet_model,
                                ov::Tensor timestemp,
                                ov::Tensor latent_input_1d,
-                               ov::Tensor text_embedding_1d,
-                               const uint32_t u_h,
-                               const uint32_t u_w) {
+                               ov::Tensor text_embedding_1d) {
     ov::InferRequest unet_infer_request = unet_model.create_infer_request();
-
-    const uint32_t latent_h = u_h / 8;
-    const uint32_t latent_w = u_w / 8;
 
     unet_infer_request.set_tensor("sample", latent_input_1d);
     unet_infer_request.set_tensor("timestep", timestemp);
@@ -300,8 +259,8 @@ ov::Tensor unet_infer_function(ov::CompiledModel& unet_model,
     noise_pred_shape[0] = 1;
 
     const float guidance_scale = 7.5f;
-    auto noise_pred_uncond = noise_pred_tensor.data<const float>();
-    auto noise_pred_text = noise_pred_uncond + ov::shape_size(noise_pred_shape);
+    const float* noise_pred_uncond = noise_pred_tensor.data<const float>();
+    const float* noise_pred_text = noise_pred_uncond + ov::shape_size(noise_pred_shape);
 
     ov::Tensor noise_pred(noise_pred_tensor.get_element_type(), noise_pred_shape);
     for (size_t i = 0; i < ov::shape_size(noise_pred_shape); ++i)
@@ -312,19 +271,17 @@ ov::Tensor unet_infer_function(ov::CompiledModel& unet_model,
 
 ov::Tensor diffusion_function(ov::CompiledModel unet_compiled_model,
                               uint32_t seed,
-                              int32_t step,
-                              uint32_t d_h,
-                              uint32_t d_w,
+                              size_t steps,
                               ov::Tensor latent_vector_1d,
                               ov::Tensor text_embeddings_2_77_768) {
     std::vector<float> log_sigma_vec = LMSDiscreteScheduler();
 
     // t_to_sigma
-    std::vector<float> sigma(step);
-    float delta = -999.0f / (step - 1);
+    std::vector<float> sigma(steps);
+    float delta = -999.0f / (steps - 1);
 
     // transform interpolation to time range
-    for (int32_t i = 0; i < step; i++) {
+    for (size_t i = 0; i < steps; i++) {
         float t = 999.0 + i * delta;
         int32_t low_idx = std::floor(t);
         int32_t high_idx = std::ceil(t);
@@ -334,7 +291,7 @@ ov::Tensor diffusion_function(ov::CompiledModel unet_compiled_model,
     sigma.push_back(0.f);
 
     // LMSDiscreteScheduler: latents are multiplied by sigmas
-    double n = sigma[0];  // 14.6146
+    const double n = sigma[0];  // 14.6146
 
     ov::Shape latent_shape = latent_vector_1d.get_shape(), latent_model_input_shape = latent_shape;
     latent_model_input_shape[0] = 2; // Unet accepts batch 2
@@ -348,7 +305,7 @@ ov::Tensor diffusion_function(ov::CompiledModel unet_compiled_model,
 
     ProgressBar bar(sigma.size());
 
-    for (size_t i = 0; i < step; i++) {
+    for (size_t i = 0; i < steps; i++) {
         bar.progress(i);
 
         // 'sample'
@@ -356,11 +313,10 @@ ov::Tensor diffusion_function(ov::CompiledModel unet_compiled_model,
         for (size_t j = 0, lanent_size = latent_vector_1d_new.get_size(); j < lanent_size; j++) {
             latent_model_input.data<float>()[j + lanent_size] = latent_model_input.data<float>()[j] = latent_vector_1d_new.data<float>()[j] * scale;
         }
-
         // 'timestep'
-        ov::Tensor timestemp = sigma_to_t(log_sigma_vec, sigma[i]);
+        ov::Tensor timestemp = sigma_to_timestemp(log_sigma_vec, sigma[i]);
 
-        ov::Tensor noise_pred_1d = unet_infer_function(unet_compiled_model, timestemp, latent_model_input, text_embeddings_2_77_768, d_h, d_w);
+        ov::Tensor noise_pred_1d = unet_infer_function(unet_compiled_model, timestemp, latent_model_input, text_embeddings_2_77_768);
 
         // LMS step function:
         std::vector<float> derivative_vec_1d;
@@ -503,7 +459,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
 void stable_diffusion(const std::string& positive_prompt = std::string{},
                       const std::vector<std::string>& output_images = {},
                       const std::string& device = std::string{},
-                      int32_t steps = 20,
+                      size_t steps = 20,
                       const std::vector<uint32_t>& seed_vec = {},
                       uint32_t num_images = 1,
                       uint32_t height = 512,
@@ -529,12 +485,12 @@ void stable_diffusion(const std::string& positive_prompt = std::string{},
         latent_shape[0] = 1;
         ov::Tensor latent_vector_1d_(ov::element::f32, latent_shape, latent_vector_1d.data());
 
-        ov::Tensor sample = diffusion_function(models.unet, seed_vec[n], steps, height, width, latent_vector_1d_, text_embeddings_);
-        auto output_decoder = vae_decoder_function(models.vae_decoder, sample, height, width);
+        ov::Tensor sample = diffusion_function(models.unet, seed_vec[n], steps, latent_vector_1d_, text_embeddings_);
+        std::cout << "!!!" << std::endl;
+        ov::Tensor generated_image = vae_decoder_function(models.vae_decoder, sample);
+        std::cout << "!!!" << std::endl;
 
-        std::vector<uint8_t> output_decoder_int = std::vector<uint8_t>(output_decoder.begin(), output_decoder.end());
-
-        convertBGRtoRGB(output_decoder_int, width, height);
-        imwrite(output_images[n], output_decoder_int.data(), height, width);
+        convertBGRtoRGB(generated_image);
+        imwrite(output_images[n], generated_image);
     }
 }
