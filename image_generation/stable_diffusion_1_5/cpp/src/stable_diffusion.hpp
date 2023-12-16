@@ -265,7 +265,7 @@ ov::Tensor diffusion_function(ov::CompiledModel unet_compiled_model,
                               uint32_t seed,
                               size_t steps,
                               ov::Tensor latent_vector_1d,
-                              ov::Tensor text_embeddings_2_77_768) {
+                              ov::Tensor text_embeddings) {
     std::vector<float> log_sigma_vec = LMSDiscreteScheduler();
 
     // t_to_sigma
@@ -301,14 +301,14 @@ ov::Tensor diffusion_function(ov::CompiledModel unet_compiled_model,
         bar.progress(i);
 
         // 'sample'
-        double scale = 1.0 / sqrt((sigma[i] * sigma[i] + 1));
+        const double scale = 1.0 / sqrt((sigma[i] * sigma[i] + 1));
         for (size_t j = 0, lanent_size = latent_vector_1d_new.get_size(); j < lanent_size; j++) {
             latent_model_input.data<float>()[j + lanent_size] = latent_model_input.data<float>()[j] = latent_vector_1d_new.data<float>()[j] * scale;
         }
         // 'timestep'
         ov::Tensor timestemp = sigma_to_timestemp(log_sigma_vec, sigma[i]);
 
-        ov::Tensor noise_pred_1d = unet_infer_function(unet_compiled_model, timestemp, latent_model_input, text_embeddings_2_77_768);
+        ov::Tensor noise_pred_1d = unet_infer_function(unet_compiled_model, timestemp, latent_model_input, text_embeddings);
 
         // LMS step function:
         std::vector<float> derivative_vec_1d;
@@ -377,7 +377,8 @@ ov::Tensor diffusion_function(ov::CompiledModel unet_compiled_model,
 }
 
 std::vector<float> text_encoder_infer_function(StableDiffusionModels models, const std::string& prompt) {
-    const size_t MAX_LENGTH = models.text_encoder.input().get_shape()[1], BATCH_SIZE = 1;
+    const size_t MAX_LENGTH = 77 /* 'model_max_length' from 'tokenizer_config.json' */, BATCH_SIZE = 1;
+    const int32_t EOS_TOKEN_ID = 49407, PAD_TOKEN_ID = EOS_TOKEN_ID;
     const ov::Shape input_ids_shape({BATCH_SIZE, MAX_LENGTH});
 
     // Tokenization
@@ -386,13 +387,14 @@ std::vector<float> text_encoder_infer_function(StableDiffusionModels models, con
     ov::Tensor input_ids_tensor = tokenizer_req.get_tensor("input_ids");
 
     input_ids_tensor.set_shape(input_ids_shape);
-    std::fill_n(input_ids_tensor.data<int32_t>(), ov::shape_size(input_ids_shape), 49407);
+    // need to pre-fill 'input_ids_tensor' with 'PAD' tokens
+    std::fill_n(input_ids_tensor.data<int32_t>(), ov::shape_size(input_ids_shape), PAD_TOKEN_ID);
 
     ov::Tensor packed_strings = tokenizer_req.get_input_tensor();
     openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{prompt}, packed_strings);
 
     tokenizer_req.infer();
-    // restore shape to CLIP's expected input shape
+    // restore shape to CLIP's expected input shape if actual shape is smaller than 'input_ids_shape'
     input_ids_tensor.set_shape(input_ids_shape);
 
     // Text embedding
@@ -405,6 +407,7 @@ std::vector<float> text_encoder_infer_function(StableDiffusionModels models, con
     text_encoder_req.infer();
 
     ov::Tensor text_embeddings_tensor = text_encoder_req.get_output_tensor(0);
+    std::cout << "text_embeddings_tensor shape " << text_embeddings_tensor.get_shape() << std::endl;
     for (size_t i = 0; i < text_embeddings_tensor.get_size(); i++)
         text_embeddings.push_back(text_embeddings_tensor.data<const float>()[i]);
 
@@ -466,16 +469,25 @@ void stable_diffusion(const std::string& positive_prompt = std::string{},
                       bool read_np_latent = false) {
     StableDiffusionModels models = compile_models(model_base_path, device, model_type, lora_path, alpha, use_cache);
 
+    ov::PartialShape sample_shape = models.unet.input("sample").get_partial_shape();
+    ov::PartialShape text_embedding_partial_shape = models.unet.input("encoder_hidden_states").get_partial_shape();
+    OPENVINO_ASSERT(sample_shape.is_dynamic() || (sample_shape[2] * 8 == width && sample_shape[3] * 8 == height),
+        "UNet model has static shapes [1, 4, H/8, W/8] or dynamic shapes [?, 4, ?, ?]");
+    ov::Shape latent_vector_shape{1, 4, height / 8, width / 8};
+    ov::Shape text_embedding_shape{2,
+        static_cast<size_t>(text_embedding_partial_shape[1].get_length()),
+        static_cast<size_t>(text_embedding_partial_shape[2].get_length())};
+
     std::vector<float> text_embeddings_pos = text_encoder_infer_function(models, positive_prompt);
     std::vector<float> text_embeddings = text_encoder_infer_function(models, negative_prompt);
     std::copy_n(text_embeddings_pos.begin(), text_embeddings_pos.size(), std::back_inserter(text_embeddings));
-    ov::Tensor text_embeddings_(ov::element::f32, {2,77,768}, text_embeddings.data());
+    std::copy_n(text_embeddings_pos.begin(), text_embeddings_pos.size(), std::back_inserter(text_embeddings));
+    ov::Tensor text_embeddings_(ov::element::f32, text_embedding_shape, text_embeddings.data());
 
     for (uint32_t n = 0; n < num_images; n++) {
+        // TODO: check that 'np_randn_function' can generate enough data
         std::vector<float> latent_vector_1d = read_np_latent ? np_randn_function() : std_randn_function(seed_vec[n], height, width);
-        ov::Shape latent_shape = models.unet.input("sample").get_shape();
-        latent_shape[0] = 1;
-        ov::Tensor latent_vector_1d_(ov::element::f32, latent_shape, latent_vector_1d.data());
+        ov::Tensor latent_vector_1d_(ov::element::f32, latent_vector_shape, latent_vector_1d.data());
 
         ov::Tensor sample = diffusion_function(models.unet, seed_vec[n], steps, latent_vector_1d_, text_embeddings_);
         ov::Tensor generated_image = vae_decoder_function(models.vae_decoder, sample);

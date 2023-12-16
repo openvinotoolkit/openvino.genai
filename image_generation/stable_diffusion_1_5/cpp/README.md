@@ -44,11 +44,11 @@ SD preparation could be auto implemented with `scripts/build_dependencies.sh`. T
     ```shell
     cd scripts
     python convert_model.py -b 1 -t FP16 -sd ../models/dreamlike-anime-1.0 # to convert to a model with static shapes
-    python convert_model.py -b 1 -t FP16 -sd ../models/dreamlike-anime-1.0 -dyn # to keep a model with dynamic shapes
+    python convert_model.py -b 1 -t FP16 -sd ../models/dreamlike-anime-1.0 -dyn True # to keep a model with dynamic shapes
     ```
 
 > [!NOTE]
->Now the pipeline support batch size = 1 only, ie. static model `(1, 3, 512, 512)`
+>Now the pipeline support batch size = 1 only, i.e. static model `(1, 3, 512, 512)`
 
 ### LoRA enabling with safetensors
 
