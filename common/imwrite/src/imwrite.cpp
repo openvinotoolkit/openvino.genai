@@ -75,7 +75,7 @@ unsigned char info[40] = {
 
 }
 
-void imwrite(const std::string& name, ov::Tensor image) {
+void imwrite(const std::string& name, ov::Tensor image, bool convert_bgr2rgb) {
     std::ofstream output_file(name, std::ofstream::binary);
     OPENVINO_ASSERT(output_file.is_open(), "Failed to open the output BMP image path");
 
@@ -119,7 +119,16 @@ void imwrite(const std::string& name, ov::Tensor image) {
 
     for (size_t y = 0; y < height; y++) {
         const std::uint8_t* current_row = data + y * width * channels;
-        output_file.write(reinterpret_cast<const char*>(current_row), width * channels);
+        if (convert_bgr2rgb) {
+            for (size_t x = 0; x < width; ++x) {
+                output_file.write(reinterpret_cast<const char*>(current_row + 2), 1);
+                output_file.write(reinterpret_cast<const char*>(current_row + 1), 1);
+                output_file.write(reinterpret_cast<const char*>(current_row), 1);
+                current_row += channels;
+            }
+        } else {
+            output_file.write(reinterpret_cast<const char*>(current_row), width * channels);
+        }
         output_file.write(reinterpret_cast<const char*>(pad), padSize);
     }
 }

@@ -7,4 +7,10 @@
 
 #include "openvino/runtime/tensor.hpp"
 
-void imwrite(const std::string& name, ov::Tensor image);
+/**
+ * @brief Writes image to file
+ * @param name File name
+ * @param image Image tensor
+ * @param convert_bgr2rgb Convert BGR to RGB
+ */
+void imwrite(const std::string& name, ov::Tensor image, bool convert_bgr2rgb);

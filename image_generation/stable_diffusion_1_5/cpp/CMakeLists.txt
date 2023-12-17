@@ -31,8 +31,6 @@ FetchContent_Declare(cxxopts
 
 FetchContent_MakeAvailable(cxxopts)
 
-add_subdirectory(../../../common/progress_bar _deps/progress_bar)
-add_subdirectory(../../../common/logger _deps/logger)
 add_subdirectory(../../../common/imwrite _deps/imwrite)
 
 set(CUSTOM_OPERATIONS tokenizer)
@@ -52,9 +50,7 @@ target_link_libraries(SD-generate PRIVATE
     openvino::runtime
     Eigen3::Eigen
     cxxopts::cxxopts
-    progress_bar::progress_bar
-    imwrite::imwrite
-    logger::logger)
+    imwrite::imwrite)
 
 add_dependencies(SD-generate user_ov_extensions)
 
