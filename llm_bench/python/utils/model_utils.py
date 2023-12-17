@@ -46,23 +46,16 @@ def get_prompts(args):
     return prompts_list
 
 
-def init_image_param():
-    return {'prompt': '', 'width': 0, 'height': 0, 'steps': 0, 'guidance_scale': ''}
-
-
 def get_image_param_from_prompt_file(args):
     image_param_list = []
-    image_param = init_image_param()
     if args['prompt'] is None and args['prompt_file'] is None:
-        image_param['prompt'] = 'sailing ship in storm by Leonardo da Vinci'
-        image_param_list.append(image_param)
+        image_param_list.append({'prompt':'sailing ship in storm by Leonardo da Vinci'})
     elif args['prompt'] is not None and args['prompt_file'] is not None:
         raise RuntimeError('== prompt and prompt file should not exist together ==')
     else:
         if args['prompt'] is not None:
             if args['prompt'] != '':
-                image_param['prompt'] = args['prompt']
-                image_param_list.append(image_param)
+                image_param_list.append({'prompt':args['prompt']})
             else:
                 raise RuntimeError('== prompt should not be empty string ==')
         else:
@@ -72,7 +65,7 @@ def get_image_param_from_prompt_file(args):
                     log.info(f'Read prompts from {input_prompt}')
                     with open(input_prompt, 'r', encoding='utf-8') as f:
                         for line in f:
-                            image_param = init_image_param()
+                            image_param = {}
                             data = json.loads(line)
                             if 'prompt' in data:
                                 if data['prompt'] != '':

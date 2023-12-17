@@ -194,23 +194,11 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
 def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list):
     set_seed(args['seed'])
     input_text = image_param['prompt']
-    if image_param['steps'] > 0:
-        nsteps = image_param['steps']
-    else:
-        nsteps = DEFAULT_INFERENCE_STEPS if 'lcm' not in args["model_name"] else 4
+    image_width = image_param.get('width', DEFAULT_IMAGE_WIDTH)
+    image_height = image_param.get('height', DEFAULT_IMAGE_HEIGHT)
+    nsteps = image_param.get('steps', DEFAULT_INFERENCE_STEPS if 'lcm' not in args["model_name"] else 4)
     nsteps = 1 if num == 0 else nsteps
-    if image_param['width'] > 0:
-        image_width = image_param['width']
-    else:
-        image_width = DEFAULT_IMAGE_WIDTH
-    if image_param['height'] > 0:
-        image_height = image_param['height']
-    else:
-        image_height = DEFAULT_IMAGE_HEIGHT
-    if image_param['guidance_scale'] != '':
-        guidance_scale = image_param['guidance_scale']
-    else:
-        guidance_scale = ''
+    guidance_scale = image_param.get('guidance_scale', None)
     log.info(f'batch_size={args["batch_size"]}, steps={nsteps}, width={image_width}, height={image_height}, guidance_scale={guidance_scale}')
     result_md5_list = []
     max_rss_mem_consumption = ''
@@ -218,7 +206,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
     additional_args = {}
-    if guidance_scale != '':
+    if guidance_scale is not None:
         additional_args["guidance_scale"] = guidance_scale
     else:
         if 'lcm-sdxl' in args['model_type']:
@@ -311,19 +299,10 @@ def run_image_classification(model_path, framework, device, args, num_iters=10):
 
 def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list):
     set_seed(args['seed'])
-    if img['steps'] > 0:
-        nsteps = img['steps']
-    else:
-        nsteps = DEFAULT_SUPER_RESOLUTION_STEPS
+    nsteps = img.get('steps', DEFAULT_SUPER_RESOLUTION_STEPS)
     nsteps = 1 if num == 0 else nsteps
-    if img['width'] > 0:
-        resize_image_width = img['width']
-    else:
-        resize_image_width = DEFAULT_SUPER_RESOLUTION_WIDTH
-    if img['height'] > 0:
-        resize_image_height = img['height']
-    else:
-        resize_image_height = DEFAULT_SUPER_RESOLUTION_HEIGHT
+    resize_image_width = img.get('width', DEFAULT_SUPER_RESOLUTION_WIDTH)
+    resize_image_height = img.get('height', DEFAULT_SUPER_RESOLUTION_HEIGHT)
     log.info(f'Test {num} input image={img["prompt"]}, steps={nsteps}, resize_width={resize_image_width}, resize_height={resize_image_height}')
     low_res_img = PIL.Image.open(img['prompt']).convert('RGB')
     low_res_img = low_res_img.resize((resize_image_width, resize_image_height))
