@@ -15,7 +15,7 @@
 #include "openvino_extensions/strings.hpp"
 
 #include "cxxopts.hpp"
-#include "scheduler.hpp"
+#include "scheduler_lms_discrete.hpp"
 #include "lora_cpp.hpp"
 #include "imwrite.hpp"
 
@@ -129,12 +129,9 @@ ov::Tensor text_encoder(StableDiffusionModels models, const std::string& pos_pro
     return text_encoder_req.get_output_tensor(0);
 }
 
-StableDiffusionModels compile_models(const std::string& model_path,
-                                     const std::string& device,
-                                     const std::string& type,
-                                     const std::string& lora_path,
-                                     const float alpha,
-                                     const bool use_cache) {
+StableDiffusionModels compile_models(const std::string& model_path, const std::string& device,
+                                     const std::string& type, const std::string& lora_path,
+                                     const float alpha, const bool use_cache) {
     StableDiffusionModels models;
 
     ov::Core core;
@@ -232,9 +229,9 @@ int32_t main(int32_t argc, char* argv[]) {
 
     ov::Tensor text_embeddings = text_encoder(models, positive_prompt, negative_prompt);
 
-    Scheduler scheduler;
-    scheduler.set_timesteps(num_inference_steps);
-    std::vector<std::int64_t> timesteps = scheduler.get_timesteps();
+    std::shared_ptr<Scheduler> scheduler = std::make_shared<LMSDiscreteScheduler>();
+    scheduler->set_timesteps(num_inference_steps);
+    std::vector<std::int64_t> timesteps = scheduler->get_timesteps();
 
     for (uint32_t n = 0; n < num_images; n++) {
         std::uint32_t seed = num_images == 1 ? user_seed: n;
@@ -245,7 +242,7 @@ int32_t main(int32_t argc, char* argv[]) {
         latent_model_input_shape[0] = 2; // Unet accepts batch 2
         ov::Tensor latent(ov::element::f32, latent_shape), latent_model_input(ov::element::f32, latent_model_input_shape);
         for (size_t i = 0; i < noise.get_size(); ++i) {
-            latent.data<float>()[i]  = noise.data<float>()[i] * scheduler.get_init_noise_sigma();
+            latent.data<float>()[i]  = noise.data<float>()[i] * scheduler->get_init_noise_sigma();
         }
 
         for (size_t inference_step = 0; inference_step < num_inference_steps; inference_step++) {
@@ -253,12 +250,12 @@ int32_t main(int32_t argc, char* argv[]) {
             latent.copy_to(ov::Tensor(latent_model_input, {0, 0, 0, 0}, {1, latent_shape[1], latent_shape[2], latent_shape[3]}));
             latent.copy_to(ov::Tensor(latent_model_input, {1, 0, 0, 0}, {2, latent_shape[1], latent_shape[2], latent_shape[3]}));
 
-            scheduler.scale_model_input(latent_model_input, inference_step);
+            scheduler->scale_model_input(latent_model_input, inference_step);
 
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
             ov::Tensor noisy_residual = unet(unet_infer_request, latent_model_input, timestep, text_embeddings);
 
-            latent = scheduler.step(noisy_residual, latent, inference_step);
+            latent = scheduler->step(noisy_residual, latent, inference_step);
         }
 
         ov::Tensor generated_image = vae_decoder(models.vae_decoder, latent);

@@ -31,7 +31,8 @@ FetchContent_Declare(cxxopts
 
 FetchContent_MakeAvailable(cxxopts)
 
-add_subdirectory(../../../common/imwrite _deps/imwrite)
+add_subdirectory(../../common/imwrite _deps/imwrite)
+add_subdirectory(../../common/diffusers _deps/diffusers)
 
 set(CUSTOM_OPERATIONS tokenizer)
 add_subdirectory(../../../thirdparty/openvino_contrib/modules/custom_operations/ _deps/tokenizers)
@@ -50,6 +51,7 @@ target_link_libraries(SD-generate PRIVATE
     openvino::runtime
     Eigen3::Eigen
     cxxopts::cxxopts
+    diffusers::diffusers
     imwrite::imwrite)
 
 add_dependencies(SD-generate user_ov_extensions)
