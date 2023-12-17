@@ -17,6 +17,7 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <queue>
 
 #include "openvino/openvino.hpp"
 
@@ -270,8 +271,7 @@ class Scheduler {
     std::vector<float> m_log_sigmas;
     std::vector<float> m_sigmas;
     std::vector<int64_t> m_timesteps;
-
-    std::vector<std::vector<float>> m_derivative_list;
+    std::list<std::vector<float>> m_derivative_list;
 
 public:
     Scheduler() {
@@ -313,6 +313,57 @@ public:
         }
     }
 
+    const std::vector<int64_t>& get_timesteps() const {
+        return m_timesteps;
+    }
+
+    ov::Tensor step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) {
+        // LMS step function:
+        std::vector<float> derivative;
+        derivative.reserve(latents.get_size());
+
+        for (size_t j = 0; j < latents.get_size(); j++) {
+            // 1. compute predicted original sample (x_0) from sigma-scaled predicted noise default "epsilon"
+            float pred_latent = latents.data<float>()[j] - m_sigmas[inference_step] * noise_pred.data<float>()[j];
+            // 2. Convert to an ODE derivative
+            derivative.push_back((latents.data<float>()[j] - pred_latent) / m_sigmas[inference_step]);
+        }
+
+        m_derivative_list.push_back(derivative);
+        // keep the list size within 4
+        size_t order = 4;
+        if (order < m_derivative_list.size()) {
+            m_derivative_list.pop_front();
+        }
+
+        // 3. Compute linear multistep coefficients
+        order = std::min(inference_step + 1, order);
+
+        std::vector<float> lms_coeffs(order);
+        for (size_t curr_order = 0; curr_order < order; curr_order++) {
+            auto lms_derivative_functor = [order, curr_order, sigmas = this->m_sigmas, inference_step] (float tau) {
+                return lms_derivative_function(tau, order, curr_order, sigmas, inference_step);
+            };
+            lms_coeffs[curr_order] = trapezoidal(lms_derivative_functor, static_cast<double>(m_sigmas[inference_step]), static_cast<double>(m_sigmas[inference_step + 1]), 1e-4);
+        }
+
+        // 4. Compute previous sample based on the derivatives path
+        // prev_sample = sample + sum(coeff * derivative for coeff, derivative in zip(lms_coeffs, reversed(self.derivatives)))
+        ov::Tensor prev_sample(latents.get_element_type(), latents.get_shape());
+        float * prev_sample_data = prev_sample.data<float>();
+        const float* latents_data = latents.data<const float>();
+        for (size_t i = 0; i < prev_sample.get_size(); ++i) {
+            float derivative_sum = 0.0f;
+            auto derivative_it = m_derivative_list.begin();
+            for (size_t curr_order = 0; curr_order < order; derivative_it++, curr_order++) {
+                derivative_sum += (*derivative_it)[i] * lms_coeffs[order - curr_order - 1];
+            }
+            prev_sample_data[i] = latents_data[i] + derivative_sum;
+        }
+
+        return prev_sample;
+    }
+
     ov::Tensor diffusion_function(ov::CompiledModel unet_compiled_model,
                                   size_t num_inference_steps,
                                   ov::Tensor latent_vector_1d,
@@ -339,48 +390,11 @@ public:
 
             scale_model_input(latent_model_input, inference_step);
             // 'timestep'
-            ov::Tensor timestep(ov::element::i64, {1}, &m_timesteps[inference_step]);
+            ov::Tensor timestep(ov::element::i64, {1}, (void*)&get_timesteps()[inference_step]);
 
             ov::Tensor noisy_residual = unet_infer_function(unet_compiled_model, timestep, latent_model_input, text_embeddings);
 
-            // LMS step function:
-            std::vector<float> derivative;
-            for (size_t j = 0; j < latent_vector_1d_new.get_size(); j++) {
-                // 1. compute predicted original sample (x_0) from sigma-scaled predicted noise default "epsilon"
-                float pred_latent = latent_vector_1d_new.data<float>()[j] - m_sigmas[inference_step] * noisy_residual.data<float>()[j];
-                // 2. Convert to an ODE derivative
-                derivative.push_back((latent_vector_1d_new.data<float>()[j] - pred_latent) / m_sigmas[inference_step]);
-            }
-
-            m_derivative_list.push_back(derivative);
-            // keep the list size within 4
-            size_t order = 4;
-            if (order < m_derivative_list.size()) {
-                m_derivative_list.erase(m_derivative_list.begin());
-            }
-
-            // 3. Compute linear multistep coefficients
-            order = std::min(inference_step + 1, order);
-
-            std::vector<float> lms_coeffs(order);
-            for (size_t curr_order = 0; curr_order < order; curr_order++) {
-                auto lms_derivative_functor = [order, curr_order, sigmas = this->m_sigmas, inference_step](float tau) {
-                    return lms_derivative_function(tau, order, curr_order, sigmas, inference_step);
-                };
-                lms_coeffs[curr_order] = trapezoidal(lms_derivative_functor, static_cast<double>(m_sigmas[inference_step]), static_cast<double>(m_sigmas[inference_step + 1]), 1e-4);
-            }
-
-            // 4. Compute previous sample based on the derivatives path
-            // prev_sample = sample + sum(coeff * derivative for coeff, derivative in zip(lms_coeffs, reversed(self.derivatives)))
-            float * new_sample_data = latent_vector_1d_new.data<float>();
-            for (size_t i = 0; i < latent_vector_1d_new.get_size(); ++i) {
-                // derivative * coeffs
-                float derivative_sum = 0.0f;
-                for (size_t curr_order = 0; curr_order < order; curr_order++) {
-                    derivative_sum += m_derivative_list[curr_order][i] * lms_coeffs[order - curr_order - 1];
-                }
-                new_sample_data[i] += derivative_sum;
-            }
+            latent_vector_1d_new = step(noisy_residual, latent_vector_1d_new, inference_step);
         }
         bar.finish();
         return latent_vector_1d_new;
