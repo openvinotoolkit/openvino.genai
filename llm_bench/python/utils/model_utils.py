@@ -49,13 +49,13 @@ def get_prompts(args):
 def get_image_param_from_prompt_file(args):
     image_param_list = []
     if args['prompt'] is None and args['prompt_file'] is None:
-        image_param_list.append({'prompt':'sailing ship in storm by Leonardo da Vinci'})
+        image_param_list.append({'prompt' : 'sailing ship in storm by Leonardo da Vinci'})
     elif args['prompt'] is not None and args['prompt_file'] is not None:
         raise RuntimeError('== prompt and prompt file should not exist together ==')
     else:
         if args['prompt'] is not None:
             if args['prompt'] != '':
-                image_param_list.append({'prompt':args['prompt']})
+                image_param_list.append({'prompt' : args['prompt']})
             else:
                 raise RuntimeError('== prompt should not be empty string ==')
         else:
