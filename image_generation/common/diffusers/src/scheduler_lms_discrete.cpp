@@ -120,7 +120,6 @@ LMSDiscreteScheduler::LMSDiscreteScheduler(int32_t num_train_timesteps,
         float alphas_cumprod =
             std::accumulate(alphas.begin(), alphas.begin() + i, 1.0f, std::multiplies<float>{});
         float sigma = std::sqrt((1 - alphas_cumprod) / alphas_cumprod);
-        m_sigmas.push_back(sigma);
         m_log_sigmas.push_back(std::log(sigma));
     }
 }
@@ -146,7 +145,8 @@ void LMSDiscreteScheduler::set_timesteps(size_t num_inference_steps) {
         int32_t low_idx = std::floor(t);
         int32_t high_idx = std::ceil(t);
         float w = t - low_idx;
-        m_sigmas[i] = std::exp((1 - w) * m_log_sigmas[low_idx] + w * m_log_sigmas[high_idx]);
+        float sigma = std::exp((1 - w) * m_log_sigmas[low_idx] + w * m_log_sigmas[high_idx]);
+        m_sigmas.push_back(sigma);
     }
     m_sigmas.push_back(0.f);
 
