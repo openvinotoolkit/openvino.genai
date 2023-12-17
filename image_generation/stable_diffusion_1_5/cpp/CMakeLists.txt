@@ -39,25 +39,25 @@ add_subdirectory(../../../thirdparty/openvino_contrib/modules/custom_operations/
 
 # create executable
 
-add_executable(SD-generate ${PROJECT_SOURCE_DIR}/src/main.cpp)
+add_executable(${PROJECT_NAME} ${PROJECT_SOURCE_DIR}/src/main.cpp)
 
-target_include_directories(SD-generate PRIVATE
+target_include_directories(${PROJECT_NAME} PRIVATE
     # TODO: remove after migration to string tensors
     $<TARGET_PROPERTY:user_ov_extensions,INTERFACE_INCLUDE_DIRECTORIES>
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${EIGEN3_INCLUDE_DIR})
 
-target_link_libraries(SD-generate PRIVATE
+target_link_libraries(${PROJECT_NAME} PRIVATE
     openvino::runtime
     Eigen3::Eigen
     cxxopts::cxxopts
     diffusers::diffusers
     imwrite::imwrite)
 
-add_dependencies(SD-generate user_ov_extensions)
+add_dependencies(${PROJECT_NAME} user_ov_extensions)
 
-target_compile_definitions(SD-generate PRIVATE TOKENIZERS_LIBRARY_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
+target_compile_definitions(${PROJECT_NAME} PRIVATE TOKENIZERS_LIBRARY_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
 
 if(CMAKE_COMPILER_IS_GNUCXX)
-    target_compile_options(SD-generate PRIVATE -march=native -Wall)
+    target_compile_options(${PROJECT_NAME} PRIVATE -march=native -Wall)
 endif()

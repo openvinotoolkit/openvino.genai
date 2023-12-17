@@ -50,49 +50,38 @@ struct StableDiffusionModels {
     ov::CompiledModel tokenizer;
 };
 
-ov::Tensor vae_decoder(ov::CompiledModel& decoder_compiled_model, ov::Tensor sample) {
-    const float coeffs_const{1 / 0.18215};
-    for (size_t i = 0; i < sample.get_size(); ++i)
-        sample.data<float>()[i] *= coeffs_const;
+StableDiffusionModels compile_models(const std::string& model_path, const std::string& device,
+                                     const std::string& type, const std::string& lora_path,
+                                     const float alpha, const bool use_cache) {
+    StableDiffusionModels models;
 
-    ov::InferRequest req = decoder_compiled_model.create_infer_request();
-    req.set_input_tensor(sample);
-    req.infer();
+    ov::Core core;
+    if (use_cache)
+        core.set_property(ov::cache_dir("./cache_dir"));
+    core.add_extension(TOKENIZERS_LIBRARY_PATH);
 
-    ov::Tensor decoded_image = req.get_output_tensor();
-    ov::Tensor generated_image(ov::element::u8, decoded_image.get_shape());
+    std::map<std::string, float> lora_models;
+    lora_models[lora_path] = alpha;
 
-    // convert to u8 image
-    const float* decoded_data = decoded_image.data<const float>();
-    std::uint8_t* generated_data = generated_image.data<std::uint8_t>();
-    for (size_t i = 0; i < decoded_image.get_size(); ++i) {
-        generated_data[i] = static_cast<std::uint8_t>(std::clamp(decoded_data[i] * 0.5f + 0.5f, 0.0f, 1.0f) * 255);
-    }
+    // CLIP and UNet
+    auto text_encoder_model = core.read_model((model_path + "/" + type + "/text_encoder/openvino_model.xml").c_str());
+    auto unet_model = core.read_model((model_path + "/" + type + "/unet/openvino_model.xml").c_str());
+    auto text_encoder_and_unet = load_lora_weights_cpp(core, text_encoder_model, unet_model, device, lora_models);
+    models.text_encoder = text_encoder_and_unet[0];
+    models.unet = text_encoder_and_unet[1];
 
-    return generated_image;
-}
+    // VAE decoder
+    auto vae_decoder_model = core.read_model((model_path + "/" + type + "/vae_decoder/openvino_model.xml").c_str());
+    ov::preprocess::PrePostProcessor ppp(vae_decoder_model);
+    ppp.output().model().set_layout("NCHW");
+    ppp.output().tensor().set_layout("NHWC");
+    models.vae_decoder = core.compile_model(vae_decoder_model = ppp.build(), device);
 
-ov::Tensor unet(ov::InferRequest req, ov::Tensor sample, ov::Tensor timestep, ov::Tensor text_embedding_1d) {
-    req.set_tensor("sample", sample);
-    req.set_tensor("timestep", timestep);
-    req.set_tensor("encoder_hidden_states", text_embedding_1d);
+    // Tokenizer
+    std::string tokenizer_model_path = "../models/tokenizer/tokenizer_encoder.xml";
+    models.tokenizer = core.compile_model(tokenizer_model_path, device);
 
-    req.infer();
-
-    ov::Tensor noise_pred_tensor = req.get_output_tensor();
-    ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
-    noise_pred_shape[0] = 1;
-
-    // perform guidance
-    const float guidance_scale = 7.5f;
-    const float* noise_pred_uncond = noise_pred_tensor.data<const float>();
-    const float* noise_pred_text = noise_pred_uncond + ov::shape_size(noise_pred_shape);
-
-    ov::Tensor noisy_residual(noise_pred_tensor.get_element_type(), noise_pred_shape);
-    for (size_t i = 0; i < ov::shape_size(noise_pred_shape); ++i)
-        noisy_residual.data<float>()[i] = noise_pred_uncond[i] + guidance_scale * (noise_pred_text[i] - noise_pred_uncond[i]);
-
-    return noisy_residual;
+    return models;
 }
 
 ov::Tensor text_encoder(StableDiffusionModels models, const std::string& pos_prompt, const std::string& neg_prompt) {
@@ -129,42 +118,53 @@ ov::Tensor text_encoder(StableDiffusionModels models, const std::string& pos_pro
     return text_encoder_req.get_output_tensor(0);
 }
 
-StableDiffusionModels compile_models(const std::string& model_path, const std::string& device,
-                                     const std::string& type, const std::string& lora_path,
-                                     const float alpha, const bool use_cache) {
-    StableDiffusionModels models;
+ov::Tensor unet(ov::InferRequest req, ov::Tensor sample, ov::Tensor timestep, ov::Tensor text_embedding_1d) {
+    req.set_tensor("sample", sample);
+    req.set_tensor("timestep", timestep);
+    req.set_tensor("encoder_hidden_states", text_embedding_1d);
 
-    ov::Core core;
-    if (use_cache)
-        core.set_property(ov::cache_dir("./cache_dir"));
-    core.add_extension(TOKENIZERS_LIBRARY_PATH);
+    req.infer();
 
-    std::map<std::string, float> lora_models;
-    lora_models[lora_path] = alpha;
+    ov::Tensor noise_pred_tensor = req.get_output_tensor();
+    ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
+    noise_pred_shape[0] = 1;
 
-    // CLIP and UNet
-    auto text_encoder_model = core.read_model((model_path + "/" + type + "/text_encoder/openvino_model.xml").c_str());
-    auto unet_model = core.read_model((model_path + "/" + type + "/unet/openvino_model.xml").c_str());
-    auto text_encoder_and_unet = load_lora_weights_cpp(core, text_encoder_model, unet_model, device, lora_models);
-    models.text_encoder = text_encoder_and_unet[0];
-    models.unet = text_encoder_and_unet[1];
+    // perform guidance
+    const float guidance_scale = 7.5f;
+    const float* noise_pred_uncond = noise_pred_tensor.data<const float>();
+    const float* noise_pred_text = noise_pred_uncond + ov::shape_size(noise_pred_shape);
 
-    // VAE decoder
-    auto vae_decoder_model = core.read_model((model_path + "/" + type + "/vae_decoder/openvino_model.xml").c_str());
-    ov::preprocess::PrePostProcessor ppp(vae_decoder_model);
-    ppp.output().model().set_layout("NCHW");
-    ppp.output().tensor().set_layout("NHWC");
-    models.vae_decoder = core.compile_model(vae_decoder_model = ppp.build(), device);
+    ov::Tensor noisy_residual(noise_pred_tensor.get_element_type(), noise_pred_shape);
+    for (size_t i = 0; i < ov::shape_size(noise_pred_shape); ++i)
+        noisy_residual.data<float>()[i] = noise_pred_uncond[i] + guidance_scale * (noise_pred_text[i] - noise_pred_uncond[i]);
 
-    // Tokenizer
-    std::string tokenizer_model_path = "../models/tokenizer/tokenizer_encoder.xml";
-    models.tokenizer = core.compile_model(tokenizer_model_path, device);
+    return noisy_residual;
+}
 
-    return models;
+ov::Tensor vae_decoder(ov::CompiledModel& decoder_compiled_model, ov::Tensor sample) {
+    const float coeffs_const{1 / 0.18215};
+    for (size_t i = 0; i < sample.get_size(); ++i)
+        sample.data<float>()[i] *= coeffs_const;
+
+    ov::InferRequest req = decoder_compiled_model.create_infer_request();
+    req.set_input_tensor(sample);
+    req.infer();
+
+    ov::Tensor decoded_image = req.get_output_tensor();
+    ov::Tensor generated_image(ov::element::u8, decoded_image.get_shape());
+
+    // convert to u8 image
+    const float* decoded_data = decoded_image.data<const float>();
+    std::uint8_t* generated_data = generated_image.data<std::uint8_t>();
+    for (size_t i = 0; i < decoded_image.get_size(); ++i) {
+        generated_data[i] = static_cast<std::uint8_t>(std::clamp(decoded_data[i] * 0.5f + 0.5f, 0.0f, 1.0f) * 255);
+    }
+
+    return generated_image;
 }
 
 int32_t main(int32_t argc, char* argv[]) {
-    cxxopts::Options options("OV_SD_CPP", "SD implementation in C++ using OpenVINO\n");
+    cxxopts::Options options("stable_diffusion", "Stable Diffusion implementation in C++ using OpenVINO\n");
 
     options.add_options()
     ("p,posPrompt", "Initial positive prompt for SD ", cxxopts::value<std::string>()->default_value("cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"))
@@ -218,6 +218,9 @@ int32_t main(int32_t argc, char* argv[]) {
         std::cerr << "Failed to create dir" << e.what() << std::endl;
     }
 
+    std::cout << "OpenVINO version: " << ov::get_openvino_version() << std::endl;
+    std::cout << "Running (may take some time) ..." << std::endl;
+
     // Stable Diffusion pipeline
 
     StableDiffusionModels models = compile_models(model_base_path, device, model_type, lora_path, alpha, use_cache);
@@ -242,11 +245,11 @@ int32_t main(int32_t argc, char* argv[]) {
         latent_model_input_shape[0] = 2; // Unet accepts batch 2
         ov::Tensor latent(ov::element::f32, latent_shape), latent_model_input(ov::element::f32, latent_model_input_shape);
         for (size_t i = 0; i < noise.get_size(); ++i) {
-            latent.data<float>()[i]  = noise.data<float>()[i] * scheduler->get_init_noise_sigma();
+            latent.data<float>()[i] = noise.data<float>()[i] * scheduler->get_init_noise_sigma();
         }
 
         for (size_t inference_step = 0; inference_step < num_inference_steps; inference_step++) {
-            // concat latents along a batch dimension
+            // concat the same latent twice along a batch dimension
             latent.copy_to(ov::Tensor(latent_model_input, {0, 0, 0, 0}, {1, latent_shape[1], latent_shape[2], latent_shape[3]}));
             latent.copy_to(ov::Tensor(latent_model_input, {1, 0, 0, 0}, {2, latent_shape[1], latent_shape[2], latent_shape[3]}));
 

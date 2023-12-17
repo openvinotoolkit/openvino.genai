@@ -80,7 +80,6 @@ void imwrite(const std::string& name, ov::Tensor image, bool convert_bgr2rgb) {
     OPENVINO_ASSERT(output_file.is_open(), "Failed to open the output BMP image path");
 
     const ov::Shape shape = image.get_shape();
-    std::cout << shape << std::endl;
     const size_t width = shape[2], height = shape[1], channels = shape[3];
     OPENVINO_ASSERT(image.get_element_type() == ov::element::u8 &&
         shape.size() == 4 && shape[0] == 1 && channels == 3,

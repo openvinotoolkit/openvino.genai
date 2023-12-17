@@ -87,10 +87,10 @@ cmake --build build --parallel
 
 ## Step 4: Run Pipeline
 ```shell
-./SD-generate [-t <text>] [-n <negPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <debugLogger>] [-e <useOVExtension>] [-r <readNPLatent>] [-l <lora.safetensors>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-p <precision>]
+./stable_diffusion [-t <text>] [-n <negPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <debugLogger>] [-e <useOVExtension>] [-r <readNPLatent>] [-l <lora.safetensors>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-p <precision>]
 
 Usage:
-  SD-generate [OPTION...]
+  stable_diffusion [OPTION...]
 ```
 
 * `-p, --posPrompt arg` Initial positive prompt for SD  (default: cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting)
@@ -119,16 +119,16 @@ Negative prompt: (empty, here couldn't use OV tokenizer, check the issues for de
 
 Read the numpy latent instead of C++ std lib for the alignment with Python pipeline 
 
-* Generate image without lora `./SD-generate -r -l ""`
+* Generate image without lora `./stable_diffusion -r -l ""`
 
 ![image](https://github.com/intel-sandbox/OV_SD_CPP/assets/102195992/66047d66-08a3-4272-abdc-7999d752eea0)
 
-* Generate image with soulcard lora `./SD-generate -r`
+* Generate image with soulcard lora `./stable_diffusion -r`
 
 ![image](https://github.com/intel-sandbox/OV_SD_CPP/assets/102195992/0f6e2e3e-74fe-4bd4-bb86-df17cb4bf3f8)
 
-* Generate the debug logging into log.txt: ` ./SD-generate --log`
-* Generate different size image with dynamic model (C++ lib generated latent): `./SD-generate -m ../models/dreamlike-anime-1.0 -t FP16_dyn --height 448 --width 704`
+* Generate the debug logging into log.txt: ` ./stable_diffusion --log`
+* Generate different size image with dynamic model (C++ lib generated latent): `./stable_diffusion -m ../models/dreamlike-anime-1.0 -t FP16_dyn --height 448 --width 704`
 
 ![image](https://github.com/yangsu2022/OV_SD_CPP/assets/102195992/9bd58b64-6688-417e-b435-c0991247b97b)
 
@@ -172,7 +172,7 @@ Program optimization: In addition to inference optimization, now parallel optimi
 5. Run with prompt:  
     ```bat
     cd PROJECT_SOURCE_DIR\build
-    .\Release\SD-generate.exe -l ''  // without lora
-    .\Release\SD-generate.exe -l ../models/soulcard.safetensors
+    .\Release\stable_diffusion.exe -l ''  // without lora
+    .\Release\stable_diffusion.exe -l ../models/soulcard.safetensors
     ```
 6. Debug within Visual Studio(open .sln file in the `build` folder)
