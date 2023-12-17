@@ -49,7 +49,7 @@ This pipeline can work with other similar topologies produced by `optimum-intel`
 ### Download and convert the model and tokenizers
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
-`beam_search_causal_lm` requires `--no-streaming-detokenizer` for `convert_tokenizers.py`.
+`beam_search_causal_lm` requires ommiting `--streaming-detokenizer` for `convert_tokenizers.py`.
 
 ```sh
 source <INSTALL_DIR>/setupvars.sh
