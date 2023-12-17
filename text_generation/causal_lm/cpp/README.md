@@ -49,12 +49,13 @@ This pipeline can work with other similar topologies produced by `optimum-intel`
 ### Download and convert the model and tokenizers
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
+`beam_search_causal_lm` requires `--no-streaming-detokenizer` for `convert_tokenizers.py`.
 
 ```sh
 source <INSTALL_DIR>/setupvars.sh
 python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
 python ../../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir ./Llama-2-7b-hf/ --stateful
-python ./convert_tokenizers.py ./Llama-2-7b-hf/ --streaming-detokenizer  # Remove --streaming-decoder for beam_search_causal_lm
+python ./convert_tokenizers.py --streaming-detokenizer ./Llama-2-7b-hf/
 ```
 
 ## Run

@@ -2,7 +2,7 @@
 # Copyright (C) 2023 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import sys
+import argparse
 
 import openvino
 import openvino_tokenizers
@@ -10,10 +10,13 @@ import transformers
 
 
 def main():
-    if len(sys.argv) != 2 and len(sys.argv) != 3:
-        raise RuntimeError("Usage: {sys.argv[0]} <SOURCE_MODEL_DIR> [--streaming-detokenizer]")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--streaming-detokenizer', action=argparse.BooleanOptionalAction)
+    parser.add_argument('pretrained_model_name_or_path')
+    args = parser.parse_args()
     tokenizer, detokenizer = openvino_tokenizers.convert_tokenizer(
-        transformers.AutoTokenizer.from_pretrained(sys.argv[1]), with_detokenizer=True, streaming_detokenizer=len(sys.argv) == 3)
+        transformers.AutoTokenizer.from_pretrained(args.pretrained_model_name_or_path),
+        with_detokenizer=True, streaming_detokenizer=args.streaming_detokenizer)
     openvino.save_model(tokenizer, "tokenizer.xml")
     openvino.save_model(detokenizer, "detokenizer.xml")
 
