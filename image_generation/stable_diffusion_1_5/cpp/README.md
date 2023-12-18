@@ -43,8 +43,8 @@ SD preparation could be auto implemented with `scripts/build_dependencies.sh`. T
 3. Run model conversion script to convert PyTorch model to OpenVINO IR via [optimum-intel](https://github.com/huggingface/optimum-intel). Please, use the script `scripts/convert_model.py` to convert the model into `FP16_static` or `FP16_dyn`, which will be saved into the `models` folder:
     ```shell
     cd scripts
-    python convert_model.py -b 1 -t FP16 -sd ../models/dreamlike-anime-1.0 # to convert to a model with static shapes
-    python convert_model.py -b 1 -t FP16 -sd ../models/dreamlike-anime-1.0 -dyn # to keep a model with dynamic shapes
+    python convert_model.py -b 1 -t FP16 -sd ../models/sd/dreamlike-anime-1.0 # to convert to a model with static shapes
+    python convert_model.py -b 1 -t FP16 -sd ../models/sd/dreamlike-anime-1.0 -dyn # to keep a model with dynamic shapes
     ```
 
 > [!NOTE]
@@ -71,7 +71,7 @@ There two steps to convert a tokenizer from HuggingFace format to OpenVINO model
 2. Use the `scripts/convert_tokenizer.py` script to convert and serialize the tokenizer to OpenVINO IR format:
     ```shell
     cd scripts
-    python convert_tokenizer.py --model_id ../models/dreamlike-anime-1.0/tokenizer/ -o ../models/tokenizer/
+    python convert_tokenizer.py --model_id ../models/sd/dreamlike-anime-1.0/FP16_static/tokenizer/ -o ../models/tokenizer/
     ```
 
 > [!NOTE]
@@ -105,7 +105,7 @@ Usage:
 * `-c, --useCache`      Use model caching
 * `-e, --useOVExtension`Use OpenVINO extension for tokenizer
 * `-r, --readNPLatent`  Read numpy generated latents from file
-* `-m, --modelPath arg` Specify path of SD model IR (default: ../models/dreamlike-anime-1.0)
+* `-m, --modelPath arg` Specify path of SD model IR (default: ../models/sd/dreamlike-anime-1.0)
 * `-t, --type arg`      Specify the type of SD model IR (FP16_static or FP16_dyn) (default: FP16_static)
 * `-l, --loraPath arg`  Specify path of lora file. (*.safetensors). (default: )
 * `-a, --alpha arg`     alpha for lora (default: 0.75)
@@ -128,7 +128,7 @@ Read the numpy latent instead of C++ std lib for the alignment with Python pipel
 ![image](https://github.com/intel-sandbox/OV_SD_CPP/assets/102195992/0f6e2e3e-74fe-4bd4-bb86-df17cb4bf3f8)
 
 * Generate the debug logging into log.txt: ` ./SD-generate --log`
-* Generate different size image with dynamic model (C++ lib generated latent): `./SD-generate -m ../models/dreamlike-anime-1.0 -t FP16_dyn --height 448 --width 704`
+* Generate different size image with dynamic model (C++ lib generated latent): `./SD-generate -m ../models/sd/dreamlike-anime-1.0 -t FP16_dyn --height 448 --width 704`
 
 ![image](https://github.com/yangsu2022/OV_SD_CPP/assets/102195992/9bd58b64-6688-417e-b435-c0991247b97b)
 
@@ -167,7 +167,7 @@ Program optimization: In addition to inference optimization, now parallel optimi
     cmake --build build --config Release --parallel
     ```
 4. Put safetensors and model IR into the models folder with the following default path:
-`models\dreamlike-anime-1.0\FP16_static` 
+`models\sd\dreamlike-anime-1.0\FP16_static` 
 `models\soulcard.safetensors`
 5. Run with prompt:  
     ```bat

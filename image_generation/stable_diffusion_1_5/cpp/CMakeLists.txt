@@ -32,8 +32,12 @@ FetchContent_Declare(cxxopts
 FetchContent_MakeAvailable(cxxopts)
 
 # create executable
+list(APPEND CUSTOM_OPERATIONS tokenizer)
+add_subdirectory(../../../thirdparty/openvino_contrib/modules/custom_operations/ "${CMAKE_CURRENT_BINARY_DIR}/custom_operations/")
 
 add_executable(SD-generate ${PROJECT_SOURCE_DIR}/src/main.cpp)
+
+target_compile_definitions(SD-generate PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
 
 target_include_directories(SD-generate PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src

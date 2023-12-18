@@ -896,11 +896,9 @@ std::vector<ov::CompiledModel> SD_init(const std::string& model_path,
     SD_compiled_models.push_back(decoder_compiled_model);
 
     if (use_ov_extension) {
-        std::string tokenizer_encoder_model_path = "../models/tokenizer/tokenizer_encoder.xml";
-        std::string extention_path = "../extensions/libuser_ov_extensions.so";
+        std::string tokenizer_encoder_model_path = "../models/tokenizer/tokenizer_encoder.xml"; 
         std::cout << "Initialize SDTokenizer Model from path: " << tokenizer_encoder_model_path << std::endl;
-        std::cout << "Load OpenVINO Extension for Tokenzier from path: " << extention_path << "\n";
-        core.add_extension(extention_path.c_str());
+        core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in CMakeLists.txt
         ov::CompiledModel compiled_tokenizer_encoder = core.compile_model(tokenizer_encoder_model_path, device);
         SD_compiled_models.push_back(compiled_tokenizer_encoder);
     }
