@@ -13,13 +13,13 @@ import transformers
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--streaming-detokenizer', action='store_true')
-    parser.add_argument('pretrained_model_name_or_path', type=pathlib.Path)
+    parser.add_argument('model_dir', type=pathlib.Path)
     args = parser.parse_args()
     tokenizer, detokenizer = openvino_tokenizers.convert_tokenizer(
-        transformers.AutoTokenizer.from_pretrained(args.pretrained_model_name_or_path),
+        transformers.AutoTokenizer.from_pretrained(args.model_dir),
         with_detokenizer=True, streaming_detokenizer=args.streaming_detokenizer)
-    openvino.save_model(tokenizer, args.pretrained_model_name_or_path / "openvino_tokenizer.xml")
-    openvino.save_model(detokenizer, args.pretrained_model_name_or_path / "openvino_detokenizer.xml")
+    openvino.save_model(tokenizer, args.model_dir / "openvino_tokenizer.xml")
+    openvino.save_model(detokenizer, args.model_dir / "openvino_detokenizer.xml")
 
 
 if __name__ == '__main__':
