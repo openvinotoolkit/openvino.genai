@@ -7,6 +7,7 @@ torch
 transformers>=4.33.0
 diffusers>=0.22.0
 optimum>=1.14.0,<1.15.0
+# TODO: replace with slyalin after https://github.com/huggingface/optimum-intel/pull/486/#discussion_r1428853330 is resolved
 git+https://github.com/Wovchena/optimum-intel.git@stateful
 git+https://github.com/openvinotoolkit/nncf.git
 packaging
