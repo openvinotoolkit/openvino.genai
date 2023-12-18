@@ -54,12 +54,13 @@ if args.type == "INT8":
     pt_model.text_encoder = wc_text_encoder
     pt_model.unet = wc_unet
     pt_model.vae = wc_vae
-    onnx_config, models_and_onnx_configs = optimum_main._get_submodels_and_onnx_configs(
-    model=pt_model,
-    task="stable-diffusion",
-    monolith=False,
-    custom_onnx_configs={},
-    custom_architecture=False,
+    _, models_and_onnx_configs = optimum_main._get_submodels_and_onnx_configs(
+        model=pt_model,
+        task="stable-diffusion",
+        monolith=False,
+        custom_onnx_configs={},
+        custom_architecture=False,
+        _variant="default"
     )
     output = Path(args.sd_weights) / args.type
     for model_name in models_and_onnx_configs:
