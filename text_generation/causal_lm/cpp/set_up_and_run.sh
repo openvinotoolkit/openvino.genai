@@ -17,7 +17,7 @@ curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/
 sudo ./ov/install_dependencies/install_openvino_dependencies.sh
 
 source ./ov/setupvars.sh
-python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ../../../llm_bench/python/convert.py --model_id openlm-research/open_llama_3b_v2 --output_dir ./open_llama_3b_v2/ --stateful &
+python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ../../../llm_bench/python/convert.py --model_id openlm-research/open_llama_3b_v2 --output_dir ./open_llama_3b_v2/ --save_orig --stateful &
 cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
 cmake --build ./build/ --config Release -j
 wait
