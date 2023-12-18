@@ -150,7 +150,10 @@ ov::Tensor vae_decoder(ov::CompiledModel& decoder_compiled_model, ov::Tensor sam
     req.set_input_tensor(sample);
     req.infer();
 
-    ov::Tensor decoded_image = req.get_output_tensor();
+    return req.get_output_tensor();
+}
+
+ov::Tensor postprocess_image(ov::Tensor decoded_image) {
     ov::Tensor generated_image(ov::element::u8, decoded_image.get_shape());
 
     // convert to u8 image
@@ -261,8 +264,8 @@ int32_t main(int32_t argc, char* argv[]) {
             latent = scheduler->step(noisy_residual, latent, inference_step);
         }
 
-        ov::Tensor generated_image = vae_decoder(models.vae_decoder, latent);
-        imwrite(std::string("./images/seed_") + std::to_string(seed) + ".bmp", generated_image, true);
+        ov::Tensor decoded_image = vae_decoder(models.vae_decoder, latent);
+        imwrite(std::string("./images/seed_") + std::to_string(seed) + ".bmp", postprocess_image(decoded_image), true);
     }
 
     return EXIT_SUCCESS;
