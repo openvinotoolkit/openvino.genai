@@ -55,6 +55,6 @@ python ./convert_tokenizers.py ./Llama-2-7b-hf/
 
 Usage: `causal_lm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "<prompt>"`
 
-Example: `./build/causal_lm ./Llama-2-7b-hf/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
+Example: `./build/causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP32/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
