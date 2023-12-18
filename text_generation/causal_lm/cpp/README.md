@@ -55,17 +55,17 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 source <INSTALL_DIR>/setupvars.sh
 python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
 python ../../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir ./Llama-2-7b-hf/ --precision FP16 --stateful
-python ./convert_tokenizers.py --streaming-detokenizer ./Llama-2-7b-hf/
+python ./convert_tokenizers.py --streaming-detokenizer ./Llama-2-7b-hf/pytorch/dldt/FP16/
 ```
 
 ## Run
 
 Usage:
-1. `causal_lm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "<prompt>"`
-2. `beam_search_causal_lm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "<prompt>"`
+1. `causal_lm <MODEL_DIR> "<PROMPT>"`
+2. `beam_search_causal_lm <MODEL_DIR> "<PROMPT>"`
 
 Examples:
-1. `./build/causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP16/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
-2. `./build/beam_search_causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP16/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
+1. `./build/causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+2. `./build/beam_search_causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.

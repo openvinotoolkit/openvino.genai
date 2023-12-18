@@ -240,3 +240,18 @@ struct GroupBeamSearcher {
         return {next_tokens, next_beams};
     }
 };
+
+// Consume group_beam_searcher because beams are consumed
+std::vector<std::vector<Beam>> finalize(GroupBeamSearcher&& group_beam_searcher) {
+    std::vector<std::vector<Beam>> finalized;
+    finalized.reserve(group_beam_searcher.groups.size());
+    for (Group& group : group_beam_searcher.groups) {
+        if (!group.done) {
+            for (Beam& beam : group.ongoing) {
+                group.finish(std::move(beam), group_beam_searcher.parameters);
+            }
+        }
+        finalized.push_back(std::move(group.min_heap));
+    }
+    return finalized;
+}
