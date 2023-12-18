@@ -23,7 +23,7 @@ bemchmarking="python ./llm_bench/python/benchmark.py -m ./ov_models/bloomz-560m/
 echo ${bemchmarking}
 eval ${bemchmarking}
 
-convert_model="python ./llm_bench/python/convert.py --model_id stable-diffusion-v2-1/ --output_dir ./ov_models/stable-diffusion-v2-1 --precision FP16"
+convert_model="python ./llm_bench/python/convert.py --model_id stable-diffusion-2-1/ --output_dir ./ov_models/stable-diffusion-v2-1 --precision FP16"
 echo ${convert_model}
 eval ${convert_model}
 wait
