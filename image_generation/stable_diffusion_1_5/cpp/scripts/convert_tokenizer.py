@@ -1,11 +1,11 @@
 from argparse import ArgumentParser
 import numpy as np
 from pathlib import Path
-from tokenizer.convert_tokenizer import convert_tokenizer, connect_models
-from tokenizer.str_pack import pack_strings, unpack_strings
+from openvino_tokenizers import convert_tokenizer
+from openvino_tokenizers import pack_strings, unpack_strings
 
 from transformers import AutoTokenizer
-from openvino.runtime import serialize, Core
+from openvino import serialize, Core, Type
 
 def main():
     parser = ArgumentParser()
@@ -15,28 +15,26 @@ def main():
                         help="Save directory of converted OpenVINO Model and configurations")
     parser.add_argument("-p", "--prompt", type=str, required=False, 
                         default="cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting",
-                        help="Save directory of converted OpenVINO Model and configurations")
-    parser.add_argument("--with_decoder", type=bool, required=False, default=True,
+                        help="A test prompt to test converted OpenVINO tokenizers against native HuggingFace")
+    parser.add_argument("--with_detokenizer", type=bool, required=False, default=True,
                         help="Whether save tokenzier decoder")
     args = parser.parse_args()
 
-    print("Load HF Tokenizer...")
+    print("Load HF Tokenizer ...")
     hf_tokenizer = AutoTokenizer.from_pretrained(args.model_id)
 
-    print("Convert HF Tokenizer to OV Tokenizer...")
-    ov_tokenizer_encoder, ov_tokenizer_decoder = convert_tokenizer(hf_tokenizer, with_decoder=args.with_decoder)
-    #print("ov_tokenizer_encoder: ", ov_tokenizer_encoder)
-    #print("ov_tokenizer_decoder: ", ov_tokenizer_decoder)
+    print("Convert HF Tokenizer to OV Tokenizer ...")
+    ov_tokenizer_encoder, ov_tokenizer_decoder = convert_tokenizer(hf_tokenizer, with_detokenizer=args.with_detokenizer, tokenizer_output_type=Type.i32)
 
-    print(f"Serialize OV Tokenizer to {args.output_dir}")
-    
+    print(f"Serialize OV Tokenizer to {args.output_dir} ...")
+
     serialize(ov_tokenizer_encoder, Path(args.output_dir) / "tokenizer_encoder.xml", Path(args.output_dir) / "tokenizer_encoder.bin")
     serialize(ov_tokenizer_decoder, Path(args.output_dir) / "tokenizer_decoder.xml", Path(args.output_dir) / "tokenizer_decoder.bin")
 
-    print(f"Test tokenzier with prompt: {args.prompt}")
+    print(f"Test tokenizer with prompt: {args.prompt}")
     hf_tokens = hf_tokenizer.encode(args.prompt)
     print(f"HF Tokenizer encode results {hf_tokens}")
-    hf_decode_str = hf_tokenizer.decode(hf_tokens)
+    hf_decode_str = hf_tokenizer.decode(hf_tokens, skip_special_tokens=True)
     print(f"HF Tokenizer decode results {hf_decode_str}")
 
     core = Core()
@@ -44,25 +42,12 @@ def main():
     compiled_ov_tokenizer_decoder = core.compile_model(ov_tokenizer_decoder)
 
     prompt_uint8 = pack_strings([args.prompt])
-    #print(f"Pack string as byte array: {prompt_uint8}")
-    encoder_outputs = compiled_ov_tokenizer_encoder(prompt_uint8)
-    #print("outputs: ", encoder_outputs)
-    input_ids = encoder_outputs["input_ids"]
-    attention_mask = encoder_outputs["attention_mask"]
+    input_ids = compiled_ov_tokenizer_encoder(prompt_uint8)["input_ids"]
     print(f"OV Tokenizer results input ids: {input_ids} with shape {input_ids.shape}")
-    print(f"OV Tokenizer results attention_mask: {attention_mask} with shape {attention_mask.shape}")
-    """
-    logits = np.array([input_ids])
-    print(f"logits for tokenizer decoder: {logits}")
-    decoder_outputs = compiled_ov_tokenizer_decoder(logits)
-    output_bytes = decoder_outputs["string_output"]
-    print("output_bytes: ", output_bytes)
-    output_text = unpack_strings(output_bytes)
-    print("output_text: ", output_text)
 
-    expected_output = unpack_strings(prompt_uint8)
-    print(f"expected_output: {expected_output}")
-    """
+    decoder_outputs = compiled_ov_tokenizer_decoder([input_ids])
+    output_text = unpack_strings(decoder_outputs["string_output"])
+    print("OV deTokenizer output_text: ", output_text)
 
 
 if __name__ == "__main__":
