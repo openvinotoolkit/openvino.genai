@@ -50,15 +50,15 @@ int32_t main(int32_t argc, char* argv[]) {
 
     try {
         result = options.parse(argc, argv);
-    } catch (const cxxopts::OptionException& e) {
+    } catch (const cxxopts::exceptions::exception& e) {
         std::cout << e.what() << "\n\n";
         std::cout << options.help() << std::endl;
-        exit(0);
+        return EXIT_FAILURE;
     }
 
     if (result.count("help")) {
         std::cout << options.help() << std::endl;
-        exit(0);
+        return EXIT_SUCCESS;
     }
 
     const std::string positive_prompt = result["posPrompt"].as<std::string>();
