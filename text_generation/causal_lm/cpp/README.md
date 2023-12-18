@@ -9,17 +9,17 @@ This applications showcase inference of a causal language model (LM). They don't
 
 ### causal_lm
 
-The program loads a model, a tokenizer, detokenizer (`.xml` and `.bin`) to OpenVINO. The model is reshaped to batch 1 and variable prompt length. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
+The program loads a tokenizer, detokenizer, and a model (`.xml` and `.bin`) to OpenVINO. The model is reshaped to batch 1 and variable prompt length. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
 
 ### beam_search_causal_lm
 
-The program loads a model a tokenizer, and a detokenizer (`.xml` and `.bin`) to OpenVINO. The model is reshaped to variable batch size and prompt length. A prompt is tokenized and passed to the model. The model predicts a distribution over the next tokens and group beam search samples from that distribution to explore possible sequesnses. The result is converted to chars and printed.
+The program loads a model a tokenizer, and a detokenizer (`.xml` and `.bin`) to OpenVINO. A prompt is tokenized and passed to the model. The model predicts a distribution over the next tokens and group beam search samples from that distribution to explore possible sequesnses. The result is converted to chars and printed.
 
 ## Install OpenVINO Runtime
 
 Install OpenVINO Runtime from an archive: [Linux](https://docs.openvino.ai/2023.2/openvino_docs_install_guides_installing_openvino_from_archive_linux.html). `<INSTALL_DIR>` below refers to the extraction location.
 
-## Build `Causal LM` and `user_ov_extensions`
+## Build `causal_lm`, `beam_search_causal_lm` and `user_ov_extensions`
 
 ```sh
 git submodule update --init
@@ -54,7 +54,7 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 ```sh
 source <INSTALL_DIR>/setupvars.sh
 python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-python ../../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir ./Llama-2-7b-hf/ --stateful
+python ../../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir ./Llama-2-7b-hf/ --precision FP16 --stateful
 python ./convert_tokenizers.py --streaming-detokenizer ./Llama-2-7b-hf/
 ```
 
@@ -65,7 +65,7 @@ Usage:
 2. `beam_search_causal_lm <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> "<prompt>"`
 
 Examples:
-1. `./build/causal_lm ./Llama-2-7b-hf/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
-2. `./build/beam_search_causal_lm ./Llama-2-7b-hf/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
+1. `./build/causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP16/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
+2. `./build/beam_search_causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP16/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "Why is the Sun yellow?"`
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.

@@ -2,9 +2,8 @@ name: causal_lm_cpp
 on:
   pull_request:
     paths:
-      - text_generation/causal_lm/cpp/*
+      - text_generation/causal_lm/cpp/**
       - '!text_generation/causal_lm/cpp/README.md'
-      - llm_bench/python/**
       - thirdparty/openvino_contrib
       - .github/workflows/causal_lm_cpp.yml
 concurrency:
@@ -21,7 +20,7 @@ jobs:
         with:
           python-version: 3.8
       - run: ./text_generation/causal_lm/cpp/set_up_and_run.sh
-  beam_search_causal_lm-ubuntu:
+  cpp-beam_search_causal_lm-ubuntu:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +44,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir ./TinyLlama-1.1B-Chat-v0.6/ --stateful &
+          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir ./TinyLlama-1.1B-Chat-v0.6/ --precision FP16 --stateful &
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
           wait
@@ -54,7 +53,7 @@ jobs:
           source ./ov/setupvars.sh
           python ./text_generation/causal_lm/cpp/convert_tokenizers.py ./TinyLlama-1.1B-Chat-v0.6/
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP32/openvino_model.xml ./tokenizer.xml ./detokenizer.xml 69 > ./pred.txt
+          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/openvino_model.xml ./tokenizer.xml ./detokenizer.xml 69 > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -70,7 +69,7 @@ jobs:
           "
           echo 69 passed
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP32/openvino_model.xml ./tokenizer.xml ./detokenizer.xml Hi > ./pred.txt
+          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/openvino_model.xml ./tokenizer.xml ./detokenizer.xml Hi > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -86,7 +85,7 @@ jobs:
           "
           echo Hi passed
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP32/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "return 0" > ./pred.txt
+          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "return 0" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -102,7 +101,7 @@ jobs:
           "
           echo return 0 passed
 
-          ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP32/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "" > ./pred.txt
+          ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -118,7 +117,7 @@ jobs:
           "
           echo '""' passed
 
-          ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP32/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "你好！ 你好嗎？" > ./pred.txt
+          ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -133,7 +132,7 @@ jobs:
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo 你好！ 你好嗎？ passed
-  beam_search_causal_lm-windows:
+  cpp-beam_search_causal_lm-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -161,7 +160,7 @@ jobs:
           export OPENVINO_LIB_PATHS=$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/runtime/3rdparty/tbb/bin\;$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/runtime/bin/intel64/Release
           export PATH=$OPENVINO_LIB_PATHS:$PATH
           export PYTHONPATH=./w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/python:./w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/python/python3
-          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir ./TinyLlama-1.1B-Chat-v0.6/ --stateful &
+          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir ./TinyLlama-1.1B-Chat-v0.6/ --precision FP16 --stateful &
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
           wait
@@ -171,7 +170,7 @@ jobs:
           call w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64\setupvars.bat
           python .\text_generation\causal_lm\cpp\convert_tokenizers.py .\TinyLlama-1.1B-Chat-v0.6\
 
-          .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP32\openvino_model.xml .\tokenizer.xml .\detokenizer.xml 69 > .\pred.txt
+          .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP16\openvino_model.xml .\tokenizer.xml .\detokenizer.xml 69 > .\pred.txt
           echo import transformers > ref.py
           echo predictions = open('pred.txt', 'r').read() >> ref.py
           echo tokenizer = transformers.LlamaTokenizer.from_pretrained(r'.\TinyLlama-1.1B-Chat-v0.6') >> ref.py
