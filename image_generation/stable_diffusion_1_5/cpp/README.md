@@ -87,7 +87,7 @@ cmake --build build --parallel
 
 ## Step 4: Run Pipeline
 ```shell
-./stable_diffusion [-t <text>] [-n <negPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <debugLogger>] [-e <useOVExtension>] [-r <readNPLatent>] [-l <lora.safetensors>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-p <precision>]
+./stable_diffusion [-p <posPrompt>] [-n <negPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <device>] [-r <readNPLatent>] [-l <lora.safetensors>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-t <modelType>]
 
 Usage:
   stable_diffusion [OPTION...]
@@ -101,9 +101,7 @@ Usage:
 * `--num arg`           Number of image output(default: 1)
 * `--height arg`        Height of output image (default: 512)
 * `--width arg`         Width of output image (default: 512)
-* `--log arg`           Generate logging into log.txt for debug
 * `-c, --useCache`      Use model caching
-* `-e, --useOVExtension`Use OpenVINO extension for tokenizer
 * `-r, --readNPLatent`  Read numpy generated latents from file
 * `-m, --modelPath arg` Specify path of SD model IR (default: ../models/dreamlike-anime-1.0)
 * `-t, --type arg`      Specify the type of SD model IR (FP16_static or FP16_dyn) (default: FP16_static)
@@ -127,7 +125,6 @@ Read the numpy latent instead of C++ std lib for the alignment with Python pipel
 
 ![image](https://github.com/intel-sandbox/OV_SD_CPP/assets/102195992/0f6e2e3e-74fe-4bd4-bb86-df17cb4bf3f8)
 
-* Generate the debug logging into log.txt: ` ./stable_diffusion --log`
 * Generate different size image with dynamic model (C++ lib generated latent): `./stable_diffusion -m ../models/dreamlike-anime-1.0 -t FP16_dyn --height 448 --width 704`
 
 ![image](https://github.com/yangsu2022/OV_SD_CPP/assets/102195992/9bd58b64-6688-417e-b435-c0991247b97b)

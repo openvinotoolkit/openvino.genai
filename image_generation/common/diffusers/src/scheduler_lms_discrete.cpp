@@ -125,7 +125,6 @@ LMSDiscreteScheduler::LMSDiscreteScheduler(int32_t num_train_timesteps,
 }
 
 float LMSDiscreteScheduler::get_init_noise_sigma() const {
-    // 14.6146
     return m_sigmas[0];
 }
 
