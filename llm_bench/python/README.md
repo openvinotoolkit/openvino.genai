@@ -116,5 +116,8 @@ Add the option `--torch_compile_backend` with the desired backend: `pytorch` or 
 python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino
 ```
 
-> [!NOTE]
-> If you encounter `AttributeError`, please check **[NOTES.md](./NOTES.md)** which provides solutions to the known errors.
+## Additional Resources
+### 1. [!NOTE]
+> If you encounter `convert issue`, please check **[NOTES.md](./doc/NOTES.md)** which provides solutions to the known errors.
+### 2. [!Image generation]
+> If you need to set parameters for image generation, you need to prepare a prompt file, please check **[IMAGE_GEN.md](./doc/IMAGE_GEN.md)**
