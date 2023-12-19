@@ -13,7 +13,7 @@ wait
 original_dir="bloomz-560m"
 dst_dir="./ov_models/bloomz-560m"
 
-convert_model="python ./llm_bench/python/convert.py --model_id ${original_dir}--output_dir ${dst_dir} --precision FP16"
+convert_model="python ./llm_bench/python/convert.py --model_id ${original_dir} --output_dir ${dst_dir} --precision FP16"
 echo ${convert_model}
 eval ${convert_model}
 wait
