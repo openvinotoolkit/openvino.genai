@@ -55,16 +55,10 @@ jobs:
       with:
         name: llm.bench_diff
         path: llm.bench_diff.diff
-    - name: Download test models
-      run: |
-        git lfs install
-        export GIT_LFS_SKIP_SMUDGE=0
-        git_clone_stable_diff="git clone https://huggingface.co/Narsil/stable-diffusion-v1-4"
-        echo ${git_clone_stable_diff}
-        eval ${git_clone_stable_diff}
-        wait
-    - name: Run llm_bench test on linux
-      run: llm_bench/python/llm_run_on_linux.sh
+    - name: Test bloomz-560m on Linux
+      run: llm_bench/python/llm_run_bloomz_560m_on_linux.sh
+    - name: Test stable-diffusion-v1-4 on Linux
+      run: llm_bench/python/llm_run_stable_diffusion_on_linux.sh
   stateful:
     runs-on: ubuntu-20.04
     steps:
