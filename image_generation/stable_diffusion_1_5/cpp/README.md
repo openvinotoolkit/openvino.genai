@@ -44,11 +44,11 @@ SD preparation could be auto implemented with `scripts/build_dependencies.sh`. T
     ```shell
     cd scripts
     python convert_model.py -b 1 -t FP16 -sd ../models/dreamlike-anime-1.0 # to convert to a model with static shapes
-    python convert_model.py -b 1 -t FP16 -sd ../models/dreamlike-anime-1.0 -dyn # to keep a model with dynamic shapes
+    python convert_model.py -b 1 -t FP16 -sd ../models/dreamlike-anime-1.0 -dyn True # to keep a model with dynamic shapes
     ```
 
 > [!NOTE]
->Now the pipeline support batch size = 1 only, ie. static model `(1, 3, 512, 512)`
+>Now the pipeline support batch size = 1 only, i.e. static model `(1, 3, 512, 512)`
 
 ### LoRA enabling with safetensors
 
@@ -87,10 +87,10 @@ cmake --build build --parallel
 
 ## Step 4: Run Pipeline
 ```shell
-./SD-generate [-t <text>] [-n <negPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <debugLogger>] [-e <useOVExtension>] [-r <readNPLatent>] [-l <lora.safetensors>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-p <precision>]
+./stable_diffusion [-p <posPrompt>] [-n <negPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <device>] [-r <readNPLatent>] [-l <lora.safetensors>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-t <modelType>]
 
 Usage:
-  SD-generate [OPTION...]
+  stable_diffusion [OPTION...]
 ```
 
 * `-p, --posPrompt arg` Initial positive prompt for SD  (default: cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting)
@@ -101,9 +101,7 @@ Usage:
 * `--num arg`           Number of image output(default: 1)
 * `--height arg`        Height of output image (default: 512)
 * `--width arg`         Width of output image (default: 512)
-* `--log arg`           Generate logging into log.txt for debug
 * `-c, --useCache`      Use model caching
-* `-e, --useOVExtension`Use OpenVINO extension for tokenizer
 * `-r, --readNPLatent`  Read numpy generated latents from file
 * `-m, --modelPath arg` Specify path of SD model IR (default: ../models/dreamlike-anime-1.0)
 * `-t, --type arg`      Specify the type of SD model IR (FP16_static or FP16_dyn) (default: FP16_static)
@@ -119,16 +117,15 @@ Negative prompt: (empty, here couldn't use OV tokenizer, check the issues for de
 
 Read the numpy latent instead of C++ std lib for the alignment with Python pipeline 
 
-* Generate image without lora `./SD-generate -r -l ""`
+* Generate image without lora `./stable_diffusion -r -l ""`
 
 ![image](https://github.com/intel-sandbox/OV_SD_CPP/assets/102195992/66047d66-08a3-4272-abdc-7999d752eea0)
 
-* Generate image with soulcard lora `./SD-generate -r`
+* Generate image with soulcard lora `./stable_diffusion -r`
 
 ![image](https://github.com/intel-sandbox/OV_SD_CPP/assets/102195992/0f6e2e3e-74fe-4bd4-bb86-df17cb4bf3f8)
 
-* Generate the debug logging into log.txt: ` ./SD-generate --log`
-* Generate different size image with dynamic model (C++ lib generated latent): `./SD-generate -m ../models/dreamlike-anime-1.0 -t FP16_dyn --height 448 --width 704`
+* Generate different size image with dynamic model (C++ lib generated latent): `./stable_diffusion -m ../models/dreamlike-anime-1.0 -t FP16_dyn --height 448 --width 704`
 
 ![image](https://github.com/yangsu2022/OV_SD_CPP/assets/102195992/9bd58b64-6688-417e-b435-c0991247b97b)
 
@@ -172,7 +169,7 @@ Program optimization: In addition to inference optimization, now parallel optimi
 5. Run with prompt:  
     ```bat
     cd PROJECT_SOURCE_DIR\build
-    .\Release\SD-generate.exe -l ''  // without lora
-    .\Release\SD-generate.exe -l ../models/soulcard.safetensors
+    .\Release\stable_diffusion.exe -l ''  // without lora
+    .\Release\stable_diffusion.exe -l ../models/soulcard.safetensors
     ```
 6. Debug within Visual Studio(open .sln file in the `build` folder)
