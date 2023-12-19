@@ -319,6 +319,8 @@ class OVChatGLM2Model(OVModelForCausalLM):
             shapes[inputs] = inputs.get_partial_shape()
             shapes[inputs][0] = -1
             input_name = inputs.get_any_name()
+            if input_name.startswith('beam_idx'):
+                continue
             if input_name.startswith('past_key_values'):
                 shapes[inputs][1] = -1
                 shapes[inputs][2] = 2
@@ -720,6 +722,8 @@ class OVQwenModel(OVModelForCausalLM):
     ):
         shapes = {}
         for inputs in model.inputs:
+            if inputs.get_any_name().startswith('beam_idx'):
+                continue
             shapes[inputs] = inputs.get_partial_shape()
             shapes[inputs][0] = -1
             if shapes[inputs].rank.get_length() > 1: 

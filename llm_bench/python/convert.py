@@ -188,8 +188,7 @@ def convert_optimum_causallm_base(model, args):
         output_names=files_subpaths,
         input_shapes=dummy_shapes,
         device="cpu",
-        fp16=args.precision == "FP16",
-        int8=False,
+        compression_option="fp16" if args.precision == "FP16" else None,
         model_kwargs={},
         stateful=args.stateful
     )
@@ -224,8 +223,7 @@ def convert_optimum_causallm_base(model, args):
             output_names=files_subpaths,
             input_shapes=dummy_shapes,
             device="cpu",
-            fp16=args.precision == "FP16",
-            int8=False,
+            compression_option="fp16" if args.precision == "FP16" else None,
             model_kwargs={},
             stateful=args.stateful
         )
@@ -608,8 +606,7 @@ def convert_sdxl(args):
             models_and_onnx_configs=models_and_onnx_configs,
             output_dir=output_dir,
             output_names=files_subpaths,
-            fp16=fp16,
-            int8=False
+            compression_option="fp16" if fp16 else None
         )
 
     pt_model, preprocessors, tiny_vae = build_pt_model(args.model_id)
