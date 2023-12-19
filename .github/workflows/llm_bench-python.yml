@@ -59,7 +59,7 @@ jobs:
       run: |
         git lfs install
         export GIT_LFS_SKIP_SMUDGE=0
-        git_clone_stable_diff="git clone https://huggingface.co/stablediffusionapi/juggernaut-xl"
+        git_clone_stable_diff="git clone git clone https://huggingface.co/bguisard/stable-diffusion-nano-2-1"
         echo ${git_clone_stable_diff}
         eval ${git_clone_stable_diff}
         wait
