@@ -59,9 +59,9 @@ jobs:
       run: |
         git lfs install
         export GIT_LFS_SKIP_SMUDGE=0
-        git_clone_stable_diff_v1_5="git clone https://huggingface.co/runwayml/stable-diffusion-v1-5"
-        echo ${git_clone_stable_diff_v1_5}
-        eval ${git_clone_stable_diff_v1_5}
+        git_clone_stable_diff="git clone https://huggingface.co/stablediffusionapi/juggernaut-xl"
+        echo ${git_clone_stable_diff}
+        eval ${git_clone_stable_diff}
         wait
     - name: Run llm_bench test on linux
       run: llm_bench/python/llm_run_on_linux.sh
