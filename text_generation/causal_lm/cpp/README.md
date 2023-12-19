@@ -1,6 +1,6 @@
-# Casual LM
+# Causal LM
 
-This application showcases inference of a casual language model (LM). It doesn't have many configuration options to encourage the reader to explore and modify the source code. There's a Jupyter notebook which corresponds to this pipeline and discusses how to create an LLM-powered Chatbot: https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot.
+This application showcases inference of a causal language model (LM). It doesn't have many configuration options to encourage the reader to explore and modify the source code. There's a Jupyter notebook which corresponds to this pipeline and discusses how to create an LLM-powered Chatbot: https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot.
 
 > [!NOTE]
 > This project is not for production use.
@@ -13,7 +13,7 @@ The program loads a tokenizer, detokenizer, and a model (`.xml` and `.bin`) to O
 
 Install OpenVINO Runtime from an archive: [Linux](https://docs.openvino.ai/2023.2/openvino_docs_install_guides_installing_openvino_from_archive_linux.html). `<INSTALL_DIR>` below refers to the extraction location.
 
-## Build `Casual LM` and `user_ov_extensions`
+## Build `Causal LM` and `user_ov_extensions`
 
 ```sh
 git submodule update --init
