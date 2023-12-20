@@ -31,52 +31,28 @@ int main(int argc, char* argv[]) try {
     core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in CMakeLists.txt
     auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
     ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
-    std::shared_ptr<ov::Model> model = core.read_model(argv[1]);
+    ov::InferRequest ireq = core.compile_model(argv[1], "CPU").create_infer_request();
+    ireq.set_tensor("input_ids", input_ids);
+    ireq.set_tensor("attention_mask", attention_mask);
+    ov::Tensor position_ids = ireq.get_tensor("position_ids");
+    position_ids.set_shape(input_ids.get_shape());
+    std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
     constexpr size_t BATCH_SIZE = 1;
-    std::map<size_t, ov::PartialShape> shapes = {
-        {0, ov::PartialShape{
-            BATCH_SIZE, -1
-        }},
-        {1, ov::PartialShape{
-            BATCH_SIZE, -1
-        }},
-        {2, ov::PartialShape{
-	    BATCH_SIZE, -1
-        }}
-    };
-    std::vector<ov::Output<ov::Node>> inputs = model->inputs();
-    for (size_t idx = 3; idx < inputs.size(); ++idx) {
-        ov::PartialShape shape = inputs.at(idx).get_partial_shape();
-        shape[0] = BATCH_SIZE;
-        shapes.emplace(idx, shape);
-    }
-    model->reshape(shapes);
-    ov::InferRequest ireq = core.compile_model(model, "CPU").create_infer_request();
-    for (size_t idx = 2; idx < inputs.size(); ++idx) {
-        ireq.get_input_tensor(idx).set_shape(inputs.at(idx).get_partial_shape().get_min_shape());
-    }
-    ireq.get_tensor("input_ids").set_shape(input_ids.get_shape());  // TODO: replace with ireq.set_tensor("input_ids", input_ids); after it's fixed
-    std::copy_n(input_ids.data<const int64_t>(), input_ids.get_size(), ireq.get_tensor("input_ids").data<int64_t>());
-    ireq.get_tensor("attention_mask").set_shape(attention_mask.get_shape());
-    std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), attention_mask.get_size(), 1);
-    ireq.get_tensor("position_ids").set_shape(input_ids.get_shape());
-    std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
+    ireq.get_tensor("beam_idx").set_shape({BATCH_SIZE});
+    ireq.get_tensor("beam_idx").data<int32_t>()[0] = 0;
     ireq.infer();
     size_t vocab_size = ireq.get_tensor("logits").get_shape().back();
     float* logits = ireq.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
     int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
 
     ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
-    ireq.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
+    position_ids.set_shape({BATCH_SIZE, 1});
     constexpr int64_t SPECIAL_EOS_TOKEN = 2;  // There's no way to extract the value from the detokenizer for now
     while (out_token != SPECIAL_EOS_TOKEN) {
         ireq.get_tensor("input_ids").data<int64_t>()[0] = out_token;
         ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1});
         std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
-        ireq.get_tensor("position_ids").data<int64_t>()[0] = ireq.get_tensor("attention_mask").get_size() - 2;
-        for (size_t idx = 3; idx < inputs.size(); ++idx) {
-            ireq.set_input_tensor(idx, ireq.get_output_tensor(idx - 2));
-        }
+        position_ids.data<int64_t>()[0] = ireq.get_tensor("attention_mask").get_size() - 2;
         ireq.start_async();
         print_token(detokenizer, out_token);
         ireq.wait();
