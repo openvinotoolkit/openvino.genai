@@ -85,7 +85,7 @@ def patch_inter_processing_and_compile(hf_model, **kwargs):
 
 def build_ov_tokenizer(hf_tokenizer):
     try:
-        from openvino_tokenizers import convert_tokenizer, pack_strings, unpack_strings
+        from openvino_tokenizers import convert_tokenizer
     except ImportError:
         log.warn("OV Tokenizer is unavailable, tokenizer conversion will be skipped")
         return hf_tokenizer
