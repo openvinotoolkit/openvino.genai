@@ -27,6 +27,7 @@ int main(int argc, char* argv[]) try {
     if (argc != 3) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>'");
     }
+    // Compile models
     ov::Core core;
     core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in CMakeLists.txt
     ov::InferRequest tokenizer = core.compile_model(
@@ -34,7 +35,9 @@ int main(int argc, char* argv[]) try {
     auto [input_ids, attention_mask] = tokenize(tokenizer, argv[2]);
     ov::InferRequest detokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
-    ov::InferRequest lm = core.compile_model(std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
+    ov::InferRequest lm = core.compile_model(
+        std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
+    // Initialize inputs
     lm.set_tensor("input_ids", input_ids);
     lm.set_tensor("attention_mask", attention_mask);
     ov::Tensor position_ids = lm.get_tensor("position_ids");
@@ -50,7 +53,8 @@ int main(int argc, char* argv[]) try {
 
     lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     position_ids.set_shape({BATCH_SIZE, 1});
-    constexpr int64_t SPECIAL_EOS_TOKEN = 2;  // There's no way to extract the value from the detokenizer for now
+    // There's no way to extract special token values from the detokenizer for now
+    constexpr int64_t SPECIAL_EOS_TOKEN = 2;
     while (out_token != SPECIAL_EOS_TOKEN) {
         lm.get_tensor("input_ids").data<int64_t>()[0] = out_token;
         lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm.get_tensor("attention_mask").get_shape().at(1) + 1});
