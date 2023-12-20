@@ -1119,8 +1119,6 @@ converters = {
     'ldm': convert_ldm_super_res,
     'mpt': convert_mpt,
     'replit': convert_mpt,
-    'chatglm2': convert_causal_lm,
-    'chatglm3': convert_causal_lm,
     'chatglm': convert_chatglm,
     "chatglm2": convert_causal_lm,
     "chatglm3": convert_causal_lm,

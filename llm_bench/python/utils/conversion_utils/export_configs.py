@@ -198,6 +198,7 @@ class QwenOpenVINOConfig(TextDecoderOnnxConfig):
     )
     DUMMY_INPUT_GENERATOR_CLASSES = (QwenDummyInputsGenerator, QwenDummyPastKeyValuesGenerator)
     DUMMY_PKV_GENERATOR_CLASS = QwenDummyPastKeyValuesGenerator
+    no_position_ids = False
 
     def generate_dummy_inputs(self, framework: str = "pt", **kwargs):
         dummy_inputs_generators = self._create_dummy_input_generator_classes(**kwargs)
@@ -241,6 +242,14 @@ class QwenOpenVINOConfig(TextDecoderOnnxConfig):
             )
 
         return dummy_inputs
+
+    @property
+    def inputs(self) -> Dict[str, Dict[int, str]]:
+        common_inputs = super().inputs
+        if not self.no_position_ids and self.task == "text-generation":
+            common_inputs["position_ids"] = {0: "batch_size", 1: "sequence_length"}
+
+        return common_inputs
 
     def add_past_key_values(self, inputs_or_outputs: Dict[str, Dict[int, str]], direction: str):
         """
