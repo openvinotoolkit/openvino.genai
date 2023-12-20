@@ -9,7 +9,7 @@ These applications showcase inference of a causal language model (LM). They don'
 
 ### causal_lm
 
-The program loads a model, a tokenizer and a detokenizer (`.xml` and `.bin`) to OpenVINO. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
+The program loads a tokenizer, a detokenizer and a model (`.xml` and `.bin`) to OpenVINO. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
 
 ### beam_search_causal_lm
 
