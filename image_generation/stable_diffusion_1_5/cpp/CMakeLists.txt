@@ -42,8 +42,6 @@ add_subdirectory(../../../thirdparty/openvino_contrib/modules/custom_operations/
 add_executable(${PROJECT_NAME} ${PROJECT_SOURCE_DIR}/src/main.cpp)
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-    # TODO: remove after migration to string tensors
-    $<TARGET_PROPERTY:user_ov_extensions,INTERFACE_INCLUDE_DIRECTORIES>
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${EIGEN3_INCLUDE_DIR})
 
