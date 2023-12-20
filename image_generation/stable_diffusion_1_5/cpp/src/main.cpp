@@ -298,7 +298,7 @@ int32_t main(int32_t argc, char* argv[]) {
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
             ov::Tensor noisy_residual = unet(unet_infer_request, latent_model_input, timestep, text_embeddings);
 
-            latent = scheduler->step(noisy_residual, latent, inference_step);
+            latent = scheduler->step(noisy_residual, latent, inference_step)["latent"];
         }
 
         ov::Tensor decoded_image = vae_decoder(models.vae_decoder, latent);
