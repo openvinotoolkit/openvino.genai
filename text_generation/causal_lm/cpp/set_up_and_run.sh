@@ -22,5 +22,5 @@ cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
 cmake --build ./build/ --config Release -j
 wait
 
-python ./convert_tokenizers.py ./open_llama_3b_v2/pytorch/dldt/FP16/
-./build/greedy_causal_lm ./open_llama_3b_v2/pytorch/dldt/FP16/openvino_model.xml ./tokenizer.xml ./detokenizer.xml "return 0"
+python ./convert_tokenizers.py ./open_llama_3b_v2/pytorch/dldt/FP16/ --streaming-detokenizer
+./build/greedy_causal_lm ./open_llama_3b_v2/pytorch/dldt/FP16/ "return 0"

@@ -5,7 +5,7 @@
 #include <openvino_extensions/strings.hpp>
 
 namespace {
-std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest&& tokenizer, std::string_view prompt) {
+std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string_view prompt) {
     constexpr size_t BATCH_SIZE = 1;
     ov::Tensor destination = tokenizer.get_input_tensor();
     openvino_extensions::pack_strings(std::array<std::string_view, BATCH_SIZE>{prompt}, destination);
@@ -24,39 +24,46 @@ void print_token(ov::InferRequest& detokenizer, int64_t out_token) {
 }
 
 int main(int argc, char* argv[]) try {
-    if (argc != 5) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <openvino_model.xml> <tokenizer.xml> <detokenizer.xml> '<prompt>'");
+    if (argc != 3) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>'");
     }
+    // Compile models
     ov::Core core;
     core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in CMakeLists.txt
-    auto [input_ids, attention_mask] = tokenize(core.compile_model(argv[2], "CPU").create_infer_request(), argv[4]);
-    ov::InferRequest detokenizer = core.compile_model(argv[3], "CPU").create_infer_request();
-    ov::InferRequest ireq = core.compile_model(argv[1], "CPU").create_infer_request();
-    ireq.set_tensor("input_ids", input_ids);
-    ireq.set_tensor("attention_mask", attention_mask);
-    ov::Tensor position_ids = ireq.get_tensor("position_ids");
+    ov::InferRequest tokenizer = core.compile_model(
+        std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
+    auto [input_ids, attention_mask] = tokenize(tokenizer, argv[2]);
+    ov::InferRequest detokenizer = core.compile_model(
+        std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
+    ov::InferRequest lm = core.compile_model(
+        std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
+    // Initialize inputs
+    lm.set_tensor("input_ids", input_ids);
+    lm.set_tensor("attention_mask", attention_mask);
+    ov::Tensor position_ids = lm.get_tensor("position_ids");
     position_ids.set_shape(input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
     constexpr size_t BATCH_SIZE = 1;
-    ireq.get_tensor("beam_idx").set_shape({BATCH_SIZE});
-    ireq.get_tensor("beam_idx").data<int32_t>()[0] = 0;
-    ireq.infer();
-    size_t vocab_size = ireq.get_tensor("logits").get_shape().back();
-    float* logits = ireq.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
+    lm.get_tensor("beam_idx").set_shape({BATCH_SIZE});
+    lm.get_tensor("beam_idx").data<int32_t>()[0] = 0;
+    lm.infer();
+    size_t vocab_size = lm.get_tensor("logits").get_shape().back();
+    float* logits = lm.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
     int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
 
-    ireq.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
+    lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     position_ids.set_shape({BATCH_SIZE, 1});
-    constexpr int64_t SPECIAL_EOS_TOKEN = 2;  // There's no way to extract the value from the detokenizer for now
+    // There's no way to extract special token values from the detokenizer for now
+    constexpr int64_t SPECIAL_EOS_TOKEN = 2;
     while (out_token != SPECIAL_EOS_TOKEN) {
-        ireq.get_tensor("input_ids").data<int64_t>()[0] = out_token;
-        ireq.get_tensor("attention_mask").set_shape({BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1});
-        std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
-        position_ids.data<int64_t>()[0] = ireq.get_tensor("attention_mask").get_size() - 2;
-        ireq.start_async();
+        lm.get_tensor("input_ids").data<int64_t>()[0] = out_token;
+        lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm.get_tensor("attention_mask").get_shape().at(1) + 1});
+        std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
+        position_ids.data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 2);
+        lm.start_async();
         print_token(detokenizer, out_token);
-        ireq.wait();
-        logits = ireq.get_tensor("logits").data<float>();
+        lm.wait();
+        logits = lm.get_tensor("logits").data<float>();
         out_token = std::max_element(logits, logits + vocab_size) - logits;
     }
     std::cout << '\n';
