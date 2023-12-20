@@ -4,6 +4,7 @@ on:
     paths:
       - image_generation/stable_diffusion_1_5/cpp/src/**
       - .github/workflows/stable_diffusion_1_5_cpp.yml
+      - thirdparty/openvino_contrib
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
