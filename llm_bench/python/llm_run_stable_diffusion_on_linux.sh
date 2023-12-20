@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 cat /proc/cpuinfo | grep 'model name' | uniq
-cat cat /proc/meminfo | grep MemTotal
+grep MemTotal /proc/meminfo
+ulimit –c unlimited
 
 git lfs install
 export GIT_LFS_SKIP_SMUDGE=0
