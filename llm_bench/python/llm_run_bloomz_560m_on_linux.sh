@@ -2,6 +2,8 @@
 # Copyright (C) 2023 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+cat /proc/cpuinfo | grep 'model name' | uniq
+
 git lfs install
 export GIT_LFS_SKIP_SMUDGE=0
 echo "Download bloomz-560m"

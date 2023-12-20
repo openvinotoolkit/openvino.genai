@@ -57,7 +57,7 @@ jobs:
         path: llm.bench_diff.diff
     - name: Test bloomz-560m on Linux
       run: llm_bench/python/llm_run_bloomz_560m_on_linux.sh
-    - name: Test stable-diffusion-v1-4 on Linux
+    - name: Test tiny-stable-diffusion on Linux
       run: llm_bench/python/llm_run_stable_diffusion_on_linux.sh
   stateful:
     runs-on: ubuntu-20.04
