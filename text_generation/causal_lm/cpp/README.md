@@ -7,7 +7,7 @@ These applications showcase inference of a causal language model (LM). They don'
 
 ## How it works
 
-### causal_lm
+### greedy_causal_lm
 
 The program loads a tokenizer, a detokenizer and a model (`.xml` and `.bin`) to OpenVINO. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
 
@@ -19,7 +19,7 @@ The program loads a tokenizer, a detokenizer and a model (`.xml` and `.bin`) to 
 
 Install OpenVINO Runtime from an archive: [Linux](https://docs.openvino.ai/2023.2/openvino_docs_install_guides_installing_openvino_from_archive_linux.html). `<INSTALL_DIR>` below refers to the extraction location.
 
-## Build `causal_lm`, `beam_search_causal_lm` and `user_ov_extensions`
+## Build `greedy_causal_lm`, `beam_search_causal_lm` and `user_ov_extensions`
 
 ```sh
 git submodule update --init
