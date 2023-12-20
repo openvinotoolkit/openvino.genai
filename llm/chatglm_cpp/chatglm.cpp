@@ -258,32 +258,6 @@ int main(int argc, char* argv[]) try {
     double total_time = 0;
     int count = 0;
     
-    // Read OpenVINO Model
-    if (1 == convert_model) {
-        startTime = Time::now();
-        std::shared_ptr<ov::Model> model = core.read_model(args.ov_model_path);
-        duration_ms = get_duration_ms_until_now(startTime);
-        std::cout << "Read chatglm Model took " << duration_ms << " ms" << std::endl;
-
-        std::vector<ov::Output<ov::Node>> inputs = model->inputs();
-
-        // Change input past key value and output present key value with FP16
-        ov::preprocess::PrePostProcessor p3(model);
-        for (size_t idx = 3; idx < inputs.size(); ++idx) {
-            p3.input(idx).tensor().set_element_type(ov::element::f16);
-            p3.output(idx - 2).tensor().set_element_type(ov::element::f16);
-        }
-
-        model = p3.build();
-        std::string modifiled_file = std::regex_replace(args.ov_model_path, std::regex("openvino_model"), "modified_openvino_model");
-        std::cout << "Save modified model in " << modifiled_file << "\n";
-        ov::serialize(model, modifiled_file);
-
-        ov::CompiledModel compilemodel = core.compile_model(modifiled_file, device, device_config);
-
-        return 0;
-    }
-
     //Compile model
     startTime = Time::now();
     ov::CompiledModel compilemodel = core.compile_model(args.ov_model_path, device, device_config);
@@ -309,19 +283,13 @@ int main(int argc, char* argv[]) try {
         for (size_t idx = 0; idx < input_ids.get_size(); ++idx) {
             output_ids.emplace_back(((int)input_ids.data<const int64_t>()[idx]));
         }
-
-        for (size_t idx = 3; idx < model_inputs.size(); ++idx) {
-            ov::PartialShape shape = model_inputs.at(idx).get_partial_shape().get_min_shape();
-            shape[1] = BATCH_SIZE;
-            ireq.get_input_tensor(idx).set_shape(shape.get_shape());
-        }
-
-        ireq.get_tensor("input_ids").set_shape(input_ids.get_shape());  // TODO: replace with ireq.set_tensor("input_ids", input_ids); after it's fixed
-        ireq.get_tensor("attention_mask").set_shape(attention_mask.get_shape());
-        std::copy_n(input_ids.data<const int64_t>(), input_ids.get_size(), ireq.get_tensor("input_ids").data<int64_t>());
-        std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), attention_mask.get_size(), 1);
+        
+        ireq.set_tensor("input_ids", input_ids);
+        ireq.set_tensor("attention_mask", attention_mask);
         ireq.get_tensor("position_ids").set_shape(input_ids.get_shape());
         std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
+        ireq.get_tensor("beam_idx").set_shape({ BATCH_SIZE });
+        ireq.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
         startTime = Time::now();
         ireq.infer();
@@ -332,9 +300,7 @@ int main(int argc, char* argv[]) try {
         float* logits = ireq.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
 
         int64_t out_token = get_out_token_id(output_ids, logits, vocab_size, args);
-         output_ids.emplace_back(((int)out_token));
-
-        //int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
+        output_ids.emplace_back(((int)out_token));
 
         ireq.get_tensor("input_ids").set_shape({ BATCH_SIZE, 1 });
         ireq.get_tensor("position_ids").set_shape({ BATCH_SIZE, 1 });
@@ -347,10 +313,6 @@ int main(int argc, char* argv[]) try {
             std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
             ireq.get_tensor("position_ids").data<int64_t>()[0] = ireq.get_tensor("attention_mask").get_size() - 2;
             
-            for (size_t idx = 3; idx < model_inputs.size(); ++idx) {
-                ireq.set_input_tensor(idx, ireq.get_output_tensor(idx - 2));
-            }
-
             ireq.start_async();
             ireq.wait();
             duration_ms = get_duration_ms_until_now(startTime);
