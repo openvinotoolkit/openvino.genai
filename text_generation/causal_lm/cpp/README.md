@@ -9,11 +9,11 @@ These applications showcase inference of a causal language model (LM). They don'
 
 ### causal_lm
 
-The program loads a tokenizer, detokenizer, and a model (`.xml` and `.bin`) to OpenVINO. The model is reshaped to batch 1 and variable prompt length. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
+The program loads a model, a tokenizer and a detokenizer (`.xml` and `.bin`) to OpenVINO. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
 
 ### beam_search_causal_lm
 
-The program loads a model a tokenizer, and a detokenizer (`.xml` and `.bin`) to OpenVINO. A prompt is tokenized and passed to the model. The model predicts a distribution over the next tokens and group beam search samples from that distribution to explore possible sequesnses. The result is converted to chars and printed.
+The program loads a tokenizer, a detokenizer and a model (`.xml` and `.bin`) to OpenVINO. A prompt is tokenized and passed to the model. The model predicts a distribution over the next tokens and group beam search samples from that distribution to explore possible sequesnses. The result is converted to chars and printed.
 
 ## Install OpenVINO Runtime
 
@@ -30,19 +30,22 @@ cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/ && cmake --build ./build/ --c
 ## Supported models
 
 1. LLaMA 2
-   1. https://huggingface.co/meta-llama/Llama-2-7b-hf
-   2. https://huggingface.co/meta-llama/Llama-2-7b-chat-hf
-   3. https://huggingface.co/meta-llama/Llama-2-13b-hf
    4. https://huggingface.co/meta-llama/Llama-2-13b-chat-hf
-   5. https://huggingface.co/meta-llama/Llama-2-70b-hf
+   3. https://huggingface.co/meta-llama/Llama-2-13b-hf
+   2. https://huggingface.co/meta-llama/Llama-2-7b-chat-hf
+   1. https://huggingface.co/meta-llama/Llama-2-7b-hf
    6. https://huggingface.co/meta-llama/Llama-2-70b-chat-hf
-2. OpenLLaMA
-   1. https://huggingface.co/openlm-research/open_llama_3b
-   2. https://huggingface.co/openlm-research/open_llama_7b
+   5. https://huggingface.co/meta-llama/Llama-2-70b-hf
+2. [Llama2-7b-WhoIsHarryPotter](https://huggingface.co/microsoft/Llama2-7b-WhoIsHarryPotter)
+3. OpenLLaMA
    3. https://huggingface.co/openlm-research/open_llama_13b
+   1. https://huggingface.co/openlm-research/open_llama_3b
    4. https://huggingface.co/openlm-research/open_llama_3b_v2
+   2. https://huggingface.co/openlm-research/open_llama_7b
    5. https://huggingface.co/openlm-research/open_llama_7b_v2
-3. [Llama2-7b-WhoIsHarryPotter](https://huggingface.co/microsoft/Llama2-7b-WhoIsHarryPotter)
+4. TinyLlama
+   1. https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v0.6
+   2. https://huggingface.co/TinyLlama/TinyLlama-1.1B-intermediate-step-1195k-token-2.5T
 
 This pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature.
 
@@ -62,11 +65,11 @@ python ./convert_tokenizers.py --streaming-detokenizer ./Llama-2-7b-hf/pytorch/d
 ## Run
 
 Usage:
-1. `causal_lm <MODEL_DIR> "<PROMPT>"`
+1. `greedy_causal_lm <MODEL_DIR> "<PROMPT>"`
 2. `beam_search_causal_lm <MODEL_DIR> "<PROMPT>"`
 
 Examples:
-1. `./build/causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+1. `./build/greedy_causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
 2. `./build/beam_search_causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.

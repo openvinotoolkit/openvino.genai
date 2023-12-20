@@ -85,7 +85,7 @@ def patch_inter_processing_and_compile(hf_model, **kwargs):
 
 def build_ov_tokenizer(hf_tokenizer):
     try:
-        from openvino_tokenizers import convert_tokenizer, pack_strings, unpack_strings
+        from openvino_tokenizers import convert_tokenizer
     except ImportError:
         log.warn("OV Tokenizer is unavailable, tokenizer conversion will be skipped")
         return hf_tokenizer
@@ -97,15 +97,14 @@ def build_ov_tokenizer(hf_tokenizer):
     def encode_ov_tokenizer_full(self, text, *args, **kwargs):
         if isinstance(text, str):
             text = [text]
-        input_tensor = pack_strings(text)
-        return ov_compiled_tokenizer(input_tensor)
+        return ov_compiled_tokenizer(text)
 
     def encode_ov_tokenizer(self, text, *args, **kwargs):
         results = encode_ov_tokenizer_full(self, text, *args, **kwargs)
         return results["input_ids"].squeeze(0).tolist()
 
     def batch_decode_ov_tokenizer(self, sequences, *args, **kwargs):
-        result = unpack_strings(ov_compiled_detokenizer(sequences)["string_output"])
+        result = list(ov_compiled_detokenizer(sequences)["string_output"])
         return result
 
     def decode_ov_tokenizer(self, token_ids, *args, **kwargs):
