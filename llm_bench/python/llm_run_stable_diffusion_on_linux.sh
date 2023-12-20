@@ -20,7 +20,8 @@ echo ${convert_model}
 eval ${convert_model}
 wait
 
-bemchmarking="python ./llm_bench/python/benchmark.py -m ${dst_dir}/pytorch/dldt/FP16/ -pf ./llm_bench/python/prompts/stable-diffusion-v1-4.jsonl -d cpu -n 1"
+#bemchmarking="python ./llm_bench/python/benchmark.py -m ${dst_dir}/pytorch/dldt/FP16/ -pf ./llm_bench/python/prompts/stable-diffusion-v1-4.jsonl -d cpu -n 1"
+bemchmarking="python ./llm_bench/python/benchmark.py -m ${dst_dir}/pytorch/dldt/FP16/ -d cpu -n 1"
 echo ${bemchmarking}
 eval ${bemchmarking}
 
