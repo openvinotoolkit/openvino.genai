@@ -45,7 +45,7 @@ jobs:
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          python ./text_generation/causal_lm/cpp/convert_tokenizers.py ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/
+          convert_tokenizer ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/
 
           timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/ 69 > ./pred.txt
           python -c "
@@ -163,7 +163,7 @@ jobs:
         shell: cmd
         run: |
           call w_openvino_toolkit_windows_2023.3.0.dev20231219_x86_64\setupvars.bat
-          python .\text_generation\causal_lm\cpp\convert_tokenizers.py .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP16\
+          convert_tokenizer .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP16\ --output .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP16\
 
           .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP16\ "Why is the Sun yellow?" > .\pred.txt
           echo import transformers > ref.py
@@ -201,7 +201,7 @@ jobs:
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          python ./text_generation/causal_lm/cpp/convert_tokenizers.py ./Qwen-7B-Chat/pytorch/dldt/FP16/
+          convert_tokenizer ./Qwen-7B-Chat/pytorch/dldt/FP16/ --output ./Qwen-7B-Chat/pytorch/dldt/FP16/
           timeout 25s ./build/beam_search_causal_lm ./Qwen-7B-Chat/pytorch/dldt/FP16/ 69 > ./pred.txt
 
           python -c "
