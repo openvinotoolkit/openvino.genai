@@ -12,7 +12,6 @@
 #include <filesystem>
 
 #include "openvino/runtime/core.hpp"
-#include "openvino_extensions/strings.hpp"
 
 #include "cxxopts.hpp"
 #include "scheduler_lms_discrete.hpp"
