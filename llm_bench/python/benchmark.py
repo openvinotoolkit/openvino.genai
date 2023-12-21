@@ -32,6 +32,7 @@ HOOK_GREEDY_SEARCH_UTILS = {'pt': utils.hook_greedy_search, 'ov': utils.hook_gre
 FW_UTILS = {'pt': utils.pt_utils, 'ov': utils.ov_utils}
 
 DEFAULT_INFERENCE_STEPS = 20
+LCM_DEFAULT_INFERENCE_STEPS = 4
 DEFAULT_IMAGE_WIDTH = 512
 DEFAULT_IMAGE_HEIGHT = 512
 DEFAULT_SUPER_RESOLUTION_STEPS = 50
@@ -196,7 +197,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
     input_text = image_param['prompt']
     image_width = image_param.get('width', DEFAULT_IMAGE_WIDTH)
     image_height = image_param.get('height', DEFAULT_IMAGE_HEIGHT)
-    nsteps = image_param.get('steps', DEFAULT_INFERENCE_STEPS if 'lcm' not in args["model_name"] else 4)
+    nsteps = image_param.get('steps', DEFAULT_INFERENCE_STEPS if 'lcm' not in args["model_name"] else LCM_DEFAULT_INFERENCE_STEPS)
     nsteps = 1 if num == 0 else nsteps
     guidance_scale = image_param.get('guidance_scale', None)
     log.info(f'batch_size={args["batch_size"]}, steps={nsteps}, width={image_width}, height={image_height}, guidance_scale={guidance_scale}')
