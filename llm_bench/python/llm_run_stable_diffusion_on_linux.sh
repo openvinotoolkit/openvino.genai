@@ -8,14 +8,14 @@ ulimit –c unlimited
 
 git lfs install
 export GIT_LFS_SKIP_SMUDGE=0
-echo "Download tiny-stable-diffusion-torch"
-git_clone_stable_diff="git clone https://huggingface.co/hf-internal-testing/tiny-stable-diffusion-torch"
+echo "Download tiny-sd"
+git_clone_stable_diff="git clone https://huggingface.co/segmind/tiny-sd"
 echo ${git_clone_stable_diff}
 eval ${git_clone_stable_diff}
 wait
 
-original_dir="tiny-stable-diffusion-torch"
-dst_dir="./ov_models/stable-diffusion-tiny-torch"
+original_dir="tiny-sd"
+dst_dir="./ov_models/tiny-sd"
 
 convert_model="python ./llm_bench/python/convert.py --model_id ${original_dir} --output_dir ${dst_dir} --precision FP16"
 echo ${convert_model}
