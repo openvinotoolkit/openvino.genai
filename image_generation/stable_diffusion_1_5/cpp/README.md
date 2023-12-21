@@ -117,7 +117,7 @@ Negative prompt: (empty, here couldn't use OV tokenizer, check the issues for de
 
 Read the numpy latent instead of C++ std lib for the alignment with Python pipeline 
 
-* Generate image without lora `./stable_diffusion -r -l ""`
+* Generate image without lora `./stable_diffusion -r`
 
 ![image](https://github.com/intel-sandbox/OV_SD_CPP/assets/102195992/66047d66-08a3-4272-abdc-7999d752eea0)
 
@@ -169,7 +169,7 @@ Program optimization: In addition to inference optimization, now parallel optimi
 5. Run with prompt:  
     ```bat
     cd PROJECT_SOURCE_DIR\build
-    .\Release\stable_diffusion.exe -l ''  // without lora
+    .\Release\stable_diffusion.exe // without lora
     .\Release\stable_diffusion.exe -l ../models/soulcard.safetensors
     ```
 6. Debug within Visual Studio(open .sln file in the `build` folder)

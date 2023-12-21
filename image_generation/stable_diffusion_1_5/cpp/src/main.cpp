@@ -2,21 +2,34 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
-#include <ctime>
 #include <iostream>
-#include <fstream>
-#include <random>
 #include <string>
-#include <vector>
-#include <cmath>
+#include <random>
+#include <fstream>
 #include <filesystem>
 
 #include "openvino/runtime/core.hpp"
+#include "openvino/pass/manager.hpp"
+#include "openvino/core/preprocess/pre_post_process.hpp"
 
 #include "cxxopts.hpp"
 #include "scheduler_lms_discrete.hpp"
-#include "lora_cpp.hpp"
+#include "lora.hpp"
 #include "imwrite.hpp"
+
+class Timer {
+    const decltype(std::chrono::steady_clock::now()) m_start;
+public:
+    Timer(const std::string& scope) :
+        m_start(std::chrono::steady_clock::now()) {
+        (std::cout << scope << ": ").flush();
+    }
+
+    ~Timer() {
+        auto m_end = std::chrono::steady_clock::now();
+        std::cout << std::chrono::duration<double, std::milli>(m_end - m_start).count() << " ms" << std::endl;
+    }
+};
 
 ov::Tensor randn_tensor(uint32_t height, uint32_t width, bool use_np_latents, uint32_t seed = 42) {
     ov::Tensor noise(ov::element::f32, {1, 4, height / 8, width / 8});
@@ -49,9 +62,16 @@ struct StableDiffusionModels {
     ov::CompiledModel tokenizer;
 };
 
+void apply_lora(std::shared_ptr<ov::Model> model, InsertLoRA::LoRAMap& lora_map) {
+    if (!lora_map.empty()) {
+        ov::pass::Manager manager;
+        manager.register_pass<InsertLoRA>(lora_map);
+        manager.run_passes(model);
+    }
+}
+
 StableDiffusionModels compile_models(const std::string& model_path, const std::string& device,
-                                     const std::string& type, const std::string& lora_path,
-                                     const float alpha, const bool use_cache) {
+                                     const std::string& lora_path, const float alpha, const bool use_cache) {
     StableDiffusionModels models;
 
     ov::Core core;
@@ -59,26 +79,44 @@ StableDiffusionModels compile_models(const std::string& model_path, const std::s
         core.set_property(ov::cache_dir("./cache_dir"));
     core.add_extension(TOKENIZERS_LIBRARY_PATH);
 
-    std::map<std::string, float> lora_models;
-    lora_models[lora_path] = alpha;
+    // read LoRA weights
+    std::map<std::string, InsertLoRA::LoRAMap> lora_weights;
+    if (!lora_path.empty()) {
+        Timer t("Loading and multiplying LoRA weights");
+        lora_weights = read_lora_adapters(lora_path, alpha);
+    }
 
-    // CLIP and UNet
-    auto text_encoder_model = core.read_model((model_path + "/" + type + "/text_encoder/openvino_model.xml").c_str());
-    auto unet_model = core.read_model((model_path + "/" + type + "/unet/openvino_model.xml").c_str());
-    auto text_encoder_and_unet = load_lora_weights_cpp(core, text_encoder_model, unet_model, device, lora_models);
-    models.text_encoder = text_encoder_and_unet[0];
-    models.unet = text_encoder_and_unet[1];
+    // Text encoder
+    {
+        Timer t("Loading and compiling text encoder");
+        auto text_encoder_model = core.read_model(model_path + "/text_encoder/openvino_model.xml");
+        apply_lora(text_encoder_model, lora_weights["text_encoder"]);
+        models.text_encoder = core.compile_model(text_encoder_model, device);
+    }
+
+    // UNet
+    {
+        Timer t("Loading and compiling UNet");
+        auto unet_model = core.read_model(model_path + "/unet/openvino_model.xml");
+        apply_lora(unet_model, lora_weights["unet"]);
+        models.unet = core.compile_model(unet_model, device);
+    }
 
     // VAE decoder
-    auto vae_decoder_model = core.read_model((model_path + "/" + type + "/vae_decoder/openvino_model.xml").c_str());
-    ov::preprocess::PrePostProcessor ppp(vae_decoder_model);
-    ppp.output().model().set_layout("NCHW");
-    ppp.output().tensor().set_layout("NHWC");
-    models.vae_decoder = core.compile_model(vae_decoder_model = ppp.build(), device);
+    {
+        Timer t("Loading and compiling VAE encoder");
+        auto vae_decoder_model = core.read_model(model_path + "/vae_decoder/openvino_model.xml");
+        ov::preprocess::PrePostProcessor ppp(vae_decoder_model);
+        ppp.output().model().set_layout("NCHW");
+        ppp.output().tensor().set_layout("NHWC");
+        models.vae_decoder = core.compile_model(vae_decoder_model = ppp.build(), device);
+    }
 
     // Tokenizer
-    std::string tokenizer_model_path = "../models/tokenizer/tokenizer_encoder.xml";
-    models.tokenizer = core.compile_model(tokenizer_model_path, device);
+    {
+        Timer t("Loading and compiling tokenizer");
+        models.tokenizer = core.compile_model(model_path + "/tokenizer/openvino_tokenizer.xml", device);
+    }
 
     return models;
 }
@@ -220,16 +258,17 @@ int32_t main(int32_t argc, char* argv[]) {
     }
 
     std::cout << "OpenVINO version: " << ov::get_openvino_version() << std::endl;
-    std::cout << "Running (may take some time) ..." << std::endl;
 
     // Stable Diffusion pipeline
 
-    StableDiffusionModels models = compile_models(model_base_path, device, model_type, lora_path, alpha, use_cache);
+    StableDiffusionModels models = compile_models(model_base_path + "/" + model_type, device, lora_path, alpha, use_cache);
     ov::InferRequest unet_infer_request = models.unet.create_infer_request();
 
     ov::PartialShape sample_shape = models.unet.input("sample").get_partial_shape();
     OPENVINO_ASSERT(sample_shape.is_dynamic() || (sample_shape[2] * 8 == width && sample_shape[3] * 8 == height),
         "UNet model has static shapes [1, 4, H/8, W/8] or dynamic shapes [?, 4, ?, ?]");
+
+    Timer t("Running Stable Diffusion pipeline");
 
     ov::Tensor text_embeddings = text_encoder(models, positive_prompt, negative_prompt);
 
