@@ -10,7 +10,7 @@ Supported parameters that can be set are:
 * `height` - resolution height (default 512)
 * `guidance_scale` - guidance scale
 * `prompt` - input prompt text for the image generation
-The specific format of prompt file is as follows：
+Prompt file example：
 {"steps":"10", "width":"256", "height":"256", "guidance_scale":"1.0", "prompt": "side profile centered painted portrait, Gandhi rolling a blunt, Gloomhaven, matte painting concept art, art nouveau, 8K HD Resolution, beautifully background"}
 
 ## 2.Ldm-super-resolution
