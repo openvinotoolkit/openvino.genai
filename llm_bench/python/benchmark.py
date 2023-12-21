@@ -41,13 +41,16 @@ mem_consumption = MemConsumption()
 stable_diffusion_hook = StableDiffusionHook()
 
 
-def get_git_revision_hash():
-    try:
-        if subprocess.call(["git", "branch"], stderr=subprocess.STDOUT, stdout=open(os.devnull, 'w')) == 0:
-            commit_id = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
-            log.info(f'current git commit id: {commit_id}')
-    except Exception:
-        log.error('get git revision error')
+def try_print_git_commit_id():
+    work_dir_list = os.path.dirname(__file__).split('openvino.genai')
+    if len(work_dir_list) > 1:
+        work_dir = work_dir_list[0] + 'openvino.genai'
+        try:
+            if subprocess.call(["git", "branch"], stderr=subprocess.STDOUT, stdout=open(os.devnull, 'w'), cwd=work_dir) == 0:
+                commit_id = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=work_dir).decode('ascii').strip()
+                log.info(f'current work dir: {work_dir}, git commit id: {commit_id}')
+        except:
+            return
 
 
 def gen_iterate_data(
@@ -469,7 +472,7 @@ CASE_TO_BENCH = {
 
 def main():
     log.basicConfig(format='[ %(levelname)s ] %(message)s', level=log.INFO, stream=sys.stdout)
-    get_git_revision_hash()
+    try_print_git_commit_id()
     args = get_argprser()
     model_path, framework, model_args, model_name = utils.model_utils.analyze_args(args)
 
