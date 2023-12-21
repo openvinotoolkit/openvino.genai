@@ -90,7 +90,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
     if not compress_only:
         model_config = model.config
         model = patch_model_for_optimum_export(model)
-        precision = precision if not gptq_applied else GPTQ_DIR.format(args.precision)
+        precision = precision if not gptq_applied else GPTQ_DIR.format(precision=args.precision)
         ov_out_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / precision
         if gptq_applied and args.compress_weights:
             log.info("Weights compression will be skipped for GPTQ models")
