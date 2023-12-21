@@ -41,8 +41,13 @@ mem_consumption = MemConsumption()
 stable_diffusion_hook = StableDiffusionHook()
 
 
-def get_git_revision_hash() -> str:
-    return subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
+def get_git_revision_hash():
+    try:
+        if subprocess.call(["git", "branch"], stderr=subprocess.STDOUT, stdout=open(os.devnull, 'w')) == 0:
+            commit_id = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
+            log.info(f'current git commit id: {commit_id}')
+    except Exception:
+        log.error('get git revision error')
 
 
 def gen_iterate_data(
@@ -464,7 +469,7 @@ CASE_TO_BENCH = {
 
 def main():
     log.basicConfig(format='[ %(levelname)s ] %(message)s', level=log.INFO, stream=sys.stdout)
-    log.info(f"current git commit id: {get_git_revision_hash()}")
+    get_git_revision_hash()
     args = get_argprser()
     model_path, framework, model_args, model_name = utils.model_utils.analyze_args(args)
 
