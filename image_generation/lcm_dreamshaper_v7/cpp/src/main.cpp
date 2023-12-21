@@ -84,10 +84,10 @@ StableDiffusionModels compile_models(const std::string& model_path, const std::s
     return models;
 }
 
-ov::Tensor text_encoder(StableDiffusionModels models, const std::string& pos_prompt, const std::string& neg_prompt) {
+ov::Tensor text_encoder(StableDiffusionModels models, const std::string& pos_prompt) {
     const size_t MAX_LENGTH = 77 /* 'model_max_length' from 'tokenizer_config.json' */, BATCH_SIZE = 1;
     const int64_t EOS_TOKEN_ID = 49407, PAD_TOKEN_ID = EOS_TOKEN_ID;
-    const ov::Shape input_ids_shape({2, MAX_LENGTH});
+    const ov::Shape input_ids_shape({1, MAX_LENGTH});
 
     ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
     ov::Tensor input_ids = text_encoder_req.get_input_tensor();
@@ -102,15 +102,17 @@ ov::Tensor text_encoder(StableDiffusionModels models, const std::string& pos_pro
     ov::InferRequest tokenizer_req = models.tokenizer.create_infer_request();
     ov::Tensor packed_strings = tokenizer_req.get_input_tensor();
 
-    openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{neg_prompt}, packed_strings);
-    tokenizer_req.infer();
-    ov::Tensor input_ids_neg = tokenizer_req.get_tensor("input_ids");
-    std::copy_n(input_ids_neg.data<std::int32_t>(), input_ids_neg.get_size(), input_ids_data);
-
     openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{pos_prompt}, packed_strings);
     tokenizer_req.infer();
     ov::Tensor input_ids_pos = tokenizer_req.get_tensor("input_ids");
-    std::copy_n(input_ids_pos.data<std::int32_t>(), input_ids_pos.get_size(), input_ids_data + MAX_LENGTH);
+    std::int32_t* input_ids_pos_data = input_ids_pos.data<std::int32_t>();
+
+    for (size_t i=0; i < input_ids_pos.get_size(); ++i) {
+        input_ids_data[i] = static_cast<std::int64_t>(input_ids_pos_data[i]);
+    }
+
+    // std::copy_n(input_ids_neg.data<std::int32_t>(), input_ids_neg.get_size(), input_ids_data);
+    // std::copy_n(input_ids_pos.data<std::int32_t>(), input_ids_pos.get_size(), input_ids_data + MAX_LENGTH);
 
     // Text embedding
     text_encoder_req.infer();
@@ -162,18 +164,6 @@ ov::Tensor unet(ov::InferRequest req, ov::Tensor sample, ov::Tensor timestep, ov
     req.infer();
 
     return req.get_output_tensor();
-
-    // ov::Tensor noise_pred_tensor = req.get_output_tensor();
-    // ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
-    // noise_pred_shape[0] = 1;
-
-    // // perform guidance
-    // const float* noise_pred_data = noise_pred_tensor.data<const float>();
-    // ov::Tensor noisy_residual(noise_pred_tensor.get_element_type(), noise_pred_shape);
-    // for (size_t i = 0; i < ov::shape_size(noise_pred_shape); ++i)
-    //     noisy_residual.data<float>()[i] = noise_pred_data[i];
-
-    // return noisy_residual;
 }
 
 ov::Tensor vae_decoder(ov::CompiledModel& decoder_compiled_model, ov::Tensor sample) {
@@ -201,7 +191,7 @@ ov::Tensor postprocess_image(ov::Tensor decoded_image) {
     return generated_image;
 }
 
-// TODO: delete after randn_tensor
+// TODO: delete after debug
 ov::Tensor read_tensor_from_txt(std::string& file_name, ov::Shape shape) {
     std::ifstream input_data(file_name, std::ifstream::in);
     std::istream_iterator<float> start(input_data), end;
@@ -218,10 +208,10 @@ int32_t main(int32_t argc, char* argv[]) {
     cxxopts::Options options("stable_diffusion", "Stable Diffusion implementation in C++ using OpenVINO\n");
 
     options.add_options()
-    ("p,posPrompt", "Initial positive prompt for SD ", cxxopts::value<std::string>()->default_value("cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"))
+    ("p,posPrompt", "Initial positive prompt for SD ", cxxopts::value<std::string>()->default_value("a beautiful pink unicorn"))
     ("n,negPrompt","Defaut is empty with space", cxxopts::value<std::string>()->default_value(" "))
     ("d,device", "AUTO, CPU, or GPU", cxxopts::value<std::string>()->default_value("CPU"))
-    ("step", "Number of diffusion steps", cxxopts::value<size_t>()->default_value("20"))
+    ("step", "Number of diffusion steps", cxxopts::value<size_t>()->default_value("4"))
     ("s,seed", "Number of random seed to generate latent for one image output", cxxopts::value<size_t>()->default_value("42"))
     ("num", "Number of image output", cxxopts::value<size_t>()->default_value("1"))
     ("height", "destination image height", cxxopts::value<size_t>()->default_value("512"))
@@ -231,7 +221,8 @@ int32_t main(int32_t argc, char* argv[]) {
     ("m,modelPath", "Specify path of SD model IRs", cxxopts::value<std::string>()->default_value("../models/dreamlike-anime-1.0"))
     ("t,type", "Specify the type of SD model IRs (e.g., FP16_static or FP16_dyn)", cxxopts::value<std::string>()->default_value("FP16_static"))
     ("l,loraPath", "Specify path of LoRA file. (*.safetensors).", cxxopts::value<std::string>()->default_value(""))
-    ("a,alpha", "alpha for LoRA", cxxopts::value<float>()->default_value("0.75"))("h,help", "Print usage");
+    ("a,alpha", "alpha for LoRA", cxxopts::value<float>()->default_value("0.75"))
+    ("h,help", "Print usage");
     cxxopts::ParseResult result;
 
     try {
@@ -281,13 +272,8 @@ int32_t main(int32_t argc, char* argv[]) {
     OPENVINO_ASSERT(sample_shape.is_dynamic() || (sample_shape[2] * 8 == width && sample_shape[3] * 8 == height),
         "UNet model has static shapes [1, 4, H/8, W/8] or dynamic shapes [?, 4, ?, ?]");
 
-
-    //TODO
-    // ov::Tensor text_embeddings = text_encoder(models, positive_prompt, negative_prompt);
-    std::string emb_path = "/home/alikh/openvino.genai/lcm_dreamshaper_v7/text_embeddings.txt";
-    ov::Shape encoder_shape = {1, 77, 768};
-    ov::Tensor text_embeddings = read_tensor_from_txt(emb_path, encoder_shape);
-
+    // no negative prompt for LCM model: https://huggingface.co/docs/diffusers/api/pipelines/latent_consistency_models#diffusers.LatentConsistencyModelPipeline
+     ov::Tensor text_embeddings = text_encoder(models, positive_prompt);
 
     std::shared_ptr<Scheduler> scheduler = std::make_shared<LCMScheduler>();
     scheduler->set_timesteps(num_inference_steps);
@@ -299,24 +285,11 @@ int32_t main(int32_t argc, char* argv[]) {
         std::uint32_t seed = num_images == 1 ? user_seed: n;
 
         ov::Tensor latent_model_input = randn_tensor(height, width, read_np_latent, seed);
-        // latents are multiplied by 'init_noise_sigma'
-        // ov::Shape latent_shape = noise.get_shape(), latent_model_input_shape = latent_shape;
-        // latent_model_input_shape[0] = 2; // Unet accepts batch 2
-        // ov::Tensor latent(ov::element::f32, latent_shape), latent_model_input(ov::element::f32, latent_model_input_shape);
-        // for (size_t i = 0; i < noise.get_size(); ++i) {
-        //     latent.data<float>()[i] = noise.data<float>()[i] * scheduler->get_init_noise_sigma();
-        // }
 
         float guidance_scale = 8.0;
         ov::Tensor guidance_scale_embedding = get_w_embedding(guidance_scale, 256);
 
         for (size_t inference_step = 0; inference_step < num_inference_steps; inference_step++) {
-            // // concat the same latent twice along a batch dimension
-            // latent.copy_to(ov::Tensor(latent_model_input, {0, 0, 0, 0}, {1, latent_shape[1], latent_shape[2], latent_shape[3]}));
-            // latent.copy_to(ov::Tensor(latent_model_input, {1, 0, 0, 0}, {2, latent_shape[1], latent_shape[2], latent_shape[3]}));
-
-            // scheduler->scale_model_input(latent_model_input, inference_step);
-
             ov::Tensor timestep(ov::element::f32, {1}, &timesteps[inference_step]);
             ov::Tensor noisy_residual = unet(unet_infer_request, latent_model_input, timestep, text_embeddings, guidance_scale_embedding);
 
@@ -326,6 +299,7 @@ int32_t main(int32_t argc, char* argv[]) {
 
         ov::Tensor decoded_image = vae_decoder(models.vae_decoder, denoised);
         imwrite(std::string("./images/seed_") + std::to_string(seed) + ".bmp", postprocess_image(decoded_image), true);
+        std::cout << "Result image saved to: " << std::string("./images/seed_") + std::to_string(seed) + ".bmp" << std::endl;
     }
 
     return EXIT_SUCCESS;

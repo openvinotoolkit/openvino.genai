@@ -12,7 +12,13 @@ public:
                  const std::vector<float>& trained_betas = {},
                  size_t original_inference_steps = 50, 
                  bool set_alpha_to_one = true,
-                 float timestep_scaling = 10.0f);
+                 float timestep_scaling = 10.0f,
+                 bool thresholding = false,
+                 bool clip_sample = false,
+                 float clip_sample_range = 1.0f,
+                 float dynamic_thresholding_ratio = 0.995f,
+                 float sample_max_value = 1.0f,
+                 bool read_torch_noise = false);
 
     void set_timesteps(size_t num_inference_steps) override;
 
@@ -25,8 +31,6 @@ public:
     std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) override;
 
 private:
-    // std::vector<float> m_log_sigmas;
-    // std::vector<float> m_sigmas;
     std::vector<int64_t> m_timesteps;
     std::vector<float> alphas_cumprod;
     PredictionType prediction_type_config;
@@ -36,8 +40,12 @@ private:
     size_t num_inference_steps;
     float timestep_scaling_config;
     float sigma_data;
+    bool thresholding;
+    bool clip_sample;
+    float clip_sample_range;
+    float dynamic_thresholding_ratio;
+    float sample_max_value;
+    bool read_torch_noise;
 
     std::vector<float> threshold_sample(const std::vector<float>& flat_sample);
-
-    // int64_t _sigma_to_t(float sigma) const;
 };

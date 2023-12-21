@@ -68,11 +68,23 @@ LCMScheduler::LCMScheduler(int32_t num_train_timesteps,
                            const std::vector<float>& trained_betas,
                            size_t original_inference_steps,
                            bool set_alpha_to_one,
-                           float timestep_scaling):
+                           float timestep_scaling,
+                           bool thresholding,
+                           bool clip_sample,
+                           float clip_sample_range,
+                           float dynamic_thresholding_ratio,
+                           float sample_max_value,
+                           bool read_torch_noise):
                            prediction_type_config(prediction_type),
                            num_train_timesteps_config(num_train_timesteps),
                            original_inference_steps_config(original_inference_steps),
-                           timestep_scaling_config(timestep_scaling) {
+                           timestep_scaling_config(timestep_scaling),
+                           thresholding(thresholding),
+                           clip_sample(clip_sample),
+                           clip_sample_range(clip_sample_range),
+                           dynamic_thresholding_ratio(dynamic_thresholding_ratio),
+                           sample_max_value(sample_max_value),
+                           read_torch_noise(read_torch_noise) {
 
     sigma_data = 0.5f; // Default: 0.5
 
@@ -131,7 +143,7 @@ void LCMScheduler::set_timesteps(size_t num_inference_steps) {
         m_timesteps.push_back(lcm_origin_timesteps[i]);
     }
 
-    // // v2. based on diffusers==0.23.1 - remove after debug:
+    // // v2. based on diffusers==0.23.1
     // std::vector<float> temp;
     // for(size_t i = 0; i < lcm_origin_timesteps.size(); i+=skipping_step)
     //     temp.push_back(lcm_origin_timesteps[i]);
@@ -141,10 +153,6 @@ void LCMScheduler::set_timesteps(size_t num_inference_steps) {
 }
 
 std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) {
-
-    // latents = sample
-    // noise_pred = model_output
-
     ov::Tensor timestep(ov::element::i64, {1}, &m_timesteps[inference_step]);
 
     float* noise_pred_data = noise_pred.data<float>();
@@ -178,14 +186,14 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
         }
     }
 
-    // TODO: 5. Clip or threshold "predicted x_0"
-    // if (thresholding) {
-    //     predicted_original_sample = threshold_sample(predicted_original_sample);
-    // } else if (clip_sample) {
-    //     for (float& value : predicted_original_sample) {
-    //         value = std::clamp(value, - clip_sample_range, clip_sample_range);
-    //     }
-    // }
+    // 5. Clip or threshold "predicted x_0"
+    if (thresholding) {
+        predicted_original_sample = threshold_sample(predicted_original_sample);
+    } else if (clip_sample) {
+        for (float& value : predicted_original_sample) {
+            value = std::clamp(value, - clip_sample_range, clip_sample_range);
+        }
+    }
 
     // 6. Denoise model output using boundary conditions
     ov::Tensor denoised(latents.get_element_type(), latents.get_shape());
@@ -201,19 +209,23 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
     float* prev_sample_data = prev_sample.data<float>();
 
     if (inference_step != num_inference_steps - 1) {
-        //TODO: uncomment noise generation
-        // std::vector<float> noise = randn_function(noise_pred.get_size());
-        std::string noise_file = "/home/alikh/openvino.genai/lcm_dreamshaper_v7/noise_" + std::to_string(inference_step) + ".txt";
-        std::vector<float> noise = read_vector_from_txt(noise_file);
+        
+        // read noise from file for debug
+        // read_torch_noise = true;
+        std::vector<float> noise;
+        if (read_torch_noise) {
+            std::string noise_file = "../scripts/torch_noise_step_" + std::to_string(inference_step) + ".txt";
+            noise = read_vector_from_txt(noise_file);
+        } else {
+            noise = randn_function(noise_pred.get_size());
+        }        
 
         for (std::size_t i = 0; i < noise_pred.get_size(); ++i) {
             prev_sample_data[i] = alpha_prod_t_prev_sqrt * denoised_data[i] + beta_prod_t_prev_sqrt * noise[i];
         }
 
     } else {
-        for (std::size_t i = 0; i < noise_pred.get_size(); ++i) {
-            prev_sample_data[i] = denoised_data[i];
-        }
+        std::copy_n(denoised_data, denoised.get_size(), prev_sample_data);
     }
 
     std::map<std::string, ov::Tensor> result{{"latent", prev_sample}, {"denoised", denoised}};
@@ -232,33 +244,33 @@ void LCMScheduler::scale_model_input(ov::Tensor sample, size_t inference_step) {
     return;
 }
 
-//  // Copied from diffusers.schedulers.scheduling_ddpm.DDPMScheduler._threshold_sample
-// std::vector<float> LCMScheduler::threshold_sample(const std::vector<float>& flat_sample) {
-//     /* 
-//     "Dynamic thresholding: At each sampling step we set s to a certain percentile absolute pixel value in xt0 (the
-//     prediction of x_0 at timestep t), and if s > 1, then we threshold xt0 to the range [-s, s] and then divide by
-//     s. Dynamic thresholding pushes saturated pixels (those near -1 and 1) inwards, thereby actively preventing
-//     pixels from saturation at each step. We find that dynamic thresholding results in significantly better
-//     photorealism as well as better image-text alignment, especially when using very large guidance weights."
-//     https://arxiv.org/abs/2205.11487
-//     */
+// Copied from diffusers.schedulers.scheduling_ddpm.DDPMScheduler._threshold_sample
+std::vector<float> LCMScheduler::threshold_sample(const std::vector<float>& flat_sample) {
+    /*
+    "Dynamic thresholding: At each sampling step we set s to a certain percentile absolute pixel value in xt0 (the
+    prediction of x_0 at timestep t), and if s > 1, then we threshold xt0 to the range [-s, s] and then divide by
+    s. Dynamic thresholding pushes saturated pixels (those near -1 and 1) inwards, thereby actively preventing
+    pixels from saturation at each step. We find that dynamic thresholding results in significantly better
+    photorealism as well as better image-text alignment, especially when using very large guidance weights."
+    https://arxiv.org/abs/2205.11487
+    */
 
-//     std::vector<float> thresholded_sample;
-//     // Calculate abs
-//     std::vector<float> abs_sample(flat_sample.size());
-//     std::transform(flat_sample.begin(), flat_sample.end(), abs_sample.begin(), [](float val) { return std::abs(val); });
+    std::vector<float> thresholded_sample;
+    // Calculate abs
+    std::vector<float> abs_sample(flat_sample.size());
+    std::transform(flat_sample.begin(), flat_sample.end(), abs_sample.begin(), [](float val) { return std::abs(val); });
 
-//     // Calculate s, the quantile threshold
-//     std::sort(abs_sample.begin(), abs_sample.end());
-//     const int s_index = std::min(static_cast<int>(std::round(dynamic_thresholding_ratio * flat_sample.size())), 
-//                                 static_cast<int>(flat_sample.size()) - 1);
-//     float s = abs_sample[s_index];
-//     s = std::clamp(s, 1.0f, sample_max_value);
+    // Calculate s, the quantile threshold
+    std::sort(abs_sample.begin(), abs_sample.end());
+    const int s_index = std::min(static_cast<int>(std::round(dynamic_thresholding_ratio * flat_sample.size())),
+                                static_cast<int>(flat_sample.size()) - 1);
+    float s = abs_sample[s_index];
+    s = std::clamp(s, 1.0f, sample_max_value);
 
-//     // Threshold and normalize the sample
-//     for (float& value : thresholded_sample) {
-//         value = std::clamp(value, -s, s) / s;
-//     }
+    // Threshold and normalize the sample
+    for (float& value : thresholded_sample) {
+        value = std::clamp(value, -s, s) / s;
+    }
 
-//     return thresholded_sample;
-// }
+    return thresholded_sample;
+}
