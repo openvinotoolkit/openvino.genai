@@ -4,7 +4,6 @@
 
 cat /proc/cpuinfo | grep 'model name' | uniq
 grep MemTotal /proc/meminfo
-ulimit –c unlimited
 
 git lfs install
 export GIT_LFS_SKIP_SMUDGE=0
