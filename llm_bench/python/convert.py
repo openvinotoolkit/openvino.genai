@@ -1076,7 +1076,6 @@ def convert_codegen2(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     if config.model_type == "codegen":
         config.model_type = "codegen2"
-    print(config)
     cuda, post_init = patch_gptq(config)
     pt_model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
