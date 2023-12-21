@@ -70,7 +70,7 @@ There two steps to convert a tokenizer from HuggingFace format to OpenVINO model
     ```
 2. Use `convert_tokenizer` to convert and serialize the tokenizer to OpenVINO IR format:
     ```shell
-    convert_tokenizer ./models/dreamlike-anime-1.0/tokenizer/ --output ./models/tokenizer/
+    convert_tokenizer ./models/dreamlike-anime-1.0/tokenizer/ --output ./models/tokenizer/ --tokenizer-output-type i32
     ```
 
 > [!NOTE]
