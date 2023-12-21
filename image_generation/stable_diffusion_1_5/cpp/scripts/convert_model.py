@@ -27,77 +27,18 @@ def parse_args() -> argparse.Namespace:
 
 args = parse_args()
 
+load_in_8bit = True if args.type == "INT8" else False
 output_path = Path(args.sd_weights) / (args.type + ("_dyn" if args.dynamic else "_static"))
 
-# convert SD model to IR
+# convert SD models to IR
 
-if args.type == "INT8":
-    from diffusers import StableDiffusionPipeline
-    from optimum.exporters.openvino import export_models
-    from optimum.exporters.onnx import __main__ as optimum_main
-    from optimum.intel.openvino import OV_XML_FILE_NAME
-    from nncf import compress_weights
+model = OVStableDiffusionPipeline.from_pretrained(args.sd_weights, trust_remote_code=True, export=True, compile=False, load_in_8bit=load_in_8bit)
+if args.type == "FP16":
+    model.half()
+if not args.dynamic:
+    model.reshape(args.batch, 512, 512, 1)
 
-    pt_model = StableDiffusionPipeline.from_pretrained(args.sd_weights, trust_remote_code=True)
-
-    pt_model.text_encoder = compress_weights(pt_model.text_encoder)
-    pt_model.unet = compress_weights(pt_model.unet)
-    pt_model.vae = compress_weights(pt_model.vae)
-
-    _, models_and_onnx_configs = optimum_main._get_submodels_and_onnx_configs(
-        model=pt_model,
-        task="stable-diffusion",
-        monolith=False,
-        custom_onnx_configs={},
-        custom_architecture=False,
-        _variant="default"
-    )
-
-    for model_name in models_and_onnx_configs:
-        subcomponent = models_and_onnx_configs[model_name][0]
-        if hasattr(subcomponent, "save_config"):
-            subcomponent.save_config(output_path / model_name)
-        elif hasattr(subcomponent, "config") and hasattr(subcomponent.config, "save_pretrained"):
-            subcomponent.config.save_pretrained(output_path / model_name)
-    files_subpaths = [Path(name_dir) / OV_XML_FILE_NAME for name_dir in models_and_onnx_configs]
-
-    # Saving the additional components needed to perform inference.
-    pt_model.scheduler.save_pretrained(output_path / "scheduler")
-
-    feature_extractor = getattr(pt_model, "feature_extractor", None)
-    if feature_extractor is not None:
-        feature_extractor.save_pretrained(output_path / "feature_extractor")
-
-    tokenizer = getattr(pt_model, "tokenizer", None)
-    if tokenizer is not None:
-        tokenizer.save_pretrained(output_path / "tokenizer")
-
-    tokenizer_2 = getattr(pt_model, "tokenizer_2", None)
-    if tokenizer_2 is not None:
-        tokenizer_2.save_pretrained(output_path / "tokenizer_2")
-
-    pt_model.save_config(output_path)
-
-    export_models(
-        models_and_onnx_configs=models_and_onnx_configs,
-        output_dir=output_path,
-        output_names=files_subpaths
-    )
-    del pt_model
-
-    if not args.dynamic:
-        model = OVStableDiffusionPipeline.from_pretrained(output_path, export=False, compile=False)
-        model.reshape(args.batch, 512, 512, 1)
-        model.save_pretrained(output_path)
-
-else:
-    model = OVStableDiffusionPipeline.from_pretrained(args.sd_weights, trust_remote_code=True, export=True, compile=False)
-    if args.type == "FP16":
-        model.half()
-    if not args.dynamic:
-        model.reshape(args.batch, 512, 512, 1)
-
-    model.save_pretrained(output_path)
+model.save_pretrained(output_path)
 
 # convert tokenizer
 

@@ -19,11 +19,5 @@ endif()
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 target_link_libraries(diffusers PUBLIC openvino::runtime)
 
-if(WIN32)
-    message(STATUS "CMake is running on Windows")
-    # TODO: make it more generic
-    set(EIGEN3_INCLUDE_DIR "C:/Eigen3/eigen-3.4.0")
-endif()
-
 find_package(Eigen3 REQUIRED)
 target_link_libraries(diffusers PUBLIC Eigen3::Eigen)

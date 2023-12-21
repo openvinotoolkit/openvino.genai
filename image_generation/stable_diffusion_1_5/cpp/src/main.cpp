@@ -131,7 +131,6 @@ ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt, s
     ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
 
     auto compute_text_embeddings = [&] (std::string& prompt, ov::Tensor encoder_output_tensor) {
-        // TODO: input_ids = text_encoder_req.get_tensor("input_ids"); does not work
         ov::Tensor input_ids(ov::element::i32, input_ids_shape);
         std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), PAD_TOKEN_ID);
 
@@ -142,7 +141,6 @@ ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt, s
         std::copy_n(input_ids_token.data<std::int32_t>(), input_ids_token.get_size(), input_ids.data<int32_t>());
 
         // text embeddings
-        // input_ids.set_shape(input_ids_shape); // restore shape after tokenizer, because it produces dynamic output length
         text_encoder_req.set_tensor("input_ids", input_ids);
         text_encoder_req.set_output_tensor(0, encoder_output_tensor);
         text_encoder_req.infer();
