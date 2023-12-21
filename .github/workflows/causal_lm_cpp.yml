@@ -148,16 +148,14 @@ jobs:
           curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13739-294cc6668c4/w_openvino_toolkit_windows_2023.3.0.dev20231219_x86_64.zip
           unzip ov.zip
       - name: Download, convert and build
-        shell: bash
+        shell: cmd
         run: |
-          export OpenVINO_DIR=$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231219_x86_64/runtime/cmake
-          export OPENVINO_LIB_PATHS=$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231219_x86_64/runtime/3rdparty/tbb/bin\;$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231219_x86_64/runtime/bin/intel64/Release
-          export PATH=$OPENVINO_LIB_PATHS:$PATH
-          export PYTHONPATH=./w_openvino_toolkit_windows_2023.3.0.dev20231219_x86_64/python:./w_openvino_toolkit_windows_2023.3.0.dev20231219_x86_64/python/python3
-          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python -m pip uninstall --yes openvino && python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir ./TinyLlama-1.1B-Chat-v0.6/ --precision FP16 --stateful &
+          call w_openvino_toolkit_windows_2023.3.0.dev20231219_x86_64\setupvars.bat
+          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
+          python -m pip uninstall --yes openvino
+          python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir ./TinyLlama-1.1B-Chat-v0.6/ --precision FP16 --stateful
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - name: Compare
         shell: cmd
         run: |
@@ -177,7 +175,7 @@ jobs:
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
           python ref.py
   cpp-beam_search_causal_lm-Qwen-7B-Chat:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-20.04-8-cores
     steps:
       - uses: actions/checkout@v4
         with:
@@ -193,7 +191,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python -m pip uninstall --yes openvino && ./llm_bench/python/convert.py Qwen/Qwen-7B-Chat --output_dir ./Qwen-7B-Chat/ --precision FP16 --stateful &
+          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python -m pip uninstall --yes openvino && python ./llm_bench/python/convert.py Qwen/Qwen-7B-Chat --output_dir ./Qwen-7B-Chat/ --precision FP16 --stateful &
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
           wait

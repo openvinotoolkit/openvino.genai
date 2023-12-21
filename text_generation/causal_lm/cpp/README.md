@@ -29,7 +29,7 @@ cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/ && cmake --build ./build/ --c
 
 ## Supported models
 
-1. chatglm  TODO: fix numbers - refer to
+1. chatglm - refer to
    [chatglm2-6b - AttributeError: can't set attribute](../../../llm_bench/python/doc/NOTES.md#chatglm2-6b---attributeerror-cant-set-attribute)
    in case of `AttributeError`
    1. https://huggingface.co/THUDM/chatglm2-6b
