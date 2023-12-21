@@ -2,13 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/openvino.hpp>
-#include <openvino_extensions/strings.hpp>
 
 namespace {
-std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string_view prompt) {
+std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
     constexpr size_t BATCH_SIZE = 1;
-    ov::Tensor destination = tokenizer.get_input_tensor();
-    openvino_extensions::pack_strings(std::array<std::string_view, BATCH_SIZE>{prompt}, destination);
+    tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
     tokenizer.infer();
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
 }
@@ -19,7 +17,7 @@ void print_token(ov::InferRequest& detokenizer, int64_t out_token) {
     inp.set_shape({BATCH_SIZE, 1});
     inp.data<int64_t>()[0] = out_token;
     detokenizer.infer();
-    std::cout << openvino_extensions::unpack_strings(detokenizer.get_output_tensor()).front() << std::flush;
+    std::cout << detokenizer.get_output_tensor().data<std::string>()[0] << std::flush;
 }
 }
 
