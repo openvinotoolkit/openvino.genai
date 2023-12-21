@@ -122,36 +122,38 @@ StableDiffusionModels compile_models(const std::string& model_path, const std::s
 }
 
 ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt, std::string& neg_prompt) {
-    const size_t MAX_LENGTH = 77 /* 'model_max_length' from 'tokenizer_config.json' */, BATCH_SIZE = 1;
+    const size_t MAX_LENGTH = 77; // 'model_max_length' from 'tokenizer_config.json'
+    const size_t HIDDEN_SIZE = static_cast<size_t>(models.text_encoder.output(0).get_partial_shape()[2].get_length());
     const int32_t EOS_TOKEN_ID = 49407, PAD_TOKEN_ID = EOS_TOKEN_ID;
-    const ov::Shape input_ids_shape({2, MAX_LENGTH});
-
-    ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
-    ov::Tensor input_ids = text_encoder_req.get_input_tensor();
-
-    input_ids.set_shape(input_ids_shape);
-    // need to pre-fill 'input_ids' with 'PAD' tokens
-    std::int32_t* input_ids_data = input_ids.data<int32_t>();
-    std::fill_n(input_ids_data, input_ids.get_size(), PAD_TOKEN_ID);
-
-    // Tokenization
+    const ov::Shape input_ids_shape({1, MAX_LENGTH});
 
     ov::InferRequest tokenizer_req = models.tokenizer.create_infer_request();
+    ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
 
-    tokenizer_req.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &neg_prompt});
-    tokenizer_req.infer();
-    ov::Tensor input_ids_neg = tokenizer_req.get_tensor("input_ids");
-    std::copy_n(input_ids_neg.data<std::int32_t>(), input_ids_neg.get_size(), input_ids_data);
+    auto compute_text_embeddings = [&] (std::string& prompt, ov::Tensor encoder_output_tensor) {
+        // TODO: input_ids = text_encoder_req.get_tensor("input_ids"); does not work
+        ov::Tensor input_ids(ov::element::i32, input_ids_shape);
+        std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), PAD_TOKEN_ID);
 
-    tokenizer_req.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &pos_prompt});
-    tokenizer_req.infer();
-    ov::Tensor input_ids_pos = tokenizer_req.get_tensor("input_ids");
-    std::copy_n(input_ids_pos.data<std::int32_t>(), input_ids_pos.get_size(), input_ids_data + MAX_LENGTH);
+        // tokenization
+        tokenizer_req.set_input_tensor(ov::Tensor{ov::element::string, {1}, &prompt});
+        tokenizer_req.infer();
+        ov::Tensor input_ids_token = tokenizer_req.get_tensor("input_ids");
+        std::copy_n(input_ids_token.data<std::int32_t>(), input_ids_token.get_size(), input_ids.data<int32_t>());
 
-    // Text embedding
-    text_encoder_req.infer();
+        // text embeddings
+        // input_ids.set_shape(input_ids_shape); // restore shape after tokenizer, because it produces dynamic output length
+        text_encoder_req.set_tensor("input_ids", input_ids);
+        text_encoder_req.set_output_tensor(0, encoder_output_tensor);
+        text_encoder_req.infer();
+    };
 
-    return text_encoder_req.get_output_tensor(0);
+    ov::Tensor text_embeddings(ov::element::f32, {2, MAX_LENGTH, HIDDEN_SIZE});
+
+    compute_text_embeddings(neg_prompt, ov::Tensor(text_embeddings, {0, 0, 0}, {1, MAX_LENGTH, HIDDEN_SIZE}));
+    compute_text_embeddings(pos_prompt, ov::Tensor(text_embeddings, {1, 0, 0}, {2, MAX_LENGTH, HIDDEN_SIZE}));
+
+    return text_embeddings;
 }
 
 ov::Tensor unet(ov::InferRequest req, ov::Tensor sample, ov::Tensor timestep, ov::Tensor text_embedding_1d) {
