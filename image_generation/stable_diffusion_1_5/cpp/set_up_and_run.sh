@@ -27,7 +27,7 @@ python -m pip install -U pip
 python -m pip install -r ./requirements.txt
 python -m pip install ../../../../thirdparty/openvino_contrib/modules/custom_operations/
 python convert_model.py -sd runwayml/stable-diffusion-v1-5 -b 1 -t FP16 -dyn True
-python convert_tokenizer.py --model_id ./runwayml/stable-diffusion-v1-5/FP16_dyn/tokenizer -o ../models/tokenizer/
+convert_tokenizer ./runwayml/stable-diffusion-v1-5/FP16_dyn/tokenizer --output ../models/tokenizer/
 cd ..
 
 # build app

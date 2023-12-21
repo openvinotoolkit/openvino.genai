@@ -68,10 +68,9 @@ There two steps to convert a tokenizer from HuggingFace format to OpenVINO model
     ```shell
     python -m pip install ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers]
     ```
-2. Use the `scripts/convert_tokenizer.py` script to convert and serialize the tokenizer to OpenVINO IR format:
+2. Use `convert_tokenizer` to convert and serialize the tokenizer to OpenVINO IR format:
     ```shell
-    cd scripts
-    python convert_tokenizer.py --model_id ../models/dreamlike-anime-1.0/tokenizer/ -o ../models/tokenizer/
+    convert_tokenizer ./models/dreamlike-anime-1.0/tokenizer/ --output ./models/tokenizer/
     ```
 
 > [!NOTE]
