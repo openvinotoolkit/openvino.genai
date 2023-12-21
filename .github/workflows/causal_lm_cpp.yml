@@ -177,3 +177,43 @@ jobs:
           echo         raise RuntimeError(f'Missing "{ref=}" from predictions') >> ref.py
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
           python ref.py
+  cpp-beam_search_causal_lm-Qwen-7B-Chat:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13739-294cc6668c4/l_openvino_toolkit_ubuntu20_2023.3.0.dev20231219_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python -m pip uninstall --yes openvino && ./llm_bench/python/convert.py Qwen/Qwen-7B-Chat --output_dir ./Qwen-7B-Chat/ --precision FP16 --stateful &
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake --build ./build/ --config Release -j
+          wait
+      - name: Compare
+        run: |
+          source ./ov/setupvars.sh
+          python ./text_generation/causal_lm/cpp/convert_tokenizers.py ./Qwen-7B-Chat/pytorch/dldt/FP16/
+          timeout 25s ./build/beam_search_causal_lm ./Qwen-7B-Chat/pytorch/dldt/FP16/ 69 > ./pred.txt
+
+          python -c "
+          import transformers
+          with open('pred.txt', 'r') as file:
+              predictions = file.read()
+          tokenizer = transformers.LlamaTokenizer.from_pretrained('Qwen/Qwen-7B-Chat')
+          tokenized = tokenizer('69', return_tensors='pt')
+          for beam in transformers.LlamaForCausalLM.from_pretrained('Qwen/Qwen-7B-Chat').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
+              ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
+              idx = predictions.find(ref)
+              if -1 == idx:
+                  raise RuntimeError(f'Missing "{ref=}" from predictions')
+              predictions = predictions[:idx] + predictions[idx + len(ref):]
+          "

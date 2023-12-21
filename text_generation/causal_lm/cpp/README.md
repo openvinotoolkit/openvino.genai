@@ -29,23 +29,33 @@ cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/ && cmake --build ./build/ --c
 
 ## Supported models
 
-1. LLaMA 2
-   4. https://huggingface.co/meta-llama/Llama-2-13b-chat-hf
-   3. https://huggingface.co/meta-llama/Llama-2-13b-hf
-   2. https://huggingface.co/meta-llama/Llama-2-7b-chat-hf
-   1. https://huggingface.co/meta-llama/Llama-2-7b-hf
-   6. https://huggingface.co/meta-llama/Llama-2-70b-chat-hf
-   5. https://huggingface.co/meta-llama/Llama-2-70b-hf
-2. [Llama2-7b-WhoIsHarryPotter](https://huggingface.co/microsoft/Llama2-7b-WhoIsHarryPotter)
-3. OpenLLaMA
-   3. https://huggingface.co/openlm-research/open_llama_13b
-   1. https://huggingface.co/openlm-research/open_llama_3b
-   4. https://huggingface.co/openlm-research/open_llama_3b_v2
-   2. https://huggingface.co/openlm-research/open_llama_7b
+1. chatglm  TODO: fix numbers - refer to
+   [chatglm2-6b - AttributeError: can't set attribute](../../../llm_bench/python/doc/NOTES.md#chatglm2-6b---attributeerror-cant-set-attribute)
+   in case of `AttributeError`
+   1. https://huggingface.co/THUDM/chatglm2-6b
+   2. https://huggingface.co/THUDM/chatglm3-6b
+2. LLaMA 2
+   1. https://huggingface.co/meta-llama/Llama-2-13b-chat-hf
+   2. https://huggingface.co/meta-llama/Llama-2-13b-hf
+   3. https://huggingface.co/meta-llama/Llama-2-7b-chat-hf
+   4. https://huggingface.co/meta-llama/Llama-2-7b-hf
+   5. https://huggingface.co/meta-llama/Llama-2-70b-chat-hf
+   6. https://huggingface.co/meta-llama/Llama-2-70b-hf
+3. [Llama2-7b-WhoIsHarryPotter](https://huggingface.co/microsoft/Llama2-7b-WhoIsHarryPotter)
+4. OpenLLaMA
+   1. https://huggingface.co/openlm-research/open_llama_13b
+   2. https://huggingface.co/openlm-research/open_llama_3b
+   3. https://huggingface.co/openlm-research/open_llama_3b_v2
+   4. https://huggingface.co/openlm-research/open_llama_7b
    5. https://huggingface.co/openlm-research/open_llama_7b_v2
-4. TinyLlama
+5. TinyLlama
    1. https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v0.6
    2. https://huggingface.co/TinyLlama/TinyLlama-1.1B-intermediate-step-1195k-token-2.5T
+6. Qwen
+   1. https://huggingface.co/Qwen/Qwen-7B-Chat
+   2. https://huggingface.co/Qwen/Qwen-7B-Chat-Int4 - refer to
+   [Qwen-7B-Chat-Int4 - Torch not compiled with CUDA enabled](../../../llm_bench/python/doc/NOTES.md#qwen-7b-chat-int4---torch-not-compiled-with-cuda-enabled)
+   in case of `AssertionError`
 
 This pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature.
 
@@ -59,7 +69,7 @@ source <INSTALL_DIR>/setupvars.sh
 python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
 python -m pip uninstall openvino  # Uninstall openvino from PyPI because there's one from the archive installed
 python ../../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir ./Llama-2-7b-hf/ --precision FP16 --stateful
-python ./convert_tokenizers.py --streaming-detokenizer ./Llama-2-7b-hf/pytorch/dldt/FP16/
+python ./convert_tokenizers.py --streaming-detokenizer --trust-remote-code ./Llama-2-7b-hf/pytorch/dldt/FP16/
 ```
 
 ## Run
