@@ -16,7 +16,7 @@ wait
 original_dir="tiny-sd"
 dst_dir="./ov_models/tiny-sd"
 
-convert_model="python ./llm_bench/python/convert.py --model_id ${original_dir} --output_dir ${dst_dir} --precision FP16"
+convert_model="python ./llm_bench/python/convert.py --model_id ${original_dir} --output_dir ${dst_dir} --precision FP16 --stateful"
 echo ${convert_model}
 eval ${convert_model}
 wait
