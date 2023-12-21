@@ -39,6 +39,7 @@ def register_normalized_configs():
         num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size')
     NormalizedConfigManager._conf['mistral'] = NormalizedTextConfig.with_args(num_key_value_heads='num_key_value_heads', allow_new=True)
     NormalizedConfigManager._conf['Yi'] = NormalizedTextConfig
+    NormalizedConfigManager._conf['phi'] = NormalizedTextConfig
 
 
 class OVMPTModel(OVModelForCausalLM):
