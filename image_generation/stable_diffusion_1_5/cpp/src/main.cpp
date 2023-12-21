@@ -77,7 +77,7 @@ StableDiffusionModels compile_models(const std::string& model_path, const std::s
     models.vae_decoder = core.compile_model(vae_decoder_model = ppp.build(), device);
 
     // Tokenizer
-    std::string tokenizer_model_path = "../models/tokenizer/tokenizer_encoder.xml";
+    std::string tokenizer_model_path = "../models/tokenizer/openvino_tokenizer.xml";
     models.tokenizer = core.compile_model(tokenizer_model_path, device);
 
     return models;
