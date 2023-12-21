@@ -4,18 +4,11 @@ from optimum.intel.openvino import (
         OVStableDiffusionPipeline, OVQuantizer,
         OVModelForCausalLM, OVModelForSeq2SeqLM, OVStableDiffusionPipeline, OVQuantizer,
         OV_XML_FILE_NAME,
-        OV_DECODER_NAME,
-        OV_DECODER_WITH_PAST_NAME,
-        OV_ENCODER_NAME
 )
-from optimum.exporters import TasksManager
 from optimum.exporters.openvino import export_models
 from optimum.exporters.onnx import __main__ as optimum_main
 from nncf import compress_weights
 from diffusers import StableDiffusionPipeline
-from openvino.runtime import Type, PartialShape, serialize
-from openvino.runtime import serialize as save_model
-import torch
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,8 +36,6 @@ args = parse_args()
 if args.type == "INT8":
     pt_model = StableDiffusionPipeline.from_pretrained(args.sd_weights, trust_remote_code=True)
 
-    from optimum.exporters import TasksManager
-    from optimum.exporters.onnx import get_encoder_decoder_models_for_export
     from optimum.exporters.openvino import export_models
     from optimum.exporters.onnx import __main__ as optimum_main
 
