@@ -1076,7 +1076,7 @@ def convert_codegen2(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     if config.model_type == "codegen":
         config.model_type = "codegen2"
-
+    print(config)
     cuda, post_init = patch_gptq(config)
     pt_model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
@@ -1084,7 +1084,7 @@ def convert_codegen2(args):
         config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
     )
     pt_model.config = config
-    convert_optimum_causallm_base(pt_model, args)
+    convert_optimum_causallm_base(pt_model, args, model_config=config)
     if post_init is not None:
         unpatch_gptq(cuda, post_init)
 
@@ -1100,7 +1100,7 @@ def convert_aquilachat(args):
         config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
     )
     pt_model.config = config
-    convert_optimum_causallm_base(pt_model, args)
+    convert_optimum_causallm_base(pt_model, args, model_config=config)
     if post_init is not None:
         unpatch_gptq(cuda, post_init)
 
