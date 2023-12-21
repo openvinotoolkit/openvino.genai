@@ -25,7 +25,7 @@ sudo -E apt install libeigen3-dev -y
 cd scripts
 python -m pip install -U pip
 python -m pip install -r ./requirements.txt
-python -m pip install ../../../../thirdparty/openvino_contrib/modules/custom_operations/
+python -m pip install ../../../thirdparty/openvino_contrib/modules/custom_operations/
 python convert_model.py -sd runwayml/stable-diffusion-v1-5 -b 1 -t FP16 -dyn True
 convert_tokenizer ./runwayml/stable-diffusion-v1-5/FP16_dyn/tokenizer --output ../models/tokenizer/
 cd ..
