@@ -175,7 +175,7 @@ jobs:
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
           python ref.py
   cpp-beam_search_causal_lm-Qwen-7B-Chat:
-    runs-on: ubuntu-20.04-8-cores
+    runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
         with:
