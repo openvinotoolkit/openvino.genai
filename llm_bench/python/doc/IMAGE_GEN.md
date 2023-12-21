@@ -19,5 +19,5 @@ Supported parameters that can be set are:
 * `width` - resize image width (default 128)
 * `height` - resize image height (default 128)
 * `prompt` - Image path
-The specific format of prompt file is as follows：
+Prompt file example：
 {"steps": "20", "width": "256", "height": "256", "prompt": "./image_256x256_size/4.png"}
