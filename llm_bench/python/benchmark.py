@@ -55,6 +55,7 @@ def try_print_git_commit_id():
         if name == 'openvino.genai':
             work_dir = os.sep.join(work_dir_list)
             break
+    log.info(f'current work dir: {work_dir}, file path name: {os.path.dirname(__file__)}')
     if os.path.exists(work_dir):
         if subprocess.call(["git", "branch"], stderr=subprocess.STDOUT, stdout=open(os.devnull, 'w'), cwd=work_dir) == 0:
             commit_id = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=work_dir).decode('ascii').strip()
