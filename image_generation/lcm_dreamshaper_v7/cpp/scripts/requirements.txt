@@ -1,2 +1,4 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
+diffusers
+optimum-intel[nncf,openvino]

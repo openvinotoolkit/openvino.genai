@@ -52,7 +52,6 @@ std::vector<float> randn_function(uint32_t size, uint32_t seed = 42) {
     return noise;
 }
 
-// TODO: delete after debug
 std::vector<float> read_vector_from_txt(std::string& file_name) {
     std::ifstream input_data(file_name, std::ifstream::in);
     std::istream_iterator<float> start(input_data), end;
@@ -209,9 +208,6 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
     float* prev_sample_data = prev_sample.data<float>();
 
     if (inference_step != num_inference_steps - 1) {
-        
-        // read noise from file for debug
-        // read_torch_noise = true;
         std::vector<float> noise;
         if (read_torch_noise) {
             std::string noise_file = "../scripts/torch_noise_step_" + std::to_string(inference_step) + ".txt";

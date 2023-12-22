@@ -26,7 +26,7 @@ cd scripts
 python -m pip install -U pip
 python -m pip install -r ./requirements.txt
 python -m pip install ../../../../thirdparty/openvino_contrib/modules/custom_operations/
-python convert_model.py
+python convert_model.py -lcm "SimianLuo/LCM_Dreamshaper_v7" -t "FP16"
 cd ..
 
 # build app
@@ -35,4 +35,4 @@ cmake --build ./build/ --config Release --parallel
 
 # run app
 cd build
-./lcm_dreamshaper -m ../scripts/lcm_dreamshaper_v7 -t FP32
+./lcm_dreamshaper
