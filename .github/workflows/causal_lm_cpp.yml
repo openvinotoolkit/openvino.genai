@@ -33,7 +33,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13649-bbddb891712/l_openvino_toolkit_ubuntu20_2023.3.0.dev20231214_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13739-294cc6668c4/l_openvino_toolkit_ubuntu20_2023.3.0.dev20231219_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -45,7 +45,7 @@ jobs:
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          python ./text_generation/causal_lm/cpp/convert_tokenizers.py ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/
+          convert_tokenizer ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/ --with-detokenizer
 
           timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/ 69 > ./pred.txt
           python -c "
@@ -127,7 +127,6 @@ jobs:
           "
           echo 你好！ 你好嗎？ passed
   cpp-beam_search_causal_lm-windows:
-    if: false  # TODO: enable after openvino package with fix is published
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -146,30 +145,28 @@ jobs:
       - name: Install OpenVINO
         shell: bash
         run: |
-          curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13649-bbddb891712/w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64.zip
+          curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13739-294cc6668c4/w_openvino_toolkit_windows_2023.3.0.dev20231219_x86_64.zip
           unzip ov.zip
       - name: Download, convert and build
-        shell: bash
+        shell: cmd
         run: |
-          export OpenVINO_DIR=$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/runtime/cmake
-          export OPENVINO_LIB_PATHS=$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/runtime/3rdparty/tbb/bin\;$GITHUB_WORKSPACE/w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/runtime/bin/intel64/Release
-          export PATH=$OPENVINO_LIB_PATHS:$PATH
-          export PYTHONPATH=./w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/python:./w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64/python/python3
-          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python -m pip uninstall --yes openvino && python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir ./TinyLlama-1.1B-Chat-v0.6/ --precision FP16 --stateful &
+          call w_openvino_toolkit_windows_2023.3.0.dev20231219_x86_64\setupvars.bat
+          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
+          python -m pip uninstall --yes openvino
+          python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir ./TinyLlama-1.1B-Chat-v0.6/ --precision FP16 --stateful
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - name: Compare
         shell: cmd
         run: |
-          call w_openvino_toolkit_windows_2023.3.0.dev20231214_x86_64\setupvars.bat
-          python .\text_generation\causal_lm\cpp\convert_tokenizers.py .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP16\
+          call w_openvino_toolkit_windows_2023.3.0.dev20231219_x86_64\setupvars.bat
+          convert_tokenizer .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP16\ --output .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP16\ --with-detokenizer
 
-          .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP16\ "Why is the Sun yellow?" > .\pred.txt
+          .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP16\ "69" > .\pred.txt
           echo import transformers > ref.py
           echo predictions = open('pred.txt', 'r').read() >> ref.py
           echo tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6') >> ref.py
-          echo tokenized = tokenizer('Why is the Sun yellow?', return_tensors='pt') >> ref.py
+          echo tokenized = tokenizer('69', return_tensors='pt') >> ref.py
           echo for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False): >> ref.py
           echo     ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n' >> ref.py
           echo     idx = predictions.find(ref) >> ref.py
@@ -177,3 +174,30 @@ jobs:
           echo         raise RuntimeError(f'Missing "{ref=}" from predictions') >> ref.py
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
           python ref.py
+  cpp-beam_search_causal_lm-Qwen-7B-Chat:
+    if: false  # TODO: enable after shape inference failure is fixed
+    runs-on: ubuntu-20.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13739-294cc6668c4/l_openvino_toolkit_ubuntu20_2023.3.0.dev20231219_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum[openvino]>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python -m pip uninstall --yes openvino && python ./llm_bench/python/convert.py --model_id Qwen/Qwen-7B-Chat --output_dir ./Qwen-7B-Chat/ --precision FP16 --stateful &
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake --build ./build/ --config Release -j
+          wait
+      - name: Compare
+        run: |
+          source ./ov/setupvars.sh
+          convert_tokenizer ./Qwen-7B-Chat/pytorch/dldt/FP16/ --output ./Qwen-7B-Chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
+          timeout 25s ./build/beam_search_causal_lm ./Qwen-7B-Chat/pytorch/dldt/FP16/ 69 > ./pred.txt

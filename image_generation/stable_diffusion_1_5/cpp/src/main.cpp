@@ -12,7 +12,6 @@
 #include <filesystem>
 
 #include "openvino/runtime/core.hpp"
-#include "openvino_extensions/strings.hpp"
 
 #include "cxxopts.hpp"
 #include "scheduler_lms_discrete.hpp"
@@ -84,7 +83,7 @@ StableDiffusionModels compile_models(const std::string& model_path, const std::s
     return models;
 }
 
-ov::Tensor text_encoder(StableDiffusionModels models, const std::string& pos_prompt, const std::string& neg_prompt) {
+ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt, std::string& neg_prompt) {
     const size_t MAX_LENGTH = 77 /* 'model_max_length' from 'tokenizer_config.json' */, BATCH_SIZE = 1;
     const int32_t EOS_TOKEN_ID = 49407, PAD_TOKEN_ID = EOS_TOKEN_ID;
     const ov::Shape input_ids_shape({2, MAX_LENGTH});
@@ -100,14 +99,13 @@ ov::Tensor text_encoder(StableDiffusionModels models, const std::string& pos_pro
     // Tokenization
 
     ov::InferRequest tokenizer_req = models.tokenizer.create_infer_request();
-    ov::Tensor packed_strings = tokenizer_req.get_input_tensor();
 
-    openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{neg_prompt}, packed_strings);
+    tokenizer_req.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &neg_prompt});
     tokenizer_req.infer();
     ov::Tensor input_ids_neg = tokenizer_req.get_tensor("input_ids");
     std::copy_n(input_ids_neg.data<std::int32_t>(), input_ids_neg.get_size(), input_ids_data);
 
-    openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{pos_prompt}, packed_strings);
+    tokenizer_req.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &pos_prompt});
     tokenizer_req.infer();
     ov::Tensor input_ids_pos = tokenizer_req.get_tensor("input_ids");
     std::copy_n(input_ids_pos.data<std::int32_t>(), input_ids_pos.get_size(), input_ids_data + MAX_LENGTH);
@@ -199,8 +197,8 @@ int32_t main(int32_t argc, char* argv[]) {
         return EXIT_SUCCESS;
     }
 
-    const std::string positive_prompt = result["posPrompt"].as<std::string>();
-    const std::string negative_prompt = result["negPrompt"].as<std::string>();
+    std::string positive_prompt = result["posPrompt"].as<std::string>();
+    std::string negative_prompt = result["negPrompt"].as<std::string>();
     const std::string device = result["device"].as<std::string>();
     const uint32_t num_inference_steps = result["step"].as<size_t>();
     const uint32_t user_seed = result["seed"].as<size_t>();

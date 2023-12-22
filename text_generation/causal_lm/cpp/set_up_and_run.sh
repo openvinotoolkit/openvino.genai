@@ -13,7 +13,7 @@ function abs_path() {
 cd "`abs_path`"
 
 mkdir ./ov/
-curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13649-bbddb891712/l_openvino_toolkit_ubuntu20_2023.3.0.dev20231214_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13739-294cc6668c4/l_openvino_toolkit_ubuntu20_2023.3.0.dev20231219_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
 sudo ./ov/install_dependencies/install_openvino_dependencies.sh
 
 source ./ov/setupvars.sh
@@ -22,5 +22,5 @@ cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
 cmake --build ./build/ --config Release -j
 wait
 
-python ./convert_tokenizers.py ./open_llama_3b_v2/pytorch/dldt/FP16/ --streaming-detokenizer
+convert_tokenizer ./open_llama_3b_v2/pytorch/dldt/FP16/ --output ./open_llama_3b_v2/pytorch/dldt/FP16/ --with-detokenizer --streaming-detokenizer True
 ./build/greedy_causal_lm ./open_llama_3b_v2/pytorch/dldt/FP16/ "return 0"
