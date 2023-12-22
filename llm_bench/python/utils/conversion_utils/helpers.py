@@ -41,10 +41,11 @@ def is_ov_model_provided(model_id, model_dir, precision, model_name="openvino_mo
         model_dirs.append(Path(model_id) / precision)
         model_dirs.append(Path(model_id) / OV_DIR / precision)
         model_dirs.append(Path(model_id) / PYTORCH_DIR / OV_DIR / precision)
-    model_dirs.append(Path(model_dir))
-    model_dirs.append(Path(model_dir) / precision)
-    model_dirs.append(Path(model_dir) / OV_DIR / precision)
-    model_dirs.append(Path(model_dir) / PYTORCH_DIR / OV_DIR / precision)
+    model_dir = Path(model_dir)
+    model_dirs.append(model_dir)
+    model_dirs.append(model_dir / precision)
+    model_dirs.append(model_dir / OV_DIR / precision)
+    model_dirs.append(model_dir / PYTORCH_DIR / OV_DIR / precision)
     for md in model_dirs:
         found = True
         for suffix in ['.xml', '.bin']:
