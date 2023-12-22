@@ -15,13 +15,7 @@ set(CMAKE_BUILD_TYPE "Release" CACHE STRING "CMake build type")
 
 # dependencies
 
-if(WIN32)
-    message(STATUS "CMake is running on Windows")
-    set(EIGEN3_INCLUDE_DIR "C:/Eigen3/eigen-3.4.0")
-endif()
-
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
-find_package(Eigen3 REQUIRED)
 
 include(FetchContent)
 
@@ -47,7 +41,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     openvino::runtime
-    Eigen3::Eigen
     cxxopts::cxxopts
     diffusers::diffusers
     imwrite::imwrite)
@@ -55,7 +48,3 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 add_dependencies(${PROJECT_NAME} user_ov_extensions)
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE TOKENIZERS_LIBRARY_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
-
-if(CMAKE_COMPILER_IS_GNUCXX)
-    target_compile_options(${PROJECT_NAME} PRIVATE -march=native -Wall)
-endif()
