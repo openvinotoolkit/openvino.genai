@@ -1238,16 +1238,9 @@ def convert_qwen(args):
             "torch_dtype": torch.float32,
             "revision": "c02ede58c0ab0045f5e4788c35842bec6a7baa0a",
         }
+    model = None
     if not compression_only:
-        model = None
-        if not compression_only:
-            model = AutoModelForCausalLM.from_pretrained(
-                args.model_id, trust_remote_code=True, **model_kwargs
-            )
-            try:
-                model.to(torch.float32)
-            except Exception:
-                pass
+        model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, **model_kwargs)
         try:
             model.to(torch.float32)
         except Exception:
