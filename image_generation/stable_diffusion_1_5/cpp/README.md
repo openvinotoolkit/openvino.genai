@@ -54,7 +54,7 @@ python convert_model.py -b 1 -t INT8 -sd ../models/dreamlike-anime-1.0 -dyn True
 ### LoRA enabling with safetensors
 
 Refer to [python pipeline blog](https://blog.openvino.ai/blog-posts/enable-lora-weights-with-stable-diffusion-controlnet-pipeline).
-The safetensor model is loaded via [src/safetensors.h](https://github.com/hsnyder/safetensors.h). The layer name and weight are modified with `Eigen Lib` and inserted into the SD model with `ov::pass::MatcherPass` in the file [diffusers/src/lora.cpp](https://github.com/openvinotoolkit/openvino.genai/blob/master/image_generation/common/diffusers/src/lora.cpp). 
+The safetensor model is loaded via [safetensors.h](https://github.com/hsnyder/safetensors.h). The layer name and weight are modified with `Eigen Lib` and inserted into the SD model with `ov::pass::MatcherPass` in the file [common/diffusers/src/lora.cpp](https://github.com/openvinotoolkit/openvino.genai/blob/master/image_generation/common/diffusers/src/lora.cpp).
 
 SD model [dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0) and Lora [soulcard](https://civitai.com/models/67927?modelVersionId=72591) are tested in this pipeline.
 
@@ -96,9 +96,9 @@ Usage:
 
 Positive prompt: cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting
 
-Negative prompt: (empty, here couldn't use OV tokenizer, check the issues for details)  
+Negative prompt: (empty, here couldn't use OV tokenizer, check the issues for details)
 
-Read the numpy latent instead of C++ std lib for the alignment with Python pipeline 
+Read the numpy latent instead of C++ std lib for the alignment with Python pipeline
 
 * Generate image without lora `./stable_diffusion -r`
 

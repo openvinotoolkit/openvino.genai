@@ -46,7 +46,7 @@ ov::Tensor randn_tensor(uint32_t height, uint32_t width, bool use_np_latents, ui
         for (size_t i = 0; i < noise.get_size(); ++i)
             latent_copy_file >> noise.data<float>()[i];
     } else {
-        std::mt19937 gen{static_cast<unsigned long>(seed)};
+        std::mt19937 gen{seed};
         std::normal_distribution<float> normal{0.0f, 1.0f};
         std::generate_n(noise.data<float>(), noise.get_size(), [&]() {
             return normal(gen);
