@@ -42,9 +42,15 @@ stable_diffusion_hook = StableDiffusionHook()
 
 
 def try_print_git_commit_id():
-    work_dir_list = os.path.dirname(__file__).split('openvino.genai')
-    if len(work_dir_list) > 1:
-        work_dir = work_dir_list[0] + 'openvino.genai'
+    work_dir_list = []
+    work_dir = ''
+    path_names = os.path.dirname(__file__).split(os.sep)
+    for name in path_names:
+        work_dir_list.append(name)
+        if name == 'openvino.genai':
+            work_dir = os.sep.join(work_dir_list)
+            break
+    if os.path.exists(work_dir):
         if subprocess.call(["git", "branch"], stderr=subprocess.STDOUT, stdout=open(os.devnull, 'w'), cwd=work_dir) == 0:
             commit_id = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=work_dir).decode('ascii').strip()
             log.info(f'current work dir: {work_dir}, git commit id: {commit_id}')
