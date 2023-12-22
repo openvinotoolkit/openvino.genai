@@ -810,7 +810,7 @@ def convert_mpt(args):
         args.compress_weights and not is_torch_compression(args) and is_ov_model_provided(args.model_id, args.output_dir, args.precision)
     )
     gptq_applied = is_gptq(config)
-    precision = precision if not gptq_applied else GPTQ_DIR.format(args.precision)
+    precision = precision if not gptq_applied else GPTQ_DIR.format(presision=args.precision)
     if post_init is not None:
         model_kwargs = {"torch_dtype": torch.float32}
     pt_model = None
@@ -885,7 +885,7 @@ def convert_chatglm(args):
     )
     compress_to_fp16 = is_fp16(args)
     gptq_applied = is_gptq(config)
-    precision = precision if not gptq_applied else GPTQ_DIR.format(args.precision)
+    precision = precision if not gptq_applied else GPTQ_DIR.format(precision=args.precision)
     tokenizer_id = args.tokenizer_id or args.model_id
     tok = AutoTokenizer.from_pretrained(tokenizer_id, trust_remote_code=True)
     ov_out_path = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / precision
@@ -981,7 +981,7 @@ def convert_falcon(args):
     tokenizer_id = args.tokenizer_id or args.model_id
     tok = AutoTokenizer.from_pretrained(tokenizer_id, trust_remote_code=True)
     gptq_applied = is_gptq(config)
-    precision = precision if not gptq_applied else GPTQ_DIR.format(args.precision)
+    precision = precision if not gptq_applied else GPTQ_DIR.format(precision=args.precision)
     if post_init is not None:
         model_kwargs = {"torch_dtype": torch.float32}
     pt_model = None
