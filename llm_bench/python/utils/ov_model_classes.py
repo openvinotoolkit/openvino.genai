@@ -40,6 +40,8 @@ def register_normalized_configs():
     NormalizedConfigManager._conf['mistral'] = NormalizedTextConfig.with_args(num_key_value_heads='num_key_value_heads', allow_new=True)
     NormalizedConfigManager._conf['Yi'] = NormalizedTextConfig
     NormalizedConfigManager._conf['phi'] = NormalizedTextConfig
+    NormalizedConfigManager._conf["codegen2"] = NormalizedConfigManager._conf["codegen"]
+    NormalizedConfigManager._conf["aquila"] = NormalizedConfigManager._conf["llama"]
 
 
 class OVMPTModel(OVModelForCausalLM):
