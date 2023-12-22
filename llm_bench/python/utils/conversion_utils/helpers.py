@@ -97,6 +97,8 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
             compression_args["ratio"] = args.ratio
         if args.group_size is not None:
             compression_args["group_size"] = args.group_size
+    if args.all_layers:
+        compression_args["all_layers"] = True
     log.info("Compression options:")
     log.info(compression_args)
     compressed_ov_model = compress_weights(ov_model, **compression_args)
