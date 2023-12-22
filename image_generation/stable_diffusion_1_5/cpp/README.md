@@ -102,15 +102,15 @@ Read the numpy latent instead of C++ std lib for the alignment with Python pipel
 
 * Generate image without lora `./stable_diffusion -r`
 
-![image](https://github.com/intel-sandbox/OV_SD_CPP/assets/102195992/66047d66-08a3-4272-abdc-7999d752eea0)
+   ![](./without_lora.bmp)
 
 * Generate image with soulcard lora `./stable_diffusion -r`
 
-![image](https://github.com/intel-sandbox/OV_SD_CPP/assets/102195992/0f6e2e3e-74fe-4bd4-bb86-df17cb4bf3f8)
+   ![](./soulcard_lora.bmp)
 
 * Generate different size image with dynamic model (C++ lib generated latent): `./stable_diffusion -m ../models/dreamlike-anime-1.0 -t FP16_dyn --height 448 --width 704`
 
-![image](https://github.com/yangsu2022/OV_SD_CPP/assets/102195992/9bd58b64-6688-417e-b435-c0991247b97b)
+   ![](./704x448.bmp)
 
 ## Notes:
 
