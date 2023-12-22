@@ -1151,8 +1151,6 @@ def main():
     parser.add_argument('-o', '--output_dir', required=True, help='output directory for saving model')
     parser.add_argument('--save_orig', action='store_true', help='save pytorch model on disk')
     parser.add_argument('-p', '--precision', choices=['FP32', 'FP16'], default='FP32', help='base conversion precision')
-    parser.add_argument('--bettertransformer', action='store_true',
-                        help='Apply bettertransformer to enable ScaledDotProductAttention operation for a part of the models')
 
     compression_group = parser.add_argument_group('Weights compression parameters')
     compression_group.add_argument(
@@ -1186,6 +1184,11 @@ def main():
         help="Size of the group of weights that share the same quantization parameters",
         default=None,
         type=int,
+    )
+    compression_group.add_argument(
+        "--all_layers",
+        action="store_true",
+        help="Compress all layers including embeddings and prediction head"
     )
     add_stateful_model_arguments(parser)
 
