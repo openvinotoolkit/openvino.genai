@@ -22,6 +22,14 @@ std::string detokenize(ov::InferRequest& detokenizer, const std::vector<int64_t>
     detokenizer.infer();
     return detokenizer.get_output_tensor().data<std::string>()[0];
 }
+
+void set_state_max_batch(std::vector<ov::VariableState>&& states, size_t batch_size) {
+    for (ov::VariableState& state : states) {
+        ov::Shape shape = state.get_state().get_shape();
+        shape.front() = batch_size;
+        state.get_state().set_shape(shape);
+    }
+}
 }
 
 int main(int argc, char* argv[]) try {
@@ -38,6 +46,10 @@ int main(int argc, char* argv[]) try {
         std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     ov::InferRequest lm = core.compile_model(
         std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
+
+    const int64_t* prompt_data = input_ids.data<const int64_t>();
+    Parameters parameters{std::vector<int64_t>{prompt_data, prompt_data + input_ids.get_size()}};
+    GroupBeamSearcher group_beam_searcher{parameters};
     // Initialize inputs
     lm.set_tensor("input_ids", input_ids);
     lm.set_tensor("attention_mask", attention_mask);
@@ -46,10 +58,8 @@ int main(int argc, char* argv[]) try {
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
     lm.get_tensor("beam_idx").set_shape({1});
     lm.get_tensor("beam_idx").data<int32_t>()[0] = 0;
+    set_state_max_batch(lm.query_state(), parameters.n_groups * parameters.group_size);
 
-    const int64_t* prompt_data = input_ids.data<const int64_t>();
-    Parameters parameters{std::vector<int64_t>{prompt_data, prompt_data + input_ids.get_size()}};
-    GroupBeamSearcher group_beam_searcher{parameters};
     std::vector<int64_t> next_tokens;
     std::vector<int32_t> next_beams;
     for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
