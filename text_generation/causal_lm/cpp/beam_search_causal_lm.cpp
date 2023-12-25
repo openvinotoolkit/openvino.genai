@@ -27,7 +27,7 @@ void set_state_max_batch(std::vector<ov::VariableState>&& states, size_t batch_s
     for (ov::VariableState& state : states) {
         ov::Shape shape = state.get_state().get_shape();
         shape.front() = batch_size;
-        state.get_state().set_shape(shape);
+        state.set_state(ov::Tensor{ov::element::f32, shape});
     }
 }
 }
