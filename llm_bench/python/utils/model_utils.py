@@ -5,6 +5,7 @@ import argparse
 import os
 import json
 import logging as log
+import subprocess
 from pathlib import Path
 from utils.config_class import DEFAULT_MODEL_CLASSES, USE_CASES, OV_MODEL_CLASSES_MAPPING, PT_MODEL_CLASSES_MAPPING
 
@@ -232,3 +233,13 @@ def get_model_precision(model_name_list):
         if model_precision != 'unknown':
             break
     return model_precision
+
+
+def try_print_git_commit_id():    
+    cur_file_path = os.path.dirname(__file__)
+    two_levels_up = '..' + os.sep + '..' + os.sep
+    work_dir = os.path.abspath(os.path.join(cur_file_path, two_levels_up))
+    if os.path.exists(work_dir):
+        if subprocess.call(["git", "branch"], stderr=subprocess.STDOUT, stdout=open(os.devnull, 'w'), cwd=work_dir) == 0:
+            commit_id = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=work_dir).decode('ascii').strip()
+            log.info(f'current work dir: {work_dir}, git commit id: {commit_id}')

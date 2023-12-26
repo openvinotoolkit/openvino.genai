@@ -26,7 +26,6 @@ from PIL import Image
 from utils.memory_profile import MemConsumption
 from utils.hook_forward import StableDiffusionHook
 import utils.output_json
-import subprocess
 
 HOOK_BEAM_SEARCH_UTILS = {'pt': utils.hook_beam_search, 'ov': utils.hook_beam_search}
 HOOK_GREEDY_SEARCH_UTILS = {'pt': utils.hook_greedy_search, 'ov': utils.hook_greedy_search}
@@ -44,19 +43,6 @@ MAX_OUTPUT_TOKEN_SIZE = 64 * 1024
 
 mem_consumption = MemConsumption()
 stable_diffusion_hook = StableDiffusionHook()
-
-
-def try_print_git_commit_id():
-    work_dir = ''
-    file_path = os.path.dirname(__file__)
-    if file_path == '':
-        work_dir = '..' + os.sep + '..' + os.sep
-    else:
-        work_dir = file_path + os.sep + '..' + os.sep + '..' + os.sep
-    if os.path.exists(work_dir):
-        if subprocess.call(["git", "branch"], stderr=subprocess.STDOUT, stdout=open(os.devnull, 'w'), cwd=work_dir) == 0:
-            commit_id = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=work_dir).decode('ascii').strip()
-            log.info(f'current work dir: {work_dir}, git commit id: {commit_id}')
 
 
 def gen_iterate_data(
@@ -489,7 +475,7 @@ CASE_TO_BENCH = {
 
 def main():
     log.basicConfig(format='[ %(levelname)s ] %(message)s', level=log.INFO, stream=sys.stdout)
-    try_print_git_commit_id()
+    utils.model_utils.try_print_git_commit_id()
     args = get_argprser()
     model_path, framework, model_args, model_name = utils.model_utils.analyze_args(args)
 

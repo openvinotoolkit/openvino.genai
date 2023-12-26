@@ -52,7 +52,7 @@ from transformers import (
     AutoModel,
 )
 from utils.nncf_utils import get_compressed_path
-from utils.model_utils import add_stateful_model_arguments
+from utils.model_utils import add_stateful_model_arguments, try_print_git_commit_id
 from optimum.exporters.openvino.utils import flattenize_inputs
 from utils.conversion_utils.convert_patch import patch_model_for_optimum_export
 from utils.conversion_utils.better_transformer_patch import register_bettertransformer_config
@@ -1144,6 +1144,7 @@ def main():
     log.basicConfig(
         format="[ %(levelname)s ] %(message)s", level=log.INFO, stream=sys.stdout
     )
+    try_print_git_commit_id()
     parser = ArgumentParser()
     parser.add_argument('-m', '--model_id', required=True, help='model_id or directory for loading')
     parser.add_argument('--tokenizer_id', required=False,
