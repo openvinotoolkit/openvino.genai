@@ -235,7 +235,7 @@ def get_model_precision(model_name_list):
     return model_precision
 
 
-def try_print_git_commit_id():    
+def try_print_git_commit_id():
     cur_file_path = os.path.dirname(__file__)
     two_levels_up = '..' + os.sep + '..' + os.sep
     work_dir = os.path.abspath(os.path.join(cur_file_path, two_levels_up))
