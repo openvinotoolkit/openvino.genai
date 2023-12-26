@@ -41,6 +41,7 @@ def is_ov_model_provided(model_id, model_dir, precision, model_name="openvino_mo
         model_dirs.append(Path(model_id) / precision)
         model_dirs.append(Path(model_id) / OV_DIR / precision)
         model_dirs.append(Path(model_id) / PYTORCH_DIR / OV_DIR / precision)
+    model_dir = Path(model_dir)
     model_dirs.append(model_dir)
     model_dirs.append(model_dir / precision)
     model_dirs.append(model_dir / OV_DIR / precision)
@@ -66,9 +67,9 @@ def get_fp_path(args, model_subpath):
         ])
     model_dir = Path(args.output_dir)
     model_dirs.append(model_dir)
-    model_dirs.append(model_dir / args.precision)
-    model_dirs.append(model_dir / OV_DIR / args.precision)
-    model_dirs.append(model_dir / PYTORCH_DIR / OV_DIR / args.precision)
+    model_dirs.append(Path(model_dir) / args.precision)
+    model_dirs.append(Path(model_dir) / OV_DIR / args.precision)
+    model_dirs.append(Path(model_dir) / PYTORCH_DIR / OV_DIR / args.precision)
     for md in model_dirs:
         if (md / model_subpath).exists():
             return md / model_subpath
@@ -97,6 +98,8 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
             compression_args["ratio"] = args.ratio
         if args.group_size is not None:
             compression_args["group_size"] = args.group_size
+    if args.all_layers:
+        compression_args["all_layers"] = True
     log.info("Compression options:")
     log.info(compression_args)
     compressed_ov_model = compress_weights(ov_model, **compression_args)

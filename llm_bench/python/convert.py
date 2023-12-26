@@ -33,7 +33,7 @@ from optimum.intel.openvino import (
     OV_XML_FILE_NAME,
     OV_DECODER_NAME,
     OV_DECODER_WITH_PAST_NAME,
-    OV_ENCODER_NAME
+    OV_ENCODER_NAME,
 )
 from optimum.exporters.onnx import __main__ as optimum_main
 
@@ -55,7 +55,9 @@ from utils.nncf_utils import get_compressed_path
 from utils.model_utils import add_stateful_model_arguments, try_print_git_commit_id
 from optimum.exporters.openvino.utils import flattenize_inputs
 from utils.conversion_utils.convert_patch import patch_model_for_optimum_export
-from utils.conversion_utils.better_transformer_patch import register_bettertransformer_config
+from utils.conversion_utils.better_transformer_patch import (
+    register_bettertransformer_config,
+)
 from utils.conversion_utils.export_configs import *  # noqa: F401,F403
 from utils.ov_model_classes import register_normalized_configs
 from utils.conversion_utils.helpers import (
@@ -74,7 +76,7 @@ from utils.conversion_utils.helpers import (
     save_ov_model_helper,
     get_fp_path,
     is_ov_model_provided,
-    BackendType
+    BackendType,
 )
 
 register_normalized_configs()
@@ -90,7 +92,9 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
     if not compress_only:
         model_config = model.config
         model = patch_model_for_optimum_export(model)
-        precision = precision if not gptq_applied else GPTQ_DIR.format(args.precision)
+        precision = (
+            precision if not gptq_applied else GPTQ_DIR.format(precision=args.precision)
+        )
         ov_out_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / precision
         if gptq_applied and args.compress_weights:
             log.info("Weights compression will be skipped for GPTQ models")
@@ -107,12 +111,17 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             fn_get_submodels=None,
             preprocessors=None,
             _variant="default",
-            monolith=False
+            monolith=False,
         )
         if "decoder_with_past_model" in models_and_onnx_configs:
-            models_and_onnx_configs = {"model": models_and_onnx_configs["decoder_with_past_model"]}
+            models_and_onnx_configs = {
+                "model": models_and_onnx_configs["decoder_with_past_model"]
+            }
         model.config.save_pretrained(ov_out_dir)
-        files_subpaths = ["openvino_" + model_name + ".xml" for model_name in models_and_onnx_configs.keys()]
+        files_subpaths = [
+            "openvino_" + model_name + ".xml"
+            for model_name in models_and_onnx_configs.keys()
+        ]
         export_models(
             models_and_onnx_configs=models_and_onnx_configs,
             output_dir=ov_out_dir,
@@ -121,19 +130,35 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             device="cpu",
             compression_option="fp16" if args.precision == "FP16" else None,
             model_kwargs={},
-            stateful=args.stateful
+            stateful=args.stateful,
         )
         save_tokenizer(tok, ov_out_dir)
 
     if is_ov_compression(args) and not gptq_applied:
+        if compress_only:
+            fp_path = get_fp_path(args, "openvino_model.xml")
+            log.info(
+                f"Model conversion to {args.precision} will be skipped as found converted model {fp_path}."
+                "If it is not expected behaviour, please remove previously converted model or use --force_convert option"
+            )
         for compress_option in args.compress_weights:
             log.info(f"Compress model weights to {compress_option}")
-            optimized_dir = get_compressed_path(args.output_dir, args.precision, compress_option)
+            optimized_dir = get_compressed_path(
+                args.output_dir, args.precision, compress_option
+            )
             model_config.save_pretrained(optimized_dir)
-            fp_path = get_fp_path(args, 'openvino_model.xml')
+            fp_path = get_fp_path(args, "openvino_model.xml")
             ir_model = Core().read_model(fp_path)
 
-            compress_ov_model_weights_helper(ir_model, tok, model_config, optimized_dir, compress_option, is_fp16(args), args)
+            compress_ov_model_weights_helper(
+                ir_model,
+                tok,
+                model_config,
+                optimized_dir,
+                compress_option,
+                is_fp16(args),
+                args,
+            )
 
     if pt_compress_weights and not gptq_applied:
         compressed_model = compress_weights(model)
@@ -147,7 +172,12 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             _variant="default",
             monolith=False,
         )
-        pt_out_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision)
+        pt_out_dir = (
+            Path(args.output_dir)
+            / PYTORCH_DIR
+            / OV_DIR
+            / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision)
+        )
         model.config.save_pretrained(pt_out_dir)
         export_models(
             models_and_onnx_configs=models_and_onnx_configs,
@@ -169,18 +199,17 @@ def convert_causal_lm(args):
     ov_out_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR
     precision = args.precision
     compression_only = (
-        is_ov_compression(args) and not is_torch_compression(args) and is_ov_model_provided(args.model_id, ov_out_dir, precision)
+        is_ov_compression(args)
+        and not is_torch_compression(args)
+        and is_ov_model_provided(args.model_id, ov_out_dir, precision)
     )
     model_kwargs = {}
     if post_init is not None:
-        model_kwargs['torch_dtype'] = torch.float32
+        model_kwargs["torch_dtype"] = torch.float32
     model = None
     if not compression_only:
         model = AutoModelForCausalLM.from_pretrained(
-            args.model_id,
-            trust_remote_code=True,
-            config=config,
-            **model_kwargs
+            args.model_id, trust_remote_code=True, config=config, **model_kwargs
         )
         try:
             model.to(torch.float32)
@@ -193,7 +222,11 @@ def convert_causal_lm(args):
 
 def convert_seq2seq(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
-    tokenizer_id = args.model_id if 'blenderbot-9B' not in args.model_id else 'facebook/blenderbot-3B'
+    tokenizer_id = (
+        args.model_id
+        if "blenderbot-9B" not in args.model_id
+        else "facebook/blenderbot-3B"
+    )
     tok = AutoTokenizer.from_pretrained(tokenizer_id, trust_remote_code=True)
     pt_compress_weights = is_torch_compression(args)
     if args.save_orig or pt_compress_weights:
@@ -221,15 +254,24 @@ def convert_seq2seq(args):
                 Path("decoder_with_past") / OV_DECODER_WITH_PAST_NAME
             )
 
-            output_names = [encoder_file_name, decoder_file_name, decoder_with_past_file_name]
-            save_dir_path = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+            output_names = [
+                encoder_file_name,
+                decoder_file_name,
+                decoder_with_past_file_name,
+            ]
+            save_dir_path = (
+                Path(args.output_dir)
+                / PYTORCH_DIR
+                / OV_DIR
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+            )
             try:
                 export_models(
                     models_and_onnx_configs=models_and_onnx_configs,
                     opset=onnx_config.DEFAULT_ONNX_OPSET,
                     output_dir=save_dir_path,
                     output_names=output_names,
-                    compress_option='FP16' if args.precision == "FP16" else None
+                    compress_option="FP16" if args.precision == "FP16" else None,
                 )
                 save_tokenizer(tok, save_dir_path)
             except Exception as ex:
@@ -241,9 +283,15 @@ def convert_seq2seq(args):
         gc.collect()
 
     ov_compression = is_ov_compression(args)
-    ov_encoder = is_ov_model_provided(args.model_id, args.output_dir, args.precision, 'openvino_encoder_model.xml')
-    ov_decoder = is_ov_model_provided(args.model_id, args.output_dir, args.precision, 'openvino_decoder_model.xml')
-    compress_only = ov_compression and ov_encoder and ov_decoder
+    ov_encoder = is_ov_model_provided(
+        args.model_id, args.output_dir, args.precision, "openvino_encoder_model.xml"
+    )
+    ov_decoder = is_ov_model_provided(
+        args.model_id, args.output_dir, args.precision, "openvino_decoder_model.xml"
+    )
+    compress_only = (
+        ov_compression and not args.force_convert and ov_encoder and ov_decoder
+    )
     if not compress_only:
         start = time.perf_counter()
         model = OVModelForSeq2SeqLM.from_pretrained(
@@ -254,39 +302,64 @@ def convert_seq2seq(args):
             config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
         )
         end = time.perf_counter()
-        log.info(f'Conversion total time {end - start}s')
+        log.info(f"Conversion total time {end - start}s")
 
         start1 = time.perf_counter()
         ov_out_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
         model.save_pretrained(ov_out_dir)
         end1 = time.perf_counter()
-        log.info(f'Serialization total time {end1 - start1}s')
+        log.info(f"Serialization total time {end1 - start1}s")
         save_tokenizer(tok, ov_out_dir)
         del model
         gc.collect()
 
     if ov_compression:
+        if compress_only:
+            log.info(
+                f"Model conversion to {args.precision} will be skipped as found converted model. "
+                "If it is not expected behaviour, please remove previously converted model or use --force_convert option"
+            )
         for compress_option in args.compress_weights:
             log.info(f"Compress model weights to {compress_option}")
-            optimized_dir = get_compressed_path(args.output_dir, args.precision, compress_option)
-            fp_enc_path = get_fp_path(args, 'openvino_encoder_model.xml')
+            optimized_dir = get_compressed_path(
+                args.output_dir, args.precision, compress_option
+            )
+            fp_enc_path = get_fp_path(args, "openvino_encoder_model.xml")
             enc_model = Core().read_model(fp_enc_path)
             compress_ov_model_weights_helper(
-                enc_model, tok, config, optimized_dir, compress_option,
-                is_fp16(args), args, "openvino_encoder_model"
+                enc_model,
+                tok,
+                config,
+                optimized_dir,
+                compress_option,
+                is_fp16(args),
+                args,
+                "openvino_encoder_model",
             )
-            fp_dec_path = get_fp_path(args, 'openvino_decoder_model.xml')
+            fp_dec_path = get_fp_path(args, "openvino_decoder_model.xml")
             dec_model = Core().read_model(fp_dec_path)
             compress_ov_model_weights_helper(
-                dec_model, tok, config, optimized_dir, compress_option,
-                is_fp16(args), args, "openvino_decoder_model"
+                dec_model,
+                tok,
+                config,
+                optimized_dir,
+                compress_option,
+                is_fp16(args),
+                args,
+                "openvino_decoder_model",
             )
-            fp_dec_path = get_fp_path(args, 'openvino_decoder_with_past_model.xml')
+            fp_dec_path = get_fp_path(args, "openvino_decoder_with_past_model.xml")
             if fp_dec_path is not None:
                 dec_model = Core().read_model(fp_dec_path)
                 compress_ov_model_weights_helper(
-                    dec_model, tok, config, optimized_dir, compress_option,
-                    is_fp16(args), args, "openvino_decoder_with_past_model"
+                    dec_model,
+                    tok,
+                    config,
+                    optimized_dir,
+                    compress_option,
+                    is_fp16(args),
+                    args,
+                    "openvino_decoder_with_past_model",
                 )
 
 
@@ -312,7 +385,12 @@ def convert_sd(args):
                 custom_architecture=False,
                 _variant="default",
             )
-            output = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+            output = (
+                Path(args.output_dir)
+                / PYTORCH_DIR
+                / OV_DIR
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+            )
             for model_name in models_and_onnx_configs:
                 subcomponent = models_and_onnx_configs[model_name][0]
                 if hasattr(subcomponent, "save_config"):
@@ -426,7 +504,12 @@ def convert_lcm(args):
                 custom_architecture=False,
                 _variant="default",
             )
-            output = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+            output = (
+                Path(args.output_dir)
+                / PYTORCH_DIR
+                / OV_DIR
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+            )
             for model_name in models_and_onnx_configs:
                 subcomponent = models_and_onnx_configs[model_name][0]
                 if hasattr(subcomponent, "save_config"):
@@ -619,7 +702,12 @@ def convert_sdxl(args):
     if args.save_orig:
         pt_model.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
     if pt_compress_weights:
-        output = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+        output = (
+            Path(args.output_dir)
+            / PYTORCH_DIR
+            / OV_DIR
+            / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+        )
         pt_model.text_encoder = compress_weights(pt_model.text_encoder)
         pt_model.unet = compress_weights(pt_model.unet)
         pt_model.vae = compress_weights(pt_model.vae)
@@ -665,7 +753,10 @@ def convert_ldm_super_res(args):
     pipeline = LDMSuperResolutionPipeline.from_pretrained(args.model_id)
     if args.save_orig:
         pipeline.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
-    unet_example_input = [torch.zeros((1, 6, 128, 128)), torch.tensor(1, dtype=torch.int32)]
+    unet_example_input = [
+        torch.zeros((1, 6, 128, 128)),
+        torch.tensor(1, dtype=torch.int32),
+    ]
 
     class Decoder(torch.nn.Module):
         def __init__(self, model):
@@ -687,8 +778,17 @@ def convert_ldm_super_res(args):
         ov_compressed_unet.inputs[1].get_node().set_element_type(Type.i32)
         ov_compressed_unet.inputs[1].get_node().set_partial_shape(PartialShape([]))
         ov_compressed_unet.validate_nodes_and_infer_types()
-        pt_out_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
-        save_model(ov_compressed_unet, pt_out_dir / 'unet.xml', compress_to_fp16=compress_to_fp16)
+        pt_out_dir = (
+            Path(args.output_dir)
+            / PYTORCH_DIR
+            / OV_DIR
+            / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+        )
+        save_model(
+            ov_compressed_unet,
+            pt_out_dir / "unet.xml",
+            compress_to_fp16=compress_to_fp16,
+        )
         pipeline.scheduler.save_config(pt_out_dir)
         # Couldn't compress decoder weights (RuntimeError: cdist only supports floating-point dtypes, X2 got: Byte)
         ov_decoder = convert_model(decoder, example_input=torch.zeros((1, 3, 128, 128)))
@@ -702,7 +802,7 @@ def convert_ldm_super_res(args):
     ov_unet.inputs[1].get_node().set_partial_shape(PartialShape([]))
     ov_unet.validate_nodes_and_infer_types()
     save_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
-    save_model(ov_unet, save_dir / 'unet.xml', compress_to_fp16=compress_to_fp16)
+    save_model(ov_unet, save_dir / "unet.xml", compress_to_fp16=compress_to_fp16)
     ov_decoder = convert_model(decoder, example_input=torch.zeros((1, 3, 128, 128)))
     save_model(ov_decoder, save_dir / "vqvae.xml", compress_to_fp16=compress_to_fp16)
     pipeline.scheduler.save_config(save_dir)
@@ -807,10 +907,15 @@ def convert_mpt(args):
     model_kwargs = {}
     precision = args.precision
     compression_only = (
-        args.compress_weights and not is_torch_compression(args) and is_ov_model_provided(args.model_id, args.output_dir, args.precision)
+        args.compress_weights
+        and not args.force_convert
+        and not is_torch_compression(args)
+        and is_ov_model_provided(args.model_id, args.output_dir, args.precision)
     )
     gptq_applied = is_gptq(config)
-    precision = precision if not gptq_applied else GPTQ_DIR.format(args.precision)
+    precision = (
+        precision if not gptq_applied else GPTQ_DIR.format(precision=args.precision)
+    )
     if post_init is not None:
         model_kwargs = {"torch_dtype": torch.float32}
     pt_model = None
@@ -819,10 +924,7 @@ def convert_mpt(args):
     compress_to_fp16 = is_fp16(args)
     if not compression_only:
         pt_model = AutoModelForCausalLM.from_pretrained(
-            args.model_id,
-            trust_remote_code=True,
-            config=config,
-            **model_kwargs
+            args.model_id, trust_remote_code=True, config=config, **model_kwargs
         )
         pt_model.config.use_cache = True
         pt_model.eval()
@@ -838,16 +940,36 @@ def convert_mpt(args):
         convert_to_ov(pt_model, tok, ov_dir, compress_to_fp16)
         if is_torch_compression(args):
             compressed_pt_model = compress_weights(pt_model)
-            pt_path = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision)
+            pt_path = (
+                Path(args.output_dir)
+                / PYTORCH_DIR
+                / OV_DIR
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision)
+            )
             convert_to_ov(compressed_pt_model, tok, pt_path, compress_to_fp16)
 
     if is_ov_compression(args):
         ov_path = get_fp_path(args, "openvino_model.xml")
+        if compression_only:
+            log.info(
+                f"Model conversion to {args.precision} will be skipped as found converted model {ov_path}. "
+                "If it is not expected behaviour, please remove previously converted model or use --force_convert option"
+            )
         ov_model = Core().read_model(ov_path)
         for compress_option in args.compress_weights:
             log.info(f"Compress model weights to {compress_option}")
-            ov_compressed_path = get_compressed_path(args.output_dir, args.precision, compress_option)
-            compress_ov_model_weights_helper(ov_model, tok, config, ov_compressed_path, compress_option, compress_to_fp16, args)
+            ov_compressed_path = get_compressed_path(
+                args.output_dir, args.precision, compress_option
+            )
+            compress_ov_model_weights_helper(
+                ov_model,
+                tok,
+                config,
+                ov_compressed_path,
+                compress_option,
+                compress_to_fp16,
+                args,
+            )
 
     if post_init is not None:
         unpatch_gptq(cuda, post_init)
@@ -881,11 +1003,16 @@ def convert_chatglm(args):
     model_kwargs = {}
     precision = args.precision
     compression_only = (
-        args.compress_weights and not is_torch_compression(args) and is_ov_model_provided(args.model_id, args.output_dir, precision)
+        args.compress_weights
+        and not args.force_convert
+        and not is_torch_compression(args)
+        and is_ov_model_provided(args.model_id, args.output_dir, precision)
     )
     compress_to_fp16 = is_fp16(args)
     gptq_applied = is_gptq(config)
-    precision = precision if not gptq_applied else GPTQ_DIR.format(args.precision)
+    precision = (
+        precision if not gptq_applied else GPTQ_DIR.format(precision=args.precision)
+    )
     tokenizer_id = args.tokenizer_id or args.model_id
     tok = AutoTokenizer.from_pretrained(tokenizer_id, trust_remote_code=True)
     ov_out_path = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / precision
@@ -893,10 +1020,7 @@ def convert_chatglm(args):
         model_kwargs = {"torch_dtype": torch.float32}
     if not compression_only:
         pt_model = AutoModel.from_pretrained(
-            args.model_id,
-            trust_remote_code=True,
-            config=config,
-            **model_kwargs
+            args.model_id, trust_remote_code=True, config=config, **model_kwargs
         )
         pt_model.config.use_cache = True
         pt_model.to(torch.float32)
@@ -911,16 +1035,36 @@ def convert_chatglm(args):
         pt_compress_weights = is_torch_compression(args)
         if pt_compress_weights:
             compressed_pt_model = compress_weights(pt_model)
-            pt_out_path = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision)
+            pt_out_path = (
+                Path(args.output_dir)
+                / PYTORCH_DIR
+                / OV_DIR
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision)
+            )
             convert_to_ov(compressed_pt_model, tok, pt_out_path)
 
     if is_ov_compression(args):
-        ov_model_path = get_fp_path(args, 'openvino_model.xml')
+        ov_model_path = get_fp_path(args, "openvino_model.xml")
+        if compression_only:
+            log.info(
+                f"Model conversion to {args.precision} will be skipped as found converted model {ov_model_path}. "
+                "If it is not expected behaviour, please remove previously converted model or use --force_convert option"
+            )
         ov_model = Core().read_model(ov_model_path)
         for compress_option in args.compress_weights:
             log.info(f"Compress model weights to {compress_option}")
-            ov_compressed_path = get_compressed_path(args.output_dir, args.precision, args.compress_weights)
-            compress_ov_model_weights_helper(ov_model, tok, config, ov_compressed_path, compress_to_fp16, compress_option, args)
+            ov_compressed_path = get_compressed_path(
+                args.output_dir, args.precision, args.compress_weights
+            )
+            compress_ov_model_weights_helper(
+                ov_model,
+                tok,
+                config,
+                ov_compressed_path,
+                compress_to_fp16,
+                compress_option,
+                args,
+            )
 
     if post_init is not None:
         unpatch_gptq(cuda, post_init)
@@ -972,7 +1116,10 @@ def convert_falcon(args):
     cuda, post_init = patch_gptq(config)
     model_kwargs = {}
     compression_only = (
-        args.compress_weights and not is_torch_compression(args) and is_ov_model_provided(args.model_id, args.output_dir, args.precision)
+        args.compress_weights
+        and not args.force_convert
+        and not is_torch_compression(args)
+        and is_ov_model_provided(args.model_id, args.output_dir, args.precision)
     )
     gptq_applied = is_gptq(config)
     if post_init is not None:
@@ -981,14 +1128,20 @@ def convert_falcon(args):
     tokenizer_id = args.tokenizer_id or args.model_id
     tok = AutoTokenizer.from_pretrained(tokenizer_id, trust_remote_code=True)
     gptq_applied = is_gptq(config)
-    precision = precision if not gptq_applied else GPTQ_DIR.format(args.precision)
+    precision = (
+        precision if not gptq_applied else GPTQ_DIR.format(precision=args.precision)
+    )
     if post_init is not None:
         model_kwargs = {"torch_dtype": torch.float32}
     pt_model = None
     compress_to_fp16 = is_fp16(args)
     if not compression_only:
         pt_model = AutoModelForCausalLM.from_pretrained(
-            args.model_id, config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True), trust_remote_code=True, **model_kwargs)
+            args.model_id,
+            config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
+            trust_remote_code=True,
+            **model_kwargs,
+        )
         pt_model.config.use_cache = True
         pt_model.eval()
 
@@ -1002,16 +1155,36 @@ def convert_falcon(args):
 
         if is_torch_compression(args):
             pt_compressed_model = compress_weights(pt_model)
-            pt_comp_path = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+            pt_comp_path = (
+                Path(args.output_dir)
+                / PYTORCH_DIR
+                / OV_DIR
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+            )
             convert_to_ov(pt_compressed_model, tok, pt_comp_path, compress_to_fp16)
 
     if is_ov_compression(args):
         fp_path = get_fp_path(args, "openvino_model.xml")
+        if compression_only:
+            log.info(
+                f"Model conversion to {args.precision} will be skipped as found converted model {fp_path}. "
+                "If it is not expected behaviour, please remove previously converted model or use --force_convert option"
+            )
         ov_model = Core().read_model(fp_path)
         for compress_option in args.compress_weights:
             log.info(f"Compress model weights to {compress_option}")
-            ov_compressed_path = get_compressed_path(args.output_dir, args.precision, compress_option)
-            compress_ov_model_weights_helper(ov_model, tok, pt_model.config, ov_compressed_path, compress_to_fp16, compress_option, args)
+            ov_compressed_path = get_compressed_path(
+                args.output_dir, args.precision, compress_option
+            )
+            compress_ov_model_weights_helper(
+                ov_model,
+                tok,
+                pt_model.config,
+                ov_compressed_path,
+                compress_to_fp16,
+                compress_option,
+                args,
+            )
 
     if post_init is not None:
         unpatch_gptq(cuda, post_init)
@@ -1022,13 +1195,18 @@ def convert_baichaun(args):
     cuda, post_init = patch_gptq(config)
     model_kwargs = {}
     compression_only = (
-        args.compress_weights and not is_torch_compression(args) and is_ov_model_provided(args.model_id, args.output_dir, args.precision)
+        args.compress_weights
+        and not args.force_convert
+        and not is_torch_compression(args)
+        and is_ov_model_provided(args.model_id, args.output_dir, args.precision)
     )
     if post_init is not None:
         model_kwargs = {"torch_dtype": torch.float32}
     model = None
     if not compression_only:
-        model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, **model_kwargs)
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_id, trust_remote_code=True, **model_kwargs
+        )
         try:
             model.to(torch.float32)
             if post_init is None:
@@ -1050,18 +1228,19 @@ def convert_qwen(args):
     model_kwargs = {"revision": "2abd8e5777bb4ce9c8ab4be7dbbd0fe4526db78d"}
     precision = args.precision
     compression_only = (
-        args.compress_weights and not is_torch_compression(args) and is_ov_model_provided(args.model_id, args.output_dir, precision)
+        args.compress_weights
+        and not args.force_convert
+        and not is_torch_compression(args)
+        and is_ov_model_provided(args.model_id, args.output_dir, precision)
     )
     if post_init is not None:
-        model_kwargs = {"torch_dtype": torch.float32, "revision": "c02ede58c0ab0045f5e4788c35842bec6a7baa0a"}
+        model_kwargs = {
+            "torch_dtype": torch.float32,
+            "revision": "c02ede58c0ab0045f5e4788c35842bec6a7baa0a",
+        }
+    model = None
     if not compression_only:
-        model = None
-        if not compression_only:
-            model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, **model_kwargs)
-            try:
-                model.to(torch.float32)
-            except Exception:
-                pass
+        model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, **model_kwargs)
         try:
             model.to(torch.float32)
         except Exception:
@@ -1105,27 +1284,27 @@ def convert_aquilachat(args):
 
 
 converters = {
-    'decoder': convert_causal_lm,
-    'blenderbot': convert_seq2seq,
-    't5': convert_seq2seq,
-    'stable-diffusion-xl': convert_sdxl,
-    'ssd-1b': convert_sdxl,
-    'sdxl': convert_sdxl,
-    'stable-diffusion': convert_sd,
-    'tiny-sd': convert_sd,
-    'small-sd': convert_sd,
-    'lcm': convert_lcm,
-    'ldm': convert_ldm_super_res,
-    'mpt': convert_mpt,
-    'replit': convert_mpt,
-    'chatglm2': convert_causal_lm,
-    'chatglm3': convert_causal_lm,
-    'chatglm': convert_chatglm,
+    "decoder": convert_causal_lm,
+    "blenderbot": convert_seq2seq,
+    "t5": convert_seq2seq,
+    "stable-diffusion-xl": convert_sdxl,
+    "ssd-1b": convert_sdxl,
+    "sdxl": convert_sdxl,
+    "stable-diffusion": convert_sd,
+    "tiny-sd": convert_sd,
+    "small-sd": convert_sd,
+    "lcm": convert_lcm,
+    "ldm": convert_ldm_super_res,
+    "mpt": convert_mpt,
+    "replit": convert_mpt,
     "chatglm2": convert_causal_lm,
     "chatglm3": convert_causal_lm,
-    'falcon': convert_falcon,
-    'baichuan': convert_baichaun,
-    'qwen': convert_qwen,
+    "chatglm": convert_chatglm,
+    "chatglm2": convert_causal_lm,
+    "chatglm3": convert_causal_lm,
+    "falcon": convert_falcon,
+    "baichuan": convert_baichaun,
+    "qwen": convert_qwen,
     "codegen2": convert_codegen2,
     "aquilachat": convert_aquilachat,
 }
@@ -1146,16 +1325,32 @@ def main():
     )
     try_print_git_commit_id()
     parser = ArgumentParser()
-    parser.add_argument('-m', '--model_id', required=True, help='model_id or directory for loading')
-    parser.add_argument('--tokenizer_id', required=False,
-                        help='tokenizer id or directory for loading. If not provided, model_id will be used by default')
-    parser.add_argument('-o', '--output_dir', required=True, help='output directory for saving model')
-    parser.add_argument('--save_orig', action='store_true', help='save pytorch model on disk')
-    parser.add_argument('-p', '--precision', choices=['FP32', 'FP16'], default='FP32', help='base conversion precision')
-    parser.add_argument('--bettertransformer', action='store_true',
-                        help='Apply bettertransformer to enable ScaledDotProductAttention operation for a part of the models')
+    parser.add_argument(
+        "-m", "--model_id", required=True, help="model_id or directory for loading"
+    )
+    parser.add_argument(
+        "--tokenizer_id",
+        required=False,
+        help="tokenizer id or directory for loading. If not provided, model_id will be used by default",
+    )
+    parser.add_argument(
+        "-o", "--output_dir", required=True, help="output directory for saving model"
+    )
+    parser.add_argument(
+        "--save_orig", action="store_true", help="save pytorch model on disk"
+    )
+    parser.add_argument(
+        "-p",
+        "--precision",
+        choices=["FP32", "FP16"],
+        default="FP32",
+        help="base conversion precision",
+    )
+    parser.add_argument(
+        "--force_convert", action="store_true", help="Force model conversion"
+    )
 
-    compression_group = parser.add_argument_group('Weights compression parameters')
+    compression_group = parser.add_argument_group("Weights compression parameters")
     compression_group.add_argument(
         "-c",
         "--compress_weights",
@@ -1187,6 +1382,11 @@ def main():
         help="Size of the group of weights that share the same quantization parameters",
         default=None,
         type=int,
+    )
+    compression_group.add_argument(
+        "--all_layers",
+        action="store_true",
+        help="Compress all layers including embeddings and prediction head",
     )
     add_stateful_model_arguments(parser)
 

@@ -2,22 +2,34 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
-#include <ctime>
 #include <iostream>
-#include <fstream>
-#include <random>
 #include <string>
-#include <vector>
-#include <cmath>
+#include <random>
+#include <fstream>
 #include <filesystem>
 
 #include "openvino/runtime/core.hpp"
-#include "openvino_extensions/strings.hpp"
+#include "openvino/pass/manager.hpp"
+#include "openvino/core/preprocess/pre_post_process.hpp"
 
 #include "cxxopts.hpp"
 #include "scheduler_lms_discrete.hpp"
-#include "lora_cpp.hpp"
+#include "lora.hpp"
 #include "imwrite.hpp"
+
+class Timer {
+    const decltype(std::chrono::steady_clock::now()) m_start;
+public:
+    Timer(const std::string& scope) :
+        m_start(std::chrono::steady_clock::now()) {
+        (std::cout << scope << ": ").flush();
+    }
+
+    ~Timer() {
+        auto m_end = std::chrono::steady_clock::now();
+        std::cout << std::chrono::duration<double, std::milli>(m_end - m_start).count() << " ms" << std::endl;
+    }
+};
 
 ov::Tensor randn_tensor(uint32_t height, uint32_t width, bool use_np_latents, uint32_t seed = 42) {
     ov::Tensor noise(ov::element::f32, {1, 4, height / 8, width / 8});
@@ -34,7 +46,7 @@ ov::Tensor randn_tensor(uint32_t height, uint32_t width, bool use_np_latents, ui
         for (size_t i = 0; i < noise.get_size(); ++i)
             latent_copy_file >> noise.data<float>()[i];
     } else {
-        std::mt19937 gen{static_cast<unsigned long>(seed)};
+        std::mt19937 gen{seed};
         std::normal_distribution<float> normal{0.0f, 1.0f};
         std::generate_n(noise.data<float>(), noise.get_size(), [&]() {
             return normal(gen);
@@ -50,9 +62,16 @@ struct StableDiffusionModels {
     ov::CompiledModel tokenizer;
 };
 
+void apply_lora(std::shared_ptr<ov::Model> model, InsertLoRA::LoRAMap& lora_map) {
+    if (!lora_map.empty()) {
+        ov::pass::Manager manager;
+        manager.register_pass<InsertLoRA>(lora_map);
+        manager.run_passes(model);
+    }
+}
+
 StableDiffusionModels compile_models(const std::string& model_path, const std::string& device,
-                                     const std::string& type, const std::string& lora_path,
-                                     const float alpha, const bool use_cache) {
+                                     const std::string& lora_path, const float alpha, const bool use_cache) {
     StableDiffusionModels models;
 
     ov::Core core;
@@ -60,62 +79,79 @@ StableDiffusionModels compile_models(const std::string& model_path, const std::s
         core.set_property(ov::cache_dir("./cache_dir"));
     core.add_extension(TOKENIZERS_LIBRARY_PATH);
 
-    std::map<std::string, float> lora_models;
-    lora_models[lora_path] = alpha;
+    // read LoRA weights
+    std::map<std::string, InsertLoRA::LoRAMap> lora_weights;
+    if (!lora_path.empty()) {
+        Timer t("Loading and multiplying LoRA weights");
+        lora_weights = read_lora_adapters(lora_path, alpha);
+    }
 
-    // CLIP and UNet
-    auto text_encoder_model = core.read_model((model_path + "/" + type + "/text_encoder/openvino_model.xml").c_str());
-    auto unet_model = core.read_model((model_path + "/" + type + "/unet/openvino_model.xml").c_str());
-    auto text_encoder_and_unet = load_lora_weights_cpp(core, text_encoder_model, unet_model, device, lora_models);
-    models.text_encoder = text_encoder_and_unet[0];
-    models.unet = text_encoder_and_unet[1];
+    // Text encoder
+    {
+        Timer t("Loading and compiling text encoder");
+        auto text_encoder_model = core.read_model(model_path + "/text_encoder/openvino_model.xml");
+        apply_lora(text_encoder_model, lora_weights["text_encoder"]);
+        models.text_encoder = core.compile_model(text_encoder_model, device);
+    }
+
+    // UNet
+    {
+        Timer t("Loading and compiling UNet");
+        auto unet_model = core.read_model(model_path + "/unet/openvino_model.xml");
+        apply_lora(unet_model, lora_weights["unet"]);
+        models.unet = core.compile_model(unet_model, device);
+    }
 
     // VAE decoder
-    auto vae_decoder_model = core.read_model((model_path + "/" + type + "/vae_decoder/openvino_model.xml").c_str());
-    ov::preprocess::PrePostProcessor ppp(vae_decoder_model);
-    ppp.output().model().set_layout("NCHW");
-    ppp.output().tensor().set_layout("NHWC");
-    models.vae_decoder = core.compile_model(vae_decoder_model = ppp.build(), device);
+    {
+        Timer t("Loading and compiling VAE decoder");
+        auto vae_decoder_model = core.read_model(model_path + "/vae_decoder/openvino_model.xml");
+        ov::preprocess::PrePostProcessor ppp(vae_decoder_model);
+        ppp.output().model().set_layout("NCHW");
+        ppp.output().tensor().set_layout("NHWC");
+        models.vae_decoder = core.compile_model(vae_decoder_model = ppp.build(), device);
+    }
 
     // Tokenizer
-    std::string tokenizer_model_path = "../models/tokenizer/tokenizer_encoder.xml";
-    models.tokenizer = core.compile_model(tokenizer_model_path, device);
+    {
+        Timer t("Loading and compiling tokenizer");
+        models.tokenizer = core.compile_model(model_path + "/tokenizer/openvino_tokenizer.xml", device);
+    }
 
     return models;
 }
 
-ov::Tensor text_encoder(StableDiffusionModels models, const std::string& pos_prompt, const std::string& neg_prompt) {
-    const size_t MAX_LENGTH = 77 /* 'model_max_length' from 'tokenizer_config.json' */, BATCH_SIZE = 1;
+ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt, std::string& neg_prompt) {
+    const size_t MAX_LENGTH = 77; // 'model_max_length' from 'tokenizer_config.json'
+    const size_t HIDDEN_SIZE = static_cast<size_t>(models.text_encoder.output(0).get_partial_shape()[2].get_length());
     const int32_t EOS_TOKEN_ID = 49407, PAD_TOKEN_ID = EOS_TOKEN_ID;
-    const ov::Shape input_ids_shape({2, MAX_LENGTH});
-
-    ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
-    ov::Tensor input_ids = text_encoder_req.get_input_tensor();
-    
-    input_ids.set_shape(input_ids_shape);
-    // need to pre-fill 'input_ids' with 'PAD' tokens
-    std::int32_t* input_ids_data = input_ids.data<int32_t>();
-    std::fill_n(input_ids_data, input_ids.get_size(), PAD_TOKEN_ID);
-
-    // Tokenization
+    const ov::Shape input_ids_shape({1, MAX_LENGTH});
 
     ov::InferRequest tokenizer_req = models.tokenizer.create_infer_request();
-    ov::Tensor packed_strings = tokenizer_req.get_input_tensor();
+    ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
 
-    openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{neg_prompt}, packed_strings);
-    tokenizer_req.infer();
-    ov::Tensor input_ids_neg = tokenizer_req.get_tensor("input_ids");
-    std::copy_n(input_ids_neg.data<std::int32_t>(), input_ids_neg.get_size(), input_ids_data);
+    auto compute_text_embeddings = [&] (std::string& prompt, ov::Tensor encoder_output_tensor) {
+        ov::Tensor input_ids(ov::element::i32, input_ids_shape);
+        std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), PAD_TOKEN_ID);
 
-    openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{pos_prompt}, packed_strings);
-    tokenizer_req.infer();
-    ov::Tensor input_ids_pos = tokenizer_req.get_tensor("input_ids");
-    std::copy_n(input_ids_pos.data<std::int32_t>(), input_ids_pos.get_size(), input_ids_data + MAX_LENGTH);
+        // tokenization
+        tokenizer_req.set_input_tensor(ov::Tensor{ov::element::string, {1}, &prompt});
+        tokenizer_req.infer();
+        ov::Tensor input_ids_token = tokenizer_req.get_tensor("input_ids");
+        std::copy_n(input_ids_token.data<std::int32_t>(), input_ids_token.get_size(), input_ids.data<int32_t>());
 
-    // Text embedding
-    text_encoder_req.infer();
+        // text embeddings
+        text_encoder_req.set_tensor("input_ids", input_ids);
+        text_encoder_req.set_output_tensor(0, encoder_output_tensor);
+        text_encoder_req.infer();
+    };
 
-    return text_encoder_req.get_output_tensor(0);
+    ov::Tensor text_embeddings(ov::element::f32, {2, MAX_LENGTH, HIDDEN_SIZE});
+
+    compute_text_embeddings(neg_prompt, ov::Tensor(text_embeddings, {0, 0, 0}, {1, MAX_LENGTH, HIDDEN_SIZE}));
+    compute_text_embeddings(pos_prompt, ov::Tensor(text_embeddings, {1, 0, 0}, {2, MAX_LENGTH, HIDDEN_SIZE}));
+
+    return text_embeddings;
 }
 
 ov::Tensor unet(ov::InferRequest req, ov::Tensor sample, ov::Tensor timestep, ov::Tensor text_embedding_1d) {
@@ -199,8 +235,8 @@ int32_t main(int32_t argc, char* argv[]) {
         return EXIT_SUCCESS;
     }
 
-    const std::string positive_prompt = result["posPrompt"].as<std::string>();
-    const std::string negative_prompt = result["negPrompt"].as<std::string>();
+    std::string positive_prompt = result["posPrompt"].as<std::string>();
+    std::string negative_prompt = result["negPrompt"].as<std::string>();
     const std::string device = result["device"].as<std::string>();
     const uint32_t num_inference_steps = result["step"].as<size_t>();
     const uint32_t user_seed = result["seed"].as<size_t>();
@@ -222,16 +258,17 @@ int32_t main(int32_t argc, char* argv[]) {
     }
 
     std::cout << "OpenVINO version: " << ov::get_openvino_version() << std::endl;
-    std::cout << "Running (may take some time) ..." << std::endl;
 
     // Stable Diffusion pipeline
 
-    StableDiffusionModels models = compile_models(model_base_path, device, model_type, lora_path, alpha, use_cache);
+    StableDiffusionModels models = compile_models(model_base_path + "/" + model_type, device, lora_path, alpha, use_cache);
     ov::InferRequest unet_infer_request = models.unet.create_infer_request();
 
     ov::PartialShape sample_shape = models.unet.input("sample").get_partial_shape();
     OPENVINO_ASSERT(sample_shape.is_dynamic() || (sample_shape[2] * 8 == width && sample_shape[3] * 8 == height),
         "UNet model has static shapes [1, 4, H/8, W/8] or dynamic shapes [?, 4, ?, ?]");
+
+    Timer t("Running Stable Diffusion pipeline");
 
     ov::Tensor text_embeddings = text_encoder(models, positive_prompt, negative_prompt);
 
