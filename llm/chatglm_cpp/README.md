@@ -68,7 +68,7 @@ Paramters:
 * `-token` PATH             Tokenizer model path (default: tokenizer.xml)
 * `-detoken` PATH           DeTokenizer model path (default: detokenizer.xml)
 * `-d, --device`            Device (default: GPU)
-* `--convert_kv_fp16`       Convert kvcache fp16 (default: False)
+* `--reduce_logits`         Reduce_logits (default: False)
 * `--do_sample`             Search (default: False)
 * `--top_k` N               top-k sampling (default: 0)
 * `--top_p` N               top-p sampling (default: 0.7)
@@ -77,10 +77,10 @@ Paramters:
    
 For Linux
 
-Convert KV cache to FP16: `chatglm -m <openvino_model.xml> -token <tokenizer.xml> -detoken <detokenizer.xml> -d --convert_kv_fp16`
+Convert model to reduce logits: `chatglm -m <openvino_model.xml> -token <tokenizer.xml> -detoken <detokenizer.xml> -d --reduce_logits`
 
 Example: `./build/llm/chatglm_cpp/chatglm -m .\chatglm3-6b\openvino_model.xml -token .\tokenizer.xml  -detoken .\detokenizer.xml -d 
- "OCL_GPU" --convert_kv_fp16`
+ "OCL_GPU" --reduce_logits`
 
 Usage: `chatglm -m <openvino_model.xml> -token <tokenizer.xml> -detoken <detokenizer.xml> -d`
 
@@ -96,10 +96,10 @@ $copy build\_deps\fast_tokenizer-src\third_party\lib\icudt70.dll build\llm\chatg
 $copy build\_deps\fast_tokenizer-src\third_party\lib\icuuc70.dll build\llm\chatglm_cpp\Release\
 $copy build\_deps\fast_tokenizer-src\lib\core_tokenizers.dll build\llm\chatglm_cpp\Release\
 ```
-Convert KV cache to FP16: `chatglm.exe -m <openvino_model.xml> -token <tokenizer.xml>  -detoken <detokenizer.xml> -d --convert_kv_fp16`
+Convert model to reduce logits: `chatglm.exe -m <openvino_model.xml> -token <tokenizer.xml>  -detoken <detokenizer.xml> -d --reduce_logits`
 
 Example: `build\llm\chatglm_cpp\Release\chatglm.exe -m .\chatglm3-6b\openvino_model.xml -token .\tokenizer.xml  -detoken .\detokenizer.xml -d 
- "OCL_GPU" --convert_kv_fp16`
+ "OCL_GPU" --reduce_logits`
 
 Usage: `chatglm.exe -m <openvino_model.xml> -token <tokenizer.xml> -detoken <detokenizer.xml> -d`
 
