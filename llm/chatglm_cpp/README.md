@@ -74,6 +74,7 @@ Paramters:
 * `--top_p` N               top-p sampling (default: 0.7)
 * `--temp` N                temperature (default: 0.95)
 * `--repeat_penalty` N      penalize repeat sequence of tokens (default: 1.0, 1.0 = disabled)
+* `--output_fixed_len` N    set output fixed lenth (default: 0, output lenth is determined by the model)
    
 For Linux
 
