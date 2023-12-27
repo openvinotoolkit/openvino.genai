@@ -52,6 +52,7 @@ struct Args {
     float top_p = 0.7;
     float temp = 0.95;
     float repeat_penalty = 1.0;
+    int output_fixed_len = 0;
 };
 
 static void usage(const std::string& prog) {
@@ -68,7 +69,8 @@ static void usage(const std::string& prog) {
         << "  --top_k N               top-k sampling (default: 0)\n"
         << "  --top_p N               top-p sampling (default: 0.7)\n"
         << "  --temp N                temperature (default: 0.95)\n"
-        << "  --repeat_penalty N      penalize repeat sequence of tokens (default: 1.0, 1.0 = disabled)\n";
+        << "  --repeat_penalty N      penalize repeat sequence of tokens (default: 1.0, 1.0 = disabled)\n"
+        << "  --output_fixed_len N    set output fixed lenth (default: 0, output lenth is determined by the model)\n";
 }
 
 static Args parse_args(const std::vector<std::string>& argv) {
@@ -110,6 +112,9 @@ static Args parse_args(const std::vector<std::string>& argv) {
         }
         else if (arg == "--repeat_penalty") {
             args.repeat_penalty = std::stof(argv[++i]);
+        }
+        else if (arg == "--output_fixed_len") {
+            args.output_fixed_len = std::stoi(argv[++i]);
         }
         else {
             std::cerr << "Unknown argument: " << arg << std::endl;
@@ -363,6 +368,7 @@ int main(int argc, char* argv[]) try {
 
     double total_time = 0;
     int count = 0;
+    double first_time;
     
     // Read OpenVINO Model
     if (1 == convert_model) {
@@ -422,6 +428,7 @@ int main(int argc, char* argv[]) try {
         ireq.infer();
         duration_ms = get_duration_ms_until_now(startTime);
         std::cout << "First token took " << duration_ms << " ms" << std::endl;
+        first_time = duration_ms;
 
         size_t vocab_size = ireq.get_tensor("logits").get_shape().back();
 
@@ -435,7 +442,7 @@ int main(int argc, char* argv[]) try {
         ireq.get_tensor("position_ids").set_shape({ BATCH_SIZE, 1 });
 
         constexpr int64_t SPECIAL_EOS_TOKEN = 2;  // There's no way to extract the value from the detokenizer for now
-        while (out_token != SPECIAL_EOS_TOKEN) {
+        while (true) {  //(out_token != SPECIAL_EOS_TOKEN)
             startTime = Time::now();
             ireq.get_tensor("input_ids").data<int64_t>()[0] = out_token;
             ireq.get_tensor("attention_mask").set_shape({ BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1 });
@@ -453,11 +460,21 @@ int main(int argc, char* argv[]) try {
 
             out_token = get_out_token_id(output_ids, logits, vocab_size, args);
             output_ids.emplace_back(((int)out_token));
+
+            if (args.output_fixed_len > 0) {
+                if(count >= (args.output_fixed_len - 1))
+                    break;
+            } 
+            else {
+                if (out_token == SPECIAL_EOS_TOKEN) {
+                    break;
+                }
+            }
         }
         std::cout << '\n';
 
         if (count > 0) {
-            std::cout << "Other Avg inference took total " << total_time << " ms token num " << count << " avg " << total_time / (count) << " ms" << std::endl;
+            std::cout << "Other Avg inference took total " << total_time << " ms token num " << count << " first " << first_time << " ms " << " avg " << total_time / (count) << " ms" << std::endl;
         }
     }
 } catch (const std::exception& error) {
