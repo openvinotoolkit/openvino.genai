@@ -1,5 +1,5 @@
 # OpenVINO Latent Consistency Model C++ pipeline
-The pure C++ text-to-image pipeline, driven by the OpenVINO native API for SD v1.5 Latent Consistency Model with LCM Scheduler. It includes advanced features like [OpenVINO extension for tokenizers](https://github.com/openvinotoolkit/openvino_contrib/blob/master/modules/custom_operations/user_ie_extensions/tokenizer/python/README.md). This demo has been tested for Linux platform only.
+The pure C++ text-to-image pipeline, driven by the OpenVINO native API for SD v1.5 Latent Consistency Model with LCM Scheduler. It includes advanced features like LoRA integration with safetensors and [OpenVINO extension for tokenizers](https://github.com/openvinotoolkit/openvino_contrib/blob/master/modules/custom_operations/user_ie_extensions/tokenizer/python/README.md). This demo has been tested for Linux platform only.
 
 > [!NOTE]
 >This tutorial assumes that the current working directory is `<openvino.genai repo>/image_generation/lcm_dreamshaper_v7/cpp/` and all paths are relative to this folder.
@@ -11,17 +11,27 @@ C++ Packages:
 * [OpenVINO](https://docs.openvino.ai/2023.2/openvino_docs_install_guides_overview.html): Model inference
 * Eigen3: Lora enabling
 
+Prepare a python environment and install dependencies:
+```shell
+conda create -n openvino_lcm_cpp python==3.10
+conda activate openvino_lcm_cpp
+conda install openvino eigen c-compiler cxx-compiler make
+```
+
 ## Step 2: Latent Consistency Model and Tokenizer models
 
-### Latent Consistency Model model:
+### Latent Consistency Model model
 
-1. Prepare a conda python environment and install dependencies:
+1. Install dependencies to import models from HuggingFace:
+
     ```shell
-    conda create -n LCM-CPP python==3.10
-    conda activate LCM-CPP
+    conda activate openvino_lcm_cpp
     python -m pip install -r scripts/requirements.txt
+    python -m pip install ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers]
     ```
+
 2. Run model conversion script to download and convert PyTorch model to OpenVINO IR via [optimum-intel](https://github.com/huggingface/optimum-intel). Please, use the script `scripts/convert_model.py` to convert the model:
+
     ```shell
     cd scripts
     python convert_model.py -lcm "SimianLuo/LCM_Dreamshaper_v7" -t FP16
@@ -30,12 +40,14 @@ C++ Packages:
 > [!NOTE]
 >Only static model is currently supported for this sample.
 
-### Tokenizer model
+### LoRA enabling with safetensors
 
-Install OpenVINO tokenizers using the following command:
-    ```shell
-    python -m pip install ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers]
-    ```
+Refer to [python pipeline blog](https://blog.openvino.ai/blog-posts/enable-lora-weights-with-stable-diffusion-controlnet-pipeline).
+The safetensor model is loaded via [safetensors.h](https://github.com/hsnyder/safetensors.h). The layer name and weight are modified with `Eigen Lib` and inserted into the LCM model with `ov::pass::MatcherPass` in the file [common/diffusers/src/lora.cpp](https://github.com/openvinotoolkit/openvino.genai/blob/master/image_generation/common/diffusers/src/lora.cpp).
+
+LCM model [lcm_dreamshaper_v7](https://huggingface.co/SimianLuo/LCM_Dreamshaper_v7) and Lora [soulcard](https://civitai.com/models/67927?modelVersionId=72591) are tested in this pipeline.
+
+Download and put safetensors and model IR into the models folder.
 
 ## Step 3: Build the LCM application
 
@@ -81,6 +93,10 @@ Read the numpy latent input and noise for scheduler instead of C++ std lib for t
 * Generate image with C++ lib generated latent and noise : `./build/lcm_dreamshaper`
 
 ![image](./cpp_random.bmp)
+
+* Generate image with soulcard lora and C++ generated latent and noise `./stable_diffusion -r -l path/to/soulcard.safetensors`
+
+![image](./lora_cpp_random.bmp)
 
 ## Benchmark:
 
