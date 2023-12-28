@@ -12,7 +12,6 @@
 #include <filesystem>
 
 #include "openvino/runtime/core.hpp"
-#include "openvino_extensions/strings.hpp"
 
 #include "cxxopts.hpp"
 #include "scheduler_lcm.hpp"
@@ -51,8 +50,7 @@ struct StableDiffusionModels {
 };
 
 StableDiffusionModels compile_models(const std::string& model_path, const std::string& device,
-                                     const std::string& type, const std::string& lora_path,
-                                     const float alpha, const bool use_cache) {
+                                     const std::string& lora_path, const float alpha, const bool use_cache) {
     StableDiffusionModels models;
 
     ov::Core core;
@@ -64,53 +62,55 @@ StableDiffusionModels compile_models(const std::string& model_path, const std::s
     lora_models[lora_path] = alpha;
 
     // CLIP and UNet
-    auto text_encoder_model = core.read_model((model_path + "/" + type + "/text_encoder/openvino_model.xml").c_str());
-    auto unet_model = core.read_model((model_path + "/" + type + "/unet/openvino_model.xml").c_str());
+    auto text_encoder_model = core.read_model((model_path + "/text_encoder/openvino_model.xml").c_str());
+    auto unet_model = core.read_model((model_path + "/unet/openvino_model.xml").c_str());
     auto text_encoder_and_unet = load_lora_weights_cpp(core, text_encoder_model, unet_model, device, lora_models);
     models.text_encoder = text_encoder_and_unet[0];
     models.unet = text_encoder_and_unet[1];
 
     // VAE decoder
-    auto vae_decoder_model = core.read_model((model_path + "/" + type + "/vae_decoder/openvino_model.xml").c_str());
+    auto vae_decoder_model = core.read_model((model_path + "/vae_decoder/openvino_model.xml").c_str());
     ov::preprocess::PrePostProcessor ppp(vae_decoder_model);
     ppp.output().model().set_layout("NCHW");
     ppp.output().tensor().set_layout("NHWC");
     models.vae_decoder = core.compile_model(vae_decoder_model = ppp.build(), device);
 
     // Tokenizer
-    std::string tokenizer_model_path = "../models/tokenizer/tokenizer_encoder.xml";
-    models.tokenizer = core.compile_model(tokenizer_model_path, device);
+    models.tokenizer = core.compile_model(model_path + "/tokenizer/openvino_tokenizer.xml", device);
 
     return models;
 }
 
-ov::Tensor text_encoder(StableDiffusionModels models, const std::string& pos_prompt) {
-    const size_t MAX_LENGTH = 77 /* 'model_max_length' from 'tokenizer_config.json' */, BATCH_SIZE = 1;
+ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt) {
+    const size_t MAX_LENGTH = 77; // 'model_max_length' from 'tokenizer_config.json'
+    const size_t HIDDEN_SIZE = static_cast<size_t>(models.text_encoder.output(0).get_partial_shape()[2].get_length());
     const int32_t EOS_TOKEN_ID = 49407, PAD_TOKEN_ID = EOS_TOKEN_ID;
     const ov::Shape input_ids_shape({1, MAX_LENGTH});
 
-    ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
-    ov::Tensor input_ids = text_encoder_req.get_input_tensor();
-    
-    input_ids.set_shape(input_ids_shape);
-    // need to pre-fill 'input_ids' with 'PAD' tokens
-    std::int32_t* input_ids_data = input_ids.data<int32_t>();
-    std::fill_n(input_ids_data, input_ids.get_size(), PAD_TOKEN_ID);
-
-    // Tokenization
-
     ov::InferRequest tokenizer_req = models.tokenizer.create_infer_request();
-    ov::Tensor packed_strings = tokenizer_req.get_input_tensor();
+    ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
 
-    openvino_extensions::pack_strings(std::array<std::string, BATCH_SIZE>{pos_prompt}, packed_strings);
-    tokenizer_req.infer();
-    ov::Tensor input_ids_pos = tokenizer_req.get_tensor("input_ids");
-    std::copy_n(input_ids_pos.data<std::int32_t>(), input_ids_pos.get_size(), input_ids_data);
+    auto compute_text_embeddings = [&] (std::string& prompt, ov::Tensor encoder_output_tensor) {
+        ov::Tensor input_ids(ov::element::i32, input_ids_shape);
+        std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), PAD_TOKEN_ID);
 
-    // Text embedding
-    text_encoder_req.infer();
+        // tokenization
+        tokenizer_req.set_input_tensor(ov::Tensor{ov::element::string, {1}, &prompt});
+        tokenizer_req.infer();
+        ov::Tensor input_ids_token = tokenizer_req.get_tensor("input_ids");
+        std::copy_n(input_ids_token.data<std::int32_t>(), input_ids_token.get_size(), input_ids.data<int32_t>());
 
-    return text_encoder_req.get_output_tensor(0);
+        // text embeddings
+        text_encoder_req.set_tensor("input_ids", input_ids);
+        text_encoder_req.set_output_tensor(0, encoder_output_tensor);
+        text_encoder_req.infer();
+    };
+
+    ov::Tensor text_embeddings(ov::element::f32, {1, MAX_LENGTH, HIDDEN_SIZE});
+
+    compute_text_embeddings(pos_prompt, ov::Tensor(text_embeddings, {0, 0, 0}, {1, MAX_LENGTH, HIDDEN_SIZE}));
+
+    return text_embeddings;
 }
 
 ov::Tensor get_w_embedding(float guidance_scale = 7.5, uint32_t embedding_dim = 512) {
@@ -189,7 +189,6 @@ int32_t main(int32_t argc, char* argv[]) {
 
     options.add_options()
     ("p,posPrompt", "Initial positive prompt for LCM ", cxxopts::value<std::string>()->default_value("a beautiful pink unicorn"))
-    ("n,negPrompt","Defaut is empty with space", cxxopts::value<std::string>()->default_value(" "))
     ("d,device", "AUTO, CPU, or GPU", cxxopts::value<std::string>()->default_value("CPU"))
     ("step", "Number of diffusion steps", cxxopts::value<size_t>()->default_value("4"))
     ("s,seed", "Number of random seed to generate latent for one image output", cxxopts::value<size_t>()->default_value("42"))
@@ -218,8 +217,7 @@ int32_t main(int32_t argc, char* argv[]) {
         return EXIT_SUCCESS;
     }
 
-    const std::string positive_prompt = result["posPrompt"].as<std::string>();
-    const std::string negative_prompt = result["negPrompt"].as<std::string>();
+    std::string positive_prompt = result["posPrompt"].as<std::string>();
     const std::string device = result["device"].as<std::string>();
     const uint32_t num_inference_steps = result["step"].as<size_t>();
     const uint32_t user_seed = result["seed"].as<size_t>();
@@ -245,7 +243,7 @@ int32_t main(int32_t argc, char* argv[]) {
 
     // Stable Diffusion pipeline
 
-    StableDiffusionModels models = compile_models(model_base_path, device, model_type, lora_path, alpha, use_cache);
+    StableDiffusionModels models = compile_models(model_base_path + "/" + model_type, device, lora_path, alpha, use_cache);
     ov::InferRequest unet_infer_request = models.unet.create_infer_request();
 
     ov::PartialShape sample_shape = models.unet.input("sample").get_partial_shape();

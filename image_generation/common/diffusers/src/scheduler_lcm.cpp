@@ -136,7 +136,7 @@ void LCMScheduler::set_timesteps(size_t num_inference_steps) {
     // LCM Inference Steps Schedule
     std::reverse(lcm_origin_timesteps.begin(),lcm_origin_timesteps.end());
 
-    // v1. based on master branch: https://github.com/huggingface/diffusers/blame/2a7f43a73bda387385a47a15d7b6fe9be9c65eb2/src/diffusers/schedulers/scheduling_lcm.py#L387 
+    // v1. based on https://github.com/huggingface/diffusers/blame/2a7f43a73bda387385a47a15d7b6fe9be9c65eb2/src/diffusers/schedulers/scheduling_lcm.py#L387
     std::vector<size_t> inference_indices = get_inf_indices(0, origin_timesteps_size, num_inference_steps);
     for (size_t i : inference_indices){
         m_timesteps.push_back(lcm_origin_timesteps[i]);

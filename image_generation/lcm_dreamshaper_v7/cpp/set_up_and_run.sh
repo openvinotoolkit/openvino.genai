@@ -14,12 +14,12 @@ cd "`abs_path`"
 
 # initialize OpenVINO
 rm -fr ./openvino && mkdir ./openvino
-curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13649-bbddb891712/l_openvino_toolkit_ubuntu20_2023.3.0.dev20231214_x86_64.tgz | tar --directory ./openvino/ --strip-components 1 -xz
+curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13739-294cc6668c4/l_openvino_toolkit_ubuntu20_2023.3.0.dev20231219_x86_64.tgz | tar --directory ./openvino/ --strip-components 1 -xz
 sudo -E ./openvino/install_dependencies/install_openvino_dependencies.sh
 source ./openvino/setupvars.sh
 
-# download extra dependencies
-sudo -E apt install libeigen3-dev -y
+# # download extra dependencies
+# sudo -E apt install libeigen3-dev -y
 
 # download / convert a model / tokenizer
 cd scripts
