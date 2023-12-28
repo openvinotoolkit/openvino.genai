@@ -18,8 +18,8 @@ curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/
 sudo -E ./openvino/install_dependencies/install_openvino_dependencies.sh
 source ./openvino/setupvars.sh
 
-# # download extra dependencies
-# sudo -E apt install libeigen3-dev -y
+# download extra dependencies
+sudo -E apt install libeigen3-dev -y
 
 # download / convert a model / tokenizer
 cd scripts
