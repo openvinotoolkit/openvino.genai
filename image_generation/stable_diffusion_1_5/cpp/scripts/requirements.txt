@@ -1,5 +1,5 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
-diffusers
+diffusers==0.24.0
 optimum-intel[nncf,openvino]
 huggingface_hub[cli]
