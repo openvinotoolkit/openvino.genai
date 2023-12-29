@@ -22,7 +22,7 @@ public:
 
     void scale_model_input(ov::Tensor sample, size_t inference_step) override;
 
-    ov::Tensor step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) override;
+    std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) override;
 
 private:
     std::vector<float> m_log_sigmas;
