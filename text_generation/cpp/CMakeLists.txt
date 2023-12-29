@@ -6,7 +6,7 @@ project(causal_lm)
 
 # Build user_ov_extensions
 list(APPEND CUSTOM_OPERATIONS tokenizer)
-add_subdirectory(../../../thirdparty/openvino_contrib/modules/custom_operations/ "${CMAKE_CURRENT_BINARY_DIR}/custom_operations/")
+add_subdirectory(../../thirdparty/openvino_contrib/modules/custom_operations/ "${CMAKE_CURRENT_BINARY_DIR}/custom_operations/")
 
 add_executable(decoder_greedy decoder_greedy.cpp)
 target_compile_definitions(decoder_greedy PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
