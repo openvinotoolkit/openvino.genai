@@ -23,4 +23,4 @@ cmake --build ./build/ --config Release -j
 wait
 
 convert_tokenizer ./open_llama_3b_v2/pytorch/dldt/FP16/ --output ./open_llama_3b_v2/pytorch/dldt/FP16/ --with-detokenizer --streaming-detokenizer True
-./build/greedy_causal_lm ./open_llama_3b_v2/pytorch/dldt/FP16/ "return 0"
+./build/decoder_greedy ./open_llama_3b_v2/pytorch/dldt/FP16/ "return 0"
