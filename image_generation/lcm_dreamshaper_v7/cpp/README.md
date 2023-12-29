@@ -9,7 +9,7 @@ The pure C++ text-to-image pipeline, driven by the OpenVINO native API for SD v1
 C++ Packages:
 * [CMake](https://cmake.org/download/): Cross-platform build tool
 * [OpenVINO](https://docs.openvino.ai/2023.2/openvino_docs_install_guides_overview.html): Model inference
-* Eigen3: Lora enabling
+* Eigen3
 
 Prepare a python environment and install dependencies:
 ```shell

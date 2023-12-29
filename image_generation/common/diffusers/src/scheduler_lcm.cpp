@@ -1,41 +1,32 @@
+// Copyright (C) 2023 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include <cassert>
 #include <random>
-
 #include <fstream>
 #include <iterator>
 
 #include "scheduler_lcm.hpp"
 
 // https://gist.github.com/lorenzoriano/5414671
-template <typename T>
-std::vector<T> linspace(T a, T b, size_t N) {
-    T h = (b - a) / static_cast<T>(N - 1);
-    std::vector<T> xs(N);
-    typename std::vector<T>::iterator x;
-    T val;
-    for (x = xs.begin(), val = a; x != xs.end(); ++x, val += h)
-        *x = val;
-    return xs;
-}
+template <typename T, typename U>
+std::vector<T> linspace(U start, U end, size_t num, bool endpoint = false) {
+    std::vector<T> indices;
+        if (num != 0) {
+            if (num == 1)
+                indices.push_back(static_cast<T>(start));
+            else {
+                if (endpoint)
+                    --num;
 
-// linspace and floor
-std::vector<size_t> get_inf_indices(float start, float end, size_t num, bool endpoint=false) {
-    std::vector<size_t> indices;
-    if (num != 0) {
-        if (num == 1)
-            indices.push_back(static_cast<size_t>(start));
-        else {
-            if (endpoint)
-                --num;
+                U delta = (end - start) / static_cast<U>(num);
+                for (size_t i = 0; i < num; i++)
+                    indices.push_back(static_cast<T>(start + delta * i));
 
-            float delta = (end - start) / num;
-            for(size_t i = 0; i < num; i++)
-                indices.push_back(static_cast<size_t>(start + delta * i));
-
-            if (endpoint)
-                indices.push_back(static_cast<size_t>(end));
+                if (endpoint)
+                    indices.push_back(static_cast<T>(end));
+            }
         }
-    }
     return indices;
 }
 
@@ -59,7 +50,7 @@ std::vector<float> read_vector_from_txt(std::string& file_name) {
     return res;
 }
 
-LCMScheduler::LCMScheduler(int32_t num_train_timesteps,
+LCMScheduler::LCMScheduler(size_t num_train_timesteps,
                            float beta_start,
                            float beta_end,
                            BetaSchedule beta_schedule,
@@ -92,13 +83,13 @@ LCMScheduler::LCMScheduler(int32_t num_train_timesteps,
     if (!trained_betas.empty()) {
         auto betas = trained_betas;
     } else if (beta_schedule == BetaSchedule::LINEAR) {
-        for (int32_t i = 0; i < num_train_timesteps; i++) {
+        for (size_t i = 0; i < num_train_timesteps; i++) {
             betas.push_back(beta_start + (beta_end - beta_start) * i / (num_train_timesteps - 1));
         }
     } else if (beta_schedule == BetaSchedule::SCALED_LINEAR) {
         float start = sqrt(beta_start);
         float end = sqrt(beta_end);
-        std::vector<float> temp = linspace(start, end, num_train_timesteps);
+        std::vector<float> temp = linspace<float, float>(start, end, num_train_timesteps, true);
         for (float b : temp) {
             betas.push_back(b * b);
         }
@@ -137,7 +128,7 @@ void LCMScheduler::set_timesteps(size_t num_inference_steps) {
     std::reverse(lcm_origin_timesteps.begin(),lcm_origin_timesteps.end());
 
     // v1. based on https://github.com/huggingface/diffusers/blame/2a7f43a73bda387385a47a15d7b6fe9be9c65eb2/src/diffusers/schedulers/scheduling_lcm.py#L387
-    std::vector<size_t> inference_indices = get_inf_indices(0, origin_timesteps_size, num_inference_steps);
+    std::vector<size_t> inference_indices = linspace<size_t, float>(0, origin_timesteps_size, num_inference_steps);
     for (size_t i : inference_indices){
         m_timesteps.push_back(lcm_origin_timesteps[i]);
     }

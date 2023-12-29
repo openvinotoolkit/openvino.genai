@@ -1,10 +1,13 @@
+// Copyright (C) 2023 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include <list>
 
 #include "scheduler.hpp"
 
 class LCMScheduler : public Scheduler {
 public:
-    LCMScheduler(int32_t num_train_timesteps = 1000,
+    LCMScheduler(size_t num_train_timesteps = 1000,
                  float beta_start = 0.00085f,
                  float beta_end = 0.012f,
                  BetaSchedule beta_schedule = BetaSchedule::SCALED_LINEAR,
@@ -35,7 +38,7 @@ private:
     std::vector<float> alphas_cumprod;
     PredictionType prediction_type_config;
     float final_alpha_cumprod;
-    int32_t num_train_timesteps_config;
+    size_t num_train_timesteps_config;
     size_t original_inference_steps_config;
     size_t num_inference_steps;
     float timestep_scaling_config;
