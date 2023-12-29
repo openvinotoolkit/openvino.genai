@@ -424,6 +424,10 @@ int main(int argc, char* argv[]) try {
         ireq.get_tensor("beam_idx").set_shape({ BATCH_SIZE });
         ireq.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
+	for (auto &&state : ireq.query_state()){
+            state.reset();
+        }
+
         startTime = Time::now();
         ireq.infer();
         duration_ms = get_duration_ms_until_now(startTime);
