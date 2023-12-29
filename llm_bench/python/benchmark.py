@@ -93,9 +93,10 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     max_output_token_size = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     max_output_token_size = MAX_OUTPUT_TOKEN_SIZE if max_output_token_size > MAX_OUTPUT_TOKEN_SIZE else max_output_token_size
     if args['batch_size'] > 1:
-        out_str = 'Batch_size={}, '.format(args['batch_size'])
-        out_str += 'all input token size after padding:{} * {}, '.format(input_token_size, args['batch_size'])
-        out_str += 'all max_output_token_size:{} * {}'.format(max_output_token_size, args['batch_size'])
+        out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
+        out_str += " Batch_size={}, ".format(args['batch_size'])
+        out_str += 'all input token size after padding: {} * {}, '.format(input_token_size, args['batch_size'])
+        out_str += 'all max_output_token_size: {} * {}'.format(max_output_token_size, args['batch_size'])
         log.info(out_str)
 
     max_rss_mem_consumption = ''
