@@ -333,7 +333,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     if num == 0:
         rslt_img_fn = args['model_name'] + '_warmup_' + img['prompt'].name
     else:
-        rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_' + img['prompt'].name    
+        rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_' + img['prompt'].name
     result_md5_list = []
     if framework == 'ov':
         res[0].save(rslt_img_fn)

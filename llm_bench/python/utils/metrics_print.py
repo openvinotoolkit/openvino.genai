@@ -58,14 +58,13 @@ def print_metrics(
 
 
 def print_generated_and_md5(iter_num, warm_up=False, generated=None, result_md5=''):
-    iter_str = str(iter_num)    
+    iter_str = str(iter_num)
     if warm_up:
         iter_str = 'warm-up'
     if generated is not None:
         log.info(f'[{iter_str}] Generated: {generated}')
     if result_md5 != '':
         log.info(f"[{iter_str}] Result MD5: {result_md5}")
-
 
 
 def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion):
