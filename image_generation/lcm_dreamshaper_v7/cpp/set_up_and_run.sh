@@ -21,12 +21,12 @@ source ./openvino/setupvars.sh
 # download extra dependencies
 sudo -E apt install libeigen3-dev -y
 
-# download / convert models
+# download / convert a model / tokenizer
 cd scripts
 python -m pip install -U pip
 python -m pip install -r ./requirements.txt
 python -m pip install ../../../../thirdparty/openvino_contrib/modules/custom_operations/
-python convert_model.py -sd runwayml/stable-diffusion-v1-5 -b 1 -t FP16 -dyn True
+python convert_model.py -lcm "SimianLuo/LCM_Dreamshaper_v7" -t "FP16"
 cd ..
 
 # build app
@@ -35,4 +35,4 @@ cmake --build ./build/ --config Release --parallel
 
 # run app
 cd build
-./stable_diffusion -m ../scripts/runwayml/stable-diffusion-v1-5 -t FP16_dyn
+./lcm_dreamshaper

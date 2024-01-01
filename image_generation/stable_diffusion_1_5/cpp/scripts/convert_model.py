@@ -1,20 +1,9 @@
 from pathlib import Path
 import argparse
-from optimum.intel.openvino import (
-        OVStableDiffusionPipeline, OVQuantizer,
-        OVModelForCausalLM, OVModelForSeq2SeqLM, OVStableDiffusionPipeline, OVQuantizer,
-        OV_XML_FILE_NAME,
-        OV_DECODER_NAME,
-        OV_DECODER_WITH_PAST_NAME,
-        OV_ENCODER_NAME
-)
-from optimum.exporters import TasksManager
-from optimum.exporters.openvino import export_models
-from optimum.exporters.onnx import __main__ as optimum_main
-from nncf import compress_weights
-from diffusers import StableDiffusionPipeline
-from openvino.runtime import Type, PartialShape, serialize
-from openvino.runtime import serialize as save_model
+from optimum.intel.openvino import OVStableDiffusionPipeline
+from openvino import Type, save_model
+from transformers import AutoTokenizer
+from openvino_tokenizers import convert_tokenizer
 import torch
 
 
@@ -38,77 +27,23 @@ def parse_args() -> argparse.Namespace:
 
 args = parse_args()
 
-###convert SD model to IR
+load_in_8bit = True if args.type == "INT8" else False
+output_path = Path(args.sd_weights) / (args.type + ("_dyn" if args.dynamic else "_static"))
 
-if args.type == "INT8":
-    pt_model = StableDiffusionPipeline.from_pretrained(args.sd_weights, trust_remote_code=True)
+# convert SD models to IR
 
-    from optimum.exporters import TasksManager
-    from optimum.exporters.onnx import get_encoder_decoder_models_for_export
-    from optimum.exporters.openvino import export_models
-    from optimum.exporters.onnx import __main__ as optimum_main
+model = OVStableDiffusionPipeline.from_pretrained(args.sd_weights, trust_remote_code=True, export=True, compile=False, load_in_8bit=load_in_8bit)
+if args.type == "FP16":
+    model.half()
+if not args.dynamic:
+    model.reshape(args.batch, 512, 512, 1)
 
-    wc_text_encoder = compress_weights(pt_model.text_encoder)
-    wc_unet = compress_weights(pt_model.unet)
-    wc_vae = compress_weights(pt_model.vae)
-    pt_model.text_encoder = wc_text_encoder
-    pt_model.unet = wc_unet
-    pt_model.vae = wc_vae
-    _, models_and_onnx_configs = optimum_main._get_submodels_and_onnx_configs(
-        model=pt_model,
-        task="stable-diffusion",
-        monolith=False,
-        custom_onnx_configs={},
-        custom_architecture=False,
-        _variant="default"
-    )
-    output = Path(args.sd_weights) / args.type
-    for model_name in models_and_onnx_configs:
-        subcomponent = models_and_onnx_configs[model_name][0]
-        if hasattr(subcomponent, "save_config"):
-            subcomponent.save_config(output / model_name)
-        elif hasattr(subcomponent, "config") and hasattr(subcomponent.config, "save_pretrained"):
-            subcomponent.config.save_pretrained(output / model_name)
-    files_subpaths = [Path(name_dir) / OV_XML_FILE_NAME for name_dir in models_and_onnx_configs]
+model.save_pretrained(output_path)
 
-    # Saving the additional components needed to perform inference.
-    pt_model.scheduler.save_pretrained(output.joinpath("scheduler"))
+# convert tokenizer
 
-    feature_extractor = getattr(pt_model, "feature_extractor", None)
-    if feature_extractor is not None:
-        feature_extractor.save_pretrained(output.joinpath("feature_extractor"))
+tokenizer_path = output_path / "tokenizer"
+hf_tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+ov_tokenizer_encoder = convert_tokenizer(hf_tokenizer, tokenizer_output_type=Type.i32)
 
-    tokenizer = getattr(pt_model, "tokenizer", None)
-    if tokenizer is not None:
-        tokenizer.save_pretrained(output.joinpath("tokenizer"))
-
-    tokenizer_2 = getattr(pt_model, "tokenizer_2", None)
-    if tokenizer_2 is not None:
-        tokenizer_2.save_pretrained(output.joinpath("tokenizer_2"))
-
-    pt_model.save_config(output)
-
-    export_models(
-        models_and_onnx_configs=models_and_onnx_configs,
-        output_dir=output,
-        output_names=files_subpaths
-    )
-    del pt_model
-
-    if not args.dynamic:
-        model = OVStableDiffusionPipeline.from_pretrained(args.sd_weights+"INT8", export=False, compile=False)
-        model.reshape(args.batch,512,512,1)
-        model.compile()
-        model.save_pretrained(Path(args.sd_weights) / "INT8_static")
-
-else:
-    model = OVStableDiffusionPipeline.from_pretrained(args.sd_weights,trust_remote_code=True, export=True, compile=False)
-    if args.type == "FP16":
-        model.half()
-    if not args.dynamic:
-        model.reshape(args.batch,512,512,1)
-    model.compile()
-    if not args.dynamic:
-        model.save_pretrained(str(Path(args.sd_weights) / args.type) + "_static")
-    else:
-        model.save_pretrained(str(Path(args.sd_weights) / args.type) + "_dyn")
+save_model(ov_tokenizer_encoder, tokenizer_path / "openvino_tokenizer.xml", compress_to_fp16=False)

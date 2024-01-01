@@ -3,12 +3,11 @@
 
 #include <group_beam_searcher.hpp>
 #include <openvino/openvino.hpp>
-#include <openvino_extensions/strings.hpp>
 
 namespace {
-std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string_view prompt) {
-    ov::Tensor destination = tokenizer.get_input_tensor();
-    openvino_extensions::pack_strings(std::array{prompt}, destination);
+std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
+    constexpr size_t BATCH_SIZE = 1;
+    tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
     tokenizer.infer();
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
 }
@@ -21,7 +20,7 @@ std::string detokenize(ov::InferRequest& detokenizer, const std::vector<int64_t>
         inp.data<int64_t>()[idx] = tokens.at(idx);
     }
     detokenizer.infer();
-    return openvino_extensions::unpack_strings(detokenizer.get_output_tensor()).front();
+    return detokenizer.get_output_tensor().data<std::string>()[0];
 }
 }
 

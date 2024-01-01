@@ -32,7 +32,12 @@ HOOK_GREEDY_SEARCH_UTILS = {'pt': utils.hook_greedy_search, 'ov': utils.hook_gre
 FW_UTILS = {'pt': utils.pt_utils, 'ov': utils.ov_utils}
 
 DEFAULT_INFERENCE_STEPS = 20
+LCM_DEFAULT_INFERENCE_STEPS = 4
+DEFAULT_IMAGE_WIDTH = 512
+DEFAULT_IMAGE_HEIGHT = 512
 DEFAULT_SUPER_RESOLUTION_STEPS = 50
+DEFAULT_SUPER_RESOLUTION_WIDTH = 128
+DEFAULT_SUPER_RESOLUTION_HEIGHT = 128
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
 MAX_OUTPUT_TOKEN_SIZE = 64 * 1024
 
@@ -187,21 +192,30 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     return iter_data_list, pretrain_time
 
 
-def run_image_generation(input_text, nsteps, num, image_id, pipe, args, iter_data_list):
+def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list):
     set_seed(args['seed'])
-    log.info(f'batch_size={args["batch_size"]}')
+    input_text = image_param['prompt']
+    image_width = image_param.get('width', DEFAULT_IMAGE_WIDTH)
+    image_height = image_param.get('height', DEFAULT_IMAGE_HEIGHT)
+    nsteps = image_param.get('steps', DEFAULT_INFERENCE_STEPS if 'lcm' not in args["model_name"] else LCM_DEFAULT_INFERENCE_STEPS)
+    nsteps = 1 if num == 0 else nsteps
+    guidance_scale = image_param.get('guidance_scale', None)
+    log.info(f'batch_size={args["batch_size"]}, steps={nsteps}, width={image_width}, height={image_height}, guidance_scale={guidance_scale}')
     result_md5_list = []
     max_rss_mem_consumption = ''
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
-    start = time.perf_counter()
     additional_args = {}
-    if 'lcm-sdxl' in args['model_type']:
-        additional_args["guidance_scale"] = 1.0
-    if 'turbo' in args['model_name']:
-        additional_args["guidance_scale"] = 0.0
-    res = pipe([input_text] * args['batch_size'], num_inference_steps=nsteps, height=512, width=512, **additional_args).images
+    if guidance_scale is not None:
+        additional_args["guidance_scale"] = guidance_scale
+    else:
+        if 'lcm-sdxl' in args['model_type']:
+            additional_args["guidance_scale"] = 1.0
+        if 'turbo' in args['model_name']:
+            additional_args["guidance_scale"] = 0.0
+    start = time.perf_counter()
+    res = pipe([input_text] * args['batch_size'], num_inference_steps=nsteps, height=image_height, width=image_width, **additional_args).images
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
@@ -239,11 +253,9 @@ def run_image_generation(input_text, nsteps, num, image_id, pipe, args, iter_dat
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters):
     pipe, pretrain_time = FW_UTILS[framework].create_image_gen_model(model_path, device, **args)
-    default_inference_steps = DEFAULT_INFERENCE_STEPS if 'lcm' not in args["model_name"] else 4
-    nsteps = int(default_inference_steps if args['infer_count'] is None else args['infer_count'])
     iter_data_list = []
-    input_text_list = utils.model_utils.get_prompts(args)
-    if len(input_text_list) == 0:
+    input_image_list = utils.model_utils.get_image_param_from_prompt_file(args)
+    if len(input_image_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
 
     if framework == "ov":
@@ -251,13 +263,13 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
         stable_diffusion_hook.new_unet(pipe)
         stable_diffusion_hook.new_vae_decoder(pipe)
 
-    log.info(f"num_iters={num_iters}, num_text_list={len(input_text_list)}")
+    log.info(f"num_iters={num_iters}, num_text_list={len(input_image_list)}")
 
     # if num_iters == 0, just output warm-up data
     for num in range(num_iters + 1):
         image_id = 0
-        for input_text in input_text_list:
-            run_image_generation(input_text, 1 if num == 0 else nsteps, num, image_id, pipe, args, iter_data_list)
+        for image_param in input_image_list:
+            run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
             image_id += 1
 
     utils.metrics_print.print_average(iter_data_list)
@@ -286,11 +298,15 @@ def run_image_classification(model_path, framework, device, args, num_iters=10):
     return iter_data_list
 
 
-def run_ldm_super_resolution(img, num, nsteps, pipe, args, framework, iter_data_list, image_id, tm_list):
+def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list):
     set_seed(args['seed'])
-    log.info(f'Test {num} input image={img}')
-    low_res_img = PIL.Image.open(img).convert('RGB')
-    low_res_img = low_res_img.resize((128, 128))
+    nsteps = img.get('steps', DEFAULT_SUPER_RESOLUTION_STEPS)
+    nsteps = 1 if num == 0 else nsteps
+    resize_image_width = img.get('width', DEFAULT_SUPER_RESOLUTION_WIDTH)
+    resize_image_height = img.get('height', DEFAULT_SUPER_RESOLUTION_HEIGHT)
+    log.info(f'Test {num} input image={img["prompt"]}, steps={nsteps}, resize_width={resize_image_width}, resize_height={resize_image_height}')
+    low_res_img = PIL.Image.open(img['prompt']).convert('RGB')
+    low_res_img = low_res_img.resize((resize_image_width, resize_image_height))
     max_rss_mem_consumption = ''
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
@@ -303,9 +319,9 @@ def run_ldm_super_resolution(img, num, nsteps, pipe, args, framework, iter_data_
         max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
     if num == 0:
-        rslt_img_fn = args['model_name'] + '_warmup_' + img.name
+        rslt_img_fn = args['model_name'] + '_warmup_' + img['prompt'].name
     else:
-        rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_' + img.name
+        rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_' + img['prompt'].name
     log.info(f'Result will be saved to {rslt_img_fn}')
     result_md5_list = []
     if framework == 'ov':
@@ -338,12 +354,14 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     pipe, pretrain_time = FW_UTILS[framework].create_ldm_super_resolution_model(model_path, device, **args)
     iter_data_list = []
     tm_list = []
-    input_prompts_list = utils.model_utils.get_prompts(args)
-    if len(input_prompts_list) > 0:
+    input_image_list = utils.model_utils.get_image_param_from_prompt_file(args)
+    if len(input_image_list) > 0:
         images = []
-        for image in input_prompts_list:
-            image = os.path.join(os.path.dirname(args['prompt'] if args['prompt'] is not None else args['prompt_file']), image.replace('./', ''))
-            images.append(Path(image))
+        for image in input_image_list:
+            image['prompt'] = os.path.join(os.path.dirname(args['prompt'] if args['prompt'] is not None else args['prompt_file']),
+                                           image['prompt'].replace('./', ''))
+            image['prompt'] = Path(image['prompt'])
+            images.append(image)
     else:
         if args['images'] is not None:
             images = Path(args['images'])
@@ -354,13 +372,12 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
         else:
             raise RuntimeError('==Failure image is empty ==')
     log.info(f'Number benchmarking images {len(images)}')
-    num_inference_steps = int(DEFAULT_SUPER_RESOLUTION_STEPS if args['infer_count'] is None else args['infer_count'])
 
     # if num_iters == 0, just output warm-up data
     for num in range(num_iters + 1):
         image_id = 0
         for img in images:
-            run_ldm_super_resolution(img, num, 1 if num == 0 else num_inference_steps, pipe, args, framework, iter_data_list, image_id, tm_list)
+            run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list)
             tm_list.clear()
             image_id = image_id + 1
     utils.metrics_print.print_average(iter_data_list)
@@ -390,8 +407,7 @@ def get_argprser():
         default=None,
         type=int,
         help='limit the output token size '
-        f'(default {DEFAULT_OUTPUT_TOKEN_SIZE}) of text_gen and code_gen models, \n'
-        f'or set inference/sampling steps (default {DEFAULT_INFERENCE_STEPS}) of Text2Image models.',
+        f'(default {DEFAULT_OUTPUT_TOKEN_SIZE}) of text_gen and code_gen models.',
     )
     parser.add_argument(
         '-n',

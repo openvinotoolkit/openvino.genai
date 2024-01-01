@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.15)
 
-project(stable_diffusion LANGUAGES CXX)
+project(lcm_dreamshaper LANGUAGES CXX)
 
 if(POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
