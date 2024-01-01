@@ -2,7 +2,10 @@
 name: label PRs
 
 on:
-- pull_request
+  pull_request:
+    paths:
+      - llm_bench/python/**
+      - .github/workflows/llm_bench-python.yml
 
 jobs:
   labeler:
