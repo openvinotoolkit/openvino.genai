@@ -15,7 +15,7 @@ def print_metrics(
     iter_str = str(iter_num)
     if warm_up:
         iter_str = 'warm-up'
-    output_str = '[{}] '.format(iter_str)
+    output_str = ''
     if iter_data['input_size'] != '':
         output_str += 'Input token size: {}, '.format(iter_data['input_size'])
     if iter_data['output_size'] != '':
@@ -31,6 +31,7 @@ def print_metrics(
     if iter_data['latency'] != '':
         output_str += 'Latency: {:.2f} ms/token'.format(iter_data['latency'])
     if output_str != '':
+        output_str = ' '.join(['[{}]'.format(iter_str), output_str])
         log.info(output_str)
     if len(tms) > 0:
         iter_data['first_token_latency'] = tms[0] * 1000 if len(tms) > 0 else -1
@@ -50,21 +51,22 @@ def print_metrics(
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion)
     output_str = ''
     if max_rss_mem != '' and max_rss_mem > -1:
-        output_str += '[{}] Max rss memory cost: {:.2f}, '.format(iter_str, max_rss_mem)
+        output_str += 'Max rss memory cost: {:.2f}, '.format(max_rss_mem)
     if max_shared_mem != '' and max_shared_mem > -1:
         output_str += 'max shared memory cost: {:.2f}'.format(max_shared_mem)
     if output_str != '':
+        output_str = ' '.join(['[{}]'.format(iter_str), output_str])
         log.info(output_str)
+    if iter_data['result_md5'] != '':
+        log.info(f"[{iter_str}] Result MD5:{iter_data['result_md5']}")
 
 
-def print_generated_and_md5(iter_num, warm_up=False, generated=None, result_md5=''):
+def print_generated(iter_num, warm_up=False, generated=None):
     iter_str = str(iter_num)
     if warm_up:
         iter_str = 'warm-up'
     if generated is not None:
         log.info(f'[{iter_str}] Generated: {generated}')
-    if result_md5 != '':
-        log.info(f"[{iter_str}] Result MD5: {result_md5}")
 
 
 def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion):

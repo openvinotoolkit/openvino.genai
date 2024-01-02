@@ -160,9 +160,9 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         warmup_md5_list = iter_data_list[prompt_index]['result_md5']
         if result_md5_list != warmup_md5_list:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} is different from warm-up's md5 {warmup_md5_list}")
-            utils.metrics_print.print_generated_and_md5(num, warm_up=(num == 0), generated=generated_text[0], result_md5=result_md5_list)
+            utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
     else:
-        utils.metrics_print.print_generated_and_md5(num, warm_up=(num == 0), generated=generated_text[0], result_md5=result_md5_list)
+        utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
     bench_hook.clear_time_list()
     bench_hook.clear_time_infer_list()
 
@@ -183,8 +183,8 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     input_text_list = utils.model_utils.get_prompts(args)
     if len(input_text_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
+    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_text_list)}')
 
-    log.info(f'Iter times: {num_iters + 1}, prompt_nums: {len(input_text_list)}')
     # if num_iters == 0, just output warm-up data
     for num in range(num_iters + 1):
         prompt_idx = 0
@@ -257,7 +257,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
         max_shared_mem=max_shared_mem_consumption,
         stable_diffusion=stable_diffusion_hook
     )
-    utils.metrics_print.print_generated_and_md5(num, warm_up=(num == 0), generated=rslt_img_fn, result_md5=result_md5_list)
+    utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn)
     stable_diffusion_hook.clear_statistics()
 
 
@@ -273,7 +273,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
         stable_diffusion_hook.new_unet(pipe)
         stable_diffusion_hook.new_vae_decoder(pipe)
 
-    log.info(f'Iter times: {num_iters + 1}, prompt_nums: {len(input_image_list)}')
+    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_image_list)}')
 
     # if num_iters == 0, just output warm-up data
     for num in range(num_iters + 1):
@@ -358,8 +358,8 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
     )
-    utils.metrics_print.print_generated_and_md5(num, warm_up=(num == 0), generated=rslt_img_fn, result_md5=result_md5_list)
-    utils.metrics_print.print_ldm_unet_vqvae_infer_latency(num, iter_data, tm_list, warm_up=(num == 0),)
+    utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn)
+    utils.metrics_print.print_ldm_unet_vqvae_infer_latency(num, iter_data, tm_list, warm_up=(num == 0))
 
 
 def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_iters):
@@ -383,7 +383,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
                 images = [images]
         else:
             raise RuntimeError('==Failure image is empty ==')
-    log.info(f'Iter times: {num_iters + 1}, prompt_nums: {len(images)}')
+    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(images)}')
 
     # if num_iters == 0, just output warm-up data
     for num in range(num_iters + 1):
