@@ -7,7 +7,7 @@ a family of models and suggests certain modifications to adapt the code to speci
 It includes the following pipelines:
 
 1. [Benchmarking script for large language models](./llm_bench/python/)
-2. [Causal LM](./text_generation/causal_lm/cpp/)
+2. [Text-generation w/ Large Language Models](./text_generation/cpp/)
 3. [OpenVINO Stable Diffuison (with LoRA) C++ pipeline](./image_generation/stable_diffusion_1_5/cpp/)
 4. [OpenVINO Latent Consistency Model (with LoRA) C++ pipeline](./image_generation/lcm_dreamshaper_v7/cpp/)
 

@@ -1,25 +1,27 @@
-# Causal LM
+# Text-generation w/ Large Language Models
 
-These applications showcase inference of a causal language model (LM). They don't have many configuration options to encourage the reader to explore and modify the source code. There's a Jupyter notebook which corresponds to these pipelines and discusses how to create an LLM-powered Chatbot: https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot.
+These examples showcase inference of text-generation Large Language Models (LLMs). The applications don't have many configuration options to encourage the reader to explore and modify the source code. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
 
 > [!NOTE]
 > This project is not for production use.
 
 ## How it works
 
-### greedy_causal_lm
+The `decoder_greedy` and `decoder_beam` applications implement text-generation pipeline with LLMs which consists of the following steps:
+ * Load a tokenizer, a detokenizer and a model in OpenVINO (`.xml` and `.bin`).
+ * A text prompt is tokenized and passed to the model.
+ * The model predicts next token in a loop until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to text and printed in a streaming fashion.
 
-The program loads a tokenizer, a detokenizer and a model (`.xml` and `.bin`) to OpenVINO. A prompt is tokenized and passed to the model. The model greedily generates token by token until the special end of sequence (EOS) token is obtained. The predicted tokens are converted to chars and printed in a streaming fashion.
+ Each application demonstrates a single text-generation scenario:
+ * `decoder_greedy` - uses decoder-based (GPT-like) model in the pipeline where the output token is predicted as the index in the output vector with the highest probability value which corresponds to greedy search.
+ * `decoder_beam` - uses decoder-based (GPT-like) model in the pipeline which predicts a distribution over the next tokens where beam search method samples from that distribution to explore possible sequences. It provides more accurate prediction for the whole generated sequence while at slower inference.
 
-### beam_search_causal_lm
-
-The program loads a tokenizer, a detokenizer and a model (`.xml` and `.bin`) to OpenVINO. A prompt is tokenized and passed to the model. The model predicts a distribution over the next tokens and group beam search samples from that distribution to explore possible sequesnses. The result is converted to chars and printed.
 
 ## Install OpenVINO Runtime
 
 Install OpenVINO Runtime from an archive: [Linux](https://docs.openvino.ai/2023.2/openvino_docs_install_guides_installing_openvino_from_archive_linux.html). `<INSTALL_DIR>` below refers to the extraction location.
 
-## Build `greedy_causal_lm`, `beam_search_causal_lm` and `user_ov_extensions`
+## Build `decoder_greedy`, `decoder_beam` and `user_ov_extensions`
 
 ```sh
 git submodule update --init
@@ -62,24 +64,25 @@ This pipeline can work with other similar topologies produced by `optimum-intel`
 ### Download and convert the model and tokenizers
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
-`beam_search_causal_lm` requires ommiting `--streaming-detokenizer` for `convert_tokenizers.py`.
+`decoder_beam` requires ommiting `--streaming-detokenizer` for `convert_tokenizers.py`.
 
 ```sh
 source <INSTALL_DIR>/setupvars.sh
-python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
+python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../llm_bench/python/requirements.txt ../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
 python -m pip uninstall openvino  # Uninstall openvino from PyPI because there's one from the archive installed
-python ../../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir ./Llama-2-7b-hf/ --precision FP16 --stateful
+python ../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir ./Llama-2-7b-hf/ --precision FP16 --stateful
 convert_tokenizer ./Llama-2-7b-hf/pytorch/dldt/FP16/ --output ./Llama-2-7b-hf/pytorch/dldt/FP16/ --with-detokenizer --streaming-detokenizer True --trust-remote-code
 ```
 
 ## Run
 
-Usage:
-1. `greedy_causal_lm <MODEL_DIR> "<PROMPT>"`
-2. `beam_search_causal_lm <MODEL_DIR> "<PROMPT>"`
+To run the application in command-line provide a model path and text prompt:
 
-Examples:
-1. `./build/greedy_causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-2. `./build/beam_search_causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+`decoder_greedy <MODEL_DIR> "<PROMPT>"`
+
+
+Example:
+
+`./build/decoder_greedy ./Llama-2-7b-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
