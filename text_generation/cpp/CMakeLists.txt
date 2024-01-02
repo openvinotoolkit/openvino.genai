@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 cmake_minimum_required(VERSION 3.15)
-project(causal_lm)
+project(text_generation)
 
 # Build user_ov_extensions
 list(APPEND CUSTOM_OPERATIONS tokenizer)
