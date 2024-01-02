@@ -40,6 +40,7 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest black
         pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt
+        pip install openvino-nightly
 
     - name: Lint with flake8
       run: |
@@ -55,8 +56,10 @@ jobs:
       with:
         name: llm.bench_diff
         path: llm.bench_diff.diff
-    - name: Run llm_bench test on linux
-      run: llm_bench/python/llm_run_on_linux.sh
+    - name: Test bloomz-560m on Linux
+      run: llm_bench/python/llm_run_bloomz_560m_on_linux.sh
+    - name: Test tiny-stable-diffusion on Linux
+      run: llm_bench/python/llm_run_stable_diffusion_on_linux.sh
   stateful:
     runs-on: ubuntu-20.04
     steps:
