@@ -475,6 +475,7 @@ CASE_TO_BENCH = {
 
 def main():
     log.basicConfig(format='[ %(levelname)s ] %(message)s', level=log.INFO, stream=sys.stdout)
+    utils.model_utils.try_print_git_commit_id()
     args = get_argprser()
     model_path, framework, model_args, model_name = utils.model_utils.analyze_args(args)
 
