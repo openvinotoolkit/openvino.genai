@@ -2,8 +2,8 @@
 name: label PRs
 
 on:
-  pull_request_target:
-    types: [opened]
+  pull_request:
+    types: [opened, reopened]
     paths:
       - llm_bench/python/**
       - .github/workflows/llm_bench-python.yml
