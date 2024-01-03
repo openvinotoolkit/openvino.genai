@@ -21,10 +21,20 @@ Install OpenVINO Runtime from an archive: [Linux](https://docs.openvino.ai/2023.
 
 ## Build `greedy_causal_lm`, `beam_search_causal_lm` and `user_ov_extensions`
 
+### Linux/macOS
+
 ```sh
 git submodule update --init
 source <INSTALL_DIR>/setupvars.sh
-cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/ && cmake --build ./build/ --config Release -j
+cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/ && cmake --build ./build/ -j
+```
+
+### Windows
+
+```bat
+git submodule update --init
+<INSTALL_DIR>/setupvars.bat
+cmake -S ./ -B ./build/ && cmake --build ./build/ --config Release -j
 ```
 
 ## Supported models
@@ -64,10 +74,24 @@ This pipeline can work with other similar topologies produced by `optimum-intel`
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 `beam_search_causal_lm` requires ommiting `--streaming-detokenizer` for `convert_tokenizers.py`.
 
+#### Linux/macOS
+
 ```sh
 source <INSTALL_DIR>/setupvars.sh
+python3 -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
+# Uninstall openvino from PyPI because there's one from the archive installed
+python3 -m pip uninstall openvino
+python3 ../../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir ./Llama-2-7b-hf/ --precision FP16 --stateful
+convert_tokenizer ./Llama-2-7b-hf/pytorch/dldt/FP16/ --output ./Llama-2-7b-hf/pytorch/dldt/FP16/ --with-detokenizer --streaming-detokenizer --trust-remote-code
+```
+
+#### Windows
+
+```bat
+<INSTALL_DIR>/setupvars.bat
 python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-python -m pip uninstall openvino  # Uninstall openvino from PyPI because there's one from the archive installed
+REM Uninstall openvino from PyPI because there's one from the archive installed
+python -m pip uninstall openvino
 python ../../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir ./Llama-2-7b-hf/ --precision FP16 --stateful
 convert_tokenizer ./Llama-2-7b-hf/pytorch/dldt/FP16/ --output ./Llama-2-7b-hf/pytorch/dldt/FP16/ --with-detokenizer --streaming-detokenizer --trust-remote-code
 ```
