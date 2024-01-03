@@ -51,9 +51,9 @@ def print_metrics(
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion)
     output_str = ''
     if max_rss_mem != '' and max_rss_mem > -1:
-        output_str += 'Max rss memory cost: {:.2f}, '.format(max_rss_mem)
+        output_str += 'Max rss memory cost: {:.2f}MBytes, '.format(max_rss_mem)
     if max_shared_mem != '' and max_shared_mem > -1:
-        output_str += 'max shared memory cost: {:.2f}'.format(max_shared_mem)
+        output_str += 'max shared memory cost: {:.2f}MBytes'.format(max_shared_mem)
     if output_str != '':
         output_str = ' '.join(['[{}]'.format(iter_str), output_str])
         log.info(output_str)
