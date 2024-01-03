@@ -44,8 +44,8 @@ def print_metrics(
         iter_data['first_token_infer_latency'] = tms_infer[0] * 1000 if len(tms_infer) > 0 else -1
         iter_data['other_tokens_infer_avg_latency'] = sum(tms_infer[1:]) / (len(tms_infer) - 1) * 1000 if len(tms_infer) > 1 else -1
         log.info(
-            f"[{iter_str}] First token infer latency: {iter_data['first_token_infer_latency']:.2f} ms/token, "
-            f"other tokens infer latency: {iter_data['other_tokens_infer_avg_latency']:.2f} ms/token, len of tokens: {len(tms_infer)}",
+            f"[{iter_str}] First infer latency: {iter_data['first_token_infer_latency']:.2f} ms/infer, "
+            f"other infers latency: {iter_data['other_tokens_infer_avg_latency']:.2f} ms/infer, inference count: {len(tms_infer)}",
         )
     if stable_diffusion is not None:
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion)
