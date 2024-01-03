@@ -4,14 +4,12 @@ from optimum.intel.openvino import OVStableDiffusionPipeline
 from openvino import Type, save_model
 from transformers import AutoTokenizer
 from openvino_tokenizers import convert_tokenizer
-import torch
 
 
 def parse_args() -> argparse.Namespace:
     """Parse and return command line arguments."""
     parser = argparse.ArgumentParser(add_help=False)
     args = parser.add_argument_group('Options')
-    # fmt: off
     args.add_argument('-h', '--help', action = 'help',
                       help='Show this help message and exit.')
     args.add_argument('-b', '--batch', type = int, default = 1, required = True,
@@ -22,7 +20,6 @@ def parse_args() -> argparse.Namespace:
                       help='Specify the model input shape to use dynamic shape.')
     args.add_argument('-sd','--sd_weights', type = str, default="", required = True,
                       help='Specify the path of stable diffusion model')
-    # fmt: on
     return parser.parse_args()
 
 args = parse_args()
