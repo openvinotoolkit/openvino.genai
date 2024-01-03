@@ -184,8 +184,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     if len(input_text_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
     log.info(f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
-             f'prompt nums: {len(input_text_list)}'
-            )
+             f'prompt nums: {len(input_text_list)}')
 
     # if num_iters == 0, just output warm-up data
     for num in range(num_iters + 1):
