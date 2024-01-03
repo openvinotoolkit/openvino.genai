@@ -33,8 +33,8 @@ cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/ && cmake --build ./build/ -j
 
 ```bat
 git submodule update --init
-<INSTALL_DIR>/setupvars.bat
-cmake -S ./ -B ./build/ && cmake --build ./build/ --config Release -j
+<INSTALL_DIR>\setupvars.bat
+cmake -S .\ -B .\build\ && cmake --build .\build\ --config Release -j
 ```
 
 ## Supported models
@@ -88,12 +88,12 @@ convert_tokenizer ./Llama-2-7b-hf/pytorch/dldt/FP16/ --output ./Llama-2-7b-hf/py
 #### Windows
 
 ```bat
-<INSTALL_DIR>/setupvars.bat
-python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
+<INSTALL_DIR>\setupvars.bat
+python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ..\..\..\llm_bench\python\requirements.txt ..\..\..\thirdparty\openvino_contrib\modules\custom_operations\[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
 REM Uninstall openvino from PyPI because there's one from the archive installed
 python -m pip uninstall openvino
-python ../../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir ./Llama-2-7b-hf/ --precision FP16 --stateful
-convert_tokenizer ./Llama-2-7b-hf/pytorch/dldt/FP16/ --output ./Llama-2-7b-hf/pytorch/dldt/FP16/ --with-detokenizer --streaming-detokenizer --trust-remote-code
+python ..\..\..\llm_bench\python\convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir .\Llama-2-7b-hf\ --precision FP16 --stateful
+convert_tokenizer .\Llama-2-7b-hf\pytorch\dldt\FP16\ --output .\Llama-2-7b-hf\pytorch\dldt\FP16\ --with-detokenizer --streaming-detokenizer --trust-remote-code
 ```
 
 ## Run
