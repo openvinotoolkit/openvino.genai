@@ -65,6 +65,11 @@ int main(int argc, char* argv[]) try {
         out_token = std::max_element(logits, logits + vocab_size) - logits;
     }
     std::cout << '\n';
+    // While it is not required to call reset function for InferRequest object if only one sequence is processed, it is
+    // useful for education purpose. In case if the user really going to process multiple sequences, it is required to
+    // call reset function.
+    // Note that this is not required in this particular sample scenario (but harmless anyway)
+    lm.reset_state()
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;
