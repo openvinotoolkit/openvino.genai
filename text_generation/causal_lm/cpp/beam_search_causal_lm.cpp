@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) try {
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     Parameters parameters{std::vector<int64_t>{prompt_data, prompt_data + input_ids.get_size()}};
     parameters.max_new_tokens = 7;
-    for (size_t group_size : {3, 5, 4}) {
+    for (size_t group_size : {3, 5}) {
         std::cout << "Group size: " << group_size << '\n';
         parameters.group_size = group_size;
         GroupBeamSearcher group_beam_searcher{parameters};
@@ -52,8 +52,7 @@ int main(int argc, char* argv[]) try {
         ov::Shape input_ids_shape = input_ids.get_shape();
         input_ids_shape.front() = FULL_BATCH_SIZE;
         for (const char* name : {"input_ids", "attention_mask", "position_ids"}) {
-            ov::Tensor input;
-            input = ov::Tensor{ov::element::i64, input_ids_shape};
+            ov::Tensor input{ov::element::i64, input_ids_shape};
             lm.set_tensor(name, input);
             input.set_shape(input_ids_shape);
             std::fill_n(input.data<int64_t>(), input.get_size(), 0);
