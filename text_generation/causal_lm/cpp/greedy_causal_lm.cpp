@@ -28,11 +28,13 @@ int main(int argc, char* argv[]) try {
     // Compile models
     ov::Core core;
     core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in CMakeLists.txt
+    // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
     auto [input_ids, attention_mask] = tokenize(tokenizer, argv[2]);
     ov::InferRequest detokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
+    // The model can be compiled for GPU as well
     ov::InferRequest lm = core.compile_model(
         std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
     // Initialize inputs
