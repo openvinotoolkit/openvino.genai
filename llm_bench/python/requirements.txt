@@ -8,7 +8,7 @@ transformers>=4.33.0
 diffusers>=0.22.0
 optimum>=1.14.0,<1.15.0
 git+https://github.com/eaidova/optimum-intel.git@a57c86a6e561be838cbefb0ac430008c05e9aaa9
-git+https://github.com/openvinotoolkit/nncf.git@6d17662fec917e1293189e2c3a2b94139a433f16
+# git+https://github.com/openvinotoolkit/nncf.git@6d17662fec917e1293189e2c3a2b94139a433f16
 packaging
 psutil
 timm

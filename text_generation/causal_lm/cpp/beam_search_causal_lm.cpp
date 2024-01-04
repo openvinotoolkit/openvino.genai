@@ -79,7 +79,9 @@ int main(int argc, char* argv[]) try {
         std::vector<int64_t> next_tokens;
         std::vector<int32_t> next_beams;
         for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
+            std::cout << "AAAAAAAAAAAA\n";
             lm.infer();
+            std::cout << "BBBBBBBBBBBBB\n";
             std::tie(next_tokens, next_beams) = group_beam_searcher.process(lm.get_tensor("logits"));
             if (next_tokens.empty()) {
                 break;
