@@ -237,6 +237,8 @@ struct GroupBeamSearcher {
                 }
             }
         }
+        next_tokens.resize(parameters.n_groups * parameters.group_size, 0);
+        next_beams.resize(parameters.n_groups * parameters.group_size, 0);
         return {next_tokens, next_beams};
     }
 };
