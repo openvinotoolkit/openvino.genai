@@ -177,14 +177,12 @@ def create_text_gen_model(model_path, device, **kwargs):
 def create_image_gen_model(model_path, device, **kwargs):
     default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
     model_type = kwargs.get('model_type', default_model_type)
-    print(model_type)
     model_class = OV_MODEL_CLASSES_MAPPING[model_type]
     model_path = Path(model_path)
     ov_config = kwargs['config']
     if not Path(model_path).exists():
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        log.info(f'model_path={model_path}')
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
         end = time.perf_counter()

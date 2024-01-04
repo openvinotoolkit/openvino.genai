@@ -143,9 +143,9 @@ def analyze_args(args):
             model_args['config'] = config
     if model_framework == 'ov':
         set_default_param_for_ov_config(model_args['config'])
-        log.info(f"ov_config={model_args['config']}")
+        log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
-        log.info(f"pt_config={model_args['config']}")
+        log.info(f"PT Config={model_args['config']}")
     model_args['model_type'] = get_model_type(model_name, use_case, model_framework)
     model_args['model_name'] = model_name
     return model_path, model_framework, model_args, model_name
