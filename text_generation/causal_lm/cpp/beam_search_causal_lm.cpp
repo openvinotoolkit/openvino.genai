@@ -41,7 +41,6 @@ int main(int argc, char* argv[]) try {
 
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     Parameters parameters{std::vector<int64_t>{prompt_data, prompt_data + input_ids.get_size()}};
-    parameters.max_new_tokens = 2;
     for (size_t group_size : {3, 5, 4}) {
         std::cout << "Group size: " << group_size << '\n';
         parameters.group_size = group_size;
