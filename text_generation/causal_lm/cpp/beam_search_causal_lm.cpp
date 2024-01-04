@@ -41,6 +41,7 @@ int main(int argc, char* argv[]) try {
 
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     Parameters parameters{std::vector<int64_t>{prompt_data, prompt_data + input_ids.get_size()}};
+    parameters.max_new_tokens = 7;
     for (size_t group_size : {3, 5, 4}) {
         std::cout << "Group size: " << group_size << '\n';
         parameters.group_size = group_size;
@@ -52,16 +53,8 @@ int main(int argc, char* argv[]) try {
         input_ids_shape.front() = FULL_BATCH_SIZE;
         for (const char* name : {"input_ids", "attention_mask", "position_ids"}) {
             ov::Tensor input;
-            if (true) {
-                input = ov::Tensor{ov::element::i64, input_ids_shape};
-                lm.set_tensor(name, input);
-            } else {
-                input = lm.get_tensor(name);
-                // set_shape() fails for second group_size value of global loop
-                // Exception from src/core/src/runtime/ov_tensor.cpp:71:
-                // Check 'shape_size(new_shape) <= ov::shape_size(m_capacity)' failed at src/inference/src/dev/make_tensor.cpp:60:
-                // Could set new shape: [6,4]
-            }
+            input = ov::Tensor{ov::element::i64, input_ids_shape};
+            lm.set_tensor(name, input);
             input.set_shape(input_ids_shape);
             std::fill_n(input.data<int64_t>(), input.get_size(), 0);
         }
@@ -79,7 +72,8 @@ int main(int argc, char* argv[]) try {
         std::vector<int32_t> next_beams;
         for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
             lm.infer();
-            std::tie(next_tokens, next_beams) = group_beam_searcher.process(lm.get_tensor("logits"));
+            size_t meaningful_batch;
+            std::tie(next_tokens, next_beams, meaningful_batch) = group_beam_searcher.process(lm.get_tensor("logits"));
             if (next_tokens.empty()) {
                 break;
             }
@@ -91,9 +85,11 @@ int main(int argc, char* argv[]) try {
             ov::Tensor attention_mask = lm.get_tensor("attention_mask");
             ov::Shape mask_shape{batch_size, attention_mask.get_shape().at(1) + 1};
             attention_mask.set_shape(mask_shape);
-            std::fill_n(attention_mask.data<int64_t>(), ov::shape_size(mask_shape), 1);
+            std::fill_n(attention_mask.data<int64_t>(), meaningful_batch * mask_shape.at(1), 1);
+            std::fill(attention_mask.data<int64_t>() + meaningful_batch * mask_shape.at(1), attention_mask.data<int64_t>() + ov::shape_size(mask_shape), 0);
             lm.get_tensor("position_ids").set_shape({batch_size, 1});
-            std::fill_n(lm.get_tensor("position_ids").data<int64_t>(), batch_size, mask_shape.at(1) - 1);
+            std::fill_n(lm.get_tensor("position_ids").data<int64_t>(), meaningful_batch, mask_shape.at(1) - 1);
+            std::fill(lm.get_tensor("position_ids").data<int64_t>() + meaningful_batch, lm.get_tensor("position_ids").data<int64_t>() + batch_size, 0);
         }
         for (const std::vector<Beam>& group : finalize(std::move(group_beam_searcher))) {
             std::cout << "Group:\n";

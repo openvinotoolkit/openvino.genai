@@ -147,7 +147,7 @@ struct GroupBeamSearcher {
             group.ongoing.front().score = 0.0;
         }
     }
-    std::pair<std::vector<int64_t>, std::vector<int32_t>> process(const ov::Tensor& logits) {
+    std::tuple<std::vector<int64_t>, std::vector<int32_t>, size_t> process(const ov::Tensor& logits) {
         std::vector<int64_t> next_tokens;
         std::vector<int32_t> next_beams;
         next_tokens.reserve(parameters.n_groups * parameters.group_size);
@@ -237,9 +237,10 @@ struct GroupBeamSearcher {
                 }
             }
         }
-        next_tokens.resize(parameters.n_groups * parameters.group_size - next_tokens.size(), 0);
-        next_beams.resize(parameters.n_groups * parameters.group_size - next_beams.size(), 0);
-        return {next_tokens, next_beams};
+        size_t batch_size = next_tokens.size();
+        next_tokens.resize(parameters.n_groups * parameters.group_size, 0);
+        next_beams.resize(parameters.n_groups * parameters.group_size, 0);
+        return {next_tokens, next_beams, batch_size};
     }
 };
 
