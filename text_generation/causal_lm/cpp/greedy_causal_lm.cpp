@@ -21,7 +21,7 @@ std::string detokenize(ov::InferRequest& detokenizer, std::vector<int64_t>& toke
 // The following reasons require TextStreamer to keep cache of previous tokens:
 // Detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
 // but detokenize(tokenize("prefix a")) == "prefix a"
-// One printable token may consist 2 token ids: detokenize(incomplete_token_id) == "�"
+// One printable token may consist of 2 token ids: detokenize(incomplete_token_id) == "�"
 struct TextStreamer {
     ov::InferRequest detokenizer;
     std::vector<int64_t> token_cache;
