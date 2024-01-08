@@ -18,10 +18,10 @@ std::string detokenize(ov::InferRequest& detokenizer, std::vector<int64_t>& toke
     return detokenizer.get_output_tensor().data<std::string>()[0];
 }
 
-// The following reasons require TextStreamer to keep cache of previous tokens:
-// Detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
+// The following reasons require TextStreamer to keep a cache of previous tokens:
+// detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
 // but detokenize(tokenize("prefix a")) == "prefix a"
-// One printable token may consist of 2 token ids: detokenize(incomplete_token_id) == "�"
+// 1 printable token may consist of 2 token ids: detokenize(incomplete_token_idx) == "�"
 struct TextStreamer {
     ov::InferRequest detokenizer;
     std::vector<int64_t> token_cache;
@@ -60,11 +60,13 @@ int main(int argc, char* argv[]) try {
     // Compile models
     ov::Core core;
     core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in CMakeLists.txt
+    // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
     auto [input_ids, attention_mask] = tokenize(tokenizer, argv[2]);
     ov::InferRequest detokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
+    // The model can be compiled for GPU as well
     ov::InferRequest lm = core.compile_model(
         std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
     // Initialize inputs
@@ -98,6 +100,12 @@ int main(int argc, char* argv[]) try {
         out_token = std::max_element(logits, logits + vocab_size) - logits;
     }
     text_streamer.end();
+    // Model is stateful which means that context (kv-cache) which belongs to a particular
+    // text sequence is accumulated inside the model during the generation loop above.
+    // This context should be reset before processing the next text sequence.
+    // While it is not required to reset context in this sample as only one sequence is processed,
+    // it is called for education purposes:
+    lm.reset_state();
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;
