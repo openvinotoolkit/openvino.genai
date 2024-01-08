@@ -18,10 +18,10 @@ std::string detokenize(ov::InferRequest& detokenizer, std::vector<int64_t>& toke
     return detokenizer.get_output_tensor().data<std::string>()[0];
 }
 
-// The following reasons require TextStreamer to keep cache of previous tokens:
-// Detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
+// The following reasons require TextStreamer to keep a cache of previous tokens:
+// detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
 // but detokenize(tokenize("prefix a")) == "prefix a"
-// One printable token may consist of 2 token ids: detokenize(incomplete_token_id) == "�"
+// 1 printable token may consist of 2 token ids: detokenize(incomplete_token_idx) == "�"
 struct TextStreamer {
     ov::InferRequest detokenizer;
     std::vector<int64_t> token_cache;
