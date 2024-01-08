@@ -78,8 +78,6 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 ```sh
 source <INSTALL_DIR>/setupvars.sh
 python3 -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-# Uninstall openvino from PyPI because there's one from the archive installed
-python3 -m pip uninstall openvino
 python3 ../../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir ./Llama-2-7b-hf/ --precision FP16 --stateful
 convert_tokenizer ./Llama-2-7b-hf/pytorch/dldt/FP16/ --output ./Llama-2-7b-hf/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
 ```
@@ -89,8 +87,6 @@ convert_tokenizer ./Llama-2-7b-hf/pytorch/dldt/FP16/ --output ./Llama-2-7b-hf/py
 ```bat
 <INSTALL_DIR>\setupvars.bat
 python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ..\..\..\llm_bench\python\requirements.txt ..\..\..\thirdparty\openvino_contrib\modules\custom_operations\[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-REM Uninstall openvino from PyPI because there's one from the archive installed
-python -m pip uninstall openvino
 python ..\..\..\llm_bench\python\convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir .\Llama-2-7b-hf\ --precision FP16 --stateful
 convert_tokenizer .\Llama-2-7b-hf\pytorch\dldt\FP16\ --output .\Llama-2-7b-hf\pytorch\dldt\FP16\ --with-detokenizer --trust-remote-code
 ```
