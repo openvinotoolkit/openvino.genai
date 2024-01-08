@@ -11,14 +11,34 @@ std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::str
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
 }
 
-void print_token(ov::InferRequest& detokenizer, int64_t out_token) {
+std::string detokenize(ov::InferRequest& detokenizer, std::vector<int64_t>& tokens) {
     constexpr size_t BATCH_SIZE = 1;
-    ov::Tensor inp = detokenizer.get_input_tensor();
-    inp.set_shape({BATCH_SIZE, 1});
-    inp.data<int64_t>()[0] = out_token;
+    detokenizer.set_input_tensor(ov::Tensor{ov::element::i64, {BATCH_SIZE, tokens.size()}, tokens.data()});
     detokenizer.infer();
-    std::cout << detokenizer.get_output_tensor().data<std::string>()[0] << std::flush;
+    return detokenizer.get_output_tensor().data<std::string>()[0];
 }
+
+// Keeps token_cache to provide context for detokenizer
+struct TextStreamer {
+    ov::InferRequest detokenizer;
+    std::vector<int64_t> token_cache;
+
+    void put(int64_t token) {
+        token_cache.push_back(token);
+        std::string text = detokenize(detokenizer, token_cache);
+        if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
+            // Don't print incomplete text
+            return;
+        }
+        std::cout << text << std::flush;
+        token_cache.clear();
+    }
+
+    void end() {
+        std::cout << detokenize(detokenizer, token_cache) << '\n';
+        token_cache.clear();
+    }
+};
 }
 
 int main(int argc, char* argv[]) try {
@@ -51,6 +71,7 @@ int main(int argc, char* argv[]) try {
 
     lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     position_ids.set_shape({BATCH_SIZE, 1});
+    TextStreamer text_streamer{std::move(detokenizer)};
     // There's no way to extract special token values from the detokenizer for now
     constexpr int64_t SPECIAL_EOS_TOKEN = 2;
     while (out_token != SPECIAL_EOS_TOKEN) {
@@ -59,12 +80,12 @@ int main(int argc, char* argv[]) try {
         std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
         position_ids.data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 2);
         lm.start_async();
-        print_token(detokenizer, out_token);
+        text_streamer.put(out_token);
         lm.wait();
         logits = lm.get_tensor("logits").data<float>();
         out_token = std::max_element(logits, logits + vocab_size) - logits;
     }
-    std::cout << '\n';
+    text_streamer.end();
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;
