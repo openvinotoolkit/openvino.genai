@@ -18,7 +18,7 @@ class BackendType(Enum):
 
 
 PYTORCH_DIR = 'pytorch'
-PYTORCH_COMPRESS_WEIGHTS_DIR = 'compressed_weights/PT_{precision}-INT8'
+PYTORCH_COMPRESS_WEIGHTS_DIR = 'compressed_weights/PT_{precision}-{compression}'
 OV_DIR = 'dldt'
 GPTQ_DIR = "GPTQ_INT4-{precision}"
 

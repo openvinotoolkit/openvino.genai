@@ -161,6 +161,8 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             )
 
     if pt_compress_weights and not gptq_applied:
+        assert "INT8" in args.compress_weights or "INT8_ASYM" in args.compress_weights, "Only INT8 compression supported for PyTorch backend"
+        compression = "INT8" if "INT8" in args.compress_weights else "INT8_ASYM"
         compressed_model = compress_weights(model)
         onnx_config, models_and_onnx_configs = _get_submodels_and_export_configs(
             model=compressed_model,
@@ -176,7 +178,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             Path(args.output_dir)
             / PYTORCH_DIR
             / OV_DIR
-            / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision)
+            / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=precision, compression=compression)
         )
         model.config.save_pretrained(pt_out_dir)
         export_models(
@@ -240,6 +242,8 @@ def convert_seq2seq(args):
             pt_model.save_pretrained(pt_out_dir)
             save_tokenizer(tok, pt_out_dir)
         if pt_compress_weights:
+            assert "INT8" in args.compress_weights or "INT8_ASYM" in args.compress_weights, "Only INT8 compression supported for PyTorch backend"
+            compression = "INT8" if "INT8" in args.compress_weights else "INT8_ASYM"
             compressed_pt_model = compress_weights(pt_model)
             onnx_config_constructor = TasksManager.get_exporter_config_constructor(
                 model=pt_model, exporter="onnx", task="text2text-generation"
@@ -263,7 +267,7 @@ def convert_seq2seq(args):
                 Path(args.output_dir)
                 / PYTORCH_DIR
                 / OV_DIR
-                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compression)
             )
             try:
                 export_models(
@@ -371,6 +375,8 @@ def convert_sd(args):
         if args.save_orig:
             pt_model.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
         if pt_compress_weights:
+            assert "INT8" in args.compress_weights or "INT8_ASYM" in args.compress_weights, "Only INT8 compression supported for PyTorch backend"
+            compression = "INT8" if "INT8" in args.compress_weights else "INT8_ASYM"
             wc_text_encoder = compress_weights(pt_model.text_encoder)
             wc_unet = compress_weights(pt_model.unet)
             wc_vae = compress_weights(pt_model.vae)
@@ -389,7 +395,7 @@ def convert_sd(args):
                 Path(args.output_dir)
                 / PYTORCH_DIR
                 / OV_DIR
-                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compression)
             )
             for model_name in models_and_onnx_configs:
                 subcomponent = models_and_onnx_configs[model_name][0]
@@ -490,6 +496,8 @@ def convert_lcm(args):
         if args.save_orig:
             pt_model.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
         if pt_compress_weights:
+            assert "INT8" in args.compress_weights or "INT8_ASYM" in args.compress_weights, "Only INT8 compression supported for PyTorch backend"
+            compression = "INT8" if "INT8" in args.compress_weights else "INT8_ASYM"
             wc_text_encoder = compress_weights(pt_model.text_encoder)
             wc_unet = compress_weights(pt_model.unet)
             wc_vae = compress_weights(pt_model.vae)
@@ -508,7 +516,7 @@ def convert_lcm(args):
                 Path(args.output_dir)
                 / PYTORCH_DIR
                 / OV_DIR
-                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compression)
             )
             for model_name in models_and_onnx_configs:
                 subcomponent = models_and_onnx_configs[model_name][0]
@@ -702,11 +710,13 @@ def convert_sdxl(args):
     if args.save_orig:
         pt_model.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
     if pt_compress_weights:
+        assert "INT8" in args.compress_weights or "INT8_ASYM" in args.compress_weights, "Only INT8 compression supported for PyTorch backend"
+        compression = "INT8" if "INT8" in args.compress_weights else "INT8_ASYM"
         output = (
             Path(args.output_dir)
             / PYTORCH_DIR
             / OV_DIR
-            / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+            / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compression)
         )
         pt_model.text_encoder = compress_weights(pt_model.text_encoder)
         pt_model.unet = compress_weights(pt_model.unet)
@@ -771,6 +781,8 @@ def convert_ldm_super_res(args):
     pt_compress_weights = is_torch_compression(args)
     compress_to_fp16 = is_fp16(args)
     if pt_compress_weights:
+        assert "INT8" in args.compress_weights or "INT8_ASYM" in args.compress_weights, "Only INT8 compression supported for PyTorch backend"
+        compression = "INT8" if "INT8" in args.compress_weights else "INT8_ASYM"
         compressed_unet = compress_weights(pipeline.unet)
         ov_compressed_unet = convert_model(
             compressed_unet, example_input=unet_example_input
@@ -782,7 +794,7 @@ def convert_ldm_super_res(args):
             Path(args.output_dir)
             / PYTORCH_DIR
             / OV_DIR
-            / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+            / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compression)
         )
         save_model(
             ov_compressed_unet,
@@ -939,12 +951,14 @@ def convert_mpt(args):
 
         convert_to_ov(pt_model, tok, ov_dir, compress_to_fp16)
         if is_torch_compression(args):
+            assert "INT8" in args.compress_weights or "INT8_ASYM" in args.compress_weights, "Only INT8 compression supported for PyTorch backend"
+            compression = "INT8" if "INT8" in args.compress_weights else "INT8_ASYM"
             compressed_pt_model = compress_weights(pt_model)
             pt_path = (
                 Path(args.output_dir)
                 / PYTORCH_DIR
                 / OV_DIR
-                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision)
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=precision, compression=compression)
             )
             convert_to_ov(compressed_pt_model, tok, pt_path, compress_to_fp16)
 
@@ -1034,12 +1048,14 @@ def convert_chatglm(args):
 
         pt_compress_weights = is_torch_compression(args)
         if pt_compress_weights:
+            assert "INT8" in args.compress_weights or "INT8_ASYM" in args.compress_weights, "Only INT8 compression supported for PyTorch backend"
+            compression = "INT8" if "INT8" in args.compress_weights else "INT8_ASYM"
             compressed_pt_model = compress_weights(pt_model)
             pt_out_path = (
                 Path(args.output_dir)
                 / PYTORCH_DIR
                 / OV_DIR
-                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision)
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=precision, compression=compression)
             )
             convert_to_ov(compressed_pt_model, tok, pt_out_path)
 
@@ -1154,12 +1170,14 @@ def convert_falcon(args):
             convert_to_ov(pt_model, tok, ov_out_path, compress_to_fp16)
 
         if is_torch_compression(args):
+            assert "INT8" in args.compress_weights or "INT8_ASYM" in args.compress_weights, "Only INT8 compression supported for PyTorch backend"
+            compression = "INT8" if "INT8" in args.compress_weights else "INT8_ASYM"
             pt_compressed_model = compress_weights(pt_model)
             pt_comp_path = (
                 Path(args.output_dir)
                 / PYTORCH_DIR
                 / OV_DIR
-                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(args.precision)
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compression)
             )
             convert_to_ov(pt_compressed_model, tok, pt_comp_path, compress_to_fp16)
 
