@@ -495,12 +495,12 @@ def convert_sd_common(pipeline, output_dir, args, tiny_vae=False):
 
         pipeline.save_config(output_dir)
 
-        export_models(
-            models_and_onnx_configs=models_and_onnx_configs,
-            output_dir=output_dir,
-            output_names=files_subpaths,
-            compression_option="fp16" if args.precision == "FP16" else None
-        )
+    export_models(
+        models_and_onnx_configs=models_and_onnx_configs,
+        output_dir=output_dir,
+        output_names=files_subpaths,
+        compression_option="fp16" if args.precision == "FP16" else None
+    )
 
 
 def convert_sd(args):
