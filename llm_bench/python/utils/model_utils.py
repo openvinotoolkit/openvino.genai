@@ -202,7 +202,7 @@ def get_model_type(model_name, use_case, model_framework):
 
 
 def normalize_model_ids(model_ids_list):
-    return [m_id[:-1] if m_id.ends_with('_') else m_id for m_id in model_ids_list]
+    return [m_id[:-1] if m_id.endswith('_') else m_id for m_id in model_ids_list]
 
 
 def get_ir_conversion_frontend(cur_model_name, model_name_list):
