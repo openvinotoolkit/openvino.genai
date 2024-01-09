@@ -9,6 +9,7 @@ import torch
 from nncf import compress_weights
 from openvino import save_model
 from ..nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION
+import warnings
 
 
 class BackendType(Enum):
@@ -85,6 +86,8 @@ def save_tokenizer(tokenizer, out_dir):
 
 def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_weights_format="INT8", fp16=False, args={}, model_name="openvino_model"):
     compression_args = None
+    if "INT8" in compress_weights_format and "INT8_ASYM" in COMPRESSION_OPTIONS:
+        warnings.warn("Usage INT8 mode is deprecated and will be removed soon. Please use INT8_ASYM instead", DeprecationWarning)
     if "4BIT_DEFAULT" in compress_weights_format:
         model_id = out_path.parents[3].name
         if model_id in INT4_MODEL_CONFIGURATION:

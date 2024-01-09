@@ -4,7 +4,7 @@ import nncf
 
 
 COMPRESSION_OPTIONS = {
-    "INT8": {"mode": nncf.CompressWeightsMode.INT8},
+    "INT8": {"mode": nncf.CompressWeightsMode.INT8 if "INT8_ASYM" not in nncf.CompressWeightsMode.__members__ else nncf.CompressWeightsMode.INT8_ASYM},
     "INT4_SYM": {
         "mode": nncf.CompressWeightsMode.INT4_SYM,
         "group_size": 128,
@@ -14,6 +14,11 @@ COMPRESSION_OPTIONS = {
         "group_size": 128,
     },
 }
+
+
+if "INT8_ASYM" in nncf.CompressWeightsMode.__members__:
+    COMPRESSION_OPTIONS["INT8_ASYM"] = {"mode": nncf.CompressWeightsMode.INT8_ASYM}
+
 
 
 def get_compressed_path(output_dir: str, base_precision, option: str):
