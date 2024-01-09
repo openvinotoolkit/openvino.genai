@@ -1357,7 +1357,7 @@ def main():
         choices=["INT8", "INT8_ASYM",  "4BIT_DEFAULT", "INT4_SYM", "INT4_ASYM"],
         nargs="+",
         help=(
-            "The weight compression option, e.g. INT8 - INT8 weights (deprecated, please use INT8_ASYM instead)"
+            "The weight compression option, e.g. INT8 - INT8 weights (deprecated, please use INT8_ASYM instead), "
             "4BIT_DEFAULT - for 4-bit compression with predefined configs, "
             "INT4_* - for INT4 compressed weights."
         ),
