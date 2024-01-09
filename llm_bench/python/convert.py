@@ -258,7 +258,7 @@ def convert_seq2seq(args):
                     opset=onnx_config.DEFAULT_ONNX_OPSET,
                     output_dir=save_dir_path,
                     output_names=output_names,
-                    compress_option="FP16" if args.precision == "FP16" else None,
+                    compression_option="fp16" if args.precision == "FP16" else None,
                 )
                 save_tokenizer(tok, save_dir_path)
             except Exception as ex:
@@ -463,7 +463,7 @@ def get_stable_diffusion_models_for_export(
 
 
 def convert_sd_common(pipeline, output_dir, args, tiny_vae=False):
-    models_and_onnx_configs = _get_submodels_for_export_stable_diffusion(pipeline)
+    models_and_onnx_configs = get_stable_diffusion_models_for_export(pipeline)
     if tiny_vae:
         models_and_onnx_configs["vae_encoder"][0].forward = lambda sample: {
             "latent_sample": models_and_onnx_configs["vae_encoder"][0].encode(x=sample)["latents"]
@@ -499,7 +499,7 @@ def convert_sd_common(pipeline, output_dir, args, tiny_vae=False):
             models_and_onnx_configs=models_and_onnx_configs,
             output_dir=output_dir,
             output_names=files_subpaths,
-            compress_option="fp16" if args.precision == "FP16" else None,
+            compression_option="fp16" if args.precision == "FP16" else None
         )
 
 
@@ -508,6 +508,10 @@ def convert_sd(args):
     pt_model = StableDiffusionPipeline.from_pretrained(args.model_id)
     if args.save_orig:
         pt_model.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
+
+    output_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
+    convert_sd_common(pt_model, output_dir, args)
+
     if pt_compress_weights:
         assert "INT8" in args.compress_weights or "INT8_ASYM" in args.compress_weights, "Only INT8 compression supported for PyTorch backend"
         compression = "INT8" if "INT8" in args.compress_weights else "INT8_ASYM"
@@ -519,12 +523,8 @@ def convert_sd(args):
         pt_model.vae = wc_vae
         output = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compression)
         convert_sd_common(pt_model, output, args)
-        del pt_model
-        gc.collect()
-        pt_model = StableDiffusionPipeline.from_pretrained(args.model_id)
-
-    output_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
-    convert_sd_common(pt_model, output_dir)
+    del pt_model
+    gc.collect()
 
     if is_ov_compression(args):
         for weigths_compression_option in args.compress_weights:
@@ -540,8 +540,8 @@ def convert_sd(args):
             model.vae_decoder.model = compress_weights(model.vae_decoder.model)
             model.save_pretrained(ov_int8_dir)
 
-    del model
-    gc.collect()
+            del model
+            gc.collect()
 
 
 def convert_lcm(args):
@@ -549,6 +549,10 @@ def convert_lcm(args):
     pt_model = StableDiffusionPipeline.from_pretrained(args.model_id)
     if args.save_orig:
         pt_model.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
+
+    output_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
+    convert_sd_common(pt_model, output_dir, args)
+
     if pt_compress_weights:
         assert "INT8" in args.compress_weights or "INT8_ASYM" in args.compress_weights, "Only INT8 compression supported for PyTorch backend"
         compression = "INT8" if "INT8" in args.compress_weights else "INT8_ASYM"
@@ -560,12 +564,8 @@ def convert_lcm(args):
         pt_model.vae = wc_vae
         output = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compression)
         convert_sd_common(pt_model, output, args)
-        del pt_model
-        gc.collect()
-        pt_model = StableDiffusionPipeline.from_pretrained(args.model_id)
-
-        output_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
-    convert_sd_common(pt_model, output_dir)
+    del pt_model
+    gc.collect()
 
     if is_ov_compression(args):
         for weigths_compression_option in args.compress_weights:
@@ -581,8 +581,8 @@ def convert_lcm(args):
             model.vae_decoder.model = compress_weights(model.vae_decoder.model)
             model.save_pretrained(ov_int8_dir)
 
-    del model
-    gc.collect()
+            del model
+            gc.collect()
 
 
 def convert_sdxl(args):
@@ -618,6 +618,13 @@ def convert_sdxl(args):
     pt_model, tiny_vae = build_pt_model(args.model_id)
     if args.save_orig:
         pt_model.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
+
+        del pt_model
+        gc.collect()
+        pt_model, tiny_vae = build_pt_model(args.model_id)
+
+    fp_out_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
+    convert_sd_common(pt_model, fp_out_dir, args, tiny_vae)
     if pt_compress_weights:
         assert "INT8" in args.compress_weights or "INT8_ASYM" in args.compress_weights, "Only INT8 compression supported for PyTorch backend"
         compression = "INT8" if "INT8" in args.compress_weights else "INT8_ASYM"
@@ -633,12 +640,9 @@ def convert_sdxl(args):
         if getattr(pt_model, "text_encoder_2", None) is not None:
             pt_model.text_encoder_2 = compress_weights(pt_model.text_encoder_2)
         convert_sd_common(pt_model, output, args, tiny_vae)
-        del pt_model
-        gc.collect()
-        pt_model, tiny_vae = build_pt_model(args.model_id)
 
-    fp_out_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
-    convert_sd_common(pt_model, fp_out_dir, args, tiny_vae)
+    del pt_model
+    gc.collect()
 
     if is_ov_compression(args):
         for weigths_compression_option in args.compress_weights:
