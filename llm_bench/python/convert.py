@@ -452,7 +452,7 @@ def convert_sd(args):
 
     if is_ov_compression(args):
         for weigths_compression_option in args.compress_weights:
-            if weigths_compression_option != "INT8":
+            if weigths_compression_option not in ["INT8", "INT8_ASYM"]:
                 log.warning(
                     "Weights compression {weigths_compression_option} does not supported for SD, will be ignored"
                 )
@@ -573,7 +573,7 @@ def convert_lcm(args):
 
     if is_ov_compression(args):
         for weigths_compression_option in args.compress_weights:
-            if weigths_compression_option != "INT8":
+            if weigths_compression_option not in ["INT8", "INT8_ASYM"]:
                 log.warning(
                     "Weights compression {weigths_compression_option} does not supported for LCM, will be ignored"
                 )
@@ -733,7 +733,7 @@ def convert_sdxl(args):
 
     if is_ov_compression(args):
         for weigths_compression_option in args.compress_weights:
-            if weigths_compression_option != "INT8":
+            if weigths_compression_option not in ["INT8", "INT8_ASYM"]:
                 log.warning(
                     "Weights compression {weigths_compression_option} does not supported for SDXL, will be ignored"
                 )
@@ -821,7 +821,7 @@ def convert_ldm_super_res(args):
 
     if is_ov_compression(args):
         for weigths_compression_option in args.compress_weights:
-            if weigths_compression_option != "INT8":
+            if weigths_compression_option not in ["INT8", "INT8_ASYM"]:
                 log.warning(
                     "Weights compression {weigths_compression_option} does not supported for LDM, will be ignored"
                 )
