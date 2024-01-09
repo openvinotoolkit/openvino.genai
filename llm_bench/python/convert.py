@@ -1354,7 +1354,7 @@ def main():
         "-c",
         "--compress_weights",
         type=str,
-        choices=["INT8", "INT8_ASYM" "4BIT_DEFAULT", "INT4_SYM", "INT4_ASYM"],
+        choices=["INT8", "INT8_ASYM",  "4BIT_DEFAULT", "INT4_SYM", "INT4_ASYM"],
         nargs="+",
         help=(
             "The weight compression option, e.g. INT8 - INT8 weights (deprecated, please use INT8_ASYM instead)"
