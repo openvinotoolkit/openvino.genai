@@ -115,25 +115,20 @@ ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt) {
     ov::InferRequest tokenizer_req = models.tokenizer.create_infer_request();
     ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
 
-    auto compute_text_embeddings = [&] (std::string& prompt, ov::Tensor encoder_output_tensor) {
-        ov::Tensor input_ids(ov::element::i32, input_ids_shape);
-        std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), PAD_TOKEN_ID);
-
-        // tokenization
-        tokenizer_req.set_input_tensor(ov::Tensor{ov::element::string, {1}, &prompt});
-        tokenizer_req.infer();
-        ov::Tensor input_ids_token = tokenizer_req.get_tensor("input_ids");
-        std::copy_n(input_ids_token.data<std::int32_t>(), input_ids_token.get_size(), input_ids.data<int32_t>());
-
-        // text embeddings
-        text_encoder_req.set_tensor("input_ids", input_ids);
-        text_encoder_req.set_output_tensor(0, encoder_output_tensor);
-        text_encoder_req.infer();
-    };
-
     ov::Tensor text_embeddings(ov::element::f32, {1, MAX_LENGTH, HIDDEN_SIZE});
+    ov::Tensor input_ids(ov::element::i32, input_ids_shape);
+    std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), PAD_TOKEN_ID);
 
-    compute_text_embeddings(pos_prompt, ov::Tensor(text_embeddings, {0, 0, 0}, {1, MAX_LENGTH, HIDDEN_SIZE}));
+    // tokenization
+    tokenizer_req.set_input_tensor(ov::Tensor{ov::element::string, {1}, &pos_prompt});
+    tokenizer_req.infer();
+    ov::Tensor input_ids_token = tokenizer_req.get_tensor("input_ids");
+    std::copy_n(input_ids_token.data<std::int32_t>(), input_ids_token.get_size(), input_ids.data<int32_t>());
+
+    // text embeddings
+    text_encoder_req.set_tensor("input_ids", input_ids);
+    text_encoder_req.set_output_tensor(0, text_embeddings);
+    text_encoder_req.infer();
 
     return text_embeddings;
 }
@@ -141,34 +136,20 @@ ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt) {
 ov::Tensor get_w_embedding(float guidance_scale = 7.5, uint32_t embedding_dim = 512) {
     float w = guidance_scale * 1000;
     uint32_t half_dim = embedding_dim / 2;
-
     float emb = log(10000) / (half_dim - 1);
-
-    std::vector<float> emb_vec(half_dim);
-    std::iota(emb_vec.begin(), emb_vec.end(), 0);
-
-    std::transform(emb_vec.begin(), emb_vec.end(), emb_vec.begin(),
-                    std::bind(std::multiplies<float>(), std::placeholders::_1, -emb));
-
-    std::transform(emb_vec.begin(), emb_vec.end(), emb_vec.begin(), [](float x){return std::exp(x);});
-
-    std::transform(emb_vec.begin(), emb_vec.end(), emb_vec.begin(),
-                    std::bind(std::multiplies<float>(), std::placeholders::_1, w));
-
-    std::vector<float> res_vec(half_dim), emb_cos(half_dim);
-    std::transform(emb_vec.begin(), emb_vec.end(), res_vec.begin(), [](float x){return std::sin(x);});
-    std::transform(emb_vec.begin(), emb_vec.end(), emb_cos.begin(), [](float x){return std::cos(x);});
-    res_vec.insert(res_vec.end(), emb_cos.begin(), emb_cos.end());
-
-    if (embedding_dim % 2 == 1)
-        res_vec.insert(res_vec.end(), 0);
-
-    assert(res_vec.size() == embedding_dim);
 
     ov::Shape embedding_shape = {1, embedding_dim};
     ov::Tensor w_embedding(ov::element::f32, embedding_shape);
-    for (size_t i = 0; i < ov::shape_size(embedding_shape); ++i)
-        w_embedding.data<float>()[i] = res_vec[i];
+    float* w_embedding_data = w_embedding.data<float>();
+
+    for (size_t i = 0; i < half_dim; ++i) {
+        float temp = std::exp((i * (-emb))) * w;
+        w_embedding_data[i] = std::sin(temp);
+        w_embedding_data[i + half_dim] = std::cos(temp);
+    }
+
+    if (embedding_dim % 2 == 1)
+        w_embedding_data[embedding_dim - 1] = 0;
 
     return w_embedding;
 }
@@ -218,8 +199,6 @@ int32_t main(int32_t argc, char* argv[]) {
     ("step", "Number of diffusion steps", cxxopts::value<size_t>()->default_value("4"))
     ("s,seed", "Number of random seed to generate latent for one image output", cxxopts::value<size_t>()->default_value("42"))
     ("num", "Number of image output", cxxopts::value<size_t>()->default_value("1"))
-    ("height", "destination image height", cxxopts::value<size_t>()->default_value("512"))
-    ("width", "destination image width", cxxopts::value<size_t>()->default_value("512"))
     ("c,useCache", "use model caching", cxxopts::value<bool>()->default_value("false"))
     ("r,readNPLatent", "read numpy generated latents from file", cxxopts::value<bool>()->default_value("false"))
     ("m,modelPath", "Specify path of LCM model IRs", cxxopts::value<std::string>()->default_value("../scripts/SimianLuo/LCM_Dreamshaper_v7"))
@@ -247,14 +226,13 @@ int32_t main(int32_t argc, char* argv[]) {
     const uint32_t num_inference_steps = result["step"].as<size_t>();
     const uint32_t user_seed = result["seed"].as<size_t>();
     const uint32_t num_images = result["num"].as<size_t>();
-    const uint32_t height = result["height"].as<size_t>();
-    const uint32_t width = result["width"].as<size_t>();
     const bool use_cache = result["useCache"].as<bool>();
     const bool read_np_latent = result["readNPLatent"].as<bool>();
     const std::string model_base_path = result["modelPath"].as<std::string>();
     const std::string model_type = result["type"].as<std::string>();
     const std::string lora_path = result["loraPath"].as<std::string>();
     const float alpha = result["alpha"].as<float>();
+    const uint32_t height = 512, width = 512;
 
     const std::string folder_name = "images";
     try {
@@ -286,14 +264,14 @@ int32_t main(int32_t argc, char* argv[]) {
     scheduler->set_timesteps(num_inference_steps);
     std::vector<std::int64_t> timesteps = scheduler->get_timesteps();
 
+    float guidance_scale = 8.0;
+    ov::Tensor guidance_scale_embedding = get_w_embedding(guidance_scale, 256);
+
     ov::Tensor denoised(ov::element::f32, {1, 4, height / 8, width / 8});
     for (uint32_t n = 0; n < num_images; n++) {
         std::uint32_t seed = num_images == 1 ? user_seed: n;
 
         ov::Tensor latent_model_input = randn_tensor(height, width, read_np_latent, seed);
-
-        float guidance_scale = 8.0;
-        ov::Tensor guidance_scale_embedding = get_w_embedding(guidance_scale, 256);
 
         for (size_t inference_step = 0; inference_step < num_inference_steps; inference_step++) {
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
