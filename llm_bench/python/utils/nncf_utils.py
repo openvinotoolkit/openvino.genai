@@ -20,7 +20,6 @@ if "INT8_ASYM" in nncf.CompressWeightsMode.__members__:
     COMPRESSION_OPTIONS["INT8_ASYM"] = {"mode": nncf.CompressWeightsMode.INT8_ASYM}
 
 
-
 def get_compressed_path(output_dir: str, base_precision, option: str):
     return Path(output_dir) / "pytorch/dldt/compressed_weights" / f"OV_{base_precision}-{option}"
 
