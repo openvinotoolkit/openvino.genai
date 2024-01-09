@@ -220,7 +220,8 @@ def get_ir_conversion_frontend(cur_model_name, model_name_list):
 def get_model_precision(model_name_list):
     precision_list = [
         'FP32', 'FP16', 'FP16-INT8', 'INT8', 'INT8_compressed_weights', 'INT8_quantized', 'PT_compressed_weights',
-        'OV_FP32-INT8', 'OV_FP16-INT8', 'PT_FP32-INT8', 'PT_FP16-INT8', 'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4',
+        'OV_FP32-INT8', 'OV_FP16-INT8', 'OV_FP32-INT8_ASYM', 'OV_FP16-INT8_ASYM', 'PT_FP32-INT8', 'PT_FP16-INT8', 'PT_FP32-INT8_ASYM', 'PT_FP16-INT8_ASYM',
+        'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4',
         'OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM', 'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT']
     model_precision = 'unknown'
     # Search from right to left of model path
