@@ -19,13 +19,23 @@ dst_dir="./ov_models/bloomz-560m"
 convert_model="python ./llm_bench/python/convert.py --model_id ${original_dir} --output_dir ${dst_dir} --precision FP16 --stateful"
 echo ${convert_model}
 eval ${convert_model}
-echo "convert model ret=$?"
+ret=$?
 wait
+
+if [ ${ret} -ne 0]; then
+    echo "convert model ret=${ret}"
+    exit ${ret}
+end
 
 benchmarking="python ./llm_bench/python/benchmark.py -m ${dst_dir}/pytorch/dldt/FP16/ -d cpu -n 1"
 echo ${benchmarking}
 eval ${benchmarking}
-echo "benchmarking ret=$?"
+ret=$?
 
 rm -rf ${original_dir}
 rm -rf ${dst_dir}
+
+if [ ${ret} -ne 0]; then
+    echo "benchmarking ret=${ret}"
+    exit ${ret}
+end
