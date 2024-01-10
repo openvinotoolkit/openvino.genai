@@ -22,8 +22,8 @@ eval ${convert_model}
 echo "convert model ret=$?"
 ret=$?
 wait
-
-if [ ${ret} -ne 0]; then
+echo "convert model ret=${ret}"
+if [ ${ret} -ne 0 ]; then
     echo "convert model ret=${ret}"
     exit ${ret}
 fi
@@ -35,8 +35,8 @@ ret=$?
 
 rm -rf ${original_dir}
 rm -rf ${dst_dir}
-
-if [ ${ret} -ne 0]; then
+echo "benchmarking ret=${ret}"
+if [ ${ret} -ne 0 ]; then
     echo "benchmarking ret=${ret}"
     exit ${ret}
 fi
