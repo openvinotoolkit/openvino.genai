@@ -524,7 +524,7 @@ def main():
     except Exception:
         log.error('An exception occurred')
         log.info(traceback.format_exc())
-        exit(-1)
+        exit(1)
     finally:
         if args.memory_consumption:
             mem_consumption.end_collect_mem_consumption_thread()
