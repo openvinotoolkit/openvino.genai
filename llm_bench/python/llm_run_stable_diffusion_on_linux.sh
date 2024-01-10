@@ -39,4 +39,4 @@ rm -rf ${dst_dir}
 if [ ${ret} -ne 0]; then
     echo "benchmarking ret=${ret}"
     exit ${ret}
-end
+fi
