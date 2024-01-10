@@ -1,6 +1,6 @@
 # Causal LM
 
-These applications showcase inference of a causal language model (LM). They don't have many configuration options to encourage the reader to explore and modify the source code. There's a Jupyter notebook which corresponds to these pipelines and discusses how to create an LLM-powered Chatbot: https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot.
+These examples showcase inference of text-generation Large Language Models (LLMs). The applications don't have many configuration options to encourage the reader to explore and modify the source code. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
 
 > [!NOTE]
 > This project is not for production use.
