@@ -26,7 +26,7 @@ wait
 if [ ${ret} -ne 0]; then
     echo "convert model ret=${ret}"
     exit ${ret}
-end
+fi
 
 benchmarking="python ./llm_bench/python/benchmark.py -m ${dst_dir}/pytorch/dldt/FP16/ -pf ./llm_bench/python/prompts/stable-diffusion.jsonl -d cpu -n 1"
 echo ${benchmarking}
