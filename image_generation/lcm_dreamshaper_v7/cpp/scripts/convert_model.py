@@ -23,10 +23,12 @@ output_path = Path(args.lcm_weights) / (args.type + "_static")
 
 ###convert LCM model to IR
 
-model = OVLatentConsistencyModelPipeline.from_pretrained(args.lcm_weights,trust_remote_code=True, export=True, compile=False)
+model = OVLatentConsistencyModelPipeline.from_pretrained(args.lcm_weights, trust_remote_code=True, export=True, compile=False)
 if args.type == "FP16":
     model.half()
-    model.reshape(1, 512, 512, 1)
+
+model.reshape(1, 512, 512, 1)
+
 model.compile()
 model.save_pretrained(output_path)
 
