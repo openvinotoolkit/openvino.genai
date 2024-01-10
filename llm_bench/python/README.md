@@ -120,4 +120,4 @@ python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_b
 ### 1. NOTE
 > If you encounter any errors, please check **[NOTES.md](./doc/NOTES.md)** which provides solutions to the known errors.
 ### 2. Image generation
-> If you need to set parameters for image generation, you need to prepare a prompt file, please check **[IMAGE_GEN.md](./doc/IMAGE_GEN.md)**
+> To configure more parameters for image generation models, reference to **[IMAGE_GEN.md](./doc/IMAGE_GEN.md)**

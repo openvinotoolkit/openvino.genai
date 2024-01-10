@@ -605,7 +605,7 @@ class OVChatGLMModel(OVModelForCausalLM):
             inputs['position_ids'] = np.array(kwargs['position_ids'])
 
         # Run inference
-        self.request.start_async(inputs, shared_memory=True)
+        self.request.start_async(inputs, share_inputs=True)
         self.request.wait()
 
         logits = torch.from_numpy(self.request.get_tensor('logits').data).to(self.device)
