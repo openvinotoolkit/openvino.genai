@@ -81,7 +81,6 @@ def gen_iterate_data(
 def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_index, bench_hook):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
-    log.info(f'input_text={input_text}')
     tok_encode_start = time.perf_counter()
     input_data = tokenizer(input_text_list, return_tensors='pt')
     tok_encode_end = time.perf_counter()
@@ -94,11 +93,11 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     max_output_token_size = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     max_output_token_size = MAX_OUTPUT_TOKEN_SIZE if max_output_token_size > MAX_OUTPUT_TOKEN_SIZE else max_output_token_size
     if args['batch_size'] > 1:
-        log.info(f"batch_size={args['batch_size']}")
-        log.info(f"All input token size after padding:{input_token_size} * {args['batch_size']}")
-        log.info(f"All max_output_token_size:{max_output_token_size} * {args['batch_size']}")
-    else:
-        log.info(f'Input token size:{input_token_size}, max_output_token_size:{max_output_token_size}')
+        out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
+        out_str += " Batch_size={}, ".format(args['batch_size'])
+        out_str += 'all input token size after padding: {} * {}, '.format(input_token_size, args['batch_size'])
+        out_str += 'all max_output_token_size: {} * {}'.format(max_output_token_size, args['batch_size'])
+        log.info(out_str)
 
     max_rss_mem_consumption = ''
     max_shared_mem_consumption = ''
@@ -152,12 +151,18 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         iter_data,
         tm_list,
         tm_infer_list,
-        generated=generated_text[0],
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         tokenization_time=(tok_encode_time, tok_decode_time)
     )
+    if num > 0:
+        warmup_md5_list = iter_data_list[prompt_index]['result_md5']
+        if result_md5_list != warmup_md5_list:
+            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} is different from warm-up's md5 {warmup_md5_list}")
+            utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+    else:
+        utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
     bench_hook.clear_time_list()
     bench_hook.clear_time_infer_list()
 
@@ -178,12 +183,15 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     input_text_list = utils.model_utils.get_prompts(args)
     if len(input_text_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
+    log.info(f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
+             f'prompt nums: {len(input_text_list)}')
 
-    log.info(f'num_iters={num_iters}, num_text_list={len(input_text_list)}')
     # if num_iters == 0, just output warm-up data
     for num in range(num_iters + 1):
         prompt_idx = 0
         for input_text in input_text_list:
+            if num == 0:
+                log.info(f'[warm-up] Input text: {input_text}')
             run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_idx, bench_hook)
             prompt_idx = prompt_idx + 1
 
@@ -200,7 +208,10 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
     nsteps = image_param.get('steps', DEFAULT_INFERENCE_STEPS if 'lcm' not in args["model_name"] else LCM_DEFAULT_INFERENCE_STEPS)
     nsteps = 1 if num == 0 else nsteps
     guidance_scale = image_param.get('guidance_scale', None)
-    log.info(f'batch_size={args["batch_size"]}, steps={nsteps}, width={image_width}, height={image_height}, guidance_scale={guidance_scale}')
+    log.info(
+        f"[{'warm-up' if num == 0 else num}] Input params: Batch_size={args['batch_size']}, "
+        f'steps={nsteps}, width={image_width}, height={image_height}, guidance_scale={guidance_scale}'
+    )
     result_md5_list = []
     max_rss_mem_consumption = ''
     max_shared_mem_consumption = ''
@@ -242,12 +253,12 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
     utils.metrics_print.print_metrics(
         num,
         iter_data,
-        generated=rslt_img_fn,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         stable_diffusion=stable_diffusion_hook
     )
+    utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn)
     stable_diffusion_hook.clear_statistics()
 
 
@@ -263,7 +274,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
         stable_diffusion_hook.new_unet(pipe)
         stable_diffusion_hook.new_vae_decoder(pipe)
 
-    log.info(f"num_iters={num_iters}, num_text_list={len(input_image_list)}")
+    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_image_list)}')
 
     # if num_iters == 0, just output warm-up data
     for num in range(num_iters + 1):
@@ -304,7 +315,10 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     nsteps = 1 if num == 0 else nsteps
     resize_image_width = img.get('width', DEFAULT_SUPER_RESOLUTION_WIDTH)
     resize_image_height = img.get('height', DEFAULT_SUPER_RESOLUTION_HEIGHT)
-    log.info(f'Test {num} input image={img["prompt"]}, steps={nsteps}, resize_width={resize_image_width}, resize_height={resize_image_height}')
+    log.info(
+        f"[{'warm-up' if num == 0 else num}] Input params: steps={nsteps}, "
+        f'resize_width={resize_image_width}, resize_height={resize_image_height}'
+    )
     low_res_img = PIL.Image.open(img['prompt']).convert('RGB')
     low_res_img = low_res_img.resize((resize_image_width, resize_image_height))
     max_rss_mem_consumption = ''
@@ -322,7 +336,6 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         rslt_img_fn = args['model_name'] + '_warmup_' + img['prompt'].name
     else:
         rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_' + img['prompt'].name
-    log.info(f'Result will be saved to {rslt_img_fn}')
     result_md5_list = []
     if framework == 'ov':
         res[0].save(rslt_img_fn)
@@ -342,12 +355,12 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     utils.metrics_print.print_metrics(
         num,
         iter_data,
-        generated=rslt_img_fn,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
     )
-    utils.metrics_print.print_ldm_unet_vqvae_infer_latency(num, iter_data, tm_list, warm_up=(num == 0),)
+    utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn)
+    utils.metrics_print.print_ldm_unet_vqvae_infer_latency(num, iter_data, tm_list, warm_up=(num == 0))
 
 
 def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_iters):
@@ -371,12 +384,14 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
                 images = [images]
         else:
             raise RuntimeError('==Failure image is empty ==')
-    log.info(f'Number benchmarking images {len(images)}')
+    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(images)}')
 
     # if num_iters == 0, just output warm-up data
     for num in range(num_iters + 1):
         image_id = 0
         for img in images:
+            if num == 0:
+                log.info(f"[{'warm-up' if num == 0 else num}] Input image={img['prompt']}")
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list)
             tm_list.clear()
             image_id = image_id + 1
@@ -482,12 +497,14 @@ def main():
     if model_args['torch_compile_backend']:
         ov_torch_backend_device = str(args.device)
         os.putenv('OPENVINO_TORCH_BACKEND_DEVICE', ov_torch_backend_device.upper())
-        os.system('echo OPENVINO_TORCH_BACKEND_DEVICE=$OPENVINO_TORCH_BACKEND_DEVICE')
+        os.system('echo [ INFO ] OPENVINO_TORCH_BACKEND_DEVICE=$OPENVINO_TORCH_BACKEND_DEVICE')
 
+    out_str = 'Model path={}'.format(model_path)
     if framework == 'ov':
-        log.info(f'model_path={model_path}, openvino runtime version: {get_version()}')
+        out_str += ', openvino runtime version: {}'.format(get_version())
         if model_args['config'].get('PREC_BF16') and model_args['config']['PREC_BF16'] is True:
             log.warning('[Warning] Param bf16/prec_bf16 only work for framework pt. It will be disabled.')
+    log.info(out_str)
     if args.memory_consumption:
         mem_consumption.start_collect_mem_consumption_thread()
     try:
