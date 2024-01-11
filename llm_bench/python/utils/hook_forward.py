@@ -45,9 +45,9 @@ class StableDiffusionHook:
     def new_text_encoder(self, pipe):
         old_text_encoder = pipe.text_encoder.request
 
-        def my_text_encoder(inputs, shared_memory=True, **kwargs):
+        def my_text_encoder(inputs, share_inputs=True, **kwargs):
             t1 = time.time()
-            r = old_text_encoder(inputs, shared_memory=shared_memory, **kwargs)
+            r = old_text_encoder(inputs, share_inputs=share_inputs, **kwargs)
             t2 = time.time()
             text_encoder_time = t2 - t1
             self.text_encoder_time += text_encoder_time
@@ -58,9 +58,9 @@ class StableDiffusionHook:
     def new_unet(self, pipe):
         old_unet = pipe.unet.request
 
-        def my_unet(inputs, shared_memory=True, **kwargs):
+        def my_unet(inputs, share_inputs=True, **kwargs):
             t1 = time.time()
-            r = old_unet(inputs, shared_memory=shared_memory, **kwargs)
+            r = old_unet(inputs, share_inputs=share_inputs, **kwargs)
             t2 = time.time()
             unet_time = t2 - t1
             self.unet_time_list.append(unet_time)
@@ -71,9 +71,9 @@ class StableDiffusionHook:
     def new_vae_decoder(self, pipe):
         old_vae_decoder = pipe.vae_decoder.request
 
-        def my_vae_decoder(inputs, shared_memory=True, **kwargs):
+        def my_vae_decoder(inputs, share_inputs=True, **kwargs):
             t1 = time.time()
-            r = old_vae_decoder(inputs, shared_memory=shared_memory, **kwargs)
+            r = old_vae_decoder(inputs, share_inputs=share_inputs, **kwargs)
             t2 = time.time()
             vae_decoder_time = t2 - t1
             self.vae_decoder_time += vae_decoder_time
