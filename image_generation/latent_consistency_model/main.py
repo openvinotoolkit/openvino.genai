@@ -1,10 +1,6 @@
 from pathlib import Path
 from openvino.runtime import Core
-from diffusers.schedulers import LMSDiscreteScheduler
-from transformers import CLIPTokenizer
-from OVLatentConsistencyModelPipeline import OVLatentConsistencyModelPipeline
 import torch
-from diffusers import DiffusionPipeline
 
 #Specify model dir
 model_dir = Path("model/")
@@ -23,23 +19,13 @@ vae_decoder = core.compile_model(model_dir / "vae_decoder.xml", device)
 
 #Define LCM scheduler, tokenizer, and OpenVINO pipeline
 #TBD - access pre-saved scheduler and tokenizer
-pipe = DiffusionPipeline.from_pretrained("SimianLuo/LCM_Dreamshaper_v7")
-scheduler = pipe.scheduler
-tokenizer = pipe.tokenizer
 
-ov_pipe = OVLatentConsistencyModelPipeline(
-    tokenizer=tokenizer,
-    text_encoder=text_enc,
-    unet=unet_model,
-    vae_decoder=vae_decoder,
-    scheduler=scheduler,
-    feature_extractor=tokenizer,
-    safety_checker=None)
-
+#Step 1: TBD - Use openvino-tokenizers library (via pip install)
+#Step 2: TBD - Load pre-saved scheduler
 print("Running inference")
 
-# Run txt2img inference pipeline
-images = ov_pipe(
+# Step 3: TBD - Run inference on the image
+images = tbd(
     prompt=prompt,
     num_inference_steps=num_inference_steps,
     guidance_scale=8.0,
