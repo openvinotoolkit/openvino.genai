@@ -369,7 +369,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     if len(input_image_list) > 0:
         images = []
         for image in input_image_list:
-            if args['prompt'] is not None and args['prompt_file'] is not None:
+            if args['prompt'] is None and args['prompt_file'] is None:
                 raise RuntimeError('==Failure image is empty ==')
             elif args['prompt_file'] is not None:
                 image['prompt'] = os.path.join(os.path.dirname(args['prompt_file']), image['prompt'].replace('./', ''))
