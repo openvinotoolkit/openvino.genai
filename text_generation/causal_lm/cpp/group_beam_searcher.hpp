@@ -135,6 +135,9 @@ struct Group {
 
 struct TokenToBeam {int64_t token_idx; int32_t beam_idx;};
 
+// GroupBeamSearcher processes logits prduced by a language model and accumulates beams using group beam search
+// algorithm. process() returns token ids selected by the algorithm and corresponding beam ids. These values are used
+// for next inference. process() returns empty, if all groups are completed
 struct GroupBeamSearcher {
     Parameters parameters;
     std::vector<Group> groups;
