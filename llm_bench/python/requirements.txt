@@ -4,9 +4,9 @@ openvino>=2023.1.0
 auto-gptq>=0.5.1 # for gptq
 pillow
 torch
-transformers>=4.33.0
+git+https://github.com/huggingface/transformers.git@e768616afa1a1e20bd9678c8099891d8529e89da
 diffusers>=0.22.0
-optimum>=1.14.0,<1.15.0
+optimum>=1.14.0,<1.17.0
 git+https://github.com/eaidova/optimum-intel.git@ea/stateful
 git+https://github.com/openvinotoolkit/nncf.git
 packaging
