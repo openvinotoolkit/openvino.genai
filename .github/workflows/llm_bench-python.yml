@@ -55,7 +55,7 @@ jobs:
       with:
         name: llm.bench_diff
         path: llm.bench_diff.diff
-    - run: python ./llm_bench/python/convert.py --model_id bloomz-560m/ --output_dir ./ov_models/bloomz-560m --precision FP16
+    - run: python ./llm_bench/python/convert.py --model_id bigscience/bloomz-560m/ --output_dir ./ov_models/bloomz-560m --precision FP16
     - run: python ./llm_bench/python/benchmark.py -m ./ov_models/bloomz-560m/pytorch/dldt/FP16/ -d cpu -n 1
   stateful:
     runs-on: ubuntu-20.04

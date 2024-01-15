@@ -21,6 +21,7 @@ jobs:
           python-version: 3.8
       - name: Install OpenVINO / libeigen3-dev
         run: |
+          mkdir openvino
           curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13739-294cc6668c4/l_openvino_toolkit_ubuntu20_2023.3.0.dev20231219_x86_64.tgz | tar --directory ./openvino/ --strip-components 1 -xz
           sudo ./openvino/install_dependencies/install_openvino_dependencies.sh
           sudo apt install libeigen3-dev
