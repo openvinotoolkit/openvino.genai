@@ -18,7 +18,7 @@ from diffusers import (
 )
 from diffusers import UNet2DConditionModel, AutoencoderTiny, LCMScheduler
 from nncf import compress_weights
-from openvino import Type, PartialShape, save_model, convert_model
+from openvino import Type as OVType, PartialShape, save_model, convert_model
 from openvino.runtime import Core, get_version
 from optimum.exporters import TasksManager
 from optimum.utils import DEFAULT_DUMMY_SHAPES
@@ -694,7 +694,7 @@ def convert_ldm_super_res(args):
         compression = "INT8" if "INT8" in args.compress_weights else "INT8_ASYM"
         compressed_unet = compress_weights(pipeline.unet)
         ov_compressed_unet = convert_model(compressed_unet, example_input=unet_example_input)
-        ov_compressed_unet.inputs[1].get_node().set_element_type(Type.i32)
+        ov_compressed_unet.inputs[1].get_node().set_element_type(OVType.i32)
         ov_compressed_unet.inputs[1].get_node().set_partial_shape(PartialShape([]))
         ov_compressed_unet.validate_nodes_and_infer_types()
         pt_out_dir = (
@@ -715,7 +715,7 @@ def convert_ldm_super_res(args):
 
     # convert model to OpenVINO IR
     ov_unet = convert_model(pipeline.unet, example_input=unet_example_input)
-    ov_unet.inputs[1].get_node().set_element_type(Type.i32)
+    ov_unet.inputs[1].get_node().set_element_type(OVType.i32)
     ov_unet.inputs[1].get_node().set_partial_shape(PartialShape([]))
     ov_unet.validate_nodes_and_infer_types()
     save_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
@@ -795,8 +795,8 @@ def convert_mpt(args):
 
         for inp_name, m_input, input_data in zip(inputs, ov_model.inputs, flattenize_inputs(dummy_inputs.values())):
             input_node = m_input.get_node()
-            if input_node.element_type == Type.dynamic:
-                m_input.get_node().set_element_type(Type.f32)
+            if input_node.element_type == OVType.dynamic:
+                m_input.get_node().set_element_type(OVType.f32)
             shape = list(input_data.shape)
             if inp_name in dynamic_shapes:
                 for k in dynamic_shapes[inp_name]:
@@ -984,7 +984,7 @@ def convert_falcon(args):
         pt_model.config.torchscript = True
         ov_model = convert_model(pt_model, example_input=dummy_inputs)
         for port, input_data, input_name in zip(ov_model.inputs[1:], flatten_inputs[1:], inputs[1:]):
-            port.get_node().set_element_type(Type.f32)
+            port.get_node().set_element_type(OVType.f32)
             shape = list(input_data.shape)
             shape[2] = -1
             port.get_node().set_partial_shape(PartialShape(shape))
