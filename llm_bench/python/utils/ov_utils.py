@@ -11,7 +11,7 @@ import time
 import types
 
 from utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
-from .ov_model_classes import register_normalized_configs
+from .ov_model_classes import register_normalized_configs, OVModelForCausalLMAttentionSinks
 import openvino.runtime.opset13 as opset
 
 
@@ -126,7 +126,15 @@ def create_text_gen_model(model_path, device, **kwargs):
     """
     default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
     model_type = kwargs.get('model_type', default_model_type)
-    model_class = OV_MODEL_CLASSES_MAPPING.get(model_type, OV_MODEL_CLASSES_MAPPING[default_model_type])
+    if "_as_" in kwargs.get("model_name", ""):
+        info = kwargs.get("model_name").split("_as_")[-1].split('_')
+        sink_size = info[0]
+        sink_window = info[1]
+        model_class = OVModelForCausalLMAttentionSinks
+        model_kwargs = {"sink_size": int(sink_size), "sink_window": int(sink_window)}
+    else:
+        model_class = OV_MODEL_CLASSES_MAPPING.get(model_type, OV_MODEL_CLASSES_MAPPING[default_model_type])
+        model_kwargs = {}
     token_class = TOKENIZE_CLASSES_MAPPING.get(model_type, TOKENIZE_CLASSES_MAPPING[default_model_type])
     model_path = Path(model_path)
     # specify the model path
@@ -148,7 +156,8 @@ def create_text_gen_model(model_path, device, **kwargs):
                 device=device,
                 ov_config=ov_config,
                 config=AutoConfig.from_pretrained(model_path, trust_remote_code=True),
-                stateful=kwargs.get("stateful", None)
+                stateful=kwargs.get("stateful", None),
+                **model_kwargs
             )
             end = time.perf_counter()
         else:
@@ -160,7 +169,8 @@ def create_text_gen_model(model_path, device, **kwargs):
                 ov_config=ov_config,
                 config=config,
                 compile=False,
-                stateful=kwargs.get("stateful", None)
+                stateful=kwargs.get("stateful", None),
+                **model_kwargs
             )
             if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
                 patch_inter_processing_and_compile(ov_model, **kwargs)

@@ -9,6 +9,7 @@ from typing import Optional, Union, Dict, List, Tuple, Callable, Iterable, Any
 from tempfile import TemporaryDirectory
 import PIL
 import numpy as np
+from openvino.runtime.ie_api import Model
 import torch
 from diffusers.schedulers import LMSDiscreteScheduler
 from diffusers.utils.torch_utils import randn_tensor
@@ -18,6 +19,7 @@ from optimum.intel.openvino import OVModelForCausalLM
 from optimum.intel.openvino.utils import ONNX_WEIGHTS_NAME, OV_XML_FILE_NAME
 from openvino.runtime import Model, Core, Tensor, Type
 from optimum.utils import NormalizedTextConfig, NormalizedConfigManager
+from torch import FloatTensor, LongTensor
 from transformers import PretrainedConfig
 from transformers.modeling_outputs import CausalLMOutputWithPast, ModelOutput
 from transformers import GenerationConfig, StoppingCriteriaList
@@ -43,6 +45,28 @@ def register_normalized_configs():
     NormalizedConfigManager._conf["codegen2"] = NormalizedConfigManager._conf["codegen"]
     NormalizedConfigManager._conf["aquila"] = NormalizedConfigManager._conf["llama"]
 
+
+class OVModelForCausalLMAttentionSinks(OVModelForCausalLM):
+    def __init__(self, model: Model, config: PretrainedConfig = None, device: str = "CPU", dynamic_shapes: bool = True, ov_config: Dict[str, str]  = None, model_save_dir: str  = None, **kwargs):
+        super().__init__(model, config, device, dynamic_shapes, ov_config, model_save_dir, **kwargs)
+        self.sink_size = kwargs.get("sink_size", 4)
+        self.sink_window_size = kwargs.get("sink_window", 1020)
+
+    def forward(self, input_ids: torch.LongTensor, attention_mask: LongTensor = None, past_key_values: Tuple[Tuple[FloatTensor]]  = None, position_ids: LongTensor  = None, **kwargs) -> CausalLMOutputWithPast:
+        if past_key_values is None:
+            self.past_len = 0
+            input_size = input_ids.shape[1]
+        elif self.use_cache:
+            self.past_len = min(self.past_len, self.sink_size + self.sink_window_size)
+            input_size = 1
+        attention_mask = torch.ones((input_ids.shape[0], input_size + self.past_len), dtype=input_ids.dtype)
+        if "position_ids" in self.input_names:
+            position_ids = np.cumsum(attention_mask, axis=1) - 1
+            position_ids[attention_mask == 0] = 1
+            if past_key_values:
+                position_ids = np.expand_dims(position_ids[:, -1], axis=-1) 
+        self.past_len = input_size + self.past_len
+        return super().forward(input_ids=input_ids, attention_mask=attention_mask, past_key_values=past_key_values, position_ids=position_ids, **kwargs)
 
 class OVMPTModel(OVModelForCausalLM):
     def _reshape(
