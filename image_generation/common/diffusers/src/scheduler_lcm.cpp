@@ -31,10 +31,11 @@ std::vector<T> linspace(U start, U end, size_t num, bool endpoint = false) {
 }
 
 // for torch.randn()
-std::vector<float> randn_function(uint32_t size, uint32_t seed = 42) {
+std::vector<float> randn_function(uint32_t size) {
     std::vector<float> noise(size);
     {
-        std::mt19937 gen{static_cast<unsigned long>(seed)};
+        std::random_device rd;
+        std::mt19937 gen(rd());
         std::normal_distribution<float> normal{0.0f, 1.0f};
         std::for_each(noise.begin(), noise.end(), [&](float& x) {
             x = normal(gen);
