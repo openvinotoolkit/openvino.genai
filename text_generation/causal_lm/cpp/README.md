@@ -73,10 +73,10 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
 
 ## Supported models
 
-1. chatglm - refer to
+1. chatglm
+   1. https://huggingface.co/THUDM/chatglm2-6b - refer to
    [chatglm2-6b - AttributeError: can't set attribute](../../../llm_bench/python/doc/NOTES.md#chatglm2-6b---attributeerror-cant-set-attribute)
    in case of `AttributeError`
-   1. https://huggingface.co/THUDM/chatglm2-6b
    2. https://huggingface.co/THUDM/chatglm3-6b
 2. LLaMA 2
    1. https://huggingface.co/meta-llama/Llama-2-13b-chat-hf
