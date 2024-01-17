@@ -5,9 +5,12 @@
 from enum import Enum
 from pathlib import Path
 import logging as log
+from typing import Union
+
 import torch
 from nncf import compress_weights
 from openvino import save_model
+from openvino.runtime.exceptions import OVTypeError
 from ..nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION
 import warnings
 
@@ -21,6 +24,8 @@ PYTORCH_DIR = 'pytorch'
 PYTORCH_COMPRESS_WEIGHTS_DIR = 'compressed_weights/PT_{precision}-{compression}'
 OV_DIR = 'dldt'
 GPTQ_DIR = "GPTQ_INT4-{precision}"
+OV_TOKENIZER_NAME = "openvino_tokenizer.xml"
+OV_DETOKENIZER_NAME = "openvino_detokenizer.xml"
 
 
 def is_torch_compression(args):
@@ -77,12 +82,59 @@ def get_fp_path(args, model_subpath):
     return None
 
 
-def save_tokenizer(tokenizer, out_dir):
+# TODO: Replace with function from optimum-intel
+def save_ov_tokenizer(
+    tokenizer,
+    output_path: Union[str, Path],
+) -> None:
+    from transformers import T5Tokenizer, T5TokenizerFast
+
+    UNSUPPORTED_TOKENZIER_CLASSES = (
+        T5Tokenizer,
+        T5TokenizerFast,
+    )
+    if isinstance(tokenizer, UNSUPPORTED_TOKENZIER_CLASSES):
+        log.info("OpenVINO Tokenizer for this model is not supported.")
+        return
+
+    try:
+        from openvino_tokenizers import convert_tokenizer
+    except ModuleNotFoundError:
+        log.info("Run `pip install openvino-tokenizers` to get OpenVINO tokenizer/detokenizer models.")
+
+    if not isinstance(output_path, Path):
+        output_path = Path(output_path)
+
+    try:
+        converted = convert_tokenizer(tokenizer, with_detokenizer=True)
+    except NotImplementedError:
+        log.info("Detokenizer is not supported, convert tokenizer only.")
+        converted = convert_tokenizer(tokenizer, with_detokenizer=False)
+    except OVTypeError:
+        log.info("OpenVINO Tokenizer for this model is not supported.")
+        return
+    except Exception as exception:
+        log.warning(f"OpenVINO Tokenizer for this model is not supported. Exception: {exception}")
+        return
+
+    if not isinstance(converted, tuple):
+        converted = (converted,)
+
+    for model, file_name in zip(converted, (OV_TOKENIZER_NAME, OV_DETOKENIZER_NAME)):
+        save_model(model, output_path / file_name)
+
+
+def save_tokenizer(tokenizer, out_dir: str, add_ov_tokenizer: bool = False) -> None:
     try:
         tokenizer.save_pretrained(out_dir)
     except Exception as e:
-        log.error(f'tokenizer loading failed with {e}')
+        log.error(f"Huggingface tokenizer saving failed with {e}")
 
+    if add_ov_tokenizer:
+        try:
+            save_ov_tokenizer(tokenizer, out_dir)
+        except Exception as e:
+            log.error(f"OpenVINO tokenizer saving failed with {e}")
 
 def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_weights_format="INT8", fp16=False, args={}, model_name="openvino_model"):
     compression_args = None
