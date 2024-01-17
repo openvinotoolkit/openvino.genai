@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (C) 2023 Intel Corporation
+# Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 set -e  # Exit immediately if a command exits with a non-zero status
@@ -17,7 +17,7 @@ curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/
 sudo ./ov/install_dependencies/install_openvino_dependencies.sh
 
 source ./ov/setupvars.sh
-python -m pip install --upgrade-strategy eager "optimum[openvino]>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ../../../llm_bench/python/convert.py --model_id openlm-research/open_llama_3b_v2 --output_dir ./open_llama_3b_v2/ --precision FP16 --stateful &
+python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ../../../llm_bench/python/convert.py --model_id openlm-research/open_llama_3b_v2 --output_dir ./open_llama_3b_v2/ --precision FP16 --stateful &
 cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
 cmake --build ./build/ --config Release -j
 wait

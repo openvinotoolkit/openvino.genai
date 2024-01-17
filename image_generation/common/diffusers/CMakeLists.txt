@@ -1,4 +1,4 @@
-# Copyright (C) 2023 Intel Corporation
+# Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 file(GLOB_RECURSE "diffusers_SRC" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
