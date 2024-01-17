@@ -6,8 +6,8 @@ pillow
 torch
 transformers>=4.33.0
 diffusers>=0.22.0
-optimum>=1.14.0,<1.15.0
-git+https://github.com/eaidova/optimum-intel.git@ea/stateful
+optimum>=1.14.0,<1.17.0
+git+https://github.com/huggingface/optimum-intel.git@e22a2ac26b3a6c7854da956d538f784ebeca879b
 git+https://github.com/openvinotoolkit/nncf.git
 packaging
 psutil
