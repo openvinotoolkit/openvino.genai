@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2018-2023 Intel Corporation
+# Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
 import sys
@@ -206,7 +206,6 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
     image_width = image_param.get('width', DEFAULT_IMAGE_WIDTH)
     image_height = image_param.get('height', DEFAULT_IMAGE_HEIGHT)
     nsteps = image_param.get('steps', DEFAULT_INFERENCE_STEPS if 'lcm' not in args["model_name"] else LCM_DEFAULT_INFERENCE_STEPS)
-    nsteps = 1 if num == 0 else nsteps
     guidance_scale = image_param.get('guidance_scale', None)
     log.info(
         f"[{'warm-up' if num == 0 else num}] Input params: Batch_size={args['batch_size']}, "
@@ -312,7 +311,6 @@ def run_image_classification(model_path, framework, device, args, num_iters=10):
 def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list):
     set_seed(args['seed'])
     nsteps = img.get('steps', DEFAULT_SUPER_RESOLUTION_STEPS)
-    nsteps = 1 if num == 0 else nsteps
     resize_image_width = img.get('width', DEFAULT_SUPER_RESOLUTION_WIDTH)
     resize_image_height = img.get('height', DEFAULT_SUPER_RESOLUTION_HEIGHT)
     log.info(
@@ -371,8 +369,10 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     if len(input_image_list) > 0:
         images = []
         for image in input_image_list:
-            image['prompt'] = os.path.join(os.path.dirname(args['prompt'] if args['prompt'] is not None else args['prompt_file']),
-                                           image['prompt'].replace('./', ''))
+            if args['prompt'] is None and args['prompt_file'] is None:
+                raise RuntimeError('==Failure image is empty ==')
+            elif args['prompt_file'] is not None:
+                image['prompt'] = os.path.join(os.path.dirname(args['prompt_file']), image['prompt'].replace('./', ''))
             image['prompt'] = Path(image['prompt'])
             images.append(image)
     else:

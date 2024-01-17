@@ -1,27 +1,37 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2018-2023 Intel Corporation
+# Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import torch
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
 import types
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers import PreTrainedModel
 
 
 @torch.jit.script_if_tracing
-def _chatglm2_get_context_layer(query_layer: torch.Tensor, key_layer: torch.Tensor, value_layer: torch.Tensor):
-    mask = torch.zeros((query_layer.shape[-2], key_layer.shape[-2]), dtype=query_layer.dtype)
+def _chatglm2_get_context_layer(
+    query_layer: torch.Tensor, key_layer: torch.Tensor, value_layer: torch.Tensor
+):
+    mask = torch.zeros(
+        (query_layer.shape[-2], key_layer.shape[-2]), dtype=query_layer.dtype
+    )
     if query_layer.shape[2] == key_layer.shape[2]:
-        tmp_mask = torch.ones((query_layer.shape[-2], key_layer.shape[-2]), dtype=torch.bool).triu(diagonal=1)
+        tmp_mask = torch.ones(
+            (query_layer.shape[-2], key_layer.shape[-2]), dtype=torch.bool
+        ).triu(diagonal=1)
         mask.masked_fill_(tmp_mask, float("-inf"))
 
-    context_layer = torch.nn.functional.scaled_dot_product_attention(query_layer, key_layer, value_layer, attn_mask=mask)
+    context_layer = torch.nn.functional.scaled_dot_product_attention(
+        query_layer, key_layer, value_layer, attn_mask=mask
+    )
     return context_layer
 
 
 def _core_attention_forward(self, query_layer, key_layer, value_layer, attention_mask):
-    query_layer, key_layer, value_layer = [k.permute(1, 2, 0, 3) for k in [query_layer, key_layer, value_layer]]
+    query_layer, key_layer, value_layer = [
+        k.permute(1, 2, 0, 3) for k in [query_layer, key_layer, value_layer]
+    ]
     if attention_mask is None:
         context_layer = _chatglm2_get_context_layer(query_layer, key_layer, value_layer)
     else:
@@ -29,7 +39,9 @@ def _core_attention_forward(self, query_layer, key_layer, value_layer, attention
             query_layer, key_layer, value_layer, attention_mask
         )
     context_layer = context_layer.permute(2, 0, 1, 3)
-    new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
+    new_context_layer_shape = context_layer.size()[:-2] + (
+        self.hidden_size_per_partition,
+    )
     context_layer = context_layer.reshape(*new_context_layer_shape)
 
     return context_layer
@@ -37,30 +49,40 @@ def _core_attention_forward(self, query_layer, key_layer, value_layer, attention
 
 @torch.jit.script_if_tracing
 def _get_chatglm_attention_mask(input_ids, past_key):
-    mask = torch.zeros((input_ids.shape[1], past_key.shape[0] + input_ids.shape[1]), dtype=past_key.dtype)
+    mask = torch.zeros(
+        (input_ids.shape[1], past_key.shape[0] + input_ids.shape[1]),
+        dtype=past_key.dtype,
+    )
     if past_key.shape[0] == 0:
-        tmp_mask = torch.ones((input_ids.shape[1], past_key.shape[0] + input_ids.shape[1]), dtype=torch.bool).triu(diagonal=1)
+        tmp_mask = torch.ones(
+            (input_ids.shape[1], past_key.shape[0] + input_ids.shape[1]),
+            dtype=torch.bool,
+        ).triu(diagonal=1)
         mask.masked_fill_(tmp_mask, float("-inf"))
     return mask
 
 
 def _chatglm_transformer_forward(
-        self,
-        input_ids,
-        position_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.BoolTensor] = None,
-        full_attention_mask: Optional[torch.BoolTensor] = None,
-        past_key_values: Optional[Tuple[Tuple[torch.Tensor, torch.Tensor], ...]] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-        use_cache: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None
+    self,
+    input_ids,
+    position_ids: Optional[torch.Tensor] = None,
+    attention_mask: Optional[torch.BoolTensor] = None,
+    full_attention_mask: Optional[torch.BoolTensor] = None,
+    past_key_values: Optional[Tuple[Tuple[torch.Tensor, torch.Tensor], ...]] = None,
+    inputs_embeds: Optional[torch.Tensor] = None,
+    use_cache: Optional[bool] = None,
+    output_hidden_states: Optional[bool] = None,
+    return_dict: Optional[bool] = None,
 ):
     output_hidden_states = (
-        output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_hidden_states
+        if output_hidden_states is not None
+        else self.config.output_hidden_states
     )
     use_cache = use_cache if use_cache is not None else self.config.use_cache
-    return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+    return_dict = (
+        return_dict if return_dict is not None else self.config.use_return_dict
+    )
 
     batch_size, seq_length = input_ids.shape
 
@@ -69,25 +91,49 @@ def _chatglm_transformer_forward(
 
     if self.pre_seq_len is not None:
         if past_key_values is None:
-            past_key_values = self.get_prompt(batch_size=batch_size, device=input_ids.device,
-                                              dtype=inputs_embeds.dtype)
+            past_key_values = self.get_prompt(
+                batch_size=batch_size,
+                device=input_ids.device,
+                dtype=inputs_embeds.dtype,
+            )
         if attention_mask is not None:
-            attention_mask = torch.cat([attention_mask.new_ones((batch_size, self.pre_seq_len)), attention_mask], dim=-1)
+            attention_mask = torch.cat(
+                [
+                    attention_mask.new_ones((batch_size, self.pre_seq_len)),
+                    attention_mask,
+                ],
+                dim=-1,
+            )
 
     if full_attention_mask is None:
-        if (attention_mask is not None and not attention_mask.all()) or (past_key_values and seq_length != 1):
-            full_attention_mask = self.get_masks(input_ids, past_key_values, padding_mask=attention_mask)
+        if (attention_mask is not None and not attention_mask.all()) or (
+            past_key_values and seq_length != 1
+        ):
+            full_attention_mask = self.get_masks(
+                input_ids, past_key_values, padding_mask=attention_mask
+            )
         elif past_key_values is not None:
-            full_attention_mask = torch.ones(batch_size, seq_length, seq_length,
-                                             device=input_ids.device,
-                                             dtype=torch.float) * float("-inf")
+            full_attention_mask = torch.ones(
+                batch_size,
+                seq_length,
+                seq_length,
+                device=input_ids.device,
+                dtype=torch.float,
+            ) * float("-inf")
             full_attention_mask.triu_(diagonal=1)
             past_length = 0
             if past_key_values:
                 past_length = past_key_values[0][0].shape[0]
             if past_length:
-                full_attention_mask = torch.cat((torch.zeros(batch_size, seq_length, past_length,
-                                                             device=input_ids.device), full_attention_mask), dim=-1)
+                full_attention_mask = torch.cat(
+                    (
+                        torch.zeros(
+                            batch_size, seq_length, past_length, device=input_ids.device
+                        ),
+                        full_attention_mask,
+                    ),
+                    dim=-1,
+                )
             full_attention_mask.unsqueeze_(1)
 
     # Rotary positional embeddings
@@ -100,12 +146,20 @@ def _chatglm_transformer_forward(
 
     # Run encoder.
     hidden_states, presents, all_hidden_states, all_self_attentions = self.encoder(
-        inputs_embeds, full_attention_mask, rotary_pos_emb=rotary_pos_emb,
-        kv_caches=past_key_values, use_cache=use_cache, output_hidden_states=output_hidden_states
+        inputs_embeds,
+        full_attention_mask,
+        rotary_pos_emb=rotary_pos_emb,
+        kv_caches=past_key_values,
+        use_cache=use_cache,
+        output_hidden_states=output_hidden_states,
     )
 
     if not return_dict:
-        return tuple(v for v in [hidden_states, presents, all_hidden_states, all_self_attentions] if v is not None)
+        return tuple(
+            v
+            for v in [hidden_states, presents, all_hidden_states, all_self_attentions]
+            if v is not None
+        )
 
     return BaseModelOutputWithPast(
         last_hidden_state=hidden_states,
@@ -116,7 +170,9 @@ def _chatglm_transformer_forward(
 
 
 def _patch_chatglm_core_attention_forward(model: "PreTrainedModel"):
-    model.transformer.forward = types.MethodType(_chatglm_transformer_forward, model.transformer)
+    model.transformer.forward = types.MethodType(
+        _chatglm_transformer_forward, model.transformer
+    )
     for block in model.transformer.encoder.layers:
         block.self_attention.core_attention.forward = types.MethodType(
             _core_attention_forward, block.self_attention.core_attention
@@ -127,9 +183,13 @@ def _update_qwen_rotary_embedding_cache(model):
     model.transformer.rotary_emb(2048)
 
 
-def _yi_prepare_decoder_attention_mask(attention_mask, input_ids, inputs_embeds, past_key_values_length):
+def _yi_prepare_decoder_attention_mask(
+    attention_mask, input_ids, inputs_embeds, past_key_values_length
+):
     input_shape = input_ids.shape if input_ids is not None else inputs_embeds.shape[:-1]
-    return _prepare_decoder_attention_mask(attention_mask, input_shape, inputs_embeds, past_key_values_length)
+    return _prepare_decoder_attention_mask(
+        attention_mask, input_shape, inputs_embeds, past_key_values_length
+    )
 
 
 # Modified from transformers.models.mistral.modeling_mistral._prepare_decoder_sliding_window_attention_mask
@@ -140,7 +200,10 @@ def _prepare_decoder_sliding_window_attention_mask(
     past_key_values_length: int,
     sliding_window: int,
 ):
-    from transformers.models.mistral.modeling_mistral import _expand_mask, _make_sliding_window_causal_mask
+    from transformers.models.mistral.modeling_mistral import (
+        _expand_mask,
+        _make_sliding_window_causal_mask,
+    )
 
     # create causal mask
     # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
@@ -156,11 +219,13 @@ def _prepare_decoder_sliding_window_attention_mask(
 
     if attention_mask is not None:
         # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
-        expanded_attn_mask = _expand_mask(attention_mask, inputs_embeds.dtype, tgt_len=input_shape[-1]).to(
-            inputs_embeds.device
-        )
+        expanded_attn_mask = _expand_mask(
+            attention_mask, inputs_embeds.dtype, tgt_len=input_shape[-1]
+        ).to(inputs_embeds.device)
         combined_attention_mask = (
-            expanded_attn_mask if combined_attention_mask is None else expanded_attn_mask + combined_attention_mask
+            expanded_attn_mask
+            if combined_attention_mask is None
+            else expanded_attn_mask + combined_attention_mask
         )
 
     return combined_attention_mask
@@ -178,7 +243,9 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
 
     inverted_mask = 1.0 - expanded_mask
 
-    return inverted_mask.masked_fill(inverted_mask.to(torch.bool), torch.finfo(dtype).min)
+    return inverted_mask.masked_fill(
+        inverted_mask.to(torch.bool), torch.finfo(dtype).min
+    )
 
 
 # Modified from transformers.models.bloom.modeling_bloom._make_causal_mask
@@ -192,7 +259,11 @@ def _make_causal_mask(
     Make causal mask used for bi-directional self-attention.
     """
     batch_size, target_length = input_ids_shape
-    mask = torch.zeros((target_length, target_length + past_key_values_length), dtype=dtype, device=device)
+    mask = torch.zeros(
+        (target_length, target_length + past_key_values_length),
+        dtype=dtype,
+        device=device,
+    )
     seq_ids = torch.arange(target_length, device=device)
 
     mask[:, past_key_values_length:] = (
@@ -201,12 +272,15 @@ def _make_causal_mask(
         else seq_ids[:, None] < seq_ids[None, :]
     )
 
-    return mask[None, None, :, :].expand(batch_size, 1, target_length, target_length + past_key_values_length)
+    return mask[None, None, :, :].expand(
+        batch_size, 1, target_length, target_length + past_key_values_length
+    )
 
 
 # Modified from transformers.models.llama.modeling_llama._prepare_decoder_attention_mask
-def _prepare_decoder_attention_mask(attention_mask, input_shape, inputs_embeds, past_key_values_length):
-
+def _prepare_decoder_attention_mask(
+    attention_mask, input_shape, inputs_embeds, past_key_values_length
+):
     # create causal mask
     # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
     combined_attention_mask = None
@@ -220,25 +294,187 @@ def _prepare_decoder_attention_mask(attention_mask, input_shape, inputs_embeds, 
 
     if attention_mask is not None:
         # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
-        expanded_attn_mask = _expand_mask(attention_mask, inputs_embeds.dtype, tgt_len=input_shape[-1]).to(
-            inputs_embeds.device
-        )
+        expanded_attn_mask = _expand_mask(
+            attention_mask, inputs_embeds.dtype, tgt_len=input_shape[-1]
+        ).to(inputs_embeds.device)
         combined_attention_mask = (
-            expanded_attn_mask if combined_attention_mask is None else expanded_attn_mask + combined_attention_mask
+            expanded_attn_mask
+            if combined_attention_mask is None
+            else expanded_attn_mask + combined_attention_mask
         )
 
     return combined_attention_mask
 
 
+def stablelm_forward(
+    self,
+    input_ids: Optional[torch.LongTensor] = None,
+    attention_mask: Optional[torch.FloatTensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+    inputs_embeds: Optional[torch.FloatTensor] = None,
+    use_cache: Optional[bool] = None,
+    output_attentions: Optional[bool] = None,
+    output_hidden_states: Optional[bool] = None,
+    return_dict: Optional[bool] = None,
+) -> Union[Tuple, BaseModelOutputWithPast]:
+    output_attentions = (
+        output_attentions
+        if output_attentions is not None
+        else self.config.output_attentions
+    )
+    output_hidden_states = (
+        output_hidden_states
+        if output_hidden_states is not None
+        else self.config.output_hidden_states
+    )
+    use_cache = use_cache if use_cache is not None else self.config.use_cache
+
+    return_dict = (
+        return_dict if return_dict is not None else self.config.use_return_dict
+    )
+
+    # Retrieve input_ids and inputs_embeds
+    if input_ids is not None and inputs_embeds is not None:
+        raise ValueError(
+            "You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time"
+        )
+    elif input_ids is not None:
+        batch_size, seq_length = input_ids.shape
+    elif inputs_embeds is not None:
+        batch_size, seq_length, _ = inputs_embeds.shape
+    else:
+        raise ValueError(
+            "You have to specify either decoder_input_ids or decoder_inputs_embeds"
+        )
+
+    seq_length_with_past = seq_length
+    past_key_values_length = 0
+
+    if past_key_values is not None:
+        past_key_values_length = past_key_values[0][0].shape[2]
+        seq_length_with_past = seq_length + past_key_values_length
+
+    if position_ids is None:
+        device = input_ids.device if input_ids is not None else inputs_embeds.device
+        position_ids = torch.arange(
+            past_key_values_length,
+            seq_length + past_key_values_length,
+            dtype=torch.long,
+            device=device,
+        )
+        position_ids = position_ids.unsqueeze(0).view(-1, seq_length)
+    else:
+        position_ids = position_ids.view(-1, seq_length).long()
+
+    if inputs_embeds is None:
+        inputs_embeds = self.embed_tokens(input_ids)
+    # Embed positions
+    if self._use_flash_attention_2:
+        # 2d mask is passed through the layers
+        attention_mask = (
+            attention_mask
+            if (attention_mask is not None and 0 in attention_mask)
+            else None
+        )
+    else:
+        if attention_mask is None:
+            attention_mask = torch.ones(
+                (batch_size, seq_length_with_past),
+                dtype=torch.bool,
+                device=inputs_embeds.device,
+            )
+        attention_mask = self._prepare_decoder_attention_mask(
+            attention_mask,
+            (batch_size, seq_length),
+            inputs_embeds,
+            past_key_values_length,
+        )
+
+    hidden_states = inputs_embeds
+
+    if self.gradient_checkpointing and self.training:
+        if use_cache:
+            use_cache = False
+
+    # Decoder layers
+    all_hidden_states = () if output_hidden_states else None
+    all_self_attns = () if output_attentions else None
+    next_decoder_cache = () if use_cache else None
+
+    for idx, decoder_layer in enumerate(self.layers):
+        if output_hidden_states:
+            all_hidden_states += (hidden_states,)
+
+        past_key_value = past_key_values[idx] if past_key_values is not None else None
+
+        if self.gradient_checkpointing and self.training:
+
+            def create_custom_forward(module):
+                def custom_forward(*inputs):
+                    # None for past_key_value
+                    return module(*inputs, past_key_value, output_attentions)
+
+                return custom_forward
+
+            layer_outputs = torch.utils.checkpoint.checkpoint(
+                create_custom_forward(decoder_layer),
+                hidden_states,
+                attention_mask,
+                position_ids,
+            )
+        else:
+            layer_outputs = decoder_layer(
+                hidden_states,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+            )
+
+        hidden_states = layer_outputs[0]
+
+        if use_cache:
+            next_decoder_cache += (layer_outputs[2 if output_attentions else 1],)
+
+        if output_attentions:
+            all_self_attns += (layer_outputs[1],)
+
+    hidden_states = self.norm(hidden_states)
+
+    # Add hidden states from the last decoder layer
+    if output_hidden_states:
+        all_hidden_states += (hidden_states,)
+
+    next_cache = next_decoder_cache if use_cache else None
+    if not return_dict:
+        return tuple(
+            v
+            for v in [hidden_states, next_cache, all_hidden_states, all_self_attns]
+            if v is not None
+        )
+    return BaseModelOutputWithPast(
+        last_hidden_state=hidden_states,
+        past_key_values=next_cache,
+        hidden_states=all_hidden_states,
+        attentions=all_self_attns,
+    )
+
+
 def patch_model_for_optimum_export(model):
     if model.config.model_type in ["stablelm_epoch", "baichuan"]:
         model.model._prepare_decoder_attention_mask = _prepare_decoder_attention_mask
+        if model.config.model_type == "stablelm_epoch":
+            model.model.forward = types.MethodType(stablelm_forward, model.model)
     elif model.config.model_type == "chatglm":
         _patch_chatglm_core_attention_forward(model)
     elif model.config.model_type == "qwen":
         _update_qwen_rotary_embedding_cache(model)
     elif model.config.model_type == "mistral":
-        model.model._prepare_decoder_attention_mask = _prepare_decoder_sliding_window_attention_mask
+        model.model._prepare_decoder_attention_mask = (
+            _prepare_decoder_sliding_window_attention_mask
+        )
     elif model.config.model_type == "Yi":
         model.model._prepare_decoder_attention_mask = _yi_prepare_decoder_attention_mask
     return model
