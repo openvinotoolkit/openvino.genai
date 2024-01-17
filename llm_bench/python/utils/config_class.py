@@ -59,7 +59,7 @@ USE_CASES = {
     'image_gen': ['stable-diffusion-', 'ssd-', 'deepfloyd-if', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl'],
     'text2speech': ['whisper'],
     'image_cls': ['vit'],
-    'code_gen': ['replit', 'codegen2', 'codegen', 'codet5'],
+    'code_gen': ['replit', 'codegen2', 'codegen', 'codet5', "stable-code"],
     'text_gen': [
         'decoder',
         't5',
