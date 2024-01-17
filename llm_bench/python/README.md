@@ -11,7 +11,7 @@ pytorch and openvino models, using almost the same code and precollected models.
 ``` bash
 python3 -m venv python-env
 source python-env/bin/activate
-pip install update --upgrade
+pip install -U pip
 pip install -r requirements.txt
 ```
 ### 2. Convert a model to OpenVINO IR
