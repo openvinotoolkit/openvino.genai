@@ -133,6 +133,7 @@ def save_tokenizer(tokenizer, out_dir: str, add_ov_tokenizer: bool = False) -> N
     if add_ov_tokenizer:
         try:
             save_ov_tokenizer(tokenizer, out_dir)
+            log.info("OpenVINO Tokenizer converted successfully.")
         except Exception as e:
             log.error(f"OpenVINO tokenizer saving failed with {e}")
 
