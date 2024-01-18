@@ -1019,6 +1019,7 @@ def convert_falcon(args):
         model_kwargs = {"torch_dtype": torch.float32}
     pt_model = None
     compress_to_fp16 = is_fp16(args)
+    ov_out_path = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
     if not compression_only:
         pt_model = AutoModelForCausalLM.from_pretrained(
             args.model_id,
@@ -1034,8 +1035,7 @@ def convert_falcon(args):
             pt_model.save_pretrained(pt_out_dir)
             save_tokenizer(tok, pt_out_dir)
 
-            ov_out_path = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
-            convert_to_ov(pt_model, tok, ov_out_path, compress_to_fp16)
+        convert_to_ov(pt_model, tok, ov_out_path, compress_to_fp16)
 
         if is_torch_compression(args):
             assert "INT8" in args.compress_weights or "INT8_ASYM" in args.compress_weights, "Only INT8 compression supported for PyTorch backend"
