@@ -58,7 +58,7 @@ the result of running the command will have the following file structure:
               |-tokenizer.model
               |-special_tokens_map.json
 
-### 3. Bechmarking
+### 3. Benchmarking
 
 Prerequisites:
 install benchmarking dependencies using `requirements.txt`
@@ -66,7 +66,7 @@ install benchmarking dependencies using `requirements.txt`
 ``` bash
 pip install -r requirements.txt
 ```
-note: **You can specify the installed openvino version through pip install**
+note: **You can specify the installed OpenVINO version through pip install**
 ``` bash
 # e.g. 
 pip install openvino==2023.2.0
