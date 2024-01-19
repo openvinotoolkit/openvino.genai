@@ -14,7 +14,7 @@ cd "`abs_path`"
 
 # initialize OpenVINO
 rm -fr ./openvino && mkdir ./openvino
-curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.0.0-14032-6bd90554401/l_openvino_toolkit_ubuntu20_2024.0.0.dev20240117_x86_64.tgz | tar --directory ./openvino/ --strip-components 1 -xz
+curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.0.0-14004-a240ae8fadd/l_openvino_toolkit_ubuntu20_2024.0.0.dev20240116_x86_64.tgz | tar --directory ./openvino/ --strip-components 1 -xz
 sudo -E ./openvino/install_dependencies/install_openvino_dependencies.sh
 source ./openvino/setupvars.sh
 
