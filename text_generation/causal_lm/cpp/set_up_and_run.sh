@@ -13,7 +13,7 @@ function abs_path() {
 cd "`abs_path`"
 
 mkdir ./ov/
-curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2023.3.0-13739-294cc6668c4/l_openvino_toolkit_ubuntu20_2023.3.0.dev20231219_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.0.0-14049-0dc2dc5f602/l_openvino_toolkit_ubuntu20_2024.0.0.dev20240118_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
 sudo ./ov/install_dependencies/install_openvino_dependencies.sh
 
 source ./ov/setupvars.sh
