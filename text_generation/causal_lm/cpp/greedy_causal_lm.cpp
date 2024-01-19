@@ -111,5 +111,5 @@ int main(int argc, char* argv[]) try {
     return 1;
 } catch (...) {
     std::cerr << "Non-exception object thrown\n";
-    return 1;
+    return 2;
 }
