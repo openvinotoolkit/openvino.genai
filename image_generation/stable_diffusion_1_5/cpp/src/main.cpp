@@ -308,8 +308,8 @@ int32_t main(int32_t argc, char* argv[]) try {
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
-    return 1;
+    return EXIT_FAILURE;
 } catch (...) {
     std::cerr << "Non-exception object thrown\n";
-    return 2;
+    return EXIT_FAILURE;
 }

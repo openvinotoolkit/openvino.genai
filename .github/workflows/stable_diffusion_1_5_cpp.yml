@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   stable_diffusion_1_5_cpp:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-20.04-8-cores
     steps:
       - uses: actions/checkout@v4
         with:
