@@ -8,7 +8,7 @@ The pure C++ text-to-image pipeline, driven by the OpenVINO native API for Stabl
 
 C++ Packages:
 * [CMake](https://cmake.org/download/): Cross-platform build tool
-* [OpenVINO >= 2023.3](docs.openvino.ai/install): Model inference. https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for early testing.
+* [OpenVINO >= 2023.3](docs.openvino.ai/install): Model inference. `master` and possibly the latest `releases/*` branch correspond to not yet released OpenVINO versions. https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for these branches early testing.
 * Eigen3: Lora enabling
 
 Prepare a python environment and install dependencies:

@@ -17,7 +17,7 @@ The program loads a tokenizer, a detokenizer and a model (`.xml` and `.bin`) to 
 
 ## Install OpenVINO
 
-Install [OpenVINO Archives >= 2023.3](docs.openvino.ai/install). https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for early testing. `<INSTALL_DIR>` below refers to the extraction location.
+Install [OpenVINO Archives >= 2023.3](docs.openvino.ai/install). `master` and possibly the latest `releases/*` branch correspond to not yet released OpenVINO versions. https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for these branches early testing. `<INSTALL_DIR>` below refers to the extraction location.
 
 ## Build `greedy_causal_lm`, `beam_search_causal_lm` and `user_ov_extensions`
 
