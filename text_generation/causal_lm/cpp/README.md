@@ -58,9 +58,7 @@ cmake -S .\ -B .\build\ && cmake --build .\build\ --config Release -j
    3. https://huggingface.co/openlm-research/open_llama_3b_v2
    4. https://huggingface.co/openlm-research/open_llama_7b
    5. https://huggingface.co/openlm-research/open_llama_7b_v2
-5. TinyLlama
-   1. https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v0.6
-   2. https://huggingface.co/TinyLlama/TinyLlama-1.1B-intermediate-step-1195k-token-2.5T
+5. [TinyLlama](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0)
 6. Qwen
    1. https://huggingface.co/Qwen/Qwen-7B-Chat
    2. https://huggingface.co/Qwen/Qwen-7B-Chat-Int4 - refer to
@@ -78,8 +76,8 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 ```sh
 source <INSTALL_DIR>/setupvars.sh
 python3 -m pip install --upgrade-strategy eager "optimum>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-python3 ../../../llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir ./Llama-2-7b-hf/ --precision FP16 --stateful
-convert_tokenizer ./Llama-2-7b-hf/pytorch/dldt/FP16/ --output ./Llama-2-7b-hf/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
+python3 ../../../llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0/ --precision FP16 --stateful
+convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
 ```
 
 #### Windows
@@ -87,8 +85,8 @@ convert_tokenizer ./Llama-2-7b-hf/pytorch/dldt/FP16/ --output ./Llama-2-7b-hf/py
 ```bat
 <INSTALL_DIR>\setupvars.bat
 python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ..\..\..\llm_bench\python\requirements.txt ..\..\..\thirdparty\openvino_contrib\modules\custom_operations\[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-python ..\..\..\llm_bench\python\convert.py --model_id meta-llama/Llama-2-7b-hf --output_dir .\Llama-2-7b-hf\ --precision FP16 --stateful
-convert_tokenizer .\Llama-2-7b-hf\pytorch\dldt\FP16\ --output .\Llama-2-7b-hf\pytorch\dldt\FP16\ --with-detokenizer --trust-remote-code
+python ..\..\..\llm_bench\python\convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir .\TinyLlama-1.1B-Chat-v1.0\ --precision FP16 --stateful
+convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --with-detokenizer --trust-remote-code
 ```
 
 ## Run
@@ -98,7 +96,7 @@ Usage:
 2. `beam_search_causal_lm <MODEL_DIR> "<PROMPT>"`
 
 Examples:
-1. `./build/greedy_causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-2. `./build/beam_search_causal_lm ./Llama-2-7b-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+1. `./build/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+2. `./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
