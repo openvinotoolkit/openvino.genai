@@ -23,21 +23,21 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std:
     }
     partial_match_table.back() = cnd;
     std::vector<int64_t> res;
-    size_t j = 0;  // The position of the current character in haystack
-    int k = 0;  // The position of the current character in needle
-    while (j < haystack.size() - 1) {
-        if (needle.at(size_t(k)) == haystack.at(j)) {
-            ++j;
-            ++k;
-            if (k == int(needle.size())) {
+    size_t haystack_id = 0;
+    int needle_id = 0;
+    while (haystack_id < haystack.size() - 1) {
+        if (needle.at(size_t(needle_id)) == haystack.at(haystack_id)) {
+            ++haystack_id;
+            ++needle_id;
+            if (needle_id == int(needle.size())) {
                 res.push_back(haystack.at(j));
-                k = partial_match_table.at(size_t(k));
+                needle_id = partial_match_table.at(size_t(needle_id));
             }
         } else {
-            k = partial_match_table.at(size_t(k));
-            if (k < 0) {
-                ++j;
-                ++k;
+            needle_id = partial_match_table.at(size_t(needle_id));
+            if (needle_id < 0) {
+                ++haystack_id;
+                ++needle_id;
             }
         }
     }
