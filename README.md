@@ -1,14 +1,13 @@
 ## GenAI Pipeline Repository
 
-
 The GenAI repository contains pipelines that implement image and text generation tasks.
 The implementation uses OpenVINO capabilities to optimize the pipelines. Each sample covers
 a family of models and suggests certain modifications to adapt the code to specific needs.
 It includes the following pipelines:
 
 1. [Benchmarking script for large language models](./llm_bench/python/)
-2. [Causal LM](./text_generation/causal_lm/cpp/)
-3. [OpenVINO Stable Diffuison (with LoRA) C++ pipeline](./image_generation/stable_diffusion_1_5/cpp/)
+2. [Text generation samples that support most popular models like LLaMA 2](./text_generation/causal_lm/cpp/)
+3. [OpenVINO Stable Diffuison (with LoRA) C++ image generation pipeline](./image_generation/stable_diffusion_1_5/cpp/)
 4. [OpenVINO Latent Consistency Model (with LoRA) C++ pipeline](./image_generation/lcm_dreamshaper_v7/cpp/)
 
 > [!NOTE]
@@ -26,3 +25,4 @@ Requirements may vary for different samples. See respective readme files for mor
 and make sure to install the OpenVINO version listed there. Refer to documentation to see
 [how to install OpenVINO](docs.openvino.ai/install).
 
+The supported devices are CPU and GPU including Intel discrete GPU.
