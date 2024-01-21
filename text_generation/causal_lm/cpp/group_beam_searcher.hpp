@@ -30,7 +30,7 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std:
             ++haystack_id;
             ++needle_id;
             if (needle_id == int(needle.size())) {
-                res.push_back(haystack.at(j));
+                res.push_back(haystack.at(haystack_id));
                 needle_id = partial_match_table.at(size_t(needle_id));
             }
         } else {
