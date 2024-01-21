@@ -19,4 +19,28 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: ./image_generation/stable_diffusion_1_5/cpp/set_up_and_run.sh
+      - name: Install OpenVINO / libeigen3-dev
+        run: |
+          mkdir openvino
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.0.0-14004-a240ae8fadd/l_openvino_toolkit_ubuntu20_2024.0.0.dev20240116_x86_64.tgz | tar --directory ./openvino/ --strip-components 1 -xz
+          sudo ./openvino/install_dependencies/install_openvino_dependencies.sh
+          sudo apt install libeigen3-dev
+      - name: Download / convert models
+        run: |
+          source ./openvino/setupvars.sh
+          cd ./image_generation/stable_diffusion_1_5/cpp/scripts/
+          python -m pip install -U pip
+          python -m pip install -r ./requirements.txt
+          python -m pip install ../../../../thirdparty/openvino_contrib/modules/custom_operations/
+          python convert_model.py -sd runwayml/stable-diffusion-v1-5 -b 1 -t FP16 -dyn True
+      - name: Build app
+        run: |
+          source ./openvino/setupvars.sh
+          cd ./image_generation/stable_diffusion_1_5/cpp/
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release --parallel
+      - name: Run app
+        run: |
+          source ./openvino/setupvars.sh
+          cd ./image_generation/stable_diffusion_1_5/cpp/build
+          ./stable_diffusion -m ../scripts/runwayml/stable-diffusion-v1-5 -t FP16_dyn
