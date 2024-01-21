@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) try {
     std::vector<int32_t> next_beams;
     for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
         lm.infer();
-        std::tie(next_tokens, next_beams) = group_beam_searcher.process(lm.get_tensor("logits"));
+        std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(lm.get_tensor("logits"));
         if (next_tokens.empty()) {
             break;
         }
@@ -86,8 +86,8 @@ int main(int argc, char* argv[]) try {
     lm.reset_state();
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
-    return 1;
+    return EXIT_FAILURE;
 } catch (...) {
     std::cerr << "Non-exception object thrown\n";
-    return 1;
+    return EXIT_FAILURE;
 }
