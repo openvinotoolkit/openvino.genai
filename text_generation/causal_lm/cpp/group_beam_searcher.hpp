@@ -135,6 +135,9 @@ struct Group {
 
 struct TokenToBeam {int64_t token_idx; int32_t beam_idx;};
 
+// GroupBeamSearcher processes logits prduced by a language model and accumulates beams using group beam search
+// algorithm. select_next_tokens() returns token ids selected by the algorithm and corresponding beam ids. These values
+// are used for next inference. select_next_tokens() returns empty, if all groups are completed
 struct GroupBeamSearcher {
     Parameters parameters;
     std::vector<Group> groups;
@@ -147,7 +150,7 @@ struct GroupBeamSearcher {
             group.ongoing.front().score = 0.0;
         }
     }
-    std::pair<std::vector<int64_t>, std::vector<int32_t>> process(const ov::Tensor& logits) {
+    std::pair<std::vector<int64_t>, std::vector<int32_t>> select_next_tokens(const ov::Tensor& logits) {
         std::vector<int64_t> next_tokens;
         std::vector<int32_t> next_beams;
         next_tokens.reserve(parameters.n_groups * parameters.group_size);
@@ -157,7 +160,7 @@ struct GroupBeamSearcher {
             if (!group.done) {
                 for (Beam& beam : group.ongoing) {
                     beam.global_beam_idx = beam_count;
-                    // beam.tokens.empty() holds for the first process() call.
+                    // beam.tokens.empty() holds for the first select_next_tokens() call.
                     // Every beam is constructed from the single batch at first call
                     if (!beam.tokens.empty()) {
                         ++beam_count;
