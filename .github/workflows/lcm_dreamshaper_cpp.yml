@@ -32,14 +32,14 @@ jobs:
           python -m pip install -r ./requirements.txt
           python -m pip install ../../../../thirdparty/openvino_contrib/modules/custom_operations/
           python convert_model.py -lcm "SimianLuo/LCM_Dreamshaper_v7" -t "FP16"
-        - name: Build app
-          run: |
-            source ./openvino/setupvars.sh
-            cd ./image_generation/lcm_dreamshaper_v7/cpp/
-            cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-            cmake --build ./build/ --config Release --parallel
-        - name: Run app
-          run: |
-            source ./openvino/setupvars.sh
-            cd ./image_generation/lcm_dreamshaper_v7/cpp/build/
-            ./lcm_dreamshaper
+      - name: Build app
+        run: |
+          source ./openvino/setupvars.sh
+          cd ./image_generation/lcm_dreamshaper_v7/cpp/
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release --parallel
+      - name: Run app
+        run: |
+          source ./openvino/setupvars.sh
+          cd ./image_generation/lcm_dreamshaper_v7/cpp/build/
+          ./lcm_dreamshaper
