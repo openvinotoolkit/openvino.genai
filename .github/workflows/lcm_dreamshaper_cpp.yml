@@ -2,8 +2,10 @@ name: lcm_dreamshaper
 on:
   pull_request:
     paths:
-      - image_generation/lcm_dreamshaper_v7/cpp/src/**
-      - .github/workflows/lcm_dreamshaper_v7_cpp.yml
+      - image_generation/lcm_dreamshaper_v7/cpp/**
+      - image_generation/common/**
+      - .github/workflows/lcm_dreamshaper_cpp.yml
+      - thirdparty/openvino_contrib
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
