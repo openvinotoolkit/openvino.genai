@@ -61,7 +61,9 @@ jobs:
         python ./llm_bench/python/convert.py --model_id bigscience/bloomz-560m --output_dir ./ov_models/bloomz-560m --precision FP16
         python ./llm_bench/python/benchmark.py -m ./ov_models/bloomz-560m/pytorch/dldt/FP16/ -d cpu -n 1
     - name: Test tiny-stable-diffusion on Linux
-      run: llm_bench/python/llm_run_stable_diffusion_on_linux.sh
+      run: |
+        python ./llm_bench/python/convert.py --model_id segmind/tiny-sd --output_dir ./ov_models/tiny-sd --precision FP16
+        python ./llm_bench/python/benchmark.py -m ./ov_models/tiny-sd/pytorch/dldt/FP16/ -pf ./llm_bench/python/prompts/stable-diffusion.jsonl -d cpu -n 1
   stateful:
     runs-on: ubuntu-20.04
     steps:
