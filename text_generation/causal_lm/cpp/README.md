@@ -1,6 +1,6 @@
-# Text generation samples that support most popular models like LLaMA 2
+# Text generation C++ samples that support most popular models like LLaMA 2
 
-These examples showcase inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen`. The applications don't have many configuration options to encourage the reader to explore and modify the source code. Loading `user_ov_extensions` provided by `openvino-tokenizers` to `ov::Core` enables tokenization. Run `convert_tokenizer` to generate IRs for the samples. [group_beam_searcher.hpp](group_beam_searcher.hpp) implements the algorithm of the same name, which is used by `beam_search_causal_lm`. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
+These examples showcase inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The applications don't have many configuration options to encourage the reader to explore and modify the source code. Loading `user_ov_extensions` provided by `openvino-tokenizers` to `ov::Core` enables tokenization. Run `convert_tokenizer` to generate IRs for the samples. [group_beam_searcher.hpp](group_beam_searcher.hpp) implements the algorithm of the same name, which is used by `beam_search_causal_lm`. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
 
 > [!NOTE]
 > This project is not for production use.

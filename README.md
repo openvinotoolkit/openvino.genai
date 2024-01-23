@@ -6,8 +6,8 @@ a family of models and suggests certain modifications to adapt the code to speci
 It includes the following pipelines:
 
 1. [Benchmarking script for large language models](./llm_bench/python/)
-2. [Text generation samples that support most popular models like LLaMA 2](./text_generation/causal_lm/cpp/)
-3. [OpenVINO Stable Diffuison (with LoRA) C++ image generation pipeline](./image_generation/stable_diffusion_1_5/cpp/)
+2. [Text generation C++ samples that support most popular models like LLaMA 2](./text_generation/causal_lm/cpp/)
+3. [Stable Diffuison (with LoRA) C++ image generation pipeline](./image_generation/stable_diffusion_1_5/cpp/)
 
 > [!NOTE]
 > This project is not for production use.
