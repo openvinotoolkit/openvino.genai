@@ -1,3 +1,4 @@
+#
 name: stable_diffusion_1_5_cpp
 on:
   pull_request:
