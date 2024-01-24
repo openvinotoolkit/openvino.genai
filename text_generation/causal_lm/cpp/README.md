@@ -12,9 +12,9 @@ The program loads a tokenizer, a detokenizer and a model (`.xml` and `.bin`) to 
 
 The program loads a tokenizer, a detokenizer and a model (`.xml` and `.bin`) to OpenVINO. A prompt is tokenized and passed to the model. The model predicts a distribution over the next tokens and group beam search samples from that distribution to explore possible sequesnses. The result is converted to chars and printed.
 
-## Install OpenVINO Runtime
+## Install OpenVINO
 
-Install OpenVINO Runtime from an archive: [Linux](https://docs.openvino.ai/2023.2/openvino_docs_install_guides_installing_openvino_from_archive_linux.html). `<INSTALL_DIR>` below refers to the extraction location.
+Install [OpenVINO Archives >= 2023.3](https://docs.openvino.ai/install). `<INSTALL_DIR>` below refers to the extraction location.
 
 ## Build `greedy_causal_lm`, `beam_search_causal_lm` and `user_ov_extensions`
 

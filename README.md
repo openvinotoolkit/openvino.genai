@@ -19,6 +19,6 @@ your contribution under these terms.
 
 Requirements may vary for different samples. See respective readme files for more details,
 and make sure to install the OpenVINO version listed there. Refer to documentation to see
-[how to install OpenVINO](docs.openvino.ai/install).
+[how to install OpenVINO](https://docs.openvino.ai/install).
 
 The supported devices are CPU and GPU including Intel discrete GPU.
