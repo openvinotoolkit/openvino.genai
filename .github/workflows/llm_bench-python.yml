@@ -69,5 +69,5 @@ jobs:
           python -m pip install -r llm_bench/python/requirements.txt optimum
           python -m pip uninstall --yes openvino
           python -m pip install openvino-nightly
-          python llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir . --stateful
+          python llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir . --stateful
           grep beam_idx pytorch/dldt/FP32/openvino_model.xml
