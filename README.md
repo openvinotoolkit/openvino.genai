@@ -9,9 +9,6 @@ It includes the following pipelines:
 2. [Text generation C++ samples that support most popular models like LLaMA 2](./text_generation/causal_lm/cpp/)
 3. [Stable Diffuison (with LoRA) C++ image generation pipeline](./image_generation/stable_diffusion_1_5/cpp/)
 
-> [!NOTE]
-> This project is not for production use.
-
 ### License
 
 The GenAI repository is licensed under [Apache License Version 2.0](LICENSE).
