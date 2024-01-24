@@ -69,7 +69,7 @@ pip install -r requirements.txt
 note: **You can specify the installed openvino version through pip install**
 ``` bash
 # e.g. 
-pip install openvino==2023.2.0
+pip install openvino==2023.3.0
 ```
 
 ### 4. Run the following command to test the performance of one LLM model
