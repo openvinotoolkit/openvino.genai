@@ -143,7 +143,7 @@ jobs:
       - name: Download, convert and build
         shell: cmd
         run: |
-          call w_openvino_toolkit_windows_2024.0.0.dev20240116_x86_64\setupvars.bat
+          call w_openvino_toolkit_windows_2023.3.0.13775.ceeafaf64f3_x86_64\setupvars.bat
           python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
           python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0/ --precision FP16 --stateful
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
@@ -151,7 +151,7 @@ jobs:
       - name: Compare
         shell: cmd
         run: |
-          call w_openvino_toolkit_windows_2024.0.0.dev20240116_x86_64\setupvars.bat
+          call w_openvino_toolkit_windows_2023.3.0.13775.ceeafaf64f3_x86_64\setupvars.bat
           convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --with-detokenizer
 
           .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "69" > .\pred.txt
