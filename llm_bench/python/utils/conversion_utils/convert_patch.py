@@ -370,7 +370,7 @@ def stablelm_forward(
     if inputs_embeds is None:
         inputs_embeds = self.embed_tokens(input_ids)
     # Embed positions
-    if self._use_flash_attention_2:
+    if getattr(self, "_use_flash_attention_2", False):
         # 2d mask is passed through the layers
         attention_mask = (
             attention_mask
