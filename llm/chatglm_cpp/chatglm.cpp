@@ -5,7 +5,6 @@
 #include <regex>
 #include <random>
 #include <openvino/openvino.hpp>
-#include <openvino_extensions/strings.hpp>
 #include <openvino/runtime/properties.hpp>
 #include "openvino/runtime/intel_gpu/properties.hpp"
 #include "openvino/op/ops.hpp"
@@ -202,22 +201,53 @@ int64_t get_out_token_id(const std::vector<int>& input_ids, float* logits, size_
     return out_token;
 }
 
-std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest & tokenizer, std::string_view prompt) {
+std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
     constexpr size_t BATCH_SIZE = 1;
-    ov::Tensor destination = tokenizer.get_input_tensor();
-    openvino_extensions::pack_strings(std::array<std::string_view, BATCH_SIZE>{prompt}, destination);
+    tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
     tokenizer.infer();
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
 }
 
-void print_token(ov::InferRequest& detokenizer, int64_t out_token) {
+std::string detokenize(ov::InferRequest& detokenizer, std::vector<int64_t>& tokens) {
     constexpr size_t BATCH_SIZE = 1;
-    ov::Tensor inp = detokenizer.get_input_tensor();
-    inp.set_shape({BATCH_SIZE, 1});
-    inp.data<int64_t>()[0] = out_token;
+    detokenizer.set_input_tensor(ov::Tensor{ov::element::i64, {BATCH_SIZE, tokens.size()}, tokens.data()});
     detokenizer.infer();
-    std::cout << openvino_extensions::unpack_strings(detokenizer.get_output_tensor()).front() << std::flush;
+    return detokenizer.get_output_tensor().data<std::string>()[0];
 }
+
+// The following reasons require TextStreamer to keep a cache of previous tokens:
+// detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
+// but detokenize(tokenize("prefix a")) == "prefix a"
+// 1 printable token may consist of 2 token ids: detokenize(incomplete_token_idx) == "�"
+struct TextStreamer {
+    ov::InferRequest detokenizer;
+    std::vector<int64_t> token_cache;
+    size_t print_len = 0;
+
+    void put(int64_t token) {
+        token_cache.push_back(token);
+        std::string text = detokenize(detokenizer, token_cache);
+        if (!text.empty() && '\n' == text.back()) {
+            // Flush the cache after the new line symbol
+            std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
+            token_cache.clear();
+            print_len = 0;
+        }
+        if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
+            // Don't print incomplete text
+            return;
+        }
+        std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
+        print_len = text.size();
+    }
+
+    void end() {
+        std::string text = detokenize(detokenizer, token_cache);
+        std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
+        token_cache.clear();
+        print_len = 0;
+    }
+};
 
 static double get_duration_ms_until_now(Time::time_point& startTime) {
     return std::chrono::duration_cast<ns>(Time::now() - startTime).count() * 0.000001;
