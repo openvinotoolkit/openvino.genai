@@ -97,6 +97,10 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
     precision = args.precision
     gptq_applied = is_gptq(model_config)
     pt_compress_weights = is_torch_compression(args)
+    if args.stateful:
+        log.warning(
+            "usage --stateful flag is deprecated and will be removed in future, default behaviour is export stateful model"
+            " please use --disable_stateful if you need model without state")
     if not compress_only:
         model_config = model.config
         model = patch_model_for_optimum_export(model)
@@ -131,7 +135,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             device="cpu",
             compression_option="fp16" if args.precision == "FP16" else None,
             model_kwargs={},
-            stateful=args.stateful,
+            stateful=not args.disable_stateful,
         )
         save_tokenizer(tok, ov_out_dir)
 
@@ -188,7 +192,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             device="cpu",
             compression_option="fp16" if args.precision == "FP16" else None,
             model_kwargs={},
-            stateful=args.stateful,
+            stateful=not args.disable_stateful,
         )
         save_tokenizer(tok, pt_out_dir)
     return
