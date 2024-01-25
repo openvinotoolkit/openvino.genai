@@ -307,7 +307,6 @@ def _prepare_decoder_attention_mask(
     return combined_attention_mask
 
 
-
 def mixtral_sparse_moe_block_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
     """ """
     batch_size, sequence_length, hidden_dim = hidden_states.shape
@@ -342,7 +341,7 @@ def mixtral_sparse_moe_block_forward(self, hidden_states: torch.Tensor) -> torch
     final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
     return final_hidden_states, router_logits
 
-  
+
 def stablelm_forward(
     self,
     input_ids: Optional[torch.LongTensor] = None,
