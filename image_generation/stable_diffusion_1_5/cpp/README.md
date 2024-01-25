@@ -1,5 +1,5 @@
-# OpenVINO Stable Diffusion (with LoRA) C++ pipeline
-The pure C++ text-to-image pipeline, driven by the OpenVINO native API for Stable Diffusion v1.5 with LMS Discrete Scheduler, supports both static and dynamic model inference. It includes advanced features like LoRA integration with safetensors and [OpenVINO extension for tokenizers](https://github.com/openvinotoolkit/openvino_contrib/blob/master/modules/custom_operations/user_ie_extensions/tokenizer/python/README.md). Loading `user_ov_extensions` provided by `openvino-tokenizers` to `ov::Core` enables tokenization. [The common folder](../../common/) contains schedulers for image generation and `imwrite()` for saving `bmp` images. This demo has been tested on Windows and Linux platform. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/main/notebooks/263-latent-consistency-models-image-generation/263-latent-consistency-models-image-generation.ipynb) which provides an example of image generaztion in Python.
+# Stable Diffusion (with LoRA) C++ pipeline
+The pure C++ text-to-image pipeline, driven by the OpenVINO native C++ API for Stable Diffusion v1.5 with LMS Discrete Scheduler, supports both static and dynamic model inference. It includes advanced features like [LoRA](https://huggingface.co/docs/peft/conceptual_guides/lora) integration with [safetensors](https://huggingface.co/docs/safetensors/index#format) and [OpenVINO extension for tokenizers](https://github.com/openvinotoolkit/openvino_contrib/blob/master/modules/custom_operations/user_ie_extensions/tokenizer/python/README.md). Loading `user_ov_extensions` provided by `openvino-tokenizers` to `ov::Core` enables tokenization. The sample uses [diffusers](../../diffusers) for image generation and [imwrite](../../imwrite) for saving `.bmp` images. This demo has been tested on Windows and Unix platforms. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/main/notebooks/225-stable-diffusion-text-to-image/225-stable-diffusion-text-to-image.ipynb) which provides an example of image generation in Python.
 
 > [!NOTE]
 >This tutorial assumes that the current working directory is `<openvino.genai repo>/image_generation/stable_diffusion_1_5/cpp/` and all paths are relative to this folder.
@@ -8,8 +8,8 @@ The pure C++ text-to-image pipeline, driven by the OpenVINO native API for Stabl
 
 C++ Packages:
 * [CMake](https://cmake.org/download/): Cross-platform build tool
-* [OpenVINO](https://docs.openvino.ai/2023.2/openvino_docs_install_guides_overview.html): Model inference
-* Eigen3: Lora enabling
+* [OpenVINO](https://docs.openvino.ai/install): Model inference
+* [Eigen3](https://anaconda.org/conda-forge/eigen): LoRA enabling
 
 Prepare a python environment and install dependencies:
 ```shell
@@ -54,9 +54,9 @@ python convert_model.py -b 1 -t INT8 -sd ../models/dreamlike-anime-1.0 -dyn True
 ### LoRA enabling with safetensors
 
 Refer to [python pipeline blog](https://blog.openvino.ai/blog-posts/enable-lora-weights-with-stable-diffusion-controlnet-pipeline).
-The safetensor model is loaded via [safetensors.h](https://github.com/hsnyder/safetensors.h). The layer name and weight are modified with `Eigen Lib` and inserted into the SD model with `ov::pass::MatcherPass` in the file [common/diffusers/src/lora.cpp](https://github.com/openvinotoolkit/openvino.genai/blob/master/image_generation/common/diffusers/src/lora.cpp).
+The safetensor model is loaded via [safetensors.h](https://github.com/hsnyder/safetensors.h). The layer name and weight are modified with `Eigen` library and inserted into the SD models with `ov::pass::MatcherPass` in the file [common/diffusers/src/lora.cpp](https://github.com/openvinotoolkit/openvino.genai/blob/master/image_generation/common/diffusers/src/lora.cpp).
 
-SD model [dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0) and Lora [soulcard](https://civitai.com/models/67927?modelVersionId=72591) are tested in this pipeline.
+SD model [dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0) and LoRA [soulcard](https://civitai.com/models/67927?modelVersionId=72591) are tested in this pipeline.
 
 Download and put safetensors and model IR into the models folder.
 
