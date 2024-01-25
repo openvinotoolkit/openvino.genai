@@ -38,6 +38,7 @@ def is_fp16(args):
 def is_int8_compression(compress_weights_mode):
     compress_weights_mode in ["INT8", "INT8_ASYM", "INT8_SYM"]
 
+
 def is_ov_model_provided(model_id, model_dir, precision, model_name="openvino_model.xml"):
     model_dirs = []
     if Path(model_id).is_dir():

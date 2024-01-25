@@ -167,7 +167,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             if is_int8_compression(cw):
                 compression_modes.append(cw)
         assert compression_modes, "Only INT8 compression supported for PyTorch backend"
-        for compress_mode in  compression_modes:
+        for compress_mode in compression_modes:
             compresion_options = COMPRESSION_OPTIONS[compress_mode]
             compressed_model = compress_weights(model, **compresion_options)
             onnx_config, models_and_onnx_configs = _get_submodels_and_export_configs(
