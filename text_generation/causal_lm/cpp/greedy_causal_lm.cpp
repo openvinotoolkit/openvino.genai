@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Intel Corporation
+// Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/openvino.hpp>
@@ -108,8 +108,8 @@ int main(int argc, char* argv[]) try {
     lm.reset_state();
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
-    return 1;
+    return EXIT_FAILURE;
 } catch (...) {
     std::cerr << "Non-exception object thrown\n";
-    return 1;
+    return EXIT_FAILURE;
 }

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Intel Corporation
+// Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
@@ -190,7 +190,7 @@ ov::Tensor postprocess_image(ov::Tensor decoded_image) {
     return generated_image;
 }
 
-int32_t main(int32_t argc, char* argv[]) {
+int32_t main(int32_t argc, char* argv[]) try {
     cxxopts::Options options("stable_diffusion", "Stable Diffusion implementation in C++ using OpenVINO\n");
 
     options.add_options()
@@ -287,4 +287,10 @@ int32_t main(int32_t argc, char* argv[]) {
     }
 
     return EXIT_SUCCESS;
+} catch (const std::exception& error) {
+    std::cerr << error.what() << '\n';
+    return EXIT_FAILURE;
+} catch (...) {
+    std::cerr << "Non-exception object thrown\n";
+    return EXIT_FAILURE;
 }

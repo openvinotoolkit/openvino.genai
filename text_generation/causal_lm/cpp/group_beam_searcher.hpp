@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Intel Corporation
+// Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/runtime/tensor.hpp>
@@ -23,21 +23,21 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std:
     }
     partial_match_table.back() = cnd;
     std::vector<int64_t> res;
-    size_t j = 0;  // The position of the current character in haystack
-    int k = 0;  // The position of the current character in needle
-    while (j < haystack.size() - 1) {
-        if (needle.at(size_t(k)) == haystack.at(j)) {
-            ++j;
-            ++k;
-            if (k == int(needle.size())) {
-                res.push_back(haystack.at(j));
-                k = partial_match_table.at(size_t(k));
+    size_t haystack_id = 0;
+    int needle_id = 0;
+    while (haystack_id < haystack.size() - 1) {
+        if (needle.at(size_t(needle_id)) == haystack.at(haystack_id)) {
+            ++haystack_id;
+            ++needle_id;
+            if (needle_id == int(needle.size())) {
+                res.push_back(haystack.at(haystack_id));
+                needle_id = partial_match_table.at(size_t(needle_id));
             }
         } else {
-            k = partial_match_table.at(size_t(k));
-            if (k < 0) {
-                ++j;
-                ++k;
+            needle_id = partial_match_table.at(size_t(needle_id));
+            if (needle_id < 0) {
+                ++haystack_id;
+                ++needle_id;
             }
         }
     }
@@ -135,6 +135,9 @@ struct Group {
 
 struct TokenToBeam {int64_t token_idx; int32_t beam_idx;};
 
+// GroupBeamSearcher processes logits prduced by a language model and accumulates beams using group beam search
+// algorithm. select_next_tokens() returns token ids selected by the algorithm and corresponding beam ids. These values
+// are used for next inference. select_next_tokens() returns empty, if all groups are completed
 struct GroupBeamSearcher {
     Parameters parameters;
     std::vector<Group> groups;
@@ -147,7 +150,7 @@ struct GroupBeamSearcher {
             group.ongoing.front().score = 0.0;
         }
     }
-    std::pair<std::vector<int64_t>, std::vector<int32_t>> process(const ov::Tensor& logits) {
+    std::pair<std::vector<int64_t>, std::vector<int32_t>> select_next_tokens(const ov::Tensor& logits) {
         std::vector<int64_t> next_tokens;
         std::vector<int32_t> next_beams;
         next_tokens.reserve(parameters.n_groups * parameters.group_size);
@@ -157,7 +160,7 @@ struct GroupBeamSearcher {
             if (!group.done) {
                 for (Beam& beam : group.ongoing) {
                     beam.global_beam_idx = beam_count;
-                    // beam.tokens.empty() holds for the first process() call.
+                    // beam.tokens.empty() holds for the first select_next_tokens() call.
                     // Every beam is constructed from the single batch at first call
                     if (!beam.tokens.empty()) {
                         ++beam_count;
