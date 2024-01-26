@@ -445,7 +445,6 @@ int main(int argc, char* argv[]) try {
         input_ids = tokenizer.get_tensor("input_ids");
         attention_mask = tokenizer.get_tensor("attention_mask");
         std::cout << "input lenghth " << input_ids.get_size() << std::endl;
-	TextStreamer text_streamer{std::move(detokenizer)};
 
         std::vector<int> output_ids;
         output_ids.reserve(input_ids.get_size());
