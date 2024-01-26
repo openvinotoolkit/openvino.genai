@@ -35,6 +35,7 @@ struct TextStreamer {
             std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
             token_cache.clear();
             print_len = 0;
+            return;
         }
         if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
             // Don't print incomplete text
