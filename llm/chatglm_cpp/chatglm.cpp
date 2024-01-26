@@ -232,6 +232,7 @@ struct TextStreamer {
             std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
             token_cache.clear();
             print_len = 0;
+	    return;
         }
         if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
             // Don't print incomplete text
@@ -433,13 +434,14 @@ int main(int argc, char* argv[]) try {
  
     auto model_inputs = compilemodel.inputs();
     auto inputs = compilemodel.inputs();
+    TextStreamer text_streamer{ std::move(detokenizer) };
 
     for (std::string input_text : sentences) {
         total_time = 0;
         count = 0;
         auto prompt_text ="<|user|> " + input_text + " <|assitant|>";
         std::cout << " #### sentence: index " << prompt_text << std::endl;
-        tokenize(tokenizer, prompt_text);
+        tokenize(tokenizer, prompt_text.c_str());
         input_ids = tokenizer.get_tensor("input_ids");
         attention_mask = tokenizer.get_tensor("attention_mask");
         std::cout << "input lenghth " << input_ids.get_size() << std::endl;
@@ -509,7 +511,7 @@ int main(int argc, char* argv[]) try {
                 }
             }
         }
-        std::cout << '\n';
+        text_streamer.end();
 
         if (count > 0) {
             std::cout << "Other Avg inference took total " << total_time << " ms token num " << count << " first " << first_time << " ms " << " avg " << total_time / (count) << " ms" << std::endl;
