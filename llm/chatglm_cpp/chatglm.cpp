@@ -45,8 +45,8 @@ namespace {
 
 struct Args {
     std::string ov_model_path = "openvino_model.xml";
-    std::string token_model_path = "tokenizer.xml";
-    std::string detoken_model_path = "detokenizer.xml";
+    std::string token_model_path = "openvino_tokenizer.xml";
+    std::string detoken_model_path = "openvino_detokenizer.xml";
     std::string device = "GPU";
     bool reduce_logits = false;
     bool do_sample = false;
@@ -63,8 +63,8 @@ static void usage(const std::string& prog) {
         << "options:\n"
         << "  -h, --help              show this help message and exit\n"
         << "  -m, --model PATH        Chatglm OpenVINO model path (default: openvino_model.xml)\n"
-        << "  -token PATH             Tokenizer model path (default: tokenizer.xml)\n"
-        << "  -detoken PATH           DeTokenizer model path (default: detokenizer.xml)\n"
+        << "  -token PATH             Tokenizer model path (default: openvino_tokenizer.xml)\n"
+        << "  -detoken PATH           DeTokenizer model path (default: openvino_detokenizer.xml)\n"
         << "  -d, --device            Device (default: GPU)\n"
         << "  --reduce_logits         Reduce_logits (default: False)\n"
         << "  --do_sample             Search (default: False)\n"
