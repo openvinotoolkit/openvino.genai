@@ -13,7 +13,6 @@ import utils.model_utils
 import torch
 import numpy as np
 from openvino.runtime import get_version
-from utils.config_class import DEFAULT_MODEL_CLASSES
 import PIL
 import hashlib
 import utils.metrics_print
