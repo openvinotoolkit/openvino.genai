@@ -76,6 +76,8 @@ int main(int argc, char* argv[]) try {
     position_ids.set_shape(input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
     constexpr size_t BATCH_SIZE = 1;
+    // Input values are persistent between inference calls.
+    // That allows to set values, which aren't going to change, only once
     lm.get_tensor("beam_idx").set_shape({BATCH_SIZE});
     lm.get_tensor("beam_idx").data<int32_t>()[0] = 0;
     lm.infer();
