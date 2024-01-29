@@ -554,7 +554,7 @@ def convert_sd(args):
         for weigths_compression_option in args.compress_weights:
             if not is_int8_compression(weigths_compression_option):
                 log.warning(
-                    "Weights compression {weigths_compression_option} does not supported for SD, will be ignored"
+                    f"Weights compression {weigths_compression_option} is not supported for SD, will be ignored"
                 )
                 continue
             model = OVStableDiffusionPipeline.from_pretrained(output_dir, compile=False)
@@ -601,7 +601,7 @@ def convert_lcm(args):
         for weigths_compression_option in args.compress_weights:
             if not is_int8_compression(weigths_compression_option):
                 log.warning(
-                    "Weights compression {weigths_compression_option} does not supported for LCM, will be ignored"
+                    f"Weights compression {weigths_compression_option} is not supported for LCM, will be ignored"
                 )
                 continue
             model = OVLatentConsistencyModelPipeline.from_pretrained(output_dir, compile=False)
@@ -684,7 +684,7 @@ def convert_sdxl(args):
         for weigths_compression_option in args.compress_weights:
             if not is_int8_compression(weigths_compression_option):
                 log.warning(
-                    "Weights compression {weigths_compression_option} does not supported for SDXL, will be ignored"
+                    f"Weights compression {weigths_compression_option} is not supported for SDXL, will be ignored"
                 )
                 continue
             ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
@@ -768,7 +768,7 @@ def convert_ldm_super_res(args):
         for weigths_compression_option in args.compress_weights:
             if not is_int8_compression(weigths_compression_option):
                 log.warning(
-                    "Weights compression {weigths_compression_option} does not supported for LDM, will be ignored"
+                    f"Weights compression {weigths_compression_option} is not supported for LDM, will be ignored"
                 )
                 continue
             ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
