@@ -12,6 +12,8 @@ Hiding KV-cache introduces a peculiarity for beam search algorithm. Beam search 
 
 To provide a possibility to implement beam search without accessing model internal state, a stateful LLM converted with `optimum-intel` or [llm_bench](../../../llm_bench/python/) introduces additional 1-dimentional `beam_idx` input. `beam_idx` must contain indices of elements in a batch which are supposed to be selected and evolve during next beam search iteration. Suppose there are two running beams. To proceed generating both beams at the next iteration, `beam_idx` values must be `[0, 1]`, pointing to batch elements `0` and `1`. To drop the last beam and split the other beam in two, `beam_idx` must be set to `[0, 0]`, this results in utilizing only the part of KV cache corresponding to zeroth element in the batch. The process of selecting appropriate entries in cache is called Cache Reorder.
 
+![](beam_idx.gif)
+
 The images below represent stateless and stateful LLM pipelines. The model has 4 inputs:
 1. `input_ids` contains the next selected token
 2. `attention_mask` is filled with `1`
