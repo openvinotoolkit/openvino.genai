@@ -15,7 +15,7 @@ Prepare a python environment and install dependencies:
 ```shell
 conda create -n openvino_lcm_cpp python==3.10
 conda activate openvino_lcm_cpp
-conda install openvino eigen c-compiler cxx-compiler make
+conda install -c conda-forge openvino eigen c-compiler cxx-compiler make
 ```
 
 ## Step 2: Latent Consistency Model and Tokenizer models
@@ -52,7 +52,7 @@ Download and put safetensors and model IR into the models folder.
 ## Step 3: Build the LCM application
 
 ```shell
-conda activate LCM-CPP
+conda activate openvino_lcm_cpp
 cmake -DCMAKE_BUILD_TYPE=Release -S . -B build
 cmake --build build --config Release --parallel
 ```
@@ -66,7 +66,7 @@ Usage:
 ```
 
 * `-p, --posPrompt arg` Initial positive prompt for SD  (default: cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting)
-* `-d, --device arg`    AUTO, CPU, or GPU (default: CPU)
+* `-d, --device arg`    AUTO, CPU, or GPU. Doesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only (default: CPU)
 * `--step arg`          Number of diffusion step ( default: 20)
 * `-s, --seed arg`      Number of random seed to generate latent (default: 42)
 * `--num arg`           Number of image output(default: 1)
@@ -79,6 +79,9 @@ Usage:
 * `-l, --loraPath arg`  Specify path of lora file. (*.safetensors). (default: )
 * `-a, --alpha arg`     alpha for lora (default: 0.75)
 * `-h, --help`          Print usage
+
+> [!NOTE]
+> The tokenizer model will always be loaded to CPU: [OpenVINO tokenizers](https://github.com/openvinotoolkit/openvino_contrib/tree/master/modules/custom_operations/user_ie_extensions/tokenizer/python#readme) can be inferred on a CPU device only.
 
 Example:
 
