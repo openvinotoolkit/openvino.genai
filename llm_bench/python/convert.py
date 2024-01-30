@@ -99,6 +99,10 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
     precision = args.precision
     gptq_applied = is_gptq(model_config)
     pt_compress_weights = is_torch_compression(args)
+    if args.stateful:
+        log.warning(
+            "usage --stateful flag is deprecated and will be removed in future, default behaviour is export stateful model"
+            " please use --disable_stateful if you need model without state")
     if not compress_only:
         model_config = model.config
         model = patch_model_for_optimum_export(model)
@@ -133,7 +137,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             device="cpu",
             compression_option="fp16" if args.precision == "FP16" else None,
             model_kwargs={},
-            stateful=args.stateful,
+            stateful=not args.disable_stateful,
         )
         save_tokenizer(tok, ov_out_dir)
 
@@ -195,7 +199,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
                 device="cpu",
                 compression_option="fp16" if args.precision == "FP16" else None,
                 model_kwargs={},
-                stateful=args.stateful,
+                stateful=not args.disable_stateful,
             )
             save_tokenizer(tok, pt_out_dir)
     return
@@ -550,7 +554,7 @@ def convert_sd(args):
         for weigths_compression_option in args.compress_weights:
             if not is_int8_compression(weigths_compression_option):
                 log.warning(
-                    "Weights compression {weigths_compression_option} does not supported for SD, will be ignored"
+                    f"Weights compression {weigths_compression_option} is not supported for SD, will be ignored"
                 )
                 continue
             model = OVStableDiffusionPipeline.from_pretrained(output_dir, compile=False)
@@ -597,7 +601,7 @@ def convert_lcm(args):
         for weigths_compression_option in args.compress_weights:
             if not is_int8_compression(weigths_compression_option):
                 log.warning(
-                    "Weights compression {weigths_compression_option} does not supported for LCM, will be ignored"
+                    f"Weights compression {weigths_compression_option} is not supported for LCM, will be ignored"
                 )
                 continue
             model = OVLatentConsistencyModelPipeline.from_pretrained(output_dir, compile=False)
@@ -680,7 +684,7 @@ def convert_sdxl(args):
         for weigths_compression_option in args.compress_weights:
             if not is_int8_compression(weigths_compression_option):
                 log.warning(
-                    "Weights compression {weigths_compression_option} does not supported for SDXL, will be ignored"
+                    f"Weights compression {weigths_compression_option} is not supported for SDXL, will be ignored"
                 )
                 continue
             ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
@@ -764,7 +768,7 @@ def convert_ldm_super_res(args):
         for weigths_compression_option in args.compress_weights:
             if not is_int8_compression(weigths_compression_option):
                 log.warning(
-                    "Weights compression {weigths_compression_option} does not supported for LDM, will be ignored"
+                    f"Weights compression {weigths_compression_option} is not supported for LDM, will be ignored"
                 )
                 continue
             ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)

@@ -110,6 +110,13 @@ def add_stateful_model_arguments(parser: argparse.ArgumentParser):
         'Additional operations are inserted into the model to handle cache state (Gathers, ShapeOf, etc.)',
     )
 
+    parser.add_argument(
+        '--disable-stateful',
+        action="store_true",
+        default=None,
+        help="Disable stateful transformation for model conversion"
+    )
+
 
 def analyze_args(args):
     model_args = {}

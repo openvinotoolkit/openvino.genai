@@ -13,13 +13,10 @@ import utils.model_utils
 import torch
 import numpy as np
 from openvino.runtime import get_version
-from utils.config_class import DEFAULT_MODEL_CLASSES
 import PIL
 import hashlib
 import utils.metrics_print
 import utils.output_csv
-import utils.hook_greedy_search
-import utils.hook_beam_search
 import traceback
 from transformers import set_seed
 from PIL import Image
@@ -27,8 +24,6 @@ from utils.memory_profile import MemConsumption
 from utils.hook_forward import StableDiffusionHook
 import utils.output_json
 
-HOOK_BEAM_SEARCH_UTILS = {'pt': utils.hook_beam_search, 'ov': utils.hook_beam_search}
-HOOK_GREEDY_SEARCH_UTILS = {'pt': utils.hook_greedy_search, 'ov': utils.hook_greedy_search}
 FW_UTILS = {'pt': utils.pt_utils, 'ov': utils.ov_utils}
 
 DEFAULT_INFERENCE_STEPS = 20
@@ -168,17 +163,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
 
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
-    model, tokenizer, pretrain_time = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
-    # Override forward for statistic each forward time.
-    default_model_type = DEFAULT_MODEL_CLASSES[args['use_case']]
-    model_type = args.get('model_type', default_model_type)
-
-    if args['num_beams'] > 1:
-        bench_hook = HOOK_BEAM_SEARCH_UTILS[framework].BeamSearchHook()
-    else:
-        bench_hook = HOOK_GREEDY_SEARCH_UTILS[framework].GreedySearchHook()
-    bench_hook.new_forward(model, model_type)
-
+    model, tokenizer, pretrain_time, bench_hook = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
     iter_data_list = []
     input_text_list = utils.model_utils.get_prompts(args)
     if len(input_text_list) == 0:
