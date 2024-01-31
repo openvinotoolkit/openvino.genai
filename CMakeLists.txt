@@ -17,3 +17,7 @@ target_link_libraries(llm PRIVATE user_ov_extensions)
 add_subdirectory(llm/chatglm_cpp)
 target_compile_definitions(chatglm PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
 target_link_libraries(chatglm PRIVATE user_ov_extensions)
+
+add_subdirectory(llm/llama_cpp)
+target_compile_definitions(llama PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
+target_link_libraries(llama PRIVATE user_ov_extensions)
