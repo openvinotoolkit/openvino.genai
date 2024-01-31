@@ -23,6 +23,7 @@ from PIL import Image
 from utils.memory_profile import MemConsumption
 from utils.hook_forward import StableDiffusionHook
 import utils.output_json
+import uuid
 
 FW_UTILS = {'pt': utils.pt_utils, 'ov': utils.ov_utils}
 
@@ -218,9 +219,9 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
         mem_consumption.clear_max_memory_consumption()
     for i in range(args['batch_size']):
         if num == 0:
-            rslt_img_fn = args['model_name'] + '_img' + str(image_id) + '_bs' + str(args['batch_size']) + '-' + str(i + 1) + '_img_warm-up.png'
+            rslt_img_fn = args['model_name'] + '_img' + str(image_id) + '_bs' + str(args['batch_size']) + '-' + str(i + 1) + str(uuid.uuid4().hex) + '_img_warm-up.png'
         else:
-            rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_img' + str(image_id) + '_bs' + str(args['batch_size']) + '-' + str(i + 1) + '.png'
+            rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_img' + str(image_id) + '_bs' + str(args['batch_size']) + '-' + str(i + 1) + str(uuid.uuid4().hex) + '.png'
         res[i].save(rslt_img_fn)
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
     generation_time = end - start
