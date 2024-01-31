@@ -430,7 +430,7 @@ int main(int argc, char* argv[]) try {
     ov::InferRequest ireq = compilemodel.create_infer_request();
     duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Compile LLM model took " << duration_ms << " ms" << std::endl;
-
+    /*
     auto supported_properties = compilemodel.get_property(ov::supported_properties);
     std::cout << "Model:" << std::endl;
     for (const auto& cfg : supported_properties) {
@@ -453,7 +453,7 @@ int main(int argc, char* argv[]) try {
         else {
             std::cout << "  " << cfg << ": " << prop.as<std::string>() << std::endl;
         }
-    }
+    } */
  
     auto model_inputs = compilemodel.inputs();
     auto inputs = compilemodel.inputs();
@@ -494,8 +494,8 @@ int main(int argc, char* argv[]) try {
 
         size_t vocab_size = ireq.get_tensor("logits").get_shape().back();
 
-        float* logits = ireq.get_tensor("logits").data<float>();
-        //float* logits = ireq.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
+        //float* logits = ireq.get_tensor("logits").data<float>();
+        float* logits = ireq.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
 
         int64_t out_token = get_out_token_id(output_ids, logits, vocab_size, args);
         output_ids.emplace_back(((int)out_token));
