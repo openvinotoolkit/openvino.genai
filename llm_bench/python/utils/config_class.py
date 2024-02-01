@@ -93,6 +93,7 @@ USE_CASES = {
         'qwen',
         'zephyr',
         'mistral',
+        'mixtral',
         'yi-',
         'phi-'
     ],

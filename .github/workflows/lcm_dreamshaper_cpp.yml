@@ -2,8 +2,10 @@ name: lcm_dreamshaper
 on:
   pull_request:
     paths:
-      - image_generation/lcm_dreamshaper_v7/cpp/src/**
-      - .github/workflows/lcm_dreamshaper_v7_cpp.yml
+      - image_generation/lcm_dreamshaper_v7/cpp/**
+      - image_generation/common/**
+      - .github/workflows/lcm_dreamshaper_cpp.yml
+      - thirdparty/openvino_contrib
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -17,4 +19,28 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: ./image_generation/lcm_dreamshaper_v7/cpp/set_up_and_run.sh
+      - name: Initialize OpenVINO / libeigen3-dev
+        run: |
+          mkdir openvino
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.0.0-14004-a240ae8fadd/l_openvino_toolkit_ubuntu20_2024.0.0.dev20240116_x86_64.tgz | tar --directory ./openvino/ --strip-components 1 -xz
+          sudo ./openvino/install_dependencies/install_openvino_dependencies.sh
+          sudo apt install libeigen3-dev
+      - name: Download / convert a model / tokenizer
+        run: |
+          source ./openvino/setupvars.sh
+          cd ./image_generation/lcm_dreamshaper_v7/cpp/scripts/
+          python -m pip install -U pip
+          python -m pip install -r ./requirements.txt
+          python -m pip install ../../../../thirdparty/openvino_contrib/modules/custom_operations/
+          python convert_model.py -lcm "SimianLuo/LCM_Dreamshaper_v7" -t "FP16"
+      - name: Build app
+        run: |
+          source ./openvino/setupvars.sh
+          cd ./image_generation/lcm_dreamshaper_v7/cpp/
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release --parallel
+      - name: Run app
+        run: |
+          source ./openvino/setupvars.sh
+          cd ./image_generation/lcm_dreamshaper_v7/cpp/build/
+          ./lcm_dreamshaper

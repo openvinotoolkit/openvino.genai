@@ -35,6 +35,7 @@ struct TextStreamer {
             std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
             token_cache.clear();
             print_len = 0;
+	    return;
         }
         if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
             // Don't print incomplete text
@@ -76,6 +77,8 @@ int main(int argc, char* argv[]) try {
     position_ids.set_shape(input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
     constexpr size_t BATCH_SIZE = 1;
+    // Input values are persistent between inference calls.
+    // That allows to set values, which aren't going to change, only once
     lm.get_tensor("beam_idx").set_shape({BATCH_SIZE});
     lm.get_tensor("beam_idx").data<int32_t>()[0] = 0;
     lm.infer();
@@ -108,8 +111,8 @@ int main(int argc, char* argv[]) try {
     lm.reset_state();
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
-    return 1;
+    return EXIT_FAILURE;
 } catch (...) {
     std::cerr << "Non-exception object thrown\n";
-    return 1;
+    return EXIT_FAILURE;
 }
