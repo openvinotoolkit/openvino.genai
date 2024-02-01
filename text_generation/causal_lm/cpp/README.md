@@ -10,9 +10,12 @@ A common LLM inference optimisation is introduction of past KV (key/value)-cache
 
 Hiding KV-cache introduces a peculiarity for beam search algorithm. Beam search suggests batched inference of multiple beams. The design described here so far would result in generating multiple independent sequences of tokens. Beam search algorithm, on the other hand, requires removing some of the ongoing beams and splitting other beams to multiple branches. Beam removal requires deleting corresponding KV-cache entry and beam splitting requires copying corresponding KV-cache values.
 
-To provide a possibility to implement beam search without accessing model internal state, a stateful LLM converted with `optimum-intel` or [llm_bench](../../../llm_bench/python/) introduces additional 1-dimentional `beam_idx` input. `beam_idx` must contain indices of elements in a batch which are supposed to be selected and evolve during next beam search iteration. Suppose there are two running beams. To proceed generating both beams at the next iteration, `beam_idx` values must be `[0, 1]`, pointing to batch elements `0` and `1`. To drop the last beam and split the other beam in two, `beam_idx` must be set to `[0, 0]`, this results in utilizing only the part of KV cache corresponding to zeroth element in the batch. The process of selecting appropriate entries in cache is called Cache Reorder.
+To provide a possibility to implement beam search without accessing model internal state, a stateful LLM converted with `optimum-intel` or [llm_bench](../../../llm_bench/python/) introduces additional 1-dimentional `beam_idx` input. `beam_idx` must contain indices of elements in a batch which are supposed to be selected and evolve during next beam search iteration. There's only one beam when the generation starts. That beam corresponds to initial prompt. `beam_idx` must have values `[0, 0]` to keep initial beam and introduce its copy. Leveraging dynamic batch size allows to change the number of beams dynamicly. `beam_idx` must have `[1]` value to remove zeroth sequence and keep second beam only.
 
-![](beam_idx.gif)
+Suppose there are two running beams. To proceed generating both beams at the next iteration, `beam_idx` values must be `[0, 1]`, pointing to batch elements `0` and `1`. To drop the last beam and split the other beam in two, `beam_idx` must be set to `[0, 0]`, this results in utilizing only the part of KV cache corresponding to zeroth element in the batch. The process of selecting appropriate entries in cache is called Cache Reorder.
+
+![](beam_idx-fork.gif)
+![](beam_idx-drop.gif)
 
 The images below represent stateless and stateful LLM pipelines. The model has 4 inputs:
 1. `input_ids` contains the next selected token
