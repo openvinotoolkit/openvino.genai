@@ -84,13 +84,13 @@ def get_fp_path(args, model_subpath):
     return None
 
 
-def save_tokenizer(tokenizer, out_dir: Union[str, Path] , add_ov_tokenizer: bool = False):
+def save_tokenizer(tokenizer, out_dir: Union[str, Path], save_ov_tokenizer: bool = False):
     try:
         tokenizer.save_pretrained(out_dir)
     except Exception as e:
         log.error(f"Huggingface tokenizer loading failed with {e}")
 
-    if not add_ov_tokenizer or not is_openvino_tokenizers_available():
+    if not save_ov_tokenizer or not is_openvino_tokenizers_available():
         return
 
     from optimum.exporters.openvino.convert import export_tokenizer
@@ -130,7 +130,7 @@ def save_ov_model_helper(ov_model, out_path, model_name='openvino_model', fp16=F
     model_name = model_name or "openvino_model"
     save_model(ov_model, Path(out_path) / f'{model_name}.xml', compress_to_fp16=fp16)
     if tok is not None:
-        save_tokenizer(tok, out_path)
+        save_tokenizer(tok, out_path, save_ov_tokenizer=True)
     if config is not None:
         config.save_pretrained(out_path)
 
