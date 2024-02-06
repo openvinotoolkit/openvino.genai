@@ -1,6 +1,6 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.2.0+cpu
 diffusers==0.26.2
-transformers==4.37.1
+transformers==4.37.2
 optimum-intel[nncf,openvino]==1.13.0
 huggingface_hub[cli]==0.20.3
