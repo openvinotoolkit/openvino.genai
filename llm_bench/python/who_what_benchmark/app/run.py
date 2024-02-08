@@ -35,9 +35,9 @@ def load_model(model_id):
 def load_prompts(args):
     if args.dataset is None:
         return None
-    split = "val"
-    if args.limit is not None:
-        split += f":{args.limit}"
+    split = "validation"
+    if args.split is not None:
+        split = args.split
     if "," in args.dataset:
         vals = args.dataset.split(",")
         path = vals[0]
@@ -47,7 +47,7 @@ def load_prompts(args):
         name = None
     data = load_dataset(path=path, name=name, split=split)
 
-    res = data[args.dataset_filed]
+    res = data[args.dataset_field]
 
     res = {"questions": list(res)}
 
@@ -105,17 +105,17 @@ def parse_args():
         "If None then internal list of prompts will be used.",
     )
     parser.add_argument(
-        "--dataset_filed",
+        "--dataset_field",
         type=str,
         default="questions",
         help="The name of field in dataset for prompts. For example question or context in squad."
         "Will be used only if dataset is defined.",
     )
     parser.add_argument(
-        "--limit",
-        type=int,
+        "--split",
+        type=str,
         default=None,
-        help="Number of prompts for dataset."
+        help="Split of prompts from dataset (for example train, validation, train[:32])."
         "Will be used only if dataset is defined.",
     )
     parser.add_argument(
