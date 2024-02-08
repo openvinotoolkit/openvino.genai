@@ -1,0 +1,9 @@
+transformers>=4.35.2
+sentence-transformers>=2.2.2
+openvino>=2023.3.0
+openvino-telemetry==2023.2.1
+optimum>=1.16.0
+optimum-intel[openvino]>1.12
+pandas>=2.0.3
+numpy>=1.23.5
+tqdm>=4.66.1
