@@ -4,8 +4,18 @@ import os
 import pandas as pd
 import whowhatbench
 from datasets import load_dataset
+from optimum.exporters import TasksManager
 from optimum.intel.openvino import OVModelForCausalLM
+from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from transformers import AutoConfig, AutoTokenizer
+
+TasksManager._SUPPORTED_MODEL_TYPE[
+    "stablelm-epoch"
+] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
+NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args(
+    num_layers="num_hidden_layers",
+    num_attention_heads="num_attention_heads",
+)
 
 
 def load_model(model_id):
@@ -61,7 +71,7 @@ def parse_args():
         help="Model to comparison with base_model. Usually it is compressed, quantized version of base_model.",
     )
     parser.add_argument(
-        "--tokenizer_path",
+        "--tokenizer",
         default=None,
         help="Tokenizer for divergency metric. If not defined then will be load from base_model or target_model.",
     )
@@ -119,8 +129,8 @@ def parse_args():
 
 
 def check_args(args):
-    assert args.base_model is None and args.target_model is None
-    assert args.base_model is None and args.gt_data is None
+    assert not (args.base_model is None and args.target_model is None)
+    assert not (args.base_model is None and args.gt_data is None)
 
 
 def load_tokenizer(args):
