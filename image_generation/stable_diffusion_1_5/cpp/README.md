@@ -78,7 +78,7 @@ Usage:
 
 * `-p, --posPrompt arg` Initial positive prompt for SD  (default: cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting)
 * `-n, --negPrompt arg` Default is empty with space (default: )
-* `-d, --device arg`    AUTO, CPU, or GPU (default: CPU)
+* `-d, --device arg`    AUTO, CPU, or GPU. Doesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only (default: CPU)
 * `--step arg`          Number of diffusion step ( default: 20)
 * `-s, --seed arg`      Number of random seed to generate latent (default: 42)
 * `--num arg`           Number of image output(default: 1)
@@ -91,6 +91,9 @@ Usage:
 * `-l, --loraPath arg`  Specify path of lora file. (*.safetensors). (default: )
 * `-a, --alpha arg`     alpha for lora (default: 0.75)
 * `-h, --help`          Print usage
+
+> [!NOTE]
+> The tokenizer model will always be loaded to CPU: [OpenVINO tokenizers](https://github.com/openvinotoolkit/openvino_contrib/tree/master/modules/custom_operations/user_ie_extensions/tokenizer/python#readme) can be inferred on a CPU device only.
 
 #### Examples
 
