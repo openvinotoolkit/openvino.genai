@@ -21,7 +21,7 @@ NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args
 def load_model(model_id):
     try:
         model = OVModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
-    except:  # pylint: disable=bare-except
+    except:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
         model = OVModelForCausalLM.from_pretrained(
             model_id,
