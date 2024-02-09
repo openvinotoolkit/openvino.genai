@@ -54,22 +54,27 @@ metrics_per_prompt, metrics = evaluator.score(optimized_model, test_data=prompts
 ### CLI example
 
 ```
-# run text generation for original model
-python3 generate.py --modeltype causal --model meta-llama/Llama-2-7b-chat-hf --save_generations_path gold_llama-2-7b-chat-hf.csv --csv simple.csv --trust_remote_code
-
-# convert and compress llama with optimum-intel and nncf and save it to some folder
+wwb --help
 ...
 
-#run text generation for compressed models
-python3 generate.py --modeltype ov_causal --model /home/user/models/meta-llama/Llama-2-7b-chat-hf-int8 --save_generations_path predict_llama-2-7b-chat-hf_int8.csv --csv simple.csv --trust_remote_code
+# run ground truth generation for uncompressed model on the first 32 samples from squad dataset
+# ground truth will be saved in llama_2_7b_squad_gt.csv file
+wwb --base_model meta-llama/Llama-2-7b-chat-hf --gt_data llama_2_7b_squad_gt.csv --dataset squad --split validation[:32] --dataset_field question
 
-python3 generate.py --modeltype ov_causal --model /home/user/models/meta-llama/Llama-2-7b-chat-hf-int4_sym --save_generations_path predict_llama-2-7b-chat-hf_int4_sym.csv --csv simple.csv --trust_remote_code
+# run comparison with compressed model on the first 32 samples from squad dataset
+wwb --target_model /home/user/models/Llama_2_7b_chat_hf_int8 --gt_data llama_2_7b_squad_gt.csv --dataset squad --split validation[:32] --dataset_field question
 
-python3 generate.py --modeltype ov_causal --model /home/user/models/meta-llama/Llama-2-7b-chat-hf-int4_asym --save_generations_path predict_llama-2-7b-chat-hf_int4_asym.csv --csv simple.csv --trust_remote_code
+# output will be like this
+#   similarity        FDT        SDT  FDT norm  SDT norm
+# 0    0.972823  67.296296  20.592593  0.735127  0.151505
 
+# run ground truth generation for uncompressed model on internal set of questions
+# ground truth will be saved in llama_2_7b_squad_gt.csv file
+wwb --base_model meta-llama/Llama-2-7b-chat-hf --gt_data llama_2_7b_wwb_gt.csv
 
-for file in predict_llama-2-7b*; do
-python3 evaluate.py --gold gold_llama-2-7b-chat-hf.csv --prediction $file --save_evaluation_path eval_$file 2>&1 | tee -a eval.log
+# run comparison with compressed model on internal set of questions
+wwb --target_model /home/user/models/Llama_2_7b_chat_hf_int8 --gt_data llama_2_7b_wwb_gt.csv
+
 done
 ```
 
@@ -83,7 +88,5 @@ done
 
 ### Notes
 
-* In the file save_evaluation_path you can see per sample similarity metrics.
-* Input CSV file for generation must contain column with name `questions`. For example see simple.csv
-* You can see example of generation in file generations.csv
-* evaluate.py uses for similarity measurement [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2) but you can use other similar network.
+* The generation of ground truth on uncompressed model must be run before comparison with compressed model.
+* WWB uses [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2) for similarity measurement but you can use other similar network.
