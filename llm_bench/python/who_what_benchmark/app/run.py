@@ -21,7 +21,7 @@ NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args
 def load_model(model_id):
     try:
         model = OVModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
-    except:
+    except ValueError:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
         model = OVModelForCausalLM.from_pretrained(
             model_id,
@@ -39,9 +39,9 @@ def load_prompts(args):
     if args.split is not None:
         split = args.split
     if "," in args.dataset:
-        vals = args.dataset.split(",")
-        path = vals[0]
-        name = vals[1]
+        path_name = args.dataset.split(",")
+        path = path_name[0]
+        name = path_name[1]
     else:
         path = args.dataset
         name = None
@@ -94,7 +94,8 @@ def parse_args():
         type=str,
         default="sentence-transformers/all-mpnet-base-v2",
         help="Model for measurement of similarity between base_model and target_model."
-        "By default it is sentence-transformers/all-mpnet-base-v2, but for Chinese LLMs better to use sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2.",
+        "By default it is sentence-transformers/all-mpnet-base-v2,"
+        "but for Chinese LLMs better to use sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2.",
     )
     parser.add_argument(
         "--dataset",
