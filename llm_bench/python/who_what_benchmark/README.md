@@ -59,10 +59,10 @@ wwb --help
 
 # run ground truth generation for uncompressed model on the first 32 samples from squad dataset
 # ground truth will be saved in llama_2_7b_squad_gt.csv file
-wwb --base_model meta-llama/Llama-2-7b-chat-hf --gt_data llama_2_7b_squad_gt.csv --dataset squad --split validation[:32] --dataset_field question
+wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_squad_gt.csv --dataset squad --split validation[:32] --dataset-field question
 
 # run comparison with compressed model on the first 32 samples from squad dataset
-wwb --target_model /home/user/models/Llama_2_7b_chat_hf_int8 --gt_data llama_2_7b_squad_gt.csv --dataset squad --split validation[:32] --dataset_field question
+wwb --target-model /home/user/models/Llama_2_7b_chat_hf_int8 --gt-data llama_2_7b_squad_gt.csv --dataset squad --split validation[:32] --dataset-field question
 
 # output will be like this
 #   similarity        FDT        SDT  FDT norm  SDT norm
@@ -70,10 +70,10 @@ wwb --target_model /home/user/models/Llama_2_7b_chat_hf_int8 --gt_data llama_2_7
 
 # run ground truth generation for uncompressed model on internal set of questions
 # ground truth will be saved in llama_2_7b_squad_gt.csv file
-wwb --base_model meta-llama/Llama-2-7b-chat-hf --gt_data llama_2_7b_wwb_gt.csv
+wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv
 
 # run comparison with compressed model on internal set of questions
-wwb --target_model /home/user/models/Llama_2_7b_chat_hf_int8 --gt_data llama_2_7b_wwb_gt.csv
+wwb --target-model /home/user/models/Llama_2_7b_chat_hf_int8 --gt-data llama_2_7b_wwb_gt.csv
 
 done
 ```

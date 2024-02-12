@@ -12,5 +12,5 @@ setup(
     description="Short test for LLMs",
     packages=find_packages(),
     install_requires=required,
-    entry_points={"console_scripts": ["wwb=app.run:main"]},
+    entry_points={"console_scripts": ["wwb=whowhatbench.wwb:main"]},
 )
