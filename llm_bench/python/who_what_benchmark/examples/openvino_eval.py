@@ -1,22 +1,19 @@
 import whowhatbench
-from bigdl.llm.transformers import AutoModelForCausalLM as BigdlForCausalLM
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from optimum.intel.openvino import OVModelForCausalLM
+from transformers import AutoTokenizer
 
-model_id = "meta-llama/Llama-2-7b-chat-hf"
+model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
-# how to download https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGUF
-model_llamacpp_id = "/path_to_the_model/llama-2-7b-chat.Q4_0.gguf"
-
-
-model_int4 = BigdlForCausalLM.from_gguf(model_llamacpp_id)[0]
-
-model = AutoModelForCausalLM.from_pretrained(model_id, device_map="auto")
+model = OVModelForCausalLM.from_pretrained(model_id, load_in_8bit=False, export=True)
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 
 
 evaluator = whowhatbench.Evaluator(base_model=model, tokenizer=tokenizer)
 
-all_metrics_per_question, all_metrics = evaluator.score(model_int4)
+model_int8 = OVModelForCausalLM.from_pretrained(
+    model_id, load_in_8bit=True, export=True
+)
+all_metrics_per_question, all_metrics = evaluator.score(model_int8)
 
 print(all_metrics_per_question)
 print(all_metrics)

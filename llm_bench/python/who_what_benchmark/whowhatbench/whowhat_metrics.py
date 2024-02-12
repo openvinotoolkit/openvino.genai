@@ -35,6 +35,10 @@ def evaluate_divergency(tokenizer, data_gold, data_prediction):
     for a_answer, b_answer in zip(answers_gold, answers_prediction):
         a_indexes = tokenizer.encode(a_answer, return_tensors="pt").squeeze().tolist()
         b_indexes = tokenizer.encode(b_answer, return_tensors="pt").squeeze().tolist()
+        if isinstance(a_indexes, int):
+            a_indexes = list([a_indexes])
+        if isinstance(b_indexes, int):
+            b_indexes = list([b_indexes])
         fdt_max.append(len(a_indexes))
 
         matcher = SequenceMatcher(None, a_indexes, b_indexes)
