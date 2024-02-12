@@ -181,26 +181,6 @@ class OVMPTModel(OVModelForCausalLM):
         return CausalLMOutputWithPast(logits=logits, past_key_values=past_key_values)
 
 
-class OVFalconModel(OVModelForCausalLM):
-    def _reshape(
-        self,
-        model: Model,
-        *args,
-        **kwargs,
-    ):
-        shapes = {}
-        for inputs in model.inputs:
-            shapes[inputs] = inputs.get_partial_shape()
-            if shapes[inputs].rank.get_length() in [1, 2, 4]:
-                shapes[inputs][0] = -1
-            if shapes[inputs].rank.get_length() in [2, 3]:
-                shapes[inputs][1] = -1
-            if shapes[inputs].rank.get_length() == 4:
-                shapes[inputs][2] = -1
-        model.reshape(shapes)
-        return model
-
-
 class OVLDMSuperResolutionPipeline(DiffusionPipeline):
     def __init__(self, model_path: Path, core: Core, device: str):
         super().__init__()
