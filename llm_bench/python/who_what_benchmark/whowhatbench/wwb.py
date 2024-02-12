@@ -2,12 +2,13 @@ import argparse
 import os
 
 import pandas as pd
-import whowhatbench
 from datasets import load_dataset
 from optimum.exporters import TasksManager
 from optimum.intel.openvino import OVModelForCausalLM
 from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from transformers import AutoConfig, AutoTokenizer
+
+from . import Evaluator
 
 TasksManager._SUPPORTED_MODEL_TYPE[
     "stablelm-epoch"
@@ -159,7 +160,7 @@ def main():
     prompts = load_prompts(args)
     tokenizer = load_tokenizer(args)
     if args.gt_data and os.path.exists(args.gt_data):
-        evaluator = whowhatbench.Evaluator(
+        evaluator = Evaluator(
             base_model=None,
             gt_data=args.gt_data,
             test_data=prompts,
@@ -167,7 +168,7 @@ def main():
         )
     else:
         base_model = load_model(args.base_model)
-        evaluator = whowhatbench.Evaluator(
+        evaluator = Evaluator(
             base_model=base_model, test_data=prompts, tokenizer=tokenizer
         )
         if args.gt_data:
