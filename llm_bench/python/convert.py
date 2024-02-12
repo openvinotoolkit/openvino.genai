@@ -1013,117 +1013,31 @@ def convert_chatglm(args):
 
 
 def convert_falcon(args):
-    def convert_to_ov(pt_model, tok, out_path, compress_to_fp16=False):
-        outs = pt_model(input_ids=torch.ones((1, 10), dtype=torch.long))
-        inputs = ["input_ids"]
-        outputs = ["logits"]
-
-        dynamic_shapes = {"input_ids": {1: "seq_len"}}
-
-        for idx in range(len(outs.past_key_values)):
-            inputs.extend([f"past_key_values.{idx}.key", f"past_key_values.{idx}.value"])
-            dynamic_shapes[inputs[-1]] = {1: "past_sequence + sequence"}
-            dynamic_shapes[inputs[-2]] = {1: "past_sequence + sequence"}
-            outputs.extend([f"present.{idx}.key", f"present.{idx}.value"])
-
-        dummy_inputs = {
-            "input_ids": torch.ones((1, 2), dtype=torch.long),
-            "past_key_values": outs.past_key_values,
-        }
-        flatten_inputs = flattenize_inputs(dummy_inputs.values())
-        pt_model.config.torchscript = True
-        ov_model = convert_model(pt_model, example_input=dummy_inputs)
-        for port, input_data, input_name in zip(ov_model.inputs[1:], flatten_inputs[1:], inputs[1:]):
-            port.get_node().set_element_type(OVType.f32)
-            shape = list(input_data.shape)
-            shape[2] = -1
-            port.get_node().set_partial_shape(PartialShape(shape))
-            port.get_tensor().set_names({input_name})
-        for idx, out_name in enumerate(outputs):
-            ov_model.outputs[idx].get_tensor().set_names({out_name})
-        ov_model.validate_nodes_and_infer_types()
-        save_ov_model_helper(ov_model, out_path, fp16=compress_to_fp16, tok=tok, config=pt_model.config)
-
-    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    config = AutoConfig.from_pretrained(args.model_id)
     cuda, post_init = patch_gptq(config)
     model_kwargs = {}
     precision = args.precision
-    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
-    cuda, post_init = patch_gptq(config)
-    model_kwargs = {}
     compression_only = (
         args.compress_weights
         and not args.force_convert
         and not is_torch_compression(args)
         and is_ov_model_provided(args.model_id, args.output_dir, args.precision)
     )
-    gptq_applied = is_gptq(config)
     if post_init is not None:
         model_kwargs = {"torch_dtype": torch.float32}
     pt_model = None
-    tokenizer_id = args.tokenizer_id or args.model_id
-    tok = AutoTokenizer.from_pretrained(tokenizer_id, trust_remote_code=True)
     gptq_applied = is_gptq(config)
     precision = precision if not gptq_applied else GPTQ_DIR.format(precision=args.precision)
-    if post_init is not None:
-        model_kwargs = {"torch_dtype": torch.float32}
-    pt_model = None
-    compress_to_fp16 = is_fp16(args)
-    ov_out_path = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
     if not compression_only:
         pt_model = AutoModelForCausalLM.from_pretrained(
             args.model_id,
-            config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
-            trust_remote_code=True,
+            config=AutoConfig.from_pretrained(args.model_id),
             **model_kwargs,
         )
         pt_model.config.use_cache = True
         pt_model.eval()
 
-        if args.save_orig:
-            pt_out_dir = Path(args.output_dir) / PYTORCH_DIR
-            pt_model.save_pretrained(pt_out_dir)
-            save_tokenizer(tok, pt_out_dir)
-
-        convert_to_ov(pt_model, tok, ov_out_path, compress_to_fp16)
-
-        if is_torch_compression(args):
-            compression_modes = []
-            for cw in args.compress_weights:
-                if is_int8_compression(cw):
-                    compression_modes.append(cw)
-            assert compression_modes, "Only INT8 compression supported for PyTorch backend"
-            for compress_mode in compression_modes:
-                compression_options = COMPRESSION_OPTIONS[compress_mode]
-                pt_compressed_model = compress_weights(pt_model, **compression_options)
-                pt_comp_path = (
-                    Path(args.output_dir)
-                    / PYTORCH_DIR
-                    / OV_DIR
-                    / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compress_mode)
-                )
-                convert_to_ov(pt_compressed_model, tok, pt_comp_path, compress_to_fp16)
-
-    if is_ov_compression(args):
-        fp_path = get_fp_path(args, "openvino_model.xml")
-        if compression_only:
-            log.info(
-                f"Model conversion to {args.precision} will be skipped as found converted model {fp_path}. "
-                "If it is not expected behaviour, please remove previously converted model or use --force_convert option"
-            )
-        ov_model = Core().read_model(fp_path)
-        for compress_option in args.compress_weights:
-            log.info(f"Compress model weights to {compress_option}")
-            ov_compressed_path = get_compressed_path(args.output_dir, args.precision, compress_option)
-            compress_ov_model_weights_helper(
-                ov_model,
-                tok,
-                pt_model.config,
-                ov_compressed_path,
-                compress_to_fp16,
-                compress_option,
-                args,
-            )
+    convert_optimum_causallm_base(pt_model, args, config, compression_only)
 
     if post_init is not None:
         unpatch_gptq(cuda, post_init)
