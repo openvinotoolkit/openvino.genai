@@ -165,13 +165,15 @@ def main():
             gt_data=args.gt_data,
             test_data=prompts,
             tokenizer=tokenizer,
-            similarity_model_id=args.text_encoder
+            similarity_model_id=args.text_encoder,
         )
     else:
         base_model = load_model(args.base_model)
         evaluator = Evaluator(
-            base_model=base_model, test_data=prompts, tokenizer=tokenizer,
-            similarity_model_id=args.text_encoder
+            base_model=base_model,
+            test_data=prompts,
+            tokenizer=tokenizer,
+            similarity_model_id=args.text_encoder,
         )
         if args.gt_data:
             evaluator.dump_gt(args.gt_data)
