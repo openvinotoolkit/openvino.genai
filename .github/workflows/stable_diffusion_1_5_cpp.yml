@@ -10,7 +10,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  stable_diffusion_1_5_cpp:
+  stable_diffusion_1_5_cpp-linux:
     runs-on: ubuntu-20.04-8-cores
     steps:
       - uses: actions/checkout@v4
@@ -48,3 +48,44 @@ jobs:
           source ./openvino/setupvars.sh
           cd ./image_generation/stable_diffusion_1_5/cpp/build
           ./stable_diffusion -m ../scripts/runwayml/stable-diffusion-v1-5 -t FP16_dyn
+  stable_diffusion_1_5_cpp-windows:
+      runs-on: windows-latest
+      steps:
+        - uses: actions/checkout@v4
+          with:
+            submodules: recursive
+        - uses: actions/setup-python@v4
+          with:
+            python-version: 3.8
+        - name: Initialize OpenVINO / libeigen3-dev
+          shell: cmd
+          run: |
+            curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.3/windows/w_openvino_toolkit_windows_2023.3.0.13775.ceeafaf64f3_x86_64.zip
+            unzip ov.zip
+            call w_openvino_toolkit_windows_2023.3.0.13775.ceeafaf64f3_x86_64/setupvars.bat
+            curl --output eigen.zip https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip
+            unzip eigen.zip
+            cd eigen-3.4.0
+            cmake -DCMAKE_BUILD_TYPE=Release -S . -B build_dir
+            cmake --install build_dir
+        - name: Download / convert a model / tokenizer
+          shell: cmd
+          run: |
+            call w_openvino_toolkit_windows_2023.3.0.13775.ceeafaf64f3_x86_64/setupvars.bat
+            cd ./image_generation/stable_diffusion_1_5/cpp/scripts/
+            python -m pip install -r ./requirements.txt
+            python -m pip install ../../../../thirdparty/openvino_contrib/modules/custom_operations/
+            python convert_model.py -sd runwayml/stable-diffusion-v1-5 -b 1 -t FP16 -dyn True
+        - name: Build app
+          shell: cmd
+          run: |
+            call w_openvino_toolkit_windows_2023.3.0.13775.ceeafaf64f3_x86_64/setupvars.bat
+            cd ./image_generation/stable_diffusion_1_5/cpp/
+            cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+            cmake --build ./build/ --config Release --parallel
+        - name: Run app
+          shell: cmd
+          run: |
+            call w_openvino_toolkit_windows_2023.3.0.13775.ceeafaf64f3_x86_64/setupvars.bat
+            cd ./image_generation/stable_diffusion_1_5/cpp/build/
+            call "./Release/stable_diffusion.exe" -m ../scripts/runwayml/stable-diffusion-v1-5 -t FP16_dyn
