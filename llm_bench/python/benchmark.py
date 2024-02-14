@@ -172,16 +172,13 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
              f'prompt nums: {len(input_text_list)}')
 
     # if num_iters == 0, just output warm-up data
-    for num in range(num_iters + 1):
-        prompt_idx = 0
-        for input_text in input_text_list:
+    for prompt_idx, input_text in enumerate(input_text_list):
+        for num in range(num_iters + 1):
             if num == 0:
                 log.info(f'[warm-up] Input text: {input_text}')
             run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_idx, bench_hook)
-            prompt_idx = prompt_idx + 1
 
     utils.metrics_print.print_average(iter_data_list)
-
     return iter_data_list, pretrain_time
 
 
@@ -261,14 +258,11 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_image_list)}')
 
     # if num_iters == 0, just output warm-up data
-    for num in range(num_iters + 1):
-        image_id = 0
-        for image_param in input_image_list:
+    for image_id, image_param in enumerate(input_image_list):
+        for num in range(num_iters + 1):
             run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
-            image_id += 1
 
     utils.metrics_print.print_average(iter_data_list)
-
     return iter_data_list, pretrain_time
 
 
