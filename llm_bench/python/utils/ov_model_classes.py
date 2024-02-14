@@ -42,6 +42,7 @@ def register_normalized_configs():
     NormalizedConfigManager._conf['phi'] = NormalizedTextConfig
     NormalizedConfigManager._conf["codegen2"] = NormalizedConfigManager._conf["codegen"]
     NormalizedConfigManager._conf["aquila"] = NormalizedConfigManager._conf["llama"]
+    NormalizedConfigManager._conf["minicpm"] = NormalizedConfigManager._conf["llama"]
     NormalizedConfigManager._conf["mixtral"] = NormalizedConfigManager._conf["mistral"]
 
 
