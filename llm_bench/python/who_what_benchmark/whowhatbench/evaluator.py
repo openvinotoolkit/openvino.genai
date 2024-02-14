@@ -61,7 +61,7 @@ class Evaluator:
         if base_model:
             self.gt_data = self._generate_data(base_model)
         else:
-            self.gt_data = pd.read_csv(gt_data)
+            self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
         self.similarity = None
         self.divergency = None
