@@ -449,6 +449,7 @@ TasksManager._SUPPORTED_MODEL_TYPE["aquila"] = TasksManager._SUPPORTED_MODEL_TYP
 TasksManager._SUPPORTED_MODEL_TYPE["codegen2"] = TasksManager._SUPPORTED_MODEL_TYPE["codegen"]
 TasksManager._SUPPORTED_MODEL_TYPE["mixtral"] = TasksManager._SUPPORTED_MODEL_TYPE['mistral']
 TasksManager._SUPPORTED_MODEL_TYPE["minicpm"] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
+TasksManager._SUPPORTED_MODEL_TYPE["qwen2"] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
 
 
 @register_in_tasks_manager('phi', *["text-generation", "text-generation-with-past"])
