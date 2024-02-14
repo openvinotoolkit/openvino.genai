@@ -37,6 +37,8 @@ def register_normalized_configs():
         num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size')
     NormalizedConfigManager._conf['qwen'] = NormalizedTextConfig.with_args(
         num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size')
+    NormalizedConfigManager._conf['qwen2'] = NormalizedTextConfig.with_args(
+        num_layers='num_hidden_layers', num_attention_heads='num_attention_heads', hidden_size='hidden_size')
     NormalizedConfigManager._conf['mistral'] = NormalizedTextConfig.with_args(num_key_value_heads='num_key_value_heads', allow_new=True)
     NormalizedConfigManager._conf['Yi'] = NormalizedTextConfig
     NormalizedConfigManager._conf['phi'] = NormalizedTextConfig
@@ -711,8 +713,9 @@ class OVQwenModel(OVModelForCausalLM):
                 continue
             shapes[inputs] = inputs.get_partial_shape()
             shapes[inputs][0] = -1
-            if shapes[inputs].rank.get_length() > 1: 
-                shapes[inputs][1] = -1
+            if shapes[inputs].rank.get_length() > 1:
+                if shapes[inputs].rank.get_length() < 4 or not shapes[inputs][2].is_dynamic(): 
+                    shapes[inputs][1] = -1
         model.reshape(shapes)
         return model
 
