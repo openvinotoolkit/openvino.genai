@@ -19,10 +19,17 @@ endif()
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 target_link_libraries(diffusers PUBLIC openvino::runtime)
 
-find_package(Eigen3 REQUIRED)
-target_link_libraries(diffusers PRIVATE Eigen3::Eigen)
-
 include(FetchContent)
+
+FetchContent_Declare(eigen3)
+FetchContent_GetProperties(eigen3)
+if(NOT eigen3_POPULATED)
+    FetchContent_Populate(eigen3 QUIET
+        URL https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip
+        URL_HASH SHA256=1ccaabbfe870f60af3d6a519c53e09f3dcf630207321dffa553564a8e75c4fc8)
+endif()
+
+target_include_directories(diffusers SYSTEM PRIVATE "${eigen3_SOURCE_DIR}")
 
 FetchContent_Declare(safetensors.h
     URL https://github.com/hsnyder/safetensors.h/archive/974a85d7dfd6e010558353226638bb26d6b9d756.tar.gz
