@@ -9,13 +9,12 @@ The pure C++ text-to-image pipeline, driven by the OpenVINO native C++ API for S
 C++ Packages:
 * [CMake](https://cmake.org/download/): Cross-platform build tool
 * [OpenVINO](https://docs.openvino.ai/install): Model inference
-* [Eigen3](https://anaconda.org/conda-forge/eigen): LoRA enabling
 
 Prepare a python environment and install dependencies:
 ```shell
 conda create -n openvino_sd_cpp python==3.10
 conda activate openvino_sd_cpp
-conda install openvino eigen c-compiler cxx-compiler make
+conda install openvino c-compiler cxx-compiler make
 ```
 
 ## Step 2: Convert Stable Diffusion v1.5 and Tokenizer models
