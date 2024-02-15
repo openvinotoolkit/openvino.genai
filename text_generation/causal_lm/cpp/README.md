@@ -1,6 +1,6 @@
 # Text generation C++ samples that support most popular models like LLaMA 2
 
-These examples showcase inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The applications don't have many configuration options to encourage the reader to explore and modify the source code. Loading `user_ov_extensions` provided by `openvino-tokenizers` to `ov::Core` enables tokenization. Run `convert_tokenizer` to generate IRs for the samples. [group_beam_searcher.hpp](group_beam_searcher.hpp) implements the algorithm of the same name, which is used by `beam_search_causal_lm`. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
+These examples showcase inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The applications don't have many configuration options to encourage the reader to explore and modify the source code. Loading `openvino_tokenizers` to `ov::Core` enables tokenization. Run `convert_tokenizer` to generate IRs for the samples. [group_beam_searcher.hpp](group_beam_searcher.hpp) implements the algorithm of the same name, which is used by `beam_search_causal_lm`. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
 
 ## How it works
 
@@ -40,7 +40,7 @@ The program loads a tokenizer, a detokenizer and a model (`.xml` and `.bin`) to 
 
 Install [OpenVINO Archives >= 2023.3](https://docs.openvino.ai/install). `<INSTALL_DIR>` below refers to the extraction location.
 
-## Build `greedy_causal_lm`, `beam_search_causal_lm` and `user_ov_extensions`
+## Build `greedy_causal_lm`, `beam_search_causal_lm` and `openvino_tokenizers`
 
 ### Linux/macOS
 

@@ -43,6 +43,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     diffusers::diffusers
     imwrite::imwrite)
 
-add_dependencies(${PROJECT_NAME} user_ov_extensions)
+add_dependencies(${PROJECT_NAME} openvino_tokenizers)
 
-target_compile_definitions(${PROJECT_NAME} PRIVATE TOKENIZERS_LIBRARY_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
+target_compile_definitions(${PROJECT_NAME} PRIVATE TOKENIZERS_LIBRARY_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
