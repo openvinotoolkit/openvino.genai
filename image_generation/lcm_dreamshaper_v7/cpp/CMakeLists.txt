@@ -35,10 +35,6 @@ add_subdirectory(../../../thirdparty/openvino_contrib/modules/custom_operations/
 
 add_executable(${PROJECT_NAME} ${PROJECT_SOURCE_DIR}/src/main.cpp)
 
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${EIGEN3_INCLUDE_DIR})
-
 target_link_libraries(${PROJECT_NAME} PRIVATE
     openvino::runtime
     cxxopts::cxxopts
