@@ -30,7 +30,7 @@ jobs:
           cd ./image_generation/lcm_dreamshaper_v7/cpp/scripts/
           python -m pip install -U pip
           python -m pip install -r ./requirements.txt
-          python -m pip install ../../../../thirdparty/oopenvino_tokenizers/
+          python -m pip install ../../../../thirdparty/openvino_tokenizers/
           python convert_model.py -lcm "SimianLuo/LCM_Dreamshaper_v7" -t "FP16"
       - name: Build app
         run: |
