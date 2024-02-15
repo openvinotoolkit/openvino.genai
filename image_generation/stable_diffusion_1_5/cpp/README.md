@@ -1,5 +1,5 @@
 # OpenVINO Stable Diffusion (with LoRA) C++ image generation pipeline
-The pure C++ text-to-image pipeline, driven by the OpenVINO native C++ API for Stable Diffusion v1.5 with LMS Discrete Scheduler, supports both static and dynamic model inference. It includes advanced features like [LoRA](https://huggingface.co/docs/peft/conceptual_guides/lora) integration with [safetensors](https://huggingface.co/docs/safetensors/index#format) and [OpenVINO extension for tokenizers](https://github.com/openvinotoolkit/openvino_contrib/blob/master/modules/custom_operations/user_ie_extensions/tokenizer/python/README.md). Loading `user_ov_extensions` provided by `openvino-tokenizers` to `ov::Core` enables tokenization. The sample uses [diffusers](../../common/diffusers) for image generation and [imwrite](../../common/imwrite) for saving `.bmp` images. This demo has been tested on Windows and Unix platforms. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/main/notebooks/225-stable-diffusion-text-to-image/225-stable-diffusion-text-to-image.ipynb) which provides an example of image generation in Python.
+The pure C++ text-to-image pipeline, driven by the OpenVINO native C++ API for Stable Diffusion v1.5 with LMS Discrete Scheduler, supports both static and dynamic model inference. It includes advanced features like [LoRA](https://huggingface.co/docs/peft/conceptual_guides/lora) integration with [safetensors](https://huggingface.co/docs/safetensors/index#format) and [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers). Loading `user_ov_extensions` provided by `openvino_tokenizers` to `ov::Core` enables tokenization. The sample uses [diffusers](../../common/diffusers) for image generation and [imwrite](../../common/imwrite) for saving `.bmp` images. This demo has been tested on Windows and Unix platforms. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/main/notebooks/225-stable-diffusion-text-to-image/225-stable-diffusion-text-to-image.ipynb) which provides an example of image generation in Python.
 
 > [!NOTE]
 >This tutorial assumes that the current working directory is `<openvino.genai repo>/image_generation/stable_diffusion_1_5/cpp/` and all paths are relative to this folder.
@@ -25,7 +25,7 @@ conda install openvino c-compiler cxx-compiler make
 ```shell
 conda activate openvino_sd_cpp
 python -m pip install -r scripts/requirements.txt
-python -m pip install ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers]
+python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
 ```
 2. Download a huggingface SD v1.5 model like:
 - [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5)
@@ -92,7 +92,7 @@ Usage:
 * `-h, --help`          Print usage
 
 > [!NOTE]
-> The tokenizer model will always be loaded to CPU: [OpenVINO tokenizers](https://github.com/openvinotoolkit/openvino_contrib/tree/master/modules/custom_operations/user_ie_extensions/tokenizer/python#readme) can be inferred on a CPU device only.
+> The tokenizer model will always be loaded to CPU: [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers) can be inferred on a CPU device only.
 
 #### Examples
 

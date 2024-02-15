@@ -5,8 +5,7 @@ cmake_minimum_required(VERSION 3.15)
 project(causal_lm)
 
 # Build user_ov_extensions
-list(APPEND CUSTOM_OPERATIONS tokenizer)
-add_subdirectory(../../../thirdparty/openvino_contrib/modules/custom_operations/ "${CMAKE_CURRENT_BINARY_DIR}/custom_operations/")
+add_subdirectory(../../../thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
 
 add_executable(greedy_causal_lm greedy_causal_lm.cpp)
 target_compile_definitions(greedy_causal_lm PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")

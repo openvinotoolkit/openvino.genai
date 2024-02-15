@@ -1,5 +1,5 @@
 # OpenVINO Latent Consistency Model C++ image generation  pipeline
-The pure C++ text-to-image pipeline, driven by the OpenVINO native API for SD v1.5 Latent Consistency Model with LCM Scheduler. It includes advanced features like LoRA integration with safetensors and [OpenVINO extension for tokenizers](https://github.com/openvinotoolkit/openvino_contrib/blob/master/modules/custom_operations/user_ie_extensions/tokenizer/python/README.md). Loading `user_ov_extensions` provided by `openvino-tokenizers` to `ov::Core` enables tokenization. [The common folder](../../common/) contains schedulers for image generation and `imwrite()` for saving `bmp` images. This demo has been tested for Linux platform only. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/main/notebooks/263-latent-consistency-models-image-generation/263-lcm-lora-controlnet.ipynb) which provides an example of image generaztion in Python.
+The pure C++ text-to-image pipeline, driven by the OpenVINO native API for SD v1.5 Latent Consistency Model with LCM Scheduler. It includes advanced features like LoRA integration with safetensors and [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers). Loading `user_ov_extensions` provided by `openvino-tokenizers` to `ov::Core` enables tokenization. [The common folder](../../common/) contains schedulers for image generation and `imwrite()` for saving `bmp` images. This demo has been tested for Linux platform only. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/main/notebooks/263-latent-consistency-models-image-generation/263-lcm-lora-controlnet.ipynb) which provides an example of image generaztion in Python.
 
 > [!NOTE]
 >This tutorial assumes that the current working directory is `<openvino.genai repo>/image_generation/lcm_dreamshaper_v7/cpp/` and all paths are relative to this folder.
@@ -26,7 +26,7 @@ conda install -c conda-forge openvino c-compiler cxx-compiler make
     ```shell
     conda activate openvino_lcm_cpp
     python -m pip install -r scripts/requirements.txt
-    python -m pip install ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers]
+    python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
     ```
 
 2. Run model conversion script to download and convert PyTorch model to OpenVINO IR via [optimum-intel](https://github.com/huggingface/optimum-intel). Please, use the script `scripts/convert_model.py` to convert the model:
@@ -80,7 +80,7 @@ Usage:
 * `-h, --help`          Print usage
 
 > [!NOTE]
-> The tokenizer model will always be loaded to CPU: [OpenVINO tokenizers](https://github.com/openvinotoolkit/openvino_contrib/tree/master/modules/custom_operations/user_ie_extensions/tokenizer/python#readme) can be inferred on a CPU device only.
+> The tokenizer model will always be loaded to CPU: [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers) can be inferred on a CPU device only.
 
 Example:
 

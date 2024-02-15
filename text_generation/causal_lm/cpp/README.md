@@ -66,7 +66,7 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 
 ```sh
 source <INSTALL_DIR>/setupvars.sh
-python3 -m pip install --upgrade-strategy eager "optimum>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
+python3 -m pip install --upgrade-strategy eager "optimum>=1.14" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
 python3 ../../../llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0/ --precision FP16 --stateful
 convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
 ```
@@ -75,7 +75,7 @@ convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --output ./TinyL
 
 ```bat
 <INSTALL_DIR>\setupvars.bat
-python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ..\..\..\llm_bench\python\requirements.txt ..\..\..\thirdparty\openvino_contrib\modules\custom_operations\[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
+python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ..\..\..\llm_bench\python\requirements.txt ..\..\..\thirdparty\openvino_tokenizers\[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
 python ..\..\..\llm_bench\python\convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir .\TinyLlama-1.1B-Chat-v1.0\ --precision FP16 --stateful
 convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --with-detokenizer --trust-remote-code
 ```

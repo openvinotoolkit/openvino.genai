@@ -5,7 +5,7 @@ on:
       - image_generation/lcm_dreamshaper_v7/cpp/**
       - image_generation/common/**
       - .github/workflows/lcm_dreamshaper_cpp.yml
-      - thirdparty/openvino_contrib
+      - thirdparty/openvino_tokenizers
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -30,7 +30,7 @@ jobs:
           cd ./image_generation/lcm_dreamshaper_v7/cpp/scripts/
           python -m pip install -U pip
           python -m pip install -r ./requirements.txt
-          python -m pip install ../../../../thirdparty/openvino_contrib/modules/custom_operations/
+          python -m pip install ../../../../thirdparty/oopenvino_tokenizers/
           python convert_model.py -lcm "SimianLuo/LCM_Dreamshaper_v7" -t "FP16"
       - name: Build app
         run: |
@@ -63,7 +63,7 @@ jobs:
             call w_openvino_toolkit_windows_2023.3.0.13775.ceeafaf64f3_x86_64/setupvars.bat
             cd ./image_generation/lcm_dreamshaper_v7/cpp/scripts/
             python -m pip install -r ./requirements.txt
-            python -m pip install ../../../../thirdparty/openvino_contrib/modules/custom_operations/
+            python -m pip install ../../../../thirdparty/openvino_tokenizers/
             python convert_model.py -lcm "SimianLuo/LCM_Dreamshaper_v7" -t "FP16"
         - name: Build app
           shell: cmd
