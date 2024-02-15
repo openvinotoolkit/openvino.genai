@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) try {
     }
     // Compile models
     ov::Core core;
-    core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in CMakeLists.txt
+    core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
