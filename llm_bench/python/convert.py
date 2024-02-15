@@ -9,7 +9,7 @@ import logging as log
 from argparse import ArgumentParser
 from functools import wraps
 from pathlib import Path
-from typing import Tuple, Union, Dict, TYPE_CHECKING
+from typing import Tuple, Union, Dict, Optional, TYPE_CHECKING
 import nncf
 import torch
 from diffusers import (
