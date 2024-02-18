@@ -321,9 +321,11 @@ public:
 
                 ov::Output<ov::Node> grand_parent_output = parent->get_input_source_output(0); // parent->get_input_source_output(0);
                 std::set<ov::Input<ov::Node>> consumers = grand_parent_output.get_target_inputs();
-
+                auto partial_shape = grand_parent_output.get_partial_shape().get_min_shape();
+                int32_t dims = static_cast<int32_t>(partial_shape[2]);
+		    
                 std::vector<int32_t> start_v = { 0, -1, 0 };
-                std::vector<int32_t> stop_v = { 1, -2, 5120 };
+                std::vector<int32_t> stop_v = { 1, -2, dims };
                 std::vector<int32_t> step_v = { 1, -1, 1 };
 
                 std::cout << "Original reshape node output shape:" << grand_parent_output.get_partial_shape() << std::endl;
