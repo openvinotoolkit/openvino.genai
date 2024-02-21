@@ -23,6 +23,7 @@ from PIL import Image
 from utils.memory_profile import MemConsumption
 from utils.hook_forward import StableDiffusionHook
 import utils.output_json
+import utils.output_file
 
 FW_UTILS = {'pt': utils.pt_utils, 'ov': utils.ov_utils}
 
@@ -73,9 +74,12 @@ def gen_iterate_data(
     return iter_data
 
 
-def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_index, bench_hook):
+def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_index, bench_hook, model_precision):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
+    if args["output_dir"] != None and num == 0:
+        for bs_index, in_text in enumerate(input_text_list):
+            utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index)
     tok_encode_start = time.perf_counter()
     input_data = tokenizer(input_text_list, return_tensors='pt')
     tok_encode_end = time.perf_counter()
@@ -114,15 +118,17 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
-    for i in range(args['batch_size']):
-        if 'sum' not in args['model_name'] and result[i][:input_token_size].equal(input_tokens[i]):
-            generated_text_len = len(result[i]) - input_tokens[i].numel()
+    for bs_idx in range(args['batch_size']):
+        if 'sum' not in args['model_name'] and result[bs_idx][:input_token_size].equal(input_tokens[bs_idx]):
+            generated_text_len = len(result[bs_idx]) - input_tokens[bs_idx].numel()
         else:
-            generated_text_len = len(result[i])
+            generated_text_len = len(result[bs_idx])
         num_tokens += generated_text_len
         if generated_text_len > max_output_token_size:
             log.error('Output token size is over max output token size!')
-        result_text = generated_text[i]
+        result_text = generated_text[bs_idx]
+        if args["output_dir"] != None:
+            utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx)
         result_md5_list.append(hashlib.md5(result_text.encode()).hexdigest())
     per_token_time = generation_time * 1000 / num_tokens
     iter_data = gen_iterate_data(
@@ -164,6 +170,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
     model, tokenizer, pretrain_time, bench_hook = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
+    model_precision = utils.model_utils.get_model_precision(model_path.parents._parts)
     iter_data_list = []
     input_text_list = utils.model_utils.get_prompts(args)
     if len(input_text_list) == 0:
@@ -176,7 +183,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
         for num in range(num_iters + 1):
             if num == 0:
                 log.info(f'[warm-up] Input text: {input_text}')
-            run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_idx, bench_hook)
+            run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_idx, bench_hook, model_precision)
 
     utils.metrics_print.print_average(iter_data_list)
     return iter_data_list, pretrain_time
@@ -206,19 +213,19 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
             additional_args["guidance_scale"] = 1.0
         if 'turbo' in args['model_name']:
             additional_args["guidance_scale"] = 0.0
+    input_text_list = [input_text] * args['batch_size']
+    if num == 0 and args["output_dir"] != None:
+        for bs_idx, in_text in enumerate(input_text_list):
+            utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx)
     start = time.perf_counter()
-    res = pipe([input_text] * args['batch_size'], num_inference_steps=nsteps, height=image_height, width=image_width, **additional_args).images
+    res = pipe(input_text_list, num_inference_steps=nsteps, height=image_height, width=image_width, **additional_args).images
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
-    for i in range(args['batch_size']):
-        if num == 0:
-            rslt_img_fn = args['model_name'] + '_img' + str(image_id) + '_bs' + str(args['batch_size']) + '-' + str(i + 1) + '_img_warm-up.png'
-        else:
-            rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_img' + str(image_id) + '_bs' + str(args['batch_size']) + '-' + str(i + 1) + '.png'
-        res[i].save(rslt_img_fn)
+    for bs_idx in range(args['batch_size']):
+        rslt_img_fn = utils.output_file.output_gen_image(res[bs_idx], args, image_id, num, bs_idx, '.png')
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
     generation_time = end - start
     iter_data = gen_iterate_data(
@@ -309,13 +316,9 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
-    if num == 0:
-        rslt_img_fn = args['model_name'] + '_warmup_' + img['prompt'].name
-    else:
-        rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_' + img['prompt'].name
     result_md5_list = []
     if framework == 'ov':
-        res[0].save(rslt_img_fn)
+        rslt_img_fn = utils.output_file.output_gen_image(res[0], args, image_id, num, None, '.png')
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
 
     generation_time = end - start
@@ -370,6 +373,8 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
         image_id = 0
         for img in images:
             if num == 0:
+                if args["output_dir"] != None:
+                    utils.output_file.output_image_input_text(str(img['prompt']), args, image_id, None)
                 log.info(f"[{'warm-up' if num == 0 else num}] Input image={img['prompt']}")
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list)
             tm_list.clear()
@@ -453,6 +458,7 @@ def get_argprser():
     parser.add_argument(
         '--convert_tokenizer', action='store_true', help='Convert tokenizer to OpenVINO format'
     )
+    parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
     utils.model_utils.add_stateful_model_arguments(parser)
 
     return parser.parse_args()
