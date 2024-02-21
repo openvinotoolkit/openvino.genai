@@ -77,7 +77,7 @@ def gen_iterate_data(
 def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_index, bench_hook, model_precision):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
-    if args["output_dir"] != None and num == 0:
+    if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(input_text_list):
             utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index)
     tok_encode_start = time.perf_counter()
@@ -127,7 +127,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         if generated_text_len > max_output_token_size:
             log.error('Output token size is over max output token size!')
         result_text = generated_text[bs_idx]
-        if args["output_dir"] != None:
+        if args["output_dir"] is not None:
             utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx)
         result_md5_list.append(hashlib.md5(result_text.encode()).hexdigest())
     per_token_time = generation_time * 1000 / num_tokens
@@ -214,7 +214,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
         if 'turbo' in args['model_name']:
             additional_args["guidance_scale"] = 0.0
     input_text_list = [input_text] * args['batch_size']
-    if num == 0 and args["output_dir"] != None:
+    if num == 0 and args["output_dir"] is not None:
         for bs_idx, in_text in enumerate(input_text_list):
             utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx)
     start = time.perf_counter()
@@ -373,7 +373,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
         image_id = 0
         for img in images:
             if num == 0:
-                if args["output_dir"] != None:
+                if args["output_dir"] is not None:
                     utils.output_file.output_image_input_text(str(img['prompt']), args, image_id, None)
                 log.info(f"[{'warm-up' if num == 0 else num}] Input image={img['prompt']}")
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list)

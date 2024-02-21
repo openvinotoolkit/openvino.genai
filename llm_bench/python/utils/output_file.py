@@ -5,8 +5,8 @@ import os
 
 
 def save_text_to_file(input_text, text_file_name, args):
-    if args['output_dir'] != None:
-        if os.path.exists(args['output_dir']) == False:
+    if args['output_dir'] is not None:
+        if os.path.exists(args['output_dir']) is False:
             os.mkdir(args['output_dir'])
         out_path = args['output_dir']
     else:
@@ -18,8 +18,8 @@ def save_text_to_file(input_text, text_file_name, args):
 
 
 def save_image_file(img, img_file_name, args):
-    if args['output_dir'] != None:
-        if os.path.exists(args['output_dir']) == False:
+    if args['output_dir'] is not None:
+        if os.path.exists(args['output_dir']) is False:
             os.mkdir(args['output_dir'])
         out_path = args['output_dir']
     else:
@@ -38,7 +38,7 @@ def output_input_text(input_text, args, model_precision, prompt_idx, batchsize_i
 
 
 def output_image_input_text(input_text, args, prompt_idx, batchsize_idx):
-    if args['batch_size'] > 1 and batchsize_idx != None:
+    if args['batch_size'] > 1 and batchsize_idx is not None:
         text_file_name = args['model_name'] + '_p' + str(prompt_idx) + '_bs' + str(batchsize_idx) + '_input.txt'
     else:
         text_file_name = args['model_name'] + '_p' + str(prompt_idx) + '_input.txt'
@@ -55,7 +55,7 @@ def output_gen_text(generated_text, args, model_precision, prompt_idx, iteration
 
 
 def output_gen_image(img, args, prompt_idx, iteration, batchsize_idx, suffix):
-    if args['batch_size'] > 1 and batchsize_idx != None:
+    if args['batch_size'] > 1 and batchsize_idx is not None:
         img_save_name = args['model_name'] + '_p' + str(prompt_idx) + '_bs' + str(batchsize_idx) + '_' + str(iteration) + suffix
     else:
         img_save_name = args['model_name'] + '_p' + str(prompt_idx) + '_' + str(iteration) + suffix
