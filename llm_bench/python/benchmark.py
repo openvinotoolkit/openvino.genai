@@ -180,7 +180,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
             for prompt_idx, input_text in enumerate(input_text_list):
                 if num == 0:
                     log.info(f'[warm-up] Input text: {input_text}')
-                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook)    
+                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook)
     else:
         for prompt_idx, input_text in enumerate(input_text_list):
             for num in range(num_iters + 1):
