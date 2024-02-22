@@ -48,16 +48,16 @@ def output_image_input_text(input_text, args, prompt_idx, batchsize_idx):
 def output_gen_text(generated_text, args, model_precision, prompt_idx, iteration, batchsize_idx):
     if args['batch_size'] > 1:
         text_file_name = args['model_name'] + '_' + model_precision + '_p' + str(prompt_idx) \
-            + '_bs' + str(batchsize_idx) + '_' + str(iteration) + '.txt'
+            + '_bs' + str(batchsize_idx) + '_iter' + str(iteration) + '_output.txt'
     else:
-        text_file_name = args['model_name'] + '_' + model_precision + '_p' + str(prompt_idx) + '_' + str(iteration) + '.txt'
+        text_file_name = args['model_name'] + '_' + model_precision + '_p' + str(prompt_idx) + '_iter' + str(iteration) + '_output.txt'
     save_text_to_file(generated_text, text_file_name, args)
 
 
 def output_gen_image(img, args, prompt_idx, iteration, batchsize_idx, suffix):
     if args['batch_size'] > 1 and batchsize_idx is not None:
-        img_save_name = args['model_name'] + '_p' + str(prompt_idx) + '_bs' + str(batchsize_idx) + '_' + str(iteration) + suffix
+        img_save_name = args['model_name'] + '_p' + str(prompt_idx) + '_bs' + str(batchsize_idx) + '_iter' + str(iteration) + '_output' + suffix
     else:
-        img_save_name = args['model_name'] + '_p' + str(prompt_idx) + '_' + str(iteration) + suffix
+        img_save_name = args['model_name'] + '_p' + str(prompt_idx) + '_iter' + str(iteration) + '_output' + suffix
     img_save_path = save_image_file(img, img_save_name, args)
     return img_save_path
