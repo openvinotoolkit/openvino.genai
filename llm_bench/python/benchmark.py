@@ -189,7 +189,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     return iter_data_list, pretrain_time
 
 
-def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list):
+def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id):
     set_seed(args['seed'])
     input_text = image_param['prompt']
     image_width = image_param.get('width', DEFAULT_IMAGE_WIDTH)
@@ -225,7 +225,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
         max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
     for bs_idx in range(args['batch_size']):
-        rslt_img_fn = utils.output_file.output_gen_image(res[bs_idx], args, image_id, num, bs_idx, '.png')
+        rslt_img_fn = utils.output_file.output_gen_image(res[bs_idx], args, image_id, num, bs_idx, proc_id, '.png')
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
     generation_time = end - start
     iter_data = gen_iterate_data(
@@ -265,9 +265,10 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_image_list)}')
 
     # if num_iters == 0, just output warm-up data
+    proc_id = os.getpid()
     for image_id, image_param in enumerate(input_image_list):
         for num in range(num_iters + 1):
-            run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
+            run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id)
 
     utils.metrics_print.print_average(iter_data_list)
     return iter_data_list, pretrain_time
@@ -294,7 +295,7 @@ def run_image_classification(model_path, framework, device, args, num_iters=10):
     return iter_data_list
 
 
-def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list):
+def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list, proc_id):
     set_seed(args['seed'])
     nsteps = img.get('steps', DEFAULT_SUPER_RESOLUTION_STEPS)
     resize_image_width = img.get('width', DEFAULT_SUPER_RESOLUTION_WIDTH)
@@ -318,7 +319,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         mem_consumption.clear_max_memory_consumption()
     result_md5_list = []
     if framework == 'ov':
-        rslt_img_fn = utils.output_file.output_gen_image(res[0], args, image_id, num, None, '.png')
+        rslt_img_fn = utils.output_file.output_gen_image(res[0], args, image_id, num, None, proc_id, '.png')
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
 
     generation_time = end - start
@@ -369,6 +370,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(images)}')
 
     # if num_iters == 0, just output warm-up data
+    proc_id = os.getpid()
     for num in range(num_iters + 1):
         image_id = 0
         for img in images:
@@ -376,7 +378,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
                 if args["output_dir"] is not None:
                     utils.output_file.output_image_input_text(str(img['prompt']), args, image_id, None)
                 log.info(f"[{'warm-up' if num == 0 else num}] Input image={img['prompt']}")
-            run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list)
+            run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list, proc_id)
             tm_list.clear()
             image_id = image_id + 1
     utils.metrics_print.print_average(iter_data_list)
