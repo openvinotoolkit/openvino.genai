@@ -74,7 +74,7 @@ def gen_iterate_data(
     return iter_data
 
 
-def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_index, bench_hook, model_precision, proc_id):
+def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_index, bench_hook, model_precision, proc_id):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
@@ -130,6 +130,8 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         if args["output_dir"] is not None:
             utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
         result_md5_list.append(hashlib.md5(result_text.encode()).hexdigest())
+    if num == 0:
+        warmup_md5[prompt_index] = result_md5_list
     per_token_time = generation_time * 1000 / num_tokens
     iter_data = gen_iterate_data(
         num,
@@ -158,7 +160,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         tokenization_time=(tok_encode_time, tok_decode_time)
     )
     if num > 0:
-        warmup_md5_list = iter_data_list[prompt_index]['result_md5']
+        warmup_md5_list = warmup_md5[prompt_index]
         if result_md5_list != warmup_md5_list:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} is different from warm-up's md5 {warmup_md5_list}")
             utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
@@ -172,6 +174,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     model, tokenizer, pretrain_time, bench_hook = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
     model_precision = utils.model_utils.get_model_precision(model_path.parents._parts)
     iter_data_list = []
+    warmup_md5 = {}
     input_text_list = utils.model_utils.get_prompts(args)
     if len(input_text_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
@@ -180,11 +183,18 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
-    for prompt_idx, input_text in enumerate(input_text_list):
+    if args['interleave'] is True:
         for num in range(num_iters + 1):
-            if num == 0:
-                log.info(f'[warm-up] Input text: {input_text}')
-            run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_idx, bench_hook, model_precision, proc_id)
+            for prompt_idx, input_text in enumerate(input_text_list):
+                if num == 0:
+                    log.info(f'[warm-up] Input text: {input_text}')
+                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
+    else:
+        for prompt_idx, input_text in enumerate(input_text_list):
+            for num in range(num_iters + 1):
+                if num == 0:
+                    log.info(f'[warm-up] Input text: {input_text}')
+                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
 
     utils.metrics_print.print_average(iter_data_list)
     return iter_data_list, pretrain_time
@@ -267,9 +277,14 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
-    for image_id, image_param in enumerate(input_image_list):
+    if args['interleave'] is True:
         for num in range(num_iters + 1):
-            run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id)
+            for image_id, image_param in enumerate(input_image_list):
+                run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id)
+    else:
+        for image_id, image_param in enumerate(input_image_list):
+            for num in range(num_iters + 1):
+                run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id)
 
     utils.metrics_print.print_average(iter_data_list)
     return iter_data_list, pretrain_time
@@ -460,6 +475,12 @@ def get_argprser():
     )
     parser.add_argument(
         '--convert_tokenizer', action='store_true', help='Convert tokenizer to OpenVINO format'
+    )
+    parser.add_argument(
+        '--interleave',
+        action='store_true',
+        help='if the value is True, input prompts are processed in interleave manner'
+        'if the value is False (default), input prompts are processed in subsequent manner'
     )
     parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
     utils.model_utils.add_stateful_model_arguments(parser)
