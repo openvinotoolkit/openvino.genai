@@ -43,7 +43,7 @@ try:
         _get_submodels_and_onnx_configs as _get_submodels_and_export_configs,
     )
 except ImportError:
-    from optimum.exporters.onnx.utils import  _get_submodels_and_onnx_configs as _get_submodels_and_export_configs
+    from optimum.exporters.onnx.utils import _get_submodels_and_onnx_configs as _get_submodels_and_export_configs
 
 from transformers import (
     AutoTokenizer,

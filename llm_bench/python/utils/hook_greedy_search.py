@@ -262,7 +262,7 @@ def new_greedy_search(
             if streamer is not None:
                 streamer.put(next_tokens.cpu())
             model_kwargs = self._update_model_kwargs_for_generation(
-                outputs, model_kwargs, is_encoder_decoder=self.config.is_encoder_decoder, model_inputs={}
+                outputs, model_kwargs, is_encoder_decoder=self.config.is_encoder_decoder
             )
 
             # if eos_token was found in one sentence, set sentence to finished

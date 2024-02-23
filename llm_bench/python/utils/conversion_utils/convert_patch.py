@@ -520,7 +520,6 @@ def patch_model_for_optimum_export(model):
         for layer in model.model.layers:
             if layer.self_attn.rotary_emb.inv_freq is None:
                 rotary_emb = layer.self_attn.rotary_emb
-                layer.self_attn.rotary_emb.inv_freq =  1.0 / (
-                rotary_emb.base ** (torch.arange(0, rotary_emb.dim, 2, dtype=torch.int64).float() / rotary_emb.dim)
-            )
+                layer.self_attn.rotary_emb.inv_freq = 1.0 / (
+                    rotary_emb.base ** (torch.arange(0, rotary_emb.dim, 2, dtype=torch.int64).float() / rotary_emb.dim))
     return model
