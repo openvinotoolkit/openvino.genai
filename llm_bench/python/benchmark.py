@@ -472,7 +472,7 @@ def get_argprser():
         '--interleave',
         action='store_true',
         help='if the value is True, input prompts are processed in interleave manner'
-        'if the value is False, input prompts are processed in subsequent manner'
+        'if the value is False (default), input prompts are processed in subsequent manner'
     )
     utils.model_utils.add_stateful_model_arguments(parser)
 
