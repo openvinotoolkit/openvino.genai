@@ -74,12 +74,12 @@ def gen_iterate_data(
     return iter_data
 
 
-def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_index, bench_hook, model_precision):
+def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_index, bench_hook, model_precision, proc_id):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(input_text_list):
-            utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index)
+            utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
     tok_encode_start = time.perf_counter()
     input_data = tokenizer(input_text_list, return_tensors='pt')
     tok_encode_end = time.perf_counter()
@@ -128,7 +128,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             log.error('Output token size is over max output token size!')
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
-            utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx)
+            utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
         result_md5_list.append(hashlib.md5(result_text.encode()).hexdigest())
     per_token_time = generation_time * 1000 / num_tokens
     iter_data = gen_iterate_data(
@@ -179,11 +179,12 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
              f'prompt nums: {len(input_text_list)}')
 
     # if num_iters == 0, just output warm-up data
+    proc_id = os.getpid()
     for prompt_idx, input_text in enumerate(input_text_list):
         for num in range(num_iters + 1):
             if num == 0:
                 log.info(f'[warm-up] Input text: {input_text}')
-            run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_idx, bench_hook, model_precision)
+            run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, prompt_idx, bench_hook, model_precision, proc_id)
 
     utils.metrics_print.print_average(iter_data_list)
     return iter_data_list, pretrain_time
@@ -216,7 +217,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     input_text_list = [input_text] * args['batch_size']
     if num == 0 and args["output_dir"] is not None:
         for bs_idx, in_text in enumerate(input_text_list):
-            utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx)
+            utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx, proc_id)
     start = time.perf_counter()
     res = pipe(input_text_list, num_inference_steps=nsteps, height=image_height, width=image_width, **additional_args).images
     end = time.perf_counter()
@@ -376,7 +377,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
         for img in images:
             if num == 0:
                 if args["output_dir"] is not None:
-                    utils.output_file.output_image_input_text(str(img['prompt']), args, image_id, None)
+                    utils.output_file.output_image_input_text(str(img['prompt']), args, image_id, None, proc_id)
                 log.info(f"[{'warm-up' if num == 0 else num}] Input image={img['prompt']}")
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list, proc_id)
             tm_list.clear()

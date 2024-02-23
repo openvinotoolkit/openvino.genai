@@ -29,28 +29,30 @@ def save_image_file(img, img_file_name, args):
     return save_path
 
 
-def output_input_text(input_text, args, model_precision, prompt_idx, batchsize_idx):
+def output_input_text(input_text, args, model_precision, prompt_idx, batchsize_idx, proc_id):
     if args['batch_size'] > 1:
-        text_file_name = args['model_name'] + '_' + model_precision + '_p' + str(prompt_idx) + '_bs' + str(batchsize_idx) + '_input.txt'
+        text_file_name = args['model_name'] + '_' + model_precision + '_p' + str(prompt_idx) + '_bs' + str(batchsize_idx)
     else:
-        text_file_name = args['model_name'] + '_' + model_precision + '_p' + str(prompt_idx) + '_input.txt'
+        text_file_name = args['model_name'] + '_' + model_precision + '_p' + str(prompt_idx)
+    text_file_name = text_file_name + '_pid' + str(proc_id) + '_input.txt'
     save_text_to_file(input_text, text_file_name, args)
 
 
-def output_image_input_text(input_text, args, prompt_idx, batchsize_idx):
+def output_image_input_text(input_text, args, prompt_idx, batchsize_idx, proc_id):
     if args['batch_size'] > 1 and batchsize_idx is not None:
-        text_file_name = args['model_name'] + '_p' + str(prompt_idx) + '_bs' + str(batchsize_idx) + '_input.txt'
+        text_file_name = args['model_name'] + '_p' + str(prompt_idx) + '_bs' + str(batchsize_idx)
     else:
-        text_file_name = args['model_name'] + '_p' + str(prompt_idx) + '_input.txt'
+        text_file_name = args['model_name'] + '_p' + str(prompt_idx)
+    text_file_name = text_file_name + '_pid' + str(proc_id) + '_input.txt'
     save_text_to_file(input_text, text_file_name, args)
 
 
-def output_gen_text(generated_text, args, model_precision, prompt_idx, iteration, batchsize_idx):
+def output_gen_text(generated_text, args, model_precision, prompt_idx, iteration, batchsize_idx, proc_id):
     if args['batch_size'] > 1:
-        text_file_name = args['model_name'] + '_' + model_precision + '_p' + str(prompt_idx) \
-            + '_bs' + str(batchsize_idx) + '_iter' + str(iteration) + '_output.txt'
+        text_file_name = args['model_name'] + '_' + model_precision + '_p' + str(prompt_idx) + '_bs' + str(batchsize_idx)
     else:
-        text_file_name = args['model_name'] + '_' + model_precision + '_p' + str(prompt_idx) + '_iter' + str(iteration) + '_output.txt'
+        text_file_name = args['model_name'] + '_' + model_precision + '_p' + str(prompt_idx)
+    text_file_name = text_file_name + '_iter' + str(iteration) + '_pid' + str(proc_id) + '_output.txt'
     save_text_to_file(generated_text, text_file_name, args)
 
 
