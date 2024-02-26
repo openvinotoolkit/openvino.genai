@@ -26,7 +26,8 @@
 typedef std::chrono::high_resolution_clock Time;
 typedef std::chrono::nanoseconds ns;
 
-const std::string sentences[] =
+const int NUM_SENTENCES = 10;
+const std::string sentences[NUM_SENTENCES] =
 {
     //"my pc sound is too low",
     "What is OpenVINO?",
@@ -55,6 +56,8 @@ struct Args {
     float temp = 0.95;
     float repeat_penalty = 1.0;
     int output_fixed_len = 0;
+    std::vector<int32_t> selected_inputs;
+    bool print_inputs_info = false;
 };
 
 static void usage(const std::string& prog) {
@@ -72,7 +75,9 @@ static void usage(const std::string& prog) {
         << "  --top_p N               top-p sampling (default: 0.7)\n"
         << "  --temp N                temperature (default: 0.95)\n"
         << "  --repeat_penalty N      penalize repeat sequence of tokens (default: 1.0, 1.0 = disabled)\n"
-        << "  --output_fixed_len N    set output fixed lenth (default: 0, output lenth is determined by the model)\n";
+        << "  --output_fixed_len N    set output fixed lenth (default: 0, output lenth is determined by the model)\n"
+        << "  --print_inputs_info      print inputs id and token length (default: false)\n"
+        << "  --select_inputs         set input ids to run with comma separated list (ex: \"1,3,1,3\")\n";
 }
 
 static Args parse_args(const std::vector<std::string>& argv) {
@@ -117,6 +122,30 @@ static Args parse_args(const std::vector<std::string>& argv) {
         }
         else if (arg == "--output_fixed_len") {
             args.output_fixed_len = std::stoi(argv[++i]);
+        }
+        else if (arg == "--select_inputs") {
+            std::string inputs_str = argv[++i];
+            auto get_input_indices = [&]() {
+                std::vector<int> input_ids;
+                size_t pos_begin = 0;
+                size_t pos_end = 0;
+                while((pos_end = inputs_str.find(",", pos_begin)) != std::string::npos) {
+                   std::string id_str = inputs_str.substr(pos_begin, (pos_end - pos_begin));
+                   args.selected_inputs.push_back(std::stoi(id_str));
+                   pos_begin = pos_end + 1;
+                }
+                std::string id_str = inputs_str.substr(pos_begin);
+                args.selected_inputs.push_back(std::stoi(id_str));
+            };
+            get_input_indices();
+            std::cout << "Selected input indices : " << std::endl;
+            for (auto i : args.selected_inputs) {
+                std::cout << i << " ";
+            }
+            std::cout << std::endl;
+        }
+        else if (arg == "--print_inputs_info") {
+            args.print_inputs_info = true;
         }
         else {
             std::cerr << "Unknown argument: " << arg << std::endl;
@@ -165,7 +194,7 @@ int64_t get_out_token_id(const std::vector<int>& input_ids, float* logits, size_
         }
 
         std::vector<TokenIdScore> token_scores(vocab_size);
-        for (int i = 0; i < vocab_size; i++) {
+        for (size_t i = 0; i < vocab_size; i++) {
             token_scores[i] = TokenIdScore(i, logits[i]);
         }
 
@@ -399,11 +428,9 @@ int main(int argc, char* argv[]) try {
         device_config[ov::hint::enable_cpu_pinning.name()] = true;
         device_config[ov::enable_profiling.name()] = false;
     }
-
     double total_time = 0;
     int count = 0;
-    double first_time;
-    
+
     // Read OpenVINO Model
     if (1 == convert_model) {
         startTime = Time::now();
@@ -425,33 +452,54 @@ int main(int argc, char* argv[]) try {
         return 0;
     }
 
+    if (args.print_inputs_info) {
+        std::cout << "Available input sentences are as follows:" << std::endl;
+        for (size_t i = 0; i < NUM_SENTENCES; ++i) {
+            auto prompt_text ="<|user|> " + sentences[i] + " <|assitant|>";
+            tokenize(tokenizer, prompt_text.c_str());
+            input_ids = tokenizer.get_tensor("input_ids");
+            std::cout << "sentence " << i << " : " << input_ids.get_size() << " tokens" << std::endl;
+        }
+        return 0;
+    }
     //Compile model
     startTime = Time::now();
     ov::CompiledModel compilemodel = core.compile_model(args.ov_model_path, device, device_config);
     ov::InferRequest ireq = compilemodel.create_infer_request();
     duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Compile LLM model took " << duration_ms << " ms" << std::endl;
- 
+
     auto model_inputs = compilemodel.inputs();
     auto inputs = compilemodel.inputs();
     TextStreamer text_streamer{ std::move(detokenizer) };
+    std::vector<int32_t> sentences_to_run;
+    if (args.selected_inputs.size() > 0)
+        sentences_to_run = args.selected_inputs;
+    else {
+        for (size_t i = 0; i < NUM_SENTENCES; ++i)
+            sentences_to_run.push_back(i);
+    }
 
-    for (std::string input_text : sentences) {
+    // input id, input length, output length, first time, other time
+    std::vector<std::tuple<int32_t, size_t, size_t, double, double>> perf_records;
+
+    for (int32_t input_id : sentences_to_run) {
+        auto input_text = sentences[input_id];
         total_time = 0;
         count = 0;
         auto prompt_text ="<|user|> " + input_text + " <|assitant|>";
-        std::cout << " #### sentence: index " << prompt_text << std::endl;
         tokenize(tokenizer, prompt_text.c_str());
         input_ids = tokenizer.get_tensor("input_ids");
         attention_mask = tokenizer.get_tensor("attention_mask");
-        std::cout << "input lenghth " << input_ids.get_size() << std::endl;
-
+        auto input_len = input_ids.get_size();
+        std::cout << " #### sentence: index " << prompt_text << std::endl;
+        std::cout << "input lenghth " << input_len << std::endl;
         std::vector<int> output_ids;
         output_ids.reserve(input_ids.get_size());
         for (size_t idx = 0; idx < input_ids.get_size(); ++idx) {
             output_ids.emplace_back(((int)input_ids.data<const int64_t>()[idx]));
         }
-        
+
         ireq.set_tensor("input_ids", input_ids);
         ireq.set_tensor("attention_mask", attention_mask);
         ireq.get_tensor("position_ids").set_shape(input_ids.get_shape());
@@ -459,7 +507,7 @@ int main(int argc, char* argv[]) try {
         ireq.get_tensor("beam_idx").set_shape({ BATCH_SIZE });
         ireq.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
-	for (auto &&state : ireq.query_state()){
+        for (auto &&state : ireq.query_state()){
             state.reset();
         }
 
@@ -467,7 +515,7 @@ int main(int argc, char* argv[]) try {
         ireq.infer();
         duration_ms = get_duration_ms_until_now(startTime);
         std::cout << "First token took " << duration_ms << " ms" << std::endl;
-        first_time = duration_ms;
+        double first_time= duration_ms;
 
         size_t vocab_size = ireq.get_tensor("logits").get_shape().back();
 
@@ -487,7 +535,7 @@ int main(int argc, char* argv[]) try {
             ireq.get_tensor("attention_mask").set_shape({ BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1 });
             std::fill_n(ireq.get_tensor("attention_mask").data<int64_t>(), ireq.get_tensor("attention_mask").get_size(), 1);
             ireq.get_tensor("position_ids").data<int64_t>()[0] = ireq.get_tensor("attention_mask").get_size() - 2;
-            
+
             ireq.start_async();
             ireq.wait();
             duration_ms = get_duration_ms_until_now(startTime);
@@ -503,7 +551,7 @@ int main(int argc, char* argv[]) try {
             if (args.output_fixed_len > 0) {
                 if(count >= (args.output_fixed_len - 1))
                     break;
-            } 
+            }
             else {
                 if (out_token == SPECIAL_EOS_TOKEN) {
                     break;
@@ -513,8 +561,14 @@ int main(int argc, char* argv[]) try {
         text_streamer.end();
 
         if (count > 0) {
-            std::cout << "Other Avg inference took total " << total_time << " ms token num " << count << " first " << first_time << " ms " << " avg " << total_time / (count) << " ms" << std::endl;
+            double avg_time = total_time / count;
+            std::cout << "Other Avg inference took total " << total_time << " ms token num " << count << " first " << first_time << " ms " << " avg " << avg_time << " ms" << std::endl;
+            perf_records.push_back({input_id, input_len, count, first_time, avg_time});
         }
+    }
+    std::cout << "input id, input token len, out token len, first token time, average time" << std::endl;
+    for (auto i : perf_records) {
+        std::cout << std::get<0>(i) << ", " << std::get<1>(i) << ", " << std::get<2>(i) << ", " << std::get<3>(i) << ", " << std::get<4>(i) << std::endl;
     }
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
