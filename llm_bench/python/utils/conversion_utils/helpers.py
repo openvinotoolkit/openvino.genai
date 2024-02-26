@@ -3,10 +3,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from enum import Enum
-from pathlib import Path
+from functools import partial
 import logging as log
+from pathlib import Path
+from datasets import load_dataset
 import torch
+import numpy as np
 from nncf import compress_weights
+from nncf import Dataset
 from openvino import save_model
 from ..nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION
 import warnings
@@ -88,6 +92,64 @@ def save_tokenizer(tokenizer, out_dir):
         log.error(f'tokenizer loading failed with {e}')
 
 
+def transform_fn(item, item_name, input_shapes, tokenizer, max_tokens=127):
+    tokenized_text = tokenizer(item[item_name], return_tensors="np")
+    input_ids = tokenized_text["input_ids"][:max_tokens]
+    attention_mask = tokenized_text["attention_mask"][:max_tokens]
+
+    inputs = {}
+    inputs["input_ids"] = input_ids
+
+    if "attention_mask" in input_shapes:
+        inputs["attention_mask"] = tokenized_text["attention_mask"]
+
+    if "position_ids" in input_shapes:
+        position_ids = np.cumsum(attention_mask, axis=1) - 1
+        position_ids[attention_mask == 0] = 1
+        inputs["position_ids"] = position_ids
+
+    for name, shape in input_shapes.items():
+        if name in inputs:
+            continue
+        inputs[name] = np.zeros(shape)
+
+    return inputs
+
+
+def get_ov_input_shapes(model, batch_size = 1):
+    inputs = {}
+    for val in model.inputs:
+        name = val.any_name
+        shape = list(val.partial_shape.get_min_shape())
+        shape[0] = batch_size
+        inputs[name] = shape
+
+    return inputs
+
+
+def get_data_aware_args(ov_model, tokenizer, compression_args):
+    res = {}
+    if 'dataset' in compression_args and tokenizer is not None:
+        dataset_args = compression_args['dataset']
+        # for example "wikitext,wikitext-2-v1,train[:1000]"
+        path, name, split = dataset_args['name'].split(',')
+        dataset = load_dataset(path, name, split=split)
+
+        if path == 'wikitext':
+            # filter short sentences
+            dataset = dataset.filter(lambda example: len(example["text"]) > 128)
+        input_shapes = get_ov_input_shapes(ov_model)
+        data_transform_func = partial(transform_fn, item_name=dataset_args['item_name'], tokenizer=tokenizer, input_shapes=input_shapes)
+        nncf_dataset = Dataset(dataset, data_transform_func)
+        res['dataset'] = nncf_dataset
+        if 'sensitivity_metric' in dataset_args:
+            res['mode'] = dataset_args['sensitivity_metric']
+        if 'awq' in dataset_args:
+            res['awq'] = dataset_args['awq']
+
+    return res
+
+
 def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_weights_format="INT8", fp16=False, args={}, model_name="openvino_model"):
     compression_args = None
     if "INT8" in compress_weights_format and "INT8_ASYM" in COMPRESSION_OPTIONS:
@@ -109,6 +171,7 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
         compression_args["all_layers"] = True
     log.info("Compression options:")
     log.info(compression_args)
+    compression_args.update(get_data_aware_args(ov_model, tok, compression_args))
     compressed_ov_model = compress_weights(ov_model, **compression_args)
     save_ov_model_helper(compressed_ov_model, out_path, model_name, fp16=fp16, tok=tok, config=config)
 
