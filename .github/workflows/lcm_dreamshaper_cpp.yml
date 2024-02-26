@@ -22,7 +22,7 @@ jobs:
       - name: Initialize OpenVINO
         run: |
           mkdir openvino
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.0.0-14004-a240ae8fadd/l_openvino_toolkit_ubuntu20_2024.0.0.dev20240116_x86_64.tgz | tar --directory ./openvino/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14573-ac041605861/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240223_x86_64.tgz | tar --directory ./openvino/ --strip-components 1 -xz
           sudo ./openvino/install_dependencies/install_openvino_dependencies.sh
       - name: Download / convert a model / tokenizer
         run: |
