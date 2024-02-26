@@ -52,7 +52,7 @@ struct TextStreamer {
         print_len = 0;
     }
 };
-}
+} 
 
 int main(int argc, char* argv[]) try {
     if (argc != 3) {
