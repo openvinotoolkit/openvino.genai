@@ -516,4 +516,10 @@ def patch_model_for_optimum_export(model):
     elif model.config.model_type == "mixtral":
         for layer in model.model.layers:
             layer.block_sparse_moe.forward = types.MethodType(mixtral_sparse_moe_block_forward, layer.block_sparse_moe)
+    elif model.config.model_type == "gemma":
+        for layer in model.model.layers:
+            if layer.self_attn.rotary_emb.inv_freq is None:
+                rotary_emb = layer.self_attn.rotary_emb
+                layer.self_attn.rotary_emb.inv_freq = 1.0 / (
+                    rotary_emb.base ** (torch.arange(0, rotary_emb.dim, 2, dtype=torch.int64).float() / rotary_emb.dim))
     return model
