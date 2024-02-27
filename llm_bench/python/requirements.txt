@@ -6,7 +6,7 @@ pillow
 torch
 transformers>=4.33.0,<4.38.0
 diffusers>=0.22.0
-optimum>=1.14.0
+optimum>=1.14.0,<1.17.0
 git+https://github.com/huggingface/optimum-intel.git@672c0228f511b6e9db1c690fce46ab5338908193
 nncf~=2.8.0
 packaging
