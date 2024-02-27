@@ -39,11 +39,11 @@ from optimum.intel.openvino import (
 from optimum.utils.import_utils import is_torch_available, is_diffusers_available
 
 try:
-    from optimum.exporters.openvino.__main__ import _get_submodels_and_export_configs
-except ImportError:
     from optimum.exporters.onnx.__main__ import (
         _get_submodels_and_onnx_configs as _get_submodels_and_export_configs,
     )
+except ImportError:
+    from optimum.exporters.onnx.utils import _get_submodels_and_onnx_configs as _get_submodels_and_export_configs
 
 from transformers import (
     AutoTokenizer,
@@ -153,6 +153,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             preprocessors=None,
             _variant="default",
             monolith=False,
+            library_name="transformers"
         )
         if "decoder_with_past_model" in models_and_onnx_configs:
             models_and_onnx_configs = {"model": models_and_onnx_configs["decoder_with_past_model"]}
@@ -217,6 +218,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
                 preprocessors=None,
                 _variant="default",
                 monolith=False,
+                library_name="transformers"
             )
 
             compression_options = COMPRESSION_OPTIONS[compress_mode]
