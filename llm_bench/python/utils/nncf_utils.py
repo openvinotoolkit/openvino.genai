@@ -53,4 +53,5 @@ INT4_MODEL_CONFIGURATION = {
                      "dataset": {"name": "wikitext,wikitext-2-v1,train[:1000]", "item_name": "text", "awq": False}},
     "bloomz_560m": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 64, "ratio": 0.8,
                     "dataset": {"name": "wikitext,wikitext-2-v1,train[:1000]", "item_name": "text", "awq": True}},
+    "mixtral-8x7b-v0.1": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.8},
 }
