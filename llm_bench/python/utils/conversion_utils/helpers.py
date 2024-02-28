@@ -116,7 +116,7 @@ def transform_fn(item, item_name, input_shapes, tokenizer, max_tokens=127):
     return inputs
 
 
-def get_ov_input_shapes(model, batch_size = 1):
+def get_ov_input_shapes(model, batch_size=1):
     inputs = {}
     for val in model.inputs:
         name = val.any_name
