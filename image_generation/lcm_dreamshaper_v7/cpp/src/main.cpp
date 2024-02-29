@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Intel Corporation
+// Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
@@ -100,7 +100,8 @@ StableDiffusionModels compile_models(const std::string& model_path, const std::s
 
     // Tokenizer
     {
-        models.tokenizer = core.compile_model(model_path + "/tokenizer/openvino_tokenizer.xml", device);
+        // Tokenizer model wil be loaded to CPU: OpenVINO Tokenizers can be inferred on a CPU device only.
+        models.tokenizer = core.compile_model(model_path + "/tokenizer/openvino_tokenizer.xml", "CPU");
     }
 
     return models;
@@ -190,17 +191,17 @@ ov::Tensor postprocess_image(ov::Tensor decoded_image) {
     return generated_image;
 }
 
-int32_t main(int32_t argc, char* argv[]) {
+int32_t main(int32_t argc, char* argv[]) try {
     cxxopts::Options options("stable_diffusion", "Stable Diffusion implementation in C++ using OpenVINO\n");
 
     options.add_options()
     ("p,posPrompt", "Initial positive prompt for LCM ", cxxopts::value<std::string>()->default_value("a beautiful pink unicorn"))
-    ("d,device", "AUTO, CPU, or GPU", cxxopts::value<std::string>()->default_value("CPU"))
+    ("d,device", "AUTO, CPU, or GPU.\nDoesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only", cxxopts::value<std::string>()->default_value("CPU"))
     ("step", "Number of diffusion steps", cxxopts::value<size_t>()->default_value("4"))
     ("s,seed", "Number of random seed to generate latent for one image output", cxxopts::value<size_t>()->default_value("42"))
     ("num", "Number of image output", cxxopts::value<size_t>()->default_value("1"))
-    ("c,useCache", "use model caching", cxxopts::value<bool>()->default_value("false"))
-    ("r,readNPLatent", "read numpy generated latents from file", cxxopts::value<bool>()->default_value("false"))
+    ("c,useCache", "Use model caching", cxxopts::value<bool>()->default_value("false"))
+    ("r,readNPLatent", "Read numpy generated latents from file, only supported for one output image", cxxopts::value<bool>()->default_value("false"))
     ("m,modelPath", "Specify path of LCM model IRs", cxxopts::value<std::string>()->default_value("../scripts/SimianLuo/LCM_Dreamshaper_v7"))
     ("t,type", "Specify the type of LCM model IRs (e.g., FP16_static or FP16_dyn)", cxxopts::value<std::string>()->default_value("FP16_static"))
     ("l,loraPath", "Specify path of LoRA file. (*.safetensors).", cxxopts::value<std::string>()->default_value(""))
@@ -233,6 +234,9 @@ int32_t main(int32_t argc, char* argv[]) {
     const std::string lora_path = result["loraPath"].as<std::string>();
     const float alpha = result["alpha"].as<float>();
     const uint32_t height = 512, width = 512;
+
+    OPENVINO_ASSERT(!read_np_latent || (read_np_latent && (num_images == 1)),
+        "\"readNPLatent\" option is only supported for one output image. Number of image output was set to: " + std::to_string(num_images));
 
     const std::string folder_name = "images";
     try {
@@ -269,8 +273,7 @@ int32_t main(int32_t argc, char* argv[]) {
 
     ov::Tensor denoised(ov::element::f32, {1, 4, height / 8, width / 8});
     for (uint32_t n = 0; n < num_images; n++) {
-        std::uint32_t seed = num_images == 1 ? user_seed: n;
-
+        std::uint32_t seed = num_images == 1 ? user_seed: user_seed + n;
         ov::Tensor latent_model_input = randn_tensor(height, width, read_np_latent, seed);
 
         for (size_t inference_step = 0; inference_step < num_inference_steps; inference_step++) {
@@ -287,4 +290,10 @@ int32_t main(int32_t argc, char* argv[]) {
     }
 
     return EXIT_SUCCESS;
+} catch (const std::exception& error) {
+    std::cerr << error.what() << '\n';
+    return EXIT_FAILURE;
+} catch (...) {
+    std::cerr << "Non-exception object thrown\n";
+    return EXIT_FAILURE;
 }

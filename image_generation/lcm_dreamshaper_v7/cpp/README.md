@@ -1,5 +1,5 @@
-# OpenVINO Latent Consistency Model C++ pipeline
-The pure C++ text-to-image pipeline, driven by the OpenVINO native API for SD v1.5 Latent Consistency Model with LCM Scheduler. It includes advanced features like LoRA integration with safetensors and [OpenVINO extension for tokenizers](https://github.com/openvinotoolkit/openvino_contrib/blob/master/modules/custom_operations/user_ie_extensions/tokenizer/python/README.md). This demo has been tested for Linux platform only.
+# OpenVINO Latent Consistency Model C++ image generation  pipeline
+The pure C++ text-to-image pipeline, driven by the OpenVINO native API for SD v1.5 Latent Consistency Model with LCM Scheduler. It includes advanced features like LoRA integration with safetensors and [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers). Loading `openvino_tokenizers` to `ov::Core` enables tokenization. [The common folder](../../common/) contains schedulers for image generation and `imwrite()` for saving `bmp` images. This demo has been tested for Linux platform only. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/main/notebooks/263-latent-consistency-models-image-generation/263-lcm-lora-controlnet.ipynb) which provides an example of image generaztion in Python.
 
 > [!NOTE]
 >This tutorial assumes that the current working directory is `<openvino.genai repo>/image_generation/lcm_dreamshaper_v7/cpp/` and all paths are relative to this folder.
@@ -9,13 +9,12 @@ The pure C++ text-to-image pipeline, driven by the OpenVINO native API for SD v1
 C++ Packages:
 * [CMake](https://cmake.org/download/): Cross-platform build tool
 * [OpenVINO](https://docs.openvino.ai/2023.2/openvino_docs_install_guides_overview.html): Model inference
-* Eigen3
 
 Prepare a python environment and install dependencies:
 ```shell
 conda create -n openvino_lcm_cpp python==3.10
 conda activate openvino_lcm_cpp
-conda install openvino eigen c-compiler cxx-compiler make
+conda install -c conda-forge openvino c-compiler cxx-compiler make
 ```
 
 ## Step 2: Latent Consistency Model and Tokenizer models
@@ -27,7 +26,7 @@ conda install openvino eigen c-compiler cxx-compiler make
     ```shell
     conda activate openvino_lcm_cpp
     python -m pip install -r scripts/requirements.txt
-    python -m pip install ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers]
+    python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
     ```
 
 2. Run model conversion script to download and convert PyTorch model to OpenVINO IR via [optimum-intel](https://github.com/huggingface/optimum-intel). Please, use the script `scripts/convert_model.py` to convert the model:
@@ -52,7 +51,7 @@ Download and put safetensors and model IR into the models folder.
 ## Step 3: Build the LCM application
 
 ```shell
-conda activate LCM-CPP
+conda activate openvino_lcm_cpp
 cmake -DCMAKE_BUILD_TYPE=Release -S . -B build
 cmake --build build --config Release --parallel
 ```
@@ -66,7 +65,7 @@ Usage:
 ```
 
 * `-p, --posPrompt arg` Initial positive prompt for SD  (default: cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting)
-* `-d, --device arg`    AUTO, CPU, or GPU (default: CPU)
+* `-d, --device arg`    AUTO, CPU, or GPU. Doesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only (default: CPU)
 * `--step arg`          Number of diffusion step ( default: 20)
 * `-s, --seed arg`      Number of random seed to generate latent (default: 42)
 * `--num arg`           Number of image output(default: 1)
@@ -79,6 +78,9 @@ Usage:
 * `-l, --loraPath arg`  Specify path of lora file. (*.safetensors). (default: )
 * `-a, --alpha arg`     alpha for lora (default: 0.75)
 * `-h, --help`          Print usage
+
+> [!NOTE]
+> The tokenizer model will always be loaded to CPU: [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers) can be inferred on a CPU device only.
 
 Example:
 

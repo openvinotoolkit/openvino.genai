@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2018-2023 Intel Corporation
+# Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
 import torch
@@ -8,6 +8,8 @@ import os
 import time
 import logging as log
 import openvino.torch  # noqa: F401
+import utils.hook_greedy_search
+import utils.hook_beam_search
 
 MAX_CONNECT_TIME = 50
 
@@ -74,7 +76,7 @@ def create_text_gen_model(model_path, device, **kwargs):
         gptneoxclm = 'transformers.models.gpt_neox.modeling_gpt_neox.GPTNeoXForCausalLM'
         chatglmfcg = 'transformers_modules.pytorch_original.modeling_chatglm.ChatGLMForConditionalGeneration'
         real_base_model_name = str(type(model)).lower()
-        log.info('Real base model=', real_base_model_name)
+        log.info(f'Real base model={real_base_model_name}')
         # bfclm will trigger generate crash.
 
         # If the device is set to GPU there's a need to substitute it with 'cuda' so it will be accepted by PyTorch
@@ -93,11 +95,17 @@ def create_text_gen_model(model_path, device, **kwargs):
     else:
         raise RuntimeError('==Failure ==: no device to load')
 
+    if kwargs['num_beams'] > 1:
+        bench_hook = utils.hook_beam_search.BeamSearchHook()
+    else:
+        bench_hook = utils.hook_greedy_search.GreedySearchHook()
+    bench_hook.new_forward(model, model_type)
+
     if kwargs['torch_compile_backend']:
         backend = kwargs['torch_compile_backend']
         compiled_model = run_torch_compile(model, backend)
         model = compiled_model
-    return model, tokenizer, from_pretrain_time
+    return model, tokenizer, from_pretrain_time, bench_hook
 
 
 def create_image_gen_model(model_path, device, **kwargs):

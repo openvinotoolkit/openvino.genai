@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Intel Corporation
+// Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
@@ -115,7 +115,8 @@ StableDiffusionModels compile_models(const std::string& model_path, const std::s
     // Tokenizer
     {
         Timer t("Loading and compiling tokenizer");
-        models.tokenizer = core.compile_model(model_path + "/tokenizer/openvino_tokenizer.xml", device);
+        // Tokenizer model wil be loaded to CPU: OpenVINO Tokenizers can be inferred on a CPU device only.
+        models.tokenizer = core.compile_model(model_path + "/tokenizer/openvino_tokenizer.xml", "CPU");
     }
 
     return models;
@@ -202,20 +203,20 @@ ov::Tensor postprocess_image(ov::Tensor decoded_image) {
     return generated_image;
 }
 
-int32_t main(int32_t argc, char* argv[]) {
+int32_t main(int32_t argc, char* argv[]) try {
     cxxopts::Options options("stable_diffusion", "Stable Diffusion implementation in C++ using OpenVINO\n");
 
     options.add_options()
     ("p,posPrompt", "Initial positive prompt for SD ", cxxopts::value<std::string>()->default_value("cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"))
     ("n,negPrompt","Defaut is empty with space", cxxopts::value<std::string>()->default_value(" "))
-    ("d,device", "AUTO, CPU, or GPU", cxxopts::value<std::string>()->default_value("CPU"))
+    ("d,device", "AUTO, CPU, or GPU.\nDoesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only", cxxopts::value<std::string>()->default_value("CPU"))
     ("step", "Number of diffusion steps", cxxopts::value<size_t>()->default_value("20"))
     ("s,seed", "Number of random seed to generate latent for one image output", cxxopts::value<size_t>()->default_value("42"))
     ("num", "Number of image output", cxxopts::value<size_t>()->default_value("1"))
-    ("height", "destination image height", cxxopts::value<size_t>()->default_value("512"))
-    ("width", "destination image width", cxxopts::value<size_t>()->default_value("512"))
-    ("c,useCache", "use model caching", cxxopts::value<bool>()->default_value("false"))
-    ("r,readNPLatent", "read numpy generated latents from file", cxxopts::value<bool>()->default_value("false"))
+    ("height", "Destination image height", cxxopts::value<size_t>()->default_value("512"))
+    ("width", "Destination image width", cxxopts::value<size_t>()->default_value("512"))
+    ("c,useCache", "Use model caching", cxxopts::value<bool>()->default_value("false"))
+    ("r,readNPLatent", "Read numpy generated latents from file", cxxopts::value<bool>()->default_value("false"))
     ("m,modelPath", "Specify path of SD model IRs", cxxopts::value<std::string>()->default_value("../models/dreamlike-anime-1.0"))
     ("t,type", "Specify the type of SD model IRs (e.g., FP16_static or FP16_dyn)", cxxopts::value<std::string>()->default_value("FP16_static"))
     ("l,loraPath", "Specify path of LoRA file. (*.safetensors).", cxxopts::value<std::string>()->default_value(""))
@@ -250,6 +251,9 @@ int32_t main(int32_t argc, char* argv[]) {
     const std::string lora_path = result["loraPath"].as<std::string>();
     const float alpha = result["alpha"].as<float>();
 
+    OPENVINO_ASSERT(!read_np_latent || (read_np_latent && (num_images == 1)),
+        "\"readNPLatent\" option is only supported for one output image. Number of image output was set to " + std::to_string(num_images));
+
     const std::string folder_name = "images";
     try {
         std::filesystem::create_directory(folder_name);
@@ -277,7 +281,7 @@ int32_t main(int32_t argc, char* argv[]) {
     std::vector<std::int64_t> timesteps = scheduler->get_timesteps();
 
     for (uint32_t n = 0; n < num_images; n++) {
-        std::uint32_t seed = num_images == 1 ? user_seed: n;
+        std::uint32_t seed = num_images == 1 ? user_seed: user_seed + n;
         ov::Tensor noise = randn_tensor(height, width, read_np_latent, seed);
 
         // latents are multiplied by 'init_noise_sigma'
@@ -306,4 +310,10 @@ int32_t main(int32_t argc, char* argv[]) {
     }
 
     return EXIT_SUCCESS;
+} catch (const std::exception& error) {
+    std::cerr << error.what() << '\n';
+    return EXIT_FAILURE;
+} catch (...) {
+    std::cerr << "Non-exception object thrown\n";
+    return EXIT_FAILURE;
 }

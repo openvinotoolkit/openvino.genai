@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2018-2023 Intel Corporation
+# Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from transformers import AutoTokenizer
 from transformers import AutoModelForCausalLM, T5ForConditionalGeneration, BlenderbotForConditionalGeneration, AutoModel
@@ -11,7 +11,7 @@ from optimum.intel.openvino import (
     OVLatentConsistencyModelPipeline,
     OVStableDiffusionXLPipeline
 )
-from utils.ov_model_classes import OVMPTModel, OVFalconModel, OVLDMSuperResolutionPipeline, OVChatGLMModel, OVChatGLM2Model, OVQwenModel
+from utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel, OVChatGLM2Model, OVQwenModel
 
 TOKENIZE_CLASSES_MAPPING = {
     'decoder': AutoTokenizer,
@@ -26,7 +26,6 @@ OV_MODEL_CLASSES_MAPPING = {
     't5': OVModelForSeq2SeqLM,
     'blenderbot': OVModelForSeq2SeqLM,
     'mpt': OVMPTModel,
-    'falcon': OVFalconModel,
     'stable-diffusion-xl': OVStableDiffusionXLPipeline,
     'sdxl': OVStableDiffusionXLPipeline,
     'lcm-sdxl': OVStableDiffusionXLPipeline,
@@ -59,7 +58,7 @@ USE_CASES = {
     'image_gen': ['stable-diffusion-', 'ssd-', 'deepfloyd-if', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl'],
     'text2speech': ['whisper'],
     'image_cls': ['vit'],
-    'code_gen': ['replit', 'codegen2', 'codegen', 'codet5'],
+    'code_gen': ['replit', 'codegen2', 'codegen', 'codet5', "stable-code"],
     'text_gen': [
         'decoder',
         't5',
@@ -93,8 +92,11 @@ USE_CASES = {
         'qwen',
         'zephyr',
         'mistral',
+        'mixtral',
         'yi-',
-        'phi-'
+        'phi-',
+        'minicpm',
+        'gemma',
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }

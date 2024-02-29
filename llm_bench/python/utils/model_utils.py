@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2018-2023 Intel Corporation
+# Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import argparse
 import os
@@ -110,6 +110,13 @@ def add_stateful_model_arguments(parser: argparse.ArgumentParser):
         'Additional operations are inserted into the model to handle cache state (Gathers, ShapeOf, etc.)',
     )
 
+    parser.add_argument(
+        '--disable-stateful',
+        action="store_true",
+        default=None,
+        help="Disable stateful transformation for model conversion"
+    )
+
 
 def analyze_args(args):
     model_args = {}
@@ -126,6 +133,7 @@ def analyze_args(args):
     model_args['num_beams'] = args.num_beams
     model_args['torch_compile_backend'] = args.torch_compile_backend
     model_args['convert_tokenizer'] = args.convert_tokenizer
+    model_args['interleave'] = args.interleave
 
     model_framework = args.framework
     model_path = Path(args.model)
@@ -219,8 +227,11 @@ def get_ir_conversion_frontend(cur_model_name, model_name_list):
 
 def get_model_precision(model_name_list):
     precision_list = [
-        'FP32', 'FP16', 'FP16-INT8', 'INT8', 'INT8_compressed_weights', 'INT8_quantized', 'PT_compressed_weights',
-        'OV_FP32-INT8', 'OV_FP16-INT8', 'OV_FP32-INT8_ASYM', 'OV_FP16-INT8_ASYM', 'PT_FP32-INT8', 'PT_FP16-INT8', 'PT_FP32-INT8_ASYM', 'PT_FP16-INT8_ASYM',
+        'FP32', 'FP16',
+        'FP16-INT8', 'INT8', 'INT8_compressed_weights', 'INT8_quantized', 'PT_compressed_weights',
+        'OV_FP32-INT8', 'OV_FP16-INT8',
+        'OV_FP32-INT8_ASYM', 'OV_FP32-INT8_SYM', 'OV_FP16-INT8_ASYM', 'OV_FP16-INT8_SYM',
+        'PT_FP32-INT8', 'PT_FP16-INT8', 'PT_FP32-INT8_ASYM', 'PT_FP32-INT8_SYM', 'PT_FP16-INT8_ASYM', 'PT_FP16-INT8_SYM',
         'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4',
         'OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM', 'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT']
     model_precision = 'unknown'

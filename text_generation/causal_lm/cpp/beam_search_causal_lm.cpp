@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Intel Corporation
+// Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <group_beam_searcher.hpp>
@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) try {
     }
     // Compile models
     ov::Core core;
-    core.add_extension(USER_OV_EXTENSIONS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in CMakeLists.txt
+    core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) try {
     std::vector<int32_t> next_beams;
     for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
         lm.infer();
-        std::tie(next_tokens, next_beams) = group_beam_searcher.process(lm.get_tensor("logits"));
+        std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(lm.get_tensor("logits"));
         if (next_tokens.empty()) {
             break;
         }
@@ -81,13 +81,13 @@ int main(int argc, char* argv[]) try {
     // Model is stateful which means that context (kv-cache) which belongs to a particular
     // text sequence is accumulated inside the model during the generation loop above.
     // This context should be reset before processing the next text sequence.
-    // While it is not required to reset context in this sample as only one sequence is processed,
+    // While it is not required to reset context in this sample as only one batch of sequences is processed,
     // it is called for education purposes:
     lm.reset_state();
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
-    return 1;
+    return EXIT_FAILURE;
 } catch (...) {
     std::cerr << "Non-exception object thrown\n";
-    return 1;
+    return EXIT_FAILURE;
 }

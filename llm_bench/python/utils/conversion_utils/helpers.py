@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2018-2023 Intel Corporation
+# Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 from enum import Enum
@@ -33,6 +33,10 @@ def is_ov_compression(args):
 
 def is_fp16(args):
     return args.precision == "FP16"
+
+
+def is_int8_compression(compress_weights_mode):
+    return compress_weights_mode in ["INT8", "INT8_ASYM", "INT8_SYM"]
 
 
 def is_ov_model_provided(model_id, model_dir, precision, model_name="openvino_model.xml"):
