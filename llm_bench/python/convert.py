@@ -9,7 +9,8 @@ import logging as log
 from argparse import ArgumentParser
 from functools import wraps
 from pathlib import Path
-from typing import Tuple, Union, Dict, TYPE_CHECKING
+from typing import Tuple, Union, Dict, Optional, TYPE_CHECKING
+import nncf
 import torch
 from diffusers import (
     StableDiffusionPipeline,
@@ -17,13 +18,14 @@ from diffusers import (
     LDMSuperResolutionPipeline,
 )
 from diffusers import UNet2DConditionModel, AutoencoderTiny, LCMScheduler
-from nncf import compress_weights
+from nncf.torch.model_creation import is_wrapped_model
 from openvino import Type as OVType, PartialShape, save_model, convert_model
 from openvino.runtime import Core, get_version
 from optimum.exporters import TasksManager
 from optimum.utils import DEFAULT_DUMMY_SHAPES
 from optimum.exporters.onnx import get_encoder_decoder_models_for_export
 from optimum.exporters.openvino import export_models
+from optimum.exporters.openvino.model_patcher import patch_model_with_bettertransformer
 from optimum.intel.openvino import (
     OVModelForSeq2SeqLM,
     OVStableDiffusionPipeline,
@@ -37,11 +39,11 @@ from optimum.intel.openvino import (
 from optimum.utils.import_utils import is_torch_available, is_diffusers_available
 
 try:
-    from optimum.exporters.openvino.__main__ import _get_submodels_and_export_configs
-except ImportError:
     from optimum.exporters.onnx.__main__ import (
         _get_submodels_and_onnx_configs as _get_submodels_and_export_configs,
     )
+except ImportError:
+    from optimum.exporters.onnx.utils import _get_submodels_and_onnx_configs as _get_submodels_and_export_configs
 
 from transformers import (
     AutoTokenizer,
@@ -93,6 +95,32 @@ register_normalized_configs()
 register_bettertransformer_config()
 
 
+def compress_torchmodels(
+    models_and_onnx_configs,
+    stateful: bool = True,
+    dummy_shapes: Optional[Dict] = None,
+    compression_options: Optional[Dict] = None,
+):
+    if dummy_shapes is None:
+        dummy_shapes = {}
+
+    if compression_options is None:
+        compression_options = {}
+
+    for model_name in models_and_onnx_configs.keys():
+        submodel, sub_onnx_config = models_and_onnx_configs[model_name]
+        if stateful:
+            submodel = patch_model_with_bettertransformer(submodel)
+        if is_wrapped_model(submodel):
+            dataset = None
+        else:
+            dummy_inputs = sub_onnx_config.generate_dummy_inputs(framework="pt", **dummy_shapes)
+            dataset = nncf.Dataset([dummy_inputs])
+        compressed_submodel = nncf.compress_weights(submodel, dataset=dataset, **compression_options)
+        models_and_onnx_configs[model_name] = (compressed_submodel, sub_onnx_config)
+    return models_and_onnx_configs
+
+
 def convert_optimum_causallm_base(model, args, model_config=None, compress_only=False):
     tokenizer_id = args.tokenizer_id or args.model_id
     tok = AutoTokenizer.from_pretrained(tokenizer_id, trust_remote_code=True)
@@ -102,7 +130,8 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
     if args.stateful:
         log.warning(
             "usage --stateful flag is deprecated and will be removed in future, default behaviour is export stateful model"
-            " please use --disable_stateful if you need model without state")
+            " please use --disable_stateful if you need model without state"
+        )
     if not compress_only:
         model_config = model.config
         model = patch_model_for_optimum_export(model)
@@ -124,6 +153,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             preprocessors=None,
             _variant="default",
             monolith=False,
+            library_name="transformers"
         )
         if "decoder_with_past_model" in models_and_onnx_configs:
             models_and_onnx_configs = {"model": models_and_onnx_configs["decoder_with_past_model"]}
@@ -171,11 +201,16 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             if is_int8_compression(cw):
                 compression_modes.append(cw)
         assert compression_modes, "Only INT8 compression supported for PyTorch backend"
-        for compress_mode in compression_modes:
-            compresion_options = COMPRESSION_OPTIONS[compress_mode]
-            compressed_model = compress_weights(model, **compresion_options)
-            onnx_config, models_and_onnx_configs = _get_submodels_and_export_configs(
-                model=compressed_model,
+        number_compression_modes = len(compression_modes)
+        original_model = model
+        for idx, compress_mode in enumerate(compression_modes):
+            if number_compression_modes - idx > 1:
+                model = copy.deepcopy(original_model)
+            else:
+                model = original_model
+
+            _, models_and_onnx_configs = _get_submodels_and_export_configs(
+                model=model,
                 task="text-generation-with-past",
                 custom_onnx_configs={},
                 custom_architecture=None,
@@ -183,7 +218,17 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
                 preprocessors=None,
                 _variant="default",
                 monolith=False,
+                library_name="transformers"
             )
+
+            compression_options = COMPRESSION_OPTIONS[compress_mode]
+            models_and_onnx_configs = compress_torchmodels(
+                models_and_onnx_configs,
+                stateful=not args.disable_stateful,
+                dummy_shapes=dummy_shapes,
+                compression_options=compression_options,
+            )
+
             pt_out_dir = (
                 Path(args.output_dir)
                 / PYTORCH_DIR
@@ -210,13 +255,19 @@ def convert_causal_lm(args):
     cuda, post_init = patch_gptq(config)
     ov_out_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR
     precision = args.precision
-    compression_only = is_ov_compression(args) and not is_torch_compression(args) and is_ov_model_provided(args.model_id, ov_out_dir, precision)
+    compression_only = (
+        is_ov_compression(args)
+        and not is_torch_compression(args)
+        and is_ov_model_provided(args.model_id, ov_out_dir, precision)
+    )
     model_kwargs = {}
     if post_init is not None:
         model_kwargs["torch_dtype"] = torch.float32
     model = None
     if not compression_only:
-        model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, config=config, **model_kwargs)
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_id, trust_remote_code=True, config=config, **model_kwargs
+        )
         try:
             model.to(torch.float32)
         except Exception:
@@ -247,12 +298,25 @@ def convert_seq2seq(args):
                 if is_int8_compression(cw):
                     compression_modes.append(cw)
             assert compression_modes, "Only INT8 compression supported for PyTorch backend"
-            for compress_mode in compression_modes:
-                compresion_options = COMPRESSION_OPTIONS[compress_mode]
-                compressed_pt_model = compress_weights(pt_model, **compresion_options)
-                onnx_config_constructor = TasksManager.get_exporter_config_constructor(model=pt_model, exporter="onnx", task="text2text-generation")
+            for idx, compress_mode in enumerate(compression_modes):
+                if idx > 0:
+                    pt_model = AutoModelForSeq2SeqLM.from_pretrained(
+                        args.model_id,
+                        trust_remote_code=True,
+                        config=config,
+                    )
+
+                onnx_config_constructor = TasksManager.get_exporter_config_constructor(
+                    model=pt_model, exporter="onnx", task="text2text-generation"
+                )
                 onnx_config = onnx_config_constructor(pt_model.config, use_past=True)
-                models_and_onnx_configs = get_encoder_decoder_models_for_export(compressed_pt_model, onnx_config)
+                models_and_onnx_configs = get_encoder_decoder_models_for_export(pt_model, onnx_config)
+
+                compression_options = COMPRESSION_OPTIONS[compress_mode]
+                models_and_onnx_configs = compress_torchmodels(
+                    models_and_onnx_configs, compression_options=compression_options
+                )
+
                 encoder_file_name = Path("encoder") / OV_ENCODER_NAME
                 decoder_file_name = Path("decoder") / OV_DECODER_NAME
                 decoder_with_past_file_name = Path("decoder_with_past") / OV_DECODER_WITH_PAST_NAME
@@ -282,6 +346,10 @@ def convert_seq2seq(args):
 
         del pt_model
         gc.collect()
+
+    # skip openvino compression pipeline if pytorch compression pipeline was used
+    if pt_compress_weights:
+        return
 
     ov_compression = is_ov_compression(args)
     ov_encoder = is_ov_model_provided(args.model_id, args.output_dir, args.precision, "openvino_encoder_model.xml")
@@ -387,12 +455,18 @@ def _get_submodels_for_export_stable_diffusion(
 
     # VAE Encoder https://github.com/huggingface/diffusers/blob/v0.11.1/src/diffusers/models/vae.py#L565
     vae_encoder = copy.deepcopy(pipeline.vae)
-    vae_encoder.forward = lambda sample: {"latent_sample": vae_encoder.encode(x=sample)["latent_dist"].sample()}
+    if isinstance(vae_encoder, AutoencoderTiny):
+        vae_encoder.forward = lambda sample: {"latent_sample": vae_encoder.encode(x=sample)["latents"]}
+    else:
+        vae_encoder.forward = lambda sample: {"latent_sample": vae_encoder.encode(x=sample)["latent_dist"].sample()}
     models_for_export["vae_encoder"] = vae_encoder
 
     # VAE Decoder https://github.com/huggingface/diffusers/blob/v0.11.1/src/diffusers/models/vae.py#L600
     vae_decoder = copy.deepcopy(pipeline.vae)
-    vae_decoder.forward = lambda latent_sample: vae_decoder.decode(z=latent_sample)
+    if isinstance(vae_encoder, AutoencoderTiny):
+        vae_decoder.forward = lambda latent_sample: vae_decoder.decode(latent_sample)
+    else:
+        vae_decoder.forward = lambda latent_sample: vae_decoder.decode(z=latent_sample)
     models_for_export["vae_decoder"] = vae_decoder
 
     text_encoder_2 = getattr(pipeline, "text_encoder_2", None)
@@ -432,7 +506,9 @@ def get_stable_diffusion_models_for_export(
             exporter="onnx",
             task="feature-extraction",
         )
-        text_encoder_onnx_config = text_encoder_config_constructor(pipeline.text_encoder.config, int_dtype=int_dtype, float_dtype=float_dtype)
+        text_encoder_onnx_config = text_encoder_config_constructor(
+            pipeline.text_encoder.config, int_dtype=int_dtype, float_dtype=float_dtype
+        )
         models_for_export["text_encoder"] = (models_for_export["text_encoder"], text_encoder_onnx_config)
 
     # U-NET
@@ -474,19 +550,15 @@ def get_stable_diffusion_models_for_export(
             task="feature-extraction",
             model_type="clip-text-with-projection",
         )
-        onnx_config = onnx_config_constructor(pipeline.text_encoder_2.config, int_dtype=int_dtype, float_dtype=float_dtype)
+        onnx_config = onnx_config_constructor(
+            pipeline.text_encoder_2.config, int_dtype=int_dtype, float_dtype=float_dtype
+        )
         models_for_export["text_encoder_2"] = (models_for_export["text_encoder_2"], onnx_config)
 
     return models_for_export
 
 
-def convert_sd_common(pipeline, output_dir, args, tiny_vae=False):
-    models_and_onnx_configs = get_stable_diffusion_models_for_export(pipeline)
-    if tiny_vae:
-        models_and_onnx_configs["vae_encoder"][0].forward = lambda sample: {
-            "latent_sample": models_and_onnx_configs["vae_encoder"][0].encode(x=sample)["latents"]
-        }
-        models_and_onnx_configs["vae_decoder"][0].forward = lambda latent_sample: models_and_onnx_configs["vae_decoder"][0].decode(latent_sample)
+def convert_sd_prepared_for_export_common(pipeline, models_and_onnx_configs, output_dir, args):
     for model_name in models_and_onnx_configs:
         subcomponent = models_and_onnx_configs[model_name][0]
         if hasattr(subcomponent, "save_config"):
@@ -496,7 +568,7 @@ def convert_sd_common(pipeline, output_dir, args, tiny_vae=False):
 
             files_subpaths = [Path(name_dir) / OV_XML_FILE_NAME for name_dir in models_and_onnx_configs]
 
-            # Saving the additional components needed to perform inference.
+        # Saving the additional components needed to perform inference.
         pipeline.scheduler.save_pretrained(output_dir.joinpath("scheduler"))
 
         feature_extractor = getattr(pipeline, "feature_extractor", None)
@@ -517,8 +589,13 @@ def convert_sd_common(pipeline, output_dir, args, tiny_vae=False):
         models_and_onnx_configs=models_and_onnx_configs,
         output_dir=output_dir,
         output_names=files_subpaths,
-        compression_option="fp16" if args.precision == "FP16" else None
+        compression_option="fp16" if args.precision == "FP16" else None,
     )
+
+
+def convert_sd_common(pipeline, output_dir, args):
+    models_and_onnx_configs = get_stable_diffusion_models_for_export(pipeline)
+    convert_sd_prepared_for_export_common(pipeline, models_and_onnx_configs, output_dir, args)
 
 
 def convert_sd(args):
@@ -528,7 +605,8 @@ def convert_sd(args):
         pt_model.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
 
     output_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
-    convert_sd_common(pt_model, output_dir, args)
+    models_and_onnx_configs = get_stable_diffusion_models_for_export(pt_model)
+    convert_sd_prepared_for_export_common(pt_model, models_and_onnx_configs, output_dir, args)
 
     if pt_compress_weights:
         compression_modes = []
@@ -536,17 +614,26 @@ def convert_sd(args):
             if is_int8_compression(cw):
                 compression_modes.append(cw)
         assert compression_modes, "Only INT8 compression supported for PyTorch backend"
-        for compress_mode in compression_modes:
-            pt_model = StableDiffusionPipeline.from_pretrained(args.model_id)
+        for idx, compress_mode in enumerate(compression_modes):
+            if idx > 0:
+                pt_model = StableDiffusionPipeline.from_pretrained(args.model_id)
+                models_and_onnx_configs = get_stable_diffusion_models_for_export(pt_model)
+
+            target_models_and_onnx_configs = {
+                k: models_and_onnx_configs[k] for k in ("text_encoder", "unet", "vae_decoder")
+            }
             compression_options = COMPRESSION_OPTIONS[compress_mode]
-            wc_text_encoder = compress_weights(pt_model.text_encoder, **compression_options)
-            wc_unet = compress_weights(pt_model.unet, **compression_options)
-            wc_vae = compress_weights(pt_model.vae, **compression_options)
-            pt_model.text_encoder = wc_text_encoder
-            pt_model.unet = wc_unet
-            pt_model.vae = wc_vae
-            output = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compress_mode)
-            convert_sd_common(pt_model, output, args)
+            models_and_onnx_configs.update(
+                compress_torchmodels(target_models_and_onnx_configs, compression_options=compression_options)
+            )
+
+            output = (
+                Path(args.output_dir)
+                / PYTORCH_DIR
+                / OV_DIR
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compress_mode)
+            )
+            convert_sd_prepared_for_export_common(pt_model, models_and_onnx_configs, output, args)
     del pt_model
     gc.collect()
 
@@ -559,9 +646,9 @@ def convert_sd(args):
                 continue
             model = OVStableDiffusionPipeline.from_pretrained(output_dir, compile=False)
             ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
-            model.text_encoder.model = compress_weights(model.text_encoder.model)
-            model.unet.model = compress_weights(model.unet.model)
-            model.vae_decoder.model = compress_weights(model.vae_decoder.model)
+            model.text_encoder.model = nncf.compress_weights(model.text_encoder.model)
+            model.unet.model = nncf.compress_weights(model.unet.model)
+            model.vae_decoder.model = nncf.compress_weights(model.vae_decoder.model)
             model.save_pretrained(ov_int8_dir)
 
             del model
@@ -575,7 +662,8 @@ def convert_lcm(args):
         pt_model.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
 
     output_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
-    convert_sd_common(pt_model, output_dir, args)
+    models_and_onnx_configs = get_stable_diffusion_models_for_export(pt_model)
+    convert_sd_prepared_for_export_common(pt_model, models_and_onnx_configs, output_dir, args)
 
     if pt_compress_weights:
         compression_modes = []
@@ -583,17 +671,26 @@ def convert_lcm(args):
             if is_int8_compression(cw):
                 compression_modes.append(cw)
         assert compression_modes, "Only INT8 compression supported for PyTorch backend"
-        for compress_mode in compression_modes:
+        for idx, compress_mode in enumerate(compression_modes):
+            if idx > 0:
+                pt_model = StableDiffusionPipeline.from_pretrained(args.model_id)
+                models_and_onnx_configs = get_stable_diffusion_models_for_export(pt_model)
+
+            target_models_and_onnx_configs = {
+                k: models_and_onnx_configs[k] for k in ("text_encoder", "unet", "vae_decoder")
+            }
             compression_options = COMPRESSION_OPTIONS[compress_mode]
-            pt_model = StableDiffusionPipeline.from_pretrained(args.model_id)
-            wc_text_encoder = compress_weights(pt_model.text_encoder, **compression_options)
-            wc_unet = compress_weights(pt_model.unet, **compression_options)
-            wc_vae = compress_weights(pt_model.vae, **compression_options)
-            pt_model.text_encoder = wc_text_encoder
-            pt_model.unet = wc_unet
-            pt_model.vae = wc_vae
-            output = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compress_mode)
-            convert_sd_common(pt_model, output, args)
+            models_and_onnx_configs.update(
+                compress_torchmodels(target_models_and_onnx_configs, compression_options=compression_options)
+            )
+
+            output = (
+                Path(args.output_dir)
+                / PYTORCH_DIR
+                / OV_DIR
+                / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compress_mode)
+            )
+            convert_sd_prepared_for_export_common(pt_model, models_and_onnx_configs, output, args)
     del pt_model
     gc.collect()
 
@@ -606,9 +703,9 @@ def convert_lcm(args):
                 continue
             model = OVLatentConsistencyModelPipeline.from_pretrained(output_dir, compile=False)
             ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
-            model.text_encoder.model = compress_weights(model.text_encoder.model)
-            model.unet.model = compress_weights(model.unet.model)
-            model.vae_decoder.model = compress_weights(model.vae_decoder.model)
+            model.text_encoder.model = nncf.compress_weights(model.text_encoder.model)
+            model.unet.model = nncf.compress_weights(model.unet.model)
+            model.vae_decoder.model = nncf.compress_weights(model.vae_decoder.model)
             model.save_pretrained(ov_int8_dir)
 
             del model
@@ -621,7 +718,6 @@ def convert_sdxl(args):
     def build_pt_model(model_id):
         model_ids = [idx.replace(" ", "") for idx in model_id.split(",")]
         pt_model = StableDiffusionXLImg2ImgPipeline.from_pretrained(model_ids[0])
-        tiny_vae = False
         if len(model_ids) > 1:
             for additional_model in model_ids[1:]:
                 if "lora" in additional_model:
@@ -638,44 +734,48 @@ def convert_sdxl(args):
                     continue
 
                 if "tae" in additional_model:
-                    tiny_vae = True
                     vae = AutoencoderTiny.from_pretrained(additional_model)
                     pt_model.vae = vae
                     continue
 
-        return pt_model, tiny_vae
+        return pt_model
 
-    pt_model, tiny_vae = build_pt_model(args.model_id)
+    pt_model = build_pt_model(args.model_id)
     if args.save_orig:
         pt_model.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
 
         del pt_model
         gc.collect()
-        pt_model, tiny_vae = build_pt_model(args.model_id)
+        pt_model = build_pt_model(args.model_id)
 
     fp_out_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
-    convert_sd_common(pt_model, fp_out_dir, args, tiny_vae)
+    models_and_onnx_configs = get_stable_diffusion_models_for_export(pt_model)
+    convert_sd_prepared_for_export_common(pt_model, models_and_onnx_configs, fp_out_dir, args)
+
     if pt_compress_weights:
         compression_modes = []
         for cw in args.compress_weights:
             if is_int8_compression(cw):
                 compression_modes.append(cw)
         assert compression_modes, "Only INT8 compression supported for PyTorch backend"
-        for compress_mode in compression_modes:
-            pt_model, tiny_vae = build_pt_model(args.model_id)
+        for idx, compress_mode in enumerate(compression_modes):
+            if idx > 0:
+                pt_model = build_pt_model(args.model_id)
+                models_and_onnx_configs = get_stable_diffusion_models_for_export(pt_model)
+
             compression_options = COMPRESSION_OPTIONS[compress_mode]
+            models_and_onnx_configs = compress_torchmodels(
+                models_and_onnx_configs, compression_options=compression_options
+            )
+
             output = (
                 Path(args.output_dir)
                 / PYTORCH_DIR
                 / OV_DIR
                 / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compress_mode)
             )
-            pt_model.text_encoder = compress_weights(pt_model.text_encoder, **compression_options)
-            pt_model.unet = compress_weights(pt_model.unet, **compression_options)
-            pt_model.vae = compress_weights(pt_model.vae, **compression_options)
-            if getattr(pt_model, "text_encoder_2", None) is not None:
-                pt_model.text_encoder_2 = compress_weights(pt_model.text_encoder_2, **compression_options)
-            convert_sd_common(pt_model, output, args, tiny_vae)
+
+            convert_sd_prepared_for_export_common(pt_model, models_and_onnx_configs, output, args)
 
     del pt_model
     gc.collect()
@@ -690,13 +790,13 @@ def convert_sdxl(args):
             ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
             compression_options = COMPRESSION_OPTIONS[weigths_compression_option]
             model = OVStableDiffusionXLPipeline.from_pretrained(fp_out_dir, compile=False)
-            model.text_encoder.model = compress_weights(model.text_encoder.model, **compression_options)
+            model.text_encoder.model = nncf.compress_weights(model.text_encoder.model, **compression_options)
             if getattr(model, "text_encoder_2", None) is not None:
-                model.text_encoder_2.model = compress_weights(model.text_encoder_2.model, **compression_options)
-            model.unet.model = compress_weights(model.unet.model)
-            model.vae_decoder.model = compress_weights(model.vae_decoder.model, **compression_options)
+                model.text_encoder_2.model = nncf.compress_weights(model.text_encoder_2.model, **compression_options)
+            model.unet.model = nncf.compress_weights(model.unet.model)
+            model.vae_decoder.model = nncf.compress_weights(model.vae_decoder.model, **compression_options)
             if getattr(model, "vae_encoder", None) is not None:
-                model.vae_encoder.model = compress_weights(model.vae_encoder.model, **compression_options)
+                model.vae_encoder.model = nncf.compress_weights(model.vae_encoder.model, **compression_options)
             model.save_pretrained(ov_int8_dir)
 
             del model
@@ -707,10 +807,10 @@ def convert_ldm_super_res(args):
     pipeline = LDMSuperResolutionPipeline.from_pretrained(args.model_id)
     if args.save_orig:
         pipeline.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
-    unet_example_input = [
+    unet_example_input = (
         torch.zeros((1, 6, 128, 128)),
         torch.tensor(1, dtype=torch.int32),
-    ]
+    )
 
     class Decoder(torch.nn.Module):
         def __init__(self, model):
@@ -722,17 +822,36 @@ def convert_ldm_super_res(args):
 
     decoder = Decoder(pipeline.vqvae)
 
-    pt_compress_weights = is_torch_compression(args)
     compress_to_fp16 = is_fp16(args)
+    # convert model to OpenVINO IR
+    ov_unet = convert_model(pipeline.unet, example_input=unet_example_input)
+    ov_unet.inputs[1].get_node().set_element_type(OVType.i32)
+    ov_unet.inputs[1].get_node().set_partial_shape(PartialShape([]))
+    ov_unet.validate_nodes_and_infer_types()
+    save_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
+    save_model(ov_unet, save_dir / "unet.xml", compress_to_fp16=compress_to_fp16)
+    ov_decoder = convert_model(decoder, example_input=torch.zeros((1, 3, 128, 128)))
+    save_model(ov_decoder, save_dir / "vqvae.xml", compress_to_fp16=compress_to_fp16)
+    pipeline.scheduler.save_config(save_dir)
+    del ov_unet, ov_decoder
+    gc.collect()
+
+    pt_compress_weights = is_torch_compression(args)
     if pt_compress_weights:
         compression_modes = []
         for cw in args.compress_weights:
             if is_int8_compression(cw):
                 compression_modes.append(cw)
         assert compression_modes, "Only INT8 compression supported for PyTorch backend"
-        for compress_mode in compression_modes:
+        for idx, compress_mode in enumerate(compression_modes):
+            if idx > 0:
+                pipeline = LDMSuperResolutionPipeline.from_pretrained(args.model_id)
+                decoder = Decoder(pipeline.vqvae)
+
             compression_options = COMPRESSION_OPTIONS[compress_mode]
-            compressed_unet = compress_weights(pipeline.unet, **compression_options)
+            compressed_unet = nncf.compress_weights(
+                pipeline.unet, dataset=nncf.Dataset([unet_example_input]), **compression_options
+            )
             ov_compressed_unet = convert_model(compressed_unet, example_input=unet_example_input)
             ov_compressed_unet.inputs[1].get_node().set_element_type(OVType.i32)
             ov_compressed_unet.inputs[1].get_node().set_partial_shape(PartialShape([]))
@@ -749,20 +868,12 @@ def convert_ldm_super_res(args):
                 compress_to_fp16=compress_to_fp16,
             )
             pipeline.scheduler.save_config(pt_out_dir)
-            # Couldn't compress decoder weights (RuntimeError: cdist only supports floating-point dtypes, X2 got: Byte)
-            ov_decoder = convert_model(decoder, example_input=torch.zeros((1, 3, 128, 128)))
-            save_model(ov_decoder, pt_out_dir / "vqvae.xml", compress_to_fp16=compress_to_fp16)
-
-    # convert model to OpenVINO IR
-    ov_unet = convert_model(pipeline.unet, example_input=unet_example_input)
-    ov_unet.inputs[1].get_node().set_element_type(OVType.i32)
-    ov_unet.inputs[1].get_node().set_partial_shape(PartialShape([]))
-    ov_unet.validate_nodes_and_infer_types()
-    save_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
-    save_model(ov_unet, save_dir / "unet.xml", compress_to_fp16=compress_to_fp16)
-    ov_decoder = convert_model(decoder, example_input=torch.zeros((1, 3, 128, 128)))
-    save_model(ov_decoder, save_dir / "vqvae.xml", compress_to_fp16=compress_to_fp16)
-    pipeline.scheduler.save_config(save_dir)
+            decoder_example_input = torch.zeros(1, 3, 128, 128)
+            compressed_decoder = nncf.compress_weights(
+                decoder, dataset=nncf.Dataset([decoder_example_input]), **compression_options
+            )
+            ov_compressed_decoder = convert_model(compressed_decoder, example_input=decoder_example_input)
+            save_model(ov_compressed_decoder, pt_out_dir / "vqvae.xml", compress_to_fp16=compress_to_fp16)
 
     if is_ov_compression(args):
         for weigths_compression_option in args.compress_weights:
@@ -772,13 +883,15 @@ def convert_ldm_super_res(args):
                 )
                 continue
             ov_int8_dir = get_compressed_path(args.output_dir, args.precision, weigths_compression_option)
-            compressed_ov_unet = compress_weights(ov_unet)
+            ov_unet = Core().read_model(save_dir / "unet.xml")
+            compressed_ov_unet = nncf.compress_weights(ov_unet)
             save_model(
                 compressed_ov_unet,
                 ov_int8_dir / "unet.xml",
                 compress_to_fp16=compress_to_fp16,
             )
-            compressed_ov_decoder = compress_weights(ov_decoder)
+            ov_decoder = Core().read_model(save_dir / "vqvae.xml")
+            compressed_ov_decoder = nncf.compress_weights(ov_decoder)
             save_model(
                 compressed_ov_decoder,
                 ov_int8_dir / "vqvae.xml",
@@ -788,6 +901,7 @@ def convert_ldm_super_res(args):
 
 
 def convert_mpt(args):
+    @torch.no_grad
     def convert_to_ov(pt_model, tok, out_path, compress_to_fp16=False):
         pt_model.config.use_cache = True
         outs = pt_model(
@@ -868,9 +982,16 @@ def convert_mpt(args):
     tok = AutoTokenizer.from_pretrained(tokenizer_id, trust_remote_code=True)
     compress_to_fp16 = is_fp16(args)
     if not compression_only:
-        pt_model = AutoModelForCausalLM.from_pretrained(args.model_id, trust_remote_code=True, config=config, **model_kwargs)
-        pt_model.config.use_cache = True
-        pt_model.eval()
+
+        def create_model(model_id, config, model_kwargs):
+            pt_model = AutoModelForCausalLM.from_pretrained(
+                model_id, trust_remote_code=True, config=config, **model_kwargs
+            )
+            pt_model.config.use_cache = True
+            pt_model.eval()
+            return pt_model
+
+        pt_model = create_model(args.model_id, config, model_kwargs)
 
         if args.save_orig:
             pt_out_dir = Path(args.output_dir) / PYTORCH_DIR
@@ -887,9 +1008,21 @@ def convert_mpt(args):
                 if is_int8_compression(cw):
                     compression_modes.append(cw)
             assert compression_modes, "Only INT8 compression supported for PyTorch backend"
-            for compress_mode in compression_modes:
+
+            dummy_inputs = {
+                "input_ids": torch.ones((1, 10), dtype=torch.long),
+                "attention_mask": torch.ones((1, 10), dtype=torch.long),
+            }
+
+            for idx, compress_mode in enumerate(compression_modes):
+                if idx > 0:
+                    pt_model = create_model(args.model_id, config, model_kwargs)
+
                 compression_options = COMPRESSION_OPTIONS[compress_mode]
-                compressed_pt_model = compress_weights(pt_model, **compression_options)
+                compressed_pt_model = nncf.compress_weights(
+                    pt_model, dataset=nncf.Dataset([dummy_inputs]), **compression_options
+                )
+
                 pt_path = (
                     Path(args.output_dir)
                     / PYTORCH_DIR
@@ -924,16 +1057,19 @@ def convert_mpt(args):
 
 
 def convert_chatglm(args):
-    def convert_to_ov(pt_model, tok, out_path, compress_to_fp16=False):
-        pt_model.config.torchscript = True
+    def make_dummy_input():
         last_token = torch.tensor([[130328]])
         past = torch.zeros(28, 2, 5, 1, 32, 128)
         position_ids = torch.tensor([[[2], [4]]])
-        dummy_input = {
+        return {
             "input_ids": last_token,
             "past_key_values": past,
             "position_ids": position_ids,
         }
+
+    def convert_to_ov(pt_model, tok, out_path, compress_to_fp16=False):
+        pt_model.config.torchscript = True
+        dummy_input = make_dummy_input()
         ov_model = convert_model(pt_model, example_input=dummy_input)
         ov_model.outputs[0].get_tensor().set_names({"logits"})
         for i in range(1, len(ov_model.outputs), 2):
@@ -947,7 +1083,10 @@ def convert_chatglm(args):
     model_kwargs = {}
     precision = args.precision
     compression_only = (
-        args.compress_weights and not args.force_convert and not is_torch_compression(args) and is_ov_model_provided(args.model_id, args.output_dir, precision)
+        args.compress_weights
+        and not args.force_convert
+        and not is_torch_compression(args)
+        and is_ov_model_provided(args.model_id, args.output_dir, precision)
     )
     compress_to_fp16 = is_fp16(args)
     gptq_applied = is_gptq(config)
@@ -958,10 +1097,15 @@ def convert_chatglm(args):
     if post_init is not None:
         model_kwargs = {"torch_dtype": torch.float32}
     if not compression_only:
-        pt_model = AutoModel.from_pretrained(args.model_id, trust_remote_code=True, config=config, **model_kwargs)
-        pt_model.config.use_cache = True
-        pt_model.to(torch.float32)
-        pt_model.eval()
+
+        def create_model(model_id, config, model_kwargs):
+            pt_model = AutoModel.from_pretrained(model_id, trust_remote_code=True, config=config, **model_kwargs)
+            pt_model.config.use_cache = True
+            pt_model.to(torch.float32)
+            pt_model.eval()
+            return pt_model
+
+        pt_model = create_model(args.model_id, config, model_kwargs)
 
         if args.save_orig:
             pt_out_dir = Path(args.output_dir) / PYTORCH_DIR
@@ -976,9 +1120,17 @@ def convert_chatglm(args):
                 if is_int8_compression(cw):
                     compression_modes.append(cw)
             assert compression_modes, "Only INT8 compression supported for PyTorch backend"
-            for compress_mode in compression_modes:
+
+            dummy_input = make_dummy_input()
+            for idx, compress_mode in enumerate(compression_modes):
+                if idx > 0:
+                    pt_model = create_model(args.model_id, config, model_kwargs)
+
                 compression_options = COMPRESSION_OPTIONS[compress_mode]
-                compressed_pt_model = compress_weights(pt_model, **compression_options)
+                compressed_pt_model = nncf.compress_weights(
+                    pt_model, dataset=nncf.Dataset([dummy_input]), **compression_options
+                )
+
                 pt_out_path = (
                     Path(args.output_dir)
                     / PYTORCH_DIR
@@ -1013,117 +1165,31 @@ def convert_chatglm(args):
 
 
 def convert_falcon(args):
-    def convert_to_ov(pt_model, tok, out_path, compress_to_fp16=False):
-        outs = pt_model(input_ids=torch.ones((1, 10), dtype=torch.long))
-        inputs = ["input_ids"]
-        outputs = ["logits"]
-
-        dynamic_shapes = {"input_ids": {1: "seq_len"}}
-
-        for idx in range(len(outs.past_key_values)):
-            inputs.extend([f"past_key_values.{idx}.key", f"past_key_values.{idx}.value"])
-            dynamic_shapes[inputs[-1]] = {1: "past_sequence + sequence"}
-            dynamic_shapes[inputs[-2]] = {1: "past_sequence + sequence"}
-            outputs.extend([f"present.{idx}.key", f"present.{idx}.value"])
-
-        dummy_inputs = {
-            "input_ids": torch.ones((1, 2), dtype=torch.long),
-            "past_key_values": outs.past_key_values,
-        }
-        flatten_inputs = flattenize_inputs(dummy_inputs.values())
-        pt_model.config.torchscript = True
-        ov_model = convert_model(pt_model, example_input=dummy_inputs)
-        for port, input_data, input_name in zip(ov_model.inputs[1:], flatten_inputs[1:], inputs[1:]):
-            port.get_node().set_element_type(OVType.f32)
-            shape = list(input_data.shape)
-            shape[2] = -1
-            port.get_node().set_partial_shape(PartialShape(shape))
-            port.get_tensor().set_names({input_name})
-        for idx, out_name in enumerate(outputs):
-            ov_model.outputs[idx].get_tensor().set_names({out_name})
-        ov_model.validate_nodes_and_infer_types()
-        save_ov_model_helper(ov_model, out_path, fp16=compress_to_fp16, tok=tok, config=pt_model.config)
-
-    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    config = AutoConfig.from_pretrained(args.model_id)
     cuda, post_init = patch_gptq(config)
     model_kwargs = {}
     precision = args.precision
-    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
-    cuda, post_init = patch_gptq(config)
-    model_kwargs = {}
     compression_only = (
         args.compress_weights
         and not args.force_convert
         and not is_torch_compression(args)
         and is_ov_model_provided(args.model_id, args.output_dir, args.precision)
     )
-    gptq_applied = is_gptq(config)
     if post_init is not None:
         model_kwargs = {"torch_dtype": torch.float32}
     pt_model = None
-    tokenizer_id = args.tokenizer_id or args.model_id
-    tok = AutoTokenizer.from_pretrained(tokenizer_id, trust_remote_code=True)
     gptq_applied = is_gptq(config)
     precision = precision if not gptq_applied else GPTQ_DIR.format(precision=args.precision)
-    if post_init is not None:
-        model_kwargs = {"torch_dtype": torch.float32}
-    pt_model = None
-    compress_to_fp16 = is_fp16(args)
-    ov_out_path = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
     if not compression_only:
         pt_model = AutoModelForCausalLM.from_pretrained(
             args.model_id,
-            config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
-            trust_remote_code=True,
+            config=AutoConfig.from_pretrained(args.model_id),
             **model_kwargs,
         )
         pt_model.config.use_cache = True
         pt_model.eval()
 
-        if args.save_orig:
-            pt_out_dir = Path(args.output_dir) / PYTORCH_DIR
-            pt_model.save_pretrained(pt_out_dir)
-            save_tokenizer(tok, pt_out_dir)
-
-        convert_to_ov(pt_model, tok, ov_out_path, compress_to_fp16)
-
-        if is_torch_compression(args):
-            compression_modes = []
-            for cw in args.compress_weights:
-                if is_int8_compression(cw):
-                    compression_modes.append(cw)
-            assert compression_modes, "Only INT8 compression supported for PyTorch backend"
-            for compress_mode in compression_modes:
-                compression_options = COMPRESSION_OPTIONS[compress_mode]
-                pt_compressed_model = compress_weights(pt_model, **compression_options)
-                pt_comp_path = (
-                    Path(args.output_dir)
-                    / PYTORCH_DIR
-                    / OV_DIR
-                    / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compress_mode)
-                )
-                convert_to_ov(pt_compressed_model, tok, pt_comp_path, compress_to_fp16)
-
-    if is_ov_compression(args):
-        fp_path = get_fp_path(args, "openvino_model.xml")
-        if compression_only:
-            log.info(
-                f"Model conversion to {args.precision} will be skipped as found converted model {fp_path}. "
-                "If it is not expected behaviour, please remove previously converted model or use --force_convert option"
-            )
-        ov_model = Core().read_model(fp_path)
-        for compress_option in args.compress_weights:
-            log.info(f"Compress model weights to {compress_option}")
-            ov_compressed_path = get_compressed_path(args.output_dir, args.precision, compress_option)
-            compress_ov_model_weights_helper(
-                ov_model,
-                tok,
-                pt_model.config,
-                ov_compressed_path,
-                compress_to_fp16,
-                compress_option,
-                args,
-            )
+    convert_optimum_causallm_base(pt_model, args, config, compression_only)
 
     if post_init is not None:
         unpatch_gptq(cuda, post_init)
@@ -1162,15 +1228,18 @@ def convert_baichaun(args):
 def convert_qwen(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     cuda, post_init = patch_gptq(config)
-    model_kwargs = {"revision": "2abd8e5777bb4ce9c8ab4be7dbbd0fe4526db78d"}
+    model_kwargs = {"code_revision": "2abd8e5777bb4ce9c8ab4be7dbbd0fe4526db78d"}
     precision = args.precision
     compression_only = (
-        args.compress_weights and not args.force_convert and not is_torch_compression(args) and is_ov_model_provided(args.model_id, args.output_dir, precision)
+        args.compress_weights
+        and not args.force_convert
+        and not is_torch_compression(args)
+        and is_ov_model_provided(args.model_id, args.output_dir, precision)
     )
     if post_init is not None:
         model_kwargs = {
             "torch_dtype": torch.float32,
-            "revision": "c02ede58c0ab0045f5e4788c35842bec6a7baa0a",
+            "code_revision": "c02ede58c0ab0045f5e4788c35842bec6a7baa0a",
         }
     model = None
     if not compression_only:

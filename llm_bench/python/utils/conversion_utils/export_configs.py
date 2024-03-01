@@ -421,7 +421,6 @@ class ChatGLM2OpenVINOConfig(TextDecoderOnnxConfig):
     def add_past_key_values(self, inputs_or_outputs: Dict[str, Dict[int, str]], direction: str):
         """
         Fills `input_or_outputs` mapping with past_key_values dynamic axes considering the direction.
-
         Args:
             inputs_or_outputs (`Dict[str, Dict[int, str]]`): The mapping to fill.
             direction (`str`):
@@ -448,8 +447,60 @@ TasksManager._SUPPORTED_MODEL_TYPE['stablelm-epoch'] = TasksManager._SUPPORTED_M
 TasksManager._SUPPORTED_MODEL_TYPE["aquila"] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
 TasksManager._SUPPORTED_MODEL_TYPE["codegen2"] = TasksManager._SUPPORTED_MODEL_TYPE["codegen"]
 TasksManager._SUPPORTED_MODEL_TYPE["mixtral"] = TasksManager._SUPPORTED_MODEL_TYPE['mistral']
+TasksManager._SUPPORTED_MODEL_TYPE["minicpm"] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
+TasksManager._SUPPORTED_MODEL_TYPE["qwen2"] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
 
 
 @register_in_tasks_manager('phi', *["text-generation", "text-generation-with-past"])
 class PhiOnnxConfig(TextDecoderWithPositionIdsOnnxConfig):
     NORMALIZED_CONFIG_CLASS = NormalizedTextConfig
+
+
+class GemmaDummyPastKeyValuesGenerator(DummyPastKeyValuesGenerator):
+    def __init__(
+        self,
+        task: str,
+        normalized_config: NormalizedTextConfig,
+        batch_size: int = DEFAULT_DUMMY_SHAPES["batch_size"],
+        sequence_length: int = DEFAULT_DUMMY_SHAPES["sequence_length"],
+        random_batch_size_range: Optional[Tuple[int, int]] = None,
+        random_sequence_length_range: Optional[Tuple[int, int]] = None,
+        **kwargs,
+    ):
+        super().__init__(
+            task=task,
+            normalized_config=normalized_config,
+            batch_size=batch_size,
+            sequence_length=sequence_length,
+            random_batch_size_range=random_batch_size_range,
+            random_sequence_length_range=random_sequence_length_range,
+        )
+        self.head_dim = normalized_config.head_dim
+        self.num_kv_heads = normalized_config.num_key_value_heads
+
+    def generate(self, input_name: str, framework: str = "pt", int_dtype: str = "int64", float_dtype: str = "fp32"):
+        shape = (
+            self.batch_size,
+            self.num_kv_heads,
+            self.sequence_length,
+            self.head_dim,
+        )
+        return [
+            (
+                self.random_float_tensor(shape, framework=framework, dtype=float_dtype),
+                self.random_float_tensor(shape, framework=framework, dtype=float_dtype),
+            )
+            for _ in range(self.num_layers)
+        ]
+
+
+@register_in_tasks_manager("gemma", *["text-generation", "text-generation-with-past"])
+class GemmaOnnxConfig(TextDecoderWithPositionIdsOnnxConfig):
+    DEFAULT_ONNX_OPSET = 14
+    DUMMY_INPUT_GENERATOR_CLASSES = (
+        DummyTextInputGenerator,
+        GemmaDummyPastKeyValuesGenerator,
+    )
+    DUMMY_PKV_GENERATOR_CLASS = GemmaDummyPastKeyValuesGenerator
+    NORMALIZED_CONFIG_CLASS = NormalizedTextConfig
+    no_position_ids = False

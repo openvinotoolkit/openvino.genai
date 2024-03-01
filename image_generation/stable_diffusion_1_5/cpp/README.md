@@ -1,5 +1,5 @@
 # OpenVINO Stable Diffusion (with LoRA) C++ image generation pipeline
-The pure C++ text-to-image pipeline, driven by the OpenVINO native C++ API for Stable Diffusion v1.5 with LMS Discrete Scheduler, supports both static and dynamic model inference. It includes advanced features like [LoRA](https://huggingface.co/docs/peft/conceptual_guides/lora) integration with [safetensors](https://huggingface.co/docs/safetensors/index#format) and [OpenVINO extension for tokenizers](https://github.com/openvinotoolkit/openvino_contrib/blob/master/modules/custom_operations/user_ie_extensions/tokenizer/python/README.md). Loading `user_ov_extensions` provided by `openvino-tokenizers` to `ov::Core` enables tokenization. The sample uses [diffusers](../../common/diffusers) for image generation and [imwrite](../../common/imwrite) for saving `.bmp` images. This demo has been tested on Windows and Unix platforms. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/main/notebooks/225-stable-diffusion-text-to-image/225-stable-diffusion-text-to-image.ipynb) which provides an example of image generation in Python.
+The pure C++ text-to-image pipeline, driven by the OpenVINO native C++ API for Stable Diffusion v1.5 with LMS Discrete Scheduler, supports both static and dynamic model inference. It includes advanced features like [LoRA](https://huggingface.co/docs/peft/conceptual_guides/lora) integration with [safetensors](https://huggingface.co/docs/safetensors/index#format) and [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers). Loading `openvino_tokenizers` to `ov::Core` enables tokenization. The sample uses [diffusers](../../common/diffusers) for image generation and [imwrite](../../common/imwrite) for saving `.bmp` images. This demo has been tested on Windows and Unix platforms. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/main/notebooks/225-stable-diffusion-text-to-image/225-stable-diffusion-text-to-image.ipynb) which provides an example of image generation in Python.
 
 > [!NOTE]
 >This tutorial assumes that the current working directory is `<openvino.genai repo>/image_generation/stable_diffusion_1_5/cpp/` and all paths are relative to this folder.
@@ -9,13 +9,12 @@ The pure C++ text-to-image pipeline, driven by the OpenVINO native C++ API for S
 C++ Packages:
 * [CMake](https://cmake.org/download/): Cross-platform build tool
 * [OpenVINO](https://docs.openvino.ai/install): Model inference
-* [Eigen3](https://anaconda.org/conda-forge/eigen): LoRA enabling
 
 Prepare a python environment and install dependencies:
 ```shell
 conda create -n openvino_sd_cpp python==3.10
 conda activate openvino_sd_cpp
-conda install openvino eigen c-compiler cxx-compiler make
+conda install openvino c-compiler cxx-compiler make
 ```
 
 ## Step 2: Convert Stable Diffusion v1.5 and Tokenizer models
@@ -26,7 +25,7 @@ conda install openvino eigen c-compiler cxx-compiler make
 ```shell
 conda activate openvino_sd_cpp
 python -m pip install -r scripts/requirements.txt
-python -m pip install ../../../thirdparty/openvino_contrib/modules/custom_operations/[transformers]
+python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
 ```
 2. Download a huggingface SD v1.5 model like:
 - [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5)
@@ -78,7 +77,7 @@ Usage:
 
 * `-p, --posPrompt arg` Initial positive prompt for SD  (default: cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting)
 * `-n, --negPrompt arg` Default is empty with space (default: )
-* `-d, --device arg`    AUTO, CPU, or GPU (default: CPU)
+* `-d, --device arg`    AUTO, CPU, or GPU. Doesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only (default: CPU)
 * `--step arg`          Number of diffusion step ( default: 20)
 * `-s, --seed arg`      Number of random seed to generate latent (default: 42)
 * `--num arg`           Number of image output(default: 1)
@@ -91,6 +90,9 @@ Usage:
 * `-l, --loraPath arg`  Specify path of lora file. (*.safetensors). (default: )
 * `-a, --alpha arg`     alpha for lora (default: 0.75)
 * `-h, --help`          Print usage
+
+> [!NOTE]
+> The tokenizer model will always be loaded to CPU: [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers) can be inferred on a CPU device only.
 
 #### Examples
 
