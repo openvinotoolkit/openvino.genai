@@ -59,9 +59,6 @@ int64_t get_next_token_id(ov::Tensor logits) {
     ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3);
     size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
-    std::cout << "batch_size = " << batch_size << std::endl;
-    std::cout << "seq_len = " << seq_len << std::endl;
-    std::cout << "vocab_size = " << vocab_size << std::endl;
     float* logits_data = logits.data<float>() + (seq_len - 1) * vocab_size;
     int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
     return out_token;
@@ -78,6 +75,16 @@ class Sequence {
     std::vector<int64_t> m_prompt_ids;
     std::vector<int64_t> m_generated_ids;
     std::vector<KVCacheBlock> m_blocks;
+
+    int64_t _get_position_id() const {
+        return get_context_len() - 1;
+    }
+
+    int64_t _get_slot_id(int64_t token_idx) const {
+        int block_id = token_idx / BLOCK_SIZE, block_offset = (token_idx % BLOCK_SIZE);
+        return m_blocks[block_id].m_index * BLOCK_SIZE + block_offset;
+    }
+
 public:
     Sequence(ov::Tensor prompt_ids) {
         m_prompt_ids.reserve(prompt_ids.get_size());
@@ -101,11 +108,15 @@ public:
     }
 
     ov::Tensor get_slot_mapping() const {
-        ov::Tensor slot_mapping_tensor(ov::element::i64, {BATCH_SIZE, get_context_len()});
+        bool is_prompt = is_prompt_phase();
+        ov::Tensor slot_mapping_tensor(ov::element::i64, {BATCH_SIZE, is_prompt ? get_context_len() : 1});
         int64_t * slot_mapping_data = slot_mapping_tensor.data<int64_t>();
-        for (size_t i = 0; i < get_context_len(); ++i) {
-            int block_id = i / BLOCK_SIZE, slot_id = (i % BLOCK_SIZE);
-            slot_mapping_data[i] = m_blocks[block_id].m_index * BLOCK_SIZE + slot_id;
+        if (is_prompt) {
+            for (size_t i = 0; i < get_context_len(); ++i) {
+                slot_mapping_data[i] = _get_slot_id(i);
+            }
+        } else {
+            slot_mapping_data[0] = _get_slot_id(_get_position_id());
         }
 
         return slot_mapping_tensor;
@@ -171,7 +182,7 @@ public:
         if (is_prompt) {
             std::iota(position_ids_data, position_ids_data + position_ids.get_size(), 0);
         } else {
-            position_ids_data[0] = get_context_len() - 1;
+            position_ids_data[0] = _get_position_id();
         }
         return position_ids;
     }
@@ -199,6 +210,28 @@ public:
     }
 };
 
+template <typename T>
+void print_array(T * array, size_t size) {
+    std::cout << " => [ ";
+    for (size_t i = 0; i < size; ++i) {
+        std::cout << array[i] << " ";
+    }
+    std::cout << " ] " << std::endl;
+}
+
+void print_tensor(std::string name, ov::Tensor tensor) {
+    std::cout << name;
+    if (tensor.get_element_type() == ov::element::i32) {
+        print_array(tensor.data<int>(), tensor.get_size());
+    } else if (tensor.get_element_type() == ov::element::i64) {
+        print_array(tensor.data<int64_t>(), tensor.get_size());
+    } else if (tensor.get_element_type() == ov::element::f32) {
+        print_array(tensor.data<float>(), tensor.get_size());
+    } else if (tensor.get_element_type() == ov::element::boolean) {
+        print_array(tensor.data<bool>(), tensor.get_size());
+    }
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) try {
@@ -220,7 +253,7 @@ int main(int argc, char* argv[]) try {
     ov::InferRequest detokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     // The model can be compiled for GPU as well
-    std::shared_ptr<ov::Model> llm_model = core.read_model(std::string{argv[1]} + "/vllm_openvino_model.xml");
+    std::shared_ptr<ov::Model> llm_model = core.read_model(std::string{argv[1]} + "/vllm_optimum_openvino_model.xml");
     ov::InferRequest lm = core.compile_model(llm_model, "CPU").create_infer_request();
 
     TextStreamer text_streamer{std::move(detokenizer)};
@@ -236,7 +269,7 @@ int main(int argc, char* argv[]) try {
     const int64_t SPECIAL_EOS_TOKEN = 2; // llm_model->get_rt_info()["eos_token_id"].as<int64_t>();
     const size_t BLOCK_SIZE = 16, X = BLOCK_SIZE / model_precision.size();
     // TODO: take from model
-    constexpr size_t NUM_KV_HEADS = 12, NUM_HEADS = 12, HEAD_SIZE = 768;
+    constexpr size_t NUM_KV_HEADS = 12, NUM_HEADS = 12, HIDDEN_DIMS = 768, HEAD_SIZE = HIDDEN_DIMS / NUM_HEADS;
     constexpr size_t NUM_DECODER_LAYERS = 12; // num KV cache pairs
     // TODO compute based on the available memory
     constexpr size_t NUM_BLOCKS = 3640;
@@ -246,8 +279,11 @@ int main(int argc, char* argv[]) try {
 
     // Initialize KV cache
 
-    std::vector<ov::Tensor> k_cache(NUM_DECODER_LAYERS, ov::Tensor(kv_cache_precision, k_cache_shape)),
-        v_cache(NUM_DECODER_LAYERS, ov::Tensor(kv_cache_precision, v_cache_shape));
+    std::vector<ov::Tensor> k_cache(NUM_DECODER_LAYERS), v_cache(NUM_DECODER_LAYERS);
+    for (size_t decoder_layer_id = 0; decoder_layer_id < NUM_DECODER_LAYERS; ++decoder_layer_id) {
+        k_cache[decoder_layer_id] = ov::Tensor(kv_cache_precision, k_cache_shape);
+        v_cache[decoder_layer_id] = ov::Tensor(kv_cache_precision, v_cache_shape);
+    }
 
     // Set PagedAttention specific parameters
 
@@ -262,6 +298,7 @@ int main(int argc, char* argv[]) try {
     Sequence sequence(input_ids);
 
     auto schedule_sequence = [&] () {
+        // allocate blocks for current inference if required
         while (sequence.requires_new_block()) {
             sequence.append_new_block(block_manager.allocate());
         }
@@ -281,18 +318,13 @@ int main(int argc, char* argv[]) try {
     //
 
     schedule_sequence();
-    std::cout << "!" << std::endl;
     lm.infer();
-    std::cout << "!" << std::endl;
     int64_t out_token = get_next_token_id(lm.get_tensor("logits"));
-    sequence.append_token(out_token);
 
     while (out_token != SPECIAL_EOS_TOKEN) {
-    std::cout << "!!" << std::endl;
+        // std::cout << "out_token = " << out_token << std::endl;
         sequence.append_token(out_token);
-    std::cout << "!!" << std::endl;
         schedule_sequence();
-    std::cout << "!!" << std::endl;
 
         lm.start_async();
         text_streamer.put(out_token);
@@ -300,6 +332,10 @@ int main(int argc, char* argv[]) try {
 
         // perform decoding
         out_token = get_next_token_id(lm.get_tensor("logits"));
+
+        static int iterations = 0;
+        if (iterations++ > 50)
+            break;
     }
     text_streamer.end();
 } catch (const std::exception& error) {
