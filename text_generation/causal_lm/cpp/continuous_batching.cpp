@@ -130,7 +130,7 @@ public:
         return m_prompt_ids.size() + m_generated_ids.size();
     }
 
-    // a numer of blocks to hold tokens of current sequence in KV cache
+    // a number of blocks to hold tokens of current sequence in KV cache
     size_t get_num_blocks() const {
         return (get_context_len() + BLOCK_SIZE - 1) / BLOCK_SIZE;
     }
@@ -268,12 +268,11 @@ public:
                     sequence.append_new_block(m_block_manager.allocate());
                 }
 
-                size_t num_available_tokens = sequence.get_num_available_tokens_for_batching();
+                size_t num_batch_available_tokens = m_config.max_tokens_to_batch - current_num_of_scheduled_tokens;
+                size_t num_seq_available_tokens = sequence.get_num_available_tokens_for_batching();
 
-                // TODO: currently we schedule 1 token even for prefill stage
-                // because we need to update PagedAttention kernel to work with multille tokens within
-                // 'generation' branch for the same sequence (currently, it implies 1 for all the sequences)
-                size_t num_scheduled_tokens = std::min(1ul, num_available_tokens);
+                // schedule all bare minimum of tokens from current sequence to fill up a batch!
+                size_t num_scheduled_tokens = std::min(num_batch_available_tokens, num_seq_available_tokens);
                 sequence.schedule_tokens(num_scheduled_tokens);
 
                 current_num_of_scheduled_tokens += num_scheduled_tokens;
@@ -287,11 +286,10 @@ class ModelRunner {
 public:
     ModelRunner(ov::InferRequest & request) :
         m_request(request) {
-        // TODO: extract from model
-        constexpr auto model_precision = ov::element::f32;
+        // TODO: make as a parameter
         constexpr auto kv_cache_precision = ov::element::f32;
 
-        const size_t BLOCK_SIZE = 16, X = BLOCK_SIZE / model_precision.size();
+        const size_t BLOCK_SIZE = 16, X = BLOCK_SIZE / kv_cache_precision.size();
         // TODO: take from model
         constexpr size_t NUM_KV_HEADS = 12, NUM_HEADS = 12, HIDDEN_DIMS = 768, HEAD_SIZE = HIDDEN_DIMS / NUM_HEADS;
         constexpr size_t NUM_DECODER_LAYERS = 12; // num KV cache pairs
@@ -486,7 +484,7 @@ int main(int argc, char* argv[]) try {
     };
 
     std::vector<Sequence> sequences;
-    size_t dataset_size = prompts.size();
+    size_t dataset_size = 30;
     sequences.reserve(dataset_size);
 
     for (size_t i = 0; i < dataset_size; ++i) {
@@ -499,7 +497,7 @@ int main(int argc, char* argv[]) try {
     //
 
     SchedulerConfig scheduler_config {
-        .max_tokens_to_batch = 2,
+        .max_tokens_to_batch = 16,
         .num_kv_blocks = NUM_BLOCKS
     };
 
@@ -511,6 +509,7 @@ int main(int argc, char* argv[]) try {
         scheduler.schedule(sequences);
         ov::Tensor logits = llm_model.infer(sequences);
         sampler.decode(sequences, logits);
+        std::cout << std::endl;
     }
 
     // print results
