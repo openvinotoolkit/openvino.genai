@@ -30,7 +30,7 @@ void print_tensor(std::string name, ov::Tensor tensor) {
 
 constexpr size_t BATCH_SIZE = 1;
 
-std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
+std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string prompt) {
     tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
     tokenizer.infer();
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
@@ -444,7 +444,7 @@ public:
                     // we are in prompt processing phase when prompt is split into chunks and processed step by step
                 }
 
-                // update internal stae of sequence
+                // update internal state of sequence to reset scheduler tokens and update currently processed onces
                 sequence.finish_iteration();
             }
         }
@@ -468,7 +468,6 @@ int main(int argc, char* argv[]) try {
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
-    auto [input_ids, attention_mask] = tokenize(tokenizer, argv[2]);
     ov::InferRequest detokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     // The model can be compiled for GPU as well
@@ -476,24 +475,35 @@ int main(int argc, char* argv[]) try {
     ov::InferRequest request = core.compile_model(model, "CPU").create_infer_request();
 
     //
-    // Constants
+    // Create sequences
     //
 
-    // create current sequence
-    Sequence sequence_0(input_ids);
-    Sequence sequence_1(input_ids);
-    Sequence sequence_2(input_ids);
-    Sequence sequence_3(input_ids);
+    std::vector<std::string> prompts = {
+        "What is OpenVINO?",
+        "How are you?",
+        "What is the current time",
+        "What is OpenVINO?",
+    };
 
-    print_tensor("Input ids", input_ids);
+    std::vector<Sequence> sequences;
+    size_t dataset_size = prompts.size();
+    sequences.reserve(dataset_size);
 
-    std::vector<Sequence> sequences = { sequence_0 };
+    for (size_t i = 0; i < dataset_size; ++i) {
+        auto [input_ids, attention_mask] = tokenize(tokenizer, prompts[i % prompts.size()]);
+        sequences.push_back(Sequence(input_ids));
+    }
 
     //
     // Perform the first inference
     //
 
-    Scheduler scheduler;
+    SchedulerConfig scheduler_config {
+        .max_tokens_to_batch = 2,
+        .num_kv_blocks = NUM_BLOCKS
+    };
+
+    Scheduler scheduler(scheduler_config);
     ModelRunner llm_model(request);
     Sampler sampler;
 
