@@ -183,7 +183,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
-    if args['interleave'] is True:
+    if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for prompt_idx, input_text in enumerate(input_text_list):
                 if num == 0:
@@ -277,7 +277,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
-    if args['interleave'] is True:
+    if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for image_id, image_param in enumerate(input_image_list):
                 run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id)
@@ -477,10 +477,10 @@ def get_argprser():
         '--convert_tokenizer', action='store_true', help='Convert tokenizer to OpenVINO format'
     )
     parser.add_argument(
-        '--interleave',
+        '--subsequent',
         action='store_true',
-        help='if the value is True, input prompts are processed in interleave manner'
-        'if the value is False (default), input prompts are processed in subsequent manner'
+        help='if the value is True, input prompts are processed in subsequent manner'
+        'if the value is False (default), input prompts are processed in interleave manner'
     )
     parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
     utils.model_utils.add_stateful_model_arguments(parser)
