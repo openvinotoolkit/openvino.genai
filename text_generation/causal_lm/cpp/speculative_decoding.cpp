@@ -3,6 +3,9 @@
 
 #include <openvino/openvino.hpp>
 #include <cmath>
+#include <random>
+
+constexpr size_t BATCH_SIZE = 1;
 
 namespace {
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
@@ -19,41 +22,31 @@ std::string detokenize(ov::InferRequest& detokenizer, std::vector<int64_t>& toke
     return detokenizer.get_output_tensor().data<std::string>()[0];
 }
 
-float* softmax(const ov::Tensor& logits, size_t dim) {
-
-
-
+std::vector<float> softmax(const ov::Tensor& logits, float temperature) {
     float* logits_data = logits.data<float>();
+    int size = logits.get_size();
     
-    float sum_exp = 0.0;
-    for (double score : logits_data) {
-        sum_exp += std::exp(score);
+    double sum_exp = 0.0;
+    for (int i = 0; i < size; i++) {
+        sum_exp += std::exp(logits_data[i] / temperature);
     }
     
-    // Calculate the softmax probabilities for each score
-    for (double score : scores) {
-        double probability = exp(score) / sum_exp;
+    std::vector<float> probabilities;
+    for (int i = 0; i < size; i++) {
+        double probability = exp(logits_data[i] / temperature) / sum_exp;
         probabilities.push_back(probability);
     }
-    
     return probabilities;
 }
 
-int main() {
-    // Example usage
-    std::vector<double> scores = {2.0, 1.0, 0.1};
-    std::vector<double> probabilities = softmax(scores);
+int random_sample(const ov::Tensor& logits, float temperature) {
+    auto probabilities = softmax(logits, temperature);
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::discrete_distribution<> distribution(probabilities.begin(), probabilities.end());
+    int sampled_index = distribution(gen);
     
-    // Output the softmax probabilities
-    std::cout << "Softmax Probabilities: ";
-    for (double probability : probabilities) {
-        std::cout << probability << " ";
-    }
-    std::cout << std::endl;
-    
-    return 0;
-}
-
+    return sampled_index;
 }
 
 // The following reasons require TextStreamer to keep a cache of previous tokens:
@@ -92,9 +85,78 @@ struct TextStreamer {
 };
 }
 
+std::vector<int64_t> convert_to_vector(ov::Tensor tensor) {
+    std::vector<int64_t> res_vector;
+    for (int i = 0; i << tensor.get_shape().back(); i++) {
+        res_vector.emplace_back(tensor.data<int64_t>()[i]);
+    }
+    return res_vector;
+}
+
+ov::Tensor append_element(ov::Tensor tensor_val, int64_t element) {
+    auto vec = convert_to_vector(tensor_val);
+    vec.emplace_back(element);
+    return ov::Tensor{ov::element::i64, {BATCH_SIZE, tensor_val.get_shape().back()}, vec.data()};
+}
+
+void set_key_values(ov::InferRequest& request, int size) {
+    std::stringstream ss_1, ss_2;
+
+    for (int i = 0; i < size; i++) {
+        ss_1 << "present." << i << ".key";
+        ss_2 << "past_key_values." << i << ".key";
+        request.set_tensor(ss_2.str(), request.get_tensor(ss_1.str()));
+        ss_1.str("");
+        ss_2.str("");
+
+        ss_1 << "present." << i << ".value";
+        ss_2 << "past_key_values." << i << ".value";
+        request.set_tensor(ss_2.str(), request.get_tensor(ss_1.str()));
+        ss_1.str("");
+        ss_2.str("");
+    }
+}
+
+void init_key_values(ov::InferRequest request, int kv_length, unsigned size_1, unsigned size_2) {
+    std::stringstream ss_1, ss_2;
+    ss_1.clear();
+    ss_2.clear();
+
+    for (int i = 0; i < kv_length; i++) {
+        ss_2 << "past_key_values." << i << ".key";
+        request.set_tensor(ss_2.str(), ov::Tensor(ov::element::f32, {BATCH_SIZE, size_1, 0, size_2}));
+        ss_2.str("");
+
+        ss_2 << "past_key_values." << i << ".value";
+        request.set_tensor(ss_2.str(), ov::Tensor(ov::element::f32, {BATCH_SIZE, size_1, 0, size_2}));
+        ss_2.str("");
+    }
+}
+
+void drop_unvalid_kv_cach(ov::InferRequest reques, int pos, int kv_size) {
+
+}
+
+
+
 int main(int argc, char* argv[]) try {
-    if (argc != 3) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>'");
+    // int tiny_llama_kv_size = 22;
+    // int tiny_llama_size_1 = 4;
+    // int tiny_llama_size_2 = 64;
+
+    int tiny_llama_kv_size = 22;
+    int tiny_llama_size_1 = 4;
+    int tiny_llama_size_2 = 64;
+
+    // int llama_kv_size = 32;
+    // int llama_size_1 = 32;
+    // int llama_size_2 = 128;
+    int llama_kv_size = 22;
+    int llama_size_1 = 4;
+    int llama_size_2 = 64;
+
+    if (argc != 4) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <DRAFT MODEL_DIR> <TARGET MODEL_DIR> '<PROMPT>'");
     }
     // Compile models
     ov::Core core;
@@ -102,43 +164,97 @@ int main(int argc, char* argv[]) try {
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
-    auto [input_ids, attention_mask] = tokenize(tokenizer, argv[2]);
+    auto [input_ids, attention_mask] = tokenize(tokenizer, argv[3]);
     ov::InferRequest detokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
-    // The model can be compiled for GPU as well
+    
+    // draft model
     ov::InferRequest lm = core.compile_model(
         std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
-    // Initialize inputs
+
+    lm.set_tensor("input_ids", input_ids);
+    // std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), 1);
+
     lm.set_tensor("input_ids", input_ids);
     lm.set_tensor("attention_mask", attention_mask);
     ov::Tensor position_ids = lm.get_tensor("position_ids");
     position_ids.set_shape(input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
-    constexpr size_t BATCH_SIZE = 1;
-    // Input values are persistent between inference calls.
-    // That allows to set values, which aren't going to change, only once
-    lm.get_tensor("beam_idx").set_shape({BATCH_SIZE});
-    lm.get_tensor("beam_idx").data<int32_t>()[0] = 0;
+    init_key_values(lm, tiny_llama_kv_size, tiny_llama_size_1, tiny_llama_size_2);
     lm.infer();
-    size_t vocab_size = lm.get_tensor("logits").get_shape().back();
-    float* logits = lm.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
-    int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
 
+    // target
+    ov::InferRequest lm_target = core.compile_model(
+    std::string{argv[2]} + "/openvino_model.xml", "CPU").create_infer_request();
+    
+    std::vector<int64_t> input_ids_target;
+    for (int i = 0; i < input_ids.get_size(); i++) {
+        input_ids_target.emplace_back(input_ids.data<int64_t>()[i]);
+    }
+    ov::Tensor input_ids_target_tensor = ov::Tensor{ov::element::i64, input_ids.get_shape(), input_ids_target.data()};
+    lm_target.set_tensor("input_ids", input_ids_target_tensor);
+    lm_target.get_tensor("attention_mask").set_shape(input_ids.get_shape());
+    std::fill_n(lm_target.get_tensor("attention_mask").data<int64_t>(), lm_target.get_tensor("attention_mask").get_size(), 1);
+
+    ov::Tensor target_position_ids = lm_target.get_tensor("position_ids");
+    target_position_ids.set_shape(input_ids.get_shape());
+    std::iota(target_position_ids.data<int64_t>(), target_position_ids.data<int64_t>() + target_position_ids.get_size(), 0);
+    init_key_values(lm_target, llama_kv_size, llama_size_1, llama_size_2);
+    lm_target.infer();
+
+    size_t vocab_size = lm.get_tensor("logits").get_shape().back();
+    
+    // draft
+    float* logits = lm.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
+    int64_t arg_max_token = std::max_element(logits, logits + vocab_size) - logits;
+    int64_t out_token = arg_max_token;
     lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
-    position_ids.set_shape({BATCH_SIZE, 1});
+    lm.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
+    
+    // target
+    float* logits_target = lm_target.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
+    int64_t target_arg_max_token = std::max_element(logits_target, logits_target + vocab_size) - logits_target;
+    int64_t target_out_token = target_arg_max_token;
+    lm_target.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
+    lm_target.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
+
     TextStreamer text_streamer{std::move(detokenizer)};
-    // There's no way to extract special token values from the detokenizer for now
+    
     constexpr int64_t SPECIAL_EOS_TOKEN = 2;
-    while (out_token != SPECIAL_EOS_TOKEN) {
+    int iter = 0;
+    int max_iter = 50;
+    while (out_token != SPECIAL_EOS_TOKEN && iter < max_iter) {
+        iter += 1;
+
+        // draft
         lm.get_tensor("input_ids").data<int64_t>()[0] = out_token;
         lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm.get_tensor("attention_mask").get_shape().at(1) + 1});
         std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
-        position_ids.data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 2);
+        lm.get_tensor("position_ids").data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 2);
+        set_key_values(lm, tiny_llama_kv_size);
         lm.start_async();
-        text_streamer.put(out_token);
         lm.wait();
+
+        // target
+        lm_target.get_tensor("input_ids").data<int64_t>()[0] = target_out_token;
+        lm_target.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm_target.get_tensor("attention_mask").get_shape().at(1) + 1});
+        std::fill_n(lm_target.get_tensor("attention_mask").data<int64_t>(), lm_target.get_tensor("attention_mask").get_size(), 1);
+        lm_target.get_tensor("position_ids").data<int64_t>()[0] = int64_t(lm_target.get_tensor("attention_mask").get_size() - 2);
+        set_key_values(lm_target, llama_kv_size);
+        lm_target.start_async();
+        lm_target.wait();
+        
+        text_streamer.put(out_token);
+        
+        // draft
         logits = lm.get_tensor("logits").data<float>();
-        out_token = std::max_element(logits, logits + vocab_size) - logits;
+        int64_t arg_max_token = std::max_element(logits, logits + vocab_size) - logits;
+        out_token = arg_max_token;
+
+        // target
+        // logits_target = lm_target.get_tensor("logits").data<float>();
+        // int64_t target_arg_max_token = std::max_element(logits_target, logits_target + vocab_size) - logits_target;
+        // target_out_token = target_arg_max_token;
     }
     text_streamer.end();
     // Model is stateful which means that context (kv-cache) which belongs to a particular
