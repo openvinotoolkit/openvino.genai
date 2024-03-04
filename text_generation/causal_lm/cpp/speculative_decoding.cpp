@@ -138,6 +138,7 @@ void drop_unvalid_kv_cach(ov::InferRequest reques, int pos, int kv_size) {
 }
 
 
+using namespace std;
 
 int main(int argc, char* argv[]) try {
     // int tiny_llama_kv_size = 22;
@@ -181,18 +182,19 @@ int main(int argc, char* argv[]) try {
     position_ids.set_shape(input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
     init_key_values(lm, tiny_llama_kv_size, tiny_llama_size_1, tiny_llama_size_2);
-    lm.infer();
+    lm.start_async();
+    lm.wait();
 
     // target
     ov::InferRequest lm_target = core.compile_model(
     std::string{argv[2]} + "/openvino_model.xml", "CPU").create_infer_request();
-    
-    std::vector<int64_t> input_ids_target;
-    for (int i = 0; i < input_ids.get_size(); i++) {
-        input_ids_target.emplace_back(input_ids.data<int64_t>()[i]);
+        
+    auto target_input_ids = lm_target.get_tensor("input_ids");
+    target_input_ids.set_shape(input_ids.get_shape());
+    for (int i = 0; i < input_ids.get_shape()[1]; i++) {
+        target_input_ids.data<int64_t>()[i] = input_ids.data<int64_t>()[i];
     }
-    ov::Tensor input_ids_target_tensor = ov::Tensor{ov::element::i64, input_ids.get_shape(), input_ids_target.data()};
-    lm_target.set_tensor("input_ids", input_ids_target_tensor);
+
     lm_target.get_tensor("attention_mask").set_shape(input_ids.get_shape());
     std::fill_n(lm_target.get_tensor("attention_mask").data<int64_t>(), lm_target.get_tensor("attention_mask").get_size(), 1);
 
@@ -200,7 +202,8 @@ int main(int argc, char* argv[]) try {
     target_position_ids.set_shape(input_ids.get_shape());
     std::iota(target_position_ids.data<int64_t>(), target_position_ids.data<int64_t>() + target_position_ids.get_size(), 0);
     init_key_values(lm_target, llama_kv_size, llama_size_1, llama_size_2);
-    lm_target.infer();
+    lm_target.start_async();
+    lm_target.wait();
 
     size_t vocab_size = lm.get_tensor("logits").get_shape().back();
     
@@ -222,39 +225,70 @@ int main(int argc, char* argv[]) try {
     
     constexpr int64_t SPECIAL_EOS_TOKEN = 2;
     int iter = 0;
-    int max_iter = 50;
+    int max_iter = 1;
+    int K = 15;
+    std::vector<int64_t> accumulated_tokens;
+    std::vector<int64_t> accumulated_draft_tokens;
+    auto target_logits = lm_target.get_tensor("logits");
+    auto target_attention_mask = lm_target.get_tensor("attention_mask");
+
+    text_streamer.put(target_out_token);
+
     while (out_token != SPECIAL_EOS_TOKEN && iter < max_iter) {
-        iter += 1;
-
-        // draft
-        lm.get_tensor("input_ids").data<int64_t>()[0] = out_token;
-        lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm.get_tensor("attention_mask").get_shape().at(1) + 1});
-        std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
-        lm.get_tensor("position_ids").data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 2);
-        set_key_values(lm, tiny_llama_kv_size);
-        lm.start_async();
-        lm.wait();
-
-        // target
-        lm_target.get_tensor("input_ids").data<int64_t>()[0] = target_out_token;
-        lm_target.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm_target.get_tensor("attention_mask").get_shape().at(1) + 1});
-        std::fill_n(lm_target.get_tensor("attention_mask").data<int64_t>(), lm_target.get_tensor("attention_mask").get_size(), 1);
-        lm_target.get_tensor("position_ids").data<int64_t>()[0] = int64_t(lm_target.get_tensor("attention_mask").get_size() - 2);
-        set_key_values(lm_target, llama_kv_size);
-        lm_target.start_async();
-        lm_target.wait();
         
-        text_streamer.put(out_token);
-        
-        // draft
-        logits = lm.get_tensor("logits").data<float>();
-        int64_t arg_max_token = std::max_element(logits, logits + vocab_size) - logits;
-        out_token = arg_max_token;
+        for (int i = 0; i < K; i++) {
+            // draft
+            lm.get_tensor("input_ids").data<int64_t>()[0] = target_out_token;
+            lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm.get_tensor("attention_mask").get_shape().at(1) + 1});
+            std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
+            lm.get_tensor("position_ids").data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 2);
+            set_key_values(lm, tiny_llama_kv_size);
+            lm.start_async();
+            lm.wait();
 
-        // target
-        // logits_target = lm_target.get_tensor("logits").data<float>();
-        // int64_t target_arg_max_token = std::max_element(logits_target, logits_target + vocab_size) - logits_target;
+            logits = lm.get_tensor("logits").data<float>();
+            int64_t arg_max_token = std::max_element(logits, logits + vocab_size) - logits;
+            text_streamer.put(arg_max_token);
+            target_out_token = arg_max_token;
+            out_token = arg_max_token;
+            accumulated_draft_tokens.emplace_back(arg_max_token);
+        }
+
+        // // target
+        // target_input_ids.set_shape({BATCH_SIZE, accumulated_draft_tokens.size()});
+        // for (int i = 0; i < K; i++) {
+        //     target_input_ids.data<int64_t>()[i] = accumulated_draft_tokens[i];
+        // }
+
+        // target_attention_mask.set_shape({BATCH_SIZE, target_attention_mask.get_shape().at(1) + K});
+        // std::fill_n(target_attention_mask.data<int64_t>(), target_attention_mask.get_size(), 1);
+
+        // target_position_ids.set_shape({BATCH_SIZE, accumulated_draft_tokens.size()});
+        // // todo: check position ids
+        // std::iota(target_position_ids.data<int64_t>(), target_position_ids.data<int64_t>() + target_position_ids.get_size(), iter + 1);
+
+        // set_key_values(lm_target, llama_kv_size);
+        // lm_target.start_async();
+        // lm_target.wait();
+        
+        // logits_target = target_logits.data<float>();
+        // int64_t target_arg_max_token;
+        // std::vector<int64_t> accumulated_target_tokens;
+        // for (int i = 0; i < K; i++) {
+        //     auto start = logits_target + vocab_size * (iter + i);
+        //     auto stop = logits_target + vocab_size * (iter + i + 1);
+        //     target_arg_max_token = std::max_element(start, stop) - start;
+
+        //     // accumulated_target_tokens.emplace_back(target_arg_max_token);
+        //     // text_streamer.put(target_arg_max_token);
+        //     accumulated_target_tokens.emplace_back(accumulated_draft_tokens[i]);
+        //     text_streamer.put(accumulated_draft_tokens[i]);
+        // }
         // target_out_token = target_arg_max_token;
+
+        // // TODO: check
+        // accumulated_draft_tokens.clear();
+        iter += 1;
     }
     text_streamer.end();
     // Model is stateful which means that context (kv-cache) which belongs to a particular
