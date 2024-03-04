@@ -23,6 +23,7 @@ from PIL import Image
 from utils.memory_profile import MemConsumption
 from utils.hook_forward import StableDiffusionHook
 import utils.output_json
+import utils.output_file
 
 FW_UTILS = {'pt': utils.pt_utils, 'ov': utils.ov_utils}
 
@@ -73,9 +74,12 @@ def gen_iterate_data(
     return iter_data
 
 
-def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_index, bench_hook):
+def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_index, bench_hook, model_precision, proc_id):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
+    if args["output_dir"] is not None and num == 0:
+        for bs_index, in_text in enumerate(input_text_list):
+            utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
     tok_encode_start = time.perf_counter()
     input_data = tokenizer(input_text_list, return_tensors='pt')
     tok_encode_end = time.perf_counter()
@@ -114,15 +118,17 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
-    for i in range(args['batch_size']):
-        if 'sum' not in args['model_name'] and result[i][:input_token_size].equal(input_tokens[i]):
-            generated_text_len = len(result[i]) - input_tokens[i].numel()
+    for bs_idx in range(args['batch_size']):
+        if 'sum' not in args['model_name'] and result[bs_idx][:input_token_size].equal(input_tokens[bs_idx]):
+            generated_text_len = len(result[bs_idx]) - input_tokens[bs_idx].numel()
         else:
-            generated_text_len = len(result[i])
+            generated_text_len = len(result[bs_idx])
         num_tokens += generated_text_len
         if generated_text_len > max_output_token_size:
             log.error('Output token size is over max output token size!')
-        result_text = generated_text[i]
+        result_text = generated_text[bs_idx]
+        if args["output_dir"] is not None:
+            utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
         result_md5_list.append(hashlib.md5(result_text.encode()).hexdigest())
     if num == 0:
         warmup_md5[prompt_index] = result_md5_list
@@ -166,6 +172,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
     model, tokenizer, pretrain_time, bench_hook = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
+    model_precision = utils.model_utils.get_model_precision(model_path.parents._parts)
     iter_data_list = []
     warmup_md5 = {}
     input_text_list = utils.model_utils.get_prompts(args)
@@ -175,24 +182,25 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
              f'prompt nums: {len(input_text_list)}')
 
     # if num_iters == 0, just output warm-up data
+    proc_id = os.getpid()
     if args['interleave'] is True:
         for num in range(num_iters + 1):
             for prompt_idx, input_text in enumerate(input_text_list):
                 if num == 0:
                     log.info(f'[warm-up] Input text: {input_text}')
-                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook)
+                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
     else:
         for prompt_idx, input_text in enumerate(input_text_list):
             for num in range(num_iters + 1):
                 if num == 0:
                     log.info(f'[warm-up] Input text: {input_text}')
-                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook)
+                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
 
     utils.metrics_print.print_average(iter_data_list)
     return iter_data_list, pretrain_time
 
 
-def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list):
+def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id):
     set_seed(args['seed'])
     input_text = image_param['prompt']
     image_width = image_param.get('width', DEFAULT_IMAGE_WIDTH)
@@ -216,19 +224,19 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
             additional_args["guidance_scale"] = 1.0
         if 'turbo' in args['model_name']:
             additional_args["guidance_scale"] = 0.0
+    input_text_list = [input_text] * args['batch_size']
+    if num == 0 and args["output_dir"] is not None:
+        for bs_idx, in_text in enumerate(input_text_list):
+            utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx, proc_id)
     start = time.perf_counter()
-    res = pipe([input_text] * args['batch_size'], num_inference_steps=nsteps, height=image_height, width=image_width, **additional_args).images
+    res = pipe(input_text_list, num_inference_steps=nsteps, height=image_height, width=image_width, **additional_args).images
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
-    for i in range(args['batch_size']):
-        if num == 0:
-            rslt_img_fn = args['model_name'] + '_img' + str(image_id) + '_bs' + str(args['batch_size']) + '-' + str(i + 1) + '_img_warm-up.png'
-        else:
-            rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_img' + str(image_id) + '_bs' + str(args['batch_size']) + '-' + str(i + 1) + '.png'
-        res[i].save(rslt_img_fn)
+    for bs_idx in range(args['batch_size']):
+        rslt_img_fn = utils.output_file.output_gen_image(res[bs_idx], args, image_id, num, bs_idx, proc_id, '.png')
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
     generation_time = end - start
     iter_data = gen_iterate_data(
@@ -268,14 +276,15 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_image_list)}')
 
     # if num_iters == 0, just output warm-up data
+    proc_id = os.getpid()
     if args['interleave'] is True:
         for num in range(num_iters + 1):
             for image_id, image_param in enumerate(input_image_list):
-                run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
+                run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id)
     else:
         for image_id, image_param in enumerate(input_image_list):
             for num in range(num_iters + 1):
-                run_image_generation(image_param, num, image_id, pipe, args, iter_data_list)
+                run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id)
 
     utils.metrics_print.print_average(iter_data_list)
     return iter_data_list, pretrain_time
@@ -302,7 +311,7 @@ def run_image_classification(model_path, framework, device, args, num_iters=10):
     return iter_data_list
 
 
-def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list):
+def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list, proc_id):
     set_seed(args['seed'])
     nsteps = img.get('steps', DEFAULT_SUPER_RESOLUTION_STEPS)
     resize_image_width = img.get('width', DEFAULT_SUPER_RESOLUTION_WIDTH)
@@ -324,13 +333,9 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
-    if num == 0:
-        rslt_img_fn = args['model_name'] + '_warmup_' + img['prompt'].name
-    else:
-        rslt_img_fn = args['model_name'] + '_iter' + str(num) + '_' + img['prompt'].name
     result_md5_list = []
     if framework == 'ov':
-        res[0].save(rslt_img_fn)
+        rslt_img_fn = utils.output_file.output_gen_image(res[0], args, image_id, num, None, proc_id, '.png')
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
 
     generation_time = end - start
@@ -381,12 +386,15 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(images)}')
 
     # if num_iters == 0, just output warm-up data
+    proc_id = os.getpid()
     for num in range(num_iters + 1):
         image_id = 0
         for img in images:
             if num == 0:
+                if args["output_dir"] is not None:
+                    utils.output_file.output_image_input_text(str(img['prompt']), args, image_id, None, proc_id)
                 log.info(f"[{'warm-up' if num == 0 else num}] Input image={img['prompt']}")
-            run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list)
+            run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list, proc_id)
             tm_list.clear()
             image_id = image_id + 1
     utils.metrics_print.print_average(iter_data_list)
@@ -474,6 +482,7 @@ def get_argprser():
         help='if the value is True, input prompts are processed in interleave manner'
         'if the value is False (default), input prompts are processed in subsequent manner'
     )
+    parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
     utils.model_utils.add_stateful_model_arguments(parser)
 
     return parser.parse_args()
