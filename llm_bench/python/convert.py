@@ -38,7 +38,7 @@ from optimum.intel.openvino import (
 )
 from optimum.utils.import_utils import is_torch_available, is_diffusers_available
 
-from optimum.exporters.utils import _get_submodels_and_onnx_configs as _get_submodels_and_export_configs
+from optimum.exporters.utils import _get_submodels_and_export_configs
 
 from transformers import (
     AutoTokenizer,
@@ -207,7 +207,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
                 model=model,
                 exporter="openvino",
                 task="text-generation-with-past",
-                custom_onnx_configs={},
+                custom_export_configs={},
                 custom_architecture=None,
                 fn_get_submodels=None,
                 preprocessors=None,
@@ -232,7 +232,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             )
             model.config.save_pretrained(pt_out_dir)
             export_models(
-                models_and_onnx_configs=models_and_onnx_configs,
+                models_and_export_configs=models_and_onnx_configs,
                 output_dir=pt_out_dir,
                 output_names=files_subpaths,
                 input_shapes=dummy_shapes,
@@ -302,7 +302,7 @@ def convert_seq2seq(args):
                     )
 
                 onnx_config_constructor = TasksManager.get_exporter_config_constructor(
-                    model=pt_model, exporter="onnx", task="text2text-generation"
+                    model=pt_model, exporter="openvino", task="text2text-generation"
                 )
                 onnx_config = onnx_config_constructor(pt_model.config, use_past=True)
                 models_and_onnx_configs = get_encoder_decoder_models_for_export(pt_model, onnx_config)
@@ -329,7 +329,7 @@ def convert_seq2seq(args):
                 )
                 try:
                     export_models(
-                        models_and_onnx_configs=models_and_onnx_configs,
+                        models_and_export_configs=models_and_onnx_configs,
                         opset=onnx_config.DEFAULT_ONNX_OPSET,
                         output_dir=save_dir_path,
                         output_names=output_names,
@@ -498,7 +498,7 @@ def get_stable_diffusion_models_for_export(
     if "text_encoder" in models_for_export:
         text_encoder_config_constructor = TasksManager.get_exporter_config_constructor(
             model=pipeline.text_encoder,
-            exporter="onnx",
+            exporter="openvino",
             task="feature-extraction",
         )
         text_encoder_onnx_config = text_encoder_config_constructor(
@@ -509,7 +509,7 @@ def get_stable_diffusion_models_for_export(
     # U-NET
     onnx_config_constructor = TasksManager.get_exporter_config_constructor(
         model=pipeline.unet,
-        exporter="onnx",
+        exporter="openvino",
         task="semantic-segmentation",
         model_type="unet",
     )
@@ -520,7 +520,7 @@ def get_stable_diffusion_models_for_export(
     vae_encoder = models_for_export["vae_encoder"]
     vae_config_constructor = TasksManager.get_exporter_config_constructor(
         model=vae_encoder,
-        exporter="onnx",
+        exporter="openvino",
         task="semantic-segmentation",
         model_type="vae-encoder",
     )
@@ -531,7 +531,7 @@ def get_stable_diffusion_models_for_export(
     vae_decoder = models_for_export["vae_decoder"]
     vae_config_constructor = TasksManager.get_exporter_config_constructor(
         model=vae_decoder,
-        exporter="onnx",
+        exporter="openvino",
         task="semantic-segmentation",
         model_type="vae-decoder",
     )
@@ -541,7 +541,7 @@ def get_stable_diffusion_models_for_export(
     if "text_encoder_2" in models_for_export:
         onnx_config_constructor = TasksManager.get_exporter_config_constructor(
             model=pipeline.text_encoder_2,
-            exporter="onnx",
+            exporter="openvino",
             task="feature-extraction",
             model_type="clip-text-with-projection",
         )
