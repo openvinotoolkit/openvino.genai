@@ -7,6 +7,7 @@ from typing import Tuple, Optional, Union
 import types
 from transformers.modeling_outputs import BaseModelOutputWithPast
 
+
 def _yi_prepare_decoder_attention_mask(
     attention_mask, input_ids, inputs_embeds, past_key_values_length
 ):
@@ -14,6 +15,7 @@ def _yi_prepare_decoder_attention_mask(
     return _prepare_decoder_attention_mask(
         attention_mask, input_shape, inputs_embeds, past_key_values_length
     )
+
 
 # Copied from transformers.models.bart.modeling_bart._expand_mask
 def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] = None):
