@@ -60,7 +60,7 @@ jobs:
         - name: Download / convert a model / tokenizer
           shell: cmd
           run: |
-            call w_openvino_toolkit_windows_2023.3.0.13775.ceeafaf64f3_x86_64/setupvars.bat
+            call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64/setupvars.bat
             cd ./image_generation/lcm_dreamshaper_v7/cpp/scripts/
             python -m pip install -r ./requirements.txt
             python -m pip install ../../../../thirdparty/openvino_tokenizers/
@@ -68,13 +68,13 @@ jobs:
         - name: Build app
           shell: cmd
           run: |
-            call w_openvino_toolkit_windows_2023.3.0.13775.ceeafaf64f3_x86_64/setupvars.bat
+            call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64/setupvars.bat
             cd ./image_generation/lcm_dreamshaper_v7/cpp/
             cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
             cmake --build ./build/ --config Release --parallel
         - name: Run app
           shell: cmd
           run: |
-            call w_openvino_toolkit_windows_2023.3.0.13775.ceeafaf64f3_x86_64/setupvars.bat
+            call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64/setupvars.bat
             cd ./image_generation/lcm_dreamshaper_v7/cpp/build/
             call "./Release/lcm_dreamshaper.exe"
