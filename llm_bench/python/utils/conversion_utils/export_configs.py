@@ -357,6 +357,7 @@ class ChatGLM2DummyPastKeyValuesGenerator(DummyPastKeyValuesGenerator):
         ]
 
 
+@register_in_tasks_manager("chatglm", *["text-generation", "text-generation-with-past"])
 class ChatGLM2OpenVINOConfig(TextDecoderOnnxConfig):
     NORMALIZED_CONFIG_CLASS = ChatGLM2NormalizedConfig
     DUMMY_INPUT_GENERATOR_CLASSES = (ChatGLM2DummyTextInputGenerator, ChatGLM2DummyPastKeyValuesGenerator)
