@@ -23,7 +23,7 @@ from openvino import Type as OVType, PartialShape, save_model, convert_model
 from openvino.runtime import Core, get_version
 from optimum.exporters import TasksManager
 from optimum.utils import DEFAULT_DUMMY_SHAPES
-from optimum.exporters.onnx import get_encoder_decoder_models_for_export
+from optimum.exporters.utils import get_encoder_decoder_models_for_export
 from optimum.exporters.openvino import export_models
 from optimum.exporters.openvino.model_patcher import patch_model_with_bettertransformer
 from optimum.intel.openvino import (
@@ -38,12 +38,7 @@ from optimum.intel.openvino import (
 )
 from optimum.utils.import_utils import is_torch_available, is_diffusers_available
 
-try:
-    from optimum.exporters.onnx.__main__ import (
-        _get_submodels_and_onnx_configs as _get_submodels_and_export_configs,
-    )
-except ImportError:
-    from optimum.exporters.onnx.utils import _get_submodels_and_onnx_configs as _get_submodels_and_export_configs
+from optimum.exporters.utils import _get_submodels_and_onnx_configs as _get_submodels_and_export_configs
 
 from transformers import (
     AutoTokenizer,
@@ -59,8 +54,7 @@ from utils.conversion_utils.convert_patch import patch_model_for_optimum_export
 from utils.conversion_utils.better_transformer_patch import (
     register_bettertransformer_config,
 )
-from utils.conversion_utils.export_configs import *  # noqa: F401,F403
-from utils.ov_model_classes import register_normalized_configs
+import utils.conversion_utils.export_configs  # noqa: F401,F403
 from utils.conversion_utils.helpers import (
     PYTORCH_DIR,
     OV_DIR,
@@ -91,7 +85,6 @@ if TYPE_CHECKING:
     if is_diffusers_available():
         from diffusers import ModelMixin
 
-register_normalized_configs()
 register_bettertransformer_config()
 
 
@@ -147,7 +140,8 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
         onnx_config, models_and_onnx_configs = _get_submodels_and_export_configs(
             model=model,
             task="text-generation-with-past",
-            custom_onnx_configs={},
+            exporter="openvino",
+            custom_export_configs={},
             custom_architecture=None,
             fn_get_submodels=None,
             preprocessors=None,
@@ -211,6 +205,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
 
             _, models_and_onnx_configs = _get_submodels_and_export_configs(
                 model=model,
+                exporter="openvino",
                 task="text-generation-with-past",
                 custom_onnx_configs={},
                 custom_architecture=None,
