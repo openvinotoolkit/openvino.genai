@@ -184,6 +184,10 @@ void print_accum_tokens(ov::InferRequest& detokenizer, std::vector<int64_t> toke
     cerr << text << " | " << ss.str() << endl;
 }
 
+string tokens_to_string(ov::InferRequest& detokenizer, std::vector<int64_t> tokens) {
+    return detokenize(detokenizer, tokens);
+}
+
 int main(int argc, char* argv[]) try {
     // int tiny_llama_kv_size = 22;
     // int tiny_llama_size_1 = 4;
@@ -283,7 +287,7 @@ int main(int argc, char* argv[]) try {
     auto target_logits = lm_target.get_tensor("logits");
     auto target_attention_mask = lm_target.get_tensor("attention_mask");
 
-    text_streamer.put(target_out_token);
+    // text_streamer.put(target_out_token);
     out_token = target_out_token;
     accumulated_draft_tokens.emplace_back(out_token);
     
@@ -294,7 +298,7 @@ int main(int argc, char* argv[]) try {
             lm.get_tensor("input_ids").data<int64_t>()[0] = out_token;
             lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm.get_tensor("attention_mask").get_shape()[1] + 1});
             std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
-            lm.get_tensor("position_ids").data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 2);
+            lm.get_tensor("position_ids").data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 1);
             set_key_values(lm, tiny_llama_kv_size);
 
             lm.infer();
@@ -305,9 +309,10 @@ int main(int argc, char* argv[]) try {
             accumulated_draft_tokens.emplace_back(arg_max_token);
         }
         print_accum_tokens(detokenizer_2, accumulated_draft_tokens, "\ndraft token");
-        
+        auto res = tokens_to_string(detokenizer_2, accumulated_draft_tokens);
+
         // sanity check
-        #if 1
+        #if 0
         out_token = target_out_token;
         accumulated_draft_tokens.clear();
         accumulated_draft_tokens.emplace_back(target_out_token);
@@ -327,6 +332,7 @@ int main(int argc, char* argv[]) try {
             accumulated_draft_tokens.emplace_back(arg_max_token);
         }
         print_accum_tokens(detokenizer_2, accumulated_draft_tokens, "target token");
+        res = tokens_to_string(detokenizer_2, accumulated_draft_tokens);
         target_out_token = out_token;
         accumulated_draft_tokens.clear();
         accumulated_draft_tokens.emplace_back(out_token);
@@ -345,7 +351,7 @@ int main(int argc, char* argv[]) try {
 
         target_position_ids.set_shape({BATCH_SIZE, accumulated_draft_tokens.size()});
         // todo: check position ids
-        std::iota(target_position_ids.data<int64_t>(), target_position_ids.data<int64_t>() + target_position_ids.get_size(), iter + 1);
+        std::iota(target_position_ids.data<int64_t>(), target_position_ids.data<int64_t>() + target_position_ids.get_size(), iter);
 
         set_key_values(lm_target, llama_kv_size);
         lm_target.infer();
@@ -356,9 +362,10 @@ int main(int argc, char* argv[]) try {
         std::vector<int64_t> accumulated_target_tokens;
         
         text_streamer.put(accumulated_draft_tokens[0]);
-        accumulated_tokens.emplace_back(accumulated_draft_tokens[0]);
         accumulated_tokens.clear();
-        
+        accumulated_tokens.emplace_back(accumulated_draft_tokens[0]);
+
+
         bool unmatched = true;
         for (int i = 0; i < accumulated_draft_tokens.size(); i++) {
             auto start = logits_target + vocab_size * i;
@@ -366,7 +373,8 @@ int main(int argc, char* argv[]) try {
             target_arg_max_token = std::max_element(start, stop) - start;
             accumulated_tokens.emplace_back(target_arg_max_token);
             
-            if (i != accumulated_draft_tokens.size() - 1 && target_arg_max_token != accumulated_draft_tokens[i] && unmatched) {
+            #if 1
+            if (i != accumulated_draft_tokens.size() - 1 && target_arg_max_token != accumulated_draft_tokens[i  + 1] && unmatched) {
                 auto new_seq_len = iter + 1;
 
                 update_kv_cache(lm_target, new_seq_len, llama_kv_size);
@@ -411,6 +419,7 @@ int main(int argc, char* argv[]) try {
             } else {
                 ;
             }
+            #endif
         }
         print_accum_tokens(detokenizer_2, accumulated_tokens, "target tokens");
 
