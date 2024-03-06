@@ -197,13 +197,13 @@ int main(int argc, char* argv[]) try {
     int tiny_llama_size_1 = 4;
     int tiny_llama_size_2 = 64;
 
-    int llama_kv_size = 32;
-    int llama_size_1 = 32;
-    int llama_size_2 = 128;
+    // int llama_kv_size = 32;
+    // int llama_size_1 = 32;
+    // int llama_size_2 = 128;
 
-    // int llama_kv_size = 22;
-    // int llama_size_1 = 4;
-    // int llama_size_2 = 64;
+    int llama_kv_size = 22;
+    int llama_size_1 = 4;
+    int llama_size_2 = 64;
 
     if (argc != 4 && argc != 5) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <DRAFT MODEL_DIR> <TARGET MODEL_DIR> '<PROMPT>'");
@@ -283,13 +283,13 @@ int main(int argc, char* argv[]) try {
 
     int K = 3;
     std::vector<int64_t> accumulated_tokens;
-    std::vector<int64_t> accumulated_draft_tokens;
+    std::vector<int64_t> accum_draft_tokens;
     auto target_logits = lm_target.get_tensor("logits");
     auto target_attention_mask = lm_target.get_tensor("attention_mask");
 
     // text_streamer.put(target_out_token);
     out_token = target_out_token;
-    accumulated_draft_tokens.emplace_back(out_token);
+    // accum_draft_tokens.emplace_back(out_token);
     
     while (out_token != SPECIAL_EOS_TOKEN && iter < max_iter) {
 
@@ -298,7 +298,7 @@ int main(int argc, char* argv[]) try {
             lm.get_tensor("input_ids").data<int64_t>()[0] = out_token;
             lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm.get_tensor("attention_mask").get_shape()[1] + 1});
             std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
-            lm.get_tensor("position_ids").data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 1);
+            lm.get_tensor("position_ids").data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 2);
             set_key_values(lm, tiny_llama_kv_size);
 
             lm.infer();
@@ -306,126 +306,94 @@ int main(int argc, char* argv[]) try {
             logits = lm.get_tensor("logits").data<float>();
             int64_t arg_max_token = std::max_element(logits, logits + vocab_size) - logits;
             out_token = arg_max_token;
-            accumulated_draft_tokens.emplace_back(arg_max_token);
+            accum_draft_tokens.emplace_back(arg_max_token);
         }
-        print_accum_tokens(detokenizer_2, accumulated_draft_tokens, "\ndraft token");
-        auto res = tokens_to_string(detokenizer_2, accumulated_draft_tokens);
-
-        // sanity check
-        #if 0
-        out_token = target_out_token;
-        accumulated_draft_tokens.clear();
-        accumulated_draft_tokens.emplace_back(target_out_token);
-        for (int i = 0; i < K; i++) {
-            // draft
-            lm_target.get_tensor("input_ids").data<int64_t>()[0] = out_token;
-            lm_target.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm_target.get_tensor("attention_mask").get_shape()[1] + 1});
-            std::fill_n(lm_target.get_tensor("attention_mask").data<int64_t>(), lm_target.get_tensor("attention_mask").get_size(), 1);
-            lm_target.get_tensor("position_ids").data<int64_t>()[0] = int64_t(lm_target.get_tensor("attention_mask").get_size() - 2);
-            set_key_values(lm_target, llama_kv_size);
-
-            lm_target.infer();
-
-            logits = lm_target.get_tensor("logits").data<float>();
-            int64_t arg_max_token = std::max_element(logits, logits + vocab_size) - logits;
-            out_token = arg_max_token;
-            accumulated_draft_tokens.emplace_back(arg_max_token);
-        }
-        print_accum_tokens(detokenizer_2, accumulated_draft_tokens, "target token");
-        res = tokens_to_string(detokenizer_2, accumulated_draft_tokens);
-        target_out_token = out_token;
-        accumulated_draft_tokens.clear();
-        accumulated_draft_tokens.emplace_back(out_token);
-
-        iter += K;
-        #else
+        auto res = tokens_to_string(detokenizer_2, accum_draft_tokens);
 
         // target
-        target_input_ids.set_shape({BATCH_SIZE, accumulated_draft_tokens.size()});
-        for (int i = 0; i < accumulated_draft_tokens.size(); i++) {
-            target_input_ids.data<int64_t>()[i] = accumulated_draft_tokens[i];
+        auto new_size = accum_draft_tokens.size() + 1;
+        target_input_ids.set_shape({BATCH_SIZE, new_size});
+        target_input_ids.data<int64_t>()[0] = out_token;
+        for (int i = 0; i < accum_draft_tokens.size(); i++) {
+            target_input_ids.data<int64_t>()[i + 1] = accum_draft_tokens[i];
         }
 
-        target_attention_mask.set_shape({BATCH_SIZE, target_attention_mask.get_shape()[1] + accumulated_draft_tokens.size()});
+        target_attention_mask.set_shape({BATCH_SIZE, target_attention_mask.get_shape()[1] + new_size});
         std::fill_n(target_attention_mask.data<int64_t>(), target_attention_mask.get_size(), 1);
 
-        target_position_ids.set_shape({BATCH_SIZE, accumulated_draft_tokens.size()});
-        // todo: check position ids
-        std::iota(target_position_ids.data<int64_t>(), target_position_ids.data<int64_t>() + target_position_ids.get_size(), iter);
+        target_position_ids.set_shape({BATCH_SIZE, accum_draft_tokens.size()});
+        std::iota(target_position_ids.data<int64_t>(), target_position_ids.data<int64_t>() + target_position_ids.get_size(), 
+                  lm.get_tensor("attention_mask").get_size() - 2);
 
         set_key_values(lm_target, llama_kv_size);
+        vector<int64_t> input_ids_to_watch;
+        auto data = lm_target.get_tensor("input_ids").data<int64_t>();
+        for (int i = 0; i < lm_target.get_tensor("input_ids").get_shape()[1]; i++) {
+            input_ids_to_watch.emplace_back(data[i]);
+        }
         lm_target.infer();
         
         logits_target = target_logits.data<float>();  // [batch, seq_len, vocab_size]
         int64_t target_arg_max_token;
-        
-        std::vector<int64_t> accumulated_target_tokens;
-        
-        text_streamer.put(accumulated_draft_tokens[0]);
         accumulated_tokens.clear();
-        accumulated_tokens.emplace_back(accumulated_draft_tokens[0]);
-
-
-        bool unmatched = true;
-        for (int i = 0; i < accumulated_draft_tokens.size(); i++) {
+        
+        for (int i = 0; i < accum_draft_tokens.size() + 1; i++) {
             auto start = logits_target + vocab_size * i;
             auto stop = logits_target + vocab_size * (i + 1);
             target_arg_max_token = std::max_element(start, stop) - start;
             accumulated_tokens.emplace_back(target_arg_max_token);
+        }
+        auto res_2 = tokens_to_string(detokenizer_2, accumulated_tokens);
+        
+        for (int i = 0; i < accum_draft_tokens.size(); i++) {
+            // if (i == accumulated_draft_tokens.size() - 1 || target_arg_max_token == accumulated_draft_tokens[i  + 1])
+            //     continue;
             
-            #if 1
-            if (i != accumulated_draft_tokens.size() - 1 && target_arg_max_token != accumulated_draft_tokens[i  + 1] && unmatched) {
-                auto new_seq_len = iter + 1;
+            // auto new_seq_len = iter + 1;
 
-                update_kv_cache(lm_target, new_seq_len, llama_kv_size);
-                target_attention_mask.set_shape({BATCH_SIZE, new_seq_len});
-                std::fill_n(target_attention_mask.data<int64_t>(), target_attention_mask.get_size(), 1);
+            // update_kv_cache(lm_target, new_seq_len, llama_kv_size);
+            // target_attention_mask.set_shape({BATCH_SIZE, new_seq_len});
+            // std::fill_n(target_attention_mask.data<int64_t>(), target_attention_mask.get_size(), 1);
 
-                // for draft model
-                update_kv_cache(lm, new_seq_len, tiny_llama_kv_size);
-                lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, new_seq_len});
-                std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
-                if (i == 0) {
-                    // if it failed starting from the very first token then need to reinfer with target network
-                    // target
-                    target_input_ids.set_shape({BATCH_SIZE, 1});
-                    target_input_ids.data<int64_t>()[0] = out_token;
+            // // for draft model
+            // update_kv_cache(lm, new_seq_len, tiny_llama_kv_size);
+            // lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, new_seq_len});
+            // std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
 
-                    target_attention_mask.set_shape({BATCH_SIZE, target_attention_mask.get_shape()[1] + 1});
-                    std::fill_n(target_attention_mask.data<int64_t>(), target_attention_mask.get_size(), 1);
+            // if (i == 0) {
+            //     // if it failed starting from the very first token then need to reinfer with target network
+            //     // target
+            //     target_input_ids.set_shape({BATCH_SIZE, 1});
+            //     target_input_ids.data<int64_t>()[0] = out_token;
 
-                    // todo: check position ids
-                    target_position_ids.set_shape({BATCH_SIZE, 1});
-                    std::iota(target_position_ids.data<int64_t>(), target_position_ids.data<int64_t>() + target_position_ids.get_size(), iter + 1);
+            //     target_attention_mask.set_shape({BATCH_SIZE, target_attention_mask.get_shape()[1] + 1});
+            //     std::fill_n(target_attention_mask.data<int64_t>(), target_attention_mask.get_size(), 1);
 
-                    set_key_values(lm_target, llama_kv_size);
-                    lm_target.infer();
+            //     // todo: check position ids
+            //     target_position_ids.set_shape({BATCH_SIZE, 1});
+            //     std::iota(target_position_ids.data<int64_t>(), target_position_ids.data<int64_t>() + target_position_ids.get_size(), iter + 1);
 
-                    logits = lm.get_tensor("logits").data<float>();
-                    int64_t arg_max_token = std::max_element(logits, logits + vocab_size) - logits;
-                    iter += 1;
-                    text_streamer.put(target_arg_max_token);
-                    out_token = arg_max_token;
-                }
-                print_accum_tokens(detokenizer_2, accumulated_tokens, "target tokens");
-                // break;
-                unmatched = false;
+            //     set_key_values(lm_target, llama_kv_size);
+            //     lm_target.infer();
 
-            }
-            if (unmatched) {
-                iter += 1; // todo: if it's needed to update anywhere else, e.g. when all elements in K matched
-                text_streamer.put(target_arg_max_token);
-                out_token = target_arg_max_token;
-            } else {
-                ;
-            }
-            #endif
+            //     logits = lm.get_tensor("logits").data<float>();
+            //     int64_t arg_max_token = std::max_element(logits, logits + vocab_size) - logits;
+            //     iter += 1;
+            //     text_streamer.put(target_arg_max_token);
+            //     out_token = arg_max_token;
+            // }
+            // print_accum_tokens(detokenizer_2, accumulated_tokens, "target tokens");
+            // // break;
+
+            // // if (unmatched)
+            // //     iter += 1; // todo: if it's needed to update anywhere else, e.g. when all elements in K matched
+            // //     text_streamer.put(target_arg_max_token);
+            // //     out_token = target_arg_max_token;
         }
         print_accum_tokens(detokenizer_2, accumulated_tokens, "target tokens");
 
         // TODO: check
-        accumulated_draft_tokens.clear();
-        #endif
+        accum_draft_tokens.clear();
     }
     text_streamer.end();
     // Model is stateful which means that context (kv-cache) which belongs to a particular
