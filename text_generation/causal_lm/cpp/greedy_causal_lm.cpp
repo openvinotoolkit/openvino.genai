@@ -71,6 +71,7 @@ int main(int argc, char* argv[]) try {
     ov::InferRequest lm = core.compile_model(
         std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
     // Initialize inputs
+    auto input_ids_shape_1 = input_ids.get_shape();
     lm.set_tensor("input_ids", input_ids);
     lm.set_tensor("attention_mask", attention_mask);
     ov::Tensor position_ids = lm.get_tensor("position_ids");
@@ -86,16 +87,29 @@ int main(int argc, char* argv[]) try {
     float* logits = lm.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
     int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
 
+    std::vector<int64_t> track_values;
+    auto atten_mask_shape = attention_mask.get_shape();
+    auto input_ids_shape = input_ids.get_shape();
+
+    for (int i = 0; i < input_ids.get_shape()[1]; i++) {
+        track_values.emplace_back(position_ids.data<int64_t>()[i]);
+    }
+
     lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     position_ids.set_shape({BATCH_SIZE, 1});
     TextStreamer text_streamer{std::move(detokenizer)};
     // There's no way to extract special token values from the detokenizer for now
     constexpr int64_t SPECIAL_EOS_TOKEN = 2;
-    while (out_token != SPECIAL_EOS_TOKEN) {
+
+    int iter = 0;
+    int max_iter = 17;
+    while (out_token != SPECIAL_EOS_TOKEN && iter < max_iter) {
+        iter++;
         lm.get_tensor("input_ids").data<int64_t>()[0] = out_token;
         lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm.get_tensor("attention_mask").get_shape().at(1) + 1});
         std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
         position_ids.data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 2);
+        auto new_position_index = position_ids.data<int64_t>()[0];
         lm.start_async();
         text_streamer.put(out_token);
         lm.wait();
