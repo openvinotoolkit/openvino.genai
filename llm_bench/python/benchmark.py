@@ -102,8 +102,14 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
+    if args['ignore_end'] is True:
+        min_gen_tokens = args['infer_count'] if args['infer_count'] is not None and args['infer_count'] > 0 else max_output_token_size
+        max_gen_tokens = args['infer_count'] if args['infer_count'] is not None and args['infer_count'] > 0 else max_output_token_size
+    else:
+        min_gen_tokens = 0
+        max_gen_tokens = max_output_token_size
     start = time.perf_counter()
-    result = model.generate(**input_data, max_new_tokens=int(max_output_token_size), num_beams=args['num_beams'], use_cache=True)
+    result = model.generate(**input_data, min_new_tokens=int(min_gen_tokens), max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True)
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
@@ -489,6 +495,7 @@ def get_argprser():
         'if the value is False (default), input prompts are processed in interleave manner'
     )
     parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
+    parser.add_argument('--ignore_end', action='store_true', help='Ignore the end token and force to generate required tokens based on the infer count')
     utils.model_utils.add_stateful_model_arguments(parser)
 
     return parser.parse_args()
