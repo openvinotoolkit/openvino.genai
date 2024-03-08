@@ -119,6 +119,7 @@ python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_b
 ## Run on 2 sockets platform
 
 benchmark.py sets openvino.properties.streams.num(1) by default
+
 +=====================+=================================================+
 | OpenVINO version    | Behaviors                                       |
 +=====================+=================================================+
