@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <greedy_sampling.hpp>
 #include <openvino/openvino.hpp>
 
 namespace {
@@ -82,9 +83,13 @@ int main(int argc, char* argv[]) try {
     lm.get_tensor("beam_idx").set_shape({BATCH_SIZE});
     lm.get_tensor("beam_idx").data<int32_t>()[0] = 0;
     lm.infer();
+    int64_t sequence_len = lm.get_tensor("logits").get_shape().at(1) - 1;
     size_t vocab_size = lm.get_tensor("logits").get_shape().back();
-    float* logits = lm.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
-    int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
+    float* logits = lm.get_tensor("logits").data<float>() + (sequence_len) * vocab_size;
+    const int64_t* prompt_data = input_ids.data<const int64_t>();
+    SamplingParameters parameters{ std::vector<int64_t>{prompt_data, prompt_data + input_ids.get_size()} };
+    GreedySampling greedy_sampling{ parameters };
+    int64_t out_token = greedy_sampling.get_out_token(logits, vocab_size);
 
     lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     position_ids.set_shape({BATCH_SIZE, 1});
@@ -100,7 +105,7 @@ int main(int argc, char* argv[]) try {
         text_streamer.put(out_token);
         lm.wait();
         logits = lm.get_tensor("logits").data<float>();
-        out_token = std::max_element(logits, logits + vocab_size) - logits;
+        out_token = greedy_sampling.get_out_token(logits, vocab_size);
     }
     text_streamer.end();
     // Model is stateful which means that context (kv-cache) which belongs to a particular
