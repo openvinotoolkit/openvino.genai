@@ -95,7 +95,8 @@ USE_CASES = {
         'mixtral',
         'yi-',
         'phi-',
-        'minicpm'
+        'minicpm',
+        'gemma',
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }
