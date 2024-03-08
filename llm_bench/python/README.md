@@ -122,7 +122,7 @@ benchmark.py sets openvino.properties.streams.num(1) by default
 
 | OpenVINO version    | Behaviors                                       |
 |:--------------------|:------------------------------------------------|
-| 2024.0.0 and before | streams.num(1) <br>execute on 2 sockets |
+| Before 2024.0.0 | streams.num(1) <br>execute on 2 sockets |
 | 2024.0.0            | streams.num(1) <br>execute on 1 socket which is the APP running on |
 
 numactl on Linux or --load_config for benchmark.py can be used to change the behaviors.
