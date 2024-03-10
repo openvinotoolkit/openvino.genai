@@ -102,12 +102,13 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
-    if args['end_token_stopping'] is True:
+    if args['end_token_stopping'] is False:
+        # Don't stop at end token by default
+        min_gen_tokens = args['infer_count'] if args['infer_count'] is not None else max_output_token_size
+        max_gen_tokens = args['infer_count'] if args['infer_count'] is not None else max_output_token_size
+    else:
         min_gen_tokens = 0
         max_gen_tokens = max_output_token_size
-    else:
-        min_gen_tokens = args['infer_count'] if args['infer_count'] is not None and args['infer_count'] > 0 else max_output_token_size
-        max_gen_tokens = args['infer_count'] if args['infer_count'] is not None and args['infer_count'] > 0 else max_output_token_size
     start = time.perf_counter()
     result = model.generate(**input_data, min_new_tokens=int(min_gen_tokens), max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True)
     end = time.perf_counter()
@@ -415,6 +416,13 @@ def num_iters_type(x):
     return x
 
 
+def num_infer_count_type(x):
+    x = int(x)
+    if x < 1:
+        raise argparse.ArgumentTypeError('Minimum input value is 1')
+    return x
+
+
 def get_argprser():
     parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-m', '--model', help='model folder including IR files or Pytorch files', required=TabError)
@@ -428,9 +436,10 @@ def get_argprser():
         '-ic',
         '--infer_count',
         default=None,
-        type=int,
+        type=num_infer_count_type,
         help='limit the output token size '
-        f'(default {DEFAULT_OUTPUT_TOKEN_SIZE}) of text_gen and code_gen models.',
+        f'(default {DEFAULT_OUTPUT_TOKEN_SIZE}) of text_gen and code_gen models. '
+        f'The value must be greater than 0.',
     )
     parser.add_argument(
         '-n',
