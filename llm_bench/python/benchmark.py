@@ -102,11 +102,10 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
-    if args['end_token_stopping'] is False:
-        # Don't stop at end token by default
-        min_gen_tokens = args['infer_count'] if args['infer_count'] is not None else max_output_token_size
-        max_gen_tokens = args['infer_count'] if args['infer_count'] is not None else max_output_token_size
-    else:
+    # Don't stop at end token by default
+    min_gen_tokens = max_output_token_size
+    max_gen_tokens = max_output_token_size
+    if args['end_token_stopping'] is True:
         min_gen_tokens = 0
         max_gen_tokens = max_output_token_size
     start = time.perf_counter()
