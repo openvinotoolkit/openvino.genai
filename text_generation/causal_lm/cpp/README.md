@@ -119,6 +119,7 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
    2. https://huggingface.co/Qwen/Qwen-7B-Chat-Int4 - refer to
    [Qwen-7B-Chat-Int4 - Torch not compiled with CUDA enabled](../../../llm_bench/python/doc/NOTES.md#qwen-7b-chat-int4---torch-not-compiled-with-cuda-enabled)
    in case of `AssertionError`
-7. [Dolly](https://huggingface.co/databricks/dolly-v2-3b)
+7. Dolly
+   1. https://huggingface.co/databricks/dolly-v2-3b
 
 This pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature.
