@@ -58,108 +58,64 @@ struct TextStreamer {
 };
 }
 
-void forward_key_values(ov::InferRequest& request, int size) {
-    // forwards key values from Results to inputs
-    // todo: rely on ports instead of names
-    std::stringstream ss_1, ss_2;
-
-    for (int i = 0; i < size; i++) {
-        ss_1 << "present." << i << ".key";
-        ss_2 << "past_key_values." << i << ".key";
-        request.set_tensor(ss_2.str(), request.get_tensor(ss_1.str()));
-        ss_1.str("");
-        ss_2.str("");
-
-        ss_1 << "present." << i << ".value";
-        ss_2 << "past_key_values." << i << ".value";
-        request.set_tensor(ss_2.str(), request.get_tensor(ss_1.str()));
-        ss_1.str("");
-        ss_2.str("");
+void forward_key_values(ov::InferRequest& request) {
+    // forwards present key/values from Results to Parameters with past key/values
+    // the first inputs are: input_ids, attention_masks, position_ids, other ones are past key/values.
+    // the first output is logits, others are present key.value
+    auto num_inputs = request.get_compiled_model().inputs().size();
+    for (size_t idx = 3; idx < num_inputs; ++idx) {
+        request.set_input_tensor(idx, request.get_output_tensor(idx - 2));
     }
 }
 
-void init_key_values(ov::InferRequest request, int kv_length) {
-    std::stringstream ss;
-    ss.clear();
-    
-    for (int i = 0; i < kv_length; i++) {
-        ss << "past_key_values." << i << ".key";
-        auto tensor_shape = request.get_tensor(ss.str()).get_shape();
-
-        request.set_tensor(ss.str(), ov::Tensor(ov::element::f32, {BATCH_SIZE, tensor_shape[1], 0, tensor_shape[3]}));
-        ss.str("");
-
-        ss << "past_key_values." << i << ".value";
-        request.set_tensor(ss.str(), ov::Tensor(ov::element::f32, {BATCH_SIZE, tensor_shape[1], 0, tensor_shape[3]}));
-        ss.str("");
+void init_key_values(ov::InferRequest request) {
+    auto num_inputs = request.get_compiled_model().inputs().size();
+    for (size_t idx = 3; idx < num_inputs; ++idx) {
+        auto kv_tensor = request.get_input_tensor(idx);
+        ov::Shape tensor_shape = kv_tensor.get_shape();
+        kv_tensor.set_shape({BATCH_SIZE, tensor_shape[1], 0, tensor_shape[3]});
     }
 }
 
-ov::Tensor trimm_tensor(ov::Tensor tensor, uint64_t axis, uint64_t new_seq_len) {
+ov::Tensor trimm_tensor(ov::Tensor tensor, uint64_t new_seq_len) {
+    // copy elements from the old to the new tensor
     // tensor shape = [batch, size_1, seq_len, size_2]
     auto old_tensor_data = tensor.data<float>();
     auto shape = tensor.get_shape();
-    auto size_1 = shape[1];
-    auto old_seq_len = shape[2];
-    auto size_2 = shape[3];
+    size_t size_1 = shape[1];
+    size_t old_seq_len = shape[2];
+    size_t size_2 = shape[3];
     
-    // todo: assume batch is always 1, if different one more cycle is needed
-    // copy elements from the old to the new tensor
     auto new_tensor = ov::Tensor{ov::element::f32, {BATCH_SIZE, size_1, new_seq_len, size_2}};
     auto new_tensor_data = new_tensor.data<float>();
-    for (int i = 0; i < size_1; i++) {
-        for (int j = 0; j < new_seq_len; j++) {
-            for (int k = 0; k < size_2; k++) {
-                // todo: replace with memcpy
-                new_tensor_data[new_seq_len * size_2 * i +  size_2 * j + k] = old_tensor_data[old_seq_len * size_2 * i +  size_2 * j + k];
-            }
+    
+    // todo: assume batch_size is always 1, if it's not 1 one more cycle is needed
+    for (size_t i = 0; i < size_1; ++i) {
+        for (size_t j = 0; j < new_seq_len; ++j) {
+            auto dst_ptr = new_tensor_data + new_seq_len * size_2 * i +  size_2 * j;
+            auto src_ptr = old_tensor_data + old_seq_len * size_2 * i +  size_2 * j;
+            std::memcpy(dst_ptr, src_ptr, size_2 * sizeof(float));
         }
     }
     return new_tensor;
 }
 
-void update_kv_cache(ov::InferRequest request, uint64_t new_seq_len, int kv_length) {
-    // key/value shape = [batch, size_1, seq_len, size_2]
-    uint64_t seq_len_axis = 2;  // check if can be removed hardcoded value
-    
-    std::stringstream ss;
-    for (int i = 0; i < kv_length; i++) {
-        
-        for (auto name: {"key", "value"}) {
-            ss << "present." << i;
-            ss << (name == "key" ? ".key" : ".value");
-            auto tensor_name = ss.str();
-            if (request.get_tensor(tensor_name).get_shape()[seq_len_axis] < new_seq_len) {
-                std::cout << "TERRIBLE" << std::endl;
-            }
-            auto trimmed_tensor = trimm_tensor(request.get_tensor(tensor_name), seq_len_axis, new_seq_len);
-            request.set_tensor(tensor_name, trimmed_tensor);
-            ss.str("");
-        }
+void update_kv_cache(ov::InferRequest request, uint64_t new_seq_len) {
+    // trims kv_cache values up to the seq_len
+    auto num_outputs = request.get_compiled_model().outputs().size();
+    for (size_t idx = 1; idx < num_outputs; ++idx) {
+        auto old_tensor = request.get_output_tensor(idx);
+        auto trimmed_tensor = trimm_tensor(old_tensor, new_seq_len);
+        request.set_output_tensor(idx, trimmed_tensor);
     }
 }
 
-
-using namespace std;
-void print_accum_tokens(ov::InferRequest& detokenizer, std::vector<int64_t> tokens, string suffix) {
-    std::string text = detokenize(detokenizer, tokens);
-    stringstream ss;
-    for (const auto& token: tokens)
-        ss << token << " ";
-    cerr << suffix << ": ";
-    cerr << text << " | " << ss.str() << endl;
-}
 
 auto tokens_to_string(ov::InferRequest& detokenizer, std::vector<int64_t> tokens) {
     return detokenize(detokenizer, tokens);
 }
 
 int main(int argc, char* argv[]) try {
-    int draft_kv_size = 22;  // todo: remove hardcoding and get this info from the network
-    int main_kv_size = 32;
-
-    // main_kv_size = 22;  // if TinyLlama is used as targed for testing purposes
-
     if (argc != 4) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <DRAFT MODEL_DIR> <MAIN MODEL_DIR> '<PROMPT>'");
     }
@@ -178,46 +134,45 @@ int main(int argc, char* argv[]) try {
         std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     
     // draft model
-    ov::InferRequest lm = core.compile_model(
-        std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
+    ov::InferRequest draft_model = core.compile_model(std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
 
-    lm.set_tensor("input_ids", input_ids);
-    lm.set_tensor("attention_mask", attention_mask);
-    ov::Tensor position_ids = lm.get_tensor("position_ids");
+    draft_model.set_tensor("input_ids", input_ids);
+    draft_model.set_tensor("attention_mask", attention_mask);
+    ov::Tensor position_ids = draft_model.get_tensor("position_ids");
     position_ids.set_shape(input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
-    init_key_values(lm, draft_kv_size);
-    lm.infer();
+    init_key_values(draft_model);
+    draft_model.infer();
 
     // main
-    ov::InferRequest lm_main = core.compile_model(
+    ov::InferRequest main_model = core.compile_model(
     std::string{argv[2]} + "/openvino_model.xml", "CPU").create_infer_request();
 
-    auto main_input_ids = lm_main.get_tensor("input_ids");
+    auto main_input_ids = main_model.get_tensor("input_ids");
     main_input_ids.set_shape(input_ids.get_shape());
     for (int i = 0; i < input_ids.get_shape()[1]; i++) {
         main_input_ids.data<int64_t>()[i] = input_ids.data<int64_t>()[i];
     }
 
-    auto main_attention_mask = lm_main.get_tensor("attention_mask");
+    auto main_attention_mask = main_model.get_tensor("attention_mask");
     main_attention_mask.set_shape(input_ids.get_shape());
     std::fill_n(main_attention_mask.data<int64_t>(), main_attention_mask.get_size(), 1);
 
-    auto main_position_ids = lm_main.get_tensor("position_ids");
+    auto main_position_ids = main_model.get_tensor("position_ids");
     main_position_ids.set_shape(input_ids.get_shape());
     std::iota(main_position_ids.data<int64_t>(), main_position_ids.data<int64_t>() + main_position_ids.get_size(), 0);
-    init_key_values(lm_main, main_kv_size);
-    lm_main.infer();
+    init_key_values(main_model);
+    main_model.infer();
 
-    size_t vocab_size = lm.get_tensor("logits").get_shape().back();
+    size_t vocab_size = draft_model.get_tensor("logits").get_shape().back();
     
     // draft
-    float* logits = lm.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
+    float* logits = draft_model.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
     int64_t arg_max_token = std::max_element(logits, logits + vocab_size) - logits;
     int64_t out_token = arg_max_token;
     
     // main
-    auto main_logits = lm_main.get_tensor("logits");
+    auto main_logits = main_model.get_tensor("logits");
     float* logits_main = main_logits.data<float>() + (input_ids.get_size() - 1) * vocab_size;
     int64_t main_arg_max_token = std::max_element(logits_main, logits_main + vocab_size) - logits_main;
     int64_t main_out_token = main_arg_max_token;
@@ -230,14 +185,14 @@ int main(int argc, char* argv[]) try {
         all_tokens.emplace_back(input_ids.data<int64_t>()[i]);
     }
     auto beginning_text = tokens_to_string(detokenizer_2, all_tokens);
-    auto atten_shape = lm.get_tensor("attention_mask").get_shape();
-    auto draft_shape = lm.get_tensor("present.0.key").get_shape();
+    auto atten_shape = draft_model.get_tensor("attention_mask").get_shape();
+    auto draft_shape = draft_model.get_tensor("present.0.key").get_shape();
 
     uint64_t iter = input_ids.get_shape()[1];
-    lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
-    lm.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
-    lm_main.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
-    lm_main.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
+    main_model.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
+    main_model.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
+    draft_model.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
+    draft_model.get_tensor("position_ids").set_shape({BATCH_SIZE, 1});
     
     constexpr int64_t SPECIAL_EOS_TOKEN = 2;
     int max_iter = 100;
@@ -249,20 +204,20 @@ int main(int argc, char* argv[]) try {
     out_token = main_out_token;
     auto first_token = main_out_token;
     all_tokens.emplace_back(main_out_token);
-    string the_whole_text;  // todo: remove on final version, is used for debug purposes only
+    std::string the_whole_text;  // todo: remove on final version, is used for debug purposes only
     while (out_token != SPECIAL_EOS_TOKEN && iter < max_iter) {
         
         for (int i = 0; i < K; i++) {
             // draft
-            lm.get_tensor("input_ids").data<int64_t>()[0] = out_token;
-            lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm.get_tensor("attention_mask").get_shape()[1] + 1});
-            std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
-            lm.get_tensor("position_ids").data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 1);  // TODO: try with -2
-            forward_key_values(lm, draft_kv_size);
+            draft_model.get_tensor("input_ids").data<int64_t>()[0] = out_token;
+            draft_model.get_tensor("attention_mask").set_shape({BATCH_SIZE, draft_model.get_tensor("attention_mask").get_shape()[1] + 1});
+            std::fill_n(draft_model.get_tensor("attention_mask").data<int64_t>(), draft_model.get_tensor("attention_mask").get_size(), 1);
+            draft_model.get_tensor("position_ids").data<int64_t>()[0] = int64_t(draft_model.get_tensor("attention_mask").get_size() - 1);  // TODO: try with -2
+            forward_key_values(draft_model);
 
-            lm.infer();
+            draft_model.infer();
 
-            logits = lm.get_tensor("logits").data<float>();
+            logits = draft_model.get_tensor("logits").data<float>();
             int64_t arg_max_token = std::max_element(logits, logits + vocab_size) - logits;
             out_token = arg_max_token;
             accum_draft_tokens.emplace_back(arg_max_token);
@@ -284,8 +239,8 @@ int main(int argc, char* argv[]) try {
         std::iota(main_position_ids.data<int64_t>(), main_position_ids.data<int64_t>() + main_position_ids.get_size(), 
                   main_attention_mask.get_size() - K);
 
-        forward_key_values(lm_main, main_kv_size);
-        lm_main.infer();
+        forward_key_values(main_model);
+        main_model.infer();
 
         logits_main = main_logits.data<float>();  // [batch, seq_len, vocab_size]
         accum_main_tokens.clear();
@@ -300,8 +255,8 @@ int main(int argc, char* argv[]) try {
         // todo: these cycles are split for debug purpose, join with the next when ready
         auto res_str_main = tokens_to_string(detokenizer_2, accum_main_tokens);
         
-        auto draft_shape = lm.get_tensor("present.0.key").get_shape();
-        auto main_shape = lm_main.get_tensor("present.0.key").get_shape();
+        auto draft_shape = draft_model.get_tensor("present.0.key").get_shape();
+        auto main_shape = main_model.get_tensor("present.0.key").get_shape();
         auto whole_text = tokens_to_string(detokenizer_2, all_tokens);
  
         bool newer_breaked = true;
@@ -320,13 +275,13 @@ int main(int argc, char* argv[]) try {
         out_token = accum_main_tokens[diagree_idx];
 
         iter += diagree_idx + 1;
-        update_kv_cache(lm, iter, draft_kv_size);
-        lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, iter});
-        std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
+        update_kv_cache(draft_model, iter);
+        draft_model.get_tensor("attention_mask").set_shape({BATCH_SIZE, iter});
+        std::fill_n(draft_model.get_tensor("attention_mask").data<int64_t>(), draft_model.get_tensor("attention_mask").get_size(), 1);
         
-        update_kv_cache(lm_main, iter, main_kv_size);
-        lm_main.get_tensor("attention_mask").set_shape({BATCH_SIZE, iter});
-        std::fill_n(lm_main.get_tensor("attention_mask").data<int64_t>(), lm_main.get_tensor("attention_mask").get_size(), 1);
+        update_kv_cache(main_model, iter);
+        main_model.get_tensor("attention_mask").set_shape({BATCH_SIZE, iter});
+        std::fill_n(main_model.get_tensor("attention_mask").data<int64_t>(), main_model.get_tensor("attention_mask").get_size(), 1);
         accum_draft_tokens.clear();
     }
     text_streamer.end();
@@ -335,7 +290,7 @@ int main(int argc, char* argv[]) try {
     // This context should be reset before processing the next text sequence.
     // While it is not required to reset context in this sample as only one sequence is processed,
     // it is called for education purposes:
-    lm.reset_state();
+    draft_model.reset_state();
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return EXIT_FAILURE;
