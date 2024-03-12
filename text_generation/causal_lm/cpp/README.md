@@ -121,5 +121,7 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
    in case of `AssertionError`
 7. Dolly
    1. https://huggingface.co/databricks/dolly-v2-3b
+8. Phi
+   1. https://huggingface.co/microsoft/phi-2   
 
 This pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature.
