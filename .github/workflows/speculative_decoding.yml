@@ -29,18 +29,18 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-          python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0-not-stateful/ --precision FP16 --disable-stateful
-          python ./llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-chat-hf --output_dir ./Llama-2-7b-chat-hf-not-stateful/ --precision FP16 --disable-stateful
-          python ./llm_bench/python/convert.py --model_id meta-llama/Llama-2-7b-chat-hf --output_dir ./Llama-2-7b-chat-hf/ --precision FP16
-          convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0-not-stateful/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v1.0-not-stateful/pytorch/dldt/FP16/ --with-detokenizer
+          python ./llm_bench/python/convert.py --model_id databricks/dolly-v2-3b --output_dir ./dolly-v2-3b-not-stateful/ --precision FP16 --disable-stateful
+          python ./llm_bench/python/convert.py --model_id databricks/dolly-v2-12b --output_dir ./dolly-v2-12b-not-stateful/ --precision FP16 --disable-stateful
+          python ./llm_bench/python/convert.py --model_id databricks/dolly-v2-12b --output_dir ./dolly-v2-12b/ --precision FP16
+          convert_tokenizer ./dolly-v2-3b-not-stateful/pytorch/dldt/FP16/ --output ./dolly-v2-3b-not-stateful/pytorch/dldt/FP16/ --with-detokenizer
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
           wait
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
-          timeout 120s ./build/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0-not-stateful/pytorch/dldt/FP16/ ./Llama-2-7b-chat-hf-not-stateful/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_speculative.txt
-          timeout 120s ./build/greedy_causal_lm ./Llama-2-7b-chat-hf/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_greedy.txt
+          timeout 120s ./build/speculative_decoding_lm ./dolly-v2-3b-not-stateful/pytorch/dldt/FP16/ ./dolly-v2-12b-not-stateful/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_speculative.txt
+          timeout 120s ./build/greedy_causal_lm ./dolly-v2-12b/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()

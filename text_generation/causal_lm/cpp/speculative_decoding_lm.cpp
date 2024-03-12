@@ -7,7 +7,7 @@
 
 constexpr size_t BATCH_SIZE = 1;
 
-// sequence length axis in key/values tensors, for most cases [BATCH_SIZE, size_1, seq_len, size_2], 
+// sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size], 
 // threfore usually SEQ_LEN_AXIS = 2
 constexpr size_t SEQ_LEN_AXIS = 2;
 
@@ -78,21 +78,24 @@ void init_key_values(ov::InferRequest request) {
     for (size_t idx = 3; idx < num_inputs; ++idx) {
         auto kv_tensor = request.get_input_tensor(idx);
         ov::Shape tensor_shape = kv_tensor.get_shape();
+        // tensor_shape[2] = 0;
+        // kv_tensor.set_shape(tensor_shape);
+
         kv_tensor.set_shape({BATCH_SIZE, tensor_shape[1], 0, tensor_shape[3]});
     }
 }
 
 ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_seq_len) {
     // Copy elements from the old to a new tensor and return it.
-    // It's assumed that key/values tensor has a shape [BATCH_SIZE, size_1, seq_len, size_2] or [seq_len, ...],
+    // It's assumed that key/values tensor has a shape [BATCH_SIZE, num_kv_heads, seq_len, head_size] or [seq_len, ...],
     // It that's not the case for your model please implement your own trim method.
     OPENVINO_ASSERT(seq_len_axis == 2 || seq_len_axis == 0, "Cannot trim key/values with sequence length axis = ", seq_len_axis);
     
     auto old_tensor_data = tensor.data<float>();
     auto shape = tensor.get_shape();
-    size_t size_1 = shape[1];
+    size_t num_kv_heads = shape[1];
     size_t old_seq_len = shape[2];
-    size_t size_2 = shape[3];
+    size_t head_size = shape[3];
     
     // if new_seq_len equal to old one no need to copy tensor, return as is
     if (old_seq_len == new_seq_len)
@@ -106,14 +109,14 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
     }
 
     // if seq_len_axis == 2, then data is not contiguous, in order to trim need to repack tensor
-    auto new_tensor = ov::Tensor{ov::element::f32, {BATCH_SIZE, size_1, new_seq_len, size_2}};
+    auto new_tensor = ov::Tensor{ov::element::f32, {BATCH_SIZE, num_kv_heads, new_seq_len, head_size}};
     auto new_tensor_data = new_tensor.data<float>();
     for (size_t batch = 0; batch < BATCH_SIZE; ++batch){
-        for (size_t i = 0; i < size_1; ++i) {
+        for (size_t i = 0; i < num_kv_heads; ++i) {
             for (size_t j = 0; j < new_seq_len; ++j) {
-                auto dst_ptr = new_tensor_data + size_1 *new_seq_len * size_2 * batch + new_seq_len * size_2 * i +  size_2 * j;
-                auto src_ptr = old_tensor_data + size_1 *new_seq_len * size_2 * batch + old_seq_len * size_2 * i +  size_2 * j;
-                std::memcpy(dst_ptr, src_ptr, size_2 * sizeof(float));
+                auto dst_ptr = new_tensor_data + num_kv_heads * new_seq_len * head_size * batch + new_seq_len * head_size * i +  head_size * j;
+                auto src_ptr = old_tensor_data + num_kv_heads * new_seq_len * head_size * batch + old_seq_len * head_size * i +  head_size * j;
+                std::memcpy(dst_ptr, src_ptr, head_size * sizeof(float));
             }
         }
     }
@@ -190,7 +193,7 @@ int main(int argc, char* argv[]) try {
     int64_t next_token = std::max_element(data_logits, data_logits + vocab_size) - data_logits;
     
     // the first token which is fed to both draft and main netwoks on each iteration
-    auto first_token = next_token;  
+    auto first_token = next_token;
     text_streamer.put(next_token);
     
     // run K infer requests on draft model and get next K prediction tokens on each iteration
@@ -203,19 +206,18 @@ int main(int argc, char* argv[]) try {
 
     /*
     Speculative decoding works the following way.
-    The draft model predicts the next K tokens one by one, while the main model 
-    validates these predictions and corrects them if necessary. These K tokens 
-    are then fed to the main model in a single inference request. 
-    We go through each predicted token, and if a difference is detected between the draft 
-    and main model, we stop and keep the last token predicted by the main network. 
+    The draft model predicts the next K tokens one by one. 
+    These K tokens are then fed to the main model in a single inference request.
+    We go through each predicted token, and if a difference is detected, we stop 
+    and keep the last token predicted by the main network.
     Then the draft model gets the latest main prediction and again tries to predict 
-    the next K tokens, repeating the cycle. 
+    the next K tokens, repeating the cycle.
     
     This approach reduces the need for multiple infer requests 
     to the main model, enhancing performance. For instance, in more predictable 
     parts of text generation, the draft model can, in best-case scenarios, 
-    generate the next K tokens that exactly match the target. In tha caste the 
-    are validated in a single inference request to the main model (which is bigger, 
+    generate the next K tokens that exactly match the target. In that case theу
+    are validated in a single inference request of the main model (which is bigger, 
     more accurate but slower) instead of running K subsequent requests.
     */
     int max_sequence_length = 100;
@@ -256,7 +258,7 @@ int main(int argc, char* argv[]) try {
         size_t disagree_idx = K - 1;
         // Iterate through the predicted tokens from the main model and compare them with draft predictions.
         // In the worst-case scenario (disagreement at the beginning), iter will increase by 1.
-        // In the best-case scenario, all elements match, and K predicted tokens will be taken. 
+        // In the best-case scenario, all elements match, and K predicted tokens will be taken.
         for (size_t i = 0; i < K; i++) {
             auto start = data_logits + vocab_size * i;
             auto stop = data_logits + vocab_size * (i + 1);
@@ -279,12 +281,6 @@ int main(int argc, char* argv[]) try {
         first_token = next_token;
     }
     text_streamer.end();
-    // Model is stateful which means that context (kv-cache) which belongs to a particular
-    // text sequence is accumulated inside the model during the generation loop above.
-    // This context should be reset before processing the next text sequence.
-    // While it is not required to reset context in this sample as only one sequence is processed,
-    // it is called for education purposes:
-    draft_model.reset_state();
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return EXIT_FAILURE;
