@@ -91,7 +91,11 @@ int main(int argc, char* argv[]) try {
     TextStreamer text_streamer{std::move(detokenizer)};
     // There's no way to extract special token values from the detokenizer for now
     constexpr int64_t SPECIAL_EOS_TOKEN = 2;
-    while (out_token != SPECIAL_EOS_TOKEN) {
+    
+    auto seq_len = input_ids.get_size();
+    int max_sequence_length = 100;
+    while (out_token != SPECIAL_EOS_TOKEN && seq_len < max_sequence_length) {
+        ++seq_len;
         lm.get_tensor("input_ids").data<int64_t>()[0] = out_token;
         lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm.get_tensor("attention_mask").get_shape().at(1) + 1});
         std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);

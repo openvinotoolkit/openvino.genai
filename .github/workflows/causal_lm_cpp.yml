@@ -182,14 +182,15 @@ jobs:
           python ./llm_bench/python/convert.py --model_id databricks/dolly-v2-7b --output_dir ./dolly-v2-7b-not-stateful/ --precision FP16 --disable-stateful
           python ./llm_bench/python/convert.py --model_id databricks/dolly-v2-7b --output_dir ./dolly-v2-7b/ --precision FP16
           convert_tokenizer ./dolly-v2-3b-not-stateful/pytorch/dldt/FP16/ --output ./dolly-v2-3b-not-stateful/pytorch/dldt/FP16/ --with-detokenizer
+          convert_tokenizer ./dolly-v2-7b/pytorch/dldt/FP16/ --output ./dolly-v2-7b/pytorch/dldt/FP16/ --with-detokenizer
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
           wait
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
-          timeout 120s ./build/speculative_decoding_lm ./dolly-v2-3b-not-stateful/pytorch/dldt/FP16/ ./dolly-v2-7b-not-stateful/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_speculative.txt
-          timeout 120s ./build/greedy_causal_lm ./dolly-v2-7b/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_greedy.txt
+          ./build/speculative_decoding_lm ./dolly-v2-3b-not-stateful/pytorch/dldt/FP16/ ./dolly-v2-7b-not-stateful/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_speculative.txt
+          ./build/greedy_causal_lm ./dolly-v2-7b/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()

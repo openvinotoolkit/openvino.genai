@@ -266,7 +266,7 @@ int main(int argc, char* argv[]) try {
             text_streamer.put(next_token);
 
             disagree_idx = i;                
-            if (next_token != draft_tokens[i])
+            if (next_token != draft_tokens[i] || next_token == SPECIAL_EOS_TOKEN)
                 break;
         }
 
