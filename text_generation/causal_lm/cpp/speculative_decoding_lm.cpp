@@ -63,26 +63,7 @@ struct TextStreamer {
 };
 }
 
-void forward_key_values(ov::InferRequest& request) {
-    // Forwards present key/values from Results to Parameters with past key/values
-    // The first Parameters are: input_ids, attention_masks, position_ids, other ones are past key/values.
-    // The first Result is logits, others are present key.value.
-    auto num_inputs = request.get_compiled_model().inputs().size();
-    for (size_t idx = 3; idx < num_inputs; ++idx) {
-        request.set_input_tensor(idx, request.get_output_tensor(idx - 2));
-    }
-}
-
-void init_key_values(ov::InferRequest request) {
-    auto num_inputs = request.get_compiled_model().inputs().size();
-    for (size_t idx = 3; idx < num_inputs; ++idx) {
-        auto kv_tensor = request.get_input_tensor(idx);
-        ov::Shape tensor_shape = kv_tensor.get_shape();
-        kv_tensor.set_shape({BATCH_SIZE, tensor_shape[1], 0, tensor_shape[3]});
-    }
-}
-
-ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_seq_len) {
+ov::Tensor trimm_tensor(const ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_seq_len) {
     // Copy elements from the old to a new tensor and return it.
     // It's assumed that key/values tensor has a shape [BATCH_SIZE, num_kv_heads, seq_len, head_size] or [seq_len, ...],
     // It that's not the case for your model please implement your own trim method.
@@ -97,13 +78,6 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
     // if new_seq_len equal to old one no need to copy tensor, return as is
     if (old_seq_len == new_seq_len)
         return tensor;
-    
-    // if seq_len_axis is the very first dimension, this means data is contiguous, then trim by just setting the new shape
-    if (seq_len_axis == 0) {
-        shape[0] = new_seq_len;
-        tensor.set_shape(shape);
-        return tensor;
-    }
 
     // if seq_len_axis == 2, then data is not contiguous, in order to trim need to repack tensor
     auto new_tensor = ov::Tensor{ov::element::f32, {BATCH_SIZE, num_kv_heads, new_seq_len, head_size}};
@@ -121,12 +95,21 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
 }
 
 void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t new_seq_len) {
-    // trims kv_cache values up to the new_seq_len
-    auto num_outputs = request.get_compiled_model().outputs().size();
-    for (size_t idx = 1; idx < num_outputs; ++idx) {
-        auto old_tensor = request.get_output_tensor(idx);
-        auto trimmed_tensor = trimm_tensor(old_tensor, seq_len_axis, new_seq_len);
-        request.set_output_tensor(idx, trimmed_tensor);
+    // trim kv_cache values up to the new_seq_len
+    for (auto& state: request.query_state()) {
+        ov::Tensor old_tensor = state.get_state();
+        ov::Tensor trimmed_tensor;
+
+        // if seq_len_axis is the very first dimension, this means data is contiguous, then trim by just setting the new shape
+        if (seq_len_axis == 0) {
+            auto shape = old_tensor.get_shape();
+            shape[0] = new_seq_len;
+            old_tensor.set_shape(shape);
+            trimmed_tensor = old_tensor;
+        } else {
+            trimmed_tensor = trimm_tensor(old_tensor, seq_len_axis, new_seq_len);
+        }
+        state.set_state(trimmed_tensor);
     }
 }
 
@@ -175,9 +158,13 @@ int main(int argc, char* argv[]) try {
     position_ids.set_shape(draft_input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
     
+    // set beam_idx for stateful model: no beam search is used and BATCH_SIZE = 1
+    draft_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
+    draft_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
+    main_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
+    main_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
+
     // To coollect kv-cache for the <PROMPT> and to get the next token run the very first infer request
-    init_key_values(draft_model);
-    init_key_values(main_model);
     draft_model.infer();
     main_model.infer();
 
@@ -226,7 +213,6 @@ int main(int argc, char* argv[]) try {
             std::fill_n(draft_attention_mask.data<int64_t>(), draft_attention_mask.get_size(), 1);
             draft_position_ids.data<int64_t>()[0] = int64_t(draft_attention_mask.get_size() - 1);
 
-            forward_key_values(draft_model);  // forward KV cache from Result outputs to Parameter inputs
             draft_model.infer();
 
             auto draft_logits = draft_model.get_tensor("logits").data<float>();
@@ -248,7 +234,6 @@ int main(int argc, char* argv[]) try {
         position_ids.set_shape({BATCH_SIZE, K});
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), seq_len);
 
-        forward_key_values(main_model);
         main_model.infer();
 
         data_logits = logits.data<float>();  // [BATCH_SIZE, K, vocab_size]
