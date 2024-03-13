@@ -38,9 +38,11 @@ The program loads a tokenizer, a detokenizer and a model (`.xml` and `.bin`) to 
 
 ### speculative_sampling_lm
 
-The program loads 2 models to perform speculaitve decoding. Speculative decoding works the following way. For each model next token prediction is performed in greedy manner by taking the next token with the maximal probablity. The draft model predicts the next K tokens one by one, while the main model validates these predictions and corrects them if necessary. These K tokens are then fed to the main model in a single inference request. We go through each predicted token, and if a difference is detected between the draft and main model, we stop and keep the last token predicted by the main network. Then the draft model gets the latest main prediction and again tries to predict the next K tokens, repeating the cycle.
+Speculative decoding (or [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) in HF terminology) is a recent technique, that allows to speed up token generation when an additional smaller draft model is used alonside with the main model.
 
-This approach reduces the need for multiple infer requests to the main model, enhancing performance. For instance, in more predictable parts of text generation, the draft model can, in best-case scenarios, generate the next K tokens that exactly match the target. In tha caste the are validated in a single inference request to the main model (which is bigger, more accurate but slower) instead of running K subsequent requests.
+Speculative decoding works the following way. The draft model predicts the next K tokens one by one in an autoregressive manner, while the main model validates these predictions and corrects them if necessary. We go through each predicted token, and if a difference is detected between the draft and main model, we stop and keep the last token predicted by the main model. Then the draft model gets the latest main prediction and again tries to predict the next K tokens, repeating the cycle.
+
+This approach reduces the need for multiple infer requests to the main model, enhancing performance. For instance, in more predictable parts of text generation, the draft model can, in best-case scenarios, generate the next K tokens that exactly match the target. In tha caste the are validated in a single inference request to the main model (which is bigger, more accurate but slower) instead of running K subsequent requests. More details can be found in the original paper https://arxiv.org/pdf/2211.17192.pdf, https://arxiv.org/pdf/2302.01318.pdf
 
 Important note: models should belong to the same familiy and have same tokenizers, and they both should be converted with `--disable-stateful`, e.g.:
 

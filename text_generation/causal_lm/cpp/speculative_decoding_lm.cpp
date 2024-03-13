@@ -63,7 +63,7 @@ struct TextStreamer {
 };
 }
 
-ov::Tensor trimm_tensor(const ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_seq_len) {
+ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_seq_len) {
     // Copy elements from the old to a new tensor and return it.
     // It's assumed that key/values tensor has a shape [BATCH_SIZE, num_kv_heads, seq_len, head_size] or [seq_len, ...],
     // It that's not the case for your model please implement your own trim method.
@@ -75,9 +75,16 @@ ov::Tensor trimm_tensor(const ov::Tensor& tensor, uint64_t seq_len_axis, uint64_
     size_t old_seq_len = shape[2];
     size_t head_size = shape[3];
     
+    OPENVINO_ASSERT(new_seq_len <= old_seq_len);
+    
     // if new_seq_len equal to old one no need to copy tensor, return as is
     if (old_seq_len == new_seq_len)
         return tensor;
+
+    if (seq_len_axis == 0) {
+        shape[0] = new_seq_len;
+        tensor.set_shape(shape);
+    }
 
     // if seq_len_axis == 2, then data is not contiguous, in order to trim need to repack tensor
     auto new_tensor = ov::Tensor{ov::element::f32, {BATCH_SIZE, num_kv_heads, new_seq_len, head_size}};
@@ -98,18 +105,7 @@ void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t n
     // trim kv_cache values up to the new_seq_len
     for (auto& state: request.query_state()) {
         ov::Tensor old_tensor = state.get_state();
-        ov::Tensor trimmed_tensor;
-
-        // if seq_len_axis is the very first dimension, this means data is contiguous, then trim by just setting the new shape
-        if (seq_len_axis == 0) {
-            auto shape = old_tensor.get_shape();
-            shape[0] = new_seq_len;
-            old_tensor.set_shape(shape);
-            trimmed_tensor = old_tensor;
-        } else {
-            trimmed_tensor = trimm_tensor(old_tensor, seq_len_axis, new_seq_len);
-        }
-        state.set_state(trimmed_tensor);
+        state.set_state(trimm_tensor(old_tensor, seq_len_axis, new_seq_len));
     }
 }
 
@@ -147,8 +143,7 @@ int main(int argc, char* argv[]) try {
     // Do not feed the same draft_postion_ids to the main, but copy input_ids from the draft_input_ids
     auto input_ids = main_model.get_tensor("input_ids");
     input_ids.set_shape(draft_input_ids.get_shape());
-    for (int i = 0; i < seq_len; ++i)
-        input_ids.data<int64_t>()[i] = draft_input_ids.data<int64_t>()[i];
+    memcpy(input_ids.data<int64_t>(), draft_input_ids.data<int64_t>(), sizeof(int64_t) * seq_len);
 
     auto attention_mask = main_model.get_tensor("attention_mask");
     attention_mask.set_shape(draft_input_ids.get_shape());
@@ -171,14 +166,14 @@ int main(int argc, char* argv[]) try {
     size_t vocab_size = draft_model.get_tensor("logits").get_shape().back();
     OPENVINO_ASSERT(vocab_size == main_model.get_tensor("logits").get_shape().back(), "vocab size should be the same for the both models");
        
-    // logits shape is [BATCH_SIZE, input_ids.size, vocab_size]
+    // logits shape is [BATCH_SIZE, seq_len, vocab_size]
     auto logits = main_model.get_tensor("logits");
     auto data_logits = logits.data<float>() + (seq_len - 1) * vocab_size;
-    int64_t next_token = std::max_element(data_logits, data_logits + vocab_size) - data_logits;
+    int64_t out_token = std::max_element(data_logits, data_logits + vocab_size) - data_logits;
     
     // the first token which is fed to both draft and main netwoks on each iteration
-    auto first_token = next_token;
-    text_streamer.put(next_token);
+    auto first_token = out_token;
+    text_streamer.put(out_token);
     
     // run K infer requests on draft model and get next K prediction tokens on each iteration
     uint64_t K = 5;
@@ -188,27 +183,25 @@ int main(int argc, char* argv[]) try {
     draft_input_ids.set_shape({BATCH_SIZE, 1});
     draft_position_ids.set_shape({BATCH_SIZE, 1});
 
-    /*
-    Speculative decoding works the following way.
-    The draft model predicts the next K tokens one by one. 
-    These K tokens are then fed to the main model in a single inference request.
-    We go through each predicted token, and if a difference is detected, we stop 
-    and keep the last token predicted by the main network.
-    Then the draft model gets the latest main prediction and again tries to predict 
-    the next K tokens, repeating the cycle.
-    
-    This approach reduces the need for multiple infer requests 
-    to the main model, enhancing performance. For instance, in more predictable 
-    parts of text generation, the draft model can, in best-case scenarios, 
-    generate the next K tokens that exactly match the target. In that case theу
-    are validated in a single inference request of the main model (which is bigger, 
-    more accurate but slower) instead of running K subsequent requests.
-    */
+/* Speculative decoding works the following way. The draft model predicts the next K
+   tokens one by one in an autoregressive manner, while the main model validates these
+   predictions and corrects them if necessary. We go through each predicted token, and
+   if a difference is detected between the draft and main model, we stop and keep the
+   last token predicted by the main model. Then the draft model gets the latest main
+   prediction and again tries to predict the next K tokens, repeating the cycle.
+
+   This approach reduces the need for multiple infer requests to the main model,
+   enhancing performance. For instance, in more predictable parts of text generation,
+   the draft model can, in best-case scenarios, generate the next K tokens that exactly
+   match the target. In tha caste the are validated in a single inference request to
+   the main model (which is bigger, more accurate but slower) instead of running K
+   subsequent requests. 
+   */
     int max_sequence_length = 100;
-    while (next_token != SPECIAL_EOS_TOKEN && seq_len < max_sequence_length) {
+    while (out_token != SPECIAL_EOS_TOKEN && seq_len < max_sequence_length) {
         // infer the K next tokens with draft model
         for (int i = 0; i < K; ++i) {
-            draft_input_ids.data<int64_t>()[0] = next_token;
+            draft_input_ids.data<int64_t>()[0] = out_token;
             draft_attention_mask.set_shape({BATCH_SIZE, seq_len + i + 1});
             std::fill_n(draft_attention_mask.data<int64_t>(), draft_attention_mask.get_size(), 1);
             draft_position_ids.data<int64_t>()[0] = int64_t(draft_attention_mask.get_size() - 1);
@@ -217,7 +210,7 @@ int main(int argc, char* argv[]) try {
 
             auto draft_logits = draft_model.get_tensor("logits").data<float>();
             int64_t arg_max_token = std::max_element(draft_logits, draft_logits + vocab_size) - draft_logits;
-            next_token = arg_max_token;
+            out_token = arg_max_token;
             draft_tokens.emplace_back(arg_max_token);
         }
 
@@ -244,11 +237,11 @@ int main(int argc, char* argv[]) try {
         for (size_t i = 0; i < K; i++) {
             auto start = data_logits + vocab_size * i;
             auto stop = data_logits + vocab_size * (i + 1);
-            next_token = std::max_element(start, stop) - start;
-            text_streamer.put(next_token);
+            out_token = std::max_element(start, stop) - start;
+            text_streamer.put(out_token);
 
             disagree_idx = i;                
-            if (next_token != draft_tokens[i] || next_token == SPECIAL_EOS_TOKEN || seq_len + disagree_idx + 1 >= max_sequence_length)
+            if (out_token != draft_tokens[i] || out_token == SPECIAL_EOS_TOKEN || seq_len + disagree_idx + 1 >= max_sequence_length)
                 break;
         }
 
@@ -260,7 +253,7 @@ int main(int argc, char* argv[]) try {
         update_kv_cache(main_model, SEQ_LEN_AXIS, seq_len);
         
         draft_tokens.clear();
-        first_token = next_token;
+        first_token = out_token;
     }
     text_streamer.end();
 } catch (const std::exception& error) {
