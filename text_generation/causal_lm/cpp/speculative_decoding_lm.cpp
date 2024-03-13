@@ -78,9 +78,6 @@ void init_key_values(ov::InferRequest request) {
     for (size_t idx = 3; idx < num_inputs; ++idx) {
         auto kv_tensor = request.get_input_tensor(idx);
         ov::Shape tensor_shape = kv_tensor.get_shape();
-        // tensor_shape[2] = 0;
-        // kv_tensor.set_shape(tensor_shape);
-
         kv_tensor.set_shape({BATCH_SIZE, tensor_shape[1], 0, tensor_shape[3]});
     }
 }
@@ -266,7 +263,7 @@ int main(int argc, char* argv[]) try {
             text_streamer.put(next_token);
 
             disagree_idx = i;                
-            if (next_token != draft_tokens[i] || next_token == SPECIAL_EOS_TOKEN)
+            if (next_token != draft_tokens[i] || next_token == SPECIAL_EOS_TOKEN || seq_len + disagree_idx + 1 >= max_sequence_length)
                 break;
         }
 

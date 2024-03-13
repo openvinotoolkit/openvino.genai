@@ -70,12 +70,14 @@ int main(int argc, char* argv[]) try {
     // The model can be compiled for GPU as well
     ov::InferRequest lm = core.compile_model(
         std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
+    auto seq_len = input_ids.get_size();
+    
     // Initialize inputs
     lm.set_tensor("input_ids", input_ids);
     lm.set_tensor("attention_mask", attention_mask);
     ov::Tensor position_ids = lm.get_tensor("position_ids");
     position_ids.set_shape(input_ids.get_shape());
-    std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
+    std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + seq_len, 0);
     constexpr size_t BATCH_SIZE = 1;
     // Input values are persistent between inference calls.
     // That allows to set values, which aren't going to change, only once
@@ -83,7 +85,7 @@ int main(int argc, char* argv[]) try {
     lm.get_tensor("beam_idx").data<int32_t>()[0] = 0;
     lm.infer();
     size_t vocab_size = lm.get_tensor("logits").get_shape().back();
-    float* logits = lm.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
+    float* logits = lm.get_tensor("logits").data<float>() + (seq_len - 1) * vocab_size;
     int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
 
     lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
@@ -92,14 +94,13 @@ int main(int argc, char* argv[]) try {
     // There's no way to extract special token values from the detokenizer for now
     constexpr int64_t SPECIAL_EOS_TOKEN = 2;
     
-    auto seq_len = input_ids.get_size();
     int max_sequence_length = 100;
     while (out_token != SPECIAL_EOS_TOKEN && seq_len < max_sequence_length) {
         ++seq_len;
         lm.get_tensor("input_ids").data<int64_t>()[0] = out_token;
-        lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm.get_tensor("attention_mask").get_shape().at(1) + 1});
-        std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
-        position_ids.data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 2);
+        lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, seq_len});
+        std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), seq_len, 1);
+        position_ids.data<int64_t>()[0] = int64_t(seq_len - 1);
         lm.start_async();
         text_streamer.put(out_token);
         lm.wait();

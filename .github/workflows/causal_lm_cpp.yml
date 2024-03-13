@@ -185,12 +185,9 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           convert_tokenizer ./Phi-2/pytorch/dldt/FP16/ --output ./Phi-2/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
-          timeout 50s ./build/beam_search_causal_lm ./Phi-2/pytorch/dldt/FP16/ 69 > ./pred.txt
-
-
-          
+          timeout 50s ./build/beam_search_causal_lm ./Phi-2/pytorch/dldt/FP16/ 69 > ./pred.txt        
   cpp-speculative_decoding_lm-ubuntu:
-    runs-on: ubuntu-20.04-8-cores
+    runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
         with:
