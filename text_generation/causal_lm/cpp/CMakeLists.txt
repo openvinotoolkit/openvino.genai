@@ -8,6 +8,7 @@ add_subdirectory(../../../thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINAR
 
 add_executable(greedy_causal_lm greedy_causal_lm.cpp)
 target_compile_definitions(greedy_causal_lm PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
+target_include_directories(greedy_causal_lm PRIVATE ./)
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 target_link_libraries(greedy_causal_lm PRIVATE openvino::runtime)
 set_target_properties(greedy_causal_lm PROPERTIES CXX_STANDARD 17)
