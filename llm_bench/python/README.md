@@ -88,6 +88,8 @@ Parameters:
 * `-p` - interactive prompt text
 * `-pf` - path of JSONL file including interactive prompts
 * `-n` - number of benchmarking iterations, if the value greater 0, will exclude the first iteration. (default=0)
+* `-ic` - limit the output token size (default 512) of text_gen and code_gen models.
+
 
 ``` bash
 python ./benchmark.py -h # for more information
@@ -101,7 +103,7 @@ the PyTorch code by compiling it into optimized kernels using a selected backend
 Prerequisites: install benchmarking dependencies using requirements.txt
 
 ``` bash
-pip install -r requirements/requirements.txt
+pip install -r requirements.txt
 ```
 
 In order to run the `torch.compile()` on CUDA GPU, install additionally the nightly PyTorch version:
