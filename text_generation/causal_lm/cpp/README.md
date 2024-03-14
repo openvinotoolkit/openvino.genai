@@ -44,7 +44,8 @@ Speculative decoding works the following way. The draft model predicts the next 
 
 This approach reduces the need for multiple infer requests to the main model, enhancing performance. For instance, in more predictable parts of text generation, the draft model can, in best-case scenarios, generate the next K tokens that exactly match the target. In tha caste the are validated in a single inference request to the main model (which is bigger, more accurate but slower) instead of running K subsequent requests. More details can be found in the original paper https://arxiv.org/pdf/2211.17192.pdf, https://arxiv.org/pdf/2302.01318.pdf
 
-Important note: models should belong to the same familiy and have same tokenizers.
+> [!NOTE]
+>Models should belong to the same family and have same tokenizers.
 
 ## Install OpenVINO
 
