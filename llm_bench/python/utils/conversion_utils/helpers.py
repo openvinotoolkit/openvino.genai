@@ -92,7 +92,7 @@ def save_tokenizer(tokenizer, out_dir):
         log.error(f'tokenizer loading failed with {e}')
 
 
-def transform_fn(item, item_name, input_shapes, tokenizer, max_tokens=127):
+def transform_fn(item, item_name, input_shapes, tokenizer, config, max_tokens=127):
     tokenized_text = tokenizer(item[item_name], return_tensors="np")
     input_ids = tokenized_text["input_ids"][:max_tokens]
     attention_mask = tokenized_text["attention_mask"][:max_tokens]
@@ -107,6 +107,13 @@ def transform_fn(item, item_name, input_shapes, tokenizer, max_tokens=127):
         position_ids = np.cumsum(attention_mask, axis=1) - 1
         position_ids[attention_mask == 0] = 1
         inputs["position_ids"] = position_ids
+
+    batch_size = input_ids.shape[0]
+    if config.model_type == "bloom":
+        batch_size *= config.num_attention_heads
+
+    if "beam_idx" in input_shapes:
+        inputs["beam_idx"] = np.arange(batch_size, dtype=int)
 
     for name, shape in input_shapes.items():
         if name in inputs:
@@ -127,7 +134,7 @@ def get_ov_input_shapes(model, batch_size=1):
     return inputs
 
 
-def get_data_aware_args(ov_model, tokenizer, compression_args):
+def get_data_aware_args(ov_model, tokenizer, config, compression_args):
     res = {}
     if 'dataset' in compression_args and tokenizer is not None:
         dataset_args = compression_args['dataset']
@@ -139,7 +146,7 @@ def get_data_aware_args(ov_model, tokenizer, compression_args):
             # filter short sentences
             dataset = dataset.filter(lambda example: len(example["text"]) > 128)
         input_shapes = get_ov_input_shapes(ov_model)
-        data_transform_func = partial(transform_fn, item_name=dataset_args['item_name'], tokenizer=tokenizer, input_shapes=input_shapes)
+        data_transform_func = partial(transform_fn, item_name=dataset_args['item_name'], tokenizer=tokenizer, input_shapes=input_shapes, config=config)
         nncf_dataset = Dataset(dataset, data_transform_func)
         res['dataset'] = nncf_dataset
         if 'sensitivity_metric' in dataset_args:
@@ -171,7 +178,7 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
         compression_args["all_layers"] = True
     log.info("Compression options:")
     log.info(compression_args)
-    compression_args.update(get_data_aware_args(ov_model, tok, compression_args))
+    compression_args.update(get_data_aware_args(ov_model, tok, config, compression_args))
     compressed_ov_model = compress_weights(ov_model, **compression_args)
     save_ov_model_helper(compressed_ov_model, out_path, model_name, fp16=fp16, tok=tok, config=config)
 
