@@ -185,7 +185,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           convert_tokenizer ./Phi-2/pytorch/dldt/FP16/ --output ./Phi-2/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
-          timeout 50s ./build/beam_search_causal_lm ./Phi-2/pytorch/dldt/FP16/ 69 > ./pred.txt
+          timeout 50s ./build/beam_search_causal_lm ./Phi-2/pytorch/dldt/FP16/ 69 > ./pred.txt        
   cpp-beam_search_causal_lm-notus-7b-v1:
     runs-on: ubuntu-20.04-16-cores
     steps:
@@ -212,6 +212,41 @@ jobs:
           source ./ov/setupvars.sh
           convert_tokenizer ./notus-7b-v1/pytorch/dldt/FP16/ --output ./notus-7b-v1/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
           timeout 50s ./build/beam_search_causal_lm ./notus-7b-v1/pytorch/dldt/FP16/ 69 > ./pred.txt
-
-
-          
+  cpp-speculative_decoding_lm-ubuntu:
+    runs-on: ubuntu-20.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.3/linux/l_openvino_toolkit_ubuntu20_2023.3.0.13775.ceeafaf64f3_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
+          python ./llm_bench/python/convert.py --model_id databricks/dolly-v2-3b --output_dir ./dolly-v2-3b/ --precision FP16
+          python ./llm_bench/python/convert.py --model_id databricks/dolly-v2-7b --output_dir ./dolly-v2-7b/ --precision FP16
+          convert_tokenizer ./dolly-v2-3b/pytorch/dldt/FP16/ --output ./dolly-v2-3b/pytorch/dldt/FP16/ --with-detokenizer
+          convert_tokenizer ./dolly-v2-7b/pytorch/dldt/FP16/ --output ./dolly-v2-7b/pytorch/dldt/FP16/ --with-detokenizer
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake --build ./build/ --config Release -j
+          wait
+      - name: run and compare
+        run: |
+          source ./ov/setupvars.sh
+          ./build/speculative_decoding_lm ./dolly-v2-3b/pytorch/dldt/FP16/ ./dolly-v2-7b/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_speculative.txt
+          ./build/greedy_causal_lm ./dolly-v2-7b/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_greedy.txt
+          python -c "
+          with open('predictions_greedy.txt', 'r') as f:
+              predicted_greedy = f.readline()
+          with open('predictions_speculative.txt', 'r') as f:
+              predicted_speculative = f.readline()
+          assert predicted_greedy == predicted_speculative
+          "
+          echo speculative_decoding_lm passed
