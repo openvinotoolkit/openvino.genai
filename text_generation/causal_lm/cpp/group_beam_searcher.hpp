@@ -106,7 +106,7 @@ struct Group {
             cur_len -= 1;
         }
 
-        beam.score /= std::pow(float(parameters.prompt.size() + beam.tokens.size()), parameters.length_penalty);
+        beam.score /= std::pow(float(cur_len), parameters.length_penalty);
         min_heap.push_back(std::move(beam));
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
         if (min_heap.size() > parameters.group_size) {
