@@ -47,7 +47,7 @@ This approach reduces the need for multiple infer requests to the main model, en
 Important note: models should belong to the same familiy and have same tokenizers, and they both should be converted with `--disable-stateful`, e.g.:
 
 ```sh
-python3 ../../../llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0/ --disable-stateful --precision FP16
+python3 ../../../llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0/ --precision FP16
 ```
 
 ## Install OpenVINO

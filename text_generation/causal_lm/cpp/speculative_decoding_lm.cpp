@@ -143,7 +143,7 @@ int main(int argc, char* argv[]) try {
     // Do not feed the same draft_postion_ids to the main, but copy input_ids from the draft_input_ids
     auto input_ids = main_model.get_tensor("input_ids");
     input_ids.set_shape(draft_input_ids.get_shape());
-    memcpy(input_ids.data<int64_t>(), draft_input_ids.data<int64_t>(), sizeof(int64_t) * seq_len);
+    draft_input_ids.copy_to(input_ids);
 
     auto attention_mask = main_model.get_tensor("attention_mask");
     attention_mask.set_shape(draft_input_ids.get_shape());
