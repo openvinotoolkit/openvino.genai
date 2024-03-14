@@ -100,7 +100,7 @@ struct Group {
 
     // finalize parameter introduced to match huggingface implementation
     void finish(Beam&& beam, const Parameters& parameters, const bool finalize = false) {
-        size_t cur_len = ongoing.front().tokens.size() + 1;
+        size_t cur_len = beam.tokens.size() + 1;
 
         if (finalize) {
             cur_len -= 1;
