@@ -96,6 +96,7 @@ jobs:
           echo Hi passed
 
           timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "return 0" > ./pred.txt
+          cat ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -112,6 +113,7 @@ jobs:
           echo return 0 passed
 
           ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "你好！ 你好嗎？" > ./pred.txt
+          cat ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
