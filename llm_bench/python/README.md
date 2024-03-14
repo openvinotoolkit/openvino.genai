@@ -122,10 +122,16 @@ benchmark.py sets openvino.properties.streams.num(1) by default
 
 | OpenVINO version    | Behaviors                                       |
 |:--------------------|:------------------------------------------------|
-| Before 2024.0.0 | streams.num(1) <br>execute on 2 sockets |
-| 2024.0.0            | streams.num(1) <br>execute on 1 socket which is the APP running on |
+| Before 2024.0.0 | streams.num(1) <br>execute on 2 sockets. |
+| 2024.0.0 | streams.num(1) <br>execute on the same socket as the APP is running on. |
 
 numactl on Linux or --load_config for benchmark.py can be used to change the behaviors.
+
+For example, --load_config config.json as following in OpenVINO 2024.0.0 will result in streams.num(1) and execute on 2 sockets.
+```
+{"INFERENCE_NUM_THREADS":<NUMBER>}
+```
+`<NUMBER>` is the number of total physical cores in 2 sockets
 
 ## Additional Resources
 ### 1. NOTE
