@@ -444,11 +444,12 @@ public:
     }
 };
 
-class ModelRunner {
-    ov::InferRequest & m_request;
+class CacheManager {
+    std::vector<ov::Tensor> m_key_cache;
+    std::vector<ov::Tensor> m_value_cache;
+
 public:
-    ModelRunner(ov::InferRequest & request) :
-        m_request(request) {
+    CacheManager() {
         // TODO: make as a parameter
         constexpr auto kv_cache_precision = ov::element::f32;
 
@@ -463,8 +464,37 @@ public:
         const ov::Shape v_cache_shape{NUM_BLOCKS, NUM_KV_HEADS, HEAD_SIZE, BLOCK_SIZE};
 
         for (size_t decoder_layer_id = 0; decoder_layer_id < NUM_DECODER_LAYERS; ++decoder_layer_id) {
-            m_request.set_input_tensor(2 + decoder_layer_id * 2, ov::Tensor(kv_cache_precision, k_cache_shape));
-            m_request.set_input_tensor(2 + decoder_layer_id * 2 + 1, ov::Tensor(kv_cache_precision, v_cache_shape));
+            m_key_cache[decoder_layer_id] = ov::Tensor(kv_cache_precision, k_cache_shape);
+            m_value_cache[decoder_layer_id] = ov::Tensor(kv_cache_precision, v_cache_shape);
+        }
+    }
+
+    size_t get_num_layers() const {
+        return m_key_cache.size();
+    }
+
+    ov::Tensor get_key_cache(size_t decoder_layer_id) const {
+        OPENVINO_ASSERT(decoder_layer_id < m_key_cache.size());
+        return m_key_cache[decoder_layer_id];
+    }
+
+    ov::Tensor get_value_cache(size_t decoder_layer_id) const {
+        OPENVINO_ASSERT(decoder_layer_id < m_value_cache.size());
+        return m_value_cache[decoder_layer_id];
+    }
+
+    // TODO: implement methods to copy / fork blocks by ID
+};
+
+class ModelRunner {
+    CacheManager m_cache_manager;
+    ov::InferRequest & m_request;
+public:
+    ModelRunner(ov::InferRequest & request) :
+        m_request(request) {
+        for (size_t decoder_layer_id = 0; decoder_layer_id < m_cache_manager.get_num_layers(); ++decoder_layer_id) {
+            m_request.set_input_tensor(2 + decoder_layer_id * 2, m_cache_manager.get_key_cache(decoder_layer_id));
+            m_request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager.get_value_cache(decoder_layer_id));
         }
     }
 
@@ -741,8 +771,10 @@ int main(int argc, char* argv[]) try {
     ov::InferRequest request = core.compile_model(model, "CPU").create_infer_request();
 
     //
-    // Create sequences
+    // Create requests for generation
     //
+
+    const size_t dataset_size = 30;
 
     std::vector<std::string> prompt_examples = {
         "What is OpenVINO?",
@@ -760,7 +792,6 @@ int main(int argc, char* argv[]) try {
     std::vector<ov::Tensor> input_ids;
     std::vector<SamplingParameters> sampling_params;
 
-    size_t dataset_size = 30;
     input_ids.reserve(dataset_size);
     sampling_params.reserve(dataset_size);
 
@@ -782,12 +813,12 @@ int main(int argc, char* argv[]) try {
     LLMEngine engine(request, scheduler_config);
     std::vector<GenerationResult> generation_results = engine.generate(input_ids, sampling_params);
 
-    for (size_t generation_id = 0; generation_id < generation_results.size(); ++generation_id) {
-        const GenerationResult & generation_result = generation_results[generation_id];
+    for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
+        const GenerationResult & generation_result = generation_results[request_id];
 
-        std::cout << "Question: " << detokenize(detokenizer, input_ids[generation_id]) << std::endl;
-        for (size_t i = 0; i < generation_result.m_generation_ids.size(); ++i) {
-            std::cout << "Answer " << i << ": " << detokenize(detokenizer, generation_result.m_generation_ids[i]) << std::endl;
+        std::cout << "Question: " << detokenize(detokenizer, input_ids[request_id]) << std::endl;
+        for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
+            std::cout << "Answer " << output_id << ": " << detokenize(detokenizer, generation_result.m_generation_ids[output_id]) << std::endl;
         }
         std::cout << std::endl;
     }
