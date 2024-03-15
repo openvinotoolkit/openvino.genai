@@ -14,6 +14,8 @@ source python-env/bin/activate
 pip install update --upgrade
 pip install -r requirements.txt
 ```
+> Note: For llama models, ensure to have transformers<4.38.
+
 ### 2. Convert a model to OpenVINO IR
    
 The conversion script for preparing benchmarking models,
