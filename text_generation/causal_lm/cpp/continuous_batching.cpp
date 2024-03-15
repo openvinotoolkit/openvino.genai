@@ -92,9 +92,24 @@ constexpr int64_t SPECIAL_EOS_TOKEN = 2; // llm_model->get_rt_info()["eos_token_
 // TODO: compute based on the available memory
 constexpr size_t NUM_BLOCKS = 3640;
 
-struct KVCacheBlock {
-    int m_ref_count;
+class KVCacheBlock {
+    std::shared_ptr<int> m_ref_count = std::make_shared<int>(0);
     int m_index;
+public:
+    explicit KVCacheBlock(int index)
+        : m_index(index) { }
+
+    int get_index() const {
+        return m_index;
+    }
+
+    bool is_free() const {
+        return (*m_ref_count) == 0;
+    }
+
+    bool copy_on_write() const {
+        return (*m_ref_count) > 1;
+    }
 };
 
 enum class StopCriteria {early, heuristic, never};
@@ -152,28 +167,11 @@ enum class SequenceStatus {
 using TokenIds = std::vector<int64_t>;
 
 class Sequence {
-    TokenIds m_prompt_ids;
+    size_t m_prompt_len;
     TokenIds m_generated_ids;
-    std::vector<KVCacheBlock> m_blocks;
     uint64_t m_sequence_id = _get_next_sequence_id();
     SequenceStatus m_status = SequenceStatus::WAITING;
-
-    // amount of processed tokens, e.g. prompt can be processed using multiple consequence inferences
-    // so, we need to track which part of the prompt we have already processed
     size_t m_num_processed_tokens = 0;
-    // a number of scheduled tokens by Scheduler::schedule logic
-    size_t m_num_scheduled_tokens = 0;
-    // a max output length for generation to use as a stopping criteria
-    size_t m_max_output_length = std::numeric_limits<size_t>::max();
-
-    int64_t _get_position_id() const {
-        return get_context_len() - 1;
-    }
-
-    int64_t _get_slot_id(int64_t token_idx) const {
-        int block_id = token_idx / BLOCK_SIZE, block_offset = (token_idx % BLOCK_SIZE);
-        return m_blocks[block_id].m_index * BLOCK_SIZE + block_offset;
-    }
 
     static uint64_t _get_next_sequence_id() {
         static uint64_t m_counter = 0;
@@ -181,13 +179,8 @@ class Sequence {
     }
 
 public:
-    explicit Sequence(const TokenIds& prompt_ids)
-        : m_prompt_ids(prompt_ids) {
-    }
-
-    explicit Sequence(const ov::Tensor& prompt_ids) {
-        m_prompt_ids.reserve(prompt_ids.get_size());
-        std::copy(prompt_ids.data<int64_t>(), prompt_ids.data<int64_t>() + prompt_ids.get_size(), std::back_inserter(m_prompt_ids));
+    explicit Sequence(size_t prompt_len)
+        : m_prompt_len(prompt_len) {
     }
 
     bool operator ==(const Sequence& other) const {
@@ -198,89 +191,25 @@ public:
         return m_sequence_id;
     }
 
+    size_t get_num_logical_blocks() const {
+        return (m_num_processed_tokens + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    }
+
+    bool has_finished() const {
+        return m_status == SequenceStatus::FINISHED;
+    }
+
+    void set_status(SequenceStatus status) {
+        m_status = status;
+    }
+
     // appends new tokens to a generated part
     void append_token(int64_t token_id) {
         m_generated_ids.push_back(token_id);
     }
 
-    // total number of tokens in a sequence
-    size_t get_context_len() const {
-        return m_prompt_ids.size() + m_generated_ids.size();
-    }
-
-    // a number of blocks to hold tokens of current sequence in KV cache
-    size_t get_num_blocks() const {
-        return (get_context_len() + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    }
-
-    // are we still processing a prompt phase?
-    bool is_prompt_phase() const {
-        return m_generated_ids.empty();
-    }
-
-    bool requires_sampling() const {
-        return get_num_processed_tokens() + get_num_scheduled_tokens() >= get_context_len(); 
-    }
-
-    bool requires_new_block() const {
-        // if next token generation requires new block allocation
-        return m_blocks.size() * BLOCK_SIZE <= get_context_len();
-    }
-
-    void append_new_block(KVCacheBlock block) {
-        m_blocks.push_back(block);
-    }
-
-    void schedule_tokens(size_t num_tokens) {
-        m_num_scheduled_tokens = num_tokens;
-    }
-
-    bool is_scheduled() const {
-        return m_num_scheduled_tokens > 0;
-    }
-
-    size_t get_num_scheduled_tokens() const {
-        return m_num_scheduled_tokens;
-    }
-
-    int64_t get_slot_id(size_t logical_token_id) const {
-        size_t physical_block_id = logical_token_id / BLOCK_SIZE;
-        size_t block_offset = logical_token_id % BLOCK_SIZE;
-        return BLOCK_SIZE * m_blocks[physical_block_id].m_index + block_offset;
-    }
-
-    // mark current schedule phase as finished and updates internal counters
-    void finish_iteration() {
-        m_num_processed_tokens += m_num_scheduled_tokens;
-        m_num_scheduled_tokens = 0;
-    }
-
-    size_t get_num_processed_tokens() const {
-        return m_num_processed_tokens;
-    }
-
-    size_t get_num_available_tokens_for_batching() const {
-        OPENVINO_ASSERT(m_num_scheduled_tokens == 0);
-        return get_context_len() - m_num_processed_tokens;
-    }
-
-    bool has_finished() const {
-        return m_max_output_length == m_generated_ids.size() ||
-            (!m_generated_ids.empty() && m_generated_ids.back() == SPECIAL_EOS_TOKEN);
-    }
-
-    // get input_id by token_id within a sequence
-    int64_t operator[] (size_t token_id) const {
-        return token_id < m_prompt_ids.size() ?
-            m_prompt_ids[token_id] : m_generated_ids[token_id - m_prompt_ids.size()];
-    }
-
-    const std::vector<KVCacheBlock> & get_kv_blocks() const {
-        return m_blocks;
-    }
-
-    const TokenIds & get_prompt_ids() const {
-        return m_prompt_ids;
+    void update_processed_tokens(size_t num_processed_tokens) {
+        m_num_processed_tokens += num_processed_tokens;
     }
 
     const TokenIds & get_generated_ids() const {
@@ -296,18 +225,31 @@ class SequenceGroup {
     uint64_t m_request_id;
     std::vector<Sequence> m_sequences;
     SamplingParameters m_sampling_params;
-public:
-    SequenceGroup(uint64_t request_id, const Sequence& sequence, const SamplingParameters& sampling_params)
-        : m_request_id(request_id),
-          m_sampling_params(sampling_params) {
-        add_sequence(sequence);
+    TokenIds m_prompt_ids;
+
+    // amount of processed tokens, e.g. prompt can be processed using multiple consequence inferences
+    // so, we need to track which part of the prompt we have already processed
+    size_t m_num_processed_tokens = 0;
+    // a number of scheduled tokens by Scheduler::schedule logic
+    size_t m_num_scheduled_tokens = 0;
+
+    int64_t _get_position_id() const {
+        return get_context_len() - 1;
     }
 
+    SequenceGroup(uint64_t request_id, const SamplingParameters& sampling_params)
+        : m_request_id(request_id),
+          m_sampling_params(sampling_params) { }
+public:
     SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const SamplingParameters& sampling_params) :
-        SequenceGroup(request_id, Sequence(input_ids), sampling_params) { }
+        SequenceGroup(request_id, sampling_params) {
+        add_sequence(Sequence(input_ids.size()));
+    }
 
     SequenceGroup(uint64_t request_id, const ov::Tensor& input_ids, const SamplingParameters& sampling_params) :
-        SequenceGroup(request_id, Sequence(input_ids), sampling_params) { }
+        SequenceGroup(request_id, sampling_params) {
+        add_sequence(Sequence(input_ids.get_size()));
+    }
 
     void add_sequence(const Sequence & sequence) {
         m_sequences.push_back(sequence);
@@ -317,6 +259,14 @@ public:
         OPENVINO_ASSERT(std::remove_if(m_sequences.begin(), m_sequences.end(), [sequence_id] (const Sequence & seq) {
             return seq.get_id() == sequence_id;
         }) != m_sequences.end(), "Failed to remove sequence with specified ID");
+    }
+
+    bool is_prompt_phase() const {
+        return m_num_processed_tokens < get_prompt_len();
+    }
+
+    size_t get_num_scheduled_tokens() const {
+        return m_num_scheduled_tokens;
     }
 
     const Sequence& operator[] (size_t index) const {
@@ -329,7 +279,7 @@ public:
         return m_sequences[index];
     }
 
-    size_t num_seqs() const {
+    size_t num_total_seqs() const {
         return m_sequences.size();
     }
 
@@ -339,61 +289,198 @@ public:
         });
     }
 
+    size_t get_prompt_len() const {
+        return m_prompt_ids.size();
+    }
+
     size_t num_unfinished_seqs() const {
-        return num_seqs() - num_finished_seqs();
+        return num_total_seqs() - num_finished_seqs();
     }
 
     bool has_finished() const {
-        return num_finished_seqs() == 0;
+        return num_unfinished_seqs() == 0;
     }
 
-    bool requires_new_block() const {
-        return std::any_of(m_sequences.begin(), m_sequences.end(), [] (const Sequence & seq) {
-            return seq.requires_new_block();
-        });
-    }
+    std::vector<Sequence> get_unfinished_sequences() const {
+        std::vector<Sequence> m_unfinished_seqs;
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (!m_sequences[seq_id].has_finished()) {
+                m_unfinished_seqs.push_back(m_sequences[seq_id]);
+            }
+        }
 
-    bool is_prompt_phase() const {
-        return num_unfinished_seqs() == 1 && m_sequences[0].is_prompt_phase();
+        return m_unfinished_seqs;
     }
 
     size_t get_num_available_tokens_for_batching() const {
-        size_t _num_unfinished_seqs = num_unfinished_seqs();
-        OPENVINO_ASSERT(_num_unfinished_seqs > 0);
-        const Sequence & first_sequence = m_sequences[0];
-
-        return first_sequence.is_prompt_phase() ? first_sequence.get_num_available_tokens_for_batching() :
-                                                  _num_unfinished_seqs;
-    }
-
-    void schedule_tokens(size_t) {
-        // TODO: move prompt handling to SequenceGroup
+        size_t num_unfinished_sequences = num_unfinished_seqs();
+        OPENVINO_ASSERT(num_unfinished_sequences > 0);
+        return is_prompt_phase() ? get_num_available_tokens_for_batching() : num_unfinished_seqs();
     }
 
     uint64_t get_request_id() const {
         return m_request_id;
     }
+
+    size_t get_context_len() const {
+        OPENVINO_ASSERT(!has_finished());
+        return get_num_processed_tokens() + get_num_scheduled_tokens();
+    }
+
+    bool requires_sampling() const {
+        return get_context_len() >= get_prompt_len();
+    }
+
+    void schedule_tokens(size_t num_tokens) {
+        m_num_scheduled_tokens = num_tokens;
+    }
+
+    bool is_scheduled() const {
+        return m_num_scheduled_tokens > 0;
+    }
+
+    // mark current schedule phase as finished and updates internal counters
+    void finish_iteration() {
+        for (size_t i = 0; i < m_sequences.size(); ++i) {
+            m_sequences[i].update_processed_tokens(m_num_scheduled_tokens);
+        }
+
+        m_num_processed_tokens += m_num_scheduled_tokens;
+        m_num_scheduled_tokens = 0;
+    }
+
+    size_t get_num_processed_tokens() const {
+        return m_num_processed_tokens;
+    }
+
+    size_t get_num_available_tokens_for_batching() const {
+        OPENVINO_ASSERT(m_num_scheduled_tokens == 0);
+        return get_prompt_len() - m_num_processed_tokens;
+    }
+
+    const TokenIds & get_prompt_ids() const {
+        return m_prompt_ids;
+    }
+
+    size_t get_num_blocks() const {
+        return (get_context_len() + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    }
 };
 
-class BlockManager {
+class BlockAllocator {
     std::vector<KVCacheBlock> m_blocks;
 public:
-    BlockManager(int num_blocks) {
+    BlockAllocator(int num_blocks) {
         m_blocks.reserve(num_blocks);
-        for (int i = 0; i < num_blocks; ++i) {
-            m_blocks.push_back({0, i});
+        for (int block_id = 0; block_id < num_blocks; ++block_id) {
+            m_blocks.push_back(KVCacheBlock(block_id));
         }
     }
 
-    bool can_allocate() const {
+    size_t num_free_blocks() const {
+        return m_blocks.size();
+    }
+
+    bool can_allocate_blocks(size_t num_blocks) const {
+        return num_blocks <= m_blocks.size();
+    }
+
+    bool can_allocate_block() {
         return !m_blocks.empty();
     }
 
-    KVCacheBlock allocate() {
-        OPENVINO_ASSERT(can_allocate());
+    void free(KVCacheBlock block) {
+        if (block.is_free()) {
+            m_blocks.push_back(block);
+        }
+    }
+
+    KVCacheBlock allocate_block() {
+        OPENVINO_ASSERT(can_allocate_block());
         auto allocated_block = m_blocks.back();
         m_blocks.pop_back();
         return allocated_block;
+    }
+};
+
+class BlockManager {
+    BlockAllocator m_allocator;
+
+    // stores blocks for each sequence (not sequence group)
+    std::map<uint64_t, std::vector<KVCacheBlock>> m_block_table;
+public:
+    BlockManager(int num_blocks)
+        : m_allocator(num_blocks) { }
+
+    const std::vector<KVCacheBlock>& get_block_table(const Sequence& seq) {
+        OPENVINO_ASSERT(m_block_table.count(seq.get_id()) == 1);
+        return m_block_table[seq.get_id()];
+    }
+
+    bool can_allocate_blocks(size_t num_blocks) const {
+        return m_allocator.can_allocate_blocks(num_blocks);
+    }
+
+    void allocate(const Sequence& sequence, size_t num_blocks) {
+        OPENVINO_ASSERT(can_allocate_blocks(num_blocks));
+
+        for (size_t i = 0; i < num_blocks; ++i) {
+            m_block_table[sequence.get_id()].push_back(m_allocator.allocate_block());
+        }
+    }
+
+    void fork_sequence(const Sequence& parent, const Sequence& child) {
+        // note, that reference counters are automatically incremented
+        m_block_table[child.get_id()] = m_block_table[parent.get_id()];
+    }
+
+    void free_sequence(const Sequence& seq) {
+        auto block_table = m_block_table[seq.get_id()];
+
+        for (KVCacheBlock& block) {
+            m_allocator.free(block);
+        }
+
+        m_block_table.erase(seq.get_id());
+    }
+
+    bool can_append_slot(const SequenceGroup& seq_group) {
+        // TODO: optimize this heuristic
+        // it assumes that all sequences require new block, but maybe some of them
+        // don't share the same block
+        // let's count actual number of sequences, where last_block_id is the same
+        return seq_group.num_unfinished_seqs() <= m_allocator.num_free_blocks();
+    }
+
+    // it returns information which blocks should be forked
+    std::map<size_t, size_t> append_slot(const SequenceGroup& seq_group) {
+        OPENVINO_ASSERT(can_append_slot(seq_group));
+
+        std::map<size_t, size_t> forked_blocks;
+        for (size_t i = 0; i < seq_group.num_unfinished_seqs(); ++i) {
+            const Sequence& sequence = seq_group[i];
+            auto seq_id = sequence.get_id();
+            auto& block_table = m_block_table[seq_id];
+            size_t num_physical_blocks = block_table.size();
+            KVCacheBlock last_block = block_table[num_physical_blocks - 1];
+
+            if (sequence.get_num_logical_blocks() > num_physical_blocks) {
+                // we require to allocate a new physical block
+                block_table.push_back(m_allocator.allocate_block());
+            } else {
+                if (last_block.copy_on_write()) {
+                    // we need to fork current block, because reference counter is more than 1
+                    KVCacheBlock new_block = m_allocator.allocate_block();
+                    block_table[num_physical_blocks - 1] = new_block;
+                    // write information about block forking for later usage in CacheManager
+                    forked_blocks[last_block.get_index()] = new_block.get_index();
+                } else {
+                    // nothing to do, because we are the only users of this block
+                }
+            }
+        }
+
+        return forked_blocks;
     }
 };
 
@@ -411,36 +498,60 @@ class Scheduler {
     SchedulerConfig m_config;
     BlockManager m_block_manager;
 public:
+    struct Output {
+        std::vector<uint64_t> m_scheduled_sequence_groups_ids;
+        // a number of scheduled tokens per sequence ID
+        std::map<uint64_t, size_t> m_num_scheduled_tokens;
+        // map of src -> dst blocks copies, which need to be performed by CacheManager
+        std::map<size_t, size_t> m_block_copy_map;
+    };
+
     Scheduler(const SchedulerConfig & config = {}) :
         m_config(config), m_block_manager(m_config.num_kv_blocks) { }
 
     void schedule(std::vector<SequenceGroup>& sequence_groups) {
-        for (size_t i = 0, current_num_of_scheduled_tokens = 0;
-            i < sequence_groups.size() && current_num_of_scheduled_tokens < m_config.max_tokens_to_batch; ++i) {
-            SequenceGroup & sequence_group = sequence_groups[i];
+        for (size_t sequence_group_id = 0, current_num_of_scheduled_tokens = 0;
+            sequence_group_id < sequence_groups.size() && current_num_of_scheduled_tokens < m_config.max_tokens_to_batch; ++sequence_group_id) {
+            SequenceGroup & sequence_group = sequence_groups[sequence_group_id];
+            OPENVINO_ASSERT(!sequence_group.has_finished());
 
-            if (!sequence_group.has_finished()) {
-                // check first whether new blocks are available for next tokens processing
-                // TODO: implement more complex logic to handle:
-                // 1. sequence can process tokens within its currently available slots
-                // 2. sequence KV blocks can be evicted by sequence with higher priority
-                // 3. num of available KV blocks can be less of num tokens available for generation
-                while (sequence_group.requires_new_block()) {
-                    for (size_t i = 0; i < sequence_group.num_seqs(); ++i) {
-                        sequence_group[i].append_new_block(m_block_manager.allocate());
-                    }
-                }
+            // TODO: implement the logic of whether current sequence can be processed or we don't have memory for its execution
+            // Handle cases, like:
+            // 1. sequence does not require new blocks (e.g. generation phase, where we still have some free physical slots)
+            // 2. only part of prompt can be allocated by BlockManager, because not all prompt tokens can fit into remainging KV cache
+            // 3. generation sequences should always be processed before prompt sequences
+            // 4. equally split remaining number of tokens in batch between prompt sequences
+            //    (align chunk size of mini-prompt-batch by BLOCK_SIZE)
+            // 5. we need to implement cache eviction (by BLOCK_SIZE) in order to continue generation of sequences with high priority
+            //    (sequences with lower priority will lose blocks in KV cache in this case)
+            //    Note: that we need to evict low-priority sequences while we have generation sequence groups (it should be either evicted or scheduled)
+            bool can_allocate_current_sequence = true;
 
-                size_t num_batch_available_tokens = m_config.max_tokens_to_batch - current_num_of_scheduled_tokens;
-                size_t num_seq_available_tokens = sequence_group.get_num_available_tokens_for_batching();
-
-                // schedule all bare minimum of tokens from current sequence to fill up a batch!
-                size_t num_scheduled_tokens = std::min(num_batch_available_tokens, num_seq_available_tokens);
-                sequence_group.schedule_tokens(num_scheduled_tokens);
-
-                current_num_of_scheduled_tokens += num_scheduled_tokens;
+            if (!can_allocate_current_sequence) {
+                continue;
             }
+
+            size_t num_batch_available_tokens = m_config.max_tokens_to_batch - current_num_of_scheduled_tokens;
+            size_t num_seq_available_tokens = sequence_group.get_num_available_tokens_for_batching();
+
+            // schedule all bare minimum of tokens from current sequence to fill up a batch!
+            size_t num_scheduled_tokens = std::min(num_batch_available_tokens, num_seq_available_tokens);
+            // TODO: remove this limitation
+            OPENVINO_ASSERT(num_scheduled_tokens == num_seq_available_tokens);
+            sequence_group.schedule_tokens(num_scheduled_tokens);
+
+            // iteratively allocate new blocks for sequence group
+            // TODO: optimize:
+            // 1. allocate required amount of blocks for prompt in a single shot
+            size_t num_blocks_to_allocate = (num_scheduled_tokens + BLOCK_SIZE - 1) / BLOCK_SIZE;
+            m_block_manager.allocate(sequence_group, num_blocks_to_allocate);
+
+            current_num_of_scheduled_tokens += num_scheduled_tokens;
         }
+    }
+
+    const std::vector<KVCacheBlock>& get_block_table(const Sequence& seq) {
+        return m_block_manager.get_block_table(seq);
     }
 };
 
@@ -458,8 +569,7 @@ public:
         constexpr size_t NUM_KV_HEADS = 12, NUM_HEADS = 12, HIDDEN_DIMS = 768, HEAD_SIZE = HIDDEN_DIMS / NUM_HEADS;
         constexpr size_t NUM_DECODER_LAYERS = 12; // num KV cache pairs
 
-        // Set PagedAttention specific parameters
-
+        // Allocate KV caches
         const ov::Shape k_cache_shape{NUM_BLOCKS, NUM_KV_HEADS, HEAD_SIZE / X, BLOCK_SIZE, X};
         const ov::Shape v_cache_shape{NUM_BLOCKS, NUM_KV_HEADS, HEAD_SIZE, BLOCK_SIZE};
 
@@ -483,20 +593,45 @@ public:
         return m_value_cache[decoder_layer_id];
     }
 
-    // TODO: implement methods to copy / fork blocks by ID
+    void copy_blocks(const std::map<size_t, size_t>& block_copy_map) {
+        constexpr auto kv_cache_precision = ov::element::f32;
+        const size_t BLOCK_SIZE = 16, X = BLOCK_SIZE / kv_cache_precision.size();
+        // TODO: take from model
+        constexpr size_t NUM_KV_HEADS = 12, NUM_HEADS = 12, HIDDEN_DIMS = 768, HEAD_SIZE = HIDDEN_DIMS / NUM_HEADS;
+        constexpr size_t NUM_DECODER_LAYERS = 12; // num KV cache pairs
+
+        for (const auto & blocks_pair : block_copy_map) {
+            size_t src_block_id = blocks_pair.first, dst_block_id = blocks_pair.second;
+
+            ov::Coordinate k_src_start_roi = { src_block_id, NUM_KV_HEADS, HEAD_SIZE / X, BLOCK_SIZE, X };
+            ov::Coordinate k_src_end_roi = { src_block_id + 1, NUM_KV_HEADS, HEAD_SIZE / X, BLOCK_SIZE, X };
+            ov::Coordinate k_dst_start_roi = { dst_block_id, NUM_KV_HEADS, HEAD_SIZE / X, BLOCK_SIZE, X };
+            ov::Coordinate k_dst_end_roi = { dst_block_id + 1, NUM_KV_HEADS, HEAD_SIZE / X, BLOCK_SIZE, X };
+            
+            ov::Coordinate v_src_start_roi = { src_block_id, NUM_KV_HEADS, HEAD_SIZE, BLOCK_SIZE };
+            ov::Coordinate v_src_end_roi = { src_block_id + 1, NUM_KV_HEADS, HEAD_SIZE, BLOCK_SIZE };
+            ov::Coordinate v_dst_start_roi = { dst_block_id, NUM_KV_HEADS, HEAD_SIZE, BLOCK_SIZE };
+            ov::Coordinate v_dst_end_roi = { dst_block_id + 1, NUM_KV_HEADS, HEAD_SIZE, BLOCK_SIZE };
+
+            for (size_t decoder_layer_id = 0; decoder_layer_id < NUM_DECODER_LAYERS; ++decoder_layer_id) {
+                ov::Tensor k_src_cache_roi(m_key_cache[decoder_layer_id], k_src_start_roi, k_src_end_roi);
+                ov::Tensor k_dst_cache_roi(m_key_cache[decoder_layer_id], k_dst_start_roi, k_dst_end_roi);
+
+                ov::Tensor v_src_cache_roi(m_value_cache[decoder_layer_id], v_src_start_roi, v_src_end_roi);
+                ov::Tensor v_dst_cache_roi(m_value_cache[decoder_layer_id], v_dst_start_roi, v_dst_end_roi);
+
+                k_src_cache_roi.copy_to(k_dst_cache_roi);
+                v_src_cache_roi.copy_to(v_dst_cache_roi);
+            }
+        }
+    }
 };
 
 class ModelRunner {
-    CacheManager m_cache_manager;
     ov::InferRequest & m_request;
 public:
     ModelRunner(ov::InferRequest & request) :
-        m_request(request) {
-        for (size_t decoder_layer_id = 0; decoder_layer_id < m_cache_manager.get_num_layers(); ++decoder_layer_id) {
-            m_request.set_input_tensor(2 + decoder_layer_id * 2, m_cache_manager.get_key_cache(decoder_layer_id));
-            m_request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager.get_value_cache(decoder_layer_id));
-        }
-    }
+        m_request(request) { }
 
     ov::Tensor step(const std::vector<SequenceGroup> & sequence_groups) {
         size_t batch_size = 0, max_num_blocks = 0, max_context_len_value = 0;
@@ -506,17 +641,9 @@ public:
         // compute aggregated values
         for (size_t i = 0; i < sequence_groups.size(); ++i) {
             const SequenceGroup & sequence_group = sequence_groups[i];
-            // TODO: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            const Sequence & sequence = sequence_group[0];
-
-            if (sequence_group[0].is_scheduled()) {
-                batch_size += sequence.get_num_scheduled_tokens();
-                max_num_blocks = std::max(max_num_blocks, sequence.get_num_blocks());
-                // TODO: compute in the cycle below
-                max_context_len_value = std::max(max_context_len_value, sequence.get_num_processed_tokens() + 1);
-            } else {
-                OPENVINO_ASSERT(sequence.get_num_scheduled_tokens() == 0);
-            }
+            batch_size += sequence_group.get_num_scheduled_tokens();
+            max_num_blocks = std::max(max_num_blocks, sequence_group.get_num_blocks());
+            max_context_len_value = std::max(max_context_len_value, sequence_group.get_num_processed_tokens() + 1);
         }
 
         ov::Tensor
@@ -542,22 +669,25 @@ public:
             * block_tables_data = block_tables.data<int32_t>();
 
         for (size_t i = 0; i < sequence_groups.size(); ++i) {
-            // TODO: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            const Sequence & sequence = sequence_groups[i][0];
-            if (sequence.is_scheduled()) {
-                size_t num_scheduled_tokens = sequence.get_num_scheduled_tokens();
-                size_t position_id = sequence.get_num_processed_tokens(), context_len = position_id + 1;
+            const SequenceGroup& sequence_group = sequence_groups[i];
+            const std::vector<Sequence>& running_sequences = sequence_group.get_unfinished_sequences();
+            size_t num_scheduled_tokens = sequence_group.get_num_scheduled_tokens();
+            size_t position_id = sequence_group.get_num_processed_tokens(), context_len = position_id + 1;
+
+            for (size_t seq_id = 0; seq_id < running_sequences.size(); ++seq_id) {
+                const Sequence& sequence = running_sequences[seq_id];
 
                 for (size_t token_id = 0; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++context_len) {
-                    input_ids_data[token_id] = sequence[position_id];
+                    // TODO:
+                    // input_ids_data[token_id] = sequence[position_id];
                     position_ids_data[token_id] = position_id;
-                    slot_mapping_data[token_id] = sequence.get_slot_id(position_id);
+                    // slot_mapping_data[token_id] = sequence_group.get_slot_id(position_id);
                     context_lens_data[token_id] = context_len;
 
-                    const std::vector<KVCacheBlock> & kv_blocks = sequence.get_kv_blocks();
-                    for (size_t logical_block_id = 0; logical_block_id < sequence.get_num_blocks(); ++logical_block_id)
-                        block_tables_data[logical_block_id] = kv_blocks[logical_block_id].m_index;
-                    block_tables_data += max_num_blocks;
+                    // const std::vector<KVCacheBlock> & kv_blocks = sequence.get_kv_blocks();
+                    // for (size_t logical_block_id = 0; logical_block_id < sequence.get_num_blocks(); ++logical_block_id)
+                    //     block_tables_data[logical_block_id] = kv_blocks[logical_block_id].get_index();
+                    // block_tables_data += max_num_blocks;
                 }
 
                 // apply strides to shift to next sequence
@@ -595,15 +725,6 @@ public:
     }
 };
 
-bool has_unfinished_groups(const std::vector<SequenceGroup> & sequence_groups) {
-    for (auto & sequence_group : sequence_groups) {
-        if (!sequence_group.has_finished())
-            return true;
-    }
-
-    return false;
-}
-
 class Sampler {
     SamplingParameters m_parameters;
 
@@ -626,22 +747,21 @@ public:
         OPENVINO_ASSERT(seq_len == 1);
 
         for (size_t i = 0, current_token_id = 0; i < sequence_groups.size(); ++i) {
+            SequenceGroup sequence_group = sequence_groups[i];
             // TODO: process multuple sequences within a group
             Sequence & sequence = sequence_groups[i][0];
 
-            if (sequence.is_scheduled()) {
-                current_token_id += sequence.get_num_scheduled_tokens();
+            current_token_id += sequence_group.get_num_scheduled_tokens();
 
-                if (sequence.requires_sampling()) {
-                    int64_t sampled_token_id = _greedy_sample(logits_data + logits_stride * (current_token_id - 1), vocab_size);
-                    sequence.append_token(sampled_token_id);
-                } else {
-                    // we are in prompt processing phase when prompt is split into chunks and processed step by step
-                }
-
-                // update internal state of sequence to reset scheduler tokens and update currently processed onces
-                sequence.finish_iteration();
+            if (sequence_group.requires_sampling()) {
+                int64_t sampled_token_id = _greedy_sample(logits_data + logits_stride * (current_token_id - 1), vocab_size);
+                sequence.append_token(sampled_token_id);
+            } else {
+                // we are in prompt processing phase when prompt is split into chunks and processed step by step
             }
+
+            // update internal state of sequence to reset scheduler tokens and update currently processed onces
+            sequence_group.finish_iteration();
         }
     }
 };
@@ -671,18 +791,28 @@ struct GenerationResult {
 };
 
 class LLMEngine {
+    CacheManager m_cache_manager;
     Scheduler m_scheduler;
     ModelRunner m_model_runner;
     Sampler m_sampler;
 
     // current requests to process
     std::vector<SequenceGroup> m_requests;
+
+    void _free_finished_groups() {
+        std::remove_if(m_requests.begin(), m_requests.end(), [] (const SequenceGroup& seq_group) {
+            return seq_group.has_finished();
+        });
+    }
 public:
     LLMEngine(ov::InferRequest& request,
               const SchedulerConfig& scheduler_config)
         : m_scheduler(scheduler_config),
-          m_model_runner(request),
-          m_sampler() {
+          m_model_runner(request) {
+        for (size_t decoder_layer_id = 0; decoder_layer_id < m_cache_manager.get_num_layers(); ++decoder_layer_id) {
+            request.set_input_tensor(2 + decoder_layer_id * 2, m_cache_manager.get_key_cache(decoder_layer_id));
+            request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager.get_value_cache(decoder_layer_id));
+        }
     }
 
     void add_request(uint64_t request_id, const TokenIds input_ids, SamplingParameters sampling_params) {
@@ -695,12 +825,26 @@ public:
         m_requests.push_back(sequence_group);
     }
 
-    // TODO: current function must return information about currentl generation step
-    // e.g. what requests has generation phase, what are ignored, etc
-    void step() {
+    std::vector<GenerationResult> step() {
         m_scheduler.schedule(m_requests);
+        // TODO: perform cache management via m_cache_manager.
+        // e.g. fork blocks, copy from CPU to GPU and back
         ov::Tensor logits = m_model_runner.step(m_requests);
         m_sampler.decode(m_requests, logits);
+
+        // perform post-processing of current step
+
+        std::vector<GenerationResult> currently_finished_requests;
+        for (size_t request_id = 0; request_id < m_requests.size(); ++request_id) {
+            const SequenceGroup& sequence_group = m_requests[request_id];
+            if (sequence_group.has_finished()) {
+                currently_finished_requests.push_back(GenerationResult::from_sequence_group(sequence_group));
+            }
+        }
+
+        _free_finished_groups();
+
+        return currently_finished_requests;
     }
 
     bool has_unifnished_requests() const {
@@ -712,36 +856,26 @@ public:
         return false;
     }
 
-    void free_finished_groups() {
-        std::remove_if(m_requests.begin(), m_requests.end(), [] (const SequenceGroup& seq_group) {
-            return seq_group.has_finished();
-        });
-    }
-
     // more high level interface
-    std::vector<GenerationResult> generate(const std::vector<ov::Tensor> prompts, std::vector<SamplingParameters> samplig_params) {
-        OPENVINO_ASSERT(prompts.size() == samplig_params.size());
+    std::vector<GenerationResult> generate(const std::vector<ov::Tensor> prompts, std::vector<SamplingParameters> sampling_params) {
+        OPENVINO_ASSERT(prompts.size() == sampling_params.size());
 
         for (size_t request_id = 0; request_id < prompts.size(); ++request_id) {
-            add_request(request_id, prompts[request_id], samplig_params[request_id]);
+            add_request(request_id, prompts[request_id], sampling_params[request_id]);
         }
 
-        while (has_unifnished_requests()) {
-            // TODO: each step should return output to track generation process and fill
-            step();
-        }
-
-        // create generation results
         std::vector<GenerationResult> results;
         results.reserve(m_requests.size());
 
-        // TODO: fill values in the order to preserve request ID
-        for (size_t i = 0; i < m_requests.size(); ++i) {
-            results.push_back(GenerationResult::from_sequence_group(m_requests[i]));
+        while (has_unifnished_requests()) {
+            std::vector<GenerationResult> partial_results = step();
+            results.insert(results.end(), partial_results.begin(), partial_results.end());
         }
 
-        // free KV blocks and other resourses
-        free_finished_groups();
+        // sort results according to request_id to return results in order of initial prompts
+        std::sort(results.begin(), results.end(), [] (const GenerationResult& r1, const GenerationResult& r2) -> bool {
+            return r1.m_request_id < r2.m_request_id;
+        });
 
         return results;
     }
