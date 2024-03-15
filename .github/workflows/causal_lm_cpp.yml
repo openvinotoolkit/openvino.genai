@@ -212,7 +212,7 @@ jobs:
           source ./ov/setupvars.sh
           convert_tokenizer ./notus-7b-v1/pytorch/dldt/FP16/ --output ./notus-7b-v1/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
           timeout 50s ./build/beam_search_causal_lm ./notus-7b-v1/pytorch/dldt/FP16/ 69 > ./pred.txt
-  cpp-beam_search_causal_lm-Phi-1_5:
+  cpp-Phi-1_5:
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -233,8 +233,26 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j 15
           wait
-      - name: Compare
+      - name: Run Generation
         run: |
           source ./ov/setupvars.sh
           convert_tokenizer ./Phi-1_5/pytorch/dldt/FP16/ --output ./Phi-1_5/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
-          timeout 50s ./build/beam_search_causal_lm ./Phi-1_5/pytorch/dldt/FP16/ 69 > ./pred.txt          
+          timeout 50s ./build/greedy_causal_lm ./Phi-1_5/pytorch/dldt/FP16/ 69 > ./pred_greedy.txt
+          timeout 50s ./build/beam_search_causal_lm ./Phi-1_5/pytorch/dldt/FP16/ 69 > ./pred_beam.txt
+      - name: Compare Beam search
+        run: |
+          python -c "
+          import transformers
+          with open('pred_greedy', 'r') as file:
+              predictions = file.read()
+          tokenizer = transformers.AutoTokenizer.from_pretrained('microsoft/phi-1_5')
+          tokenized = tokenizer('69', return_tensors='pt')
+          for output in transformers.AutoModelForCausalLM.from_pretrained('microsoft/phi-1_5').generate(**tokenized, max_length=200, do_sample=False):
+              ref = ': ' + tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
+              idx = predictions.find(ref)
+              if -1 == idx:
+                  raise RuntimeError(f'Missing "{ref=}" from predictions')
+              predictions = predictions[:idx] + predictions[idx + len(ref):]
+          "
+          echo 69 passed
+
