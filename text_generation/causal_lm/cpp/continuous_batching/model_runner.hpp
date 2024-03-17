@@ -9,6 +9,7 @@
 #include <openvino/runtime/infer_request.hpp>
 
 #include "sequence_group.hpp"
+#include "scheduler.hpp"
 
 class ModelRunner {
     ov::InferRequest & m_request;
@@ -16,7 +17,7 @@ public:
     ModelRunner(ov::InferRequest & request) :
         m_request(request) { }
 
-    ov::Tensor step(const std::vector<SequenceGroup> & sequence_groups) {
+    ov::Tensor step(const std::vector<SequenceGroup> & sequence_groups, const Scheduler::Output& scheduler_output) {
         size_t batch_size = 0, max_num_blocks = 0, max_context_len_value = 0;
         // since we merge sequence_len and batch to avoid ragged dimensions => batch dimension contains all tokens, while seq len is 1
         const size_t seq_len = 1;
@@ -24,9 +25,9 @@ public:
         // compute aggregated values
         for (size_t i = 0; i < sequence_groups.size(); ++i) {
             const SequenceGroup & sequence_group = sequence_groups[i];
-            batch_size += sequence_group.get_num_scheduled_tokens();
+            batch_size += sequence_group.get_num_scheduled_tokens() * sequence_group.num_running_seqs();
             max_num_blocks = std::max(max_num_blocks, sequence_group.get_num_blocks());
-            max_context_len_value = std::max(max_context_len_value, sequence_group.get_num_processed_tokens() + 1);
+            max_context_len_value = std::max(max_context_len_value, sequence_group.get_context_len());
         }
 
         ov::Tensor
@@ -51,26 +52,37 @@ public:
         int32_t
             * block_tables_data = block_tables.data<int32_t>();
 
-        for (size_t i = 0; i < sequence_groups.size(); ++i) {
-            const SequenceGroup& sequence_group = sequence_groups[i];
-            const std::vector<Sequence>& running_sequences = sequence_group.get_unfinished_sequences();
+        for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            const SequenceGroup& sequence_group = sequence_groups[seq_group_id];
+            const std::vector<Sequence>& running_sequences = sequence_group.get_running_sequences();
             size_t num_scheduled_tokens = sequence_group.get_num_scheduled_tokens();
-            size_t position_id = sequence_group.get_num_processed_tokens(), context_len = position_id + 1;
+            size_t group_position_id = sequence_group.get_num_processed_tokens(), group_context_len = group_position_id + 1;
 
             for (size_t seq_id = 0; seq_id < running_sequences.size(); ++seq_id) {
                 const Sequence& sequence = running_sequences[seq_id];
+                size_t position_id = group_position_id, context_len = group_context_len;
 
                 for (size_t token_id = 0; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++context_len) {
-                    // TODO:
-                    // input_ids_data[token_id] = sequence[position_id];
+                    const std::vector<KVCacheBlock> & kv_blocks = scheduler_output.m_block_tables.at(sequence.get_id());
+                    const size_t num_blocks = kv_blocks.size();
+                    for (size_t block_id = 0; block_id < kv_blocks.size(); ++block_id)
+                        block_tables_data[block_id] = kv_blocks[block_id].get_index();
+                    block_tables_data += max_num_blocks;
+
                     position_ids_data[token_id] = position_id;
-                    // slot_mapping_data[token_id] = sequence_group.get_slot_id(position_id);
                     context_lens_data[token_id] = context_len;
 
-                    // const std::vector<KVCacheBlock> & kv_blocks = sequence.get_kv_blocks();
-                    // for (size_t logical_block_id = 0; logical_block_id < sequence.get_num_blocks(); ++logical_block_id)
-                    //     block_tables_data[logical_block_id] = kv_blocks[logical_block_id].get_index();
-                    // block_tables_data += max_num_blocks;
+                    // compute token for current sequence
+                    input_ids_data[token_id] = position_id < sequence_group.get_prompt_len() ?
+                        sequence_group.get_prompt_ids()[position_id] :
+                        sequence.get_generated_ids()[position_id - sequence_group.get_prompt_len()];
+
+                    // compute slot_id
+                    size_t physical_block_id = position_id / BLOCK_SIZE;
+                    size_t block_offset = position_id % BLOCK_SIZE;
+                    int64_t slot_id = BLOCK_SIZE * kv_blocks[physical_block_id].get_index() + block_offset;
+                    slot_mapping_data[token_id] = slot_id;
                 }
 
                 // apply strides to shift to next sequence
@@ -85,7 +97,7 @@ public:
         m_request.set_tensor("input_ids", input_ids);
         m_request.set_tensor("position_ids", position_ids);
 
-        // PagedAttention specific parameetrs
+        // PagedAttention specific parameters
         m_request.set_tensor("is_prompt", is_prompt);
         m_request.set_tensor("slot_mapping", slot_mapping);
         m_request.set_tensor("max_context_len", max_context_len);

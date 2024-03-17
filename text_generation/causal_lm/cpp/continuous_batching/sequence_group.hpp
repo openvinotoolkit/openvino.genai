@@ -16,32 +16,23 @@ enum class SequenceStatus {
 using TokenIds = std::vector<int64_t>;
 
 class Sequence {
-    size_t m_prompt_len;
-    TokenIds m_generated_ids;
-    uint64_t m_sequence_id = _get_next_sequence_id();
-    SequenceStatus m_status = SequenceStatus::WAITING;
-    size_t m_num_processed_tokens = 0;
-
     static uint64_t _get_next_sequence_id() {
         static uint64_t m_counter = 0;
         return m_counter++;
     }
 
-public:
-    explicit Sequence(size_t prompt_len)
-        : m_prompt_len(prompt_len) {
-    }
+    TokenIds m_generated_ids;
+    uint64_t m_sequence_id = _get_next_sequence_id();
+    SequenceStatus m_status = SequenceStatus::WAITING;
+    float m_cumulative_log_prob = 0.0f;
 
+public:
     bool operator ==(const Sequence& other) const {
         return other.m_sequence_id == m_sequence_id;
     }
 
     uint64_t get_id() const {
         return m_sequence_id;
-    }
-
-    size_t get_num_logical_blocks() const {
-        return (m_num_processed_tokens + BLOCK_SIZE - 1) / BLOCK_SIZE;
     }
 
     bool has_finished() const {
@@ -53,16 +44,18 @@ public:
     }
 
     // appends new tokens to a generated part
-    void append_token(int64_t token_id) {
+    void append_token(int64_t token_id, float log_prob) {
+        m_cumulative_log_prob += log_prob;
         m_generated_ids.push_back(token_id);
-    }
-
-    void update_processed_tokens(size_t num_processed_tokens) {
-        m_num_processed_tokens += num_processed_tokens;
     }
 
     const TokenIds & get_generated_ids() const {
         return m_generated_ids;
+    }
+
+    // TODO: implement
+    float get_beam_search_scope() const {
+        return m_cumulative_log_prob;
     }
 };
 
@@ -81,6 +74,8 @@ class SequenceGroup {
     size_t m_num_processed_tokens = 0;
     // a number of scheduled tokens by Scheduler::schedule logic
     size_t m_num_scheduled_tokens = 0;
+    // context length of longest sequence within a group
+    size_t m_max_content_len = 0;
 
     int64_t _get_position_id() const {
         return get_context_len() - 1;
@@ -92,12 +87,12 @@ class SequenceGroup {
 public:
     SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const SamplingParameters& sampling_params) :
         SequenceGroup(request_id, sampling_params) {
-        add_sequence(Sequence(input_ids.size()));
+        add_sequence(Sequence{});
     }
 
     SequenceGroup(uint64_t request_id, const ov::Tensor& input_ids, const SamplingParameters& sampling_params) :
         SequenceGroup(request_id, sampling_params) {
-        add_sequence(Sequence(input_ids.get_size()));
+        add_sequence(Sequence{});
     }
 
     void add_sequence(const Sequence & sequence) {
@@ -110,12 +105,13 @@ public:
         }) != m_sequences.end(), "Failed to remove sequence with specified ID");
     }
 
-    bool is_prompt_phase() const {
-        return m_num_processed_tokens < get_prompt_len();
+    size_t get_prompt_len() const {
+        return m_prompt_ids.size();
     }
 
-    size_t get_num_scheduled_tokens() const {
-        return m_num_scheduled_tokens;
+    // a sequence group can generate new tokens if it already proccessed m_max_content_len before
+    bool can_generate_tokens() const {
+        return m_max_content_len >= get_prompt_len();
     }
 
     const Sequence& operator[] (size_t index) const {
@@ -138,42 +134,51 @@ public:
         });
     }
 
-    size_t get_prompt_len() const {
-        return m_prompt_ids.size();
-    }
-
-    size_t num_unfinished_seqs() const {
+    size_t num_running_seqs() const {
         return num_total_seqs() - num_finished_seqs();
     }
 
     bool has_finished() const {
-        return num_unfinished_seqs() == 0;
+        return num_running_seqs() == 0;
     }
 
-    std::vector<Sequence> get_unfinished_sequences() const {
-        std::vector<Sequence> m_unfinished_seqs;
+    std::vector<Sequence> get_running_sequences() const {
+        std::vector<Sequence> running_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (!m_sequences[seq_id].has_finished()) {
-                m_unfinished_seqs.push_back(m_sequences[seq_id]);
+                running_seqs.push_back(m_sequences[seq_id]);
             }
         }
 
-        return m_unfinished_seqs;
-    }
-
-    size_t get_num_available_tokens_for_batching() const {
-        size_t num_unfinished_sequences = num_unfinished_seqs();
-        OPENVINO_ASSERT(num_unfinished_sequences > 0);
-        return is_prompt_phase() ? get_num_available_tokens_for_batching() : num_unfinished_seqs();
+        return running_seqs;
     }
 
     uint64_t get_request_id() const {
         return m_request_id;
     }
 
+    size_t get_num_scheduled_tokens() const {
+        return m_num_scheduled_tokens;
+    }
+
+    size_t get_num_processed_tokens() const {
+        return m_num_processed_tokens;
+    }
+
+    void preempt_tokens(size_t num_preempt_tokens) {
+        OPENVINO_ASSERT(num_preempt_tokens <= m_num_processed_tokens);
+        m_num_processed_tokens -= num_preempt_tokens;
+        // Note, that m_max_content_len is kept as is
+    }
+
+    // returns context length taking into account scheduled tokens
     size_t get_context_len() const {
         OPENVINO_ASSERT(!has_finished());
         return get_num_processed_tokens() + get_num_scheduled_tokens();
+    }
+
+    size_t get_num_logical_blocks() const {
+        return (get_context_len() + BLOCK_SIZE - 1) / BLOCK_SIZE;
     }
 
     bool requires_sampling() const {
@@ -188,29 +193,27 @@ public:
         return m_num_scheduled_tokens > 0;
     }
 
+    size_t get_num_available_tokens_for_batching() const {
+        OPENVINO_ASSERT(!has_finished());
+        OPENVINO_ASSERT(get_num_scheduled_tokens() == 0);
+        // if sequence group has not finished, it has at least one token to process
+        size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len);
+        return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u);
+    }
+
     // mark current schedule phase as finished and updates internal counters
     void finish_iteration() {
-        for (size_t i = 0; i < m_sequences.size(); ++i) {
-            m_sequences[i].update_processed_tokens(m_num_scheduled_tokens);
-        }
-
         m_num_processed_tokens += m_num_scheduled_tokens;
+        // if some processed tokens were evicted, max content len is greater than number of processed tokens
+        m_max_content_len = std::max(m_max_content_len, m_num_processed_tokens);
         m_num_scheduled_tokens = 0;
     }
 
-    size_t get_num_processed_tokens() const {
-        return m_num_processed_tokens;
-    }
-
-    size_t get_num_available_tokens_for_batching() const {
-        OPENVINO_ASSERT(m_num_scheduled_tokens == 0);
-        return get_prompt_len() - m_num_processed_tokens;
-    }
-
-    const TokenIds & get_prompt_ids() const {
+    const TokenIds& get_prompt_ids() const {
         return m_prompt_ids;
     }
 
+    // requires number of physical blocks for next generation
     size_t get_num_blocks() const {
         return (get_context_len() + BLOCK_SIZE - 1) / BLOCK_SIZE;
     }

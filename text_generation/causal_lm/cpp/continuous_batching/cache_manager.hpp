@@ -14,14 +14,6 @@ class CacheManager {
 
 public:
     CacheManager() {
-        // TODO: make as a parameter
-        constexpr auto kv_cache_precision = ov::element::f32;
-
-        const size_t BLOCK_SIZE = 16, X = BLOCK_SIZE / kv_cache_precision.size();
-        // TODO: take from model
-        constexpr size_t NUM_KV_HEADS = 12, NUM_HEADS = 12, HIDDEN_DIMS = 768, HEAD_SIZE = HIDDEN_DIMS / NUM_HEADS;
-        constexpr size_t NUM_DECODER_LAYERS = 12; // num KV cache pairs
-
         // Allocate KV caches
         const ov::Shape k_cache_shape{NUM_BLOCKS, NUM_KV_HEADS, HEAD_SIZE / X, BLOCK_SIZE, X};
         const ov::Shape v_cache_shape{NUM_BLOCKS, NUM_KV_HEADS, HEAD_SIZE, BLOCK_SIZE};
@@ -47,12 +39,6 @@ public:
     }
 
     void copy_blocks(const std::map<size_t, size_t>& block_copy_map) {
-        constexpr auto kv_cache_precision = ov::element::f32;
-        const size_t BLOCK_SIZE = 16, X = BLOCK_SIZE / kv_cache_precision.size();
-        // TODO: take from model
-        constexpr size_t NUM_KV_HEADS = 12, NUM_HEADS = 12, HIDDEN_DIMS = 768, HEAD_SIZE = HIDDEN_DIMS / NUM_HEADS;
-        constexpr size_t NUM_DECODER_LAYERS = 12; // num KV cache pairs
-
         for (const auto & blocks_pair : block_copy_map) {
             size_t src_block_id = blocks_pair.first, dst_block_id = blocks_pair.second;
 

@@ -93,10 +93,9 @@ public:
     }
 
     std::vector<GenerationResult> step() {
-        m_scheduler.schedule(m_requests);
-        // TODO: perform cache management via m_cache_manager.
-        // e.g. fork blocks, copy from CPU to GPU and back
-        ov::Tensor logits = m_model_runner.step(m_requests);
+        Scheduler::Output scheduler_output = m_scheduler.schedule(m_requests);
+        m_cache_manager.copy_blocks(scheduler_output.m_block_copy_map);
+        ov::Tensor logits = m_model_runner.step(m_requests, scheduler_output);
         m_sampler.decode(m_requests, logits);
 
         // perform post-processing of current step
@@ -114,7 +113,7 @@ public:
         return currently_finished_requests;
     }
 
-    bool has_unifnished_requests() const {
+    bool has_unfinished_requests() const {
         for (auto & sequence_group : m_requests) {
             if (!sequence_group.has_finished())
                 return true;
@@ -134,7 +133,7 @@ public:
         std::vector<GenerationResult> results;
         results.reserve(m_requests.size());
 
-        while (has_unifnished_requests()) {
+        while (has_unfinished_requests()) {
             std::vector<GenerationResult> partial_results = step();
             results.insert(results.end(), partial_results.begin(), partial_results.end());
         }
