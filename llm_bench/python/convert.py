@@ -335,6 +335,7 @@ def convert_seq2seq(args):
                         output_dir=save_dir_path,
                         output_names=output_names,
                         ov_config=OVConfig(dtype="fp16") if args.precision == "FP16" else None,
+                        stateful=False
                     )
                     save_tokenizer(tok, save_dir_path)
                 except Exception as ex:
@@ -591,6 +592,7 @@ def convert_sd_prepared_for_export_common(pipeline, models_and_export_configs, o
         output_dir=output_dir,
         output_names=files_subpaths,
         ov_config=OVConfig(dtype="fp16") if args.precision == "FP16" else None,
+        stateful=False
     )
 
 
