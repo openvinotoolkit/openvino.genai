@@ -98,15 +98,13 @@ struct Group {
     std::vector<Beam> min_heap;  // The worst of the best completed beams is the first
     bool done = false;
 
-    // finalize parameter introduced to match huggingface implementation
-    void finish(Beam&& beam, const Parameters& parameters, const bool finalize = false) {
-        size_t cur_len = beam.tokens.size() + 1;
+    void finish(Beam&& beam, const Parameters& parameters) {
+        beam.score /= std::pow(float(beam.tokens.size()), parameters.length_penalty);
 
-        if (finalize) {
-            cur_len -= 1;
+        if (beam.tokens.back() == parameters.eos_token) {
+            beam.tokens.pop_back();
         }
 
-        beam.score /= std::pow(float(cur_len), parameters.length_penalty);
         min_heap.push_back(std::move(beam));
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
         if (min_heap.size() > parameters.group_size) {
@@ -118,7 +116,7 @@ struct Group {
         if (min_heap.size() < parameters.group_size) {
             return;
         }
-        size_t cur_len = ongoing.front().tokens.size() + 1;
+        size_t cur_len = ongoing.front().tokens.size();
         float best_sum_logprobs = ongoing.front().score;
         float worst_score = min_heap.front().score;
         switch (parameters.stop_criteria) {
@@ -231,7 +229,6 @@ struct GroupBeamSearcher {
                     if (cand_idx >= parameters.group_size) {
                         continue;
                     }
-                    candidates.at(cand_idx).tokens.resize(candidates.at(cand_idx).tokens.size() - 1);
                     group->finish(std::move(candidates.at(cand_idx)), parameters);
                 } else {
                     group->ongoing.push_back(std::move(candidates.at(cand_idx)));
@@ -259,7 +256,7 @@ std::vector<std::vector<Beam>> finalize(GroupBeamSearcher&& group_beam_searcher)
     for (Group& group : group_beam_searcher.groups) {
         if (!group.done) {
             for (Beam& beam : group.ongoing) {
-                group.finish(std::move(beam), group_beam_searcher.parameters, true);
+                group.finish(std::move(beam), group_beam_searcher.parameters);
             }
         }
         finalized.push_back(std::move(group.min_heap));
