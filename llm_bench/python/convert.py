@@ -1380,6 +1380,22 @@ def main():
         action="store_true",
         help="Compress all layers including embeddings and prediction head",
     )
+    compression_group.add_argument(
+        "--dataset",
+        help=(
+            "Dataset parameters for data-aware compression in format path,name,split,item_name ",
+            "(for example \"wikitext,wikitext-2-v1,train[:1000],text\") ",
+            "path,name,split - parameters for load_dataset from datasets ",
+            "and item_name is field name in dataset with text."
+        ),
+        default=None,
+        type=str,
+    )
+    compression_group.add_argument(
+        "--awq",
+        action="store_true",
+        help="Apply AWQ algorithm during compression",
+    )
     add_stateful_model_arguments(parser)
 
     args = parser.parse_args()

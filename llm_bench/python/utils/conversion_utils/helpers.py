@@ -134,26 +134,47 @@ def get_ov_input_shapes(model, batch_size=1):
     return inputs
 
 
-def get_data_aware_args(ov_model, tokenizer, config, compression_args):
+def get_data_aware_args(ov_model, tokenizer, config, compression_args, args):
+    """initializes dict with data-aware compression parameters if defined dataset and tokenizer
+
+    Args:
+        ov_model : OpenVINO model for compression
+        tokenizer : tokenizer for ov_model
+        config : ov_model configuration
+        compression_args: compression arguments from model compression configuration
+        args : CLI args
+
+    Returns:
+        res: dict with data-aware compression parameters
+    """
     res = {}
-    if 'dataset' in compression_args and tokenizer is not None:
+    if tokenizer is None:
+        return res
+    dataset_params = None
+    if 'dataset' in compression_args:
         dataset_args = compression_args['dataset']
-        # for example "wikitext,wikitext-2-v1,train[:1000]"
-        path, name, split = dataset_args['name'].split(',')
+        dataset_params = dataset_args['name']
+        if 'sensitivity_metric' in dataset_args:
+            res['mode'] = dataset_args['sensitivity_metric']
+        if 'awq' in dataset_args:
+            res['awq'] = dataset_args['awq']
+    elif args.dataset is not None:
+        dataset_params = args.dataset
+        if args.awq:
+            res['awq'] = args.awq
+
+    if dataset_params is not None:
+        # for example "wikitext,wikitext-2-v1,train[:1000],text"
+        path, name, split, item_name = dataset_params.split(',')
         dataset = load_dataset(path, name, split=split)
 
         if path == 'wikitext':
             # filter short sentences
             dataset = dataset.filter(lambda example: len(example["text"]) > 128)
         input_shapes = get_ov_input_shapes(ov_model)
-        data_transform_func = partial(transform_fn, item_name=dataset_args['item_name'], tokenizer=tokenizer, input_shapes=input_shapes, config=config)
+        data_transform_func = partial(transform_fn, item_name=item_name, tokenizer=tokenizer, input_shapes=input_shapes, config=config)
         nncf_dataset = Dataset(dataset, data_transform_func)
         res['dataset'] = nncf_dataset
-        if 'sensitivity_metric' in dataset_args:
-            res['mode'] = dataset_args['sensitivity_metric']
-        if 'awq' in dataset_args:
-            res['awq'] = dataset_args['awq']
-
     return res
 
 
@@ -178,7 +199,7 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
         compression_args["all_layers"] = True
     log.info("Compression options:")
     log.info(compression_args)
-    compression_args.update(get_data_aware_args(ov_model, tok, config, compression_args))
+    compression_args.update(get_data_aware_args(ov_model, tok, config, compression_args, args))
     compressed_ov_model = compress_weights(ov_model, **compression_args)
     save_ov_model_helper(compressed_ov_model, out_path, model_name, fp16=fp16, tok=tok, config=config)
 
