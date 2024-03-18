@@ -3,10 +3,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from enum import Enum
-from pathlib import Path
+from functools import partial
 import logging as log
+from pathlib import Path
+from datasets import load_dataset
 import torch
+import numpy as np
 from nncf import compress_weights
+from nncf import Dataset
 from openvino import save_model
 from ..nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION
 from optimum.intel.openvino.configuration import _check_default_4bit_configs
@@ -89,6 +93,92 @@ def save_tokenizer(tokenizer, out_dir):
         log.error(f'tokenizer loading failed with {e}')
 
 
+def transform_fn(item, item_name, input_shapes, tokenizer, config, max_tokens=127):
+    tokenized_text = tokenizer(item[item_name], return_tensors="np")
+    input_ids = tokenized_text["input_ids"][:max_tokens]
+    attention_mask = tokenized_text["attention_mask"][:max_tokens]
+
+    inputs = {}
+    inputs["input_ids"] = input_ids
+
+    if "attention_mask" in input_shapes:
+        inputs["attention_mask"] = tokenized_text["attention_mask"]
+
+    if "position_ids" in input_shapes:
+        position_ids = np.cumsum(attention_mask, axis=1) - 1
+        position_ids[attention_mask == 0] = 1
+        inputs["position_ids"] = position_ids
+
+    batch_size = input_ids.shape[0]
+    if config.model_type == "bloom":
+        batch_size *= config.num_attention_heads
+
+    if "beam_idx" in input_shapes:
+        inputs["beam_idx"] = np.arange(batch_size, dtype=int)
+
+    for name, shape in input_shapes.items():
+        if name in inputs:
+            continue
+        inputs[name] = np.zeros(shape)
+
+    return inputs
+
+
+def get_ov_input_shapes(model, batch_size=1):
+    inputs = {}
+    for val in model.inputs:
+        name = val.any_name
+        shape = list(val.partial_shape.get_min_shape())
+        shape[0] = batch_size
+        inputs[name] = shape
+
+    return inputs
+
+
+def get_data_aware_args(ov_model, tokenizer, config, compression_args, args):
+    """initializes dict with data-aware compression parameters if defined dataset and tokenizer
+
+    Args:
+        ov_model : OpenVINO model for compression
+        tokenizer : tokenizer for ov_model
+        config : ov_model configuration
+        compression_args: compression arguments from model compression configuration
+        args : CLI args
+
+    Returns:
+        res: dict with data-aware compression parameters
+    """
+    res = {}
+    if tokenizer is None:
+        return res
+    dataset_params = None
+    if 'dataset' in compression_args:
+        dataset_args = compression_args['dataset']
+        dataset_params = dataset_args['name']
+        if 'sensitivity_metric' in dataset_args:
+            res['mode'] = dataset_args['sensitivity_metric']
+        if 'awq' in dataset_args:
+            res['awq'] = dataset_args['awq']
+    elif args.dataset is not None:
+        dataset_params = args.dataset
+        if args.awq:
+            res['awq'] = args.awq
+
+    if dataset_params is not None:
+        # for example "wikitext,wikitext-2-v1,train[:1000],text"
+        path, name, split, item_name = dataset_params.split(',')
+        dataset = load_dataset(path, name, split=split)
+
+        if path == 'wikitext':
+            # filter short sentences
+            dataset = dataset.filter(lambda example: len(example["text"]) > 128)
+        input_shapes = get_ov_input_shapes(ov_model)
+        data_transform_func = partial(transform_fn, item_name=item_name, tokenizer=tokenizer, input_shapes=input_shapes, config=config)
+        nncf_dataset = Dataset(dataset, data_transform_func)
+        res['dataset'] = nncf_dataset
+    return res
+
+
 def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_weights_format="INT8", fp16=False, args={}, model_name="openvino_model"):
     compression_args = None
     if "INT8" in compress_weights_format and "INT8_ASYM" in COMPRESSION_OPTIONS:
@@ -112,6 +202,7 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
         compression_args["all_layers"] = True
     log.info("Compression options:")
     log.info(compression_args)
+    compression_args.update(get_data_aware_args(ov_model, tok, config, compression_args, args))
     compressed_ov_model = compress_weights(ov_model, **compression_args)
     save_ov_model_helper(compressed_ov_model, out_path, model_name, fp16=fp16, tok=tok, config=config)
 
