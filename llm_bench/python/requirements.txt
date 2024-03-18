@@ -13,7 +13,7 @@ git+https://github.com/openvinotoolkit/nncf.git
 packaging
 psutil
 timm
-tiktoken
+openvino-tokenizers[transformers]
 onnx
 einops
 transformers_stream_generator

@@ -2,14 +2,17 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import logging as log
+import warnings
 from enum import Enum
 from pathlib import Path
-import logging as log
+from typing import Union
+
 import torch
 from nncf import compress_weights
 from openvino import save_model
+from optimum.intel.utils.import_utils import is_openvino_tokenizers_available
 from ..nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION
-import warnings
 
 
 class BackendType(Enum):
@@ -81,11 +84,21 @@ def get_fp_path(args, model_subpath):
     return None
 
 
-def save_tokenizer(tokenizer, out_dir):
+def save_tokenizer(tokenizer, out_dir: Union[str, Path], save_ov_tokenizer: bool = False):
     try:
         tokenizer.save_pretrained(out_dir)
     except Exception as e:
-        log.error(f'tokenizer loading failed with {e}')
+        log.error(f"Huggingface tokenizer loading failed with {e}")
+
+    if not save_ov_tokenizer or not is_openvino_tokenizers_available():
+        return
+
+    from optimum.exporters.openvino.convert import export_tokenizer
+
+    try:
+        export_tokenizer(tokenizer, out_dir)
+    except Exception as e:
+        log.error(f"OpenVINO tokenizer saving failed with {e}")
 
 
 def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_weights_format="INT8", fp16=False, args={}, model_name="openvino_model"):
@@ -117,7 +130,7 @@ def save_ov_model_helper(ov_model, out_path, model_name='openvino_model', fp16=F
     model_name = model_name or "openvino_model"
     save_model(ov_model, Path(out_path) / f'{model_name}.xml', compress_to_fp16=fp16)
     if tok is not None:
-        save_tokenizer(tok, out_path)
+        save_tokenizer(tok, out_path, save_ov_tokenizer=True)
     if config is not None:
         config.save_pretrained(out_path)
 

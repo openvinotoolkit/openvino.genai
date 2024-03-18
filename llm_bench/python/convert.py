@@ -169,7 +169,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             model_kwargs={},
             stateful=not args.disable_stateful,
         )
-        save_tokenizer(tok, ov_out_dir)
+        save_tokenizer(tok, ov_out_dir, save_ov_tokenizer=True)
 
     if is_ov_compression(args) and not gptq_applied:
         if compress_only:
@@ -246,7 +246,7 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
                 model_kwargs={},
                 stateful=not args.disable_stateful,
             )
-            save_tokenizer(tok, pt_out_dir)
+            save_tokenizer(tok, pt_out_dir, save_ov_tokenizer=True)
     return
 
 
@@ -340,7 +340,7 @@ def convert_seq2seq(args):
                         output_names=output_names,
                         compression_option="fp16" if args.precision == "FP16" else None,
                     )
-                    save_tokenizer(tok, save_dir_path)
+                    save_tokenizer(tok, save_dir_path, save_ov_tokenizer=True)
                 except Exception as ex:
                     log.warning(f"PT weights compression failed with {ex}, please use OpenVINO backend instead")
 
@@ -372,7 +372,7 @@ def convert_seq2seq(args):
         model.save_pretrained(ov_out_dir)
         end1 = time.perf_counter()
         log.info(f"Serialization total time {end1 - start1}s")
-        save_tokenizer(tok, ov_out_dir)
+        save_tokenizer(tok, ov_out_dir, save_ov_tokenizer=True)
         del model
         gc.collect()
 
