@@ -9,6 +9,7 @@ import torch
 from nncf import compress_weights
 from openvino import save_model
 from ..nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION
+from optimum.intel.openvino.configuration import _check_default_4bit_configs
 import warnings
 
 
@@ -93,11 +94,13 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
     if "INT8" in compress_weights_format and "INT8_ASYM" in COMPRESSION_OPTIONS:
         warnings.warn("Usage INT8 mode is deprecated and will be removed soon. Please use INT8_ASYM instead", DeprecationWarning)
     if "4BIT_DEFAULT" in compress_weights_format:
-        model_id = out_path.parents[3].name
-        if model_id in INT4_MODEL_CONFIGURATION:
-            compression_args = INT4_MODEL_CONFIGURATION[model_id]
-        else:
-            compression_args = COMPRESSION_OPTIONS["INT4_SYM"]
+        compression_args = _check_default_4bit_configs(config)
+        if compression_args is None:
+            model_id = out_path.parents[3].name
+            if model_id in INT4_MODEL_CONFIGURATION:
+                compression_args = INT4_MODEL_CONFIGURATION[model_id]
+            else:
+                compression_args = COMPRESSION_OPTIONS["INT4_SYM"]
 
     if compression_args is None:
         compression_args = COMPRESSION_OPTIONS[compress_weights_format]
