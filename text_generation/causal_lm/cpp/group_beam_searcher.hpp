@@ -44,7 +44,10 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std:
     return res;
 }
 
-struct Token {float log_prob; int64_t idx;};
+struct Token {
+    float log_prob;
+    int64_t idx;
+};
 
 std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
     if (logits.get_shape().at(0) <= batch_idx) {
@@ -55,10 +58,10 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
     size_t sequence_offset = (logits.get_shape().at(1) - 1) * vocab_size;
     const float* beam_logits = logits.data<const float>() + batch_offset + sequence_offset;
     float max_logit = *std::max_element(beam_logits, beam_logits + vocab_size);
-    float log_sum = std::log(std::accumulate(
-        beam_logits, beam_logits + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
+    float log_sum = std::log(
+        std::accumulate(beam_logits, beam_logits + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
             return accumulated + std::exp(to_add - max_logit);
-    }));
+        }));
     std::vector<Token> tokens;
     tokens.reserve(vocab_size);
     for (size_t idx = 0; idx < vocab_size; ++idx) {
@@ -77,7 +80,7 @@ bool greater(const Beam& left, const Beam& right) {
     return left.score > right.score;
 }
 
-enum class StopCriteria {early, heuristic, never};
+enum class StopCriteria { early, heuristic, never };
 
 struct Parameters {
     std::vector<int64_t> prompt;
@@ -90,11 +93,13 @@ struct Parameters {
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
     // There's no way to extract special token values from the tokenizer for now
     int64_t eos_token = 2;
-    std::function<bool(const Beam&)> early_finish = [](const Beam&){return false;};
+    std::function<bool(const Beam&)> early_finish = [](const Beam&) {
+        return false;
+    };
 };
 
 struct Group {
-    std::vector<Beam> ongoing;  // Best beams in front
+    std::vector<Beam> ongoing;   // Best beams in front
     std::vector<Beam> min_heap;  // The worst of the best completed beams is the first
     bool done = false;
 
@@ -121,26 +126,30 @@ struct Group {
         float best_sum_logprobs = ongoing.front().score;
         float worst_score = min_heap.front().score;
         switch (parameters.stop_criteria) {
-            case StopCriteria::early:
-                done = true;
-                return;
-            case StopCriteria::heuristic: {
-                float highest_attainable_score = best_sum_logprobs / std::pow(float(cur_len), parameters.length_penalty);
-                done = worst_score >= highest_attainable_score;
-                return;
-            }
-            case StopCriteria::never: {
-                size_t length = parameters.length_penalty > 0.0 ? parameters.max_new_tokens : cur_len;
-                float highest_attainable_score = best_sum_logprobs / std::pow(float(length), parameters.length_penalty);
-                done = worst_score >= highest_attainable_score;
-                return;
-            }
-            default: throw std::runtime_error("Never reached");
+        case StopCriteria::early:
+            done = true;
+            return;
+        case StopCriteria::heuristic: {
+            float highest_attainable_score = best_sum_logprobs / std::pow(float(cur_len), parameters.length_penalty);
+            done = worst_score >= highest_attainable_score;
+            return;
+        }
+        case StopCriteria::never: {
+            size_t length = parameters.length_penalty > 0.0 ? parameters.max_new_tokens : cur_len;
+            float highest_attainable_score = best_sum_logprobs / std::pow(float(length), parameters.length_penalty);
+            done = worst_score >= highest_attainable_score;
+            return;
+        }
+        default:
+            throw std::runtime_error("Never reached");
         }
     }
 };
 
-struct TokenToBeam {int64_t token_idx; int32_t beam_idx;};
+struct TokenToBeam {
+    int64_t token_idx;
+    int32_t beam_idx;
+};
 
 // GroupBeamSearcher processes logits prduced by a language model and accumulates beams using group beam search
 // algorithm. select_next_tokens() returns token ids selected by the algorithm and corresponding beam ids. These values
