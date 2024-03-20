@@ -97,8 +97,15 @@ struct Group {
     std::vector<Beam> ongoing;  // Best beams in front
     std::vector<Beam> min_heap;  // The worst of the best completed beams is the first
     bool done = false;
+
     void finish(Beam&& beam, const Parameters& parameters) {
-        beam.score /= std::pow(float(parameters.prompt.size() + beam.tokens.size()), parameters.length_penalty);
+        beam.score /= std::pow(float(beam.tokens.size()), parameters.length_penalty);
+
+        // HF implementation counts eos_token for length penalty calculation
+        if (beam.tokens.back() == parameters.eos_token) {
+            beam.tokens.pop_back();
+        }
+
         min_heap.push_back(std::move(beam));
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
         if (min_heap.size() > parameters.group_size) {
@@ -110,7 +117,7 @@ struct Group {
         if (min_heap.size() < parameters.group_size) {
             return;
         }
-        size_t cur_len = parameters.prompt.size() + ongoing.front().tokens.size();
+        size_t cur_len = ongoing.front().tokens.size();
         float best_sum_logprobs = ongoing.front().score;
         float worst_score = min_heap.front().score;
         switch (parameters.stop_criteria) {
@@ -173,7 +180,7 @@ struct GroupBeamSearcher {
                 continue;
             }
             std::vector<Beam> candidates;
-            candidates.reserve(2 * parameters.group_size);
+            candidates.reserve(parameters.group_size * 2 * parameters.group_size);
             for (const Beam& beam : group->ongoing) {
                 std::vector<Token> tokens = log_softmax(logits, beam.global_beam_idx);
                 for (auto prev_group = groups.cbegin(); prev_group != group; ++prev_group) {
@@ -223,7 +230,6 @@ struct GroupBeamSearcher {
                     if (cand_idx >= parameters.group_size) {
                         continue;
                     }
-                    candidates.at(cand_idx).tokens.resize(candidates.at(cand_idx).tokens.size() - 1);
                     group->finish(std::move(candidates.at(cand_idx)), parameters);
                 } else {
                     group->ongoing.push_back(std::move(candidates.at(cand_idx)));

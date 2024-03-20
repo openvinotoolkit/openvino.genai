@@ -13,7 +13,6 @@ import utils.hook_greedy_search
 import utils.hook_beam_search
 
 from utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
-from .ov_model_classes import register_normalized_configs
 import openvino.runtime.opset13 as opset
 
 
@@ -136,7 +135,6 @@ def create_text_gen_model(model_path, device, **kwargs):
         model_path = model_path.parents[2]
 
     ov_config = kwargs['config']
-    register_normalized_configs()
 
     model_path_existed = Path(model_path).exists()
     # load model

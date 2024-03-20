@@ -477,12 +477,6 @@ def get_argprser():
         '--convert_tokenizer', action='store_true', help='Convert tokenizer to OpenVINO format'
     )
     parser.add_argument(
-        '--interleave',
-        action='store_true',
-        help='if the value is True, input prompts are processed in interleave manner'
-        'if the value is False (default), input prompts are processed in subsequent manner'
-    )
-    parser.add_argument(
         '--subsequent',
         action='store_true',
         help='if the value is True, input prompts are processed in subsequent manner'
