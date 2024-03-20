@@ -864,16 +864,12 @@ class CodeGen2Attention(nn.Module):
 
         return outputs
 
-def rotate_every_two(x: torch.Tensor) -> torch.Tensor:
-    x1 = x[:, :, :, ::2]
-    x2 = x[:, :, :, 1::2]
-    x = torch.stack((-x2, x1), dim=-1)
-    return x.flatten(-2)  # in einsum notation: rearrange(x, '... d j -> ... (d j)')
 
-def apply_rotary_pos_emb(tensor: torch.Tensor, sin: torch.Tensor, cos: torch.Tensor) -> torch.Tensor:
+def gptj_apply_rotary_pos_emb(tensor: torch.Tensor, sin: torch.Tensor, cos: torch.Tensor) -> torch.Tensor:
     sin = torch.repeat_interleave(sin[:, :, None, :], 2, 3)
     cos = torch.repeat_interleave(cos[:, :, None, :], 2, 3)
     return (tensor * cos) + (rotate_every_two(tensor) * sin)
+
 
 def gptj_forward(
     self,
@@ -895,7 +891,7 @@ def gptj_forward(
     query = self._split_heads(query, self.num_attention_heads, self.head_dim, True)
     key = self._split_heads(key, self.num_attention_heads, self.head_dim, True)
     value = self._split_heads(value, self.num_attention_heads, self.head_dim, False)
-    
+
     sincos = self.embed_positions[position_ids]
     sin, cos = torch.split(sincos, sincos.shape[-1] // 2, dim=-1)
     print("patched gptj model with simplied position_ids")
@@ -906,14 +902,14 @@ def gptj_forward(
         q_rot = query[:, :, :, : self.rotary_dim]
         q_pass = query[:, :, :, self.rotary_dim :]
 
-        k_rot = apply_rotary_pos_emb(k_rot, sin, cos)
-        q_rot = apply_rotary_pos_emb(q_rot, sin, cos)
+        k_rot = gptj_apply_rotary_pos_emb(k_rot, sin, cos)
+        q_rot = gptj_apply_rotary_pos_emb(q_rot, sin, cos)
 
         key = torch.cat([k_rot, k_pass], dim=-1)
         query = torch.cat([q_rot, q_pass], dim=-1)
     else:
-        key = apply_rotary_pos_emb(key, sin, cos)
-        query = apply_rotary_pos_emb(query, sin, cos)
+        key = gptj_apply_rotary_pos_emb(key, sin, cos)
+        query = gptj_apply_rotary_pos_emb(query, sin, cos)
 
     key = key.permute(0, 2, 1, 3)
     query = query.permute(0, 2, 1, 3)
@@ -944,12 +940,14 @@ def gptj_forward(
 
     return outputs  # a, present, (attentions)
 
+
 def raise_on_head_mask(head_mask: Optional[torch.Tensor]):
     if head_mask is not None:
         raise ValueError(
             "layer_head_mask different than None is unsupported for now with BetterTransformer, please"
             "open a PR or an issue at https://github.com/huggingface/optimum."
         )
+
 
 def gptj_wrapped_scaled_dot_product(
     self,
@@ -995,7 +993,7 @@ def gptj_wrapped_scaled_dot_product(
             causal_mask = torch.where(causal_mask, 0, mask_value)
 
             # torch.Tensor.expand does no memory copy
-            
+
             if attention_mask is not None:
                 attention_mask = causal_mask + attention_mask
             else:
@@ -1011,6 +1009,7 @@ def gptj_wrapped_scaled_dot_product(
         sdpa_result = sdpa_result.to(value.dtype)
 
     return sdpa_result, None
+
 
 def register_bettertransformer_config():
     from optimum.bettertransformer.models import BetterTransformerManager
@@ -1145,11 +1144,11 @@ def register_bettertransformer_config():
             _bt_prepare_decoder_attention_mask,
         ),
     }
-    
+
     BetterTransformerManager.MODEL_MAPPING["gptj"] = {
         "GPTJAttention": GPTJAttentionLayerBetterTransformer
     }
-    
+
     BetterTransformerManager.NOT_REQUIRES_NESTED_TENSOR.add("stablelm_epoch")
     BetterTransformerManager.NOT_REQUIRES_STRICT_VALIDATION.add("stablelm_epoch")
     BetterTransformerManager.MODEL_MAPPING["codegen2"] = {
