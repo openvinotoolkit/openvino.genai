@@ -309,14 +309,14 @@ jobs:
           convert_tokenizer ./Phi-1_5/pytorch/dldt/FP16/ --output ./Phi-1_5/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
           timeout 50s ./build/greedy_causal_lm ./Phi-1_5/pytorch/dldt/FP16/ "Alan Turing was a" > ./pred_greedy.txt
           timeout 50s ./build/beam_search_causal_lm ./Phi-1_5/pytorch/dldt/FP16/ "Alan Turing was a" > ./pred_beam.txt
-      - name: Compare Beam search
+      - name: Compare
         run: |
           python -c "
           import transformers
           with open('pred_greedy.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('microsoft/phi-1_5')
-          tokenized = tokenizer("Alan Turing was a", return_tensors='pt')
+          tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
           for output in transformers.AutoModelForCausalLM.from_pretrained('microsoft/phi-1_5').generate(**tokenized, max_length=100, do_sample=False):
               ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
               idx = predictions.find(ref)
@@ -324,4 +324,4 @@ jobs:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo Beam Search Tests passed
+          echo Phi-1_5 passed
