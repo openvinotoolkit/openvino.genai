@@ -136,6 +136,7 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
    1. https://huggingface.co/databricks/dolly-v2-3b
 8. Phi
    1. https://huggingface.co/microsoft/phi-2
+   2. https://huggingface.co/microsoft/phi-1_5
 9. [notus-7b-v1](https://huggingface.co/argilla/notus-7b-v1)
 10. [zephyr-7b-beta](https://huggingface.co/HuggingFaceH4/zephyr-7b-beta)
 
