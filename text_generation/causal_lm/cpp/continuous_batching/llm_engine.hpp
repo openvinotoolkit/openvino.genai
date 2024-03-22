@@ -49,9 +49,7 @@ class LLMEngine {
         auto new_end = std::remove_if(m_requests.begin(), m_requests.end(), [] (const SequenceGroup& seq_group) {
             return seq_group.has_finished();
         });
-        std::cout << "Before " << m_requests.size() << std::endl;
         m_requests.erase(new_end, m_requests.end());
-        std::cout << "After " << m_requests.size() << std::endl;
     }
 public:
     LLMEngine(ov::InferRequest& request,
@@ -78,7 +76,7 @@ public:
         Scheduler::Output scheduler_output = m_scheduler.schedule(m_requests);
         m_cache_manager.copy_blocks(scheduler_output.m_block_copy_map);
         ov::Tensor logits = m_model_runner.forward(m_requests, scheduler_output);
-        Sampler::Output sampler_output = m_sampler.sample(m_requests, logits);
+        SamplerOutput sampler_output = m_sampler.sample(m_requests, logits);
 
         // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
 

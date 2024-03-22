@@ -12,7 +12,7 @@ target_include_directories(${TARGET_NAME} PRIVATE continuous_batching)
 target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::runtime)
-set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 17)
+set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 20)
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON)
 
 set(TARGET_NAME greedy_sample)

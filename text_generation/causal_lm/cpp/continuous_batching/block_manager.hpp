@@ -7,6 +7,8 @@
 #include <vector>
 #include <map>
 
+#include "sequence_group.hpp"
+
 class KVCacheBlock {
     std::shared_ptr<int> m_ref_count = std::make_shared<int>(0);
     int m_index;
@@ -71,7 +73,6 @@ public:
         : m_allocator(num_blocks) { }
 
     const std::vector<KVCacheBlock>& get_block_table(uint64_t seq_id) {
-        std::cout << "Get blocks for sequece " << seq_id << std::endl;
         OPENVINO_ASSERT(m_block_table.count(seq_id) == 1);
         return m_block_table[seq_id];
     }
@@ -86,7 +87,6 @@ public:
 
     void allocate(Sequence::CPtr sequence, size_t num_blocks) {
         OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
-        std::cout << "Adding blocks " << num_blocks << " for sequence " << sequence->get_id() << std::endl;
 
         for (size_t i = 0; i < num_blocks; ++i) {
             m_block_table[sequence->get_id()].push_back(m_allocator.allocate_block());
@@ -94,7 +94,6 @@ public:
     }
 
     void fork_sequence(Sequence::CPtr parent, Sequence::CPtr child) {
-        std::cout << "Fork for sequence " << parent->get_id() << " to " << child->get_id() << std::endl;
         // note, that reference counters are automatically incremented
         m_block_table[child->get_id()] = m_block_table[parent->get_id()];
     }
@@ -106,7 +105,6 @@ public:
             m_allocator.free(block);
         }
 
-        std::cout << "Free for sequence " << seq_id << std::endl;
         m_block_table.erase(seq_id);
     }
 

@@ -229,7 +229,6 @@ public:
 
     // returns context length taking into account scheduled tokens
     size_t get_context_len() const {
-        std::cout << "Request id " << get_request_id() << " " << m_sequences[0]->get_generated_len() << std::endl;
         OPENVINO_ASSERT(!has_finished());
         return get_num_processed_tokens() + get_num_scheduled_tokens();
     }
@@ -278,5 +277,9 @@ public:
     Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
         m_sequences.emplace_back(Sequence::fork(sequence));
         return m_sequences.back();
+    }
+
+    const SamplingParameters& get_sampling_parameters() const {
+        return m_sampling_params;
     }
 };

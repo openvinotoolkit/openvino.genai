@@ -106,18 +106,16 @@ public:
         m_request.set_tensor("context_lens", context_lens);
         m_request.set_tensor("block_tables", block_tables);
 
-        print_tensor("input_ids", input_ids);
-        print_tensor("position_ids", position_ids);
+        // print_tensor("input_ids", input_ids);
+        // print_tensor("position_ids", position_ids);
 
-        print_tensor("is_prompt", is_prompt);
-        print_tensor("slot_mapping", slot_mapping);
-        print_tensor("max_context_len", max_context_len);
-        print_tensor("context_lens", context_lens);
-        print_tensor("block_tables", block_tables);
+        // print_tensor("is_prompt", is_prompt);
+        // print_tensor("slot_mapping", slot_mapping);
+        // print_tensor("max_context_len", max_context_len);
+        // print_tensor("context_lens", context_lens);
+        // print_tensor("block_tables", block_tables);
 
-        std::cout << "!" << std::endl;
         m_request.infer();
-        std::cout << "!!" << std::endl;
 
         // return logits
         return m_request.get_output_tensor();

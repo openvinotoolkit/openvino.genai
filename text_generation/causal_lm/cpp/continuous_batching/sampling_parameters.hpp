@@ -53,4 +53,12 @@ struct SamplingParameters {
         multimomial.top_k = 20;
         return multimomial;
     }
+
+    bool is_gready_sampling() const {
+        return temperature == 0.0f && !is_beam_search();
+    }
+
+    bool is_beam_search() const {
+        return n_groups * group_size > 1;
+    }
 };
