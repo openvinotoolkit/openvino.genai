@@ -192,6 +192,32 @@ jobs:
           source ./ov/setupvars.sh
           convert_tokenizer ./Qwen-7B-Chat/pytorch/dldt/FP16/ --output ./Qwen-7B-Chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
           timeout 50s ./build/beam_search_causal_lm ./Qwen-7B-Chat/pytorch/dldt/FP16/ 69 > ./pred.txt
+  cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
+    runs-on: ubuntu-20.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id Qwen/Qwen1.5-7B-Chat --output_dir ./Qwen1.5-7B-Chat/ --precision FP16 &
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake --build ./build/ --config Release -j
+          wait
+      - name: Run
+        run: |
+          source ./ov/setupvars.sh
+          convert_tokenizer ./Qwen1.5-7B-Chat/pytorch/dldt/FP16/ --output ./Qwen1.5-7B-Chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
+          timeout 50s ./build/beam_search_causal_lm ./Qwen1.5-7B-Chat/pytorch/dldt/FP16/ "你好！" > ./pred_qwen15.txt
   cpp-beam_search_causal_lm-Phi-2:
     runs-on: ubuntu-20.04-16-cores
     steps:
