@@ -10,28 +10,7 @@
 #include "model_runner.hpp"
 #include "scheduler.hpp"
 
-
-template <typename T>
-void print_array(T * array, size_t size) {
-    std::cout << " => [ ";
-    for (size_t i = 0; i < size; ++i) {
-        std::cout << array[i] << " ";
-    }
-    std::cout << " ] " << std::endl;
-}
-
-void print_tensor(std::string name, ov::Tensor tensor) {
-    std::cout << name;
-    if (tensor.get_element_type() == ov::element::i32) {
-        print_array(tensor.data<int>(), tensor.get_size());
-    } else if (tensor.get_element_type() == ov::element::i64) {
-        print_array(tensor.data<int64_t>(), tensor.get_size());
-    } else if (tensor.get_element_type() == ov::element::f32) {
-        print_array(tensor.data<float>(), tensor.get_size());
-    } else if (tensor.get_element_type() == ov::element::boolean) {
-        print_array(tensor.data<bool>(), tensor.get_size());
-    }
-}
+#include "debug_utils.hpp"
 
 struct GenerationResult {
     // request ID
@@ -47,7 +26,7 @@ struct GenerationResult {
         result.m_request_id = sequence_group.get_request_id();
 
         for (size_t sequence_id = 0; sequence_id < sequence_group.num_finished_seqs(); ++sequence_id) {
-            result.m_generation_ids.push_back(sequence_group[sequence_id].get_generated_ids());
+            result.m_generation_ids.push_back(sequence_group[sequence_id]->get_generated_ids());
         }
 
         // TODO: track this information
@@ -66,10 +45,13 @@ class LLMEngine {
     // current requests to process
     std::vector<SequenceGroup> m_requests;
 
-    void _free_finished_groups() {
-        std::remove_if(m_requests.begin(), m_requests.end(), [] (const SequenceGroup& seq_group) {
+    void _free_finished_requests() {
+        auto new_end = std::remove_if(m_requests.begin(), m_requests.end(), [] (const SequenceGroup& seq_group) {
             return seq_group.has_finished();
         });
+        std::cout << "Before " << m_requests.size() << std::endl;
+        m_requests.erase(new_end, m_requests.end());
+        std::cout << "After " << m_requests.size() << std::endl;
     }
 public:
     LLMEngine(ov::InferRequest& request,
@@ -95,8 +77,10 @@ public:
     std::vector<GenerationResult> step() {
         Scheduler::Output scheduler_output = m_scheduler.schedule(m_requests);
         m_cache_manager.copy_blocks(scheduler_output.m_block_copy_map);
-        ov::Tensor logits = m_model_runner.step(m_requests, scheduler_output);
-        m_sampler.decode(m_requests, logits);
+        ov::Tensor logits = m_model_runner.forward(m_requests, scheduler_output);
+        Sampler::Output sampler_output = m_sampler.sample(m_requests, logits);
+
+        // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
 
         // perform post-processing of current step
 
@@ -108,7 +92,7 @@ public:
             }
         }
 
-        _free_finished_groups();
+        _free_finished_requests();
 
         return currently_finished_requests;
     }
@@ -143,6 +127,7 @@ public:
             return r1.m_request_id < r2.m_request_id;
         });
 
+        OPENVINO_ASSERT(results.size() == prompts.size());
         return results;
     }
 };

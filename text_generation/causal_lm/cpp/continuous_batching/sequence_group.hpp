@@ -22,17 +22,40 @@ class Sequence {
     }
 
     TokenIds m_generated_ids;
-    uint64_t m_sequence_id = _get_next_sequence_id();
+    uint64_t m_id = _get_next_sequence_id();
     SequenceStatus m_status = SequenceStatus::WAITING;
     float m_cumulative_log_prob = 0.0f;
 
 public:
+    using Ptr = std::shared_ptr<Sequence>;
+    using CPtr = std::shared_ptr<const Sequence>;
+
+    // don't use directly
+    Sequence() = default;
+
+    // don't use directly
+    Sequence(const Sequence& seq) :
+        m_generated_ids(seq.m_generated_ids),
+        m_status(seq.m_status),
+        m_cumulative_log_prob(seq.m_cumulative_log_prob) {
+        OPENVINO_ASSERT(seq.m_id != m_id);
+    }
+
+
+    static Sequence::Ptr create() {
+        return std::make_shared<Sequence>();
+    }
+
+    static Sequence::Ptr fork(Sequence::CPtr sequence) {
+        return std::make_shared<Sequence>(*sequence);
+    }
+
     bool operator ==(const Sequence& other) const {
-        return other.m_sequence_id == m_sequence_id;
+        return other.m_id == m_id;
     }
 
     uint64_t get_id() const {
-        return m_sequence_id;
+        return m_id;
     }
 
     bool has_finished() const {
@@ -49,12 +72,15 @@ public:
         m_generated_ids.push_back(token_id);
     }
 
+    size_t get_generated_len() const {
+        return m_generated_ids.size();
+    }
+
     const TokenIds & get_generated_ids() const {
         return m_generated_ids;
     }
 
-    // TODO: implement
-    float get_beam_search_scope() const {
+    float get_cumulative_log_probs() const {
         return m_cumulative_log_prob;
     }
 };
@@ -65,10 +91,10 @@ public:
 //   via reference counter machanism on BlockManager level
 class SequenceGroup {
     uint64_t m_request_id;
-    std::vector<Sequence> m_sequences;
+    std::vector<Sequence::Ptr> m_sequences;
     SamplingParameters m_sampling_params;
     TokenIds m_prompt_ids;
-
+ 
     // amount of processed tokens, e.g. prompt can be processed using multiple consequence inferences
     // so, we need to track which part of the prompt we have already processed
     size_t m_num_processed_tokens = 0;
@@ -85,23 +111,26 @@ class SequenceGroup {
         : m_request_id(request_id),
           m_sampling_params(sampling_params) { }
 public:
-    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const SamplingParameters& sampling_params) :
-        SequenceGroup(request_id, sampling_params) {
-        add_sequence(Sequence{});
+    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const SamplingParameters& sampling_params)
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params) {
     }
 
-    SequenceGroup(uint64_t request_id, const ov::Tensor& input_ids, const SamplingParameters& sampling_params) :
-        SequenceGroup(request_id, sampling_params) {
-        add_sequence(Sequence{});
+    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const SamplingParameters& sampling_params)
+        : m_request_id(request_id),
+          m_sampling_params(sampling_params) {
+        add_sequence(Sequence::create());
+
+        m_prompt_ids.resize(input_ids.get_size());
+        std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), m_prompt_ids.begin());
     }
 
-    void add_sequence(const Sequence & sequence) {
-        m_sequences.push_back(sequence);
+    void add_sequence(const Sequence::Ptr & sequence) {
+        m_sequences.emplace_back(sequence);
     }
 
     void remove_sequence(uint64_t sequence_id) {
-        OPENVINO_ASSERT(std::remove_if(m_sequences.begin(), m_sequences.end(), [sequence_id] (const Sequence & seq) {
-            return seq.get_id() == sequence_id;
+        OPENVINO_ASSERT(std::remove_if(m_sequences.begin(), m_sequences.end(), [sequence_id] (Sequence::Ptr seq) {
+            return seq->get_id() == sequence_id;
         }) != m_sequences.end(), "Failed to remove sequence with specified ID");
     }
 
@@ -114,12 +143,12 @@ public:
         return m_max_content_len >= get_prompt_len();
     }
 
-    const Sequence& operator[] (size_t index) const {
+    const Sequence::CPtr operator[] (size_t index) const {
         OPENVINO_ASSERT(m_sequences.size() > index);
         return m_sequences[index];
     }
 
-    Sequence& operator[] (size_t index) {
+    Sequence::Ptr operator[] (size_t index) {
         OPENVINO_ASSERT(m_sequences.size() > index);
         return m_sequences[index];
     }
@@ -129,8 +158,8 @@ public:
     }
 
     size_t num_finished_seqs() const {
-        return std::count_if(m_sequences.begin(), m_sequences.end(), [] (const Sequence& seq) {
-            return seq.has_finished();
+        return std::count_if(m_sequences.begin(), m_sequences.end(), [] (Sequence::CPtr seq) {
+            return seq->has_finished();
         });
     }
 
@@ -142,11 +171,38 @@ public:
         return num_running_seqs() == 0;
     }
 
-    std::vector<Sequence> get_running_sequences() const {
-        std::vector<Sequence> running_seqs;
+    std::vector<Sequence::Ptr> get_finished_sequences() const {
+        std::vector<Sequence::Ptr> finished_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (!m_sequences[seq_id].has_finished()) {
-                running_seqs.push_back(m_sequences[seq_id]);
+            if (m_sequences[seq_id]->has_finished()) {
+                finished_seqs.push_back(m_sequences[seq_id]);
+            }
+        }
+
+        // do we need to sort sequences here or sampler can handle it for us?
+        std::sort(finished_seqs.begin(), finished_seqs.end(), [] (Sequence::CPtr s1, Sequence::CPtr s2) {
+            return s1->get_cumulative_log_probs() > s2->get_cumulative_log_probs();
+        });
+
+        return finished_seqs;
+    }
+
+    std::vector<Sequence::Ptr> get_running_sequences() {
+        std::vector<Sequence::Ptr> running_seqs;
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (!m_sequences[seq_id]->has_finished()) {
+                running_seqs.emplace_back(m_sequences[seq_id]);
+            }
+        }
+
+        return running_seqs;
+    }
+
+    std::vector<Sequence::CPtr> get_running_sequences() const {
+        std::vector<Sequence::CPtr> running_seqs;
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (!m_sequences[seq_id]->has_finished()) {
+                running_seqs.emplace_back(m_sequences[seq_id]);
             }
         }
 
@@ -173,6 +229,7 @@ public:
 
     // returns context length taking into account scheduled tokens
     size_t get_context_len() const {
+        std::cout << "Request id " << get_request_id() << " " << m_sequences[0]->get_generated_len() << std::endl;
         OPENVINO_ASSERT(!has_finished());
         return get_num_processed_tokens() + get_num_scheduled_tokens();
     }
@@ -216,5 +273,10 @@ public:
     // requires number of physical blocks for next generation
     size_t get_num_blocks() const {
         return (get_context_len() + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    }
+
+    Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
+        m_sequences.emplace_back(Sequence::fork(sequence));
+        return m_sequences.back();
     }
 };

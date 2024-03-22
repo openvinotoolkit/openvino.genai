@@ -66,10 +66,6 @@ struct TextStreamer {
 }  // namespace
 
 int main(int argc, char* argv[]) try {
-    if (argc != 3) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>'");
-    }
-
     //
     // Compile models
     //
@@ -79,11 +75,11 @@ int main(int argc, char* argv[]) try {
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(
-        std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
+        "/home/sandye51/Documents/Programming/git_repo/vllm/openvino_tokenizer.xml", "CPU").create_infer_request();
     ov::InferRequest detokenizer = core.compile_model(
-        std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
+        "/home/sandye51/Documents/Programming/git_repo/vllm/openvino_detokenizer.xml", "CPU").create_infer_request();
     // The model can be compiled for GPU as well
-    std::shared_ptr<ov::Model> model = core.read_model(std::string{argv[1]} + "/vllm_optimum_openvino_model.xml");
+    std::shared_ptr<ov::Model> model = core.read_model("/home/sandye51/Documents/Programming/git_repo/vllm/vllm_optimum_openvino_model.xml");
     ov::InferRequest request = core.compile_model(model, "CPU").create_infer_request();
 
     //
@@ -101,8 +97,8 @@ int main(int argc, char* argv[]) try {
 
     std::vector<SamplingParameters> sampling_params_examples {
         SamplingParameters::greedy(),
-        SamplingParameters::multimomial(),
-        SamplingParameters::beam_search()
+        // SamplingParameters::multimomial(),
+        // SamplingParameters::beam_search()
     };
 
     std::vector<ov::Tensor> input_ids;
@@ -113,7 +109,9 @@ int main(int argc, char* argv[]) try {
 
     for (size_t request_id = 0; request_id < dataset_size; ++request_id) {
         auto [_input_ids, _attention_mask] = tokenize(tokenizer, prompt_examples[request_id % prompt_examples.size()]);
-        input_ids.push_back(_input_ids);
+        ov::Tensor input_id(_input_ids.get_element_type(), _input_ids.get_shape());
+        _input_ids.copy_to(input_id);
+        input_ids.push_back(input_id);
         sampling_params.push_back(sampling_params_examples[request_id % sampling_params_examples.size()]);
     }
 

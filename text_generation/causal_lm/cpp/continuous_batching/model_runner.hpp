@@ -8,6 +8,7 @@
 
 #include <openvino/runtime/infer_request.hpp>
 
+#include "debug_utils.hpp"
 #include "sequence_group.hpp"
 #include "scheduler.hpp"
 
@@ -17,14 +18,15 @@ public:
     ModelRunner(ov::InferRequest & request) :
         m_request(request) { }
 
-    ov::Tensor step(const std::vector<SequenceGroup> & sequence_groups, const Scheduler::Output& scheduler_output) {
+    ov::Tensor forward(const std::vector<SequenceGroup> & sequence_groups, const Scheduler::Output& scheduler_output) {
         size_t batch_size = 0, max_num_blocks = 0, max_context_len_value = 0;
         // since we merge sequence_len and batch to avoid ragged dimensions => batch dimension contains all tokens, while seq len is 1
         const size_t seq_len = 1;
 
         // compute aggregated values
-        for (size_t i = 0; i < sequence_groups.size(); ++i) {
-            const SequenceGroup & sequence_group = sequence_groups[i];
+        for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            const SequenceGroup & sequence_group = sequence_groups[seq_group_id];
             batch_size += sequence_group.get_num_scheduled_tokens() * sequence_group.num_running_seqs();
             max_num_blocks = std::max(max_num_blocks, sequence_group.get_num_blocks());
             max_context_len_value = std::max(max_context_len_value, sequence_group.get_context_len());
@@ -55,12 +57,12 @@ public:
         for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
             const SequenceGroup& sequence_group = sequence_groups[seq_group_id];
-            const std::vector<Sequence>& running_sequences = sequence_group.get_running_sequences();
+            std::vector<Sequence::CPtr> running_sequences = sequence_group.get_running_sequences();
             size_t num_scheduled_tokens = sequence_group.get_num_scheduled_tokens();
             size_t group_position_id = sequence_group.get_num_processed_tokens(), group_context_len = group_position_id + 1;
 
             for (size_t seq_id = 0; seq_id < running_sequences.size(); ++seq_id) {
-                const Sequence& sequence = running_sequences[seq_id];
+                const Sequence& sequence = *running_sequences[seq_id];
                 size_t position_id = group_position_id, context_len = group_context_len;
 
                 for (size_t token_id = 0; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++context_len) {
@@ -104,16 +106,18 @@ public:
         m_request.set_tensor("context_lens", context_lens);
         m_request.set_tensor("block_tables", block_tables);
 
-        // print_tensor("input_ids", input_ids);
-        // print_tensor("position_ids", position_ids);
+        print_tensor("input_ids", input_ids);
+        print_tensor("position_ids", position_ids);
 
-        // print_tensor("is_prompt", is_prompt);
-        // print_tensor("slot_mapping", slot_mapping);
-        // print_tensor("max_context_len", max_context_len);
-        // print_tensor("context_lens", context_lens);
-        // print_tensor("block_tables", block_tables);
+        print_tensor("is_prompt", is_prompt);
+        print_tensor("slot_mapping", slot_mapping);
+        print_tensor("max_context_len", max_context_len);
+        print_tensor("context_lens", context_lens);
+        print_tensor("block_tables", block_tables);
 
+        std::cout << "!" << std::endl;
         m_request.infer();
+        std::cout << "!!" << std::endl;
 
         // return logits
         return m_request.get_output_tensor();

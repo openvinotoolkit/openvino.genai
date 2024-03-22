@@ -14,7 +14,7 @@ class Sequence;
 
 struct SamplingParameters {
     // Generic
-    size_t max_new_tokens = 20;
+    size_t max_new_tokens = 40;
     bool ignore_eos = false;
     int64_t eos_token = 2; // There's no way to extract special token values from the tokenizer for now
 

@@ -66,7 +66,7 @@ private:
         // currently, we support only preemption by (TODO: implement "partial") recompute
         for (size_t s = 0; s < sequence_group.num_running_seqs(); ++s) {
             // so, let's fully drop a sequence(s) from block_manager
-            m_block_manager.free_sequence(sequence_group[s].get_id());
+            m_block_manager.free_sequence(sequence_group[s]->get_id());
         }
         // update computed part of each sequence
         sequence_group.preempt_tokens(sequence_group.get_num_processed_tokens());
@@ -136,22 +136,26 @@ private:
 
                 // apply KV cache limitations
                 size_t context_len = sequence_group.get_context_len();
-                size_t available_slots = context_len % BLOCK_SIZE, required_slots = context_len - available_slots;
+                size_t available_slots = context_len % BLOCK_SIZE, required_slots = num_scheduled_tokens - available_slots;
                 size_t num_required_blocks = (required_slots + BLOCK_SIZE - 1) / BLOCK_SIZE, num_free_blocks = m_block_manager.num_free_blocks();
                 size_t num_scheduled_blocks = std::min(num_required_blocks, num_free_blocks);
-                num_scheduled_tokens = available_slots + num_scheduled_blocks * BLOCK_SIZE;
+                // some scheduled blocks can be no fully occupied, so we need to take min between num_scheduled_blocks
+                // and total "scheduled capacity"
+                num_scheduled_tokens = std::min(num_scheduled_tokens, available_slots + num_scheduled_blocks * BLOCK_SIZE);
 
-                // allocate KV blocks
-                m_block_manager.allocate(sequence_group[0], num_scheduled_blocks);
-                // and schedule tokens
-                sequence_group.schedule_tokens(num_scheduled_tokens);
+                if (num_scheduled_tokens > 0) {
+                    // allocate KV blocks
+                    m_block_manager.allocate(sequence_group[0], num_scheduled_blocks);
+                    // and schedule tokens
+                    sequence_group.schedule_tokens(num_scheduled_tokens);
 
-                // add information to scheduler_output
-                {
-                    auto request_id = sequence_group.get_request_id();
-                    scheduler_output.m_scheduled_sequence_groups_ids.push_back(request_id);
-                    scheduler_output.m_block_tables[request_id] = m_block_manager.get_block_table(request_id);
-                    scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
+                    // add information to scheduler_output
+                    {
+                        auto request_id = sequence_group.get_request_id();
+                        scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
+                        scheduler_output.m_block_tables[request_id] = m_block_manager.get_block_table(request_id);
+                        scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
+                    }
                 }
 
                 // if we added maximum amount of tokens to compute
@@ -198,7 +202,7 @@ private:
                 // add information to scheduler_output
                 {
                     auto request_id = sequence_group.get_request_id();
-                    scheduler_output.m_scheduled_sequence_groups_ids.push_back(request_id);
+                    scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
                     scheduler_output.m_block_tables[request_id] = m_block_manager.get_block_table(request_id);
                     scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens_per_seq * num_running_seqs;
 

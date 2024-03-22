@@ -71,6 +71,7 @@ public:
         : m_allocator(num_blocks) { }
 
     const std::vector<KVCacheBlock>& get_block_table(uint64_t seq_id) {
+        std::cout << "Get blocks for sequece " << seq_id << std::endl;
         OPENVINO_ASSERT(m_block_table.count(seq_id) == 1);
         return m_block_table[seq_id];
     }
@@ -83,17 +84,19 @@ public:
         return m_allocator.can_allocate_blocks(num_blocks);
     }
 
-    void allocate(const Sequence& sequence, size_t num_blocks) {
-        OPENVINO_ASSERT(can_allocate_blocks(num_blocks));
+    void allocate(Sequence::CPtr sequence, size_t num_blocks) {
+        OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
+        std::cout << "Adding blocks " << num_blocks << " for sequence " << sequence->get_id() << std::endl;
 
         for (size_t i = 0; i < num_blocks; ++i) {
-            m_block_table[sequence.get_id()].push_back(m_allocator.allocate_block());
+            m_block_table[sequence->get_id()].push_back(m_allocator.allocate_block());
         }
     }
 
-    void fork_sequence(const Sequence& parent, const Sequence& child) {
+    void fork_sequence(Sequence::CPtr parent, Sequence::CPtr child) {
+        std::cout << "Fork for sequence " << parent->get_id() << " to " << child->get_id() << std::endl;
         // note, that reference counters are automatically incremented
-        m_block_table[child.get_id()] = m_block_table[parent.get_id()];
+        m_block_table[child->get_id()] = m_block_table[parent->get_id()];
     }
 
     void free_sequence(size_t seq_id) {
@@ -103,6 +106,7 @@ public:
             m_allocator.free(block);
         }
 
+        std::cout << "Free for sequence " << seq_id << std::endl;
         m_block_table.erase(seq_id);
     }
 
@@ -117,11 +121,11 @@ public:
     std::map<size_t, size_t> append_slot(const SequenceGroup& seq_group) {
         OPENVINO_ASSERT(can_append_slot(seq_group));
         size_t num_logical_blocks = seq_group.get_num_logical_blocks();
-        std::vector<Sequence> unifinished_sequences = seq_group.get_running_sequences();
+        std::vector<Sequence::CPtr> unifinished_sequences = seq_group.get_running_sequences();
 
         std::map<size_t, size_t> copy_blocks_map;
         for (size_t i = 0; i < unifinished_sequences.size(); ++i) {
-            const Sequence& sequence = seq_group[i];
+            const Sequence& sequence = *unifinished_sequences[i];
             auto seq_id = sequence.get_id();
             auto& block_table = m_block_table[seq_id];
             size_t num_physical_blocks = block_table.size();
