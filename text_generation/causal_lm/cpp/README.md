@@ -127,7 +127,7 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
    4. https://huggingface.co/openlm-research/open_llama_7b
    5. https://huggingface.co/openlm-research/open_llama_7b_v2
 5. [TinyLlama](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0)
-6. Qwen and Qwen1.5
+6. Qwen
    1. https://huggingface.co/Qwen/Qwen-7B-Chat
    2. https://huggingface.co/Qwen/Qwen-7B-Chat-Int4 - refer to
    3. https://huggingface.co/Qwen/Qwen1.5-7B-Chat
