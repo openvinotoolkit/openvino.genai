@@ -71,7 +71,7 @@ int main(int argc, char* argv[]) try {
     ov::InferRequest lm = core.compile_model(
         std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
     auto seq_len = input_ids.get_size();
-    
+    ov::Model lm_model = core.compile_model(std::string{argv[1]} + "/openvino_model.xml", "CPU").get_runtime_model();
     // Initialize inputs
     lm.set_tensor("input_ids", input_ids);
     lm.set_tensor("attention_mask", attention_mask);
@@ -91,12 +91,16 @@ int main(int argc, char* argv[]) try {
     lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     position_ids.set_shape({BATCH_SIZE, 1});
     TextStreamer text_streamer{std::move(detokenizer)};
-    auto rt_info = model.get_rt_info();
+    // After compiling the model, before the inference loop
+    auto rt_info = lm_model.get_rt_info();
+
+    // int64_t SPECIAL_EOS_TOKEN = 2; // Default value if not found
     if (rt_info.count("eos_token_id") > 0) {
         SPECIAL_EOS_TOKEN = std::any_cast<int64_t>(rt_info["eos_token_id"]);
     } else {
         throw std::runtime_error("EOS token ID not found in model's runtime information.");
     }
+
     
     int max_sequence_length = 100;
     while (out_token != SPECIAL_EOS_TOKEN && seq_len < max_sequence_length) {
