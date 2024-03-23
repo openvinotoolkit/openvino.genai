@@ -43,9 +43,9 @@ int main(int argc, char* argv[]) try {
     // Initialize inputs
     lm.set_tensor("input_ids", input_ids);
     lm.set_tensor("attention_mask", attention_mask);
-    ov::Tensor position_ids = lm.get_tensor("position_ids");
-    position_ids.set_shape(input_ids.get_shape());
-    std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
+    // ov::Tensor position_ids = lm.get_tensor("position_ids");
+    // position_ids.set_shape(input_ids.get_shape());
+    // std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
     lm.get_tensor("beam_idx").set_shape({1});
     lm.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
@@ -69,8 +69,8 @@ int main(int argc, char* argv[]) try {
         ov::Shape mask_shape{batch_size, attention_mask.get_shape().at(1) + 1};
         attention_mask.set_shape(mask_shape);
         std::fill_n(attention_mask.data<int64_t>(), ov::shape_size(mask_shape), 1);
-        lm.get_tensor("position_ids").set_shape({batch_size, 1});
-        std::fill_n(lm.get_tensor("position_ids").data<int64_t>(), batch_size, mask_shape.at(1) - 1);
+        // lm.get_tensor("position_ids").set_shape({batch_size, 1});
+        // std::fill_n(lm.get_tensor("position_ids").data<int64_t>(), batch_size, mask_shape.at(1) - 1);
     }
     for (const std::vector<Beam>& group : finalize(std::move(group_beam_searcher))) {
         std::cout << "Group:\n";

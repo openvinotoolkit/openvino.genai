@@ -66,10 +66,10 @@ public:
                 size_t position_id = group_position_id, context_len = group_context_len;
 
                 for (size_t token_id = 0; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++context_len) {
-                    const std::vector<KVCacheBlock> & kv_blocks = scheduler_output.m_block_tables.at(sequence.get_id());
+                    const std::vector<KVCacheBlock::Ptr> & kv_blocks = scheduler_output.m_block_tables.at(sequence.get_id());
                     const size_t num_blocks = kv_blocks.size();
                     for (size_t block_id = 0; block_id < kv_blocks.size(); ++block_id)
-                        block_tables_data[block_id] = kv_blocks[block_id].get_index();
+                        block_tables_data[block_id] = kv_blocks[block_id]->get_index();
                     block_tables_data += max_num_blocks;
 
                     position_ids_data[token_id] = position_id;
@@ -83,7 +83,7 @@ public:
                     // compute slot_id
                     size_t physical_block_id = position_id / BLOCK_SIZE;
                     size_t block_offset = position_id % BLOCK_SIZE;
-                    int64_t slot_id = BLOCK_SIZE * kv_blocks[physical_block_id].get_index() + block_offset;
+                    int64_t slot_id = BLOCK_SIZE * kv_blocks[physical_block_id]->get_index() + block_offset;
                     slot_mapping_data[token_id] = slot_id;
                 }
 

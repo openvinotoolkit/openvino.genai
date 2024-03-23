@@ -75,10 +75,21 @@ public:
     std::vector<GenerationResult> step() {
         Scheduler::Output scheduler_output = m_scheduler.schedule(m_requests);
         m_cache_manager.copy_blocks(scheduler_output.m_block_copy_map);
+
         ov::Tensor logits = m_model_runner.forward(m_requests, scheduler_output);
         SamplerOutput sampler_output = m_sampler.sample(m_requests, logits);
 
         // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
+        {
+            for (const auto& pair : sampler_output.m_forked_sequences) {
+                uint64_t parent_id = pair.first;
+                for (auto & child_id : pair.second)
+                    m_scheduler.fork_sequence(parent_id, child_id);
+            }
+
+            for (auto seq_id : sampler_output.m_dropped_sequences)
+                m_scheduler.free_sequence(seq_id);
+        }
 
         // perform post-processing of current step
 

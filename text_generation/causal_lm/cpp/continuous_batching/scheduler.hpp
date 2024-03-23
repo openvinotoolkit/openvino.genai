@@ -34,7 +34,7 @@ public:
         // map of src -> dst blocks copies, which need to be performed by CacheManager
         std::map<size_t, std::unordered_set<size_t>> m_block_copy_map;
         // block tables for scheduled sequences
-        std::map<uint64_t, std::vector<KVCacheBlock>> m_block_tables;
+        std::map<uint64_t, std::vector<KVCacheBlock::Ptr>> m_block_tables;
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
     };
@@ -57,8 +57,16 @@ public:
         return scheduler_output;
     }
 
-    const std::vector<KVCacheBlock>& get_block_table(const Sequence& seq) {
+    const std::vector<KVCacheBlock::Ptr>& get_block_table(const Sequence& seq) {
         return m_block_manager.get_block_table(seq.get_id());
+    }
+
+    void free_sequence(uint64_t seq_id) {
+        m_block_manager.free_sequence(seq_id);
+    }
+
+    void fork_sequence(uint64_t parent_id, uint64_t child_id) {
+        m_block_manager.fork_sequence(parent_id, child_id);
     }
 
 private:
@@ -144,16 +152,18 @@ private:
                 num_scheduled_tokens = std::min(num_scheduled_tokens, available_slots + num_scheduled_blocks * BLOCK_SIZE);
 
                 if (num_scheduled_tokens > 0) {
+                    Sequence::Ptr sequence = sequence_group[0];
+                    uint64_t seq_id = sequence->get_id();
+
                     // allocate KV blocks
-                    m_block_manager.allocate(sequence_group[0], num_scheduled_blocks);
+                    m_block_manager.allocate(seq_id, num_scheduled_blocks);
                     // and schedule tokens
                     sequence_group.schedule_tokens(num_scheduled_tokens);
 
                     // add information to scheduler_output
                     {
-                        auto request_id = sequence_group.get_request_id();
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
-                        scheduler_output.m_block_tables[request_id] = m_block_manager.get_block_table(request_id);
+                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_table(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
                     }
                 }
@@ -203,8 +213,13 @@ private:
                 {
                     auto request_id = sequence_group.get_request_id();
                     scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
-                    scheduler_output.m_block_tables[request_id] = m_block_manager.get_block_table(request_id);
                     scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens_per_seq * num_running_seqs;
+
+                    // block tables for each running sequence within a group
+                    std::vector<Sequence::Ptr> running_seqs = sequence_group.get_running_sequences();
+                    for (const auto & seq : sequence_group.get_running_sequences()) {
+                        scheduler_output.m_block_tables[seq->get_id()] = m_block_manager.get_block_table(seq->get_id());
+                    }
 
                     // merge copy_blocks
                     for (const auto& src_dst : copy_blocks_map) {

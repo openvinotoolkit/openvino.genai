@@ -41,7 +41,6 @@ public:
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
 
-
     static Sequence::Ptr create() {
         return std::make_shared<Sequence>();
     }
@@ -129,9 +128,11 @@ public:
     }
 
     void remove_sequence(uint64_t sequence_id) {
-        OPENVINO_ASSERT(std::remove_if(m_sequences.begin(), m_sequences.end(), [sequence_id] (Sequence::Ptr seq) {
+        auto remove_it = std::remove_if(m_sequences.begin(), m_sequences.end(), [sequence_id] (Sequence::Ptr seq) {
             return seq->get_id() == sequence_id;
-        }) != m_sequences.end(), "Failed to remove sequence with specified ID");
+        });
+        OPENVINO_ASSERT(remove_it != m_sequences.end(), "Failed to remove sequence with specified ID");
+        m_sequences.erase(remove_it);
     }
 
     size_t get_prompt_len() const {

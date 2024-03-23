@@ -86,7 +86,7 @@ int main(int argc, char* argv[]) try {
     // Create requests for generation
     //
 
-    const size_t dataset_size = 30;
+    const size_t dataset_size = 1;
 
     std::vector<std::string> prompt_examples = {
         "What is OpenVINO?",
@@ -96,9 +96,9 @@ int main(int argc, char* argv[]) try {
     };
 
     std::vector<SamplingParameters> sampling_params_examples {
-        SamplingParameters::greedy(),
+        // SamplingParameters::greedy(),
         // SamplingParameters::multimomial(),
-        // SamplingParameters::beam_search()
+        SamplingParameters::beam_search()
     };
 
     std::vector<ov::Tensor> input_ids;
