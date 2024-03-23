@@ -91,10 +91,7 @@ int main(int argc, char* argv[]) try {
     lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     position_ids.set_shape({BATCH_SIZE, 1});
     TextStreamer text_streamer{std::move(detokenizer)};
-    auto& model = lm.get_model();
     auto rt_info = model.get_rt_info();
-
-    int64_t SPECIAL_EOS_TOKEN = 2; // Default value if not found
     if (rt_info.count("eos_token_id") > 0) {
         SPECIAL_EOS_TOKEN = std::any_cast<int64_t>(rt_info["eos_token_id"]);
     } else {
