@@ -130,6 +130,8 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
 6. Qwen
    1. https://huggingface.co/Qwen/Qwen-7B-Chat
    2. https://huggingface.co/Qwen/Qwen-7B-Chat-Int4 - refer to
+   3. https://huggingface.co/Qwen/Qwen1.5-7B-Chat
+   4. https://huggingface.co/Qwen/Qwen1.5-7B-Chat-GPTQ-Int4
    [Qwen-7B-Chat-Int4 - Torch not compiled with CUDA enabled](../../../llm_bench/python/doc/NOTES.md#qwen-7b-chat-int4---torch-not-compiled-with-cuda-enabled)
    in case of `AssertionError`
 7. Dolly
