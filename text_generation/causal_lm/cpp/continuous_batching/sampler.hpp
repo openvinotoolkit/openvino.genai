@@ -244,6 +244,8 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup> & sequence_groups, ov::
                     sampled_token_id == sampling_params.eos_token && !sampling_params.ignore_eos) {
                     // stop sequence by max_output_length or EOS token
                     running_sequences[0]->set_status(SequenceStatus::FINISHED);
+                    // drop sequence from scheduler
+                    sampler_output.m_dropped_sequences.push_back(running_sequences[0]->get_id());
                 }
             } else if (sampling_params.is_beam_search()) {
                 uint64_t request_id = sequence_group.get_request_id();
@@ -330,28 +332,27 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
     }
 
     auto try_to_finish_candidate = [&] (Group& group, Beam& candidate) -> void {
+        uint64_t seq_id = candidate.m_sequence->get_id();
         // try to finish candidate
         int64_t preempted_seq_id = group.finish(candidate, m_parameters);
 
         // if candidate has lower score than others finished
-        if (preempted_seq_id == candidate.m_sequence->get_id()) {
+        if (preempted_seq_id == seq_id) {
             // do nothing and just ignore current finished candidate
         } else {
-            // some already finished sequences are preempred as they have low beam search score
-            // we need to drop them from scheduler
             if (preempted_seq_id >= 0) {
-                sampler_output.m_dropped_sequences.push_back(preempted_seq_id);
+                m_sequence_group->remove_sequence(preempted_seq_id);
             }
 
             // need to insert candidate to a sequence group
-            Sequence::Ptr forked_sequnce = m_sequence_group->fork_sequence(candidate.m_sequence);
+            Sequence::Ptr forked_sequence = m_sequence_group->fork_sequence(candidate.m_sequence);
             // and finish immidiately
-            forked_sequnce->set_status(SequenceStatus::FINISHED);
+            forked_sequence->set_status(SequenceStatus::FINISHED);
 
             // HF implementation counts eos_token for length penalty calculation
             if (candidate.m_token_id != m_parameters->eos_token) {
                 // append token from candidate to actual sequence
-                candidate.m_sequence->append_token(candidate.m_token_id, candidate.m_log_prob);
+                forked_sequence->append_token(candidate.m_token_id, candidate.m_log_prob);
             }
         }
     };
@@ -444,7 +445,9 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
         if (group.done) {
             // group has finished, group all running sequences
             for (const Beam& beam : group.ongoing) {
-                sampler_output.m_dropped_sequences.push_back(beam.m_sequence->get_id());
+                uint64_t seq_id = beam.m_sequence->get_id();
+                m_sequence_group->remove_sequence(seq_id);
+                sampler_output.m_dropped_sequences.push_back(seq_id);
             }
             group.ongoing.clear();
         }
@@ -464,6 +467,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                 if (num_childs > 1) {
                     child_beam.m_sequence = m_sequence_group->fork_sequence(child_beam.m_sequence);
                     child_beam.m_sequence->append_token(child_beam.m_token_id, child_beam.m_log_prob);
+
                     // reduce forks count, since fork already happened and next loop iteration
                     // will go by the second branch (num_childs == 1)
                     --num_childs;
@@ -471,7 +475,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                     // fill out scheduler output
                     sampler_output.m_forked_sequences[parent_sequence_id].push_back(child_beam.m_sequence->get_id());
                 } else if (num_childs == 1) {
-                    // keep current sequence and add a new token
+                    // keep current sequence going and add a new token
                     child_beam.m_sequence->append_token(child_beam.m_token_id, child_beam.m_log_prob);
                 }
             }

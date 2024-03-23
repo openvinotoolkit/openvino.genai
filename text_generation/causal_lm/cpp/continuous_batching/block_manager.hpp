@@ -16,7 +16,8 @@ public:
     using Ptr = std::shared_ptr<KVCacheBlock>;
 
     explicit KVCacheBlock(int index)
-        : m_index(index) { }
+        : m_ref_count(0),
+          m_index(index) { }
 
     int get_index() const {
         return m_index;
@@ -42,11 +43,18 @@ public:
 
 class BlockAllocator {
     std::list<KVCacheBlock::Ptr> m_free_blocks;
+    int m_total_num_blocks;
 public:
-    BlockAllocator(int num_blocks) {
-        for (int block_id = 0; block_id < num_blocks; ++block_id) {
+    BlockAllocator(int num_blocks) :
+        m_total_num_blocks(num_blocks) {
+        for (int block_id = 0; block_id < m_total_num_blocks; ++block_id) {
             m_free_blocks.push_back(std::make_shared<KVCacheBlock>(block_id));
         }
+    }
+
+    ~BlockAllocator() {
+        // sanity check to validate that all blocks are freed
+        OPENVINO_ASSERT(m_total_num_blocks == m_free_blocks.size());
     }
 
     size_t num_free_blocks() const {
@@ -71,6 +79,10 @@ public:
         m_free_blocks.pop_back();
         return allocated_block;
     }
+
+    float get_used_percentage() const {
+        return static_cast<float>(m_total_num_blocks - m_free_blocks.size()) / m_total_num_blocks;
+    }
 };
 
 class BlockManager {
@@ -82,6 +94,11 @@ class BlockManager {
 public:
     BlockManager(int num_blocks)
         : m_allocator(num_blocks) { }
+
+    ~BlockManager() {
+        // sanity check that all sequences are freed
+        OPENVINO_ASSERT(m_block_table.empty());
+    }
 
     const std::vector<KVCacheBlock::Ptr>& get_block_table(uint64_t seq_id) {
         OPENVINO_ASSERT(m_block_table.count(seq_id) == 1);
@@ -120,7 +137,7 @@ public:
             m_allocator.free(block);
         }
 
-        m_block_table.erase(seq_id);
+        OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
     }
 
     bool can_append_slot(const SequenceGroup& seq_group) {

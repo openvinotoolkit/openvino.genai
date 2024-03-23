@@ -14,7 +14,7 @@ class Sequence;
 
 struct SamplingParameters {
     // Generic
-    size_t max_new_tokens = 40;
+    size_t max_new_tokens = 60;
     bool ignore_eos = false;
     int64_t eos_token = 2; // There's no way to extract special token values from the tokenizer for now
 
@@ -24,7 +24,7 @@ struct SamplingParameters {
     float diversity_penalty = 1.0f;
     StopCriteria stop_criteria = StopCriteria::heuristic;
     float length_penalty = 1.0f;
-    size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
+    size_t no_repeat_ngram_size = 40;
     std::function<bool(const Sequence&)> early_finish = [](const Sequence&) {return false; };
 
     // Multinomial
@@ -41,8 +41,8 @@ struct SamplingParameters {
 
     static SamplingParameters beam_search() {
         SamplingParameters beam_search;
-        beam_search.n_groups = 3;
-        beam_search.group_size = 5;
+        beam_search.n_groups = 2;
+        beam_search.group_size = 2;
         return beam_search;
     }
 

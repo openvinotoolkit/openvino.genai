@@ -18,19 +18,20 @@ struct GenerationResult {
     // in a generic case we have multiple generation results per initial prompt
     // depending on sampling parameters (e.g. beam search or parallel sampling)
     std::vector<TokenIds> m_generation_ids;
-    // score (cumulative logprob)
-    float m_cumulative_logprob;
+    // scores (cumulative log probabilities)
+    std::vector<float> m_scores;
 
     static GenerationResult from_sequence_group(const SequenceGroup& sequence_group) {
         GenerationResult result;
         result.m_request_id = sequence_group.get_request_id();
 
+        OPENVINO_ASSERT(sequence_group.num_finished_seqs() == sequence_group.num_total_seqs() &&
+                        sequence_group.has_finished());
         for (size_t sequence_id = 0; sequence_id < sequence_group.num_finished_seqs(); ++sequence_id) {
-            result.m_generation_ids.push_back(sequence_group[sequence_id]->get_generated_ids());
+            Sequence::CPtr sequence = sequence_group[sequence_id];
+            result.m_scores.push_back(sequence->get_cumulative_log_probs());
+            result.m_generation_ids.push_back(sequence->get_generated_ids());
         }
-
-        // TODO: track this information
-        result.m_cumulative_logprob = 0.0f;
 
         return result;
     }
@@ -51,6 +52,7 @@ class LLMEngine {
         });
         m_requests.erase(new_end, m_requests.end());
     }
+
 public:
     LLMEngine(ov::InferRequest& request,
               const SchedulerConfig& scheduler_config)

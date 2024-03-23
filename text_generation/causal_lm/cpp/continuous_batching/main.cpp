@@ -90,6 +90,7 @@ int main(int argc, char* argv[]) try {
 
     std::vector<std::string> prompt_examples = {
         "What is OpenVINO?",
+        "What is OpenVINO?",
         "How are you?",
         "What is the current time",
         "What is OpenVINO?",
@@ -132,7 +133,7 @@ int main(int argc, char* argv[]) try {
 
         std::cout << "Question: " << detokenize(detokenizer, input_ids[request_id]) << std::endl;
         for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
-            std::cout << "Answer " << output_id << ": " << detokenize(detokenizer, generation_result.m_generation_ids[output_id]) << std::endl;
+            std::cout << "Answer " << output_id << " (" << generation_result.m_scores[output_id] << ") : " << detokenize(detokenizer, generation_result.m_generation_ids[output_id]) << std::endl;
         }
         std::cout << std::endl;
     }

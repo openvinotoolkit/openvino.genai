@@ -81,8 +81,8 @@ enum class StopCriteria {early, heuristic, never};
 
 struct Parameters {
     std::vector<int64_t> prompt;
-    size_t n_groups = 3;
-    size_t group_size = 5;
+    size_t n_groups = 2;
+    size_t group_size = 2;
     float diversity_penalty = 1.0;
     size_t max_new_tokens = 30;
     StopCriteria stop_criteria = StopCriteria::heuristic;
