@@ -87,7 +87,7 @@ struct Beam {
     // beam is made on top of sequence
     float m_log_prob = 0.0f;
     int64_t m_token_id = -1;
-    float m_score = 0.0f;
+    float m_score = -std::numeric_limits<float>::infinity();
 
     Beam(Sequence::Ptr sequence)
         : m_sequence(sequence) { }
@@ -224,12 +224,12 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup> & sequence_groups, ov::
 
     for (size_t sequence_group_id = 0, current_token_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
         SequenceGroup& sequence_group = sequence_groups[sequence_group_id];
-        size_t num_running_seqeunces = sequence_group.num_running_seqs();
+        size_t num_running_sequences = sequence_group.num_running_seqs();
         size_t num_scheduled_tokens = sequence_group.get_num_scheduled_tokens();
         const SamplingParameters& sampling_params = sequence_group.get_sampling_parameters();
 
         const void * sequence_group_logits_data = logits_data + logits_stride * current_token_id;
-        ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_seqeunces, num_scheduled_tokens, vocab_size}, (void *)sequence_group_logits_data);
+        ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, num_scheduled_tokens, vocab_size}, (void *)sequence_group_logits_data);
 
         if (sequence_group.requires_sampling()) {
             if (sampling_params.is_gready_sampling()) {
@@ -270,7 +270,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup> & sequence_groups, ov::
         }
 
         // accumulate a number of processed tokens
-        current_token_id += sequence_group.get_num_scheduled_tokens() * num_running_seqeunces;
+        current_token_id += sequence_group.get_num_scheduled_tokens() * num_running_sequences;
 
         // NOTE: it should be before 'get_num_scheduled_tokens' is used
         // update internal state of sequence group to reset scheduler tokens and update currently processed ones
@@ -289,8 +289,12 @@ GroupBeamSearcher::GroupBeamSearcher(SequenceGroup& sequence_group)
 
     for (Group& group : m_groups) {
         group.ongoing.reserve(m_parameters->group_size);
-        // initially we just add our base sequence to a group
-        group.ongoing.push_back(Beam(sequence_group[0]));
+        // initially we just add our "base" sequence to beams inside each group
+        for (size_t i = 0; i < m_parameters->group_size; ++i)
+            group.ongoing.push_back(Beam(sequence_group[0]));
+        // to avoid selecting the same tokens for beams within group, let's just initialize score
+        // for the front one
+        group.ongoing.front().m_score = 0.0f;
     }
 }
 
@@ -303,7 +307,6 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
     // parent sequence ID -> number of child sequences
     std::map<uint64_t, uint64_t> parent_2_num_childs_map;
 
-    size_t beam_count = 0;
     for (Group& group : m_groups) {
         if (!group.done) {
             for (Beam& beam : group.ongoing) {
@@ -318,12 +321,6 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                     }
                     return std::numeric_limits<size_t>::max();
                 } (parent_seq_id);
-
-                // '!beam.get_generated_len()' holds for the first select_next_tokens() call.
-                // Every beam is constructed from the single batch at first call
-                if (!beam.get_generated_len()) {
-                    ++beam_count;
-                }
 
                 // zero out all parent forks counts
                 parent_2_num_childs_map[parent_seq_id] = 0;
@@ -349,6 +346,17 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
             // and finish immidiately
             forked_sequence->set_status(SequenceStatus::FINISHED);
 
+            // TODO: make it more simplier
+            // currently, we finish sequence and then fork it in current code
+            {
+                for (size_t i = 0; i < group.min_heap.size(); ++i) {
+                    if (group.min_heap[i].m_sequence->get_id() == seq_id) {
+                        group.min_heap[i].m_sequence = forked_sequence;
+                        break;
+                    }
+                }
+            }
+
             // HF implementation counts eos_token for length penalty calculation
             if (candidate.m_token_id != m_parameters->eos_token) {
                 // append token from candidate to actual sequence
@@ -373,10 +381,8 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
 
             // apply diversity penalty
             for (auto prev_group_id = 0; prev_group_id < group_id; ++prev_group_id) {
-                for (const Beam& prev_beam : m_groups[prev_group_id].ongoing) {
-                    if (prev_beam.get_generated_len() > beam.get_generated_len()) {
-                        tokens[prev_beam.m_token_id].m_log_prob -= m_parameters->diversity_penalty;
-                    }
+                for (const Beam& prev_beam : child_beams_per_group[prev_group_id]) {
+                    tokens[prev_beam.m_token_id].m_log_prob -= m_parameters->diversity_penalty;
                 }
             }
 
@@ -386,7 +392,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
             if (full_text.size() > 1 && full_text.size() >= m_parameters->no_repeat_ngram_size) {
                 auto tail_start = full_text.end() - ptrdiff_t(m_parameters->no_repeat_ngram_size) + 1;
                 for (int64_t banned_token : kmp_search(full_text, {tail_start, full_text.end()})) {
-                    tokens.at(size_t(banned_token)).m_log_prob = -std::numeric_limits<float>::infinity();
+                    tokens[banned_token].m_log_prob = -std::numeric_limits<float>::infinity();
                 }
             }
 
@@ -395,6 +401,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                 return left.m_log_prob > right.m_log_prob;  // Most probable tokens in front
             });
 
+            size_t add_count = 0;
             for (Token token : tokens) {
                 Beam new_candidate = beam;
                 new_candidate.m_score += new_candidate.m_log_prob = token.m_log_prob;
@@ -406,7 +413,8 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                     try_to_finish_candidate(group, new_candidate);
                 } else {
                     candidates.push_back(new_candidate);
-                    if (candidates.size() == 2 * m_parameters->group_size) {
+                    std::cout << token.m_index << "(" << token.m_log_prob << ") ";
+                    if (++add_count == 2 * m_parameters->group_size) {
                         break;
                     }
                 }
@@ -421,7 +429,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
 
         for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
             Beam & candidate = candidates[cand_idx];
-            if (m_parameters->eos_token == candidates[cand_idx].m_token_id) {
+            if (m_parameters->eos_token == candidate.m_token_id) {
                 // If beam_token does not belong to top num_beams tokens, it should not be added
                 if (cand_idx >= m_parameters->group_size)
                     continue;
@@ -451,7 +459,9 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
             }
             group.ongoing.clear();
         }
+        std::cout << std::endl;
     }
+    std::cout << "Next iteration" << std::endl;
 
     // fork child sequences for non-finished groups
 

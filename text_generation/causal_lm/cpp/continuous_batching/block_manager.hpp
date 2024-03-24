@@ -151,12 +151,12 @@ public:
     std::map<size_t, size_t> append_slot(const SequenceGroup& seq_group) {
         OPENVINO_ASSERT(can_append_slot(seq_group));
         size_t num_logical_blocks = seq_group.get_num_logical_blocks();
-        std::vector<Sequence::CPtr> unfinished_sequences = seq_group.get_running_sequences();
+        std::vector<Sequence::CPtr> running_sequences = seq_group.get_running_sequences();
 
         std::map<size_t, size_t> copy_blocks_map;
-        for (size_t i = 0; i < unfinished_sequences.size(); ++i) {
-            const Sequence& sequence = *unfinished_sequences[i];
-            auto seq_id = sequence.get_id();
+        for (size_t i = 0; i < running_sequences.size(); ++i) {
+            Sequence::CPtr sequence = running_sequences[i];
+            auto seq_id = sequence->get_id();
             auto& block_table = m_block_table[seq_id];
             size_t num_physical_blocks = block_table.size();
 

@@ -9,7 +9,7 @@
 #include "sampling_parameters.hpp"
 
 enum class SequenceStatus {
-    WAITING = 0,
+    RUNNING = 0,
     FINISHED = 1
 };
 
@@ -23,7 +23,7 @@ class Sequence {
 
     TokenIds m_generated_ids;
     uint64_t m_id = _get_next_sequence_id();
-    SequenceStatus m_status = SequenceStatus::WAITING;
+    SequenceStatus m_status = SequenceStatus::RUNNING;
     float m_cumulative_log_prob = 0.0f;
 
 public:
@@ -59,6 +59,10 @@ public:
 
     bool has_finished() const {
         return m_status == SequenceStatus::FINISHED;
+    }
+
+    bool is_running() const {
+        return m_status == SequenceStatus::RUNNING;
     }
 
     void set_status(SequenceStatus status) {
@@ -101,10 +105,6 @@ class SequenceGroup {
     size_t m_num_scheduled_tokens = 0;
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
-
-    int64_t _get_position_id() const {
-        return get_context_len() - 1;
-    }
 
     SequenceGroup(uint64_t request_id, const SamplingParameters& sampling_params)
         : m_request_id(request_id),
@@ -191,18 +191,18 @@ public:
     std::vector<Sequence::Ptr> get_running_sequences() {
         std::vector<Sequence::Ptr> running_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (!m_sequences[seq_id]->has_finished()) {
+            if (m_sequences[seq_id]->is_running()) {
                 running_seqs.emplace_back(m_sequences[seq_id]);
             }
         }
 
         return running_seqs;
     }
-
+    
     std::vector<Sequence::CPtr> get_running_sequences() const {
         std::vector<Sequence::CPtr> running_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (!m_sequences[seq_id]->has_finished()) {
+            if (m_sequences[seq_id]->is_running()) {
                 running_seqs.emplace_back(m_sequences[seq_id]);
             }
         }

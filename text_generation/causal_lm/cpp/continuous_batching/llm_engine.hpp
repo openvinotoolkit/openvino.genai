@@ -108,7 +108,7 @@ public:
         return currently_finished_requests;
     }
 
-    bool has_unfinished_requests() const {
+    bool has_running_requests() const {
         for (auto & sequence_group : m_requests) {
             if (!sequence_group.has_finished())
                 return true;
@@ -128,7 +128,7 @@ public:
         std::vector<GenerationResult> results;
         results.reserve(m_requests.size());
 
-        while (has_unfinished_requests()) {
+        while (has_running_requests()) {
             std::vector<GenerationResult> partial_results = step();
             results.insert(results.end(), partial_results.begin(), partial_results.end());
         }

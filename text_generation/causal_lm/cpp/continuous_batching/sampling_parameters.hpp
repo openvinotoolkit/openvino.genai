@@ -14,14 +14,14 @@ class Sequence;
 
 struct SamplingParameters {
     // Generic
-    size_t max_new_tokens = 60;
+    size_t max_new_tokens = 100;
     bool ignore_eos = false;
     int64_t eos_token = 2; // There's no way to extract special token values from the tokenizer for now
 
     // Beam search specific
     size_t n_groups = 1;
     size_t group_size = 1; // beam_width
-    float diversity_penalty = 1.0f;
+    float diversity_penalty = 1.0f; // 0.0 means no diversity
     StopCriteria stop_criteria = StopCriteria::heuristic;
     float length_penalty = 1.0f;
     size_t no_repeat_ngram_size = 40;
@@ -43,6 +43,8 @@ struct SamplingParameters {
         SamplingParameters beam_search;
         beam_search.n_groups = 2;
         beam_search.group_size = 2;
+        beam_search.max_new_tokens = 100;
+        beam_search.diversity_penalty = 2.0f;
         return beam_search;
     }
 

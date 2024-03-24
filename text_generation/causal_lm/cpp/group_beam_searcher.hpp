@@ -83,8 +83,8 @@ struct Parameters {
     std::vector<int64_t> prompt;
     size_t n_groups = 2;
     size_t group_size = 2;
-    float diversity_penalty = 1.0;
-    size_t max_new_tokens = 30;
+    float diversity_penalty = 2.0;
+    size_t max_new_tokens = 100;
     StopCriteria stop_criteria = StopCriteria::heuristic;
     float length_penalty = 1.0;
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
@@ -179,6 +179,7 @@ struct GroupBeamSearcher {
                 for (auto prev_group = groups.cbegin(); prev_group != group; ++prev_group) {
                     for (const Beam& prev_beam : prev_group->ongoing) {
                         if (prev_beam.tokens.size() > beam.tokens.size()) {
+                            // std::cout << "parameters.diversity_penalty " << prev_beam.tokens.back() << std::endl;
                             tokens.at(size_t(prev_beam.tokens.back())).log_prob -= parameters.diversity_penalty;
                         }
                     }
@@ -203,6 +204,7 @@ struct GroupBeamSearcher {
                         group->finish(std::move(new_candidate), parameters);
                     } else {
                         candidates.push_back(std::move(new_candidate));
+                        std::cout << token.idx << "(" << token.log_prob << ") ";
                         ++add_count;
                         if (add_count == 2 * parameters.group_size) {
                             break;
@@ -214,8 +216,17 @@ struct GroupBeamSearcher {
             if (candidates.size() < 2 * parameters.group_size) {
                 throw std::runtime_error("No beams left to search");
             }
+            // std::cout << "before sort" << std::endl;
+            // for (size_t i = 0; i < candidates.size(); ++i)
+            //     std::cout << candidates[i].tokens.back() << "-" << candidates[i].score << " ";
             auto to_sort = candidates.begin() + ptrdiff_t(2 * parameters.group_size);
             std::partial_sort(candidates.begin(), to_sort, candidates.end(), greater);
+            // std::cout << std::endl;
+            
+            // std::cout << "after sort" << std::endl;
+            // for (size_t i = 0; i < candidates.size(); ++i)
+            //     std::cout << candidates[i].tokens.back() << "-" << candidates[i].score << " ";
+            // std::cout << std::endl;
             group->ongoing.clear();
             for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
                 if (parameters.eos_token == candidates.at(cand_idx).tokens.back()) {
@@ -239,7 +250,9 @@ struct GroupBeamSearcher {
                     next_beams.push_back(int32_t(beam.global_beam_idx));
                 }
             }
+            std::cout << std::endl;
         }
+        std::cout << "Next iteration" << std::endl;
         return {next_tokens, next_beams};
     }
 };
