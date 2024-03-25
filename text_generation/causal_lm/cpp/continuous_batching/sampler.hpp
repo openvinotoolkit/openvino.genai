@@ -413,7 +413,6 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                     try_to_finish_candidate(group, new_candidate);
                 } else {
                     candidates.push_back(new_candidate);
-                    std::cout << token.m_index << "(" << token.m_log_prob << ") ";
                     if (++add_count == 2 * m_parameters->group_size) {
                         break;
                     }
@@ -459,9 +458,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
             }
             group.ongoing.clear();
         }
-        std::cout << std::endl;
     }
-    std::cout << "Next iteration" << std::endl;
 
     // fork child sequences for non-finished groups
 

@@ -24,7 +24,7 @@ struct SamplingParameters {
     float diversity_penalty = 1.0f; // 0.0 means no diversity
     StopCriteria stop_criteria = StopCriteria::heuristic;
     float length_penalty = 1.0f;
-    size_t no_repeat_ngram_size = 40;
+    size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
     std::function<bool(const Sequence&)> early_finish = [](const Sequence&) {return false; };
 
     // Multinomial
