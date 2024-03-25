@@ -60,6 +60,9 @@ int main(int argc, char* argv[]) try {
     }
     // Compile models
     ov::Core core;
+
+    auto tokenizer_model = core.read_model(std::string{argv[1]} + "/openvino_tokenizer.xml");
+
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(
@@ -71,7 +74,6 @@ int main(int argc, char* argv[]) try {
     ov::InferRequest lm = core.compile_model(
         std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
     auto seq_len = input_ids.get_size();
-    
     // Initialize inputs
     lm.set_tensor("input_ids", input_ids);
     lm.set_tensor("attention_mask", attention_mask);
@@ -91,8 +93,15 @@ int main(int argc, char* argv[]) try {
     lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     position_ids.set_shape({BATCH_SIZE, 1});
     TextStreamer text_streamer{std::move(detokenizer)};
-    // There's no way to extract special token values from the detokenizer for now
-    constexpr int64_t SPECIAL_EOS_TOKEN = 2;
+    // After compiling the model, before the inference loop
+    
+    auto rt_info = tokenizer_model.get_rt_info();
+    if (rt_info.count("eos_token_id") > 0) {
+        SPECIAL_EOS_TOKEN = rt_info["eos_token_id"];
+    } else {
+        throw std::runtime_error("EOS token ID not found in model's runtime information.");
+    }
+
     
     int max_sequence_length = 100;
     while (out_token != SPECIAL_EOS_TOKEN && seq_len < max_sequence_length) {
