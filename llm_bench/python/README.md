@@ -7,6 +7,7 @@ pytorch and openvino models, using almost the same code and precollected models.
 ## Usage 
 
 ### 1. Start a Python virtual environment
+   
 ``` bash
 python3 -m venv python-env
 source python-env/bin/activate
