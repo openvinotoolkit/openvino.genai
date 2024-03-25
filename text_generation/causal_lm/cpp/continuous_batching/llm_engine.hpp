@@ -18,17 +18,19 @@ struct GenerationResult {
     // in a generic case we have multiple generation results per initial prompt
     // depending on sampling parameters (e.g. beam search or parallel sampling)
     std::vector<TokenIds> m_generation_ids;
-    // scores (cumulative log probabilities)
+    // scores
     std::vector<float> m_scores;
 
-    static GenerationResult from_sequence_group(const SequenceGroup& sequence_group) {
+    static GenerationResult from_sequence_group(SequenceGroup::CPtr sequence_group) {
         GenerationResult result;
-        result.m_request_id = sequence_group.get_request_id();
+        result.m_request_id = sequence_group->get_request_id();
 
-        OPENVINO_ASSERT(sequence_group.num_finished_seqs() == sequence_group.num_total_seqs() &&
-                        sequence_group.has_finished());
-        for (size_t sequence_id = 0; sequence_id < sequence_group.num_finished_seqs(); ++sequence_id) {
-            Sequence::CPtr sequence = sequence_group[sequence_id];
+        OPENVINO_ASSERT(sequence_group->num_finished_seqs() == sequence_group->num_total_seqs() &&
+                        sequence_group->has_finished());
+        for (size_t sequence_id = 0; sequence_id < sequence_group->num_finished_seqs(); ++sequence_id) {
+            Sequence::CPtr sequence = (*sequence_group)[sequence_id];
+            // TODO: they are not correct in case of beam search at least
+            // we need to pass beam score instead of cumulative log probs (e.g. normalized by length)
             result.m_scores.push_back(sequence->get_cumulative_log_probs());
             result.m_generation_ids.push_back(sequence->get_generated_ids());
         }
@@ -44,11 +46,11 @@ class LLMEngine {
     Sampler m_sampler;
 
     // current requests to process
-    std::vector<SequenceGroup> m_requests;
+    std::vector<SequenceGroup::Ptr> m_requests;
 
     void _free_finished_requests() {
-        auto new_end = std::remove_if(m_requests.begin(), m_requests.end(), [] (const SequenceGroup& seq_group) {
-            return seq_group.has_finished();
+        auto new_end = std::remove_if(m_requests.begin(), m_requests.end(), [] (SequenceGroup::CPtr seq_group) -> bool {
+            return seq_group->has_finished();
         });
         m_requests.erase(new_end, m_requests.end());
     }
@@ -57,7 +59,8 @@ public:
     LLMEngine(ov::InferRequest& request,
               const SchedulerConfig& scheduler_config)
         : m_scheduler(scheduler_config),
-          m_model_runner(request) {
+          m_model_runner(request),
+          m_requests() {
         for (size_t decoder_layer_id = 0; decoder_layer_id < m_cache_manager.get_num_layers(); ++decoder_layer_id) {
             request.set_input_tensor(2 + decoder_layer_id * 2, m_cache_manager.get_key_cache(decoder_layer_id));
             request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager.get_value_cache(decoder_layer_id));
@@ -65,12 +68,12 @@ public:
     }
 
     void add_request(uint64_t request_id, const TokenIds input_ids, SamplingParameters sampling_params) {
-        SequenceGroup sequence_group(request_id, input_ids, sampling_params);
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params);
         m_requests.push_back(sequence_group);
     }
 
     void add_request(uint64_t request_id, const ov::Tensor input_ids, SamplingParameters sampling_params) {
-        SequenceGroup sequence_group(request_id, input_ids, sampling_params);
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params);
         m_requests.push_back(sequence_group);
     }
 
@@ -96,9 +99,10 @@ public:
         // perform post-processing of current step
 
         std::vector<GenerationResult> currently_finished_requests;
-        for (size_t request_id = 0; request_id < m_requests.size(); ++request_id) {
-            const SequenceGroup& sequence_group = m_requests[request_id];
-            if (sequence_group.has_finished()) {
+        for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
+            uint64_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = m_requests[seq_group_id];
+            if (sequence_group->has_finished()) {
                 currently_finished_requests.push_back(GenerationResult::from_sequence_group(sequence_group));
             }
         }
@@ -109,16 +113,12 @@ public:
     }
 
     bool has_running_requests() const {
-        for (auto & sequence_group : m_requests) {
-            if (!sequence_group.has_finished())
-                return true;
-        }
-
-        return false;
+        return !m_requests.empty();
     }
 
     // more high level interface
     std::vector<GenerationResult> generate(const std::vector<ov::Tensor> prompts, std::vector<SamplingParameters> sampling_params) {
+        OPENVINO_ASSERT(!has_running_requests(), "Generate cannot be called while LLMEngine is already in running state. Use LLMEngine::add_request");
         OPENVINO_ASSERT(prompts.size() == sampling_params.size());
 
         for (size_t request_id = 0; request_id < prompts.size(); ++request_id) {
@@ -128,9 +128,13 @@ public:
         std::vector<GenerationResult> results;
         results.reserve(m_requests.size());
 
-        while (has_running_requests()) {
-            std::vector<GenerationResult> partial_results = step();
-            results.insert(results.end(), partial_results.begin(), partial_results.end());
+        try {
+            while (has_running_requests()) {
+                std::vector<GenerationResult> partial_results = step();
+                results.insert(results.end(), partial_results.begin(), partial_results.end());
+            }
+        } catch (const std::exception& ex) {
+            std::cout << ex.what() << std::endl;
         }
 
         // sort results according to request_id to return results in order of initial prompts

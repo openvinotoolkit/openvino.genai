@@ -140,18 +140,18 @@ public:
         OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
     }
 
-    bool can_append_slot(const SequenceGroup& seq_group) {
+    bool can_append_slot(SequenceGroup::CPtr seq_group) {
         // TODO: optimize this heuristic
         // it assumes that all sequences require new block, but maybe some of them
         // don't share the same block
         // let's count actual number of sequences, where last_block_id is the same
-        return seq_group.num_running_seqs() <= m_allocator.num_free_blocks();
+        return seq_group->num_running_seqs() <= m_allocator.num_free_blocks();
     }
 
-    std::map<size_t, size_t> append_slot(const SequenceGroup& seq_group) {
+    std::map<size_t, size_t> append_slot(SequenceGroup::CPtr seq_group) {
         OPENVINO_ASSERT(can_append_slot(seq_group));
-        size_t num_logical_blocks = seq_group.get_num_logical_blocks();
-        std::vector<Sequence::CPtr> running_sequences = seq_group.get_running_sequences();
+        size_t num_logical_blocks = seq_group->get_num_logical_blocks();
+        std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
 
         std::map<size_t, size_t> copy_blocks_map;
         for (size_t i = 0; i < running_sequences.size(); ++i) {

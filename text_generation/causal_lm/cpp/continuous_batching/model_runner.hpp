@@ -18,7 +18,7 @@ public:
     ModelRunner(ov::InferRequest & request) :
         m_request(request) { }
 
-    ov::Tensor forward(const std::vector<SequenceGroup> & sequence_groups, const Scheduler::Output& scheduler_output) {
+    ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
         size_t batch_size = 0, max_num_blocks = 0, max_context_len_value = 0;
         // since we merge sequence_len and batch to avoid ragged dimensions => batch dimension contains all tokens, while seq len is 1
         const size_t seq_len = 1;
@@ -26,10 +26,10 @@ public:
         // compute aggregated values
         for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-            const SequenceGroup & sequence_group = sequence_groups[seq_group_id];
-            batch_size += sequence_group.get_num_scheduled_tokens() * sequence_group.num_running_seqs();
-            max_num_blocks = std::max(max_num_blocks, sequence_group.get_num_blocks());
-            max_context_len_value = std::max(max_context_len_value, sequence_group.get_context_len());
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            batch_size += sequence_group->get_num_scheduled_tokens() * sequence_group->num_running_seqs();
+            max_num_blocks = std::max(max_num_blocks, sequence_group->get_num_blocks());
+            max_context_len_value = std::max(max_context_len_value, sequence_group->get_context_len());
         }
 
         ov::Tensor
@@ -56,10 +56,10 @@ public:
 
         for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-            const SequenceGroup& sequence_group = sequence_groups[seq_group_id];
-            std::vector<Sequence::CPtr> running_sequences = sequence_group.get_running_sequences();
-            size_t num_scheduled_tokens = sequence_group.get_num_scheduled_tokens();
-            size_t group_position_id = sequence_group.get_num_processed_tokens(), group_context_len = group_position_id + 1;
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+            size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+            size_t group_position_id = sequence_group->get_num_processed_tokens(), group_context_len = group_position_id + 1;
 
             for (size_t seq_id = 0; seq_id < running_sequences.size(); ++seq_id) {
                 const Sequence& sequence = *running_sequences[seq_id];
@@ -76,9 +76,9 @@ public:
                     context_lens_data[token_id] = context_len;
 
                     // compute token for current sequence
-                    input_ids_data[token_id] = position_id < sequence_group.get_prompt_len() ?
-                        sequence_group.get_prompt_ids()[position_id] :
-                        sequence.get_generated_ids()[position_id - sequence_group.get_prompt_len()];
+                    input_ids_data[token_id] = position_id < sequence_group->get_prompt_len() ?
+                        sequence_group->get_prompt_ids()[position_id] :
+                        sequence.get_generated_ids()[position_id - sequence_group->get_prompt_len()];
 
                     // compute slot_id
                     size_t physical_block_id = position_id / BLOCK_SIZE;

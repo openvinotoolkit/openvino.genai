@@ -110,6 +110,9 @@ class SequenceGroup {
         : m_request_id(request_id),
           m_sampling_params(sampling_params) { }
 public:
+    using Ptr = std::shared_ptr<SequenceGroup>;
+    using CPtr = std::shared_ptr<const SequenceGroup>;
+
     SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const SamplingParameters& sampling_params)
         : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params) {
     }
@@ -144,12 +147,12 @@ public:
         return m_max_content_len >= get_prompt_len();
     }
 
-    const Sequence::CPtr operator[] (size_t index) const {
+    Sequence::Ptr operator[] (size_t index) {
         OPENVINO_ASSERT(m_sequences.size() > index);
         return m_sequences[index];
     }
 
-    Sequence::Ptr operator[] (size_t index) {
+    Sequence::CPtr operator[] (size_t index) const {
         OPENVINO_ASSERT(m_sequences.size() > index);
         return m_sequences[index];
     }
