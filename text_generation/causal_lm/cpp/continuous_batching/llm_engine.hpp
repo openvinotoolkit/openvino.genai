@@ -128,13 +128,9 @@ public:
         std::vector<GenerationResult> results;
         results.reserve(m_requests.size());
 
-        try {
-            while (has_running_requests()) {
-                std::vector<GenerationResult> partial_results = step();
-                results.insert(results.end(), partial_results.begin(), partial_results.end());
-            }
-        } catch (const std::exception& ex) {
-            std::cout << ex.what() << std::endl;
+        while (has_running_requests()) {
+            std::vector<GenerationResult> partial_results = step();
+            results.insert(results.end(), partial_results.begin(), partial_results.end());
         }
 
         // sort results according to request_id to return results in order of initial prompts
