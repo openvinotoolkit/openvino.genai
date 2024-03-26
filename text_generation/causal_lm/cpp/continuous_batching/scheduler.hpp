@@ -17,10 +17,24 @@ struct SchedulerConfig {
     // a maximum number of tokens to batch
     // (in constrast to max_batch_size which combines independent sequences, we consider total amount of tokens in a batch)
     // TODO: benchmark this value and understand a required value to ensure inference is not memory bound
-    const size_t max_tokens_to_batch = 16;
+    const size_t max_num_batched_tokens = 16;
 
     // total number of KV blocks available to scheduler logic
     const size_t num_kv_blocks = NUM_BLOCKS;
+
+    // whether to split prompt / generate to different scheduling phases
+    const bool dynamic_split_fuse = true;
+
+    //
+    // vLLM-like settings
+    //
+
+    // max number of scheduled sequences (you can think of it as "max batch size")
+    const size_t max_num_seqs = 256;
+    // max number of padding tokens applied when we schedule a prompt phase
+    // e.g. if total number of padded tokens within a batch a greater than this value, then
+    // new sequnce is not added to batch
+    const size_t max_paddings = 256;
 };
 
 class Scheduler {
@@ -37,6 +51,8 @@ public:
         std::map<uint64_t, std::vector<KVCacheBlock::Ptr>> m_block_tables;
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
+        // dedicated prompt phase
+        bool is_prompt;
     };
 
     explicit Scheduler(const SchedulerConfig & config = {}) :
@@ -48,11 +64,26 @@ public:
         // 1. perform balancing of running groups first to ensure we have some free KV blocks for generation
         _apply_preemption(sequence_groups);
 
-        // 2. schedule groups in generation phase
-        _schedule_generate_phase(sequence_groups, scheduler_output);
+        if (m_config.dynamic_split_fuse) {
+            // deepspeed-mii case
+            // generation phase is always scheduled first
+            _schedule_generate_phase_dynamic_split_fuse(sequence_groups, scheduler_output);
+            // some tokens from generation prompt are also scheduled
+            _schedule_prompt_phase_dynamic_split_fuse(sequence_groups, scheduler_output);
+        } else {
+            // vLLM case
+            // schedule prompt phase using whole prompt's input_ids
+            // note, that we also apply padding, while need to be considered by model runner
 
-        // 3. schedule groups in prompt phase
-        _schedule_prompt_phase(sequence_groups, scheduler_output);
+            // TODO: padding is not implemented at the current version, because we need just to benchmark a single prompt
+            // to compare PagedAttention with multiple tokens (is_prompt=False) and SPDA with vanila batch approach
+            _schedule_prompt_phase_vllm(sequence_groups, scheduler_output);
+
+            if (!scheduler_output.is_prompt) {
+                // prompt sequences are not scheduler => scheduler generation phase by dynamic_split_fuse implementation
+                _schedule_prompt_phase_dynamic_split_fuse(sequence_groups, scheduler_output);
+            }
+        }
 
         return scheduler_output;
     }
@@ -120,7 +151,7 @@ private:
         }
     }
 
-    void _schedule_prompt_phase(std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
+    void _schedule_prompt_phase_dynamic_split_fuse(std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
         // in the current method we need to balance multiple prompts (or parts of prompts) between
         // available amount of tokens in megabatch
         // Considerations:
@@ -136,7 +167,7 @@ private:
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
 
-                size_t num_tokens_in_megabatch = m_config.max_tokens_to_batch - scheduler_output.m_total_num_scheduled_tokens;
+                size_t num_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t num_available_tokens = sequence_group->get_num_available_tokens_for_batching();
 
                 // apply megabatch limitations
@@ -169,13 +200,13 @@ private:
                 }
 
                 // if we added maximum amount of tokens to compute
-                if (scheduler_output.m_total_num_scheduled_tokens == m_config.max_tokens_to_batch)
+                if (scheduler_output.m_total_num_scheduled_tokens == m_config.max_num_batched_tokens)
                     break;
             }
         }
     }
 
-    void _schedule_generate_phase(const std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
+    void _schedule_generate_phase_dynamic_split_fuse(const std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
             // Note, that can_generate_tokens will mix preempted sequence groups
@@ -186,7 +217,7 @@ private:
             if (sequence_group->can_generate_tokens()) {
                 OPENVINO_ASSERT(!sequence_group->has_finished());
                 size_t num_running_seqs = sequence_group->num_running_seqs();
-                size_t num_tokens_in_megabatch = m_config.max_tokens_to_batch - scheduler_output.m_total_num_scheduled_tokens;
+                size_t num_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t available_tokens_per_seq_in_megabatch = num_tokens_in_megabatch / num_running_seqs;
 
                 // we cannot schedule even a single token per each sequence in a group
@@ -229,8 +260,76 @@ private:
                 }
 
                 // if we added maximum amount of tokens to compute
-                if (scheduler_output.m_total_num_scheduled_tokens == m_config.max_tokens_to_batch)
+                if (scheduler_output.m_total_num_scheduled_tokens == m_config.max_num_batched_tokens)
                     break;
+            }
+        }
+    }
+
+    void _schedule_prompt_phase_vllm(std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
+        // Current scheduling method schedules prompts only in a manner similar to vLLM:
+        // - Limits max batch size by:
+        //   - max_num_seqs (256 in vLLM's defaults)
+        //   - max_paddings (256 in vLLM's defaults)
+        //   - max_num_batched_tokens (max_model_length (and at least 2048) in vLLM's defaults)
+
+        OPENVINO_ASSERT(!m_config.dynamic_split_fuse, "Internal error: we are in vLLM scheduling");
+        OPENVINO_ASSERT(m_config.max_num_seqs <= m_config.max_num_batched_tokens, "Max num batched tokens must be greater or equal to max num sequences");
+        OPENVINO_ASSERT(scheduler_output.m_scheduled_sequence_groups_ids.empty(), "Internal error: in vLLM scheduling, prompt phase is always first one");
+
+        for (size_t sequence_group_id = 0, num_scheduled_tokens = 0, max_sequence_len = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
+            SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
+            if (!sequence_group->can_generate_tokens()) {
+                size_t num_running_seqs = sequence_group->num_running_seqs();
+                // prompt phases can have a single running sequence
+                OPENVINO_ASSERT(num_running_seqs == 1);
+                // here we also assume that sequence must be scheduler in a single shot and has no already generated context
+                OPENVINO_ASSERT(sequence_group->get_context_len() == 0);
+
+                size_t num_available_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
+                size_t sequence_len = sequence_group->get_num_available_tokens_for_batching();
+                max_sequence_len = std::max(max_sequence_len, sequence_len);
+
+                // if we limited by max_num_seqs condition
+                if ((scheduler_output.m_scheduled_sequence_groups_ids.size() + 1) == m_config.max_num_seqs)
+                    break;
+
+                // apply max num batched tokens limitation
+                if (num_available_tokens_in_megabatch < max_sequence_len)
+                    break;
+
+                // apply max padding tokens limitations
+                size_t total_num_paddings = max_sequence_len * (scheduler_output.m_scheduled_sequence_groups_ids.size() + 1) - (num_scheduled_tokens + sequence_len);
+                if (total_num_paddings > m_config.max_paddings)
+                    break;
+
+                // apply KV cache limitations
+                const size_t num_required_blocks = (max_sequence_len + BLOCK_SIZE - 1) / BLOCK_SIZE;
+                if (!m_block_manager.can_allocate_blocks(num_required_blocks))
+                    break;
+
+                // add scheduling information
+                {
+                    Sequence::Ptr sequence = (*sequence_group)[0];
+                    uint64_t seq_id = sequence->get_id();
+
+                    // allocate KV blocks
+                    m_block_manager.allocate(seq_id, num_required_blocks);
+                    // and schedule tokens
+                    sequence_group->schedule_tokens(sequence_len);
+
+                    // add information to scheduler_output
+                    {
+                        scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
+                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_table(seq_id);
+                        scheduler_output.m_total_num_scheduled_tokens = max_sequence_len * scheduler_output.m_scheduled_sequence_groups_ids.size();
+                    }
+
+                    // update "is_prompt" flag
+                    scheduler_output.is_prompt = true;
+                }
+
+                num_scheduled_tokens += sequence_len;
             }
         }
     }

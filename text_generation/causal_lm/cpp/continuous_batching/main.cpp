@@ -121,7 +121,7 @@ int main(int argc, char* argv[]) try {
     //
 
     SchedulerConfig scheduler_config {
-        .max_tokens_to_batch = 16,
+        .max_num_batched_tokens = 16,
         .num_kv_blocks = NUM_BLOCKS
     };
 
