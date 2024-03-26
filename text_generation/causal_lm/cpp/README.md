@@ -134,14 +134,16 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
    4. https://huggingface.co/Qwen/Qwen1.5-7B-Chat-GPTQ-Int4
    [Qwen-7B-Chat-Int4 - Torch not compiled with CUDA enabled](../../../llm_bench/python/doc/NOTES.md#qwen-7b-chat-int4---torch-not-compiled-with-cuda-enabled)
    in case of `AssertionError`
-7. Dolly
+7. Baichuan
+   1. https://huggingface.co/baichuan-inc/Baichuan2-7B-Chat
+8. Dolly
    1. https://huggingface.co/databricks/dolly-v2-3b
-8. Phi
+9. Phi
    1. https://huggingface.co/microsoft/phi-2
    2. https://huggingface.co/microsoft/phi-1_5
-9. [notus-7b-v1](https://huggingface.co/argilla/notus-7b-v1)
-10. [zephyr-7b-beta](https://huggingface.co/HuggingFaceH4/zephyr-7b-beta)
-11. [Mistral-7B-v0.1](https://huggingface.co/mistralai/Mistral-7B-v0.1)
+10. [notus-7b-v1](https://huggingface.co/argilla/notus-7b-v1)
+11. [zephyr-7b-beta](https://huggingface.co/HuggingFaceH4/zephyr-7b-beta)
+12. [Mistral-7B-v0.1](https://huggingface.co/mistralai/Mistral-7B-v0.1)
 
 
 This pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature.
