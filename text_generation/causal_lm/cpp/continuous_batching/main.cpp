@@ -122,7 +122,10 @@ int main(int argc, char* argv[]) try {
 
     SchedulerConfig scheduler_config {
         .max_num_batched_tokens = 16,
-        .num_kv_blocks = NUM_BLOCKS
+        .num_kv_blocks = NUM_BLOCKS,
+        .dynamic_split_fuse = false,
+        .max_num_seqs = 2,
+        .max_paddings = 8,
     };
 
     LLMEngine engine(request, scheduler_config);

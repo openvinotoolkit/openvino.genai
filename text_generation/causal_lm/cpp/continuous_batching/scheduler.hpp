@@ -23,7 +23,7 @@ struct SchedulerConfig {
     const size_t num_kv_blocks = NUM_BLOCKS;
 
     // whether to split prompt / generate to different scheduling phases
-    const bool dynamic_split_fuse = true;
+    const bool dynamic_split_fuse = false;
 
     //
     // vLLM-like settings
@@ -290,10 +290,6 @@ private:
                 size_t sequence_len = sequence_group->get_num_available_tokens_for_batching();
                 max_sequence_len = std::max(max_sequence_len, sequence_len);
 
-                // if we limited by max_num_seqs condition
-                if ((scheduler_output.m_scheduled_sequence_groups_ids.size() + 1) == m_config.max_num_seqs)
-                    break;
-
                 // apply max num batched tokens limitation
                 if (num_available_tokens_in_megabatch < max_sequence_len)
                     break;
@@ -330,6 +326,10 @@ private:
                 }
 
                 num_scheduled_tokens += sequence_len;
+
+                // if we limited by max_num_seqs condition
+                if (scheduler_output.m_scheduled_sequence_groups_ids.size() == m_config.max_num_seqs)
+                    break;
             }
         }
     }

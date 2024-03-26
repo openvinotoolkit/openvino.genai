@@ -6,7 +6,7 @@ project(causal_lm)
 
 add_subdirectory(../../../thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
 
-set(TARGET_NAME continuous_batching)
+set(TARGET_NAME continuous_batching_sample)
 add_executable(${TARGET_NAME} continuous_batching/main.cpp)
 target_include_directories(${TARGET_NAME} PRIVATE continuous_batching)
 target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
