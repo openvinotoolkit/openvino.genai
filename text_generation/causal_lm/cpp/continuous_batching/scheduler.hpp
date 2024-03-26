@@ -52,7 +52,7 @@ public:
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
         // dedicated prompt phase
-        bool is_prompt;
+        bool is_prompt = false;
     };
 
     explicit Scheduler(const SchedulerConfig & config = {}) :
@@ -81,7 +81,7 @@ public:
 
             if (!scheduler_output.is_prompt) {
                 // prompt sequences are not scheduler => scheduler generation phase by dynamic_split_fuse implementation
-                _schedule_prompt_phase_dynamic_split_fuse(sequence_groups, scheduler_output);
+                _schedule_generate_phase_dynamic_split_fuse(sequence_groups, scheduler_output);
             }
         }
 
@@ -101,6 +101,16 @@ public:
     }
 
 private:
+    static size_t _num_running_sequence_groups(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+        size_t num_running = 0;
+        for (const SequenceGroup::CPtr& seq_group : sequence_groups) {
+            if (seq_group->can_generate_tokens())
+                ++num_running;
+        }
+
+        return num_running;
+    }
+
     void _preempt_by_recompute(SequenceGroup::Ptr sequence_group) {
         // currently, we support only preemption by (TODO: implement "partial") recompute
         for (size_t s = 0; s < sequence_group->num_running_seqs(); ++s) {
@@ -111,7 +121,7 @@ private:
         sequence_group->preempt_tokens(sequence_group->get_num_processed_tokens());
     }
 
-    size_t _get_low_priority_sequence_group_id(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+    static size_t _get_low_priority_sequence_group_id(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         for (size_t seq_group_id = 0, num_groups = sequence_groups.size(); seq_group_id < num_groups; ++seq_group_id) {
             SequenceGroup::CPtr sequence_group = sequence_groups[num_groups - seq_group_id - 1];
             if (sequence_group->get_num_processed_tokens() > 0) {
@@ -277,6 +287,9 @@ private:
         OPENVINO_ASSERT(m_config.max_num_seqs <= m_config.max_num_batched_tokens, "Max num batched tokens must be greater or equal to max num sequences");
         OPENVINO_ASSERT(scheduler_output.m_scheduled_sequence_groups_ids.empty(), "Internal error: in vLLM scheduling, prompt phase is always first one");
 
+        // TODO: it currently does not handle beam search, where beam width should contribute to total number of "num running sequences"
+        size_t num_running_sequence_groups = _num_running_sequence_groups(sequence_groups);
+
         for (size_t sequence_group_id = 0, num_scheduled_tokens = 0, max_sequence_len = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
             if (!sequence_group->can_generate_tokens()) {
@@ -290,6 +303,10 @@ private:
                 size_t sequence_len = sequence_group->get_num_available_tokens_for_batching();
                 max_sequence_len = std::max(max_sequence_len, sequence_len);
 
+                // if we limited by max_num_seqs condition
+                if (num_running_sequence_groups >= m_config.max_num_seqs)
+                    break;
+
                 // apply max num batched tokens limitation
                 if (num_available_tokens_in_megabatch < max_sequence_len)
                     break;
@@ -300,7 +317,7 @@ private:
                     break;
 
                 // apply KV cache limitations
-                const size_t num_required_blocks = (max_sequence_len + BLOCK_SIZE - 1) / BLOCK_SIZE;
+                const size_t num_required_blocks = (sequence_len + BLOCK_SIZE - 1) / BLOCK_SIZE;
                 if (!m_block_manager.can_allocate_blocks(num_required_blocks))
                     break;
 
@@ -326,10 +343,7 @@ private:
                 }
 
                 num_scheduled_tokens += sequence_len;
-
-                // if we limited by max_num_seqs condition
-                if (scheduler_output.m_scheduled_sequence_groups_ids.size() == m_config.max_num_seqs)
-                    break;
+                num_running_sequence_groups += 1;
             }
         }
     }

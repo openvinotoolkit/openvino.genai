@@ -73,17 +73,23 @@ private:
             // fill information about current sequence group's prompt
             // note: we don't fill padding values with some values like -1 for slot_mapping data
             {
-                for (size_t block_id = 0; block_id < kv_blocks.size(); ++block_id)
-                    block_tables_data[block_id] = kv_blocks[block_id]->get_index();
+                for (size_t block_id = 0; block_id < max_num_blocks; ++block_id)
+                    block_tables_data[block_id] = block_id < kv_blocks.size() ?
+                        kv_blocks[block_id]->get_index() :
+                        -1;
 
                 std::iota(position_ids_data, position_ids_data + context_len, 0);
+                std::fill_n(position_ids_data + context_len, max_seq_len - context_len, -1);
+
                 std::copy_n(input_ids.data(), context_len, input_ids_data);
                 context_lens_data[0] = context_len;
 
                 // compute slot_id
-                for (size_t token_id = 0; token_id < context_len; ++token_id) {
+                for (size_t token_id = 0; token_id < max_seq_len; ++token_id) {
                     size_t physical_block_id = token_id / BLOCK_SIZE, block_offset = token_id % BLOCK_SIZE;
-                    int64_t slot_id = BLOCK_SIZE * kv_blocks[physical_block_id]->get_index() + block_offset;
+                    int64_t slot_id = token_id < context_len ?
+                        BLOCK_SIZE * kv_blocks[physical_block_id]->get_index() + block_offset :
+                        -1 /* PAD token ID */ ;
                     slot_mapping_data[token_id] = slot_id;
                 }
 

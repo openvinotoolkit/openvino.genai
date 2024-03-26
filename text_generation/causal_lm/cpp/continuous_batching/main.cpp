@@ -97,7 +97,8 @@ int main(int argc, char* argv[]) try {
     };
 
     std::vector<SamplingParameters> sampling_params_examples {
-        SamplingParameters::beam_search(),
+        // TODO: enable beam search for vLLM case
+        // SamplingParameters::beam_search(),
         SamplingParameters::greedy(),
         // SamplingParameters::multimomial(),
     };

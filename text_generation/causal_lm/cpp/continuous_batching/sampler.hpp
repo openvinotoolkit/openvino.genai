@@ -220,19 +220,22 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
     const float * logits_data = logits.data<float>();
     ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3);
-    size_t seq_len = logits_shape[1], vocab_size = logits_shape[2], logits_stride = seq_len * vocab_size;
-    OPENVINO_ASSERT(seq_len == 1);
+    size_t max_seq_len = logits_shape[1], vocab_size = logits_shape[2];
 
     SamplerOutput sampler_output;
 
-    for (size_t sequence_group_id = 0, current_token_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
+    for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
         SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
+        if (!sequence_group->is_scheduled())
+            continue;
+
         size_t num_running_sequences = sequence_group->num_running_seqs();
-        size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+        size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens(); // points to a token which needs to be sampled
+        size_t padded_amount_of_processed_tokens = std::max(num_scheduled_tokens, max_seq_len);
         const SamplingParameters& sampling_params = sequence_group->get_sampling_parameters();
 
-        const void * sequence_group_logits_data = logits_data + logits_stride * current_token_id;
-        ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, num_scheduled_tokens, vocab_size}, (void *)sequence_group_logits_data);
+        const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
+        ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, padded_amount_of_processed_tokens, vocab_size}, (void *)sequence_group_logits_data);
 
         if (sequence_group->requires_sampling()) {
             if (sampling_params.is_gready_sampling()) {
@@ -273,7 +276,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         }
 
         // accumulate a number of processed tokens
-        current_token_id += sequence_group->get_num_scheduled_tokens() * num_running_sequences;
+        currently_processed_tokens += padded_amount_of_processed_tokens * num_running_sequences;
 
         // NOTE: it should be before 'get_num_scheduled_tokens' is used
         // update internal state of sequence group to reset scheduler tokens and update currently processed ones

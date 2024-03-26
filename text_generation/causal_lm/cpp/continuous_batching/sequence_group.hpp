@@ -175,6 +175,10 @@ public:
         return num_running_seqs() == 0;
     }
 
+    bool is_running() const {
+        return !has_finished();
+    }
+
     std::vector<Sequence::Ptr> get_finished_sequences() const {
         std::vector<Sequence::Ptr> finished_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
