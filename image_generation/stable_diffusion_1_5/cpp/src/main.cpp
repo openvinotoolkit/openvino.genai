@@ -17,6 +17,9 @@
 #include "lora.hpp"
 #include "imwrite.hpp"
 
+const size_t TOKENIZER_MODEL_MAX_LENGTH = 77; // 'model_max_length' from 'tokenizer_config.json'
+const size_t VAE_SCALE_FACTOR = 8;
+
 class Timer {
     const decltype(std::chrono::steady_clock::now()) m_start;
 public:
@@ -70,13 +73,66 @@ void apply_lora(std::shared_ptr<ov::Model> model, InsertLoRA::LoRAMap& lora_map)
     }
 }
 
-StableDiffusionModels compile_models(const std::string& model_path, const std::string& device,
-                                     const std::string& lora_path, const float alpha, const bool use_cache) {
+void reshape_text_encoder(std::shared_ptr<ov::Model> model, size_t batch_size, size_t tokenizer_model_max_length) {
+    ov::PartialShape input_shape = model->input(0).get_partial_shape();
+    input_shape[0] = batch_size;
+    input_shape[1] = tokenizer_model_max_length;
+    std::map<std::string, ov::PartialShape> name_to_shape{{model->input(0).get_any_name(), input_shape}};
+    model->reshape(name_to_shape);
+}
+
+void reshape_unet_encoder(std::shared_ptr<ov::Model> model, int64_t batch_size, int64_t height, int64_t width, 
+                          int64_t num_images_per_prompt, int64_t tokenizer_model_max_length) {
+    batch_size *= num_images_per_prompt;
+    // The factor of 2 comes from the guidance scale > 1
+    for (auto input : model->inputs()) {
+        if (input.get_any_name().find("timestep_cond") == std::string::npos) {
+            batch_size *= 2;
+            break;
+        }
+    }
+
+    height = height / VAE_SCALE_FACTOR;
+    width = width / VAE_SCALE_FACTOR;
+    
+    std::map<std::string, ov::PartialShape> name_to_shape;
+
+    for (auto input : model->inputs()) {
+        std::string input_name = input.get_any_name();
+        name_to_shape[input_name] = input.get_partial_shape();
+        if (input_name == "timestep") {
+            name_to_shape[input_name][0] = 1;
+        } else if (input_name == "sample") {
+            int64_t in_channels = 4; // 'in_channels' parameter from 'unet/config.json'
+            name_to_shape[input_name] = {batch_size, in_channels, height, width};
+        } else if (input_name == "time_ids") {
+            name_to_shape[input_name][0] = batch_size;
+        } else {
+            name_to_shape[input_name][0] = batch_size;
+            name_to_shape[input_name][1] = TOKENIZER_MODEL_MAX_LENGTH;
+        }
+    }
+
+    model->reshape(name_to_shape);
+}
+
+void reshape_vae_decoder(std::shared_ptr<ov::Model> model, int64_t height, int64_t width) {
+    height = height / VAE_SCALE_FACTOR;
+    width = width / VAE_SCALE_FACTOR;
+    int64_t latent_channels = 4; // 'latent_channels' parameter from 'vae_decoder/config.json'
+    std::map<std::string, ov::PartialShape> name_to_shape{{model->input(0).get_any_name(), {1, latent_channels, height, width}}};
+    model->reshape(name_to_shape);
+}
+
+StableDiffusionModels compile_models(const std::string& model_path, const std::string& device, const std::string& lora_path,
+                                     const float alpha, const bool use_cache, const bool use_dynamic_shapes,
+                                     const size_t batch_size, const size_t height, const size_t width, const size_t num_images) {
     StableDiffusionModels models;
 
     ov::Core core;
     if (use_cache)
         core.set_property(ov::cache_dir("./cache_dir"));
+    
     core.add_extension(TOKENIZERS_LIBRARY_PATH);
 
     // read LoRA weights
@@ -90,6 +146,9 @@ StableDiffusionModels compile_models(const std::string& model_path, const std::s
     {
         Timer t("Loading and compiling text encoder");
         auto text_encoder_model = core.read_model(model_path + "/text_encoder/openvino_model.xml");
+        if (!use_dynamic_shapes) {
+            reshape_text_encoder(text_encoder_model, batch_size, TOKENIZER_MODEL_MAX_LENGTH);
+        }
         apply_lora(text_encoder_model, lora_weights["text_encoder"]);
         models.text_encoder = core.compile_model(text_encoder_model, device);
     }
@@ -98,6 +157,9 @@ StableDiffusionModels compile_models(const std::string& model_path, const std::s
     {
         Timer t("Loading and compiling UNet");
         auto unet_model = core.read_model(model_path + "/unet/openvino_model.xml");
+        if (!use_dynamic_shapes) {
+            reshape_unet_encoder(unet_model, batch_size, height, width, num_images, TOKENIZER_MODEL_MAX_LENGTH);
+        }
         apply_lora(unet_model, lora_weights["unet"]);
         models.unet = core.compile_model(unet_model, device);
     }
@@ -106,6 +168,9 @@ StableDiffusionModels compile_models(const std::string& model_path, const std::s
     {
         Timer t("Loading and compiling VAE decoder");
         auto vae_decoder_model = core.read_model(model_path + "/vae_decoder/openvino_model.xml");
+        if (!use_dynamic_shapes) {
+            reshape_vae_decoder(vae_decoder_model, height, width);
+        }
         ov::preprocess::PrePostProcessor ppp(vae_decoder_model);
         ppp.output().model().set_layout("NCHW");
         ppp.output().tensor().set_layout("NHWC");
@@ -123,10 +188,9 @@ StableDiffusionModels compile_models(const std::string& model_path, const std::s
 }
 
 ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt, std::string& neg_prompt) {
-    const size_t MAX_LENGTH = 77; // 'model_max_length' from 'tokenizer_config.json'
     const size_t HIDDEN_SIZE = static_cast<size_t>(models.text_encoder.output(0).get_partial_shape()[2].get_length());
     const int32_t EOS_TOKEN_ID = 49407, PAD_TOKEN_ID = EOS_TOKEN_ID;
-    const ov::Shape input_ids_shape({1, MAX_LENGTH});
+    const ov::Shape input_ids_shape({1, TOKENIZER_MODEL_MAX_LENGTH});
 
     ov::InferRequest tokenizer_req = models.tokenizer.create_infer_request();
     ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
@@ -147,10 +211,10 @@ ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt, s
         text_encoder_req.infer();
     };
 
-    ov::Tensor text_embeddings(ov::element::f32, {2, MAX_LENGTH, HIDDEN_SIZE});
+    ov::Tensor text_embeddings(ov::element::f32, {2, TOKENIZER_MODEL_MAX_LENGTH, HIDDEN_SIZE});
 
-    compute_text_embeddings(neg_prompt, ov::Tensor(text_embeddings, {0, 0, 0}, {1, MAX_LENGTH, HIDDEN_SIZE}));
-    compute_text_embeddings(pos_prompt, ov::Tensor(text_embeddings, {1, 0, 0}, {2, MAX_LENGTH, HIDDEN_SIZE}));
+    compute_text_embeddings(neg_prompt, ov::Tensor(text_embeddings, {0, 0, 0}, {1, TOKENIZER_MODEL_MAX_LENGTH, HIDDEN_SIZE}));
+    compute_text_embeddings(pos_prompt, ov::Tensor(text_embeddings, {1, 0, 0}, {2, TOKENIZER_MODEL_MAX_LENGTH, HIDDEN_SIZE}));
 
     return text_embeddings;
 }
@@ -218,7 +282,8 @@ int32_t main(int32_t argc, char* argv[]) try {
     ("c,useCache", "Use model caching", cxxopts::value<bool>()->default_value("false"))
     ("r,readNPLatent", "Read numpy generated latents from file", cxxopts::value<bool>()->default_value("false"))
     ("m,modelPath", "Specify path of SD model IRs", cxxopts::value<std::string>()->default_value("../models/dreamlike-anime-1.0"))
-    ("t,type", "Specify the type of SD model IRs (e.g., FP16_static or FP16_dyn)", cxxopts::value<std::string>()->default_value("FP16_static"))
+    ("t,type", "Specify the type of SD model IRs (FP32, FP16 or INT8)", cxxopts::value<std::string>()->default_value("FP16"))
+    ("dynamic", "Specify the model input shape to use dynamic shape", cxxopts::value<bool>()->default_value("false"))
     ("l,loraPath", "Specify path of LoRA file. (*.safetensors).", cxxopts::value<std::string>()->default_value(""))
     ("a,alpha", "alpha for LoRA", cxxopts::value<float>()->default_value("0.75"))("h,help", "Print usage");
     cxxopts::ParseResult result;
@@ -248,6 +313,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     const bool read_np_latent = result["readNPLatent"].as<bool>();
     const std::string model_base_path = result["modelPath"].as<std::string>();
     const std::string model_type = result["type"].as<std::string>();
+    const bool use_dynamic_shapes = result["dynamic"].as<bool>();
     const std::string lora_path = result["loraPath"].as<std::string>();
     const float alpha = result["alpha"].as<float>();
 
@@ -263,13 +329,20 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     std::cout << "OpenVINO version: " << ov::get_openvino_version() << std::endl;
 
-    // Stable Diffusion pipeline
+    const std::string model_path = model_base_path + "/" + model_type;
+    if (!std::filesystem::exists(model_path)) {
+        std::cerr << "Model IRs for type " << model_type << " don't exist in directory " << model_path << "\n";
+        std::cerr << "Refer to README.md to know how to export OpenVINO model with particular data type." << std::endl;
+        return EXIT_FAILURE;
+    }
 
-    StableDiffusionModels models = compile_models(model_base_path + "/" + model_type, device, lora_path, alpha, use_cache);
+    // Stable Diffusion pipeline
+    const size_t batch_size = 1;
+    StableDiffusionModels models = compile_models(model_path, device, lora_path, alpha, use_cache, use_dynamic_shapes, batch_size, height, width, num_images);
     ov::InferRequest unet_infer_request = models.unet.create_infer_request();
 
     ov::PartialShape sample_shape = models.unet.input("sample").get_partial_shape();
-    OPENVINO_ASSERT(sample_shape.is_dynamic() || (sample_shape[2] * 8 == width && sample_shape[3] * 8 == height),
+    OPENVINO_ASSERT(sample_shape.is_dynamic() || (sample_shape[2] * 8 == height && sample_shape[3] * 8 == width),
         "UNet model has static shapes [1, 4, H/8, W/8] or dynamic shapes [?, 4, ?, ?]");
 
     Timer t("Running Stable Diffusion pipeline");
