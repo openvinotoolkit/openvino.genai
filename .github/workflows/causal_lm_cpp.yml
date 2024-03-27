@@ -235,7 +235,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id baichuan-inc/Baichuan2-7B-Chat --output_dir ./Baichuan2-7B-Chat/ --precision FP16 &
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" "bitsandbytes>=0.43.0" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id baichuan-inc/Baichuan2-7B-Chat --output_dir ./Baichuan2-7B-Chat/ --precision FP16 &
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
           wait
