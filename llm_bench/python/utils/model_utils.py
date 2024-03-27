@@ -96,9 +96,6 @@ def set_default_param_for_ov_config(ov_config):
     # With this PR https://github.com/huggingface/optimum-intel/pull/362, we are able to disable model cache
     if 'CACHE_DIR' not in ov_config:
         ov_config['CACHE_DIR'] = ''
-    # OpenVINO self have default value 2 for nstreams on machine with 2 nodes. Reducing memory consumed via changing nstreams to 1.
-    if 'NUM_STREAMS' not in ov_config:
-        ov_config['NUM_STREAMS'] = '1'
 
 
 def add_stateful_model_arguments(parser: argparse.ArgumentParser):
