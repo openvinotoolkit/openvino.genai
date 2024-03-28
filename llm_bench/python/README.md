@@ -15,7 +15,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 > Note:
-> If you want to reuse an existing python exvironment, recommend following command to use all the dependencies with latest versions:  
+> If you are using an existing python environment, recommend following command to use all the dependencies with latest versions:  
 > pip install -U --upgrade-strategy eager -r requirements.txt
 
 ### 2. Convert a model to OpenVINO IR
