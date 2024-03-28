@@ -37,6 +37,8 @@ OV_MODEL_CLASSES_MAPPING = {
     'codet5': OVModelForSeq2SeqLM,
     'codegen2': OVModelForCausalLM,
     'ldm_super_resolution': OVLDMSuperResolutionPipeline,
+    'chatglm2': OVModelForCausalLM,
+    'chatglm3': OVModelForCausalLM,
     'chatglm': OVChatGLMModel,
 }
 
@@ -94,6 +96,7 @@ USE_CASES = {
         'phi-',
         'minicpm',
         'gemma',
+        "deci",
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }
