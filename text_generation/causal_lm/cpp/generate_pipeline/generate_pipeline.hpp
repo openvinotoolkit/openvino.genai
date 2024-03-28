@@ -77,6 +77,8 @@ public:
           m_model_runner(request) {
             // todo
     }
+    
+    LLMEngine() = default;
 
     // more high level interface
     GenerationResult generate(ov::Tensor prompts, SamplingParameters sampling_params) {
@@ -90,22 +92,104 @@ public:
     }
 };
 
+std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string prompt) {
+    size_t batch_size = 1;
+    tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
+    tokenizer.infer();
+    return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
+}
+
+std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::vector<std::string> prompts) {
+    tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, &prompts});
+    tokenizer.infer();
+    return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
+}
+
+std::string detokenize(ov::InferRequest& detokenizer, std::vector<int64_t> tokens) {
+    size_t batch_size = 1;
+    detokenizer.set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
+    detokenizer.infer();
+    return detokenizer.get_output_tensor().data<std::string>()[0];
+}
+
+std::vector<std::string> detokenize(ov::InferRequest& detokenizer, ov::Tensor tokens) {
+    detokenizer.set_input_tensor(tokens);
+    detokenizer.infer();
+    auto res = detokenizer.get_output_tensor();
+    
+    std::vector<std::string> strings;
+    strings.reserve(res.get_shape()[0]);
+    for (int i = 0; i < res.get_shape()[0]; ++i) {
+        strings.emplace_back(res.data<std::string>()[i]);
+    }
+    return strings;
+}
+
+
+// The following reasons require TextStreamer to keep a cache of previous tokens:
+// detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
+// but detokenize(tokenize("prefix a")) == "prefix a"
+// 1 printable token may consist of 2 token ids: detokenize(incomplete_token_idx) == "�"
+struct TextStreamer {
+    ov::InferRequest detokenizer;
+    std::vector<int64_t> token_cache;
+    size_t print_len = 0;
+
+    void put(int64_t token) {
+        token_cache.push_back(token);
+        std::string text = detokenize(detokenizer, token_cache);
+        if (!text.empty() && '\n' == text.back()) {
+            // Flush the cache after the new line symbol
+            std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
+            token_cache.clear();
+            print_len = 0;
+            return;
+        }
+        if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
+            // Don't print incomplete text
+            return;
+        }
+        std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
+        print_len = text.size();
+    }
+
+    void end() {
+        std::string text = detokenize(detokenizer, token_cache);
+        std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
+        token_cache.clear();
+        print_len = 0;
+    }
+};
+
 class LLMPipeline {
-    ov::InferRequest m_model_runner;
+    LLMEngine m_model_runner;
+    ov::InferRequest m_tokenizer;
+    ov::InferRequest m_detokenizer;
     std::string m_path;
-    SamplingParameters sampling_parameters;
+    SamplingParameters m_sampling_parameters;
 
 public:
     LLMPipeline(std::string& path) : m_path(path) {
-        // load generation config from the file
-        // todo
+        if (std::filesystem::exists(m_path + "/generation_config.json")) {
+            m_sampling_parameters = SamplingParameters(m_path + "/generation_config.json");
+        }
+
+        ov::Core core;
+        // The model can be compiled for GPU as well
+        auto model_request = core.compile_model(m_path + "/openvino_model.xml", "CPU").create_infer_request();
+        m_model_runner = LLMEngine(model_request);
+
+        // tokenizer and detokenizer work on CPU only
+        core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
+        m_tokenizer = core.compile_model(m_path + "/openvino_tokenizer.xml", "CPU").create_infer_request();
+        m_detokenizer = core.compile_model(m_path + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     }
 
-    GenerationResult call() {
-        // will call generate inside itself
-        GenerationResult results;
-        results.reserve(10);
-        return results;
-    }
+    std::string call(std::string text) {
+        auto [input_ids, attention_mask] = tokenize(m_tokenizer, text);
 
+        auto generate_results = m_model_runner.generate(input_ids, m_sampling_parameters);
+
+        return detokenize(m_detokenizer, generate_results);
+    }
 };

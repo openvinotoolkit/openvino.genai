@@ -6,15 +6,20 @@
 
 #include <cstdlib>
 #include <functional>
+#include <nlohmann/json.hpp>
+#include <fstream>
 
 enum class StopCriteria {early, heuristic, never};
 
 // forward declaration
 class Sequence;
 
+// SamplingParameters is similar to HuggingFace GenerationConfig 
+// and has parameters that are not present in the original SamplingParameters for continous batching
 struct SamplingParameters {
     // Generic
     size_t max_new_tokens = 100;
+    size_t max_length = 100; // max_new tokens should have priority over max_new_tokens
     bool ignore_eos = false;
     int64_t eos_token = 2; // There's no way to extract special token values from the tokenizer for now
 
@@ -31,6 +36,28 @@ struct SamplingParameters {
     float temperature = 0.0f; // by default we use greedy sampling
     int top_k = -1; // maybe to assign vocab_size ?
     float top_p = 1.0f; // by default convsider all tokens
+    bool do_sample;
+
+    // special tokens
+    int64_t bos_token_id = 0;
+    int64_t eos_token_id = 0;
+    int64_t pad_token_id = 0;
+
+    SamplingParameters() = default;
+
+    SamplingParameters(std::string json_path) {
+        std::ifstream f(json_path);
+        nlohmann::json data = nlohmann::json::parse(f);
+
+        bos_token_id = data.value("bos_token_id", 0);
+        eos_token_id = data.value("eos_token_id", 0);
+        max_length = data.value("max_length", 0);
+        pad_token_id = data.value("pad_token_id", 0);
+        
+        temperature = data.value("temperature", 0.0f);
+        do_sample = data.value("do_sample", false);
+        top_p = data.value("top_p", 0.0f);
+    }
 
     static SamplingParameters greedy() {
         SamplingParameters greedy_params;
@@ -53,11 +80,12 @@ struct SamplingParameters {
         multimomial.temperature = 0.8f;
         multimomial.top_p = 0.8;
         multimomial.top_k = 20;
+        multimomial.do_sample = 20;
         return multimomial;
     }
 
     bool is_gready_sampling() const {
-        return temperature == 0.0f && !is_beam_search();
+        return !do_sample && !is_beam_search();
     }
 
     bool is_beam_search() const {
@@ -65,7 +93,7 @@ struct SamplingParameters {
     }
 
     bool is_multimomial() const {
-        return temperature == 0.0f && !is_beam_search();
+        return do_sample;
     }
     
 };
