@@ -26,15 +26,15 @@ conda install -c conda-forge  openvino c-compiler cxx-compiler make cmake
 ### Stable Diffusion v1.5 model:
 
 1. Install dependencies to import models from HuggingFace:
-   ```shell
-   conda activate openvino_sd_cpp
-   python -m pip install -r requirements.txt
-   python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
-   ```
-   
-2. Download and export to OpenVINO format a huggingface SD v1.5 model like:
-   - [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5)
-   - [dreamlike-art/dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0) to run Stable Diffusion with LoRA adapters.
+```shell
+git submodule update --init
+conda activate openvino_sd_cpp
+python -m pip install -r scripts/requirements.txt
+python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
+```
+2. Download a huggingface SD v1.5 model like:
+- [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5)
+- [dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0) to run Stable Diffusion with LoRA adapters.
 
    Example command for downloading and exporting FP16 model:
    ```shell
