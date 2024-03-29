@@ -102,8 +102,15 @@ int main(int argc, char* argv[]) try {
 
     ov::Core core;
     core.add_extension("libuser_ov_extensions.so");
+
     // The model can be compiled for GPU as well
     std::shared_ptr<ov::Model> model = core.read_model("/home/sandye51/Documents/Programming/git_repo/vllm/vllm_optimum_openvino_model.xml");
+    const ov::ParameterVector& parameters = model->get_parameters();
+    for (size_t decoder_layer_id = 0; decoder_layer_id < NUM_DECODER_LAYERS; ++decoder_layer_id) {
+        parameters[2 + 2 * decoder_layer_id]->set_element_type(kv_cache_precision);
+        parameters[2 + 2 * decoder_layer_id + 1]->set_element_type(kv_cache_precision);
+    }
+    model->validate_nodes_and_infer_types();
     ov::InferRequest request = core.compile_model(model, "CPU").create_infer_request();
 
     //
