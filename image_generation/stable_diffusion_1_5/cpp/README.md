@@ -28,7 +28,7 @@ conda install -c conda-forge  openvino c-compiler cxx-compiler make cmake
 1. Install dependencies to import models from HuggingFace:
    ```shell
    conda activate openvino_sd_cpp
-   python -m pip install -r scripts/requirements.txt
+   python -m pip install -r requirements.txt
    python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
    ```
    
