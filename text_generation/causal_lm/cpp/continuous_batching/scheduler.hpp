@@ -75,8 +75,6 @@ public:
             // schedule prompt phase using whole prompt's input_ids
             // note, that we also apply padding, while need to be considered by model runner
 
-            // TODO: padding is not implemented at the current version, because we need just to benchmark a single prompt
-            // to compare PagedAttention with multiple tokens (is_prompt=False) and SPDA with vanila batch approach
             _schedule_prompt_phase_vllm(sequence_groups, scheduler_output);
 
             if (!scheduler_output.is_prompt) {
