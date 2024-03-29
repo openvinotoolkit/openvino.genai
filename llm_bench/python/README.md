@@ -11,10 +11,12 @@ pytorch and openvino models, using almost the same code and precollected models.
 ``` bash
 python3 -m venv python-env
 source python-env/bin/activate
-pip install update --upgrade
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
-> Note: For llama models, ensure to have transformers<4.38.
+> Note:
+> If you are using an existing python environment, recommend following command to use all the dependencies with latest versions:  
+> pip install -U --upgrade-strategy eager -r requirements.txt
 
 ### 2. Convert a model to OpenVINO IR
    
