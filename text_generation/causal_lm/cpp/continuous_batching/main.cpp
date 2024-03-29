@@ -86,7 +86,7 @@ int main(int argc, char* argv[]) try {
     // Create requests for generation
     //
 
-    const size_t dataset_size = 10;
+    const size_t dataset_size = 16;
 
     std::vector<std::string> prompt_examples = {
         "What is OpenVINO?",
@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) try {
 
     std::vector<SamplingParameters> sampling_params_examples {
         // TODO: enable beam search for vLLM case
-        // SamplingParameters::beam_search(),
+        SamplingParameters::beam_search(),
         SamplingParameters::greedy(),
         // SamplingParameters::multimomial(),
     };
