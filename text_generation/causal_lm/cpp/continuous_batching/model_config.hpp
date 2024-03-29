@@ -13,7 +13,7 @@ constexpr size_t BLOCK_SIZE = 1;
 constexpr int64_t SPECIAL_EOS_TOKEN = 2; // llm_model->get_rt_info()["eos_token_id"].as<int64_t>();
 
 // TODO: compute based on the available memory
-constexpr size_t NUM_BLOCKS = 3640;
+constexpr size_t NUM_BLOCKS = 364000;
 
 // TODO: make as a parameter
 constexpr auto kv_cache_precision = ov::element::f16;
