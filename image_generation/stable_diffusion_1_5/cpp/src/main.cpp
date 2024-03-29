@@ -281,7 +281,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     ("width", "Destination image width", cxxopts::value<size_t>()->default_value("512"))
     ("c,useCache", "Use model caching", cxxopts::value<bool>()->default_value("false"))
     ("r,readNPLatent", "Read numpy generated latents from file", cxxopts::value<bool>()->default_value("false"))
-    ("m,modelPath", "Specify path of SD model IRs", cxxopts::value<std::string>()->default_value("../models/dreamlike-anime-1.0"))
+    ("m,modelPath", "Specify path of SD model IRs", cxxopts::value<std::string>()->default_value("../models/dreamlike_anime_1_0_ov"))
     ("t,type", "Specify the type of SD model IRs (FP32, FP16 or INT8)", cxxopts::value<std::string>()->default_value("FP16"))
     ("dynamic", "Specify the model input shape to use dynamic shape", cxxopts::value<bool>()->default_value("false"))
     ("l,loraPath", "Specify path of LoRA file. (*.safetensors).", cxxopts::value<std::string>()->default_value(""))
