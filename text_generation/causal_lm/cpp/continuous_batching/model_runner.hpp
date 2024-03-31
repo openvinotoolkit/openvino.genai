@@ -11,6 +11,7 @@
 #include "debug_utils.hpp"
 #include "sequence_group.hpp"
 #include "scheduler.hpp"
+#include "timer.hpp"
 
 class ModelRunner {
     ov::InferRequest & m_request;
@@ -122,7 +123,12 @@ private:
         // print_tensor("context_lens", context_lens);
         // print_tensor("block_tables", block_tables);
 
-        m_request.infer();
+        {
+            static ScopedTimer timer("pure prompt inference");
+            timer.start();
+            m_request.infer();
+            timer.end();
+        }
 
         // return logits
         return m_request.get_output_tensor();
@@ -227,7 +233,12 @@ private:
         // print_tensor("context_lens", context_lens);
         // print_tensor("block_tables", block_tables);
 
-        m_request.infer();
+        {
+            static ScopedTimer timer("pure generate inference");
+            timer.start();
+            m_request.infer();
+            timer.end();
+        }
 
         // return logits
         return m_request.get_output_tensor();

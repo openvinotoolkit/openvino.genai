@@ -4,6 +4,10 @@
 cmake_minimum_required(VERSION 3.15)
 project(causal_lm)
 
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
+
 add_subdirectory(../../../thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
 
 # start of dependencies

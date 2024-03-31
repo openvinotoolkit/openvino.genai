@@ -9,6 +9,7 @@
 #include "sampler.hpp"
 #include "model_runner.hpp"
 #include "scheduler.hpp"
+#include "timer.hpp"
 
 #include "debug_utils.hpp"
 
@@ -78,14 +79,39 @@ public:
     }
 
     std::vector<GenerationResult> step() {
-        Scheduler::Output scheduler_output = m_scheduler.schedule(m_requests);
-        m_cache_manager.copy_blocks(scheduler_output.m_block_copy_map);
+        static ScopedTimer step_timer("step()");
+        step_timer.start();
 
-        ov::Tensor logits = m_model_runner.forward(m_requests, scheduler_output);
-        SamplerOutput sampler_output = m_sampler.sample(m_requests, logits);
+        Scheduler::Output scheduler_output;
+        {
+            static ScopedTimer timer("scheduling");
+            timer.start();
+            scheduler_output = m_scheduler.schedule(m_requests);
+            m_cache_manager.copy_blocks(scheduler_output.m_block_copy_map);
+            timer.end();
+        }
+
+        ov::Tensor logits;
+        {
+            static ScopedTimer timer("forward");
+            timer.start();
+            logits = m_model_runner.forward(m_requests, scheduler_output);
+            timer.end();
+        }
+
+        SamplerOutput sampler_output;
+        {
+            static ScopedTimer timer("sample");
+            timer.start();
+            sampler_output = m_sampler.sample(m_requests, logits);
+            timer.end();
+        }
 
         // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
         {
+            static ScopedTimer timer("fork / free sequence");
+            timer.start();
+
             for (const auto& pair : sampler_output.m_forked_sequences) {
                 uint64_t parent_id = pair.first;
                 for (auto & child_id : pair.second)
@@ -94,21 +120,31 @@ public:
 
             for (auto seq_id : sampler_output.m_dropped_sequences)
                 m_scheduler.free_sequence(seq_id);
+
+            timer.end();
         }
 
         // perform post-processing of current step
 
         std::vector<GenerationResult> currently_finished_requests;
-        for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
-            uint64_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-            SequenceGroup::CPtr sequence_group = m_requests[seq_group_id];
-            if (sequence_group->has_finished()) {
-                currently_finished_requests.push_back(GenerationResult::from_sequence_group(sequence_group));
+        {
+            static ScopedTimer timer("create finished results");
+            timer.start();
+
+            for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
+                uint64_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                SequenceGroup::CPtr sequence_group = m_requests[seq_group_id];
+                if (sequence_group->has_finished()) {
+                   currently_finished_requests.push_back(GenerationResult::from_sequence_group(sequence_group));
+                }
             }
+
+            _free_finished_requests();
+
+            timer.end();
         }
 
-        _free_finished_requests();
-
+        step_timer.end();
         return currently_finished_requests;
     }
 
