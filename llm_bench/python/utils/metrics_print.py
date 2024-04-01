@@ -108,6 +108,7 @@ def print_average(iter_data_list):
         # 1st iteration is the warm-up iteration
         return
     total_generation_time = 0
+    total_latency = 0
     total_num_tokens = 0
     warm_up_iters = 0
     for iter_data in iter_data_list:
@@ -117,6 +118,8 @@ def print_average(iter_data_list):
             continue
         if iter_data['generation_time'] != '':
             total_generation_time += iter_data['generation_time']
+        if iter_data['latency'] != '':
+            total_latency += iter_data['latency']
         if iter_data['output_size'] != '':
             total_num_tokens += iter_data['output_size']
 
@@ -131,6 +134,6 @@ def print_average(iter_data_list):
             avg_per_iter_time = total_generation_time / total_iters
             out_str += '\n[ INFO ] [Average] Iteration time: {:.2f}s'.format(avg_per_iter_time)
             if total_num_tokens > 0:
-                avg_per_token_time = total_generation_time * 1000 / total_num_tokens
+                avg_per_token_time = total_latency / total_iters
                 out_str += ', Latency: {:.2f} ms/token'.format(avg_per_token_time)
         log.info(out_str)

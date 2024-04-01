@@ -132,11 +132,11 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         result_md5_list.append(hashlib.md5(result_text.encode()).hexdigest())
     if num == 0:
         warmup_md5[prompt_index] = result_md5_list
-    per_token_time = generation_time * 1000 / num_tokens
+    per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
     iter_data = gen_iterate_data(
         num,
         input_token_size * args['batch_size'],
-        max_output_token_size * args['batch_size'],
+        max_output_token_size,
         num_tokens,
         generation_time,
         per_token_time,
