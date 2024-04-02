@@ -36,7 +36,7 @@ def get_int4_default_compression_args(model_id):
 def get_compressed_path(output_dir: str, base_precision: str, option: str):
     output_dir = Path(output_dir)
     if option == "4BIT_DEFAULT":
-        model_id = Path(output_dir).parents[3].name
+        model_id = output_dir.parents[3].name
         option = get_int4_default_compression_args(model_id)["mode"].split(".")[-1].upper()
     return output_dir / "pytorch" / "dldt" / "compressed_weights" / f"OV_{base_precision}-{option}"
 
