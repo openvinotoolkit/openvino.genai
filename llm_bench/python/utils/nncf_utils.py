@@ -23,8 +23,20 @@ if "INT8_SYM" in nncf.CompressWeightsMode.__members__:
     COMPRESSION_OPTIONS["INT8_SYM"] = {"mode": nncf.CompressWeightsMode.INT8_SYM}
 
 
-def get_compressed_path(output_dir: str, base_precision, option: str):
-    return Path(output_dir) / "pytorch/dldt/compressed_weights" / f"OV_{base_precision}-{option}"
+def get_int4_default_compression_args(model_id):
+    if model_id in INT4_MODEL_CONFIGURATION:
+        compression_args = INT4_MODEL_CONFIGURATION[model_id]
+    else:
+        compression_args = COMPRESSION_OPTIONS["INT4_SYM"]
+    return compression_args
+
+
+def get_compressed_path(output_dir: str, base_precision: str, option: str):
+    output_dir = Path(output_dir)
+    if option == "4BIT_DEFAULT":
+        model_id = Path(output_dir).parents[3].name
+        option = get_int4_default_compression_args(model_id)["mode"].split(".")[-1].upper()    
+    return output_dir / "pytorch" / "dldt" / "compressed_weights" / f"OV_{base_precision}-{option}"
 
 
 INT4_MODEL_CONFIGURATION = {
