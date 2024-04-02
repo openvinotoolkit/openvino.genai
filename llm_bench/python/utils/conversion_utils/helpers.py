@@ -187,7 +187,7 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
         compression_args = _check_default_4bit_configs(config)
         if compression_args is None:
             model_id = out_path.parents[3].name
-            compression_args = is_int4_default_compression(model_id)
+            compression_args = get_int4_default_compression_args(model_id)
 
     if compression_args is None:
         compression_args = COMPRESSION_OPTIONS[compress_weights_format]
