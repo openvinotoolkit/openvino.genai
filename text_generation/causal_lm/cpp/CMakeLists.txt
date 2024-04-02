@@ -8,12 +8,14 @@ add_subdirectory(../../../thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINAR
 add_subdirectory(../../../thirdparty/nlohmann_json/ "${CMAKE_CURRENT_BINARY_DIR}/nlohmann_json/")
 
 
-add_executable(greedy_causal_lm greedy_causal_lm.cpp)
-target_compile_definitions(greedy_causal_lm PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
+set(TARGET_NAME continuous_batching)
+add_executable(${TARGET_NAME} continuous_batching/main.cpp)
+target_include_directories(${TARGET_NAME} PRIVATE continuous_batching)
+target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
-target_link_libraries(greedy_causal_lm PRIVATE openvino::runtime)
-set_target_properties(greedy_causal_lm PROPERTIES CXX_STANDARD 17)
-set_target_properties(greedy_causal_lm PROPERTIES CXX_STANDARD_REQUIRED ON)
+target_link_libraries(${TARGET_NAME} PRIVATE openvino::runtime)
+set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 20)
+set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON)
 
 add_executable(beam_search_causal_lm beam_search_causal_lm.cpp)
 target_compile_definitions(beam_search_causal_lm PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
@@ -48,6 +50,8 @@ target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<T
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::runtime)
 target_link_libraries(${TARGET_NAME} PRIVATE nlohmann_json::nlohmann_json)
-
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 17)
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON)
+
+target_link_libraries(${TARGET_NAME} PRIVATE stdc++fs)
+

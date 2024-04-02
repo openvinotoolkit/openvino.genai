@@ -5,9 +5,9 @@
 
 #include <openvino/openvino.hpp>
 #include "sampling_parameters.hpp"
+#include <experimental/filesystem>
 
-
-using GenerationResult = std::vector<int64_t>;
+using GenerationResult = ov::Tensor;
 
 class LLMEngine {
     ov::InferRequest m_model_runner;
@@ -15,10 +15,11 @@ class LLMEngine {
     GenerationResult greedy_search(ov::Tensor prompts, SamplingParameters sampling_params) {
         ov::Shape prompts_shape = prompts.get_shape();
         size_t batch_size = prompts_shape[0];
+        // todo: implement for batch > 1
         OPENVINO_ASSERT(batch_size == 1);
         
-        GenerationResult results;
-        results.reserve(sampling_params.max_new_tokens);
+        GenerationResult results = ov::Tensor{ov::element::i64, {batch_size, sampling_params.max_new_tokens}};
+
         auto attention_mask = ov::Tensor{ov::element::i64, prompts.get_shape()};
         std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
         auto position_ids = ov::Tensor{ov::element::i64, prompts.get_shape()};
@@ -37,23 +38,22 @@ class LLMEngine {
             m_model_runner.infer();
             auto logits = m_model_runner.get_tensor("logits");
             ov::Shape logits_shape = logits.get_shape();
-
-            size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
-            OPENVINO_ASSERT(batch_size == 1);
-            // todo: implement for batch > 1
-
-            const float * logits_data = logits.data<const float>() + (seq_len - 1) * vocab_size;
-            int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
+            size_t seq_len = logits_shape[1], vocab_size = logits_shape[2];
 
             m_model_runner.get_tensor("input_ids").set_shape({batch_size, 1});
-            m_model_runner.get_tensor("input_ids").data<int64_t>()[0] = out_token;
-            
             m_model_runner.get_tensor("attention_mask").set_shape({batch_size, m_model_runner.get_tensor("attention_mask").get_shape()[1] + 1});
             std::fill_n(m_model_runner.get_tensor("attention_mask").data<int64_t>(), m_model_runner.get_tensor("attention_mask").get_size(), 1);
             
             m_model_runner.get_tensor("position_ids").set_shape({batch_size, 1});
-            m_model_runner.get_tensor("position_ids").data<int64_t>()[0] = int64_t(initial_seq_len + i);
-            results.emplace_back(out_token);
+
+            for (size_t batch = 0; batch < batch_size; ++batch) {
+                const float * logits_data = logits.data<const float>() + seq_len * vocab_size * batch + (seq_len - 1) * vocab_size;
+                int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
+                results.data<int64_t>()[sampling_params.max_new_tokens * batch + i] = out_token;
+                
+                m_model_runner.get_tensor("input_ids").data<int64_t>()[batch] = out_token;
+                m_model_runner.get_tensor("position_ids").data<int64_t>()[batch] = int64_t(initial_seq_len + i);
+            }
         }
         return results;
     }
@@ -61,14 +61,12 @@ class LLMEngine {
     GenerationResult beam_search(ov::Tensor prompts, SamplingParameters sampling_params) {
         // todo: implement
         GenerationResult results;
-        results.reserve(10);
         return results;
     }
 
     GenerationResult multinomial_sampling(ov::Tensor prompts, SamplingParameters sampling_params) {
         // todo: implement
         GenerationResult results;
-        results.reserve(10);
         return results;
     }
 
@@ -114,17 +112,17 @@ std::string detokenize(ov::InferRequest& detokenizer, std::vector<int64_t> token
 
 std::vector<std::string> detokenize(ov::InferRequest& detokenizer, ov::Tensor tokens) {
     detokenizer.set_input_tensor(tokens);
+    auto shape = tokens.get_shape();
+    auto data = tokens.data<int64_t>();
     detokenizer.infer();
     auto res = detokenizer.get_output_tensor();
     
     std::vector<std::string> strings;
-    strings.reserve(res.get_shape()[0]);
     for (int i = 0; i < res.get_shape()[0]; ++i) {
         strings.emplace_back(res.data<std::string>()[i]);
     }
     return strings;
 }
-
 
 // The following reasons require TextStreamer to keep a cache of previous tokens:
 // detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
@@ -170,7 +168,7 @@ class LLMPipeline {
 
 public:
     LLMPipeline(std::string& path) : m_path(path) {
-        if (std::filesystem::exists(m_path + "/generation_config.json")) {
+        if (std::experimental::filesystem::exists(m_path + "/generation_config.json")) {
             m_sampling_parameters = SamplingParameters(m_path + "/generation_config.json");
         }
 
@@ -190,6 +188,6 @@ public:
 
         auto generate_results = m_model_runner.generate(input_ids, m_sampling_parameters);
 
-        return detokenize(m_detokenizer, generate_results);
+        return detokenize(m_detokenizer, generate_results)[0];
     }
 };

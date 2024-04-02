@@ -11,13 +11,13 @@ constexpr size_t BATCH_SIZE = 1;
 
 }  // namespace
 
-void print_generation_results(GenerationResult results, ov::InferRequest& detokenizer) {
-    TextStreamer text_streamer{std::move(detokenizer)};
-    for (const auto& result: results) {
-        text_streamer.put(result);
-    }
-    text_streamer.end();
-}
+// void print_generation_results(GenerationResult results, ov::InferRequest& detokenizer) {
+//     TextStreamer text_streamer{std::move(detokenizer)};
+//     for (const auto& result: results) {
+//         text_streamer.put(result);
+//     }
+//     text_streamer.end();
+// }
 
 int main(int argc, char* argv[]) try {
     std::string model_path = "/home/epavel/devel/openvino.genai/text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/";
