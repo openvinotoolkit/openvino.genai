@@ -12,7 +12,7 @@ import numpy as np
 from nncf import compress_weights
 from nncf import Dataset
 from openvino import save_model
-from ..nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION, is_int4_default_compression
+from ..nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION, get_int4_default_compression_args
 from optimum.intel.openvino.configuration import _check_default_4bit_configs
 import warnings
 
