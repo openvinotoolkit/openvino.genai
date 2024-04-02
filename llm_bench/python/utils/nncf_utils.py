@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging as log
 
 import nncf
 
@@ -28,6 +29,7 @@ def get_int4_default_compression_args(model_id):
         compression_args = INT4_MODEL_CONFIGURATION[model_id]
     else:
         compression_args = COMPRESSION_OPTIONS["INT4_SYM"]
+        log.info(f"Model is not supported with 4BIT_DEFAULT. Compress weights configuration was switched to INT4_SYM.")
     return compression_args
 
 
@@ -35,7 +37,7 @@ def get_compressed_path(output_dir: str, base_precision: str, option: str):
     output_dir = Path(output_dir)
     if option == "4BIT_DEFAULT":
         model_id = Path(output_dir).parents[3].name
-        option = get_int4_default_compression_args(model_id)["mode"].split(".")[-1].upper()    
+        option = get_int4_default_compression_args(model_id)["mode"].split(".")[-1].upper()
     return output_dir / "pytorch" / "dldt" / "compressed_weights" / f"OV_{base_precision}-{option}"
 
 
