@@ -12,7 +12,7 @@ import numpy as np
 from nncf import compress_weights
 from nncf import Dataset
 from openvino import save_model
-from ..nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION
+from ..nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION, is_int4_default_compression
 from optimum.intel.openvino.configuration import _check_default_4bit_configs
 import warnings
 
@@ -187,10 +187,7 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
         compression_args = _check_default_4bit_configs(config)
         if compression_args is None:
             model_id = out_path.parents[3].name
-            if model_id in INT4_MODEL_CONFIGURATION:
-                compression_args = INT4_MODEL_CONFIGURATION[model_id]
-            else:
-                compression_args = COMPRESSION_OPTIONS["INT4_SYM"]
+            compression_args = is_int4_default_compression(model_id)
 
     if compression_args is None:
         compression_args = COMPRESSION_OPTIONS[compress_weights_format]
