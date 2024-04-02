@@ -89,9 +89,6 @@ std::vector<std::pair<ov::Tensor, SamplingParameters>> filtered_dataset(const st
         sampled_dataset.push_back(sample);
     }
 
-    std::cout << "Total inputs: " << total_i << std::endl;
-    std::cout << "Total outputs: " << total_o << std::endl;
-
     return sampled_dataset;
 }
 
@@ -140,6 +137,7 @@ int main(int argc, char* argv[]) try {
 
     // The model can be compiled for GPU as well
     std::shared_ptr<ov::Model> model = core.read_model(models_path + "/vllm_optimum_openvino_model.xml");
+    // TODO: reshape model according to plugin desired shape condifuration
     const ov::ParameterVector& parameters = model->get_parameters();
     for (size_t decoder_layer_id = 0; decoder_layer_id < NUM_DECODER_LAYERS; ++decoder_layer_id) {
         parameters[2 + 2 * decoder_layer_id]->set_element_type(kv_cache_precision);
