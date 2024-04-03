@@ -29,7 +29,7 @@ conda install -c conda-forge  openvino c-compiler cxx-compiler make cmake
 ```shell
 git submodule update --init
 conda activate openvino_sd_cpp
-python -m pip install -r scripts/requirements.txt
+python -m pip install -r requirements.txt
 python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
 ```
 2. Download a huggingface SD v1.5 model like:
@@ -114,7 +114,7 @@ Read the numpy latent instead of C++ std lib for the alignment with Python pipel
 
    ![](./soulcard_lora.bmp)
 
-* Generate different size image with dynamic model (C++ lib generated latent): `./build/stable_diffusion -m ../models/dreamlike_anime_1_0_ov -t FP16 --dynamic --height 448 --width 704`
+* Generate different size image with dynamic model (C++ lib generated latent): `./build/stable_diffusion -m ./models/dreamlike_anime_1_0_ov -t FP16 --dynamic --height 448 --width 704`
 
    ![](./704x448.bmp)
 
