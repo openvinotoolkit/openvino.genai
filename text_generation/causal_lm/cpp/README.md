@@ -72,6 +72,7 @@ cmake -S .\ -B .\build\ && cmake --build .\build\ --config Release -j
 ### Download and convert the model and tokenizers
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
+For gemma models transformers with version >= 4.38 is required. So use 4.38.1 for it
 
 #### Linux/macOS
 
