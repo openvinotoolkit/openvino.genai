@@ -130,8 +130,9 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
             latency_unit = 'token'
             if batch_size > 1:
                 latency_unit = '{}tokens'.format(batch_size)
-            prompt_dict[p_idx] = '\n[ INFO ] [Average] Prompt[{}] Input token size: {}, 1st token lantency: {:.2f} ms/{}, 2nd tokens latency: {:.2f} ms/{}, ' \
-                '2nd tokens throughput: {:.2f} tokens/s'.format(p_idx, avg_input_size, avg_1st_token_latency, latency_unit, avg_2nd_tokens_latency, latency_unit, avg_2nd_token_tput)
+            prompt_dict[p_idx] = '\n[ INFO ] [Average] Prompt[{}] Input token size: {}, 1st token lantency: {:.2f} ms/{}, ' \
+                '2nd tokens latency: {:.2f} ms/{}, 2nd tokens throughput: {:.2f} tokens/s' \
+                .format(p_idx, avg_input_size, avg_1st_token_latency, latency_unit, avg_2nd_tokens_latency, latency_unit, avg_2nd_token_tput)
 
 
 def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False):
@@ -155,7 +156,7 @@ def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False
 
     if total_iters > 0:
         prompt_dict = {}
-        if is_text_gen == True:
+        if is_text_gen is True:
             output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch_size)
         log.info('<<< Warm-up iteration is excluded. >>>')
         out_str = '[Total] Iterations: {}'.format(total_iters)
