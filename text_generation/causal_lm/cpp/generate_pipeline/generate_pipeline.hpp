@@ -6,8 +6,10 @@
 #include <openvino/openvino.hpp>
 #include "sampling_parameters.hpp"
 #include <experimental/filesystem>
+#include "group_beam_searcher.hpp"
 
-using GenerationResult = ov::Tensor;
+// using GenerationResult = ov::Tensor;
+using GenerationResult = std::vector<std::vector<int64_t>>;
 
 class LLMEngine {
     ov::InferRequest m_model_runner;
@@ -15,10 +17,9 @@ class LLMEngine {
     GenerationResult greedy_search(ov::Tensor prompts, SamplingParameters sampling_params) {
         ov::Shape prompts_shape = prompts.get_shape();
         size_t batch_size = prompts_shape[0];
-        // todo: implement for batch > 1
         OPENVINO_ASSERT(batch_size == 1);
         
-        GenerationResult results = ov::Tensor{ov::element::i64, {batch_size, sampling_params.max_new_tokens}};
+        GenerationResult results(batch_size);
 
         auto attention_mask = ov::Tensor{ov::element::i64, prompts.get_shape()};
         std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
@@ -45,12 +46,13 @@ class LLMEngine {
             std::fill_n(m_model_runner.get_tensor("attention_mask").data<int64_t>(), m_model_runner.get_tensor("attention_mask").get_size(), 1);
             
             m_model_runner.get_tensor("position_ids").set_shape({batch_size, 1});
-
+    
             for (size_t batch = 0; batch < batch_size; ++batch) {
                 const float * logits_data = logits.data<const float>() + seq_len * vocab_size * batch + (seq_len - 1) * vocab_size;
                 int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
-                results.data<int64_t>()[sampling_params.max_new_tokens * batch + i] = out_token;
+                results[batch].emplace_back(out_token);
                 
+                // todo: add exit criteria when pad or EOS is met
                 m_model_runner.get_tensor("input_ids").data<int64_t>()[batch] = out_token;
                 m_model_runner.get_tensor("position_ids").data<int64_t>()[batch] = int64_t(initial_seq_len + i);
             }
@@ -59,8 +61,72 @@ class LLMEngine {
     }
 
     GenerationResult beam_search(ov::Tensor prompts, SamplingParameters sampling_params) {
-        // todo: implement
+        ov::Shape prompts_shape = prompts.get_shape();
+        size_t batch_size = prompts_shape[0];
+        // todo: implement for batch > 1
+        OPENVINO_ASSERT(batch_size == 1);
+
+        // initialize inputs
+        auto attention_mask = ov::Tensor{ov::element::i64, prompts.get_shape()};
+        std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
+        auto position_ids = ov::Tensor{ov::element::i64, prompts.get_shape()};
+        std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
+        auto initial_seq_len = prompts.get_shape()[1];
+
+        m_model_runner.set_tensor("input_ids", prompts);
+        m_model_runner.set_tensor("attention_mask", attention_mask);
+        m_model_runner.set_tensor("position_ids", position_ids);
+    
+        // set beam_idx for stateful model: no beam search is used and BATCH_SIZE = 1
+        m_model_runner.get_tensor("beam_idx").set_shape({batch_size});
+        m_model_runner.get_tensor("beam_idx").data<int32_t>()[0] = 0;
+
+        const int64_t* prompt_data = prompts.data<const int64_t>();
+        
+        // todo: remove this duplicatino and use the same SamplingParameters for both greedy and beam
+        Parameters parameters{std::vector<int64_t>{prompt_data, prompt_data + prompts.get_size()}};
+        parameters.n_groups = sampling_params.n_groups;
+        parameters.diversity_penalty = sampling_params.diversity_penalty;
+        parameters.group_size = sampling_params.group_size;
+
+        GroupBeamSearcher group_beam_searcher{parameters};
+        std::vector<int64_t> next_tokens;
+        std::vector<int32_t> next_beams;
+        for (size_t length_count = 0; length_count < sampling_params.max_new_tokens; ++length_count) {
+            m_model_runner.infer();
+            std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(m_model_runner.get_tensor("logits"));
+            if (next_tokens.empty()) {
+                break;
+            }
+            size_t batch_size = next_tokens.size();
+            // Set pointers
+            m_model_runner.set_tensor("input_ids", ov::Tensor{ov::element::i64, {batch_size, 1}, next_tokens.data()});
+            m_model_runner.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
+            // Set auxiliary inputs
+            ov::Tensor attention_mask = m_model_runner.get_tensor("attention_mask");
+            ov::Shape mask_shape{batch_size, attention_mask.get_shape()[1] + 1};
+            attention_mask.set_shape(mask_shape);
+            std::fill_n(attention_mask.data<int64_t>(), ov::shape_size(mask_shape), 1);
+
+            m_model_runner.get_tensor("position_ids").set_shape({batch_size, 1});
+            std::fill_n(m_model_runner.get_tensor("position_ids").data<int64_t>(), batch_size, mask_shape.at(1) - 1);
+        }
+
+        std::vector<Beam> beams;
+        for (const std::vector<Beam>& group : finalize(std::move(group_beam_searcher))) {
+            for (const Beam& beam : group) {
+                beams.emplace_back(beam);
+                // results.emplace_back(beam.tokens);
+            }
+        }
+
+        auto compare_scores = [](Beam left, Beam right) { return (left.score < right.score); };
+        std::sort(beams.begin(), beams.end(), compare_scores);
+        
         GenerationResult results;
+        for (auto beam = beams.begin(); beam != beams.begin() + sampling_params.num_return_sequences; ++beam) {
+            results.emplace_back(beam->tokens);
+        }
         return results;
     }
 
@@ -124,6 +190,23 @@ std::vector<std::string> detokenize(ov::InferRequest& detokenizer, ov::Tensor to
     return strings;
 }
 
+std::vector<std::string> detokenize(ov::InferRequest& detokenizer, 
+                                    std::vector<std::vector<int64_t>> lines, 
+                                    int64_t pad_token_idx) {
+    // todo: implement calling detokenizer in a single batch
+
+    std::vector<std::string> strings;
+    for (auto& line: lines){
+        ov::Tensor tokens = ov::Tensor{ov::element::i64, {1, line.size()}, line.data()};
+        detokenizer.set_input_tensor(tokens);
+        detokenizer.infer();
+        auto res = detokenizer.get_output_tensor();
+        strings.emplace_back(res.data<std::string>()[0]);
+    }
+    
+    return strings;
+}
+
 // The following reasons require TextStreamer to keep a cache of previous tokens:
 // detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
 // but detokenize(tokenize("prefix a")) == "prefix a"
@@ -171,6 +254,7 @@ public:
         if (std::experimental::filesystem::exists(m_path + "/generation_config.json")) {
             m_sampling_parameters = SamplingParameters(m_path + "/generation_config.json");
         }
+        m_sampling_parameters = SamplingParameters(m_path + "/generation_config_beam.json");
 
         ov::Core core;
         // The model can be compiled for GPU as well
@@ -188,6 +272,6 @@ public:
 
         auto generate_results = m_model_runner.generate(input_ids, m_sampling_parameters);
 
-        return detokenize(m_detokenizer, generate_results)[0];
+        return detokenize(m_detokenizer, generate_results, 0)[0];
     }
 };
