@@ -12,9 +12,9 @@
 // forward declaration
 class Sequence;
 
-// SamplingParameters is similar to HuggingFace GenerationConfig 
-// and has parameters that are not present in the original SamplingParameters for continous batching
-struct SamplingParameters {
+// Similar to HuggingFace GenerationConfig 
+// but has parameters that are not present in the original SamplingParameters for continous batching
+struct GenerationConfig {
     // Generic
     size_t max_new_tokens = 10;
     size_t max_length = 100; // max_new tokens should have priority over max_new_tokens
@@ -43,9 +43,9 @@ struct SamplingParameters {
     int64_t eos_token_id = 0;
     int64_t pad_token_id = 0;
 
-    SamplingParameters() = default;
+    GenerationConfig() = default;
 
-    SamplingParameters(std::string json_path) {
+    GenerationConfig(std::string json_path) {
         std::ifstream f(json_path);
         nlohmann::json data = nlohmann::json::parse(f);
 
@@ -54,6 +54,7 @@ struct SamplingParameters {
         max_length = data.value("max_length", 0);
         pad_token_id = data.value("pad_token_id", 0);
         num_return_sequences = data.value("num_return_sequences", 1);
+        max_new_tokens = data.value("max_new_tokens", 100);
         
         temperature = data.value("temperature", 0.0f);
         do_sample = data.value("do_sample", false);
@@ -66,15 +67,15 @@ struct SamplingParameters {
         group_size = num_beams / n_groups;
     }
 
-    static SamplingParameters greedy() {
-        SamplingParameters greedy_params;
+    static GenerationConfig greedy() {
+        GenerationConfig greedy_params;
         greedy_params.temperature = 0.0f;
         greedy_params.ignore_eos = true;
         return greedy_params;
     }
 
-    static SamplingParameters beam_search() {
-        SamplingParameters beam_search;
+    static GenerationConfig beam_search() {
+        GenerationConfig beam_search;
         beam_search.n_groups = 3;
         beam_search.group_size = 5;
         beam_search.max_new_tokens = 10;
@@ -82,8 +83,8 @@ struct SamplingParameters {
         return beam_search;
     }
 
-    static SamplingParameters multimomial() {
-        SamplingParameters multimomial;
+    static GenerationConfig multimomial() {
+        GenerationConfig multimomial;
         multimomial.temperature = 0.8f;
         multimomial.top_p = 0.8;
         multimomial.top_k = 20;

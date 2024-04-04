@@ -14,7 +14,7 @@ using GenerationResult = std::vector<std::vector<int64_t>>;
 class LLMEngine {
     ov::InferRequest m_model_runner;
 
-    GenerationResult greedy_search(ov::Tensor prompts, SamplingParameters sampling_params) {
+    GenerationResult greedy_search(ov::Tensor prompts, GenerationConfig sampling_params) {
         ov::Shape prompts_shape = prompts.get_shape();
         size_t batch_size = prompts_shape[0];
         OPENVINO_ASSERT(batch_size == 1);
@@ -60,7 +60,7 @@ class LLMEngine {
         return results;
     }
 
-    GenerationResult beam_search(ov::Tensor prompts, SamplingParameters sampling_params) {
+    GenerationResult beam_search(ov::Tensor prompts, GenerationConfig sampling_params) {
         ov::Shape prompts_shape = prompts.get_shape();
         size_t batch_size = prompts_shape[0];
         // todo: implement for batch > 1
@@ -120,7 +120,7 @@ class LLMEngine {
             }
         }
 
-        auto compare_scores = [](Beam left, Beam right) { return (left.score < right.score); };
+        auto compare_scores = [](Beam left, Beam right) { return (left.score > right.score); };
         std::sort(beams.begin(), beams.end(), compare_scores);
         
         GenerationResult results;
@@ -130,7 +130,7 @@ class LLMEngine {
         return results;
     }
 
-    GenerationResult multinomial_sampling(ov::Tensor prompts, SamplingParameters sampling_params) {
+    GenerationResult multinomial_sampling(ov::Tensor prompts, GenerationConfig sampling_params) {
         // todo: implement
         GenerationResult results;
         return results;
@@ -145,7 +145,7 @@ public:
     LLMEngine() = default;
 
     // more high level interface
-    GenerationResult generate(ov::Tensor prompts, SamplingParameters sampling_params) {
+    GenerationResult generate(ov::Tensor prompts, GenerationConfig sampling_params) {
         if (sampling_params.is_gready_sampling()) {
             return greedy_search(prompts, sampling_params);
         } else if (sampling_params.is_beam_search()) {
@@ -247,14 +247,14 @@ class LLMPipeline {
     ov::InferRequest m_tokenizer;
     ov::InferRequest m_detokenizer;
     std::string m_path;
-    SamplingParameters m_sampling_parameters;
+    GenerationConfig m_sampling_parameters;
 
 public:
     LLMPipeline(std::string& path) : m_path(path) {
         if (std::experimental::filesystem::exists(m_path + "/generation_config.json")) {
-            m_sampling_parameters = SamplingParameters(m_path + "/generation_config.json");
+            m_sampling_parameters = GenerationConfig(m_path + "/generation_config.json");
         }
-        m_sampling_parameters = SamplingParameters(m_path + "/generation_config_beam.json");
+        m_sampling_parameters = GenerationConfig(m_path + "/generation_config_beam.json");
 
         ov::Core core;
         // The model can be compiled for GPU as well
