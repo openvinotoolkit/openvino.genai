@@ -18,7 +18,7 @@ Prepare a python environment and install dependencies:
 ```shell
 conda create -n openvino_sd_cpp python==3.10
 conda activate openvino_sd_cpp
-conda install -c conda-forge  openvino c-compiler cxx-compiler make cmake
+conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
 ```
 
 ## Step 2: Convert Stable Diffusion v1.5 and Tokenizer models
