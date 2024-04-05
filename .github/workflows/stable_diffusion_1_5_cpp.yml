@@ -12,6 +12,11 @@ concurrency:
 jobs:
   stable_diffusion_1_5_cpp-linux:
     runs-on: ubuntu-20.04-8-cores
+    # Do not ignore bash profile files. From:
+    # https://github.com/marketplace/actions/setup-miniconda
+    defaults:
+      run:
+        shell: bash -l {0}
     steps:
       - uses: actions/checkout@v4
         with:
