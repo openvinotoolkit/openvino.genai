@@ -11,7 +11,7 @@
 // using GenerationResult = ov::Tensor;
 using GenerationResult = std::vector<std::vector<int64_t>>;
 
-class LLMEngine {
+class LLMModel {
     ov::InferRequest m_model_runner;
 
     GenerationResult greedy_search(ov::Tensor prompts, GenerationConfig sampling_params) {
@@ -35,7 +35,7 @@ class LLMEngine {
         m_model_runner.get_tensor("beam_idx").set_shape({batch_size});
         m_model_runner.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
-        for (size_t i = 0; i < sampling_params.max_new_tokens; ++i) {
+        for (size_t i = 0; i < sampling_params.m_max_new_tokens; ++i) {
             m_model_runner.infer();
             auto logits = m_model_runner.get_tensor("logits");
             ov::Shape logits_shape = logits.get_shape();
@@ -85,14 +85,14 @@ class LLMEngine {
         
         // todo: remove this duplicatino and use the same SamplingParameters for both greedy and beam
         Parameters parameters{std::vector<int64_t>{prompt_data, prompt_data + prompts.get_size()}};
-        parameters.n_groups = sampling_params.n_groups;
-        parameters.diversity_penalty = sampling_params.diversity_penalty;
-        parameters.group_size = sampling_params.group_size;
+        parameters.n_groups = sampling_params.m_num_groups;
+        parameters.diversity_penalty = sampling_params.m_diversity_penalty;
+        parameters.group_size = sampling_params.m_group_size;
 
         GroupBeamSearcher group_beam_searcher{parameters};
         std::vector<int64_t> next_tokens;
         std::vector<int32_t> next_beams;
-        for (size_t length_count = 0; length_count < sampling_params.max_new_tokens; ++length_count) {
+        for (size_t length_count = 0; length_count < sampling_params.m_max_new_tokens; ++length_count) {
             m_model_runner.infer();
             std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(m_model_runner.get_tensor("logits"));
             if (next_tokens.empty()) {
@@ -124,7 +124,7 @@ class LLMEngine {
         std::sort(beams.begin(), beams.end(), compare_scores);
         
         GenerationResult results;
-        for (auto beam = beams.begin(); beam != beams.begin() + sampling_params.num_return_sequences; ++beam) {
+        for (auto beam = beams.begin(); beam != beams.begin() + sampling_params.m_num_return_sequences; ++beam) {
             results.emplace_back(beam->tokens);
         }
         return results;
@@ -137,12 +137,12 @@ class LLMEngine {
     }
 
 public:
-    LLMEngine(ov::InferRequest& request) :
+    LLMModel(ov::InferRequest& request) :
           m_model_runner(request) {
             // todo
     }
     
-    LLMEngine() = default;
+    LLMModel() = default;
 
     // more high level interface
     GenerationResult generate(ov::Tensor prompts, GenerationConfig sampling_params) {
@@ -165,6 +165,7 @@ std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::str
 
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::vector<std::string> prompts) {
     tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, &prompts});
+    auto size_ = tokenizer.get_input_tensor().get_shape();
     tokenizer.infer();
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
 }
@@ -243,7 +244,7 @@ struct TextStreamer {
 };
 
 class LLMPipeline {
-    LLMEngine m_model_runner;
+    LLMModel m_model_runner;
     ov::InferRequest m_tokenizer;
     ov::InferRequest m_detokenizer;
     std::string m_path;
@@ -259,12 +260,16 @@ public:
         ov::Core core;
         // The model can be compiled for GPU as well
         auto model_request = core.compile_model(m_path + "/openvino_model.xml", "CPU").create_infer_request();
-        m_model_runner = LLMEngine(model_request);
+        m_model_runner = LLMModel(model_request);
 
         // tokenizer and detokenizer work on CPU only
         core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
         m_tokenizer = core.compile_model(m_path + "/openvino_tokenizer.xml", "CPU").create_infer_request();
         m_detokenizer = core.compile_model(m_path + "/openvino_detokenizer.xml", "CPU").create_infer_request();
+    }
+
+    GenerationConfig generation_config() const {
+        return m_sampling_parameters;
     }
 
     std::string call(std::string text) {
@@ -273,5 +278,33 @@ public:
         auto generate_results = m_model_runner.generate(input_ids, m_sampling_parameters);
 
         return detokenize(m_detokenizer, generate_results, 0)[0];
+    }
+    
+    std::string call(std::string text, GenerationConfig sampling_parameters) {
+        auto [input_ids, attention_mask] = tokenize(m_tokenizer, text);
+
+        auto generate_results = m_model_runner.generate(input_ids, sampling_parameters);
+
+        return detokenize(m_detokenizer, generate_results, 0)[0];
+    }
+
+    std::vector<std::string> call(std::vector<std::string> text, GenerationConfig sampling_parameters) {
+        auto [input_ids, attention_mask] = tokenize(m_tokenizer, text);
+
+        auto generate_results = m_model_runner.generate(input_ids, sampling_parameters);
+
+        return detokenize(m_detokenizer, generate_results, 0);
+    }
+
+    std::string operator()(std::string text, GenerationConfig sampling_parameters) {
+        return call(text, sampling_parameters);
+    }
+    
+    std::vector<std::string> operator()(std::vector<std::string> text, GenerationConfig sampling_parameters) {
+        return call(text, sampling_parameters);
+    }
+    
+    std::vector<std::string> operator()(std::initializer_list<std::string> text, GenerationConfig sampling_parameters) {
+        return call(text, sampling_parameters);
     }
 };

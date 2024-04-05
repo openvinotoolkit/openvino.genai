@@ -16,32 +16,119 @@ class Sequence;
 // but has parameters that are not present in the original SamplingParameters for continous batching
 struct GenerationConfig {
     // Generic
-    size_t max_new_tokens = 10;
-    size_t max_length = 100; // max_new tokens should have priority over max_new_tokens
-    bool ignore_eos = false;
-    int64_t eos_token = 2; // There's no way to extract special token values from the tokenizer for now
-    size_t num_return_sequences = 3;
+    size_t m_max_new_tokens = 10;
+    size_t m_max_length = 100; // max_new tokens should have priority over max_new_tokens
+    bool m_ignore_eos = false;
+    int64_t m_eos_token = 2; // There's no way to extract special token values from the tokenizer for now
+    size_t m_num_return_sequences = 3;
 
     // Beam search specific
-    size_t n_groups = 1;
-    size_t group_size = 1; // beam_width
-    float diversity_penalty = 1.0f; // 0.0 means no diversity
+    size_t m_num_groups = 1;
+    size_t m_group_size = 1; // beam_width
+    float m_diversity_penalty = 1.0f; // 0.0 means no diversity
+    float m_repetition_penalty = 1.0f;
     
     StopCriteria stop_criteria = StopCriteria::heuristic;
-    float length_penalty = 1.0f;
-    size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
+    float m_length_penalty = 1.0f;
+    size_t m_no_repeat_ngram_size = std::numeric_limits<size_t>::max();
     std::function<bool(const Sequence&)> early_finish = [](const Sequence&) {return false; };
 
     // Multinomial
-    float temperature = 0.0f; // by default we use greedy sampling
-    int top_k = -1; // maybe to assign vocab_size ?
-    float top_p = 1.0f; // by default convsider all tokens
-    bool do_sample;
+    float m_temperature = 0.0f; // by default we use greedy sampling
+    int m_top_k = -1; // maybe to assign vocab_size ?
+    float m_top_p = 1.0f; // by default convsider all tokens
+    bool m_do_sample;
 
     // special tokens
-    int64_t bos_token_id = 0;
-    int64_t eos_token_id = 0;
-    int64_t pad_token_id = 0;
+    int64_t m_bos_token_id = 0;
+    int64_t m_eos_token_id = 0;
+    int64_t m_pad_token_id = 0;
+
+    GenerationConfig& max_new_tokens(size_t max_new_tokens) {
+        this->m_max_new_tokens = max_new_tokens;
+         return *this;
+     }
+
+    GenerationConfig& max_length(size_t max_length) {
+        this->m_max_length = max_length;
+         return *this;
+     }
+
+    GenerationConfig& ignore_eos(bool ignore_eos) {
+        this->m_ignore_eos = ignore_eos;
+         return *this;
+     }
+
+    GenerationConfig& eos_token(int64_t eos_token) {
+        this->m_eos_token = eos_token;
+         return *this;
+     }
+
+    GenerationConfig& num_return_sequences(size_t num_return_sequences) {
+        this->m_num_return_sequences = num_return_sequences;
+         return *this;
+     }
+
+    GenerationConfig& num_groups(size_t num_groups) {
+        this->m_num_groups = num_groups;
+         return *this;
+     }
+
+    GenerationConfig& group_size(size_t group_size) {
+        this->m_group_size = group_size;
+         return *this;
+     }
+    GenerationConfig& diversity_penalty(float diversity_penalty) {
+        this->m_diversity_penalty = diversity_penalty;
+         return *this;
+     }
+
+    GenerationConfig& length_penalty(float length_penalty) {
+        this->m_length_penalty = length_penalty;
+         return *this;
+     }
+    GenerationConfig& no_repeat_ngram_size(size_t no_repeat_ngram_size) {
+        this->m_no_repeat_ngram_size = no_repeat_ngram_size;
+         return *this;
+     }
+
+    GenerationConfig& temperature(float temperature) {
+        this->m_temperature = temperature;
+         return *this;
+     }
+    GenerationConfig& top_k(size_t top_k) {
+        this->m_top_k = top_k;
+         return *this;
+     }
+
+    GenerationConfig& top_p(size_t top_p) {
+        this->m_top_p = top_p;
+         return *this;
+     }
+    GenerationConfig& do_sample(bool do_sample) {
+        this->m_do_sample = do_sample;
+         return *this;
+     }
+
+    GenerationConfig& repetition_penalty(float repetition_penalty) {
+        this->m_repetition_penalty = repetition_penalty;
+         return *this;
+     }
+
+    GenerationConfig& bos_token_id(int64_t bos_token_id) {
+        this->m_bos_token_id = bos_token_id;
+         return *this;
+     }
+
+    GenerationConfig& eos_token_id(int64_t eos_token_id) {
+        this->m_eos_token_id = eos_token_id;
+         return *this;
+     }
+
+    GenerationConfig& pad_token_id(int64_t pad_token_id) {
+        this->m_pad_token_id = pad_token_id;
+         return *this;
+     }
 
     GenerationConfig() = default;
 
@@ -49,59 +136,59 @@ struct GenerationConfig {
         std::ifstream f(json_path);
         nlohmann::json data = nlohmann::json::parse(f);
 
-        bos_token_id = data.value("bos_token_id", 0);
-        eos_token_id = data.value("eos_token_id", 0);
-        max_length = data.value("max_length", 0);
-        pad_token_id = data.value("pad_token_id", 0);
-        num_return_sequences = data.value("num_return_sequences", 1);
-        max_new_tokens = data.value("max_new_tokens", 100);
+        m_bos_token_id = data.value("bos_token_id", 0);
+        m_eos_token_id = data.value("eos_token_id", 0);
+        m_max_length = data.value("max_length", 0);
+        m_pad_token_id = data.value("pad_token_id", 0);
+        m_num_return_sequences = data.value("num_return_sequences", 1);
+        m_max_new_tokens = data.value("max_new_tokens", 100);
         
-        temperature = data.value("temperature", 0.0f);
-        do_sample = data.value("do_sample", false);
-        top_p = data.value("top_p", 0.0f);
+        m_temperature = data.value("temperature", 0.0f);
+        m_do_sample = data.value("do_sample", false);
+        m_top_p = data.value("top_p", 0.0f);
         
         // beam_search_params
-        n_groups = data.value("num_beam_groups", 1);
-        diversity_penalty = data.value("diversity_penalty", 1.0f);
+        m_num_groups = data.value("num_beam_groups", 1);
+        m_diversity_penalty = data.value("diversity_penalty", 1.0f);
         int num_beams = data.value("num_beams", 1);
-        group_size = num_beams / n_groups;
+        m_group_size = num_beams / m_num_groups;
     }
 
     static GenerationConfig greedy() {
         GenerationConfig greedy_params;
-        greedy_params.temperature = 0.0f;
-        greedy_params.ignore_eos = true;
+        greedy_params.m_temperature = 0.0f;
+        greedy_params.m_ignore_eos = true;
         return greedy_params;
     }
 
     static GenerationConfig beam_search() {
         GenerationConfig beam_search;
-        beam_search.n_groups = 3;
-        beam_search.group_size = 5;
-        beam_search.max_new_tokens = 10;
-        beam_search.diversity_penalty = 2.0f;
+        beam_search.m_num_groups = 3;
+        beam_search.m_group_size = 5;
+        beam_search.m_max_new_tokens = 10;
+        beam_search.m_diversity_penalty = 2.0f;
         return beam_search;
     }
 
     static GenerationConfig multimomial() {
         GenerationConfig multimomial;
-        multimomial.temperature = 0.8f;
-        multimomial.top_p = 0.8;
-        multimomial.top_k = 20;
-        multimomial.do_sample = 20;
+        multimomial.m_temperature = 0.8f;
+        multimomial.m_top_p = 0.8;
+        multimomial.m_top_k = 20;
+        multimomial.m_do_sample = 20;
         return multimomial;
     }
 
     bool is_gready_sampling() const {
-        return !do_sample && !is_beam_search();
+        return !m_do_sample && !is_beam_search();
     }
 
     bool is_beam_search() const {
-        return n_groups * group_size > 1;
+        return m_num_groups * m_group_size > 1;
     }
 
     bool is_multimomial() const {
-        return do_sample;
+        return m_do_sample;
     }
     
 };
