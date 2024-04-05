@@ -139,7 +139,6 @@ class LLMModel {
 public:
     LLMModel(ov::InferRequest& request) :
           m_model_runner(request) {
-            // todo
     }
     
     LLMModel() = default;
