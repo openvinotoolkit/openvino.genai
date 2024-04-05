@@ -2,5 +2,5 @@
 torch==2.2.2+cpu
 diffusers==0.27.0
 transformers==4.38.2
-optimum-intel[nncf,openvino]==1.15.2
+optimum-intel[nncf,openvino]==1.16.0
 huggingface_hub[cli]==0.22.2
