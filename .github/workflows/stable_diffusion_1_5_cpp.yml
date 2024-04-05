@@ -1,4 +1,5 @@
 name: stable_diffusion_1_5_cpp
+
 on:
   pull_request:
     paths:
@@ -6,16 +7,22 @@ on:
       - image_generation/common/**
       - .github/workflows/stable_diffusion_1_5_cpp.yml
       - thirdparty/openvino_tokenizers
+
+env:
+  working_directory: "./image_generation/stable_diffusion_1_5/cpp/"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
   stable_diffusion_1_5_cpp-linux:
+    if: ${{ false }}
     runs-on: ubuntu-20.04-8-cores
-    # Do not ignore bash profile files. From:
-    # https://github.com/marketplace/actions/setup-miniconda
     defaults:
       run:
+        # Do not ignore bash profile files. From:
+        # https://github.com/marketplace/actions/setup-miniconda#important
         shell: bash -l {0}
     steps:
       - uses: actions/checkout@v4
@@ -35,14 +42,14 @@ jobs:
           conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
 
       - name: Install python dependencies
-        working-directory: ./image_generation/stable_diffusion_1_5/cpp/  # TODO Move working dir to workflow var
+        working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_sd_cpp
           python -m pip install -r requirements.txt
           python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
 
       - name: Download and convert model and tokenizer
-        working-directory: ./image_generation/stable_diffusion_1_5/cpp/
+        working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_sd_cpp
           export LD_LIBRARY_PATH="$CONDA_PREFIX/lib"
@@ -51,51 +58,64 @@ jobs:
           convert_tokenizer $MODEL_PATH/tokenizer/ --tokenizer-output-type i32 -o $MODEL_PATH/tokenizer/
 
       - name: Build app
-        working-directory: ./image_generation/stable_diffusion_1_5/cpp/
+        working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_sd_cpp
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release --parallel
 
       - name: Run app
-        working-directory: ./image_generation/stable_diffusion_1_5/cpp/
+        working-directory: ${{ env.working_directory }}
         run: |
           ./build/stable_diffusion -m ./models/stable_diffusion_v1_5_ov -t FP16 --dynamic
 
   stable_diffusion_1_5_cpp-windows:
       runs-on: windows-latest
+      defaults:
+        run:
+          # Do not ignore cmd Autorun commands. From:
+          # https://github.com/marketplace/actions/setup-miniconda#important
+          shell: cmd /C call {0}
       steps:
         - uses: actions/checkout@v4
           with:
             submodules: recursive
-        - uses: actions/setup-python@v4
+
+        - name: Setup conda
+          uses: conda-incubator/setup-miniconda@v3
           with:
-            python-version: 3.8
-        - name: Initialize OpenVINO
-          shell: cmd
+            miniconda-version: "latest"
+            activate-environment: openvino_sd_cpp
+            python-version: "3.10"
+
+        - name: Install OpenVINO and other conda dependencies
           run: |
-            curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64.zip
-            unzip ov.zip
-        - name: Download and convert model and tokenizer
-          shell: cmd
+            conda activate openvino_sd_cpp
+            conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
+  
+        - name: Install python dependencies
+          working-directory: ${{ env.working_directory }}
           run: |
-            call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64/setupvars.bat
-            cd ./image_generation/stable_diffusion_1_5/cpp/
-            python -m pip install -r ./requirements.txt
+            conda activate openvino_sd_cpp
+            python -m pip install -r requirements.txt
             python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
+  
+        - name: Download and convert model and tokenizer
+          working-directory: ${{ env.working_directory }}
+          run: |
+            conda activate openvino_sd_cpp
             set MODEL_PATH=models/stable_diffusion_v1_5_ov/FP16
             optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --convert-tokenizer --weight-format fp16 %MODEL_PATH%
             convert_tokenizer %MODEL_PATH%/tokenizer/ --tokenizer-output-type i32 -o %MODEL_PATH%/tokenizer/
+  
         - name: Build app
-          shell: cmd
+          working-directory: ${{ env.working_directory }}
           run: |
-            call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64/setupvars.bat
-            cd ./image_generation/stable_diffusion_1_5/cpp/
+            conda activate openvino_sd_cpp
             cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
             cmake --build ./build/ --config Release --parallel
+  
         - name: Run app
-          shell: cmd
+          working-directory: ${{ env.working_directory }}
           run: |
-            call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64/setupvars.bat
-            cd ./image_generation/stable_diffusion_1_5/cpp/
             call "./build/Release/stable_diffusion.exe" -m ./models/stable_diffusion_v1_5_ov -t FP16 --dynamic
