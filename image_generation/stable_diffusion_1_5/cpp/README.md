@@ -19,6 +19,8 @@ Prepare a python environment and install dependencies:
 conda create -n openvino_sd_cpp python==3.10
 conda activate openvino_sd_cpp
 conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
+# Ensure that Conda standard libraries are used
+conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 ```
 
 ## Step 2: Convert Stable Diffusion v1.5 and Tokenizer models
@@ -28,6 +30,7 @@ conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
 1. Install dependencies to import models from HuggingFace:
 ```shell
 git submodule update --init
+# Reactivate Conda environment after installing dependencies and setting env vars
 conda activate openvino_sd_cpp
 python -m pip install -r requirements.txt
 python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
@@ -38,7 +41,6 @@ python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
 
    Example command for downloading and exporting FP16 model:
    ```shell
-   export LD_LIBRARY_PATH="$CONDA_PREFIX/lib"
    export MODEL_PATH="models/dreamlike_anime_1_0_ov/FP16"
    # Using optimum-cli for exporting model to OpenVINO format
    optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --convert-tokenizer --weight-format fp16 $MODEL_PATH
