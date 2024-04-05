@@ -16,7 +16,9 @@
 #include "openvino/runtime/core.hpp"
 #include "scheduler_lms_discrete.hpp"
 
-const size_t TOKENIZER_MODEL_MAX_LENGTH = 77;  // 'model_max_length' from 'tokenizer_config.json'
+const size_t TOKENIZER_MODEL_MAX_LENGTH = 77;   // 'model_max_length' parameter from 'tokenizer_config.json'
+const int64_t UNET_IN_CHANNELS = 4;             // 'in_channels' parameter from 'unet/config.json'
+const int64_t VAE_DECODER_LATENT_CHANNELS = 4;  // 'latent_channels' parameter from 'vae_decoder/config.json'
 const size_t VAE_SCALE_FACTOR = 8;
 
 class Timer {
@@ -34,7 +36,7 @@ public:
 };
 
 ov::Tensor randn_tensor(uint32_t height, uint32_t width, bool use_np_latents, uint32_t seed = 42) {
-    ov::Tensor noise(ov::element::f32, {1, 4, height / 8, width / 8});
+    ov::Tensor noise(ov::element::f32, {1, UNET_IN_CHANNELS, height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
     if (use_np_latents) {
         // read np generated latents with defaut seed 42
         const char* latent_file_name = "../np_latents_512x512.txt";
@@ -81,17 +83,15 @@ void reshape_text_encoder(std::shared_ptr<ov::Model> model, size_t batch_size, s
     ov::PartialShape input_shape = model->input(0).get_partial_shape();
     input_shape[0] = batch_size;
     input_shape[1] = tokenizer_model_max_length;
-    std::map<std::string, ov::PartialShape> name_to_shape{{model->input(0).get_any_name(), input_shape}};
-    model->reshape(name_to_shape);
+    std::map<size_t, ov::PartialShape> idx_to_shape{{0, input_shape}};
+    model->reshape(idx_to_shape);
 }
 
 void reshape_unet_encoder(std::shared_ptr<ov::Model> model,
                           int64_t batch_size,
                           int64_t height,
                           int64_t width,
-                          int64_t num_images_per_prompt,
                           int64_t tokenizer_model_max_length) {
-    batch_size *= num_images_per_prompt;
     // The factor of 2 comes from the guidance scale > 1
     for (auto input : model->inputs()) {
         if (input.get_any_name().find("timestep_cond") == std::string::npos) {
@@ -111,8 +111,7 @@ void reshape_unet_encoder(std::shared_ptr<ov::Model> model,
         if (input_name == "timestep") {
             name_to_shape[input_name][0] = 1;
         } else if (input_name == "sample") {
-            int64_t in_channels = 4;  // 'in_channels' parameter from 'unet/config.json'
-            name_to_shape[input_name] = {batch_size, in_channels, height, width};
+            name_to_shape[input_name] = {batch_size, UNET_IN_CHANNELS, height, width};
         } else if (input_name == "time_ids") {
             name_to_shape[input_name][0] = batch_size;
         } else {
@@ -127,10 +126,9 @@ void reshape_unet_encoder(std::shared_ptr<ov::Model> model,
 void reshape_vae_decoder(std::shared_ptr<ov::Model> model, int64_t height, int64_t width) {
     height = height / VAE_SCALE_FACTOR;
     width = width / VAE_SCALE_FACTOR;
-    int64_t latent_channels = 4;  // 'latent_channels' parameter from 'vae_decoder/config.json'
-    std::map<std::string, ov::PartialShape> name_to_shape{
-        {model->input(0).get_any_name(), {1, latent_channels, height, width}}};
-    model->reshape(name_to_shape);
+
+    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {1, VAE_DECODER_LATENT_CHANNELS, height, width}}};
+    model->reshape(idx_to_shape);
 }
 
 StableDiffusionModels compile_models(const std::string& model_path,
@@ -141,8 +139,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
                                      const bool use_dynamic_shapes,
                                      const size_t batch_size,
                                      const size_t height,
-                                     const size_t width,
-                                     const size_t num_images) {
+                                     const size_t width) {
     StableDiffusionModels models;
 
     ov::Core core;
@@ -174,7 +171,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
         Timer t("Loading and compiling UNet");
         auto unet_model = core.read_model(model_path + "/unet/openvino_model.xml");
         if (!use_dynamic_shapes) {
-            reshape_unet_encoder(unet_model, batch_size, height, width, num_images, TOKENIZER_MODEL_MAX_LENGTH);
+            reshape_unet_encoder(unet_model, batch_size, height, width, TOKENIZER_MODEL_MAX_LENGTH);
         }
         apply_lora(unet_model, lora_weights["unet"]);
         models.unet = core.compile_model(unet_model, device);
@@ -381,20 +378,13 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     // Stable Diffusion pipeline
     const size_t batch_size = 1;
-    StableDiffusionModels models = compile_models(model_path,
-                                                  device,
-                                                  lora_path,
-                                                  alpha,
-                                                  use_cache,
-                                                  use_dynamic_shapes,
-                                                  batch_size,
-                                                  height,
-                                                  width,
-                                                  num_images);
+    StableDiffusionModels models =
+        compile_models(model_path, device, lora_path, alpha, use_cache, use_dynamic_shapes, batch_size, height, width);
     ov::InferRequest unet_infer_request = models.unet.create_infer_request();
 
     ov::PartialShape sample_shape = models.unet.input("sample").get_partial_shape();
-    OPENVINO_ASSERT(sample_shape.is_dynamic() || (sample_shape[2] * 8 == height && sample_shape[3] * 8 == width),
+    OPENVINO_ASSERT(sample_shape.is_dynamic() ||
+                        (sample_shape[2] * VAE_SCALE_FACTOR == height && sample_shape[3] * VAE_SCALE_FACTOR == width),
                     "UNet model has static shapes [1, 4, H/8, W/8] or dynamic shapes [?, 4, ?, ?]");
 
     Timer t("Running Stable Diffusion pipeline");
