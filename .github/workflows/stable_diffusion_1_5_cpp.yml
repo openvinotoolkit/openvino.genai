@@ -26,17 +26,20 @@ jobs:
 
       - name: Install OpenVINO and other conda dependencies
         run: |
+          conda activate openvino_sd_cpp
           conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
 
       - name: Install python dependencies
         working-directory: ./image_generation/stable_diffusion_1_5/cpp/  # TODO Move working dir to workflow var
         run: |
+          conda activate openvino_sd_cpp
           python -m pip install -r requirements.txt
           python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
 
       - name: Download and convert model and tokenizer
         working-directory: ./image_generation/stable_diffusion_1_5/cpp/
         run: |
+          conda activate openvino_sd_cpp
           export LD_LIBRARY_PATH="$CONDA_PREFIX/lib"
           export MODEL_PATH="models/stable_diffusion_v1_5_ov/FP16"
           optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --convert-tokenizer --weight-format fp16 $MODEL_PATH
@@ -45,6 +48,7 @@ jobs:
       - name: Build app
         working-directory: ./image_generation/stable_diffusion_1_5/cpp/
         run: |
+          conda activate openvino_sd_cpp
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release --parallel
 
