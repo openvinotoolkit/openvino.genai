@@ -17,7 +17,6 @@ concurrency:
 
 jobs:
   stable_diffusion_1_5_cpp-linux:
-    if: ${{ false }}
     runs-on: ubuntu-20.04-8-cores
     defaults:
       run:
@@ -40,6 +39,7 @@ jobs:
         run: |
           conda activate openvino_sd_cpp
           conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
+          conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
       - name: Install python dependencies
         working-directory: ${{ env.working_directory }}
@@ -52,7 +52,6 @@ jobs:
         working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_sd_cpp
-          export LD_LIBRARY_PATH="$CONDA_PREFIX/lib"
           export MODEL_PATH="models/stable_diffusion_v1_5_ov/FP16"
           optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --convert-tokenizer --weight-format fp16 $MODEL_PATH
           convert_tokenizer $MODEL_PATH/tokenizer/ --tokenizer-output-type i32 -o $MODEL_PATH/tokenizer/
@@ -71,11 +70,6 @@ jobs:
 
   stable_diffusion_1_5_cpp-windows:
       runs-on: windows-latest
-      # defaults:
-      #   run:
-      #     # Do not ignore cmd Autorun commands. From:
-      #     # https://github.com/marketplace/actions/setup-miniconda#important
-      #     shell: cmd /C call {0}
       steps:
         - uses: actions/checkout@v4
           with:
