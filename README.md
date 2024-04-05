@@ -25,3 +25,4 @@ and make sure to install the OpenVINO version listed there. Refer to documentati
 The supported devices are CPU and GPU including Intel discrete GPU.
 
 See also: https://docs.openvino.ai/2023.3/gen_ai_guide.html.
+x
