@@ -71,11 +71,11 @@ jobs:
 
   stable_diffusion_1_5_cpp-windows:
       runs-on: windows-latest
-      defaults:
-        run:
-          # Do not ignore cmd Autorun commands. From:
-          # https://github.com/marketplace/actions/setup-miniconda#important
-          shell: cmd /C call {0}
+      # defaults:
+      #   run:
+      #     # Do not ignore cmd Autorun commands. From:
+      #     # https://github.com/marketplace/actions/setup-miniconda#important
+      #     shell: cmd /C call {0}
       steps:
         - uses: actions/checkout@v4
           with:
