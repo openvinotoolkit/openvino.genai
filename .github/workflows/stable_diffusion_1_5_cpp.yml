@@ -66,7 +66,7 @@ jobs:
       - name: Run app
         working-directory: ${{ env.working_directory }}
         run: |
-          ./build/stable_diffusion -m ./models/stable_diffusion_v1_5_ov -t FP16 --dynamic
+          ./build/stable_diffusion -m ./models/stable_diffusion_v1_5_ov -t FP16
 
   stable_diffusion_1_5_cpp-windows:
       runs-on: windows-latest
