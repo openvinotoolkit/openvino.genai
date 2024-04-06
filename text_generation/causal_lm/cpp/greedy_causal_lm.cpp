@@ -93,11 +93,12 @@ int main(int argc, char* argv[]) try {
     lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     position_ids.set_shape({BATCH_SIZE, 1});
     TextStreamer text_streamer{std::move(detokenizer)};
-    // After compiling the model, before the inference loop
-    
-    auto rt_info = tokenizer_model.get_rt_info();
+
+    auto rt_info = tokenizer_model->get_rt_info();
+    int64_t SPECIAL_EOS_TOKEN;
+
     if (rt_info.count("eos_token_id") > 0) {
-        SPECIAL_EOS_TOKEN = rt_info["eos_token_id"];
+        SPECIAL_EOS_TOKEN = rt_info["eos_token_id"].as<int64_t>();;
     } else {
         throw std::runtime_error("EOS token ID not found in model's runtime information.");
     }
