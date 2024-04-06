@@ -62,11 +62,9 @@ int main(int argc, char* argv[]) try {
     ov::Core core;
 
     auto tokenizer_model = core.read_model(std::string{argv[1]} + "/openvino_tokenizer.xml");
-
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
     // tokenizer and detokenizer work on CPU only
-    ov::InferRequest tokenizer = core.compile_model(
-        std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
+    ov::InferRequest tokenizer = core.compile_model(tokenizer_model, "CPU").create_infer_request();
     auto [input_ids, attention_mask] = tokenize(tokenizer, argv[2]);
     ov::InferRequest detokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
