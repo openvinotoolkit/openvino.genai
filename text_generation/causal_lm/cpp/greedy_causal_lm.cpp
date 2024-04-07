@@ -61,9 +61,11 @@ int main(int argc, char* argv[]) try {
     // Compile models
     ov::Core core;
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
+    //Read the tokenizer model information from the file to later get the runtime information
+    auto tokenizer_model = core.read_model(std::string{argv[1]} + "/openvino_tokenizer.xml");
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(
-        std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
+        tokenizer_model, "CPU").create_infer_request();
     auto [input_ids, attention_mask] = tokenize(tokenizer, argv[2]);
     ov::InferRequest detokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
@@ -91,8 +93,8 @@ int main(int argc, char* argv[]) try {
     lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     position_ids.set_shape({BATCH_SIZE, 1});
     TextStreamer text_streamer{std::move(detokenizer)};
-    // Read the tokenizer model configurations to get the runtime info
-    auto tokenizer_model = core.read_model(std::string{argv[1]} + "/openvino_tokenizer.xml");
+
+    // Get the runtime info from the tokenizer model that we read earlier
     auto rt_info = tokenizer_model->get_rt_info(); //Get the runtime info for the model
     int64_t SPECIAL_EOS_TOKEN;
 
