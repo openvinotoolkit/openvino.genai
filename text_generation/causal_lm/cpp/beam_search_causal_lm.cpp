@@ -165,7 +165,7 @@ int main(int argc, char* argv[]) try {
 
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer =
-        core.compile_model(std::string{argv[1]} + "/openvino_tokenizer_mask_fixed.xml", "CPU").create_infer_request();
+        core.compile_model(std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
     ov::InferRequest detokenizer =
         core.compile_model(std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     // The model can be compiled for GPU as well
