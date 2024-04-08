@@ -38,7 +38,7 @@ jobs:
       - name: Install OpenVINO and other conda dependencies
         run: |
           conda activate openvino_sd_cpp
-          conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
+          conda install -c conda-forge openvino-nightly c-compiler cxx-compiler make cmake
           conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
       - name: Install python dependencies
@@ -53,7 +53,7 @@ jobs:
         run: |
           conda activate openvino_sd_cpp
           export MODEL_PATH="models/stable_diffusion_v1_5_ov/FP16"
-          optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --convert-tokenizer --weight-format fp16 $MODEL_PATH
+          optimum-cli export openvino-nightly --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --convert-tokenizer --weight-format fp16 $MODEL_PATH
           convert_tokenizer $MODEL_PATH/tokenizer/ --tokenizer-output-type i32 -o $MODEL_PATH/tokenizer/
 
       - name: Build app
@@ -85,7 +85,7 @@ jobs:
         - name: Install OpenVINO and other conda dependencies
           run: |
             conda activate openvino_sd_cpp
-            conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
+            conda install -c conda-forge openvino-nightly c-compiler cxx-compiler make cmake
   
         - name: Install python dependencies
           working-directory: ${{ env.working_directory }}
