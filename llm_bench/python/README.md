@@ -11,10 +11,12 @@ pytorch and openvino models, using almost the same code and precollected models.
 ``` bash
 python3 -m venv python-env
 source python-env/bin/activate
-pip install update --upgrade
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
-> Note: For llama models, ensure to have transformers<4.38.
+> Note:
+> If you are using an existing python environment, recommend following command to use all the dependencies with latest versions:  
+> pip install -U --upgrade-strategy eager -r requirements.txt
 
 ### 2. Convert a model to OpenVINO IR
    
@@ -119,6 +121,23 @@ Add the option `--torch_compile_backend` with the desired backend: `pytorch` or 
 ```bash
 python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino
 ```
+
+## Run on 2 sockets platform
+
+benchmark.py sets openvino.properties.streams.num(1) by default
+
+| OpenVINO version    | Behaviors                                       |
+|:--------------------|:------------------------------------------------|
+| Before 2024.0.0 | streams.num(1) <br>execute on 2 sockets. |
+| 2024.0.0 | streams.num(1) <br>execute on the same socket as the APP is running on. |
+
+numactl on Linux or --load_config for benchmark.py can be used to change the behaviors.
+
+For example, --load_config config.json as following in OpenVINO 2024.0.0 will result in streams.num(1) and execute on 2 sockets.
+```
+{"INFERENCE_NUM_THREADS":<NUMBER>}
+```
+`<NUMBER>` is the number of total physical cores in 2 sockets
 
 ## Additional Resources
 ### 1. NOTE
