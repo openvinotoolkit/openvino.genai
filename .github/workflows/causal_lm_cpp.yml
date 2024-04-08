@@ -152,6 +152,28 @@ jobs:
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo 你好！ 你好嗎？ passed
+
+          timeout 1m ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
+          python -c "
+          import transformers
+          with open('pred.txt', 'r') as file:
+              predictions = file.read()
+          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
+          prompts = [
+            'Alan Turing was a',
+            'return 0',
+            '你好！ 你好嗎？'
+          ]
+          for prompt in prompts:
+            tokenized = tokenizer(prompt, return_tensors='pt')
+            for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
+                ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
+                idx = predictions.find(ref)
+                if -1 == idx:
+                    raise RuntimeError(f'Missing "{ref=}" from predictions')
+                predictions = predictions[:idx] + predictions[idx + len(ref):]
+          "
+          echo Multi prompt passed
   cpp-beam_search_causal_lm-windows:
     runs-on: windows-latest
     steps:
@@ -269,7 +291,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           convert_tokenizer ./Phi-2/pytorch/dldt/FP16/ --output ./Phi-2/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
-          timeout 50s ./build/beam_search_causal_lm ./Phi-2/pytorch/dldt/FP16/ 69 > ./pred.txt        
+          timeout 50s ./build/beam_search_causal_lm ./Phi-2/pytorch/dldt/FP16/ 69 > ./pred.txt
   cpp-beam_search_causal_lm-notus-7b-v1:
     runs-on: ubuntu-20.04-16-cores
     steps:
