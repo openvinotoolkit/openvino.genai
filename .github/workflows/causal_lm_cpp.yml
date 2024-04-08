@@ -378,7 +378,7 @@ jobs:
           "
           echo Phi-1_5 passed
   cpp-beam_search_causal_lm-redpajama-3b-chat:
-    runs-on: ubuntu-22.04-8-cores
+    runs-on: ubuntu-20.04-8-cores
     steps:
       - uses: actions/checkout@v4
         with:
@@ -389,14 +389,14 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.0/linux/l_openvino_toolkit_ubuntu22_2024.0.0.14509.34caeefd078_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.0/linux/l_openvino_toolkit_ubuntu20_2024.0.0.14509.34caeefd078_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id ikala/redpajama-3b-chat --output_dir ./redpajama-3b-chat/ --precision FP16 &
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
-          cmake --build ./build/ --config Release -j 15
+          cmake --build ./build/ --config Release -j
           wait
       - name: Run Generation
         run: |
