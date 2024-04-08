@@ -17,6 +17,7 @@ COMPRESSION_OPTIONS = {
         "mode": nncf.CompressWeightsMode.INT4_SYM,
         "group_size": 128,
         "ratio": 1,
+        "all_layers": True,
     },
 }
 
