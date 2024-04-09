@@ -168,7 +168,7 @@ jobs:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo 你好！ 你好嗎？ passed
+          echo "你好！ 你好嗎？" passed
 
           timeout 1m ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
           python -c "
