@@ -149,5 +149,4 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
 10. [zephyr-7b-beta](https://huggingface.co/HuggingFaceH4/zephyr-7b-beta)
 11. [Mistral-7B-v0.1](https://huggingface.co/mistralai/Mistral-7B-v0.1)
 
-
 This pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature.

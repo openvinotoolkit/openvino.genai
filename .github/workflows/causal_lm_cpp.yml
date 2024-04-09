@@ -10,6 +10,7 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
   cpp-beam_search_causal_lm-Mistral-7B:
     runs-on: ubuntu-20.04-16-cores
@@ -37,6 +38,21 @@ jobs:
           source ./ov/setupvars.sh
           convert_tokenizer ./Mistral-7B-v0.1/pytorch/dldt/FP16/ --output ./Mistral-7B-v0.1/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
           timeout 50s ./build/beam_search_causal_lm ./Mistral-7B-v0.1/pytorch/dldt/FP16/ 69 > ./pred.txt
+          python -c " 
+          import transformers 
+          with open('pred.txt', 'r') as file: 
+              predictions = file.read() 
+          tokenizer = transformers.LlamaTokenizer.from_pretrained('mistralai/Mistral-7B-v0.1') 
+          tokenized = tokenizer('69', return_tensors='pt') 
+          for beam in transformers.LlamaForCausalLM.from_pretrained('mistralai/Mistral-7B-v0.1').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False): 
+              ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n' 
+              idx = predictions.find(ref) 
+              if -1 == idx: 
+                  raise RuntimeError(f'Missing "{ref=}" from predictions') 
+              predictions = predictions[:idx] + predictions[idx + len(ref):] 
+          " 
+          echo "69" passed 
+
   cpp-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
     steps:
@@ -63,6 +79,7 @@ jobs:
           source ./ov/setupvars.sh
           convert_tokenizer ./open_llama_3b_v2/pytorch/dldt/FP16/ --output ./open_llama_3b_v2/pytorch/dldt/FP16/ --with-detokenizer
           ./build/greedy_causal_lm ./open_llama_3b_v2/pytorch/dldt/FP16/ "return 0"
+
   cpp-beam_search_causal_lm-ubuntu:
     runs-on: ubuntu-20.04
     steps:
@@ -103,7 +120,7 @@ jobs:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo 69 passed
+          echo "69" passed
 
           timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ Hi > ./pred.txt
           python -c "
@@ -119,7 +136,7 @@ jobs:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo Hi passed
+          echo "Hi" passed
 
           timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "return 0" > ./pred.txt
           python -c "
@@ -135,7 +152,7 @@ jobs:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo return 0 passed
+          echo "return 0" passed
 
           ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "你好！ 你好嗎？" > ./pred.txt
           python -c "
@@ -214,6 +231,7 @@ jobs:
           echo         raise RuntimeError(f'Missing "{ref=}" from predictions') >> ref.py
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
           python ref.py
+
   cpp-beam_search_causal_lm-Qwen-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
     steps:
@@ -240,6 +258,7 @@ jobs:
           source ./ov/setupvars.sh
           convert_tokenizer ./Qwen-7B-Chat/pytorch/dldt/FP16/ --output ./Qwen-7B-Chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
           timeout 50s ./build/beam_search_causal_lm ./Qwen-7B-Chat/pytorch/dldt/FP16/ 69 > ./pred.txt
+
   cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
     steps:
@@ -266,6 +285,7 @@ jobs:
           source ./ov/setupvars.sh
           convert_tokenizer ./Qwen1.5-7B-Chat/pytorch/dldt/FP16/ --output ./Qwen1.5-7B-Chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
           timeout 50s ./build/beam_search_causal_lm ./Qwen1.5-7B-Chat/pytorch/dldt/FP16/ "你好！" > ./pred_qwen15.txt
+
   cpp-beam_search_causal_lm-Phi-2:
     runs-on: ubuntu-20.04-16-cores
     steps:
@@ -318,6 +338,7 @@ jobs:
           source ./ov/setupvars.sh
           convert_tokenizer ./notus-7b-v1/pytorch/dldt/FP16/ --output ./notus-7b-v1/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
           timeout 50s ./build/beam_search_causal_lm ./notus-7b-v1/pytorch/dldt/FP16/ 69 > ./pred.txt
+
   cpp-speculative_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
     steps:
@@ -355,7 +376,8 @@ jobs:
               predicted_speculative = f.readline()
           assert predicted_greedy == predicted_speculative
           "
-          echo speculative_decoding_lm passed
+          echo "Alan Turing was a" passed
+
   cpp-Phi-1_5:
     runs-on: ubuntu-20.04-16-cores
     steps:
@@ -398,4 +420,4 @@ jobs:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo Phi-1_5 passed
+          echo "Alan Turing was a" passed
