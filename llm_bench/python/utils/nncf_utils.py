@@ -2,9 +2,9 @@ from pathlib import Path
 
 import nncf
 
-
 COMPRESSION_OPTIONS = {
-    "INT8": {"mode": nncf.CompressWeightsMode.INT8 if "INT8_ASYM" not in nncf.CompressWeightsMode.__members__ else nncf.CompressWeightsMode.INT8_ASYM},
+    "INT8": {
+        "mode": nncf.CompressWeightsMode.INT8 if "INT8_ASYM" not in nncf.CompressWeightsMode.__members__ else nncf.CompressWeightsMode.INT8_ASYM},
     "INT4_SYM": {
         "mode": nncf.CompressWeightsMode.INT4_SYM,
         "group_size": 128,
@@ -13,8 +13,13 @@ COMPRESSION_OPTIONS = {
         "mode": nncf.CompressWeightsMode.INT4_ASYM,
         "group_size": 128,
     },
+    "4BIT_MAXIMUM": {
+        "mode": nncf.CompressWeightsMode.INT4_SYM,
+        "group_size": 128,
+        "ratio": 1,
+        "all_layers": True,
+    },
 }
-
 
 if "INT8_ASYM" in nncf.CompressWeightsMode.__members__:
     COMPRESSION_OPTIONS["INT8_ASYM"] = {"mode": nncf.CompressWeightsMode.INT8_ASYM}

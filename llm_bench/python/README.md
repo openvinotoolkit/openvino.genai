@@ -37,7 +37,7 @@ Paramters:
 * `--output_dir` - output directory for saving OpenVINO model
 * `--precision` - (optional, default FP32), precision for model conversion FP32 or FP16
 * `--save_orig` - flag for saving original pytorch model, model will be located in `<output_dir>/pytorch` subdirectory.
-* `--compress_weights` - The weight compression option, INT8 - INT8 weights, 4BIT_DEFAULT - for 4-bit weights compression with predefined configuration, INT4_SYM - for INT4 compressed weights with symmetric quantization, INT4_ASYM - for INT4 compressed weights with assymetric quantization. You can specify multiple backends separated by a space.
+* `--compress_weights` - The weight compression option, INT8 - INT8 weights, 4BIT_DEFAULT - for 4-bit compression with predefined configs with performance-accuracy trade-off, 4BIT_MAXIMUM - for 4-bit compression with predefined configs for the best performance, INT4_SYM - for INT4 compressed weights with symmetric quantization, INT4_ASYM - for INT4 compressed weights with assymetric quantization. You can specify multiple backends separated by a space.
 * `--compress_weights_backends` - (optional, default openvino) backends for weights compression, this option has an effect only with `--compress_weights`. You can specify multiple backends separated by a space.
 * `--ratio` - Compression ratio between primary and backup precision, e.g. INT4/INT8.
 * `--group_size` - Size of the group of weights that share the same quantization parameters
