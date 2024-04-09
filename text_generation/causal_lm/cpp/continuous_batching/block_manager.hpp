@@ -14,6 +14,7 @@ class KVCacheBlock {
     int m_index;
 public:
     using Ptr = std::shared_ptr<KVCacheBlock>;
+    using CPtr = std::shared_ptr<const KVCacheBlock>;
 
     explicit KVCacheBlock(int index)
         : m_ref_count(0),
@@ -74,9 +75,9 @@ public:
 
     KVCacheBlock::Ptr allocate_block() {
         OPENVINO_ASSERT(can_allocate_blocks(1));
-        KVCacheBlock::Ptr allocated_block = m_free_blocks.back();
+        KVCacheBlock::Ptr allocated_block = m_free_blocks.front();
         allocated_block->increment();
-        m_free_blocks.pop_back();
+        m_free_blocks.pop_front();
         return allocated_block;
     }
 
@@ -148,12 +149,12 @@ public:
         return seq_group->num_running_seqs() <= m_allocator.num_free_blocks();
     }
 
-    std::map<size_t, size_t> append_slot(SequenceGroup::CPtr seq_group) {
+    std::map<size_t, std::list<size_t>> append_slot(SequenceGroup::CPtr seq_group) {
         OPENVINO_ASSERT(can_append_slot(seq_group));
         size_t num_logical_blocks = seq_group->get_num_logical_blocks();
         std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
 
-        std::map<size_t, size_t> copy_blocks_map;
+        std::map<size_t, std::list<size_t>> copy_blocks_map;
         for (size_t i = 0; i < running_sequences.size(); ++i) {
             Sequence::CPtr sequence = running_sequences[i];
             auto seq_id = sequence->get_id();
@@ -164,14 +165,17 @@ public:
                 // we require to allocate a new physical block
                 block_table.push_back(m_allocator.allocate_block());
             } else {
-                KVCacheBlock::Ptr last_block = block_table[num_physical_blocks - 1];
+                OPENVINO_ASSERT(num_logical_blocks == num_physical_blocks, "A number of physical and logic blocks must be the same in this code path");
+                KVCacheBlock::Ptr last_block = block_table.back();
 
                 if (last_block->copy_on_write()) {
                     // we need to fork current block, because reference counter is more than 1
                     KVCacheBlock::Ptr new_block = m_allocator.allocate_block();
                     block_table[num_physical_blocks - 1] = new_block;
                     // write information about block forking for later usage in CacheManager
-                    copy_blocks_map[last_block->get_index()] = new_block->get_index();
+                    copy_blocks_map[last_block->get_index()].push_back(new_block->get_index());
+                    // release `last_block` usage
+                    m_allocator.free(last_block);
                 } else {
                     // nothing to do, because we are the only users of this block
                 }

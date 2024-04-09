@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <list>
 #include <cstdlib>
 #include <limits>
 
@@ -163,7 +164,7 @@ struct SamplerOutput {
     // IDs of sequences that need to be forked (note, the same sequence can be forked multiple times)
     // it will later be used by scheduler to fork block_tables for child sequences
     // (used during Beam Search)
-    std::unordered_map<uint64_t, std::vector<uint64_t>> m_forked_sequences;
+    std::unordered_map<uint64_t, std::list<uint64_t>> m_forked_sequences;
 };
 
 class GroupBeamSearcher {
@@ -325,7 +326,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                         if (seq_id == running_seqs[seq_global_index]->get_id())
                             return seq_global_index;
                     }
-                    return std::numeric_limits<size_t>::max();
+                    OPENVINO_THROW("Internal error in beam search: should not be here");
                 } (parent_seq_id);
 
                 // zero out all parent forks counts
@@ -485,7 +486,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                     // will go by the second branch (num_childs == 1)
                     --num_childs;
 
-                    // fill out scheduler output
+                    // fill out sampler output
                     sampler_output.m_forked_sequences[parent_sequence_id].push_back(child_beam.m_sequence->get_id());
                 } else if (num_childs == 1) {
                     // keep current sequence going and add a new token

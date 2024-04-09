@@ -4,6 +4,7 @@
 #include <openvino/openvino.hpp>
 
 #include "llm_engine.hpp"
+#include "paged_attention.hpp"
 
 namespace {
 
@@ -71,7 +72,7 @@ int main(int argc, char* argv[]) try {
     //
 
     ov::Core core;
-    core.add_extension("libuser_ov_extensions.so");
+    core.add_extension<PagedAttention>();
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(
@@ -82,9 +83,12 @@ int main(int argc, char* argv[]) try {
     // The model can be compiled for GPU as well
     std::shared_ptr<ov::Model> model = core.read_model("/home/sandye51/Documents/Programming/git_repo/vllm/vllm_optimum_openvino_model.xml");
     const ov::ParameterVector& parameters = model->get_parameters();
+    ov::PartialShape pshape = ov::PartialShape::dynamic(4);
     for (size_t decoder_layer_id = 0; decoder_layer_id < NUM_DECODER_LAYERS; ++decoder_layer_id) {
         parameters[2 + 2 * decoder_layer_id]->set_element_type(kv_cache_precision);
         parameters[2 + 2 * decoder_layer_id + 1]->set_element_type(kv_cache_precision);
+        parameters[2 + 2 * decoder_layer_id]->set_partial_shape(pshape);
+        parameters[2 + 2 * decoder_layer_id + 1]->set_partial_shape(pshape);
     }
     model->validate_nodes_and_infer_types();
     ov::InferRequest request = core.compile_model(model, "CPU").create_infer_request();
@@ -93,7 +97,7 @@ int main(int argc, char* argv[]) try {
     // Create requests for generation
     //
 
-    const size_t dataset_size = 16;
+    const size_t dataset_size = 1;
 
     std::vector<std::string> prompt_examples = {
         "What is OpenVINO?",
@@ -105,7 +109,7 @@ int main(int argc, char* argv[]) try {
 
     std::vector<SamplingParameters> sampling_params_examples {
         SamplingParameters::beam_search(),
-        SamplingParameters::greedy(),
+        // SamplingParameters::greedy(),
         // SamplingParameters::multimomial(),
     };
 
@@ -128,7 +132,7 @@ int main(int argc, char* argv[]) try {
     //
 
     SchedulerConfig scheduler_config {
-        .max_num_batched_tokens = 16,
+        .max_num_batched_tokens = 32,
         .num_kv_blocks = NUM_BLOCKS,
         .dynamic_split_fuse = false,
         .max_num_seqs = 2,

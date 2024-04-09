@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 #include <cxxopts.hpp>
 
+#include "paged_attention.hpp"
 #include "llm_engine.hpp"
 
 namespace {
@@ -133,15 +134,18 @@ int main(int argc, char* argv[]) try {
     //
 
     ov::Core core;
-    core.add_extension("libuser_ov_extensions.so");
+    core.add_extension<PagedAttention>();
 
     // The model can be compiled for GPU as well
     std::shared_ptr<ov::Model> model = core.read_model(models_path + "/vllm_optimum_openvino_model.xml");
     // TODO: reshape model according to plugin desired shape condifuration
     const ov::ParameterVector& parameters = model->get_parameters();
+    ov::PartialShape pshape = ov::PartialShape::dynamic(4);
     for (size_t decoder_layer_id = 0; decoder_layer_id < NUM_DECODER_LAYERS; ++decoder_layer_id) {
         parameters[2 + 2 * decoder_layer_id]->set_element_type(kv_cache_precision);
         parameters[2 + 2 * decoder_layer_id + 1]->set_element_type(kv_cache_precision);
+        parameters[2 + 2 * decoder_layer_id]->set_partial_shape(pshape);
+        parameters[2 + 2 * decoder_layer_id + 1]->set_partial_shape(pshape);
     }
     model->validate_nodes_and_infer_types();
 

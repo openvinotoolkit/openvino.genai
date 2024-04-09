@@ -6,7 +6,6 @@
 
 #include <cstdlib>
 #include <vector>
-#include <unordered_set>
 
 #include "model_config.hpp"
 #include "block_manager.hpp"
@@ -46,7 +45,7 @@ public:
         // IDs of scheduled groups
         std::vector<uint64_t> m_scheduled_sequence_groups_ids;
         // map of src -> dst blocks copies, which need to be performed by CacheManager
-        std::map<size_t, std::unordered_set<size_t>> m_block_copy_map;
+        std::map<size_t, std::list<size_t>> m_block_copy_map;
         // block tables for scheduled sequences
         std::map<uint64_t, std::vector<KVCacheBlock::Ptr>> m_block_tables;
         // total number of scheduled tokens
@@ -174,6 +173,8 @@ private:
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
+                Sequence::Ptr sequence = (*sequence_group)[0];
+                uint64_t seq_id = sequence->get_id();
 
                 size_t num_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t num_available_tokens = sequence_group->get_num_available_tokens_for_batching();
@@ -182,8 +183,8 @@ private:
                 size_t num_scheduled_tokens = std::min(num_tokens_in_megabatch, num_available_tokens);
 
                 // apply KV cache limitations
-                size_t context_len = sequence_group->get_context_len();
-                size_t available_slots = context_len % BLOCK_SIZE, required_slots = num_scheduled_tokens - available_slots;
+                size_t available_slots = sequence_group->get_num_blocks() * BLOCK_SIZE - sequence_group->get_num_processed_tokens(),
+                       required_slots = num_scheduled_tokens > available_slots ? num_scheduled_tokens - available_slots : 0;
                 size_t num_required_blocks = (required_slots + BLOCK_SIZE - 1) / BLOCK_SIZE, num_free_blocks = m_block_manager.num_free_blocks();
                 size_t num_scheduled_blocks = std::min(num_required_blocks, num_free_blocks);
                 // some scheduled blocks can be no fully occupied, so we need to take min between num_scheduled_blocks
@@ -191,11 +192,9 @@ private:
                 num_scheduled_tokens = std::min(num_scheduled_tokens, available_slots + num_scheduled_blocks * BLOCK_SIZE);
 
                 if (num_scheduled_tokens > 0) {
-                    Sequence::Ptr sequence = (*sequence_group)[0];
-                    uint64_t seq_id = sequence->get_id();
-
-                    // allocate KV blocks
-                    m_block_manager.allocate(seq_id, num_scheduled_blocks);
+                    // allocate KV blocks if required
+                    if (num_scheduled_blocks > 0)
+                        m_block_manager.allocate(seq_id, num_scheduled_blocks);
                     // and schedule tokens
                     sequence_group->schedule_tokens(num_scheduled_tokens);
 
@@ -246,7 +245,7 @@ private:
                 // we can ensure that preemption stage freed some KV blocks to allocate new slots for us
                 OPENVINO_ASSERT(m_block_manager.can_append_slot(sequence_group));
                 // allocate new slots
-                auto copy_blocks_map = m_block_manager.append_slot(sequence_group);
+                std::map<size_t, std::list<size_t>> copy_blocks_map = m_block_manager.append_slot(sequence_group);
 
                 // add information to scheduler_output
                 {
@@ -262,8 +261,10 @@ private:
 
                     // merge copy_blocks
                     for (const auto& src_dst : copy_blocks_map) {
-                        size_t src_indx = src_dst.first, dst_index = src_dst.second;
-                        scheduler_output.m_block_copy_map[src_indx].insert(dst_index);
+                        size_t src_index = src_dst.first;
+                        const std::list<size_t>& dst_indexes = src_dst.second;
+                        for (const auto dst_index : dst_indexes)
+                            scheduler_output.m_block_copy_map[src_index].push_back(dst_index);
                     }
                 }
 

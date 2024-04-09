@@ -18,8 +18,8 @@ public:
         m_value_cache.reserve(NUM_DECODER_LAYERS);
 
         // Allocate KV caches
-        const ov::Shape k_cache_shape{NUM_BLOCKS, NUM_KV_HEADS, HEAD_SIZE / X, BLOCK_SIZE, X};
-        const ov::Shape v_cache_shape{NUM_BLOCKS, NUM_KV_HEADS, HEAD_SIZE, BLOCK_SIZE};
+        const ov::Shape k_cache_shape{NUM_BLOCKS, NUM_KV_HEADS, BLOCK_SIZE, HEAD_SIZE};
+        const ov::Shape v_cache_shape{NUM_BLOCKS, NUM_KV_HEADS, BLOCK_SIZE, HEAD_SIZE};
 
         for (size_t decoder_layer_id = 0; decoder_layer_id < NUM_DECODER_LAYERS; ++decoder_layer_id) {
             ov::Tensor key_cache(kv_cache_precision, k_cache_shape);
@@ -44,30 +44,24 @@ public:
         return m_value_cache[decoder_layer_id];
     }
 
-    void copy_blocks(const std::map<size_t, std::unordered_set<size_t>>& block_copy_map) {
+    void copy_blocks(const std::map<size_t, std::list<size_t>>& block_copy_map) {
         for (const auto & blocks_pair : block_copy_map) {
             size_t src_block_id = blocks_pair.first;
-            std::unordered_set<size_t> dst_block_ids = blocks_pair.second;
+            const std::list<size_t>& dst_block_ids = blocks_pair.second;
 
-            ov::Coordinate k_src_start_roi = { src_block_id, NUM_KV_HEADS, HEAD_SIZE / X, BLOCK_SIZE, X };
-            ov::Coordinate k_src_end_roi = { src_block_id + 1, NUM_KV_HEADS, HEAD_SIZE / X, BLOCK_SIZE, X };
-            
-            ov::Coordinate v_src_start_roi = { src_block_id, NUM_KV_HEADS, HEAD_SIZE, BLOCK_SIZE };
-            ov::Coordinate v_src_end_roi = { src_block_id + 1, NUM_KV_HEADS, HEAD_SIZE, BLOCK_SIZE };
+            ov::Coordinate src_start_roi = { src_block_id, 0, 0, 0 };
+            ov::Coordinate src_end_roi = { src_block_id + 1, NUM_KV_HEADS, BLOCK_SIZE, HEAD_SIZE };
 
             for (size_t dst_block_id : dst_block_ids) {
-                ov::Coordinate k_dst_start_roi = { dst_block_id, NUM_KV_HEADS, HEAD_SIZE / X, BLOCK_SIZE, X };
-                ov::Coordinate k_dst_end_roi = { dst_block_id + 1, NUM_KV_HEADS, HEAD_SIZE / X, BLOCK_SIZE, X };
-
-                ov::Coordinate v_dst_start_roi = { dst_block_id, NUM_KV_HEADS, HEAD_SIZE, BLOCK_SIZE };
-                ov::Coordinate v_dst_end_roi = { dst_block_id + 1, NUM_KV_HEADS, HEAD_SIZE, BLOCK_SIZE };
+                ov::Coordinate dst_start_roi = { dst_block_id, 0, 0, 0 };
+                ov::Coordinate dst_end_roi = { dst_block_id + 1, NUM_KV_HEADS, BLOCK_SIZE, HEAD_SIZE };
 
                 for (size_t decoder_layer_id = 0; decoder_layer_id < NUM_DECODER_LAYERS; ++decoder_layer_id) {
-                    ov::Tensor k_src_cache_roi(m_key_cache[decoder_layer_id], k_src_start_roi, k_src_end_roi);
-                    ov::Tensor k_dst_cache_roi(m_key_cache[decoder_layer_id], k_dst_start_roi, k_dst_end_roi);
+                    ov::Tensor k_src_cache_roi(m_key_cache[decoder_layer_id], src_start_roi, src_end_roi);
+                    ov::Tensor k_dst_cache_roi(m_key_cache[decoder_layer_id], dst_start_roi, dst_end_roi);
 
-                    ov::Tensor v_src_cache_roi(m_value_cache[decoder_layer_id], v_src_start_roi, v_src_end_roi);
-                    ov::Tensor v_dst_cache_roi(m_value_cache[decoder_layer_id], v_dst_start_roi, v_dst_end_roi);
+                    ov::Tensor v_src_cache_roi(m_value_cache[decoder_layer_id], src_start_roi, src_end_roi);
+                    ov::Tensor v_dst_cache_roi(m_value_cache[decoder_layer_id], dst_start_roi, dst_end_roi);
 
                     k_src_cache_roi.copy_to(k_dst_cache_roi);
                     v_src_cache_roi.copy_to(v_dst_cache_roi);

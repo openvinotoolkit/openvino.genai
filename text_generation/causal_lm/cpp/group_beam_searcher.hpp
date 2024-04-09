@@ -238,9 +238,11 @@ struct GroupBeamSearcher {
                 for (const Beam& beam : group->ongoing) {
                     next_tokens.push_back(beam.tokens.back());
                     next_beams.push_back(int32_t(beam.global_beam_idx));
+                    std::cout << next_tokens.back() << " " << next_beams.back() << std::endl;
                 }
             }
         }
+        std::cout << std::endl;
         return {next_tokens, next_beams};
     }
 };

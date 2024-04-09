@@ -87,9 +87,9 @@ private:
 
                 // compute slot_id
                 for (size_t token_id = 0; token_id < max_seq_len; ++token_id) {
-                    size_t physical_block_id = token_id / BLOCK_SIZE, block_offset = token_id % BLOCK_SIZE;
+                    size_t logical_block_id = token_id / BLOCK_SIZE, block_offset = token_id % BLOCK_SIZE;
                     int64_t slot_id = token_id < context_len ?
-                        BLOCK_SIZE * kv_blocks[physical_block_id]->get_index() + block_offset :
+                        BLOCK_SIZE * kv_blocks[logical_block_id]->get_index() + block_offset :
                         -1 /* PAD token ID */ ;
                     slot_mapping_data[token_id] = slot_id;
                 }
@@ -199,8 +199,7 @@ private:
                         sequence->get_generated_ids()[position_id - sequence_group->get_prompt_len()];
 
                     // compute slot_id
-                    size_t physical_block_id = position_id / BLOCK_SIZE;
-                    size_t block_offset = position_id % BLOCK_SIZE;
+                    size_t physical_block_id = position_id / BLOCK_SIZE, block_offset = position_id % BLOCK_SIZE;
                     int64_t slot_id = BLOCK_SIZE * kv_blocks[physical_block_id]->get_index() + block_offset;
                     slot_mapping_data[token_id] = slot_id;
                 }

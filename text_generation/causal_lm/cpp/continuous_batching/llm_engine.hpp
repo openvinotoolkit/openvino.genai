@@ -114,7 +114,8 @@ public:
 
             for (const auto& pair : sampler_output.m_forked_sequences) {
                 uint64_t parent_id = pair.first;
-                for (auto & child_id : pair.second)
+                const std::list<uint64_t>& child_ids = pair.second;
+                for (auto & child_id : child_ids)
                     m_scheduler.fork_sequence(parent_id, child_id);
             }
 
