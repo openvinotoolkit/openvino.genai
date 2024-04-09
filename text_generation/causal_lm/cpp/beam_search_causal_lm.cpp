@@ -59,6 +59,12 @@ std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::vec
     tokenizer.infer();
 
     pad_left(tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask"));
+
+    // fix mask filled with '2' instead of '0'
+    ov::Tensor attention_mask = tokenizer.get_tensor("attention_mask");
+    int64_t* attention_mask_data = attention_mask.data<int64_t>();
+    std::replace(attention_mask_data, attention_mask_data + attention_mask.get_size(), 2, 0);
+
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
 }
 
