@@ -190,7 +190,7 @@ jobs:
                     raise RuntimeError(f'Missing "{ref=}" from predictions')
                 predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo Multi prompt passed
+          echo "Multi prompt" passed
   cpp-beam_search_causal_lm-windows:
     runs-on: windows-latest
     steps:
