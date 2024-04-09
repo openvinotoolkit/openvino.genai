@@ -116,6 +116,23 @@ Add the option `--torch_compile_backend` with the desired backend: `pytorch` or 
 python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino
 ```
 
+## Run on 2 sockets platform
+
+benchmark.py sets openvino.properties.streams.num(1) by default
+
+| OpenVINO version    | Behaviors                                       |
+|:--------------------|:------------------------------------------------|
+| Before 2024.0.0 | streams.num(1) <br>execute on 2 sockets. |
+| 2024.0.0 | streams.num(1) <br>execute on the same socket as the APP is running on. |
+
+numactl on Linux or --load_config for benchmark.py can be used to change the behaviors.
+
+For example, --load_config config.json as following in OpenVINO 2024.0.0 will result in streams.num(1) and execute on 2 sockets.
+```
+{"INFERENCE_NUM_THREADS":<NUMBER>}
+```
+`<NUMBER>` is the number of total physical cores in 2 sockets
+
 ## Additional Resources
 ### 1. NOTE
 > If you encounter any errors, please check **[NOTES.md](./doc/NOTES.md)** which provides solutions to the known errors.
