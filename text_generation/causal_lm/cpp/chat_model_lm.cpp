@@ -24,13 +24,13 @@ std::string detokenize(ov::InferRequest& detokenizer, const std::vector<int64_t>
     detokenizer.infer();
     return detokenizer.get_output_tensor().data<std::string>()[0];
 }
-}  // namespace
 
-std::string generate_chat_promt_gemma(const std::string& input) {
-    std::stringstream result_promt;
-    result_promt << "<bos><start_of_turn>user\n" << input << "<end_of_turn>\n<start_of_turn>model";
-    return result_promt.str();
+std::string generate_chat_prompt_gemma(const std::string& input) {
+    std::stringstream result_prompt;
+    result_prompt << "<bos><start_of_turn>user\n" << input << "<end_of_turn>\n<start_of_turn>model";
+    return result_prompt.str();
 }
+}  // namespace
 
 int main(int argc, char* argv[]) try {
     if (argc != 2) {
@@ -50,33 +50,34 @@ int main(int argc, char* argv[]) try {
 
     int64_t total_positions = 0;
     int32_t global_beam_idx = 0;
+    std::string prompt;
+    const size_t seq_len_dim_idx = 1;
 
-    std::string promt;
+    std::cout << "Type keyword \"Stop!\" to stop the chat. \n";
     for (;;) {
-        std::cout << "User promt:\n";
-        std::getline(std::cin, promt);
+        std::cout << "User prompt:\n";
+        std::getline(std::cin, prompt);
         std::cout << "\n";
 
-        if (!promt.compare("Stop!"))
+        if (!prompt.compare("Stop!"))
             break;
 
-        promt = generate_chat_promt_gemma(promt);
+        prompt = generate_chat_prompt_gemma(prompt);
 
-        auto [input_ids, new_attention_mask] = tokenize(tokenizer, std::move(promt));
+        auto [input_ids, new_attention_mask] = tokenize(tokenizer, std::move(prompt));
 
         // Initialize inputs
         lm.set_tensor("input_ids", input_ids);
 
         auto attention_mask = lm.get_tensor("attention_mask");
         // attention to all previous tokens + new tokens
-        ov::Shape mask_shape{1, attention_mask.get_shape().at(1) + new_attention_mask.get_shape().at(1)};
+        ov::Shape mask_shape{1, attention_mask.get_shape().at(seq_len_dim_idx) + new_attention_mask.get_shape().at(seq_len_dim_idx)};
         attention_mask.set_shape(mask_shape);
-        std::fill_n(attention_mask.data<int64_t>(), ov::shape_size(mask_shape), 1);
+        std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
 
         auto position_ids = lm.get_tensor("position_ids");
         position_ids.set_shape(input_ids.get_shape());
-        auto check = attention_mask.get_shape().at(1);
-        // increment position_ids for every token which is sent to model
+        // increment position_ids for every token sent to model
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), total_positions);
         total_positions += position_ids.get_size();
 
@@ -99,14 +100,15 @@ int main(int argc, char* argv[]) try {
             lm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
             // Set auxiliary inputs
             ov::Tensor attention_mask = lm.get_tensor("attention_mask");
-            ov::Shape mask_shape{batch_size, attention_mask.get_shape().at(1) + 1};
+            ov::Shape mask_shape{batch_size, attention_mask.get_shape().at(seq_len_dim_idx) + 1};
             attention_mask.set_shape(mask_shape);
             std::fill_n(attention_mask.data<int64_t>(), ov::shape_size(mask_shape), 1);
             lm.get_tensor("position_ids").set_shape({batch_size, 1});
             std::fill_n(lm.get_tensor("position_ids").data<int64_t>(), batch_size, total_positions++);
         }
+
         Beam answer;
-        float highest_score = -10000;
+        float highest_score = std::numeric_limits<float>().min();
         for (const std::vector<Beam>& group : finalize(std::move(group_beam_searcher))) {
             for (const Beam& beam : group) {
                 if (beam.score > highest_score) {
@@ -115,7 +117,10 @@ int main(int argc, char* argv[]) try {
                 }
             }
         }
-        std::cout << "Answer: " << detokenize(detokenizer, answer.tokens) << "\n_______\n";
+
+        auto answer_str = detokenize(detokenizer, answer.tokens);
+        answer_str = answer_str.substr(0, answer_str.find("<eos>"));
+        std::cout << "Answer: " << answer_str << "\n_______\n";
         global_beam_idx = answer.global_beam_idx;
 
         // Model is stateful which means that context (kv-cache) which belongs to a particular
