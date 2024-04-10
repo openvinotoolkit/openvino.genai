@@ -104,37 +104,23 @@ void initialize_inputs(const ov::Tensor& input_ids, const ov::Tensor& attention_
     std::fill_n(beam_idx.data<int32_t>(), input_shape.at(0), 0);
 }
 
-void set_attention_mask(ov::Tensor&& attention_mask, const Parameters& parameters) {
-    const size_t beams_per_prompt = parameters.n_groups * parameters.group_size;
-    const size_t batch_size = beams_per_prompt * parameters.prompts.size();
-
+void set_attention_mask(ov::Tensor&& attention_mask, std::vector<int32_t> next_beams) {
     ov::Tensor original_mask{ov::element::i64, attention_mask.get_shape()};
     ov::Shape original_shape = original_mask.get_shape();
     attention_mask.copy_to(original_mask);
 
-    ov::Shape new_shape{batch_size, original_mask.get_shape().at(1) + 1};
+    ov::Shape new_shape{next_beams.size(), original_mask.get_shape().at(1) + 1};
     attention_mask.set_shape(new_shape);
 
-    const bool broadcast_mask = original_mask.get_shape().at(0) != batch_size;
+    for (size_t beam_id = 0; beam_id < next_beams.size(); beam_id++) {
+        const size_t original_prompt_offset = next_beams.at(beam_id) * original_shape.at(1);
+        const size_t result_prompt_offset = beam_id * new_shape.at(1);
 
-    for (size_t prompt_id = 0; prompt_id < parameters.prompts.size(); prompt_id++) {
-        const size_t prompt_id_offset = prompt_id * beams_per_prompt;
+        int64_t* dest = attention_mask.data<int64_t>() + result_prompt_offset;
+        const int64_t* src = original_mask.data<int64_t>() + original_prompt_offset;
 
-        for (size_t batch = 0; batch < beams_per_prompt; batch++) {
-            const size_t batch_offset = prompt_id_offset + batch;
-
-            // mask broadcasted after first inference
-            // each prompt mask should be broadcasted to the number of beams per prompt
-            const size_t original_prompt_offset = (broadcast_mask ? prompt_id : batch_offset) * original_shape.at(1);
-
-            const size_t result_prompt_offset = batch_offset * new_shape.at(1);
-
-            int64_t* dest = attention_mask.data<int64_t>() + result_prompt_offset;
-            const int64_t* src = original_mask.data<int64_t>() + original_prompt_offset;
-
-            std::memcpy(dest, src, original_shape.at(1) * sizeof(int64_t));
-            attention_mask.data<int64_t>()[result_prompt_offset + new_shape.at(1) - 1] = 1;
-        }
+        std::memcpy(dest, src, original_shape.at(1) * sizeof(int64_t));
+        attention_mask.data<int64_t>()[result_prompt_offset + new_shape.at(1) - 1] = 1;
     }
 }
 
@@ -211,7 +197,7 @@ int main(int argc, char* argv[]) try {
         lm.set_tensor("input_ids", ov::Tensor{ov::element::i64, {batch_size, 1}, next_tokens.data()});
         lm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
         // Set auxiliary inputs
-        set_attention_mask(lm.get_tensor("attention_mask"), parameters);
+        set_attention_mask(lm.get_tensor("attention_mask"), next_beams);
         set_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
     }
 

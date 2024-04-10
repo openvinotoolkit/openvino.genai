@@ -146,10 +146,6 @@ struct Group {
     }
 };
 
-struct TokenToBeam {
-    int64_t token_idx;
-    int32_t global_beam_idx;
-};
 
 // GroupBeamSearcher processes logits prduced by a language model and accumulates beams using group beam search
 // algorithm. select_next_tokens() returns token ids selected by the algorithm and corresponding beam ids. These values
