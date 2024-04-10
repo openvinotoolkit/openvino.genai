@@ -84,6 +84,7 @@ enum class StopCriteria { early, heuristic, never };
 
 struct Parameters {
     std::vector<std::vector<int64_t>> prompts;
+    int64_t eos_token;
     size_t n_groups = 3;
     size_t group_size = 5;
     float diversity_penalty = 1.0;
@@ -91,8 +92,7 @@ struct Parameters {
     StopCriteria stop_criteria = StopCriteria::heuristic;
     float length_penalty = 1.0;
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
-    // There's no way to extract special token values from the tokenizer for now
-    int64_t eos_token = 2;
+
     std::function<bool(const Beam&)> early_finish = [](const Beam&) {
         return false;
     };
@@ -145,7 +145,6 @@ struct Group {
         }
     }
 };
-
 
 // GroupBeamSearcher processes logits prduced by a language model and accumulates beams using group beam search
 // algorithm. select_next_tokens() returns token ids selected by the algorithm and corresponding beam ids. These values

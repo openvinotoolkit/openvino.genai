@@ -154,10 +154,10 @@ int main(int argc, char* argv[]) try {
     // Compile models
     ov::Core core;
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
-
+    // Read the tokenizer model information from the file to later get the runtime information
+    auto tokenizer_model = core.read_model(std::string{argv[1]} + "/openvino_tokenizer.xml");
     // tokenizer and detokenizer work on CPU only
-    ov::InferRequest tokenizer =
-        core.compile_model(std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
+    ov::InferRequest tokenizer = core.compile_model(tokenizer_model, "CPU").create_infer_request();
     ov::InferRequest detokenizer =
         core.compile_model(std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     // The model can be compiled for GPU as well
@@ -177,7 +177,18 @@ int main(int argc, char* argv[]) try {
         prompts.push_back(std::vector<int64_t>{prompt_start, prompt_start + sequence_length});
     }
 
-    Parameters parameters{std::move(prompts)};
+    // Get the runtime info from the tokenizer model that we read earlier
+    auto rt_info = tokenizer_model->get_rt_info();  // Get the runtime info for the model
+    int64_t SPECIAL_EOS_TOKEN;
+
+    if (rt_info.count("eos_token_id") > 0) {  // check if the runtime information has a valid EOS token ID
+        SPECIAL_EOS_TOKEN = rt_info["eos_token_id"].as<int64_t>();
+
+    } else {
+        throw std::runtime_error("EOS token ID not found in model's runtime information.");
+    }
+
+    Parameters parameters{std::move(prompts), SPECIAL_EOS_TOKEN};
     GroupBeamSearcher group_beam_searcher{parameters};
 
     initialize_inputs(input_ids, attention_mask, lm);
