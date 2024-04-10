@@ -15,18 +15,18 @@ using namespace std;
 
 int main(int argc, char* argv[]) try {
     {
-        // // PIPELINE Ex.1
-        // std::string model_path = "text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/";
-        // LLMPipeline pipe(model_path);
-        // std::cout << pipe.call("table is made of");
+        // PIPELINE Ex.1
+        std::string model_path = "text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/";
+        LLMPipeline pipe(model_path);
+        std::cout << pipe("table is made of");
     }
+    cout << endl <<  "-------------END OF GENERATE ------" << endl;
 
     {
         // PIPELINE Ex.2
         std::string model_path = "text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/";
         LLMPipeline pipe(model_path);
         GenerationConfig config = pipe.generation_config();
-        
         // batched inputs
         auto results = pipe({"table is made of", 
                             "Alan Turing was a",
@@ -40,27 +40,12 @@ int main(int argc, char* argv[]) try {
         }
     }
 
-    // // GENERATE
-    // ov::Core core;
-    // std::string model_path = "text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/";
-    // core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
-    // ov::InferRequest tokenizer = core.compile_model(model_path + "/openvino_tokenizer.xml", "CPU").create_infer_request();
-    // ov::InferRequest detokenizer = core.compile_model(model_path + "/openvino_detokenizer.xml", "CPU").create_infer_request();
-
-    // // todo: beam search does not work properly on GPU, when reshaped from batch=1 to batch=num_beams not broadcasted
-    // std::shared_ptr<ov::Model> model = core.read_model(model_path + "/openvino_model.xml");
-    // ov::InferRequest request = core.compile_model(model, "CPU").create_infer_request();
-    
-    // auto [input_ids, attention_mask] = tokenize(tokenizer, "Alan Turing was a");
-    // GenerationConfig config = GenerationConfig::beam_search();
-    // LLMModel engine(request);
-    
-    // GenerationResult generation_results = engine.generate(input_ids, config);
-    // std::cout << detokenize(detokenizer, generation_results[0]);
-    
-    // generation_results = engine.generate(input_ids, config.temperature(0.2).top_k(4).do_sample(true).repetition_penalty(1.2));
-    // std::cout << detokenize(detokenizer, generation_results[0]);
-
+    // GENERATE
+    std::string model_path = "text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/";
+    LLMPipeline pipe(model_path);
+    auto [input_ids, attention_mask] = pipe.tokenize("table is made of");
+    auto res = pipe.generate(input_ids, attention_mask);
+    std::cout << pipe.detokenize(res)[0];
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return EXIT_FAILURE;

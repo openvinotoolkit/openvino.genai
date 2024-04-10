@@ -5,8 +5,8 @@
 
 #include <openvino/openvino.hpp>
 #include <openvino/core/any.hpp>
-#include "sampling_parameters.hpp"
-#include <experimental/filesystem>
+#include "generation_config.hpp"
+#include <filesystem>
 #include "group_beam_searcher.hpp"
 
 // using GenerationResult = ov::Tensor;
@@ -74,6 +74,13 @@ void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attenti
     }
 }
 
+ov::Tensor init_attention_mask(ov::Tensor& position_ids) {
+    auto shape = position_ids.get_shape();
+    auto attention_mask = ov::Tensor{position_ids.get_element_type(), shape};
+    std::fill_n(attention_mask.data<int64_t>(), shape[0] * shape[1], 1);
+    return attention_mask;
+}
+
 ov::Tensor extend_attention(ov::Tensor attention_mask) {
     auto shape = attention_mask.get_shape();
     auto batch_size = shape[0];
@@ -89,190 +96,190 @@ ov::Tensor extend_attention(ov::Tensor attention_mask) {
     return new_atten_mask;
 }
 
-std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string prompt) {
-    size_t batch_size = 1;
-    tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
-    tokenizer.infer();
 
-    vector<vector<int64_t>> input_ids_vec;
-    input_ids_vec.reserve(1);
-    auto res_tensor = tokenizer.get_tensor("input_ids");
-    auto res_shape = res_tensor.get_shape();
-    
-    for (int i = 0; i < res_shape[0]; ++i) {
-        int64_t* start = res_tensor.data<int64_t>() + i * res_shape[1];
-        input_ids_vec.emplace_back(std::vector<int64_t>(start, start + res_shape[1]));
-    }
-
-    return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
-}
-
-std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::vector<std::string> prompts) {
-    tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
-    auto size_ = tokenizer.get_input_tensor().get_shape();
-    tokenizer.infer();
-
-    pad_left(tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask"));
-    // fix mask filled with '2' instead of '0'
-    ov::Tensor attention_mask = tokenizer.get_tensor("attention_mask");
-    int64_t* attention_mask_data = attention_mask.data<int64_t>();
-    std::replace(attention_mask_data, attention_mask_data + attention_mask.get_size(), 2, 0);
-    
-    vector<vector<int64_t>> input_ids_vec;
-    vector<vector<int64_t>> atten_mask_vec;
-    
-    input_ids_vec.reserve(prompts.size());
-    atten_mask_vec.reserve(prompts.size());
-    auto res_tensor = tokenizer.get_tensor("input_ids");
-    auto atten_tensor = tokenizer.get_tensor("attention_mask");
-    auto res_shape = res_tensor.get_shape();
-    
-    for (int i = 0; i < res_shape[0]; ++i) {
-        int64_t* start = res_tensor.data<int64_t>() + i * res_shape[1];
-        input_ids_vec.emplace_back(std::vector<int64_t>(start, start + res_shape[1]));
-        
-        int64_t* atten_start = atten_tensor.data<int64_t>() + i * res_shape[1];
-        atten_mask_vec.emplace_back(std::vector<int64_t>(atten_start, atten_start + res_shape[1]));
-    }
-
-    return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
-}
-
-std::string detokenize(ov::InferRequest& detokenizer, std::vector<int64_t> tokens) {
-    size_t batch_size = 1;
-    detokenizer.set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
-    detokenizer.infer();
-    return detokenizer.get_output_tensor().data<std::string>()[0];
-}
-
-std::vector<std::string> detokenize(ov::InferRequest& detokenizer, ov::Tensor tokens) {
-    detokenizer.set_input_tensor(tokens);
-    auto shape = tokens.get_shape();
-    auto data = tokens.data<int64_t>();
-    detokenizer.infer();
-    auto res = detokenizer.get_output_tensor();
-    
-    std::vector<std::string> strings;
-    for (int i = 0; i < res.get_shape()[0]; ++i) {
-        strings.emplace_back(res.data<std::string>()[i]);
-    }
-    return strings;
-}
-
-std::vector<std::string> detokenize(ov::InferRequest& detokenizer, 
-                                    std::vector<std::vector<int64_t>> lines, 
-                                    int64_t pad_token_idx) {
-    // todo: implement calling detokenizer in a single batch
-
-    std::vector<std::string> strings;
-    for (auto& line: lines){
-        ov::Tensor tokens = ov::Tensor{ov::element::i64, {1, line.size()}, line.data()};
-        detokenizer.set_input_tensor(tokens);
-        detokenizer.infer();
-        auto res = detokenizer.get_output_tensor();
-        auto res_str = res.data<std::string>()[0];
-        strings.emplace_back(res_str);
-    }
-    
-    return strings;
-}
 
 // The following reasons require TextStreamer to keep a cache of previous tokens:
 // detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
 // but detokenize(tokenize("prefix a")) == "prefix a"
 // 1 printable token may consist of 2 token ids: detokenize(incomplete_token_idx) == "�"
-struct TextStreamer {
-    ov::InferRequest detokenizer;
-    std::vector<int64_t> token_cache;
-    size_t print_len = 0;
+// TODO: CHECK IF WE REALLY NEED TEXT STREAMER
+// struct TextStreamer {
+//     ov::InferRequest detokenizer;
+//     std::vector<int64_t> token_cache;
+//     size_t print_len = 0;
 
-    void put(int64_t token) {
-        token_cache.push_back(token);
-        std::string text = detokenize(detokenizer, token_cache);
-        if (!text.empty() && '\n' == text.back()) {
-            // Flush the cache after the new line symbol
-            std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
-            token_cache.clear();
-            print_len = 0;
-            return;
-        }
-        if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
-            // Don't print incomplete text
-            return;
-        }
-        std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
-        print_len = text.size();
-    }
+//     void put(int64_t token) {
+//         token_cache.push_back(token);
+//         std::string text = detokenize(detokenizer, token_cache);
+//         if (!text.empty() && '\n' == text.back()) {
+//             // Flush the cache after the new line symbol
+//             std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
+//             token_cache.clear();
+//             print_len = 0;
+//             return;
+//         }
+//         if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
+//             // Don't print incomplete text
+//             return;
+//         }
+//         std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
+//         print_len = text.size();
+//     }
 
-    void end() {
-        std::string text = detokenize(detokenizer, token_cache);
-        std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
-        token_cache.clear();
-        print_len = 0;
-    }
-};
+//     void end() {
+//         std::string text = detokenize(detokenizer, token_cache);
+//         std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
+//         token_cache.clear();
+//         print_len = 0;
+//     }
+// };
 
 class LLMPipeline {
     ov::InferRequest m_model_runner;
     ov::InferRequest m_tokenizer;
     ov::InferRequest m_detokenizer;
-    std::string m_path;
     GenerationConfig m_sampling_parameters;
 
 public:
-    LLMPipeline(std::string& path, std::string device="CPU", const ov::AnyMap& config={}) : m_path(path) {
-        if (std::experimental::filesystem::exists(m_path + "/generation_config.json")) {
-            m_sampling_parameters = GenerationConfig(m_path + "/generation_config.json");
+    // TODO: add constructor for specifying manually tokenizer path
+    // dir path
+    // xml file path
+    // compiled model
+    // infer request
+    // ov::Model
+    
+    LLMPipeline(
+        std::string& model_path,
+        std::string& tokenizer_path,
+        std::string& detokenizer_path,
+        std::string device="CPU",
+        const ov::AnyMap& config={}
+    ) {
+        ov::Core core;
+        
+        auto is_xml = [](std::string path) -> bool { return path.compare(path.length() - 4, 4, ".xml") == 0;};
+        
+        std::string full_path = model_path;
+	    if (!is_xml(full_path))
+		    full_path += "/openvino_model.xml";
+        m_model_runner = core.compile_model(full_path, device, config).create_infer_request();
+
+        core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
+        // tokenizer and detokenizer work on CPU only
+        full_path = tokenizer_path;
+	    if (!is_xml(full_path))
+		    full_path += "/openvino_tokenizer.xml";
+        m_tokenizer = core.compile_model(full_path, "CPU").create_infer_request();
+
+        full_path = detokenizer_path;
+	    if (!is_xml(full_path))
+		    full_path += "/openvino_detokenizer.xml";
+        m_detokenizer = core.compile_model(full_path, "CPU").create_infer_request();        
+    }
+
+    LLMPipeline(std::string& path, std::string device="CPU", const ov::AnyMap& config={}) {
+        if (std::filesystem::exists(path + "/generation_config.json")) {
+            m_sampling_parameters = GenerationConfig(path + "/generation_config.json");
         }
         
         ov::Core core;
-        auto model_request = core.compile_model(m_path + "/openvino_model.xml", device, config).create_infer_request();
+        auto model_request = core.compile_model(path + "/openvino_model.xml", device, config).create_infer_request();
         m_model_runner = model_request;
 
         // tokenizer and detokenizer work on CPU only
         core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
-        m_tokenizer = core.compile_model(m_path + "/openvino_tokenizer.xml", "CPU").create_infer_request();
-        m_detokenizer = core.compile_model(m_path + "/openvino_detokenizer.xml", "CPU").create_infer_request();
+        m_tokenizer = core.compile_model(path + "/openvino_tokenizer.xml", "CPU").create_infer_request();
+        m_detokenizer = core.compile_model(path + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     }
 
     GenerationConfig generation_config() const {
         return m_sampling_parameters;
     }
 
-    std::string call(std::string text) {
-        auto [input_ids, attention_mask] = tokenize(m_tokenizer, text);
+    std::pair<ov::Tensor, ov::Tensor> tokenize(std::string prompt) {
+        size_t batch_size = 1;
+        m_tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
+        m_tokenizer.infer();
 
-        auto generate_results = generate(input_ids, attention_mask, m_sampling_parameters);
+        vector<vector<int64_t>> input_ids_vec;
+        input_ids_vec.reserve(1);
+        auto res_tensor = m_tokenizer.get_tensor("input_ids");
+        auto res_shape = res_tensor.get_shape();
+        
+        for (int i = 0; i < res_shape[0]; ++i) {
+            int64_t* start = res_tensor.data<int64_t>() + i * res_shape[1];
+            input_ids_vec.emplace_back(std::vector<int64_t>(start, start + res_shape[1]));
+        }
 
-        return detokenize(m_detokenizer, generate_results, 0)[0];
-    }
-    
-    std::string call(std::string text, GenerationConfig sampling_parameters) {
-        auto [input_ids, attention_mask] = tokenize(m_tokenizer, text);
-
-        auto generate_results = generate(input_ids, attention_mask, sampling_parameters);
-
-        return detokenize(m_detokenizer, generate_results, 0)[0];
-    }
-
-    std::vector<std::string> call(std::vector<std::string> text, GenerationConfig sampling_parameters) {
-        auto [input_ids, attention_mask] = tokenize(m_tokenizer, text);
-
-        auto generate_results = generate(input_ids, attention_mask, sampling_parameters);
-
-        return detokenize(m_detokenizer, generate_results, 0);
+        return {m_tokenizer.get_tensor("input_ids"), m_tokenizer.get_tensor("attention_mask")};
     }
 
-    std::string operator()(std::string text, GenerationConfig sampling_parameters) {
-        return call(text, sampling_parameters);
+    std::pair<ov::Tensor, ov::Tensor> tokenize(std::vector<std::string> prompts) {
+        m_tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
+        auto size_ = m_tokenizer.get_input_tensor().get_shape();
+        m_tokenizer.infer();
+
+        pad_left(m_tokenizer.get_tensor("input_ids"), m_tokenizer.get_tensor("attention_mask"));
+        // fix mask filled with '2' instead of '0'
+        ov::Tensor attention_mask = m_tokenizer.get_tensor("attention_mask");
+        int64_t* attention_mask_data = attention_mask.data<int64_t>();
+        std::replace(attention_mask_data, attention_mask_data + attention_mask.get_size(), 2, 0);
+        
+        vector<vector<int64_t>> input_ids_vec;
+        vector<vector<int64_t>> atten_mask_vec;
+        
+        input_ids_vec.reserve(prompts.size());
+        atten_mask_vec.reserve(prompts.size());
+        auto res_tensor = m_tokenizer.get_tensor("input_ids");
+        auto atten_tensor = m_tokenizer.get_tensor("attention_mask");
+        auto res_shape = res_tensor.get_shape();
+        
+        for (int i = 0; i < res_shape[0]; ++i) {
+            int64_t* start = res_tensor.data<int64_t>() + i * res_shape[1];
+            input_ids_vec.emplace_back(std::vector<int64_t>(start, start + res_shape[1]));
+            
+            int64_t* atten_start = atten_tensor.data<int64_t>() + i * res_shape[1];
+            atten_mask_vec.emplace_back(std::vector<int64_t>(atten_start, atten_start + res_shape[1]));
+        }
+
+        return {m_tokenizer.get_tensor("input_ids"), m_tokenizer.get_tensor("attention_mask")};
     }
-    
-    std::vector<std::string> operator()(std::vector<std::string> text, GenerationConfig sampling_parameters) {
-        return call(text, sampling_parameters);
+
+    std::string detokenize(std::vector<int64_t> tokens) {
+        size_t batch_size = 1;
+        m_detokenizer.set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
+        m_detokenizer.infer();
+        return m_detokenizer.get_output_tensor().data<std::string>()[0];
     }
-    
-    std::vector<std::string> operator()(std::initializer_list<std::string> text, GenerationConfig sampling_parameters) {
-        return call(text, sampling_parameters);
+
+    std::vector<std::string> detokenize(ov::Tensor tokens) {
+        m_detokenizer.set_input_tensor(tokens);
+        auto shape = tokens.get_shape();
+        auto data = tokens.data<int64_t>();
+        m_detokenizer.infer();
+        auto res = m_detokenizer.get_output_tensor();
+        
+        std::vector<std::string> strings;
+        for (int i = 0; i < res.get_shape()[0]; ++i) {
+            strings.emplace_back(res.data<std::string>()[i]);
+        }
+        return strings;
+    }
+
+    std::vector<std::string> detokenize(GenerationResult lines) {
+        // todo: implement calling detokenizer in a single batch
+
+        std::vector<std::string> strings;
+        for (auto& line: lines){
+            ov::Tensor tokens = ov::Tensor{ov::element::i64, {1, line.size()}, line.data()};
+            m_detokenizer.set_input_tensor(tokens);
+            m_detokenizer.infer();
+            auto res = m_detokenizer.get_output_tensor();
+            auto res_str = res.data<std::string>()[0];
+            strings.emplace_back(res_str);
+        }
+        
+        return strings;
     }
 
     GenerationResult greedy_search(ov::Tensor input_ids, 
@@ -397,14 +404,70 @@ public:
         return results;
     }
 
+    std::string call(std::string text) {
+        auto [input_ids, attention_mask] = tokenize(text);
 
-    GenerationResult generate(ov::Tensor prompts, ov::Tensor attention_mask, GenerationConfig sampling_params) {
-    if (sampling_params.is_gready_sampling()) {
-        return greedy_search(prompts, attention_mask, sampling_params);
-    } else if (sampling_params.is_beam_search()) {
-        return beam_search(prompts, sampling_params);
-    } else {  // if (sampling_params.is_multimomial()) {
-        return multinomial_sampling(prompts, sampling_params);
+        auto generate_results = generate(input_ids, attention_mask, m_sampling_parameters);
+
+        return detokenize(generate_results)[0];
     }
-}
+    
+    std::string call(std::string text, GenerationConfig generation_config) {
+        auto [input_ids, attention_mask] = tokenize(text);
+        // to keep config specified during LLMPipeline creation need to get existing 
+        // and modify only after that, e.g.:
+        // GenerationConfig config = pipe.generation_config();
+        // config.do_sample(false).max_new_tokens(20);
+        auto generate_results = generate(input_ids, attention_mask, generation_config);
+
+        return detokenize(generate_results)[0];
+    }
+
+    std::vector<std::string> call(std::vector<std::string> text, GenerationConfig sampling_parameters) {
+        auto [input_ids, attention_mask] = tokenize(text);
+
+        auto generate_results = generate(input_ids, attention_mask, sampling_parameters);
+
+        return detokenize(generate_results);
+    }
+    
+    std::string operator()(std::string text) {
+        return call(text);
+    }
+
+    std::string operator()(std::string text, GenerationConfig sampling_parameters) {
+        return call(text, sampling_parameters);
+    }
+    
+    std::vector<std::string> operator()(std::vector<std::string> text, GenerationConfig sampling_parameters) {
+        return call(text, sampling_parameters);
+    }
+    
+    std::vector<std::string> operator()(std::initializer_list<std::string> text, GenerationConfig sampling_parameters) {
+        return call(text, sampling_parameters);
+    }
+    
+    GenerationResult generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params) {
+        if (sampling_params.is_gready_sampling()) {
+            return greedy_search(input_ids, attention_mask, sampling_params);
+        } else if (sampling_params.is_beam_search()) {
+            return beam_search(input_ids, sampling_params);
+        } else {  // if (sampling_params.is_multimomial()) {
+            return multinomial_sampling(input_ids, sampling_params);
+        }
+    }
+
+    GenerationResult generate(ov::Tensor input_ids, ov::Tensor attention_mask) {
+        return generate(input_ids, attention_mask, m_sampling_parameters);
+    }
+
+    GenerationResult generate(ov::Tensor input_ids, GenerationConfig sampling_params) {
+
+        return generate(input_ids, init_attention_mask(input_ids), sampling_params);
+    }
+
+    GenerationResult generate(ov::Tensor input_ids) {
+        return generate(input_ids, init_attention_mask(input_ids), m_sampling_parameters);
+    }
+
 };

@@ -15,6 +15,8 @@ class Sequence;
 // Similar to HuggingFace GenerationConfig 
 // but has parameters that are not present in the original SamplingParameters for continous batching
 struct GenerationConfig {
+    // todo: add copy constructor
+    
     // Generic
     size_t m_max_new_tokens = 10;
     size_t m_max_length = 100; // max_new tokens should have priority over max_new_tokens
