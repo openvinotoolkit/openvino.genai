@@ -22,7 +22,7 @@ std::string detokenize(ov::InferRequest& detokenizer, const std::vector<int64_t>
     detokenizer.infer();
     return detokenizer.get_output_tensor().data<std::string>()[0];
 }
-}  // namespace
+}
 
 int main(int argc, char* argv[]) try {
     if (argc != 3) {
@@ -31,15 +31,17 @@ int main(int argc, char* argv[]) try {
     // Compile models
     ov::Core core;
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
+    //Read the tokenizer model information from the file to later get the runtime information
+    auto tokenizer_model = core.read_model(std::string{argv[1]} + "/openvino_tokenizer.xml");
     // tokenizer and detokenizer work on CPU only
-    ov::InferRequest tokenizer =
-        core.compile_model(std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
+    ov::InferRequest tokenizer = core.compile_model(
+        tokenizer_model, "CPU").create_infer_request();
     auto [input_ids, attention_mask] = tokenize(tokenizer, argv[2]);
-    ov::InferRequest detokenizer =
-        core.compile_model(std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
+    ov::InferRequest detokenizer = core.compile_model(
+        std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     // The model can be compiled for GPU as well
-    ov::InferRequest lm =
-        core.compile_model(std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
+    ov::InferRequest lm = core.compile_model(
+        std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
     // Initialize inputs
     lm.set_tensor("input_ids", input_ids);
     lm.set_tensor("attention_mask", attention_mask);
@@ -49,8 +51,18 @@ int main(int argc, char* argv[]) try {
     lm.get_tensor("beam_idx").set_shape({1});
     lm.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
+    // Get the runtime info from the tokenizer model that we read earlier
+    auto rt_info = tokenizer_model->get_rt_info(); //Get the runtime info for the model
+    int64_t SPECIAL_EOS_TOKEN;
+
+    if (rt_info.count("eos_token_id") > 0) { //check if the runtime information has a valid EOS token ID
+        SPECIAL_EOS_TOKEN = rt_info["eos_token_id"].as<int64_t>();
+       
+    } else {
+        throw std::runtime_error("EOS token ID not found in model's runtime information.");
+    }
     const int64_t* prompt_data = input_ids.data<const int64_t>();
-    Parameters parameters{std::vector<int64_t>{prompt_data, prompt_data + input_ids.get_size()}};
+    Parameters parameters{std::vector<int64_t>{prompt_data, prompt_data + input_ids.get_size()}, SPECIAL_EOS_TOKEN};
     GroupBeamSearcher group_beam_searcher{parameters};
     std::vector<int64_t> next_tokens;
     std::vector<int32_t> next_beams;
