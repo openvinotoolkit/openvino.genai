@@ -91,6 +91,9 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
 
     max_output_token_size = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     max_output_token_size = MAX_OUTPUT_TOKEN_SIZE if max_output_token_size > MAX_OUTPUT_TOKEN_SIZE else max_output_token_size
+    # If infer_count is provided, generate exactly that number of tokens
+    min_output_token_size = max_output_token_size if args['infer_count'] is not None else 0
+
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
         out_str += " Batch_size={}, ".format(args['batch_size'])
@@ -103,7 +106,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
     start = time.perf_counter()
-    result = model.generate(**input_data, max_new_tokens=int(max_output_token_size), num_beams=args['num_beams'], use_cache=True)
+    result = model.generate(**input_data, max_new_tokens=int(max_output_token_size), min_new_tokens=int(min_output_token_size), num_beams=args['num_beams'], use_cache=True)
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
@@ -426,7 +429,7 @@ def get_argprser():
         '--infer_count',
         default=None,
         type=int,
-        help='limit the output token size '
+        help='set the output token size'
         f'(default {DEFAULT_OUTPUT_TOKEN_SIZE}) of text_gen and code_gen models.',
     )
     parser.add_argument(
