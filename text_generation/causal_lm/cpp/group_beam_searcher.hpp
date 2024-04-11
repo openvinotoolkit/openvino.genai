@@ -113,9 +113,9 @@ struct Group {
         }
 
         min_heap.push_back(std::move(beam));
-        std::push_heap(min_heap.begin(), min_heap.end(), greater);
+        std::push_heap(min_heap.begin(), min_heap.end(), ::greater);
         if (min_heap.size() > parameters.group_size) {
-            std::pop_heap(min_heap.begin(), min_heap.end(), greater);
+            std::pop_heap(min_heap.begin(), min_heap.end(), ::greater);
             min_heap.pop_back();
         }
     }
@@ -265,7 +265,7 @@ struct GroupBeamSearcher {
                 throw std::runtime_error("No beams left to search");
             }
             auto to_sort = candidates.begin() + ptrdiff_t(2 * parameters.group_size);
-            std::partial_sort(candidates.begin(), to_sort, candidates.end(), greater);
+            std::partial_sort(candidates.begin(), to_sort, candidates.end(), ::greater);
             group->ongoing.clear();
             for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
                 if (parameters.eos_token == candidates.at(cand_idx).tokens.back()) {

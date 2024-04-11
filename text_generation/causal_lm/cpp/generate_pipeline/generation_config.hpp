@@ -33,7 +33,6 @@ struct GenerationConfig {
     size_t m_num_return_sequences = 3;  // is used by beam search, in other case is equal to batch size
     StopCriteria stop_criteria = StopCriteria::heuristic;
     
-    
     float m_repetition_penalty = 1.0f;
     float m_length_penalty = 1.0f;
     size_t m_no_repeat_ngram_size = std::numeric_limits<size_t>::max();

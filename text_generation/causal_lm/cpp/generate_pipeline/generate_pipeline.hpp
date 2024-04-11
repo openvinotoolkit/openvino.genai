@@ -9,7 +9,7 @@
 #include <filesystem>
 #include "group_beam_searcher.hpp"
 
-using GenerationResult = std::vector<std::vector<int64_t>>;
+using GenerationResult = std::vector<std::pair<float, std::vector<int64_t>>>;
 using namespace std;
 
 std::pair<ov::Tensor, ov::Tensor> pad_left(ov::Tensor&& input_ids, ov::Tensor&& attention_mask, int64_t pad_token=2) {
@@ -124,7 +124,8 @@ public:
 	    if (!is_xml(full_path))
 		    full_path += "/openvino_model.xml";
         m_model_runner = core.compile_model(full_path, device, config).create_infer_request();
-
+        
+        // todo: add loading EOS_TOKEN_ID from IR
         core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
         // tokenizer and detokenizer work on CPU only
         full_path = tokenizer_path;
@@ -205,6 +206,11 @@ public:
 
         return {m_tokenizer.get_tensor("input_ids"), m_tokenizer.get_tensor("attention_mask")};
     }
+    
+    std::pair<ov::Tensor, ov::Tensor> tokenize(std::initializer_list<std::string> text) {
+        return tokenize(std::vector<std::string>(text.begin(), text.end()));
+    }
+    
 
     std::string detokenize(std::vector<int64_t> tokens) {
         size_t batch_size = 1;
@@ -231,7 +237,7 @@ public:
         // todo: implement calling detokenizer in a single batch
 
         std::vector<std::string> strings;
-        for (auto& line: lines){
+        for (auto& [score, line]: lines){
             ov::Tensor tokens = ov::Tensor{ov::element::i64, {1, line.size()}, line.data()};
             m_detokenizer.set_input_tensor(tokens);
             m_detokenizer.infer();
@@ -281,13 +287,14 @@ public:
             for (size_t batch = 0; batch < batch_size; ++batch) {
                 const float * logits_data = logits.data<const float>() + seq_len * vocab_size * batch + (seq_len - 1) * vocab_size;
                 int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
-                results[batch].emplace_back(out_token);
+                results[batch].second.emplace_back(out_token);
                 token_iter_results[batch] = out_token;
                 eos_met[batch] != (out_token == sampling_params.m_eos_token_id);
 
                 m_model_runner.get_tensor("input_ids").data<int64_t>()[batch] = out_token;
                 m_model_runner.get_tensor("position_ids").data<int64_t>()[batch] = int64_t(prompt_len + i);
             }
+            // place
             sampling_params.m_callback(std::move(token_iter_results), *this);
             
             // stop generation when EOS is met in all batches
@@ -348,13 +355,16 @@ public:
 
             m_model_runner.get_tensor("position_ids").set_shape({batch_size, 1});
             std::fill_n(m_model_runner.get_tensor("position_ids").data<int64_t>(), batch_size, mask_shape.at(1) - 1);
+            
+            // place
+            sampling_params.m_callback(std::move(next_tokens), *this);
+
         }
 
         std::vector<Beam> beams;
         for (const std::vector<Beam>& group : finalize(std::move(group_beam_searcher))) {
             for (const Beam& beam : group) {
                 beams.emplace_back(beam);
-                // results.emplace_back(beam.tokens);
             }
         }
 
@@ -363,7 +373,7 @@ public:
         
         GenerationResult results;
         for (auto beam = beams.begin(); beam != beams.begin() + sampling_params.m_num_return_sequences; ++beam) {
-            results.emplace_back(beam->tokens);
+            results.emplace_back(std::pair(beam->score, beam->tokens));
         }
         return results;
     }
