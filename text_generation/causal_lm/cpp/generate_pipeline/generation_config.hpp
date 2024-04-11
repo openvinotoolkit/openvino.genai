@@ -8,29 +8,33 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <group_beam_searcher.hpp>  // used only for StopCriteria
+#include <limits>
 
 // forward declaration
 class Sequence;
 
-// Similar to HuggingFace GenerationConfig 
-// but has parameters that are not present in the original SamplingParameters for continous batching
+// forward declaration
+class LLMPipeline;
+
+// Similar to HuggingFace GenerationConfig
 struct GenerationConfig {
     // todo: add copy constructor
     
     // Generic
-    size_t m_max_new_tokens = 10;
-    size_t m_max_length = 100; // max_new tokens should have priority over max_new_tokens
+    size_t m_max_new_tokens = SIZE_MAX;
+    size_t m_max_length = SIZE_MAX; // m_max_new_tokens should have priority over m_max_length
     bool m_ignore_eos = false;
     int64_t m_eos_token = 2; // There's no way to extract special token values from the tokenizer for now
-    size_t m_num_return_sequences = 3;
 
     // Beam search specific
     size_t m_num_groups = 1;
     size_t m_group_size = 1; // beam_width
     float m_diversity_penalty = 1.0f; // 0.0 means no diversity
-    float m_repetition_penalty = 1.0f;
-    
+    size_t m_num_return_sequences = 3;  // is used by beam search, in other case is equal to batch size
     StopCriteria stop_criteria = StopCriteria::heuristic;
+    
+    
+    float m_repetition_penalty = 1.0f;
     float m_length_penalty = 1.0f;
     size_t m_no_repeat_ngram_size = std::numeric_limits<size_t>::max();
     std::function<bool(const Sequence&)> early_finish = [](const Sequence&) {return false; };
@@ -43,8 +47,21 @@ struct GenerationConfig {
 
     // special tokens
     int64_t m_bos_token_id = 0;
-    int64_t m_eos_token_id = 0;
+    int64_t m_eos_token_id = 0;  // todo: do we need both m_eos_token and m_eos_token_id?
     int64_t m_pad_token_id = 0;
+
+    std::function<void (std::vector<int64_t>&&, LLMPipeline&)> m_callback = [](std::vector<int64_t>&& tokens, LLMPipeline& pipe){ ;};
+
+
+    size_t get_max_new_tokens(size_t prompt_length = 0) {
+        // max_new_tokens has priority over max_length,
+        // only if m_max_new_tokens was not specified use max_length
+        if (m_max_new_tokens != SIZE_MAX) {
+            return m_max_new_tokens;
+        } else {
+            return m_max_length - prompt_length;
+        }
+    }
 
     GenerationConfig& max_new_tokens(size_t max_new_tokens) {
         this->m_max_new_tokens = max_new_tokens;
@@ -132,6 +149,11 @@ struct GenerationConfig {
          return *this;
      }
 
+    GenerationConfig& set_callback(std::function<void (std::vector<int64_t>&&, LLMPipeline&)> callback) {
+        this->m_callback = callback;
+         return *this;
+     }
+
     GenerationConfig() = default;
 
     GenerationConfig(std::string json_path) {
@@ -140,10 +162,12 @@ struct GenerationConfig {
 
         m_bos_token_id = data.value("bos_token_id", 0);
         m_eos_token_id = data.value("eos_token_id", 0);
-        m_max_length = data.value("max_length", 0);
+
         m_pad_token_id = data.value("pad_token_id", 0);
         m_num_return_sequences = data.value("num_return_sequences", 1);
-        m_max_new_tokens = data.value("max_new_tokens", 100);
+        
+        m_max_new_tokens = data.value("max_new_tokens", SIZE_MAX);
+        m_max_length = data.value("max_length", SIZE_MAX);
         
         m_temperature = data.value("temperature", 0.0f);
         m_do_sample = data.value("do_sample", false);
@@ -194,5 +218,3 @@ struct GenerationConfig {
     }
     
 };
-
-enum class SamplingAlgorithm{greedy, multinomial, baeam_search};

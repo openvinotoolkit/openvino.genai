@@ -9,7 +9,6 @@
 #include <filesystem>
 #include "group_beam_searcher.hpp"
 
-// using GenerationResult = ov::Tensor;
 using GenerationResult = std::vector<std::vector<int64_t>>;
 using namespace std;
 
@@ -51,7 +50,7 @@ void update_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_m
 
     for (size_t batch = 0; batch < batch_size; batch++) {
         int64_t* start = attention_mask.data<int64_t>() + batch * seq_length;
-        position_ids.data<int64_t>()[batch] = std::accumulate(start, start + seq_length - 1, 0);
+        position_ids.data<int64_t>()[batch] = std::accumulate(start, start + seq_length, 0);
     }
 }
 
@@ -95,44 +94,6 @@ ov::Tensor extend_attention(ov::Tensor attention_mask) {
     }
     return new_atten_mask;
 }
-
-
-
-// The following reasons require TextStreamer to keep a cache of previous tokens:
-// detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
-// but detokenize(tokenize("prefix a")) == "prefix a"
-// 1 printable token may consist of 2 token ids: detokenize(incomplete_token_idx) == "�"
-// TODO: CHECK IF WE REALLY NEED TEXT STREAMER
-// struct TextStreamer {
-//     ov::InferRequest detokenizer;
-//     std::vector<int64_t> token_cache;
-//     size_t print_len = 0;
-
-//     void put(int64_t token) {
-//         token_cache.push_back(token);
-//         std::string text = detokenize(detokenizer, token_cache);
-//         if (!text.empty() && '\n' == text.back()) {
-//             // Flush the cache after the new line symbol
-//             std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
-//             token_cache.clear();
-//             print_len = 0;
-//             return;
-//         }
-//         if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
-//             // Don't print incomplete text
-//             return;
-//         }
-//         std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
-//         print_len = text.size();
-//     }
-
-//     void end() {
-//         std::string text = detokenize(detokenizer, token_cache);
-//         std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
-//         token_cache.clear();
-//         print_len = 0;
-//     }
-// };
 
 class LLMPipeline {
     ov::InferRequest m_model_runner;
@@ -291,10 +252,10 @@ public:
         GenerationResult results(batch_size);
 
         auto position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
-        // std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
+        // todo: make this work even if position_ids are not specified
         initialize_position_ids(position_ids, attention_mask);
 
-        size_t initial_seq_len = input_ids.get_shape()[1];
+        size_t prompt_len = input_ids.get_shape()[1];
 
         m_model_runner.set_tensor("input_ids", input_ids);
         m_model_runner.set_tensor("attention_mask", attention_mask);
@@ -304,7 +265,8 @@ public:
         auto beam_data = m_model_runner.get_tensor("beam_idx").data<int32_t>();
         std::iota(beam_data, beam_data + batch_size, 0);
 
-        for (size_t i = 0; i < sampling_params.m_max_new_tokens; ++i) {
+        for (size_t i = 0; i < sampling_params.get_max_new_tokens(prompt_len); ++i) {
+            // todo: consider replacing with start_async and run callback right after that
             m_model_runner.infer();
             auto logits = m_model_runner.get_tensor("logits");
             ov::Shape logits_shape = logits.get_shape();
@@ -312,18 +274,26 @@ public:
 
             m_model_runner.get_tensor("input_ids").set_shape({batch_size, 1});
             m_model_runner.set_tensor("attention_mask", extend_attention(m_model_runner.get_tensor("attention_mask")));
-            // m_model_runner.get_tensor("position_ids").set_shape({batch_size, 1});
-            update_position_ids(position_ids, attention_mask);
-
+            update_position_ids(position_ids, attention_mask);  // todo: check why does not always work correctly
+            
+            std::vector<int64_t> token_iter_results(batch_size);  // results of a single infer request
+            std::vector<int> eos_met(batch_size, 0);  // use int because can not use std::all_of with vector<bool>
             for (size_t batch = 0; batch < batch_size; ++batch) {
                 const float * logits_data = logits.data<const float>() + seq_len * vocab_size * batch + (seq_len - 1) * vocab_size;
                 int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
                 results[batch].emplace_back(out_token);
-                
-                // todo: add exit criteria when pad or EOS is met
+                token_iter_results[batch] = out_token;
+                eos_met[batch] != (out_token == sampling_params.m_eos_token_id);
+
                 m_model_runner.get_tensor("input_ids").data<int64_t>()[batch] = out_token;
-                m_model_runner.get_tensor("position_ids").data<int64_t>()[batch] = int64_t(initial_seq_len + i);
+                m_model_runner.get_tensor("position_ids").data<int64_t>()[batch] = int64_t(prompt_len + i);
             }
+            sampling_params.m_callback(std::move(token_iter_results), *this);
+            
+            // stop generation when EOS is met in all batches
+            bool all_are_eos = std::all_of(eos_met.begin(), eos_met.end(), [](int elem) { return elem == 1; });
+            if (!sampling_params.m_ignore_eos && all_are_eos)
+                break;
         }
         return results;
     }
@@ -339,7 +309,7 @@ public:
         std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
         auto position_ids = ov::Tensor{ov::element::i64, prompts.get_shape()};
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
-        auto initial_seq_len = prompts.get_shape()[1];
+        auto prompt_len = prompts.get_shape()[1];
 
         m_model_runner.set_tensor("input_ids", prompts);
         m_model_runner.set_tensor("attention_mask", attention_mask);
@@ -360,7 +330,7 @@ public:
         GroupBeamSearcher group_beam_searcher{parameters};
         std::vector<int64_t> next_tokens;
         std::vector<int32_t> next_beams;
-        for (size_t length_count = 0; length_count < sampling_params.m_max_new_tokens; ++length_count) {
+        for (size_t length_count = 0; length_count < sampling_params.get_max_new_tokens(prompt_len); ++length_count) {
             m_model_runner.infer();
             std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(m_model_runner.get_tensor("logits"));
             if (next_tokens.empty()) {
