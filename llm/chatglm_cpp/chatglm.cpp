@@ -517,10 +517,9 @@ int main(int argc, char* argv[]) try {
         std::cout << "First token took " << duration_ms << " ms" << std::endl;
         double first_time= duration_ms;
 
+	int64_t sequence_len = ireq.get_tensor("logits").get_shape().at(1) - 1;
         size_t vocab_size = ireq.get_tensor("logits").get_shape().back();
-
-        float* logits = ireq.get_tensor("logits").data<float>();
-        //float* logits = ireq.get_tensor("logits").data<float>() + (input_ids.get_size() - 1) * vocab_size;
+        float* logits = ireq.get_tensor("logits").data<float>() + sequence_len * vocab_size;
 
         int64_t out_token = get_out_token_id(output_ids, logits, vocab_size, args);
         output_ids.emplace_back(((int)out_token));
