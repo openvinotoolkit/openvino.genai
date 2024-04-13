@@ -6,6 +6,8 @@
 
 #include <cstdlib>
 
+#include "openvino/runtime/core.hpp"
+
 // for CPU we use block_size = 1 instead of vLLM's = 1
 constexpr size_t BLOCK_SIZE = 16;
 
@@ -16,7 +18,7 @@ constexpr int64_t SPECIAL_EOS_TOKEN = 2; // llm_model->get_rt_info()["eos_token_
 constexpr size_t NUM_BLOCKS = 36400;
 
 // TODO: make as a parameter
-constexpr auto kv_cache_precision = ov::element::f16;
+auto kv_cache_precision = ov::Core().get_property("CPU", ov::hint::inference_precision) == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
 
 // TODO: take from model
 constexpr size_t NUM_KV_HEADS = 12, NUM_HEADS = 12, HIDDEN_DIMS = 768, HEAD_SIZE = HIDDEN_DIMS / NUM_HEADS;

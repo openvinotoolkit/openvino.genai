@@ -39,7 +39,9 @@ std::vector<std::pair<ov::Tensor, SamplingParameters>> filtered_dataset(const st
     std::ifstream json_file(dataset_path.c_str());
     OPENVINO_ASSERT(json_file.is_open(), "Cannot open dataset file");
 
+    Timer parse_timer;
     nlohmann::json json_dataset = nlohmann::json::parse(json_file);
+    std::cout << "Json parse: " << parse_timer.current_in_milli() / 1000. << " secs" << std::endl;
     std::vector<std::pair<ov::Tensor, SamplingParameters>> sampled_dataset, dataset;
     sampled_dataset.reserve(num_prompts);
     dataset.reserve(json_dataset.size());
@@ -48,7 +50,10 @@ std::vector<std::pair<ov::Tensor, SamplingParameters>> filtered_dataset(const st
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
 
     ov::InferRequest tokenizer = core.compile_model(
-        models_path + "/openvino_tokenizer.xml", "CPU").create_infer_request();
+        models_path + "/openvino_tokenizer.xml", "CPU", ov::enable_profiling(true)).create_infer_request();
+
+    Timer tokenizer_timer;
+    std::map<std::string, double> perf_counters;
 
     for (auto json_data_iterator = json_dataset.begin(); json_data_iterator != json_dataset.end(); ++json_data_iterator) {
         auto & json_data = *json_data_iterator;
@@ -68,6 +73,11 @@ std::vector<std::pair<ov::Tensor, SamplingParameters>> filtered_dataset(const st
         auto [_input_ids_answer, _attention_mask_answer] = tokenize(tokenizer, gpt_answer);
         size_t input_len = _input_ids_prompt_clone.get_size(), output_len = _input_ids_answer.get_size();
 
+        std::vector<ov::ProfilingInfo> profiling_info = tokenizer.get_profiling_info();
+        for (const ov::ProfilingInfo& info : profiling_info) {
+            perf_counters[info.node_type] += info.real_time.count();
+        }
+
         // Prune too short sequences.
         if (input_len < 4 || output_len < 4)
             continue;
@@ -80,6 +90,11 @@ std::vector<std::pair<ov::Tensor, SamplingParameters>> filtered_dataset(const st
 
         dataset.push_back({ _input_ids_prompt_clone, greedy_search });
     }
+
+    for (auto pair : perf_counters)
+        std::cout << pair.first << " " << pair.second / 1000. << " secs" << std::endl;
+
+    std::cout << "Total Tokenization time: " << tokenizer_timer.current_in_milli() / 1000. << " secs" << std::endl;
 
     // sample dataset
     size_t total_i = 0, total_o = 0;
