@@ -104,6 +104,18 @@ int main(int argc, char* argv[]) try {
     for (const auto& beam : beams)
         std::cout << beam.first << ": " << pipe.detokenize(beam.second) << std::endl;
 
+    {
+        // Example 5: Speculative sampling
+        std::string assitive_model_path = "text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16";
+        pipe = LLMPipeline(model_path);
+        auto [input_ids, attention_mask] = pipe.tokenize({prompt});
+        config = GenerationConfig::assistive_decoding(assitive_model_path).num_assistant_tokens(5).max_new_tokens(20);
+        
+        auto results = pipe.generate(input_ids, attention_mask, config);
+        for (const auto& beam : results)
+            std::cout << pipe.detokenize(beam.second) << std::endl;
+    }
+
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return EXIT_FAILURE;

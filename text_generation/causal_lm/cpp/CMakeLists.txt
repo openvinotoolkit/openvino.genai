@@ -46,4 +46,3 @@ set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 17)
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON)
 
 target_link_libraries(${TARGET_NAME} PRIVATE stdc++fs)
-

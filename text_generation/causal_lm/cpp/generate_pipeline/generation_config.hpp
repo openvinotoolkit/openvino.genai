@@ -51,7 +51,6 @@ struct GenerationConfig {
 
     std::function<void (std::vector<int64_t>&&, LLMPipeline&)> m_callback = [](std::vector<int64_t>&& tokens, LLMPipeline& pipe){ ;};
 
-
     size_t get_max_new_tokens(size_t prompt_length = 0) {
         // max_new_tokens has priority over max_length,
         // only if m_max_new_tokens was not specified use max_length
@@ -63,95 +62,94 @@ struct GenerationConfig {
     }
 
     GenerationConfig& max_new_tokens(size_t max_new_tokens) {
-        this->m_max_new_tokens = max_new_tokens;
-         return *this;
-     }
+        m_max_new_tokens = max_new_tokens;
+        return *this;
+    }
 
     GenerationConfig& max_length(size_t max_length) {
-        this->m_max_length = max_length;
-         return *this;
-     }
+        m_max_length = max_length;
+        return *this;
+    }
 
     GenerationConfig& ignore_eos(bool ignore_eos) {
-        this->m_ignore_eos = ignore_eos;
-         return *this;
-     }
+        m_ignore_eos = ignore_eos;
+        return *this;
+    }
 
     GenerationConfig& eos_token(int64_t eos_token) {
-        this->m_eos_token = eos_token;
-         return *this;
-     }
+        m_eos_token = eos_token;
+        return *this;
+    }
 
     GenerationConfig& num_return_sequences(size_t num_return_sequences) {
-        this->m_num_return_sequences = num_return_sequences;
-         return *this;
-     }
+        m_num_return_sequences = num_return_sequences;
+        return *this;
+    }
 
     GenerationConfig& num_groups(size_t num_groups) {
-        this->m_num_groups = num_groups;
-         return *this;
-     }
+        m_num_groups = num_groups;
+        return *this;
+    }
 
     GenerationConfig& group_size(size_t group_size) {
-        this->m_group_size = group_size;
-         return *this;
-     }
+        m_group_size = group_size;
+        return *this;
+    }
+
     GenerationConfig& diversity_penalty(float diversity_penalty) {
-        this->m_diversity_penalty = diversity_penalty;
-         return *this;
-     }
+        m_diversity_penalty = diversity_penalty;
+        return *this;
+    }
 
     GenerationConfig& length_penalty(float length_penalty) {
-        this->m_length_penalty = length_penalty;
-         return *this;
-     }
+        m_length_penalty = length_penalty;
+        return *this;
+    }
+
     GenerationConfig& no_repeat_ngram_size(size_t no_repeat_ngram_size) {
-        this->m_no_repeat_ngram_size = no_repeat_ngram_size;
-         return *this;
-     }
+        m_no_repeat_ngram_size = no_repeat_ngram_size;
+        return *this;
+    }
 
     GenerationConfig& temperature(float temperature) {
-        this->m_temperature = temperature;
-         return *this;
-     }
+        m_temperature = temperature;
+        return *this;
+    }
+
     GenerationConfig& top_k(size_t top_k) {
-        this->m_top_k = top_k;
-         return *this;
-     }
+        m_top_k = top_k;
+        return *this;
+    }
 
     GenerationConfig& top_p(size_t top_p) {
-        this->m_top_p = top_p;
-         return *this;
-     }
+        m_top_p = top_p;
+        return *this;
+    }
+
     GenerationConfig& do_sample(bool do_sample) {
-        this->m_do_sample = do_sample;
-         return *this;
-     }
+        m_do_sample = do_sample;
+        return *this;
+    }
 
     GenerationConfig& repetition_penalty(float repetition_penalty) {
-        this->m_repetition_penalty = repetition_penalty;
-         return *this;
-     }
+        m_repetition_penalty = repetition_penalty;
+        return *this;
+    }
 
     GenerationConfig& bos_token_id(int64_t bos_token_id) {
-        this->m_bos_token_id = bos_token_id;
-         return *this;
-     }
+        m_bos_token_id = bos_token_id;
+        return *this;
+    }
 
     GenerationConfig& eos_token_id(int64_t eos_token_id) {
-        this->m_eos_token_id = eos_token_id;
-         return *this;
-     }
+        m_eos_token_id = eos_token_id;
+        return *this;
+    }
 
     GenerationConfig& pad_token_id(int64_t pad_token_id) {
-        this->m_pad_token_id = pad_token_id;
-         return *this;
-     }
-
-    GenerationConfig& set_callback(std::function<void (std::vector<int64_t>&&, LLMPipeline&)> callback) {
-        this->m_callback = callback;
-         return *this;
-     }
+        m_pad_token_id = pad_token_id;
+        return *this;
+    }
 
     GenerationConfig() = default;
 
@@ -203,9 +201,16 @@ struct GenerationConfig {
         multimomial.m_do_sample = 20;
         return multimomial;
     }
+    
+    template <typename T>
+    static GenerationConfig assistive_decoding(T& assistant_model) {
+        GenerationConfig assistive;
+        assistive.assistant_model(assistant_model);
+        return assistive;
+    }
 
     bool is_gready_sampling() const {
-        return !m_do_sample && !is_beam_search();
+        return !m_do_sample && !is_beam_search() && !is_speculative();
     }
 
     bool is_beam_search() const {
@@ -215,5 +220,68 @@ struct GenerationConfig {
     bool is_multimomial() const {
         return m_do_sample;
     }
+
+    // for Assistive/Speculative decoding
+    ov::InferRequest m_assistant_model;
+    size_t m_num_assistant_tokens = 5;
+    size_t m_seq_len_axis = 2;
+    private:
+        std::shared_ptr<const ov::Model> m_assistant_ov_model;
+        bool is_assistant_request_defined = false;
+        bool is_assistant_ov_defined = false;
+
+    public:
+        GenerationConfig& assistant_model(const ov::InferRequest& assistant_model) {
+            m_assistant_model = assistant_model;
+            is_assistant_request_defined = true;
+            return *this;
+        }
+
+        GenerationConfig& assistant_model(ov::CompiledModel& assistant_model) {
+            m_assistant_model = assistant_model.create_infer_request();
+            is_assistant_request_defined = true;
+            return *this;
+        }
+
+        GenerationConfig& assistant_model(const std::shared_ptr<const ov::Model>& assistant_model) {
+            m_assistant_ov_model = assistant_model;
+            is_assistant_ov_defined = true;
+            return *this;
+        }
+
+        GenerationConfig& assistant_model(std::string assistant_model) {
+            auto is_xml = [](std::string path) -> bool { return path.compare(path.length() - 4, 4, ".xml") == 0;};
+            if (!is_xml(assistant_model))
+                assistant_model += "/openvino_model.xml";
+
+            m_assistant_ov_model = ov::Core().read_model(assistant_model);
+            is_assistant_ov_defined = true;
+            return *this;
+        }
+
+        GenerationConfig& set_callback(std::function<void (std::vector<int64_t>&&, LLMPipeline&)> callback) {
+            m_callback = callback;
+            return *this;
+        }
+
+        ov::InferRequest get_assistant_model(std::string device="CPU", const ov::AnyMap& config={}) {
+            if (is_assistant_request_defined) {
+                return m_assistant_model;
+            } else if (is_assistant_ov_defined) {
+                m_assistant_model = ov::Core().compile_model(m_assistant_ov_model, device, config).create_infer_request();
+                is_assistant_request_defined = true;
+                return m_assistant_model;
+            } else {
+                OPENVINO_THROW("assistant model is not specified");
+            }
+        }
+        
+        GenerationConfig& num_assistant_tokens(int64_t num_assistant_tokens) {
+            m_num_assistant_tokens = num_assistant_tokens;
+        return *this;
+    }
     
+    bool is_speculative() const {
+        return is_assistant_ov_defined || is_assistant_request_defined;
+    }
 };
