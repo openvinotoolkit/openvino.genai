@@ -303,7 +303,8 @@ private:
                 max_sequence_len = std::max(max_sequence_len, sequence_len);
 
                 // TODO: better handling
-                OPENVINO_ASSERT(m_config.max_num_batched_tokens >= sequence_len, "Sequence length is longer than max number of tokens in batch");
+                // e.g. return status that sequence is ignored and cannot be processed by current scheduling algorigthm
+                OPENVINO_ASSERT(m_config.max_num_batched_tokens >= sequence_len, "Sequence length (", sequence_len, ") is longer than max number of tokens in batch (", m_config.max_num_batched_tokens, ")");
 
                 // if we limited by max_num_seqs condition
                 if (num_running_sequence_groups >= m_config.max_num_seqs)

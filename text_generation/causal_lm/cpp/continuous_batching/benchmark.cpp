@@ -34,17 +34,16 @@ std::string detokenize(ov::InferRequest& detokenizer, ov::Tensor tokens) {
     return detokenizer.get_output_tensor().data<std::string>()[0];
 }
 
-
 std::vector<std::pair<ov::Tensor, SamplingParameters>> filtered_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_input_len, const size_t max_output_len) {
     std::ifstream json_file(dataset_path.c_str());
     OPENVINO_ASSERT(json_file.is_open(), "Cannot open dataset file");
 
     Timer parse_timer;
     nlohmann::json json_dataset = nlohmann::json::parse(json_file);
-    std::cout << "Json parse: " << parse_timer.current_in_milli() / 1000. << " secs" << std::endl;
     std::vector<std::pair<ov::Tensor, SamplingParameters>> sampled_dataset, dataset;
-    sampled_dataset.reserve(num_prompts);
-    dataset.reserve(json_dataset.size());
+    const size_t num_prompt_candidates = static_cast<size_t>(num_prompts * 1.2);
+    sampled_dataset.reserve(num_prompt_candidates);
+    dataset.reserve(num_prompt_candidates);
 
     ov::Core core;
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
@@ -55,7 +54,7 @@ std::vector<std::pair<ov::Tensor, SamplingParameters>> filtered_dataset(const st
     Timer tokenizer_timer;
     std::map<std::string, double> perf_counters;
 
-    for (auto json_data_iterator = json_dataset.begin(); json_data_iterator != json_dataset.end(); ++json_data_iterator) {
+    for (auto json_data_iterator = json_dataset.begin(); json_data_iterator != json_dataset.end() && dataset.size() < num_prompt_candidates; ++json_data_iterator) {
         auto & json_data = *json_data_iterator;
 
         // Filter out the conversations with less than 2 turns.
@@ -73,11 +72,6 @@ std::vector<std::pair<ov::Tensor, SamplingParameters>> filtered_dataset(const st
         auto [_input_ids_answer, _attention_mask_answer] = tokenize(tokenizer, gpt_answer);
         size_t input_len = _input_ids_prompt_clone.get_size(), output_len = _input_ids_answer.get_size();
 
-        std::vector<ov::ProfilingInfo> profiling_info = tokenizer.get_profiling_info();
-        for (const ov::ProfilingInfo& info : profiling_info) {
-            perf_counters[info.node_type] += info.real_time.count();
-        }
-
         // Prune too short sequences.
         if (input_len < 4 || output_len < 4)
             continue;
@@ -90,9 +84,6 @@ std::vector<std::pair<ov::Tensor, SamplingParameters>> filtered_dataset(const st
 
         dataset.push_back({ _input_ids_prompt_clone, greedy_search });
     }
-
-    for (auto pair : perf_counters)
-        std::cout << pair.first << " " << pair.second / 1000. << " secs" << std::endl;
 
     std::cout << "Total Tokenization time: " << tokenizer_timer.current_in_milli() / 1000. << " secs" << std::endl;
 
@@ -223,7 +214,7 @@ int main(int argc, char* argv[]) try {
                 // accumulate output tokens
                 total_output_tokens += output_len;
             }
-            // std::cout << "Finished: " << num_finished << std::endl;
+            std::cout << "Finished: " << num_finished << std::endl;
         }
 
         // collect performance metrics
