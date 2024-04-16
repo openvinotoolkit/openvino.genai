@@ -452,7 +452,7 @@ jobs:
         run: |
           python -c "
           import transformers
-          with open('pred_greedy.txt', 'r') as file:
+          with open('pred.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('ikala/redpajama-3b-chat')
           tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
