@@ -454,9 +454,9 @@ jobs:
           import transformers
           with open('pred.txt', 'r') as file:
               predictions = file.read()
-          tokenizer = transformers.GPTNeoXTokenizer.from_pretrained('ikala/redpajama-3b-chat')
+          tokenizer = transformers.AutoTokenizer.from_pretrained('ikala/redpajama-3b-chat')
           tokenized = tokenizer('69', return_tensors='pt')
-          for beam in transformers.GPTNeoXForCausalLM.from_pretrained('ikala/redpajama-3b-chat').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
+          for beam in transformers.AutoModelForCausalLM.from_pretrained('ikala/redpajama-3b-chat').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
