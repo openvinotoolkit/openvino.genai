@@ -43,28 +43,29 @@ void sampling_top_k(TokenIdScore* first, TokenIdScore* kth, TokenIdScore* last) 
 }
 
 TokenIdScore* sampling_top_p(TokenIdScore* first, TokenIdScore* last, float top_p) {
-    // fast top_p in expected O(n) time complexity
-    sampling_softmax_inplace(first, last);
+    //sort score
+    std::sort(first, last, std::greater<TokenIdScore>());
 
-    while (first + 1 < last) {
-        const float pivot_score = (last - 1)->score; // use mid score?
-        TokenIdScore* mid =
-            std::partition(first, last - 1, [pivot_score](const TokenIdScore& x) { return x.score > pivot_score; });
-        std::swap(*mid, *(last - 1));
+    int vocab_size = last - first;
+    std::vector<TokenIdScore> token_scores(vocab_size);
+    for (int i = 0; i < vocab_size; i++) {
+        token_scores[i] = first[i];
+    }
 
-        const float prefix_sum =
-            std::accumulate(first, mid, 0.f, [](float sum, const TokenIdScore& x) { return sum + x.score; });
-        if (prefix_sum >= top_p) {
-            last = mid;
-        }
-        else if (prefix_sum + mid->score < top_p) {
-            first = mid + 1;
-            top_p -= prefix_sum + mid->score;
-        }
-        else {
-            return mid + 1;
+    //calculate softmax
+    sampling_softmax_inplace(token_scores.data(), token_scores.data() + token_scores.size());
+
+    float prefix_sum = 0.0f;
+
+    //top_p 
+    for (int i = 0; i < vocab_size; i++) {
+        prefix_sum += token_scores[i].score;
+        if (prefix_sum >= top_p){
+            return first + (i + 1);
+            break;
         }
     }
+
     return last;
 }
 
