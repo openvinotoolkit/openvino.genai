@@ -59,33 +59,40 @@ int main(int argc, char* argv[]) try {
     if (argc != 3) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>'");
     }
+
     // Compile models
     ov::Core core;
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
+    //Read the tokenizer model information from the file to later get the runtime information
+    auto tokenizer_model = core.read_model(std::string{ argv[1] } + "/openvino_tokenizer.xml");
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(
-        std::string{argv[1]} + "/openvino_tokenizer.xml", "CPU").create_infer_request();
+        tokenizer_model, "CPU").create_infer_request();
     auto [input_ids, attention_mask] = tokenize(tokenizer, argv[2]);
     ov::InferRequest detokenizer = core.compile_model(
         std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     // The model can be compiled for GPU as well
     ov::InferRequest lm = core.compile_model(
         std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
+    auto seq_len = input_ids.get_size();
+
     // Initialize inputs
     lm.set_tensor("input_ids", input_ids);
     lm.set_tensor("attention_mask", attention_mask);
     ov::Tensor position_ids = lm.get_tensor("position_ids");
     position_ids.set_shape(input_ids.get_shape());
-    std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
+    std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + seq_len, 0);
     constexpr size_t BATCH_SIZE = 1;
     // Input values are persistent between inference calls.
     // That allows to set values, which aren't going to change, only once
     lm.get_tensor("beam_idx").set_shape({BATCH_SIZE});
     lm.get_tensor("beam_idx").data<int32_t>()[0] = 0;
     lm.infer();
-    int64_t sequence_len = lm.get_tensor("logits").get_shape().at(1) - 1;
+
+    int64_t sequence_offset = lm.get_tensor("logits").get_shape().at(1) - 1;
     size_t vocab_size = lm.get_tensor("logits").get_shape().back();
-    float* logits = lm.get_tensor("logits").data<float>() + (sequence_len) * vocab_size;
+    float* logits = lm.get_tensor("logits").data<float>() + (sequence_offset) * vocab_size;
+    
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     SamplingParameters parameters{ std::vector<int64_t>{prompt_data, prompt_data + input_ids.get_size()} };
     GreedySampling greedy_sampling{ parameters };
@@ -94,9 +101,20 @@ int main(int argc, char* argv[]) try {
     lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     position_ids.set_shape({BATCH_SIZE, 1});
     TextStreamer text_streamer{std::move(detokenizer)};
-    // There's no way to extract special token values from the detokenizer for now
-    constexpr int64_t SPECIAL_EOS_TOKEN = 2;
-    while (out_token != SPECIAL_EOS_TOKEN) {
+    // Get the runtime info from the tokenizer model that we read earlier
+    auto rt_info = tokenizer_model->get_rt_info(); //Get the runtime info for the model
+    int64_t SPECIAL_EOS_TOKEN;
+
+    if (rt_info.count("eos_token_id") > 0) { //check if the runtime information has a valid EOS token ID
+        SPECIAL_EOS_TOKEN = rt_info["eos_token_id"].as<int64_t>();
+    }
+    else {
+        throw std::runtime_error("EOS token ID not found in model's runtime information.");
+    }
+
+    int max_sequence_length = 100;
+    while (out_token != SPECIAL_EOS_TOKEN && seq_len < max_sequence_length) {
+        ++seq_len;
         lm.get_tensor("input_ids").data<int64_t>()[0] = out_token;
         lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm.get_tensor("attention_mask").get_shape().at(1) + 1});
         std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
