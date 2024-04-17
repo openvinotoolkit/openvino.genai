@@ -7,7 +7,7 @@
 #include <functional>
 #include <nlohmann/json.hpp>
 #include <fstream>
-#include <group_beam_searcher.hpp>  // used only for StopCriteria
+// #include <group_beam_searcher.hpp>  // used only for StopCriteria
 #include <limits>
 
 // forward declaration
@@ -31,7 +31,7 @@ struct GenerationConfig {
     size_t m_group_size = 1; // beam_width
     float m_diversity_penalty = 1.0f; // 0.0 means no diversity
     size_t m_num_return_sequences = 3;  // is used by beam search, in other case is equal to batch size
-    StopCriteria stop_criteria = StopCriteria::heuristic;
+    // StopCriteria stop_criteria = StopCriteria::heuristic;
     
     float m_repetition_penalty = 1.0f;
     float m_length_penalty = 1.0f;

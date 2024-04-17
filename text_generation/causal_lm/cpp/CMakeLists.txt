@@ -36,7 +36,7 @@ set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 17)
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON)
 
 set(TARGET_NAME generate_sample)
-add_executable(${TARGET_NAME} generate_pipeline/generate_sample.cpp)
+add_executable(${TARGET_NAME} generate_pipeline/generate_sample.cpp generate_pipeline/llm_tokenizer.cpp generate_pipeline/llm_pipeline.cpp)
 target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
