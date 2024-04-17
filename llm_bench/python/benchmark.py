@@ -132,11 +132,11 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         result_md5_list.append(hashlib.md5(result_text.encode()).hexdigest())
     if num == 0:
         warmup_md5[prompt_index] = result_md5_list
-    per_token_time = generation_time * 1000 / num_tokens
+    per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
     iter_data = gen_iterate_data(
         num,
         input_token_size * args['batch_size'],
-        max_output_token_size * args['batch_size'],
+        max_output_token_size,
         num_tokens,
         generation_time,
         per_token_time,
@@ -157,7 +157,8 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
-        tokenization_time=(tok_encode_time, tok_decode_time)
+        tokenization_time=(tok_encode_time, tok_decode_time),
+        batch_size=args['batch_size']
     )
     if num > 0:
         warmup_md5_list = warmup_md5[prompt_index]
@@ -183,6 +184,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
+    prompt_idx_list = [prompt_idx for prompt_idx, input_text in enumerate(input_text_list)]
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for prompt_idx, input_text in enumerate(input_text_list):
@@ -196,7 +198,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
                     log.info(f'[warm-up] Input text: {input_text}')
                 run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
 
-    utils.metrics_print.print_average(iter_data_list)
+    utils.metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time
 
 
@@ -277,6 +279,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
+    prompt_idx_list = [image_id for image_id, image_param in enumerate(input_image_list)]
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for image_id, image_param in enumerate(input_image_list):
@@ -286,7 +289,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
             for num in range(num_iters + 1):
                 run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id)
 
-    utils.metrics_print.print_average(iter_data_list)
+    utils.metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
     return iter_data_list, pretrain_time
 
 
@@ -397,7 +400,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list, proc_id)
             tm_list.clear()
             image_id = image_id + 1
-    utils.metrics_print.print_average(iter_data_list)
+    utils.metrics_print.print_average(iter_data_list, [], 0, False)
 
     return iter_data_list, pretrain_time
 
@@ -475,12 +478,6 @@ def get_argprser():
     )
     parser.add_argument(
         '--convert_tokenizer', action='store_true', help='Convert tokenizer to OpenVINO format'
-    )
-    parser.add_argument(
-        '--interleave',
-        action='store_true',
-        help='if the value is True, input prompts are processed in interleave manner'
-        'if the value is False (default), input prompts are processed in subsequent manner'
     )
     parser.add_argument(
         '--subsequent',

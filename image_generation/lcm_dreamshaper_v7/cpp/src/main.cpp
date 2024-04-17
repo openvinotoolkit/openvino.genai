@@ -264,7 +264,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     std::shared_ptr<Scheduler> scheduler = std::make_shared<LCMScheduler>(LCMScheduler(
         1000, 0.00085f, 0.012f, BetaSchedule::SCALED_LINEAR,
         PredictionType::EPSILON, {}, 50, true, 10.0f, false,
-        false, 1.0f, 0.995f, 1.0f, read_np_latent));
+        false, 1.0f, 0.995f, 1.0f, read_np_latent, user_seed));
     scheduler->set_timesteps(num_inference_steps);
     std::vector<std::int64_t> timesteps = scheduler->get_timesteps();
 

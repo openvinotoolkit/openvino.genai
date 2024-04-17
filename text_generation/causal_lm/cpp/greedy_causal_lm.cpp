@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) try {
     ov::Core core;
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
     //Read the tokenizer model information from the file to later get the runtime information
-    auto tokenizer_model = core.read_model(std::string{ argv[1] } + "/openvino_tokenizer.xml");
+    auto tokenizer_model = core.read_model(std::string{argv[1]} + "/openvino_tokenizer.xml");
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(
         tokenizer_model, "CPU").create_infer_request();
@@ -91,6 +91,7 @@ int main(int argc, char* argv[]) try {
 
     int64_t sequence_offset = lm.get_tensor("logits").get_shape().at(1) - 1;
     size_t vocab_size = lm.get_tensor("logits").get_shape().back();
+
     float* logits = lm.get_tensor("logits").data<float>() + (sequence_offset) * vocab_size;
     
     const int64_t* prompt_data = input_ids.data<const int64_t>();
@@ -101,14 +102,14 @@ int main(int argc, char* argv[]) try {
     lm.get_tensor("input_ids").set_shape({BATCH_SIZE, 1});
     position_ids.set_shape({BATCH_SIZE, 1});
     TextStreamer text_streamer{std::move(detokenizer)};
+
     // Get the runtime info from the tokenizer model that we read earlier
     auto rt_info = tokenizer_model->get_rt_info(); //Get the runtime info for the model
     int64_t SPECIAL_EOS_TOKEN;
 
     if (rt_info.count("eos_token_id") > 0) { //check if the runtime information has a valid EOS token ID
         SPECIAL_EOS_TOKEN = rt_info["eos_token_id"].as<int64_t>();
-    }
-    else {
+    } else {
         throw std::runtime_error("EOS token ID not found in model's runtime information.");
     }
 
@@ -116,9 +117,9 @@ int main(int argc, char* argv[]) try {
     while (out_token != SPECIAL_EOS_TOKEN && seq_len < max_sequence_length) {
         ++seq_len;
         lm.get_tensor("input_ids").data<int64_t>()[0] = out_token;
-        lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, lm.get_tensor("attention_mask").get_shape().at(1) + 1});
-        std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), lm.get_tensor("attention_mask").get_size(), 1);
-        position_ids.data<int64_t>()[0] = int64_t(lm.get_tensor("attention_mask").get_size() - 2);
+        lm.get_tensor("attention_mask").set_shape({BATCH_SIZE, seq_len});
+        std::fill_n(lm.get_tensor("attention_mask").data<int64_t>(), seq_len, 1);
+        position_ids.data<int64_t>()[0] = int64_t(seq_len - 1);
         lm.start_async();
         text_streamer.put(out_token);
         lm.wait();

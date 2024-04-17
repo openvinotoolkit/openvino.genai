@@ -23,7 +23,8 @@ from openvino import Type as OVType, PartialShape, save_model, convert_model
 from openvino.runtime import Core, get_version
 from optimum.exporters import TasksManager
 from optimum.utils import DEFAULT_DUMMY_SHAPES
-from optimum.exporters.onnx import get_encoder_decoder_models_for_export
+from optimum.intel.openvino.configuration import OVConfig
+from optimum.exporters.utils import get_encoder_decoder_models_for_export
 from optimum.exporters.openvino import export_models
 from optimum.exporters.openvino.model_patcher import patch_model_with_bettertransformer
 from optimum.intel.openvino import (
@@ -38,12 +39,7 @@ from optimum.intel.openvino import (
 )
 from optimum.utils.import_utils import is_torch_available, is_diffusers_available
 
-try:
-    from optimum.exporters.onnx.__main__ import (
-        _get_submodels_and_onnx_configs as _get_submodels_and_export_configs,
-    )
-except ImportError:
-    from optimum.exporters.onnx.utils import _get_submodels_and_onnx_configs as _get_submodels_and_export_configs
+from optimum.exporters.utils import _get_submodels_and_export_configs
 
 from transformers import (
     AutoTokenizer,
@@ -59,8 +55,7 @@ from utils.conversion_utils.convert_patch import patch_model_for_optimum_export
 from utils.conversion_utils.better_transformer_patch import (
     register_bettertransformer_config,
 )
-from utils.conversion_utils.export_configs import *  # noqa: F401,F403
-from utils.ov_model_classes import register_normalized_configs
+import utils.conversion_utils.export_configs  # noqa: F401,F403
 from utils.conversion_utils.helpers import (
     PYTORCH_DIR,
     OV_DIR,
@@ -91,12 +86,11 @@ if TYPE_CHECKING:
     if is_diffusers_available():
         from diffusers import ModelMixin
 
-register_normalized_configs()
 register_bettertransformer_config()
 
 
 def compress_torchmodels(
-    models_and_onnx_configs,
+    models_and_export_configs,
     stateful: bool = True,
     dummy_shapes: Optional[Dict] = None,
     compression_options: Optional[Dict] = None,
@@ -107,18 +101,18 @@ def compress_torchmodels(
     if compression_options is None:
         compression_options = {}
 
-    for model_name in models_and_onnx_configs.keys():
-        submodel, sub_onnx_config = models_and_onnx_configs[model_name]
+    for model_name in models_and_export_configs.keys():
+        submodel, sub_export_config = models_and_export_configs[model_name]
         if stateful:
             submodel = patch_model_with_bettertransformer(submodel)
         if is_wrapped_model(submodel):
             dataset = None
         else:
-            dummy_inputs = sub_onnx_config.generate_dummy_inputs(framework="pt", **dummy_shapes)
+            dummy_inputs = sub_export_config.generate_dummy_inputs(framework="pt", **dummy_shapes)
             dataset = nncf.Dataset([dummy_inputs])
         compressed_submodel = nncf.compress_weights(submodel, dataset=dataset, **compression_options)
-        models_and_onnx_configs[model_name] = (compressed_submodel, sub_onnx_config)
-    return models_and_onnx_configs
+        models_and_export_configs[model_name] = (compressed_submodel, sub_export_config)
+    return models_and_export_configs
 
 
 def convert_optimum_causallm_base(model, args, model_config=None, compress_only=False):
@@ -144,10 +138,11 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             model.save_pretrained(pt_out_dir)
             save_tokenizer(tok, pt_out_dir)
         dummy_shapes = DEFAULT_DUMMY_SHAPES
-        onnx_config, models_and_onnx_configs = _get_submodels_and_export_configs(
+        export_config, models_and_export_configs = _get_submodels_and_export_configs(
             model=model,
             task="text-generation-with-past",
-            custom_onnx_configs={},
+            exporter="openvino",
+            custom_export_configs={},
             custom_architecture=None,
             fn_get_submodels=None,
             preprocessors=None,
@@ -155,17 +150,17 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             monolith=False,
             library_name="transformers"
         )
-        if "decoder_with_past_model" in models_and_onnx_configs:
-            models_and_onnx_configs = {"model": models_and_onnx_configs["decoder_with_past_model"]}
+        if "decoder_with_past_model" in models_and_export_configs:
+            models_and_export_configs = {"model": models_and_export_configs["decoder_with_past_model"]}
         model.config.save_pretrained(ov_out_dir)
-        files_subpaths = ["openvino_" + model_name + ".xml" for model_name in models_and_onnx_configs.keys()]
+        files_subpaths = ["openvino_" + model_name + ".xml" for model_name in models_and_export_configs.keys()]
         export_models(
-            models_and_onnx_configs=models_and_onnx_configs,
+            models_and_export_configs=models_and_export_configs,
             output_dir=ov_out_dir,
             output_names=files_subpaths,
             input_shapes=dummy_shapes,
             device="cpu",
-            compression_option="fp16" if args.precision == "FP16" else None,
+            ov_config=OVConfig(dtype="fp16") if args.precision == "FP16" else None,
             model_kwargs={},
             stateful=not args.disable_stateful,
         )
@@ -209,10 +204,11 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             else:
                 model = original_model
 
-            _, models_and_onnx_configs = _get_submodels_and_export_configs(
+            _, models_and_export_configs = _get_submodels_and_export_configs(
                 model=model,
+                exporter="openvino",
                 task="text-generation-with-past",
-                custom_onnx_configs={},
+                custom_export_configs={},
                 custom_architecture=None,
                 fn_get_submodels=None,
                 preprocessors=None,
@@ -222,8 +218,8 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             )
 
             compression_options = COMPRESSION_OPTIONS[compress_mode]
-            models_and_onnx_configs = compress_torchmodels(
-                models_and_onnx_configs,
+            models_and_export_configs = compress_torchmodels(
+                models_and_export_configs,
                 stateful=not args.disable_stateful,
                 dummy_shapes=dummy_shapes,
                 compression_options=compression_options,
@@ -237,12 +233,12 @@ def convert_optimum_causallm_base(model, args, model_config=None, compress_only=
             )
             model.config.save_pretrained(pt_out_dir)
             export_models(
-                models_and_onnx_configs=models_and_onnx_configs,
+                models_and_export_configs=models_and_export_configs,
                 output_dir=pt_out_dir,
                 output_names=files_subpaths,
                 input_shapes=dummy_shapes,
                 device="cpu",
-                compression_option="fp16" if args.precision == "FP16" else None,
+                ov_config=OVConfig(dtype="fp16") if args.precision == "FP16" else None,
                 model_kwargs={},
                 stateful=not args.disable_stateful,
             )
@@ -306,15 +302,15 @@ def convert_seq2seq(args):
                         config=config,
                     )
 
-                onnx_config_constructor = TasksManager.get_exporter_config_constructor(
-                    model=pt_model, exporter="onnx", task="text2text-generation"
+                export_config_constructor = TasksManager.get_exporter_config_constructor(
+                    model=pt_model, exporter="openvino", task="text2text-generation"
                 )
-                onnx_config = onnx_config_constructor(pt_model.config, use_past=True)
-                models_and_onnx_configs = get_encoder_decoder_models_for_export(pt_model, onnx_config)
+                export_config = export_config_constructor(pt_model.config, use_past=True)
+                models_and_export_configs = get_encoder_decoder_models_for_export(pt_model, export_config)
 
                 compression_options = COMPRESSION_OPTIONS[compress_mode]
-                models_and_onnx_configs = compress_torchmodels(
-                    models_and_onnx_configs, compression_options=compression_options
+                models_and_export_configs = compress_torchmodels(
+                    models_and_export_configs, compression_options=compression_options
                 )
 
                 encoder_file_name = Path("encoder") / OV_ENCODER_NAME
@@ -334,11 +330,12 @@ def convert_seq2seq(args):
                 )
                 try:
                     export_models(
-                        models_and_onnx_configs=models_and_onnx_configs,
-                        opset=onnx_config.DEFAULT_ONNX_OPSET,
+                        models_and_export_configs=models_and_export_configs,
+                        opset=export_config.DEFAULT_ONNX_OPSET,
                         output_dir=save_dir_path,
                         output_names=output_names,
-                        compression_option="fp16" if args.precision == "FP16" else None,
+                        ov_config=OVConfig(dtype="fp16") if args.precision == "FP16" else None,
+                        stateful=False
                     )
                     save_tokenizer(tok, save_dir_path)
                 except Exception as ex:
@@ -503,70 +500,75 @@ def get_stable_diffusion_models_for_export(
     if "text_encoder" in models_for_export:
         text_encoder_config_constructor = TasksManager.get_exporter_config_constructor(
             model=pipeline.text_encoder,
-            exporter="onnx",
+            exporter="openvino",
             task="feature-extraction",
+            library_name="diffusers",
         )
-        text_encoder_onnx_config = text_encoder_config_constructor(
+        text_encoder_export_config = text_encoder_config_constructor(
             pipeline.text_encoder.config, int_dtype=int_dtype, float_dtype=float_dtype
         )
-        models_for_export["text_encoder"] = (models_for_export["text_encoder"], text_encoder_onnx_config)
+        models_for_export["text_encoder"] = (models_for_export["text_encoder"], text_encoder_export_config)
 
     # U-NET
-    onnx_config_constructor = TasksManager.get_exporter_config_constructor(
+    export_config_constructor = TasksManager.get_exporter_config_constructor(
         model=pipeline.unet,
-        exporter="onnx",
+        exporter="openvino",
         task="semantic-segmentation",
         model_type="unet",
+        library_name="diffusers",
     )
-    unet_onnx_config = onnx_config_constructor(pipeline.unet.config, int_dtype=int_dtype, float_dtype=float_dtype)
-    models_for_export["unet"] = (models_for_export["unet"], unet_onnx_config)
+    unet_export_config = export_config_constructor(pipeline.unet.config, int_dtype=int_dtype, float_dtype=float_dtype)
+    models_for_export["unet"] = (models_for_export["unet"], unet_export_config)
 
     # VAE Encoder https://github.com/huggingface/diffusers/blob/v0.11.1/src/diffusers/models/vae.py#L565
     vae_encoder = models_for_export["vae_encoder"]
     vae_config_constructor = TasksManager.get_exporter_config_constructor(
         model=vae_encoder,
-        exporter="onnx",
+        exporter="openvino",
         task="semantic-segmentation",
         model_type="vae-encoder",
+        library_name="diffusers",
     )
-    vae_onnx_config = vae_config_constructor(vae_encoder.config, int_dtype=int_dtype, float_dtype=float_dtype)
-    models_for_export["vae_encoder"] = (vae_encoder, vae_onnx_config)
+    vae_export_config = vae_config_constructor(vae_encoder.config, int_dtype=int_dtype, float_dtype=float_dtype)
+    models_for_export["vae_encoder"] = (vae_encoder, vae_export_config)
 
     # VAE Decoder https://github.com/huggingface/diffusers/blob/v0.11.1/src/diffusers/models/vae.py#L600
     vae_decoder = models_for_export["vae_decoder"]
     vae_config_constructor = TasksManager.get_exporter_config_constructor(
         model=vae_decoder,
-        exporter="onnx",
+        exporter="openvino",
         task="semantic-segmentation",
         model_type="vae-decoder",
+        library_name="diffusers",
     )
-    vae_onnx_config = vae_config_constructor(vae_decoder.config, int_dtype=int_dtype, float_dtype=float_dtype)
-    models_for_export["vae_decoder"] = (vae_decoder, vae_onnx_config)
+    vae_export_config = vae_config_constructor(vae_decoder.config, int_dtype=int_dtype, float_dtype=float_dtype)
+    models_for_export["vae_decoder"] = (vae_decoder, vae_export_config)
 
     if "text_encoder_2" in models_for_export:
-        onnx_config_constructor = TasksManager.get_exporter_config_constructor(
+        export_config_constructor = TasksManager.get_exporter_config_constructor(
             model=pipeline.text_encoder_2,
-            exporter="onnx",
+            exporter="openvino",
             task="feature-extraction",
             model_type="clip-text-with-projection",
+            library_name="diffusers",
         )
-        onnx_config = onnx_config_constructor(
+        export_config = export_config_constructor(
             pipeline.text_encoder_2.config, int_dtype=int_dtype, float_dtype=float_dtype
         )
-        models_for_export["text_encoder_2"] = (models_for_export["text_encoder_2"], onnx_config)
+        models_for_export["text_encoder_2"] = (models_for_export["text_encoder_2"], export_config)
 
     return models_for_export
 
 
-def convert_sd_prepared_for_export_common(pipeline, models_and_onnx_configs, output_dir, args):
-    for model_name in models_and_onnx_configs:
-        subcomponent = models_and_onnx_configs[model_name][0]
+def convert_sd_prepared_for_export_common(pipeline, models_and_export_configs, output_dir, args):
+    for model_name in models_and_export_configs:
+        subcomponent = models_and_export_configs[model_name][0]
         if hasattr(subcomponent, "save_config"):
             subcomponent.save_config(output_dir / model_name)
         elif hasattr(subcomponent, "config") and hasattr(subcomponent.config, "save_pretrained"):
             subcomponent.config.save_pretrained(output_dir / model_name)
 
-            files_subpaths = [Path(name_dir) / OV_XML_FILE_NAME for name_dir in models_and_onnx_configs]
+            files_subpaths = [Path(name_dir) / OV_XML_FILE_NAME for name_dir in models_and_export_configs]
 
         # Saving the additional components needed to perform inference.
         pipeline.scheduler.save_pretrained(output_dir.joinpath("scheduler"))
@@ -586,16 +588,17 @@ def convert_sd_prepared_for_export_common(pipeline, models_and_onnx_configs, out
         pipeline.save_config(output_dir)
 
     export_models(
-        models_and_onnx_configs=models_and_onnx_configs,
+        models_and_export_configs=models_and_export_configs,
         output_dir=output_dir,
         output_names=files_subpaths,
-        compression_option="fp16" if args.precision == "FP16" else None,
+        ov_config=OVConfig(dtype="fp16") if args.precision == "FP16" else None,
+        stateful=False
     )
 
 
 def convert_sd_common(pipeline, output_dir, args):
-    models_and_onnx_configs = get_stable_diffusion_models_for_export(pipeline)
-    convert_sd_prepared_for_export_common(pipeline, models_and_onnx_configs, output_dir, args)
+    models_and_export_configs = get_stable_diffusion_models_for_export(pipeline)
+    convert_sd_prepared_for_export_common(pipeline, models_and_export_configs, output_dir, args)
 
 
 def convert_sd(args):
@@ -605,8 +608,8 @@ def convert_sd(args):
         pt_model.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
 
     output_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
-    models_and_onnx_configs = get_stable_diffusion_models_for_export(pt_model)
-    convert_sd_prepared_for_export_common(pt_model, models_and_onnx_configs, output_dir, args)
+    models_and_export_configs = get_stable_diffusion_models_for_export(pt_model)
+    convert_sd_prepared_for_export_common(pt_model, models_and_export_configs, output_dir, args)
 
     if pt_compress_weights:
         compression_modes = []
@@ -617,14 +620,14 @@ def convert_sd(args):
         for idx, compress_mode in enumerate(compression_modes):
             if idx > 0:
                 pt_model = StableDiffusionPipeline.from_pretrained(args.model_id)
-                models_and_onnx_configs = get_stable_diffusion_models_for_export(pt_model)
+                models_and_export_configs = get_stable_diffusion_models_for_export(pt_model)
 
-            target_models_and_onnx_configs = {
-                k: models_and_onnx_configs[k] for k in ("text_encoder", "unet", "vae_decoder")
+            target_models_and_export_configs = {
+                k: models_and_export_configs[k] for k in ("text_encoder", "unet", "vae_decoder")
             }
             compression_options = COMPRESSION_OPTIONS[compress_mode]
-            models_and_onnx_configs.update(
-                compress_torchmodels(target_models_and_onnx_configs, compression_options=compression_options)
+            models_and_export_configs.update(
+                compress_torchmodels(target_models_and_export_configs, compression_options=compression_options)
             )
 
             output = (
@@ -633,7 +636,7 @@ def convert_sd(args):
                 / OV_DIR
                 / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compress_mode)
             )
-            convert_sd_prepared_for_export_common(pt_model, models_and_onnx_configs, output, args)
+            convert_sd_prepared_for_export_common(pt_model, models_and_export_configs, output, args)
     del pt_model
     gc.collect()
 
@@ -662,8 +665,8 @@ def convert_lcm(args):
         pt_model.save_pretrained(Path(args.output_dir) / PYTORCH_DIR)
 
     output_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
-    models_and_onnx_configs = get_stable_diffusion_models_for_export(pt_model)
-    convert_sd_prepared_for_export_common(pt_model, models_and_onnx_configs, output_dir, args)
+    models_and_export_configs = get_stable_diffusion_models_for_export(pt_model)
+    convert_sd_prepared_for_export_common(pt_model, models_and_export_configs, output_dir, args)
 
     if pt_compress_weights:
         compression_modes = []
@@ -674,14 +677,14 @@ def convert_lcm(args):
         for idx, compress_mode in enumerate(compression_modes):
             if idx > 0:
                 pt_model = StableDiffusionPipeline.from_pretrained(args.model_id)
-                models_and_onnx_configs = get_stable_diffusion_models_for_export(pt_model)
+                models_and_export_configs = get_stable_diffusion_models_for_export(pt_model)
 
-            target_models_and_onnx_configs = {
-                k: models_and_onnx_configs[k] for k in ("text_encoder", "unet", "vae_decoder")
+            target_models_and_export_configs = {
+                k: models_and_export_configs[k] for k in ("text_encoder", "unet", "vae_decoder")
             }
             compression_options = COMPRESSION_OPTIONS[compress_mode]
-            models_and_onnx_configs.update(
-                compress_torchmodels(target_models_and_onnx_configs, compression_options=compression_options)
+            models_and_export_configs.update(
+                compress_torchmodels(target_models_and_export_configs, compression_options=compression_options)
             )
 
             output = (
@@ -690,7 +693,7 @@ def convert_lcm(args):
                 / OV_DIR
                 / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compress_mode)
             )
-            convert_sd_prepared_for_export_common(pt_model, models_and_onnx_configs, output, args)
+            convert_sd_prepared_for_export_common(pt_model, models_and_export_configs, output, args)
     del pt_model
     gc.collect()
 
@@ -749,8 +752,8 @@ def convert_sdxl(args):
         pt_model = build_pt_model(args.model_id)
 
     fp_out_dir = Path(args.output_dir) / PYTORCH_DIR / OV_DIR / args.precision
-    models_and_onnx_configs = get_stable_diffusion_models_for_export(pt_model)
-    convert_sd_prepared_for_export_common(pt_model, models_and_onnx_configs, fp_out_dir, args)
+    models_and_export_configs = get_stable_diffusion_models_for_export(pt_model)
+    convert_sd_prepared_for_export_common(pt_model, models_and_export_configs, fp_out_dir, args)
 
     if pt_compress_weights:
         compression_modes = []
@@ -761,11 +764,11 @@ def convert_sdxl(args):
         for idx, compress_mode in enumerate(compression_modes):
             if idx > 0:
                 pt_model = build_pt_model(args.model_id)
-                models_and_onnx_configs = get_stable_diffusion_models_for_export(pt_model)
+                models_and_export_configs = get_stable_diffusion_models_for_export(pt_model)
 
             compression_options = COMPRESSION_OPTIONS[compress_mode]
-            models_and_onnx_configs = compress_torchmodels(
-                models_and_onnx_configs, compression_options=compression_options
+            models_and_export_configs = compress_torchmodels(
+                models_and_export_configs, compression_options=compression_options
             )
 
             output = (
@@ -775,7 +778,7 @@ def convert_sdxl(args):
                 / PYTORCH_COMPRESS_WEIGHTS_DIR.format(precision=args.precision, compression=compress_mode)
             )
 
-            convert_sd_prepared_for_export_common(pt_model, models_and_onnx_configs, output, args)
+            convert_sd_prepared_for_export_common(pt_model, models_and_export_configs, output, args)
 
     del pt_model
     gc.collect()
@@ -1347,11 +1350,12 @@ def main():
         "-c",
         "--compress_weights",
         type=str,
-        choices=["INT8", "INT8_ASYM", "INT8_SYM", "4BIT_DEFAULT", "INT4_SYM", "INT4_ASYM"],
+        choices=["INT8", "INT8_ASYM", "INT8_SYM", "4BIT_DEFAULT", "4BIT_MAXIMUM", "INT4_SYM", "INT4_ASYM"],
         nargs="+",
         help=(
             "The weight compression option, e.g. INT8 - INT8 weights (deprecated, please use INT8_ASYM instead), "
-            "4BIT_DEFAULT - for 4-bit compression with predefined configs, "
+            "4BIT_DEFAULT - for 4-bit compression with predefined configs with performance-accuracy trade-off, "
+            "4BIT_MAXIMUM - for 4-bit compression with predefined configs for the best performance, "
             "INT4_* - for INT4 compressed weights."
         ),
     )
@@ -1379,6 +1383,22 @@ def main():
         "--all_layers",
         action="store_true",
         help="Compress all layers including embeddings and prediction head",
+    )
+    compression_group.add_argument(
+        "--dataset",
+        help=(
+            "Dataset parameters for data-aware compression in format path,name,split,item_name "
+            "(for example \"wikitext,wikitext-2-v1,train[:1000],text\") "
+            "path,name,split - parameters for load_dataset from datasets "
+            "and item_name is field name in dataset with text."
+        ),
+        default=None,
+        type=str,
+    )
+    compression_group.add_argument(
+        "--awq",
+        action="store_true",
+        help="Apply AWQ algorithm during compression",
     )
     add_stateful_model_arguments(parser)
 

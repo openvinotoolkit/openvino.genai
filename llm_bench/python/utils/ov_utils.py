@@ -13,7 +13,6 @@ import utils.hook_greedy_search
 import utils.hook_beam_search
 
 from utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
-from .ov_model_classes import register_normalized_configs
 import openvino.runtime.opset13 as opset
 
 
@@ -136,14 +135,13 @@ def create_text_gen_model(model_path, device, **kwargs):
         model_path = model_path.parents[2]
 
     ov_config = kwargs['config']
-    register_normalized_configs()
 
     model_path_existed = Path(model_path).exists()
     # load model
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if model_type in ['mpt', 'falcon', 'replit', 'codegen2', 'chatglm']:
+        if model_type in ['replit', 'codegen2', 'chatglm', 'mpt']:
             start = time.perf_counter()
             ov_model = model_class.from_pretrained(
                 model_path,
@@ -151,6 +149,15 @@ def create_text_gen_model(model_path, device, **kwargs):
                 ov_config=ov_config,
                 config=AutoConfig.from_pretrained(model_path, trust_remote_code=True),
                 stateful=kwargs.get("stateful", None)
+            )
+            end = time.perf_counter()
+        elif model_type in ['falcon']:
+            ov_model = model_class.from_pretrained(
+                model_path,
+                device=device,
+                ov_config=ov_config,
+                stateful=kwargs.get("stateful", None),
+                trust_remote_code=False
             )
             end = time.perf_counter()
         else:

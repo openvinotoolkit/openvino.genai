@@ -865,9 +865,156 @@ class CodeGen2Attention(nn.Module):
         return outputs
 
 
+def gptj_apply_rotary_pos_emb(tensor: torch.Tensor, sin: torch.Tensor, cos: torch.Tensor) -> torch.Tensor:
+    sin = torch.repeat_interleave(sin[:, :, None, :], 2, 3)
+    cos = torch.repeat_interleave(cos[:, :, None, :], 2, 3)
+    return (tensor * cos) + (rotate_every_two(tensor) * sin)
+
+
+def gptj_forward(
+    self,
+    hidden_states: torch.FloatTensor,
+    layer_past: Optional[Tuple[torch.Tensor]] = None,
+    attention_mask: Optional[torch.FloatTensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    head_mask: Optional[torch.FloatTensor] = None,
+    use_cache: Optional[bool] = False,
+    output_attentions: Optional[bool] = False,
+) -> Union[
+    Tuple[torch.Tensor, Tuple[torch.Tensor]],
+    Optional[Tuple[torch.Tensor, Tuple[torch.Tensor], Tuple[torch.Tensor, ...]]],
+]:
+    query = self.q_proj(hidden_states)
+    key = self.k_proj(hidden_states)
+    value = self.v_proj(hidden_states)
+
+    query = self._split_heads(query, self.num_attention_heads, self.head_dim, True)
+    key = self._split_heads(key, self.num_attention_heads, self.head_dim, True)
+    value = self._split_heads(value, self.num_attention_heads, self.head_dim, False)
+
+    sincos = self.embed_positions[position_ids]
+    sin, cos = torch.split(sincos, sincos.shape[-1] // 2, dim=-1)
+    print("patched gptj model with simplied position_ids")
+    if self.rotary_dim is not None:
+        k_rot = key[:, :, :, : self.rotary_dim]
+        k_pass = key[:, :, :, self.rotary_dim :]
+
+        q_rot = query[:, :, :, : self.rotary_dim]
+        q_pass = query[:, :, :, self.rotary_dim :]
+
+        k_rot = gptj_apply_rotary_pos_emb(k_rot, sin, cos)
+        q_rot = gptj_apply_rotary_pos_emb(q_rot, sin, cos)
+
+        key = torch.cat([k_rot, k_pass], dim=-1)
+        query = torch.cat([q_rot, q_pass], dim=-1)
+    else:
+        key = gptj_apply_rotary_pos_emb(key, sin, cos)
+        query = gptj_apply_rotary_pos_emb(query, sin, cos)
+
+    key = key.permute(0, 2, 1, 3)
+    query = query.permute(0, 2, 1, 3)
+
+    if layer_past is not None:
+        past_key = layer_past[0]
+        past_value = layer_past[1]
+        key = torch.cat((past_key, key), dim=-2)
+        value = torch.cat((past_value, value), dim=-2)
+
+    if use_cache is True:
+        # Note that this cast is quite ugly, but is not implemented before ROPE as the original codebase keeps the key in float32 all along the computation.
+        # Reference: https://github.com/kingoflolz/mesh-transformer-jax/blob/f8315e3003033b23f21d78361b288953064e0e76/mesh_transformer/layers.py#L128
+        present = (key.to(hidden_states.dtype), value)
+    else:
+        present = None
+
+    # compute self-attention: V x Softmax(QK^T)
+    attn_output, attn_weights = self._attn(query, key, value, attention_mask, head_mask)
+
+    attn_output = self._merge_heads(attn_output, self.num_attention_heads, self.head_dim)
+    attn_output = self.out_proj(attn_output)
+    attn_output = self.resid_dropout(attn_output)
+
+    outputs = (attn_output, present)
+    if output_attentions:
+        outputs += (attn_weights,)
+
+    return outputs  # a, present, (attentions)
+
+
+def raise_on_head_mask(head_mask: Optional[torch.Tensor]):
+    if head_mask is not None:
+        raise ValueError(
+            "layer_head_mask different than None is unsupported for now with BetterTransformer, please"
+            "open a PR or an issue at https://github.com/huggingface/optimum."
+        )
+
+
+def gptj_wrapped_scaled_dot_product(
+    self,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: Optional[torch.Tensor] = None,
+    head_mask: Optional[torch.Tensor] = None,
+):
+    raise_on_head_mask(head_mask)
+    batch_size = query.shape[0]
+
+    mask_value = torch.finfo(value.dtype).min
+    mask_value = torch.full([], mask_value, dtype=value.dtype)
+
+    # in gpt-neo-x and gpt-j the query and keys are always in fp32
+    # thus we need to cast them to the value dtype
+    if self.downcast_qk:
+        query = query.to(value.dtype)
+        key = key.to(value.dtype)
+
+    if batch_size == 1 and attention_mask is not None and attention_mask[0, 0, -1, -1] < -1:
+        raise ValueError("BetterTransformer does not support padding='max_length' with a batch size of 1.")
+
+    dropout_p = self.dropout_prob_attn if self.training else 0.0
+    if batch_size == 1 or self.training:
+        if query.shape[2] > 1:
+            sdpa_result = torch.nn.functional.scaled_dot_product_attention(
+                query, key, value, attn_mask=None, dropout_p=dropout_p, is_causal=True
+            )
+        else:
+            sdpa_result = torch.nn.functional.scaled_dot_product_attention(
+                query, key, value, attn_mask=None, dropout_p=dropout_p, is_causal=False
+            )
+    else:
+        query_length, key_length = query.size(-2), key.size(-2)
+
+        # causal_mask is always [True, ..., True] otherwise, so executing this
+        # is unnecessary
+        if query_length > 1:
+            causal_mask = self.bias[:, :, key_length - query_length : key_length, :key_length].to(torch.bool)
+
+            causal_mask = torch.where(causal_mask, 0, mask_value)
+
+            # torch.Tensor.expand does no memory copy
+
+            if attention_mask is not None:
+                attention_mask = causal_mask + attention_mask
+            else:
+                causal_mask = causal_mask.expand(batch_size, -1, -1, -1)
+
+        sdpa_result = torch.nn.functional.scaled_dot_product_attention(
+            query, key, value, attn_mask=attention_mask, dropout_p=dropout_p, is_causal=False
+        )
+
+    # in gpt-neo-x and gpt-j the query and keys are always in fp32
+    # thus we need to cast them to the value dtype
+    if self.downcast_qk:
+        sdpa_result = sdpa_result.to(value.dtype)
+
+    return sdpa_result, None
+
+
 def register_bettertransformer_config():
     from optimum.bettertransformer.models import BetterTransformerManager
     from optimum.bettertransformer.models.base import BetterTransformerBaseLayer
+    from transformers.models.gptj.modeling_gptj import GPTJAttention
 
     class StableLMAttentionLayerBetterTransformer(
         BetterTransformerBaseLayer, StableLMAttention, nn.Module
@@ -944,6 +1091,41 @@ def register_bettertransformer_config():
         def forward(self, *args, **kwargs):
             return bt_aquila_forward(self, *args, **kwargs)
 
+    class GPTJAttentionLayerBetterTransformer(BetterTransformerBaseLayer, GPTJAttention, nn.Module):
+        _attn = gptj_wrapped_scaled_dot_product
+
+        def __init__(self, layer: "nn.Module", config: "PretrainedConfig"):
+            super().__init__(config)
+            with torch.device("meta"):
+                super(BetterTransformerBaseLayer, self).__init__(config)
+
+            submodules = [
+                "k_proj",
+                "v_proj",
+                "q_proj",
+                "out_proj",
+                "attn_dropout",
+                "resid_dropout",
+                "bias",
+                "scale_attn",
+                "masked_bias",
+            ]
+            # Attribute only for transformers>=4.28
+            if hasattr(layer, "embed_positions"):
+                submodules.append("embed_positions")
+
+            for attr in submodules:
+                setattr(self, attr, getattr(layer, attr))
+
+            self.module_mapping = None
+            self.original_layers_mapping = {submodule: submodule for submodule in submodules}
+
+            self.downcast_qk = True
+            self.dropout_prob_attn = config.attn_pdrop
+
+        def forward(self, *args, **kwargs):
+            return gptj_forward(self, *args, **kwargs)
+
     BetterTransformerManager.MODEL_MAPPING["stablelm_epoch"] = {
         "Attention": StableLMAttentionLayerBetterTransformer
     }
@@ -961,6 +1143,10 @@ def register_bettertransformer_config():
             "_prepare_decoder_attention_mask",
             _bt_prepare_decoder_attention_mask,
         ),
+    }
+
+    BetterTransformerManager.MODEL_MAPPING["gptj"] = {
+        "GPTJAttention": GPTJAttentionLayerBetterTransformer
     }
 
     BetterTransformerManager.NOT_REQUIRES_NESTED_TENSOR.add("stablelm_epoch")
