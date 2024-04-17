@@ -7,6 +7,7 @@
 #include <list>
 #include <cstdlib>
 #include <limits>
+#include <map>
 
 #include "openvino/runtime/tensor.hpp"
 

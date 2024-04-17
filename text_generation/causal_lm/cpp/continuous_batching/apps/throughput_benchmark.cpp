@@ -8,50 +8,26 @@
 #include <nlohmann/json.hpp>
 #include <cxxopts.hpp>
 
-#include "paged_attention.hpp"
-#include "llm_engine.hpp"
+#include "tokenizer.hpp"
+#include "timer.hpp"
+#include "continuous_batching_pipeline.hpp"
 
 namespace {
 
-constexpr size_t BATCH_SIZE = 1;
-
-std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string prompt) {
-    tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
-    tokenizer.infer();
-    return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
-}
-
-std::string detokenize(ov::InferRequest& detokenizer, std::vector<int64_t> tokens) {
-    constexpr size_t BATCH_SIZE = 1;
-    detokenizer.set_input_tensor(ov::Tensor{ov::element::i64, {BATCH_SIZE, tokens.size()}, tokens.data()});
-    detokenizer.infer();
-    return detokenizer.get_output_tensor().data<std::string>()[0];
-}
-
-std::string detokenize(ov::InferRequest& detokenizer, ov::Tensor tokens) {
-    detokenizer.set_input_tensor(tokens);
-    detokenizer.infer();
-    return detokenizer.get_output_tensor().data<std::string>()[0];
-}
-
-std::vector<std::pair<ov::Tensor, SamplingParameters>> filtered_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_input_len, const size_t max_output_len) {
+std::vector<std::pair<std::string, SamplingParameters>> filtered_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_input_len, const size_t max_output_len) {
     std::ifstream json_file(dataset_path.c_str());
     OPENVINO_ASSERT(json_file.is_open(), "Cannot open dataset file");
 
-    Timer parse_timer;
+    // from vLLM tput benchmark
+    const float dataset_size_coeff = 1.2f;
+
     nlohmann::json json_dataset = nlohmann::json::parse(json_file);
-    std::vector<std::pair<ov::Tensor, SamplingParameters>> sampled_dataset, dataset;
-    const size_t num_prompt_candidates = static_cast<size_t>(num_prompts * 1.2);
+    std::vector<std::pair<std::string, SamplingParameters>> sampled_dataset, dataset;
+    const size_t num_prompt_candidates = static_cast<size_t>(num_prompts * dataset_size_coeff);
     sampled_dataset.reserve(num_prompt_candidates);
     dataset.reserve(num_prompt_candidates);
 
-    ov::Core core;
-    core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
-
-    ov::InferRequest tokenizer = core.compile_model(
-        models_path + "/openvino_tokenizer.xml", "CPU", ov::enable_profiling(true)).create_infer_request();
-
-    Timer tokenizer_timer;
+    Tokenizer tokenizer(models_path);
     std::map<std::string, double> perf_counters;
 
     for (auto json_data_iterator = json_dataset.begin(); json_data_iterator != json_dataset.end() && dataset.size() < num_prompt_candidates; ++json_data_iterator) {
@@ -65,12 +41,10 @@ std::vector<std::pair<ov::Tensor, SamplingParameters>> filtered_dataset(const st
         std::string human_question = json_data["conversations"][0]["value"];
         std::string gpt_answer = json_data["conversations"][1]["value"];
 
-        auto [_input_ids_prompt, _attention_mask_prompt] = tokenize(tokenizer, human_question);
-        ov::Tensor _input_ids_prompt_clone(_input_ids_prompt.get_element_type(), _input_ids_prompt.get_shape());
-        _input_ids_prompt.copy_to(_input_ids_prompt_clone);
+        ov::Tensor _input_ids_prompt = tokenizer.encode(human_question);
+        ov::Tensor _input_ids_answer = tokenizer.encode(gpt_answer);
 
-        auto [_input_ids_answer, _attention_mask_answer] = tokenize(tokenizer, gpt_answer);
-        size_t input_len = _input_ids_prompt_clone.get_size(), output_len = _input_ids_answer.get_size();
+        size_t input_len = _input_ids_prompt.get_size(), output_len = _input_ids_answer.get_size();
 
         // Prune too short sequences.
         if (input_len < 4 || output_len < 4)
@@ -82,19 +56,14 @@ std::vector<std::pair<ov::Tensor, SamplingParameters>> filtered_dataset(const st
         SamplingParameters greedy_search = SamplingParameters::greedy();
         greedy_search.max_new_tokens = std::min(max_output_len, output_len);
 
-        dataset.push_back({ _input_ids_prompt_clone, greedy_search });
+        dataset.push_back({ human_question, greedy_search });
     }
-
-    std::cout << "Total Tokenization time: " << tokenizer_timer.current_in_milli() / 1000. << " secs" << std::endl;
 
     // sample dataset
-    size_t total_i = 0, total_o = 0;
-    for (size_t i = 0; i < num_prompts; ++i) {
-        auto sample = dataset[rand() % dataset.size()];
-        total_i += sample.first.get_size();
-        total_o += sample.second.max_new_tokens;
-        sampled_dataset.push_back(sample);
-    }
+    srand(42);
+    std::generate_n(std::back_inserter(sampled_dataset), num_prompts, [&] {
+        return dataset[rand() % dataset.size()];
+    });
 
     return sampled_dataset;
 }
@@ -135,39 +104,14 @@ int main(int argc, char* argv[]) try {
     const size_t max_input_len = result["max_input_len"].as<size_t>();
     const size_t max_output_len = result["max_output_len"].as<size_t>();
 
-    //
-    // Compile models
-    //
-
-    ov::Core core;
-    core.add_extension<PagedAttention>();
-
-    // The model can be compiled for GPU as well
-    std::shared_ptr<ov::Model> model = core.read_model(models_path + "/vllm_optimum_openvino_model.xml");
-    // TODO: reshape model according to plugin desired shape condifuration
-    const ov::ParameterVector& parameters = model->get_parameters();
-    ov::PartialShape pshape = ov::PartialShape::dynamic(4);
-    for (size_t decoder_layer_id = 0; decoder_layer_id < NUM_DECODER_LAYERS; ++decoder_layer_id) {
-        parameters[2 + 2 * decoder_layer_id]->set_element_type(kv_cache_precision);
-        parameters[2 + 2 * decoder_layer_id + 1]->set_element_type(kv_cache_precision);
-        parameters[2 + 2 * decoder_layer_id]->set_partial_shape(pshape);
-        parameters[2 + 2 * decoder_layer_id + 1]->set_partial_shape(pshape);
-    }
-    model->validate_nodes_and_infer_types();
-
-    //
     // Create requests for generation
-    //
+    std::vector<std::pair<std::string, SamplingParameters>> dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
 
-    std::vector<std::pair<ov::Tensor, SamplingParameters>> dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
-
-    //
     // Perform the first inference
-    //
-
     SchedulerConfig scheduler_config {
         .max_num_batched_tokens = max_batch_size,
-        .num_kv_blocks = NUM_BLOCKS,
+        .num_kv_blocks = 36800,
+        .block_size = 16,
         .dynamic_split_fuse = dynamic_split_fuse,
         .max_num_seqs = 256, // not used if dynamic_split_fuse=True
         .max_paddings = 256, // not used if dynamic_split_fuse=True
@@ -185,32 +129,28 @@ int main(int argc, char* argv[]) try {
     std::cout << "\tMax input length: " << max_input_len << std::endl;
     std::cout << "\tMax output length: " << max_output_len << std::endl;
 
-    //
     // Benchmarking
-    //
-
-    ov::InferRequest request = core.compile_model(model, "CPU", ov::enable_profiling(true), ov::hint::enable_hyper_threading(false)).create_infer_request();
-    LLMEngine engine(request, scheduler_config);
+    ContinuousBatchingPipeline pipe(models_path, scheduler_config/*, ov::enable_profiling(true)*/);
 
     for (size_t request_id = 0; request_id < dataset.size(); ++request_id) {
-        engine.add_request(request_id, dataset[request_id].first, dataset[request_id].second);
+        pipe.add_request(request_id, dataset[request_id].first, dataset[request_id].second);
     }
 
     Timer timer;
     size_t total_input_tokens = 0, total_output_tokens = 0;
     double paged_attention_time_ms = 0.0, matmul_time_ms = 0.0, infer_total_ms = 0.0;
 
-    for (size_t num_finished = 0; engine.has_running_requests(); ) {
-        std::vector<GenerationResult> results = engine.step();
+    for (size_t num_finished = 0; pipe.has_running_requests(); ) {
+        std::vector<GenerationResult> results = pipe.step();
         if (!results.empty()) {
             num_finished += results.size();
             for (size_t output_id = 0; output_id < results.size(); ++output_id) {
                 size_t output_len = results[output_id].m_generation_ids[0].size();
-                size_t input_len = dataset[results[output_id].m_request_id].first.get_size();
+                size_t input_len = dataset[results[output_id].m_request_id].first.size();
                 // check correctness of generated length
                 OPENVINO_ASSERT(dataset[results[output_id].m_request_id].second.max_new_tokens == output_len);
                 // accumulate input tokens
-                total_input_tokens += dataset[results[output_id].m_request_id].first.get_size();
+                total_input_tokens += input_len;
                 // accumulate output tokens
                 total_output_tokens += output_len;
             }
@@ -218,16 +158,16 @@ int main(int argc, char* argv[]) try {
         }
 
         // collect performance metrics
-        std::vector<ov::ProfilingInfo> profiling_info = request.get_profiling_info();
-        for (const ov::ProfilingInfo& info : profiling_info) {
-            double current_time = info.real_time.count();
-            if (info.node_type == "PagedAttentionExtension") {
-                paged_attention_time_ms += current_time;
-            } else if (info.node_type == "FullyConnected") {
-                matmul_time_ms += current_time;
-            }
-            infer_total_ms += current_time;
-        }
+        // std::vector<ov::ProfilingInfo> profiling_info = request.get_profiling_info();
+        // for (const ov::ProfilingInfo& info : profiling_info) {
+        //     double current_time = info.real_time.count();
+        //     if (info.node_type == "PagedAttentionExtension") {
+        //         paged_attention_time_ms += current_time;
+        //     } else if (info.node_type == "FullyConnected") {
+        //         matmul_time_ms += current_time;
+        //     }
+        //     infer_total_ms += current_time;
+        // }
     }
 
     double total_time_in_ms = timer.current_in_milli();

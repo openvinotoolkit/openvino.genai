@@ -5,9 +5,14 @@
 #pragma once
 
 #include <cstdlib>
+#include <limits>
 #include <functional>
 
-enum class StopCriteria {early, heuristic, never};
+enum class StopCriteria {
+    early,
+    heuristic,
+    never
+};
 
 // forward declaration
 class Sequence;
@@ -48,12 +53,12 @@ struct SamplingParameters {
         return beam_search;
     }
 
-    static SamplingParameters multimomial() {
-        SamplingParameters multimomial;
-        multimomial.temperature = 0.8f;
-        multimomial.top_p = 0.8;
-        multimomial.top_k = 20;
-        return multimomial;
+    static SamplingParameters multinomial() {
+        SamplingParameters multinomial;
+        multinomial.temperature = 0.8f;
+        multinomial.top_p = 0.8;
+        multinomial.top_k = 20;
+        return multinomial;
     }
 
     bool is_gready_sampling() const {

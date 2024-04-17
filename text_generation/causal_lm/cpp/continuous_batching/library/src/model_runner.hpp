@@ -14,9 +14,9 @@
 #include "timer.hpp"
 
 class ModelRunner {
-    ov::InferRequest & m_request;
+    ov::InferRequest m_request;
 public:
-    ModelRunner(ov::InferRequest & request) :
+    explicit ModelRunner(ov::InferRequest request) :
         m_request(request) { }
 
     ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
