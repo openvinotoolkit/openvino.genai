@@ -5,11 +5,7 @@ import csv
 from pathlib import Path
 
 
-def output_comments(result, use_case, writer):
-    for key in result.keys():
-        result[key] = ''
-    writer.writerow(result)
-
+def output_comments(path, use_case):
     comment_list = []
     if use_case == 'text_gen' or use_case == 'code_gen':
         comment_list.append('input_size: Input token size')
@@ -49,13 +45,17 @@ def output_comments(result, use_case, writer):
         'the value in -1 iteration row is the maximum value of all available shared memory numbers in iterations',
     )
 
-    for comments in comment_list:
-        result['iteration'] = comments
-        writer.writerow(result)
+    with open(path, 'a+') as f:
+        csv_write = csv.writer(f)
+        csv_write.writerow([])
+        for comments in comment_list:
+            csv_write.writerow([comments])
 
 
-def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision):
+def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision, pid, tid):
     header = [
+        'pid',
+        'tid',
         'iteration',
         'model',
         'framework',
@@ -98,6 +98,8 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             total_max_rss_mem_consumption = 0
             total_max_shared_mem_consumption = 0
             result = {}
+            result['pid'] = pid
+            result['tid'] = tid
             result['model'] = model
             result['framework'] = framework
             result['device'] = device
@@ -197,5 +199,3 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
                 if total_max_shared_mem_consumption > 0:
                     result['max_shared_mem(MB)'] = total_max_shared_mem_consumption
                 writer.writerow(result)
-
-            output_comments(result, model_args['use_case'], writer)

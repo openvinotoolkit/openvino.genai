@@ -118,7 +118,7 @@ def build_ov_tokenizer(hf_tokenizer):
     return hf_tokenizer
 
 
-def create_text_gen_model(model_path, device, **kwargs):
+def create_text_gen_model(model_path, device, start_of_log, **kwargs):
     """Create text generation model.
 
     - model_path: can be model_path or IR path
@@ -180,15 +180,15 @@ def create_text_gen_model(model_path, device, **kwargs):
         bench_hook = utils.hook_greedy_search.GreedySearchHook()
     bench_hook.new_forward(ov_model, model_type)
     from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f'{start_of_log}From pretrained time: {from_pretrained_time:.2f}s')
     # load token
     tokenizer = token_class.from_pretrained(model_path, trust_remote_code=True)
     if kwargs.get("convert_tokenizer", False):
         tokenizer = build_ov_tokenizer(tokenizer)
-    return ov_model, tokenizer, from_pretrained_time, bench_hook
+    return ov_model, tokenizer, from_pretrained_time
 
 
-def create_image_gen_model(model_path, device, **kwargs):
+def create_image_gen_model(model_path, device, start_of_log, **kwargs):
     default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
     model_type = kwargs.get('model_type', default_model_type)
     model_class = OV_MODEL_CLASSES_MAPPING[model_type]
@@ -201,7 +201,7 @@ def create_image_gen_model(model_path, device, **kwargs):
         ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
         end = time.perf_counter()
     from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f'{start_of_log}From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, from_pretrained_time
 
 

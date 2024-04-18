@@ -5,11 +5,8 @@
 import time
 import torch
 import warnings
-import transformers
 import torch.distributed as dist
-import logging as log
 from torch import nn
-from packaging import version
 from typing import Optional, Tuple, Union, List
 from transformers.generation.stopping_criteria import (
     StoppingCriteriaList,
@@ -18,7 +15,8 @@ from transformers.generation.stopping_criteria import (
 from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.beam_search import BeamScorer
 from transformers.utils import ModelOutput
-import utils.hook_beam_search as hook_beam
+import utils.global_var
+import threading
 
 
 class BeamSearchEncoderDecoderOutput(ModelOutput):
@@ -231,6 +229,7 @@ def old_beam_search(
         beam_scores[:, 1:] = -1e9
         beam_scores = beam_scores.view((batch_size * num_beams,))
 
+        thread_id = threading.get_native_id()
         this_peer_finished = False  # used by synced_gpus only
         while True:
             tic = time.perf_counter()
@@ -252,7 +251,9 @@ def old_beam_search(
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
             )
-            hook_beam.tm_infer_list.append(time.perf_counter() - tic_infer)
+            utils.global_var.get_value('thread_lock').acquire()
+            utils.global_var.get_value(thread_id)['tm_infer_list'].append(time.perf_counter() - tic_infer)
+            utils.global_var.get_value('thread_lock').release()
 
             if synced_gpus and this_peer_finished:
                 cur_len = cur_len + 1
@@ -327,7 +328,9 @@ def old_beam_search(
 
             # increase cur_len
             cur_len = cur_len + 1
-            hook_beam.tm_list.append(time.perf_counter() - tic)
+            utils.global_var.get_value('thread_lock').acquire()
+            utils.global_var.get_value(thread_id)['tm_list'].append(time.perf_counter() - tic)
+            utils.global_var.get_value('thread_lock').release()            
             if beam_scorer.is_done or stopping_criteria(input_ids, scores):
                 if not synced_gpus:
                     break

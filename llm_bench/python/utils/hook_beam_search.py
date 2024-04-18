@@ -19,6 +19,8 @@ from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.beam_search import BeamScorer
 from transformers.utils import ModelOutput
 import utils.hook_beam_search_old as hook_old_beam
+import utils.global_var
+import threading
 
 
 class GenerateBeamDecoderOnlyOutput(ModelOutput):
@@ -256,7 +258,7 @@ def new_beam_search(
         this_peer_finished = False
 
         decoder_prompt_len = input_ids.shape[-1]  # record the prompt length of decoder
-
+        thread_id = threading.get_native_id()
         while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
             tic = time.perf_counter()
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
@@ -304,7 +306,9 @@ def new_beam_search(
                     output_attentions=output_attentions,
                     output_hidden_states=output_hidden_states,
                 )
-            tm_infer_list.append(time.perf_counter() - tic_infer)
+            utils.global_var.get_value('thread_lock').acquire()
+            utils.global_var.get_value(thread_id)['tm_infer_list'].append(time.perf_counter() - tic_infer)
+            utils.global_var.get_value('thread_lock').release()
 
             if synced_gpus and this_peer_finished:
                 cur_len = cur_len + 1
@@ -385,7 +389,9 @@ def new_beam_search(
 
             # increase cur_len
             cur_len = cur_len + 1
-            tm_list.append(time.perf_counter() - tic)
+            utils.global_var.get_value('thread_lock').acquire()
+            utils.global_var.get_value(thread_id)['tm_list'].append(time.perf_counter() - tic)
+            utils.global_var.get_value('thread_lock').release()
             if beam_scorer.is_done or all(stopping_criteria(input_ids, scores)):
                 this_peer_finished = True
 
@@ -435,32 +441,6 @@ def new_beam_search(
 
 
 class BeamSearchHook:
-    def __init__(self):
-        """Clear the time list."""
-        global tm_list
-        tm_list.clear()
-        global tm_infer_list
-        tm_infer_list.clear()
-
-    def clear_time_list(self):
-        """Clear the time list."""
-        global tm_list
-        tm_list.clear()
-
-    def get_time_list(self):
-        """Return the time list."""
-        return tm_list
-
-    def clear_time_infer_list(self):
-        """Clear the infer time list."""
-        global tm_infer_list
-        tm_infer_list.clear()
-
-    def get_time_infer_list(self):
-        """Return the infer time list."""
-        global tm_infer_list
-        return tm_infer_list
-
     def new_forward(self, model, model_type=None):
         """Define a new beam search function."""
         min_version = version.parse(hook_common.TRANS_MIN_VERSION)

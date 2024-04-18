@@ -14,7 +14,8 @@ from transformers.generation.stopping_criteria import (
 from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
-import utils.hook_greedy_search as hook_greedy
+import utils.global_var
+import threading
 
 
 class GreedySearchDecoderOnlyOutput(ModelOutput):
@@ -192,6 +193,7 @@ def old_greedy_search(
         unfinished_sequences = torch.ones(input_ids.shape[0], dtype=torch.long, device=input_ids.device)
 
         this_peer_finished = False  # used by synced_gpus only
+        thread_id = threading.get_native_id()
         while True:
             tic = time.perf_counter()
             if synced_gpus:
@@ -215,7 +217,9 @@ def old_greedy_search(
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
             )
-            hook_greedy.tm_infer_list.append(time.perf_counter() - tic_infer)
+            utils.global_var.get_value('thread_lock').acquire()
+            utils.global_var.get_value(thread_id)['tm_infer_list'].append(time.perf_counter() - tic_infer)
+            utils.global_var.get_value('thread_lock').release()
 
             if synced_gpus and this_peer_finished:
                 continue  # don't waste resources running the code we don't need
@@ -273,7 +277,9 @@ def old_greedy_search(
             # stop if we exceed the maximum length
             if stopping_criteria(input_ids, scores):
                 this_peer_finished = True
-            hook_greedy.tm_list.append(time.perf_counter() - tic)
+            utils.global_var.get_value('thread_lock').acquire()
+            utils.global_var.get_value(thread_id)['tm_list'].append(time.perf_counter() - tic)
+            utils.global_var.get_value('thread_lock').release()
             if this_peer_finished and not synced_gpus:
                 break
 
