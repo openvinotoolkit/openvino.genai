@@ -74,6 +74,10 @@ public:
         m_block_manager.fork_sequence(parent_id, child_id);
     }
 
+    const SchedulerConfig& get_config() const {
+        return m_config;
+    }
+
 private:
     static size_t _num_running_sequence_groups(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         size_t num_running = 0;
@@ -160,13 +164,13 @@ private:
                 size_t num_scheduled_tokens = std::min(num_tokens_in_megabatch, num_available_tokens);
 
                 // apply KV cache limitations
-                size_t available_slots = sequence_group->get_num_blocks() * BLOCK_SIZE - sequence_group->get_num_processed_tokens(),
+                size_t available_slots = sequence_group->get_num_blocks() * m_config.block_size - sequence_group->get_num_processed_tokens(),
                        required_slots = num_scheduled_tokens > available_slots ? num_scheduled_tokens - available_slots : 0;
-                size_t num_required_blocks = (required_slots + BLOCK_SIZE - 1) / BLOCK_SIZE, num_free_blocks = m_block_manager.num_free_blocks();
+                size_t num_required_blocks = (required_slots + m_config.block_size - 1) / m_config.block_size, num_free_blocks = m_block_manager.num_free_blocks();
                 size_t num_scheduled_blocks = std::min(num_required_blocks, num_free_blocks);
                 // some scheduled blocks can be no fully occupied, so we need to take min between num_scheduled_blocks
                 // and total "scheduled capacity"
-                num_scheduled_tokens = std::min(num_scheduled_tokens, available_slots + num_scheduled_blocks * BLOCK_SIZE);
+                num_scheduled_tokens = std::min(num_scheduled_tokens, available_slots + num_scheduled_blocks * m_config.block_size);
 
                 if (num_scheduled_tokens > 0) {
                     // allocate KV blocks if required
@@ -297,7 +301,7 @@ private:
                     break;
 
                 // apply KV cache limitations
-                const size_t num_required_blocks = (sequence_len + BLOCK_SIZE - 1) / BLOCK_SIZE;
+                const size_t num_required_blocks = (sequence_len + m_config.block_size - 1) / m_config.block_size;
                 if (!m_block_manager.can_allocate_blocks(num_required_blocks))
                     break;
 

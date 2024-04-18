@@ -18,7 +18,7 @@ class DeviceConfig {
 public:
     DeviceConfig(ov::Core& core, const SchedulerConfig& scheduling_config, const ModelConfig& model_config, const std::string& device) {
         m_device = device;
-        
+
         if (m_device == "CPU") {
             auto inference_precision = core.get_property(device, ov::hint::inference_precision);
             m_kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;

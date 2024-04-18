@@ -83,12 +83,13 @@ public:
 
         m_scheduler = std::make_shared<Scheduler>(scheduler_config);
         // and finally create model runner
-        m_model_runner = std::make_shared<ModelRunner>(infer_request);
+        m_model_runner = std::make_shared<ModelRunner>(infer_request, scheduler_config);
         m_sampler = std::make_shared<Sampler>();
     }
 
-    void add_request(uint64_t request_id, std::string prompt, SamplingParameters sampling_params) {
-        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, m_tokenizer->encode(prompt), sampling_params);
+    void add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, m_tokenizer->encode(prompt),
+                                                                            sampling_params, m_scheduler->get_config().block_size);
         m_requests.push_back(sequence_group);
     }
 
@@ -167,8 +168,7 @@ public:
         return !m_requests.empty();
     }
 
-    // more high level interface
-    std::vector<GenerationResult> generate(const std::vector<std::string> prompts, std::vector<SamplingParameters> sampling_params) {
+    std::vector<GenerationResult> generate(const std::vector<std::string> prompts, std::vector<GenerationConfig> sampling_params) {
         OPENVINO_ASSERT(!has_running_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
         OPENVINO_ASSERT(prompts.size() == sampling_params.size());
 
@@ -199,7 +199,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::string& models
     m_impl = std::make_shared<Impl>(models_path, scheduler_config);
 }
 
-void ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, SamplingParameters sampling_params) {
+void ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
     return m_impl->add_request(request_id, prompt, sampling_params);
 }
 
@@ -211,6 +211,6 @@ bool ContinuousBatchingPipeline::has_running_requests() const {
     return m_impl->has_running_requests();
 }
 
-std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, std::vector<SamplingParameters> sampling_params) {
+std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, std::vector<GenerationConfig> sampling_params) {
     return m_impl->generate(prompts, sampling_params);
 }

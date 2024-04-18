@@ -15,9 +15,11 @@
 
 class ModelRunner {
     ov::InferRequest m_request;
+    SchedulerConfig m_scheduler_config;
 public:
-    explicit ModelRunner(ov::InferRequest request) :
-        m_request(request) { }
+    ModelRunner(ov::InferRequest request, const SchedulerConfig& scheduler_config) :
+        m_request(request),
+        m_scheduler_config(scheduler_config) { }
 
     ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
         return scheduler_output.is_prompt ?
@@ -87,10 +89,10 @@ private:
 
                 // compute slot_id
                 for (size_t token_id = 0; token_id < max_seq_len; ++token_id) {
-                    size_t logical_block_id = token_id / BLOCK_SIZE, block_offset = token_id % BLOCK_SIZE;
+                    size_t logical_block_id = token_id / m_scheduler_config.block_size, block_offset = token_id % m_scheduler_config.block_size;
                     int64_t slot_id = token_id < context_len ?
-                        BLOCK_SIZE * kv_blocks[logical_block_id]->get_index() + block_offset :
-                        -1 /* PAD token ID */ ;
+                        m_scheduler_config.block_size * kv_blocks[logical_block_id]->get_index() + block_offset :
+                        -1 /* invalid slot ID */ ;
                     slot_mapping_data[token_id] = slot_id;
                 }
 
@@ -199,8 +201,8 @@ private:
                         sequence->get_generated_ids()[position_id - sequence_group->get_prompt_len()];
 
                     // compute slot_id
-                    size_t physical_block_id = position_id / BLOCK_SIZE, block_offset = position_id % BLOCK_SIZE;
-                    int64_t slot_id = BLOCK_SIZE * kv_blocks[physical_block_id]->get_index() + block_offset;
+                    size_t physical_block_id = position_id / m_scheduler_config.block_size, block_offset = position_id % m_scheduler_config.block_size;
+                    int64_t slot_id = m_scheduler_config.block_size * kv_blocks[physical_block_id]->get_index() + block_offset;
                     slot_mapping_data[token_id] = slot_id;
                 }
 

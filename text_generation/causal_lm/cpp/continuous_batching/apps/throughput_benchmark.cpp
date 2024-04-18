@@ -14,7 +14,7 @@
 
 namespace {
 
-std::vector<std::pair<std::string, SamplingParameters>> filtered_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_input_len, const size_t max_output_len) {
+std::vector<std::pair<std::string, GenerationConfig>> filtered_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_input_len, const size_t max_output_len) {
     std::ifstream json_file(dataset_path.c_str());
     OPENVINO_ASSERT(json_file.is_open(), "Cannot open dataset file");
 
@@ -22,7 +22,7 @@ std::vector<std::pair<std::string, SamplingParameters>> filtered_dataset(const s
     const float dataset_size_coeff = 1.2f;
 
     nlohmann::json json_dataset = nlohmann::json::parse(json_file);
-    std::vector<std::pair<std::string, SamplingParameters>> sampled_dataset, dataset;
+    std::vector<std::pair<std::string, GenerationConfig>> sampled_dataset, dataset;
     const size_t num_prompt_candidates = static_cast<size_t>(num_prompts * dataset_size_coeff);
     sampled_dataset.reserve(num_prompt_candidates);
     dataset.reserve(num_prompt_candidates);
@@ -53,7 +53,7 @@ std::vector<std::pair<std::string, SamplingParameters>> filtered_dataset(const s
         if (input_len > max_input_len || (input_len + output_len) > 2048)
             continue;
 
-        SamplingParameters greedy_search = SamplingParameters::greedy();
+        GenerationConfig greedy_search = GenerationConfig::greedy();
         greedy_search.max_new_tokens = std::min(max_output_len, output_len);
 
         dataset.push_back({ human_question, greedy_search });
@@ -105,7 +105,7 @@ int main(int argc, char* argv[]) try {
     const size_t max_output_len = result["max_output_len"].as<size_t>();
 
     // Create requests for generation
-    std::vector<std::pair<std::string, SamplingParameters>> dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
+    std::vector<std::pair<std::string, GenerationConfig>> dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
 
     // Perform the first inference
     SchedulerConfig scheduler_config {

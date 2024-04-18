@@ -101,7 +101,7 @@ struct Beam {
         return m_sequence->get_generated_len();
     }
 
-    float get_beam_search_score(const SamplingParameters& sampling_params) const {
+    float get_beam_search_score(const GenerationConfig& sampling_params) const {
         float cumulative_log_prob = m_sequence->get_cumulative_log_probs(), highest_attainable_score = 0.0f;
         float current_length = m_sequence->get_generated_len() + 1;
 
@@ -127,7 +127,7 @@ struct Group {
     std::vector<Beam> min_heap;  // The worst of the best completed beams is the first
     bool done = false;
 
-    int64_t finish(Beam beam, const SamplingParameters& sampling_params) {
+    int64_t finish(Beam beam, const GenerationConfig& sampling_params) {
         int64_t preeempted_sequence_id = -1;
         float generated_len = beam.get_generated_len() + 1;
         beam.m_score /= std::pow(generated_len, sampling_params.length_penalty);
@@ -143,7 +143,7 @@ struct Group {
         return preeempted_sequence_id;
     }
 
-    bool is_done(const SamplingParameters& sampling_params) {
+    bool is_done(const GenerationConfig& sampling_params) {
         if (min_heap.size() == sampling_params.group_size) {
             const Beam& best_running_sequence = ongoing.front(), & worst_finished_sequence = min_heap.front();
 
@@ -170,7 +170,7 @@ struct SamplerOutput {
 
 class GroupBeamSearcher {
     SequenceGroup::Ptr m_sequence_group;
-    SamplingParameters m_parameters;
+    GenerationConfig m_parameters;
     std::vector<Group> m_groups;
 public:
     GroupBeamSearcher(const GroupBeamSearcher&) = default;
@@ -234,7 +234,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         size_t num_running_sequences = sequence_group->num_running_seqs();
         size_t actual_seq_len = sequence_group->get_num_scheduled_tokens(); // points to a token which needs to be sampled
         size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
-        const SamplingParameters& sampling_params = sequence_group->get_sampling_parameters();
+        const GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
 
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);

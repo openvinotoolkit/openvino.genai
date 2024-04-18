@@ -6,7 +6,7 @@
 #include <openvino/openvino.hpp>
 
 #include "scheduler_config.hpp"
-#include "sampling_parameters.hpp"
+#include "generation_config.hpp"
 
 struct GenerationResult {
     // request ID
@@ -27,12 +27,12 @@ public:
     ContinuousBatchingPipeline(const std::string& models_path,
                                const SchedulerConfig& scheduler_config);
 
-    void add_request(uint64_t request_id, std::string prompt, SamplingParameters sampling_params);
+    void add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params);
 
     std::vector<GenerationResult> step();
 
     bool has_running_requests() const;
 
-    // more high level interface
-    std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, std::vector<SamplingParameters> sampling_params);
+    // more high level interface, which can process multiple prompts in continuous batching manner
+    std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, std::vector<GenerationConfig> sampling_params);
 };

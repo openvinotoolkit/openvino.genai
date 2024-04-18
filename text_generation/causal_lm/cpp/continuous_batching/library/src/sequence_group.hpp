@@ -6,7 +6,7 @@
 #include <vector>
 #include <cstdlib>
 
-#include "sampling_parameters.hpp"
+#include "generation_config.hpp"
 
 enum class SequenceStatus {
     RUNNING = 0,
@@ -95,7 +95,8 @@ public:
 class SequenceGroup {
     uint64_t m_request_id;
     std::vector<Sequence::Ptr> m_sequences;
-    SamplingParameters m_sampling_params;
+    GenerationConfig m_sampling_params;
+    std::size_t m_block_size;
     TokenIds m_prompt_ids;
  
     // amount of processed tokens, e.g. prompt can be processed using multiple consequence inferences
@@ -106,20 +107,20 @@ class SequenceGroup {
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
 
-    SequenceGroup(uint64_t request_id, const SamplingParameters& sampling_params)
+    SequenceGroup(uint64_t request_id, const GenerationConfig& sampling_params, std::size_t block_size)
         : m_request_id(request_id),
-          m_sampling_params(sampling_params) { }
+          m_sampling_params(sampling_params),
+          m_block_size(block_size) { }
 public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
 
-    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const SamplingParameters& sampling_params)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params) {
+    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const GenerationConfig& sampling_params, std::size_t block_size)
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size) {
     }
 
-    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const SamplingParameters& sampling_params)
-        : m_request_id(request_id),
-          m_sampling_params(sampling_params) {
+    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const GenerationConfig& sampling_params, std::size_t block_size)
+        : SequenceGroup(request_id, sampling_params, block_size) {
         add_sequence(Sequence::create());
 
         m_prompt_ids.resize(input_ids.get_size());
@@ -241,10 +242,6 @@ public:
         return get_num_processed_tokens() + get_num_scheduled_tokens();
     }
 
-    size_t get_num_logical_blocks() const {
-        return (get_context_len() + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    }
-
     bool requires_sampling() const {
         return get_context_len() >= get_prompt_len();
     }
@@ -277,9 +274,13 @@ public:
         return m_prompt_ids;
     }
 
+    size_t get_num_logical_blocks() const {
+        return (get_context_len() + m_block_size - 1) / m_block_size;
+    }
+
     // requires number of physical blocks for next generation
     size_t get_num_blocks() const {
-        return (get_context_len() + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        return get_num_logical_blocks();
     }
 
     Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
@@ -287,7 +288,7 @@ public:
         return m_sequences.back();
     }
 
-    const SamplingParameters& get_sampling_parameters() const {
+    const GenerationConfig& get_sampling_parameters() const {
         return m_sampling_params;
     }
 };

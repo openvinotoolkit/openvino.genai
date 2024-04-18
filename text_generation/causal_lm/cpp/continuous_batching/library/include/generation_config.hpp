@@ -17,7 +17,7 @@ enum class StopCriteria {
 // forward declaration
 class Sequence;
 
-struct SamplingParameters {
+struct GenerationConfig {
     // Generic
     size_t max_new_tokens = 100;
     bool ignore_eos = false;
@@ -37,15 +37,15 @@ struct SamplingParameters {
     int top_k = -1; // maybe to assign vocab_size ?
     float top_p = 1.0f; // by default convsider all tokens
 
-    static SamplingParameters greedy() {
-        SamplingParameters greedy_params;
+    static GenerationConfig greedy() {
+        GenerationConfig greedy_params;
         greedy_params.temperature = 0.0f;
         greedy_params.ignore_eos = true;
         return greedy_params;
     }
 
-    static SamplingParameters beam_search() {
-        SamplingParameters beam_search;
+    static GenerationConfig beam_search() {
+        GenerationConfig beam_search;
         beam_search.n_groups = 2;
         beam_search.group_size = 2;
         beam_search.max_new_tokens = 100;
@@ -53,8 +53,8 @@ struct SamplingParameters {
         return beam_search;
     }
 
-    static SamplingParameters multinomial() {
-        SamplingParameters multinomial;
+    static GenerationConfig multinomial() {
+        GenerationConfig multinomial;
         multinomial.temperature = 0.8f;
         multinomial.top_p = 0.8;
         multinomial.top_k = 20;

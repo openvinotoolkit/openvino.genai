@@ -17,14 +17,14 @@ int main(int argc, char* argv[]) try {
         "What is OpenVINO?",
     };
 
-    std::vector<SamplingParameters> sampling_params_examples {
-        SamplingParameters::beam_search(),
-        // SamplingParameters::greedy(),
-        // SamplingParameters::multinomial(),
+    std::vector<GenerationConfig> sampling_params_examples {
+        GenerationConfig::beam_search(),
+        // GenerationConfig::greedy(),
+        // GenerationConfig::multinomial(),
     };
 
     std::vector<std::string> prompts(dataset_size);
-    std::vector<SamplingParameters> sampling_params(dataset_size);
+    std::vector<GenerationConfig> sampling_params(dataset_size);
 
     for (size_t request_id = 0; request_id < dataset_size; ++request_id) {
         prompts[request_id] = prompt_examples[request_id % prompt_examples.size()];
