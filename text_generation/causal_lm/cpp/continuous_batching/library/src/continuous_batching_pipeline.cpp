@@ -65,7 +65,7 @@ public:
         m_tokenizer = std::make_shared<Tokenizer>(models_path);
 
         // The model can be compiled for GPU as well
-        std::shared_ptr<ov::Model> model = core.read_model(models_path + "/vllm_optimum_openvino_model.xml");
+        std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
         ModelConfig model_config(model);
 
         const std::string device = "CPU"; 

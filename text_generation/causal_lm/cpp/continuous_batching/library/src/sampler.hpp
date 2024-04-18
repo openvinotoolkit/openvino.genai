@@ -259,7 +259,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 uint64_t request_id = sequence_group->get_request_id();
 
                 // create beam search info if we are on the first generate
-                if (!m_beam_search_info.contains(request_id)) {
+                if (m_beam_search_info.find(request_id) == m_beam_search_info.end()) {
                     m_beam_search_info.emplace(request_id, GroupBeamSearcher(sequence_group));
                 }
 
