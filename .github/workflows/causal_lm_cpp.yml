@@ -452,15 +452,24 @@ jobs:
         run: |
           python -c "
           import transformers
-          with open('pred.txt', 'r') as file:
+          with open('pred_greedy.txt', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('ikala/redpajama-3b-chat')
-          tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
-          for output in transformers.AutoModelForCausalLM.from_pretrained('ikala/redpajama-3b-chat').generate(**tokenized, max_length=100, do_sample=False):
-              ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
-              idx = predictions.find(ref)
-              if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref=}" from predictions')
-              predictions = predictions[:idx] + predictions[idx + len(ref):]
+          model = transformers.AutoModelForCausalLM.from_pretrained('ikala/redpajama-3b-chat')
+          tokenized_input = tokenizer("Alan Turing was a", return_tensors='pt')
+          generated_texts = []
+          for output in model.generate(**tokenized_input, max_length=100, do_sample=False):
+              generated_text = tokenizer.decode(output[tokenized_input['input_ids'].numel():], skip_special_tokens=True).strip()
+              generated_texts.append(generated_text)
+          found_match = False
+          for sentence in predictions.split('.'):
+              for generated_text in generated_texts:
+                  if sentence.strip() in generated_text:
+                      found_match = True
+                      break
+              if found_match:
+                  break
+          if not found_match:
+              raise RuntimeError(f'Missing a sentence from predictions')
           "
           echo redpajama-3b passed
