@@ -132,7 +132,7 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
                 latency_unit = '{}tokens'.format(batch_size)
             prompt_dict[p_idx] = '\n[ INFO ] {}[Average] Prompt[{}] Input token size: {}, 1st token lantency: {:.2f} ms/{}, ' \
                 '2nd tokens latency: {:.2f} ms/{}, 2nd tokens throughput: {:.2f} tokens/s' \
-                .format(start_of_log, p_idx, avg_input_size, avg_1st_token_latency, latency_unit,\
+                .format(start_of_log, p_idx, avg_input_size, avg_1st_token_latency, latency_unit,
                         avg_2nd_tokens_latency, latency_unit, avg_2nd_token_tput)
 
 
