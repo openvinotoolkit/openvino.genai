@@ -521,7 +521,7 @@ def case_to_bench_thread(model_path, model_name, framework, model_args, args):
         thread_id = threading.get_native_id()
         proc_id = os.getpid()
         start_of_log = '[p{}][t{}]'.format(proc_id, thread_id)
-        utils.global_var.set_value(thread_id, {'tm_list':[], 'tm_infer_list':[]})
+        utils.global_var.set_value(thread_id, {'tm_list': [], 'tm_infer_list': []})
         iter_data_list, pretrain_time = CASE_TO_BENCH[model_args['use_case']](model_path, framework, args.device, model_args, args.num_iters, start_of_log)
         if args.report is not None or args.report_json is not None:
             model_precision = ''
@@ -607,6 +607,7 @@ def main():
         utils.output_csv.output_comments(args.report, model_args)
         for f in utils.global_var.get_value('csv_file_list'):
             os.remove(f)
+
 
 if __name__ == '__main__':
     main()
