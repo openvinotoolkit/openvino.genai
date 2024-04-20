@@ -100,9 +100,9 @@ convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyL
 
 ### Examples:
 #### Windows:
-1. `/build/Release/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-2. `/build/Release/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-3. `/build/Release/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ ./Llama-2-7b-chat-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+1. `.\build\Release\greedy_causal_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
+2. `.\build\Release\beam_search_causal_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
+3. `.\build\Release\speculative_decoding_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ .\Llama-2-7b-chat-hf\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
 
 #### Linux/MacOS:
 1. `./build/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
