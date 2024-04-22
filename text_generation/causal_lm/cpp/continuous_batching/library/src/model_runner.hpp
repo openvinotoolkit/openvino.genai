@@ -27,6 +27,10 @@ public:
             _forward_generate(sequence_groups, scheduler_output);
     }
 
+    ov::InferRequest get_infer_request() const {
+        return m_request;
+    }
+
 private:
     ov::Tensor _forward_prompt(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
         OPENVINO_ASSERT(scheduler_output.is_prompt, "Internal error: current function can only be called when 'is_prompt' is 'true'");

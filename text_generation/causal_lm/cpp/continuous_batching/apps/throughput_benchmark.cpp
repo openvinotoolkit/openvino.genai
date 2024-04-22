@@ -186,7 +186,7 @@ int main(int argc, char* argv[]) try {
     std::cout << "\tMax output length: " << max_output_len << std::endl;
 
     // Benchmarking
-    ContinuousBatchingPipeline pipe(models_path, scheduler_config/*, ov::enable_profiling(true)*/);
+    ContinuousBatchingPipeline pipe(models_path, scheduler_config);
 
     for (size_t request_id = 0; request_id < dataset.size(); ++request_id) {
         pipe.add_request(request_id, dataset.m_prompts[request_id], dataset.m_sampling_params[request_id]);
@@ -201,18 +201,6 @@ int main(int argc, char* argv[]) try {
         if (!results.empty()) {
             std::cout << "Finished: " << (num_finished += results.size()) << std::endl;
         }
-
-        // collect performance metrics
-        // std::vector<ov::ProfilingInfo> profiling_info = request.get_profiling_info();
-        // for (const ov::ProfilingInfo& info : profiling_info) {
-        //     double current_time = info.real_time.count();
-        //     if (info.node_type == "PagedAttentionExtension") {
-        //         paged_attention_time_ms += current_time;
-        //     } else if (info.node_type == "FullyConnected") {
-        //         matmul_time_ms += current_time;
-        //     }
-        //     infer_total_ms += current_time;
-        // }
     }
 
     double total_time_in_ms = timer.current_in_milli();
@@ -226,11 +214,6 @@ int main(int argc, char* argv[]) try {
     std::cout << "Average output len: " << dataset.get_average_output_len() << " tokens" << std::endl;
     std::cout << "Total execution time secs: " << total_time_in_ms / 1000. << " secs" << std::endl;
     std::cout << "Tput: " << (dataset.m_total_input_len + dataset.m_total_output_len) / (total_time_in_ms / 1000.) << " tokens / sec " << std::endl << std::endl;
-
-    std::cout << "Paged attention % of inference execution: " << (paged_attention_time_ms / infer_total_ms) * 100 << std::endl;
-    std::cout << "MatMul % of inference execution: " << (matmul_time_ms / infer_total_ms) * 100 << std::endl;
-    std::cout << "Total inference execution secs: " << infer_total_ms / 1000. << std::endl;
-    std::cout << "Inference % of total execution: " << (infer_total_ms / total_time_in_ms) * 100 << std::endl;
 
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

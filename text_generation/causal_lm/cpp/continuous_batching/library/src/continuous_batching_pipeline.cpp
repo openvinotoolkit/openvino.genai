@@ -55,6 +55,20 @@ class ContinuousBatchingPipeline::Impl {
 
     GenerationConfig m_generation_config;
 
+    struct PerfTime {
+        float m_paged_attention_time_ms = 0.0f;
+        float m_matmul_time_ms = 0.0f;
+        float m_infer_total_ms = 0.0f;
+
+        ~PerfTime() {
+            std::cout << "Inference requests aggregated statistic: " << std::endl;
+            std::cout << "Paged attention % of inference execution: " << (m_paged_attention_time_ms / m_infer_total_ms) * 100 << std::endl;
+            std::cout << "MatMul % of inference execution: " << (m_matmul_time_ms / m_infer_total_ms) * 100 << std::endl;
+            std::cout << "Total inference execution secs: " << m_infer_total_ms / 1000. << std::endl;
+            std::cout << std::endl;
+        }
+    } m_perf;
+
     // current requests to process
     std::vector<SequenceGroup::Ptr> m_requests;
 
@@ -79,7 +93,7 @@ public:
         DeviceConfig device_config(core, scheduler_config, model_config, device);
 
         apply_paged_attention_transformations(model, model_config, device_config);
-        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device()).create_infer_request();
+        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), ov::enable_profiling(true)).create_infer_request();
 
         // setup KV caches
         m_cache_manager = std::make_shared<CacheManager>(model_config, device_config);
@@ -137,6 +151,18 @@ public:
             timer.start();
             logits = m_model_runner->forward(m_requests, scheduler_output);
             timer.end();
+
+            // collect detailed statistic
+            std::vector<ov::ProfilingInfo> profiling_info = m_model_runner->get_infer_request().get_profiling_info();
+            for (const ov::ProfilingInfo& info : profiling_info) {
+                double current_time = info.real_time.count();
+                if (info.node_type == "PagedAttentionExtension") {
+                    m_perf.m_paged_attention_time_ms += current_time;
+                } else if (info.node_type == "FullyConnected") {
+                    m_perf.m_matmul_time_ms += current_time;
+                }
+                m_perf.m_infer_total_ms += current_time;
+            }
         }
 
         SamplerOutput sampler_output;
