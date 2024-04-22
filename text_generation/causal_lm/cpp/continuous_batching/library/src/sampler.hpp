@@ -291,7 +291,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
 GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group)
     : m_sequence_group(sequence_group),
         m_parameters{m_sequence_group->get_sampling_parameters()},
-        m_groups{m_parameters.n_groups} {
+        m_groups{m_parameters.num_groups} {
     OPENVINO_ASSERT(m_parameters.no_repeat_ngram_size > 0, "no_repeat_ngram_size must be positive");
     OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1);
 
@@ -309,8 +309,8 @@ GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group)
 void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output) {
     std::vector<int64_t> next_tokens;
     std::vector<int32_t> next_beams;
-    next_tokens.reserve(m_parameters.n_groups * m_parameters.group_size);
-    next_beams.reserve(m_parameters.n_groups * m_parameters.group_size);
+    next_tokens.reserve(m_parameters.num_groups * m_parameters.group_size);
+    next_beams.reserve(m_parameters.num_groups * m_parameters.group_size);
 
     // parent sequence ID -> number of child sequences
     std::map<uint64_t, uint64_t> parent_2_num_childs_map;

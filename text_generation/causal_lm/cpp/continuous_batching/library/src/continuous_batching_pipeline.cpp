@@ -48,6 +48,8 @@ class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
 
+    GenerationConfig m_generation_config;
+
     // current requests to process
     std::vector<SequenceGroup::Ptr> m_requests;
 
@@ -85,6 +87,16 @@ public:
         // and finally create model runner
         m_model_runner = std::make_shared<ModelRunner>(infer_request, scheduler_config);
         m_sampler = std::make_shared<Sampler>();
+
+        // read default generation config
+    }
+
+    GenerationConfig get_config() const {
+        return m_generation_config;
+    }
+
+    std::shared_ptr<Tokenizer> get_tokenizer() {
+        return m_tokenizer;
     }
 
     void add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
@@ -197,6 +209,10 @@ public:
 ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::string& models_path,
                      const SchedulerConfig& scheduler_config) {
     m_impl = std::make_shared<Impl>(models_path, scheduler_config);
+}
+
+std::shared_ptr<Tokenizer> ContinuousBatchingPipeline::get_tokenizer() {
+    return m_impl->get_tokenizer();
 }
 
 void ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {

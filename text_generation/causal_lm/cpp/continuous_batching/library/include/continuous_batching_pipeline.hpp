@@ -6,6 +6,7 @@
 #include <openvino/openvino.hpp>
 
 #include "scheduler_config.hpp"
+#include "tokenizer.hpp"
 #include "generation_config.hpp"
 
 struct GenerationResult {
@@ -26,6 +27,10 @@ class ContinuousBatchingPipeline {
 public:
     ContinuousBatchingPipeline(const std::string& models_path,
                                const SchedulerConfig& scheduler_config);
+
+    std::shared_ptr<Tokenizer> get_tokenizer();
+
+    GenerationConfig get_config() const;
 
     void add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params);
 
