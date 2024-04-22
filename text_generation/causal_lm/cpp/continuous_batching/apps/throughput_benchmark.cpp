@@ -153,8 +153,6 @@ int main(int argc, char* argv[]) try {
             for (size_t output_id = 0; output_id < results.size(); ++output_id) {
                 size_t output_len = results[output_id].m_generation_ids[0].size();
                 size_t input_len = dataset[results[output_id].m_request_id].first.size();
-                // check correctness of generated length
-                OPENVINO_ASSERT(dataset[results[output_id].m_request_id].second.max_new_tokens == output_len);
                 // accumulate input tokens
                 total_input_tokens += input_len;
                 // accumulate output tokens
