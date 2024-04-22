@@ -96,6 +96,11 @@ int main(int argc, char* argv[]) try {
         return EXIT_FAILURE;
     }
 
+    if (result.count("help")) {
+        std::cout << options.help() << std::endl;
+        return EXIT_SUCCESS;
+    }
+
     const size_t num_prompts = result["num_prompts"].as<size_t>();
     const size_t max_batch_size = result["max_batch_size"].as<size_t>();
     const bool dynamic_split_fuse = result["dynamic_split_fuse"].as<bool>();
