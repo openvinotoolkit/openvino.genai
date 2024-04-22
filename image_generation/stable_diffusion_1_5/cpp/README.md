@@ -12,7 +12,7 @@ Prerequisites:
 
 C++ Packages:
 * [CMake](https://cmake.org/download/): Cross-platform build tool
-* [OpenVINO](https://docs.openvino.ai/install): Model inference
+* [OpenVINO](https://docs.openvino.ai/install): Model inference. `master` and possibly the latest `releases/*` branch correspond to not yet released OpenVINO versions. https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for these branches early testing.
 
 Prepare a python environment and install dependencies:
 ```shell
