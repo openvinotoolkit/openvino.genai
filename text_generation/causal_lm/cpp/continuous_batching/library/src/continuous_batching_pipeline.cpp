@@ -29,8 +29,13 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
         // we need to pass beam score instead of cumulative log probs (e.g. normalized by length)
         result.m_scores.push_back(sequence->get_cumulative_log_probs());
 
-        std::string output_text = tokenizer->decode(sequence->get_generated_ids());
-        result.m_generation_ids.push_back(output_text);
+        {
+            static ScopedTimer timer("detokenize");
+            timer.start();
+            std::string output_text = tokenizer->decode(sequence->get_generated_ids());
+            timer.end();
+            result.m_generation_ids.push_back(output_text);
+        }
     }
 
     return result;
