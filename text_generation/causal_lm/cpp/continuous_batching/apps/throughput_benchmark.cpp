@@ -14,7 +14,54 @@
 
 namespace {
 
-std::vector<std::pair<std::string, GenerationConfig>> filtered_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_input_len, const size_t max_output_len) {
+struct Dataset {
+    std::vector<std::string> m_prompts;
+    std::vector<GenerationConfig> m_sampling_params;
+    std::vector<size_t> m_input_lens, m_output_lens;
+
+    size_t m_total_input_len = 0;
+    size_t m_total_output_len = 0;
+
+    void reserve(const size_t size) {
+        m_prompts.reserve(size);
+        m_sampling_params.reserve(size);
+        m_input_lens.reserve(size);
+        m_output_lens.reserve(size);
+    }
+
+    void push_data(std::string prompt, GenerationConfig sampling_params) {
+        m_prompts.push_back(prompt);
+        m_sampling_params.push_back(sampling_params);
+    }
+
+    void push_lens(size_t input_len, size_t output_len) {
+        m_input_lens.push_back(input_len);
+        m_output_lens.push_back(output_len);
+
+        m_total_input_len += input_len;
+        m_total_output_len += output_len;
+    }
+
+    float get_average_input_len() const {
+        OPENVINO_ASSERT(!empty());
+        return static_cast<float>(m_total_input_len / size());
+    }
+
+    float get_average_output_len() const {
+        OPENVINO_ASSERT(!empty());
+        return static_cast<float>(m_total_output_len / size());
+    }
+
+    bool empty() const {
+        return size() == 0;
+    }
+
+    size_t size() const {
+        return m_prompts.size();
+    }
+};
+
+Dataset filtered_dataset(const std::string& models_path, const std::string& dataset_path, const size_t num_prompts, const size_t max_input_len, const size_t max_output_len) {
     std::ifstream json_file(dataset_path.c_str());
     OPENVINO_ASSERT(json_file.is_open(), "Cannot open dataset file");
 
@@ -22,7 +69,7 @@ std::vector<std::pair<std::string, GenerationConfig>> filtered_dataset(const std
     const float dataset_size_coeff = 1.2f;
 
     nlohmann::json json_dataset = nlohmann::json::parse(json_file);
-    std::vector<std::pair<std::string, GenerationConfig>> sampled_dataset, dataset;
+    Dataset sampled_dataset, dataset;
     const size_t num_prompt_candidates = static_cast<size_t>(num_prompts * dataset_size_coeff);
     sampled_dataset.reserve(num_prompt_candidates);
     dataset.reserve(num_prompt_candidates);
@@ -57,14 +104,17 @@ std::vector<std::pair<std::string, GenerationConfig>> filtered_dataset(const std
         GenerationConfig greedy_search = GenerationConfig::greedy();
         greedy_search.max_new_tokens = std::min(max_output_len, output_len);
 
-        dataset.push_back({ human_question, greedy_search });
+        dataset.push_data(human_question, greedy_search);
+        dataset.push_lens(input_len, output_len);
     }
 
     // sample dataset
     srand(42);
-    std::generate_n(std::back_inserter(sampled_dataset), num_prompts, [&] {
-        return dataset[rand() % dataset.size()];
-    });
+
+    for (size_t selected_index = rand() % dataset.size(); sampled_dataset.size() < num_prompts; selected_index = rand() % dataset.size()) {
+        sampled_dataset.push_data(dataset.m_prompts[selected_index], dataset.m_sampling_params[selected_index]);
+        sampled_dataset.push_lens(dataset.m_input_lens[selected_index], dataset.m_output_lens[selected_index]);
+    }
 
     return sampled_dataset;
 }
@@ -111,7 +161,7 @@ int main(int argc, char* argv[]) try {
     const size_t max_output_len = result["max_output_len"].as<size_t>();
 
     // Create requests for generation
-    std::vector<std::pair<std::string, GenerationConfig>> dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
+    Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
 
     // Perform the first inference
     SchedulerConfig scheduler_config {
@@ -139,7 +189,7 @@ int main(int argc, char* argv[]) try {
     ContinuousBatchingPipeline pipe(models_path, scheduler_config/*, ov::enable_profiling(true)*/);
 
     for (size_t request_id = 0; request_id < dataset.size(); ++request_id) {
-        pipe.add_request(request_id, dataset[request_id].first, dataset[request_id].second);
+        pipe.add_request(request_id, dataset.m_prompts[request_id], dataset.m_sampling_params[request_id]);
     }
 
     Timer timer;
@@ -149,16 +199,7 @@ int main(int argc, char* argv[]) try {
     for (size_t num_finished = 0; pipe.has_running_requests(); ) {
         std::vector<GenerationResult> results = pipe.step();
         if (!results.empty()) {
-            num_finished += results.size();
-            for (size_t output_id = 0; output_id < results.size(); ++output_id) {
-                size_t output_len = results[output_id].m_generation_ids[0].size();
-                size_t input_len = dataset[results[output_id].m_request_id].first.size();
-                // accumulate input tokens
-                total_input_tokens += input_len;
-                // accumulate output tokens
-                total_output_tokens += output_len;
-            }
-            std::cout << "Finished: " << num_finished << std::endl;
+            std::cout << "Finished: " << (num_finished += results.size()) << std::endl;
         }
 
         // collect performance metrics
@@ -179,12 +220,12 @@ int main(int argc, char* argv[]) try {
     paged_attention_time_ms /= 1000;
     matmul_time_ms /= 1000;
 
-    std::cout << "Total input tokens: " << total_input_tokens << std::endl;
-    std::cout << "Total output tokens: " << total_output_tokens << std::endl;
-    std::cout << "Average input len: " << total_input_tokens / static_cast<float>(num_prompts) << " tokens" << std::endl;
-    std::cout << "Average output len: " << total_output_tokens / static_cast<float>(num_prompts) << " tokens" << std::endl;
+    std::cout << "Total input tokens: " << dataset.m_total_input_len << std::endl;
+    std::cout << "Total output tokens: " << dataset.m_total_output_len << std::endl;
+    std::cout << "Average input len: " << dataset.get_average_input_len() << " tokens" << std::endl;
+    std::cout << "Average output len: " << dataset.get_average_output_len() << " tokens" << std::endl;
     std::cout << "Total execution time secs: " << total_time_in_ms / 1000. << " secs" << std::endl;
-    std::cout << "Tput: " << (total_input_tokens + total_output_tokens) / (total_time_in_ms / 1000.) << " tokens / sec " << std::endl << std::endl;
+    std::cout << "Tput: " << (dataset.m_total_input_len + dataset.m_total_output_len) / (total_time_in_ms / 1000.) << " tokens / sec " << std::endl << std::endl;
 
     std::cout << "Paged attention % of inference execution: " << (paged_attention_time_ms / infer_total_ms) * 100 << std::endl;
     std::cout << "MatMul % of inference execution: " << (matmul_time_ms / infer_total_ms) * 100 << std::endl;
