@@ -27,5 +27,5 @@ public:
 
     virtual void scale_model_input(ov::Tensor sample, size_t inference_step) = 0;
 
-    virtual ov::Tensor step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) = 0;
+    virtual std::map<std::string, ov::Tensor> step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) = 0;
 };

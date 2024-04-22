@@ -5,11 +5,12 @@ on:
       - .github/workflows/causal_lm_cpp.yml
       - llm_bench/python/**
       - text_generation/causal_lm/cpp/*
-      - thirdparty/openvino_contrib
-      - '!**.md'
+      - thirdparty/openvino_tokenizers
+      - "!**.md"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
   cpp-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -20,7 +21,24 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: ./text_generation/causal_lm/cpp/set_up_and_run.sh
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id openlm-research/open_llama_3b_v2 --output_dir ./open_llama_3b_v2/ --precision FP16  &
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake --build ./build/ --config Release -j
+          wait
+      - name: convert_tokenizer and run
+        run: |
+          source ./ov/setupvars.sh
+          convert_tokenizer ./open_llama_3b_v2/pytorch/dldt/FP16/ --output ./open_llama_3b_v2/pytorch/dldt/FP16/ --with-detokenizer
+          ./build/greedy_causal_lm ./open_llama_3b_v2/pytorch/dldt/FP16/ "return 0"
+
   cpp-beam_search_causal_lm-ubuntu:
     runs-on: ubuntu-20.04
     steps:
@@ -33,99 +51,84 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.0.0-14004-a240ae8fadd/l_openvino_toolkit_ubuntu20_2024.0.0.dev20240116_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir ./TinyLlama-1.1B-Chat-v0.6/ --precision FP16 --stateful &
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0/ --precision FP16 &
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
           wait
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          convert_tokenizer ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/ --with-detokenizer
+          convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --with-detokenizer
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/ 69 > ./pred.txt
+          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ 69 > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
               predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6')
+          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           tokenized = tokenizer('69', return_tensors='pt')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
+          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo 69 passed
+          echo "69" passed
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/ Hi > ./pred.txt
+          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ Hi > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
               predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6')
+          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           tokenized = tokenizer('Hi', return_tensors='pt')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
+          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo Hi passed
+          echo "Hi" passed
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/ "return 0" > ./pred.txt
+          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "return 0" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
               predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6')
+          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           tokenized = tokenizer('return 0', return_tensors='pt')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
+          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo return 0 passed
+          echo "return 0" passed
 
-          ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/ "" > ./pred.txt
+          ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
               predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6')
-          tokenized = tokenizer('', return_tensors='pt')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
-              ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
-              idx = predictions.find(ref)
-              if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref=}" from predictions')
-              predictions = predictions[:idx] + predictions[idx + len(ref):]
-          "
-          echo '""' passed
-
-          ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v0.6/pytorch/dldt/FP16/ "你好！ 你好嗎？" > ./pred.txt
-          python -c "
-          import transformers
-          with open('pred.txt', 'r') as file:
-              predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6')
+          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           tokenized = tokenizer('你好！ 你好嗎？', return_tensors='pt')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
+          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo 你好！ 你好嗎？ passed
+          echo "你好！ 你好嗎？" passed
+
   cpp-beam_search_causal_lm-windows:
     runs-on: windows-latest
     steps:
@@ -135,46 +138,39 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - uses: actions/checkout@v4
-        with:
-          repository: TinyLlama/TinyLlama-1.1B-Chat-v0.6
-          ref: bf9ae1c8bf026667e6f810768de259bb4a7f4777
-          path: TinyLlama-1.1B-Chat-v0.6
-          lfs: true
-          github-server-url: https://huggingface.co
       - name: Install OpenVINO
         shell: bash
         run: |
-          curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.0.0-14004-a240ae8fadd/w_openvino_toolkit_windows_2024.0.0.dev20240116_x86_64.zip
+          curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64.zip
           unzip ov.zip
       - name: Download, convert and build
         shell: cmd
         run: |
-          call w_openvino_toolkit_windows_2024.0.0.dev20240116_x86_64\setupvars.bat
-          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-          python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v0.6 --output_dir ./TinyLlama-1.1B-Chat-v0.6/ --precision FP16 --stateful
+          call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64\setupvars.bat
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
+          python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0/ --precision FP16
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
       - name: Compare
         shell: cmd
         run: |
-          call w_openvino_toolkit_windows_2024.0.0.dev20240116_x86_64\setupvars.bat
-          convert_tokenizer .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP16\ --output .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP16\ --with-detokenizer
+          call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64\setupvars.bat
+          convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --with-detokenizer
 
-          .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v0.6\pytorch\dldt\FP16\ "69" > .\pred.txt
+          .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "69" > .\pred.txt
           echo import transformers > ref.py
           echo predictions = open('pred.txt', 'r').read() >> ref.py
-          echo tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6') >> ref.py
+          echo tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0') >> ref.py
           echo tokenized = tokenizer('69', return_tensors='pt') >> ref.py
-          echo for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v0.6').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False): >> ref.py
+          echo for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False): >> ref.py
           echo     ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n' >> ref.py
           echo     idx = predictions.find(ref) >> ref.py
           echo     if -1 == idx: >> ref.py
           echo         raise RuntimeError(f'Missing "{ref=}" from predictions') >> ref.py
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
           python ref.py
+
   cpp-beam_search_causal_lm-Qwen-7B-Chat:
-    if: false  # TODO: enable after shape inference failure is fixed
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -186,12 +182,12 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.0.0-14004-a240ae8fadd/l_openvino_toolkit_ubuntu20_2024.0.0.dev20240116_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager transformers==4.35.2 "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_contrib/modules/custom_operations/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id Qwen/Qwen-7B-Chat --output_dir ./Qwen-7B-Chat/ --precision FP16 --stateful &
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id Qwen/Qwen-7B-Chat --output_dir ./Qwen-7B-Chat/ --precision FP16 &
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
           wait
@@ -199,4 +195,168 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           convert_tokenizer ./Qwen-7B-Chat/pytorch/dldt/FP16/ --output ./Qwen-7B-Chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
-          timeout 25s ./build/beam_search_causal_lm ./Qwen-7B-Chat/pytorch/dldt/FP16/ 69 > ./pred.txt
+          timeout 50s ./build/beam_search_causal_lm ./Qwen-7B-Chat/pytorch/dldt/FP16/ 69 > ./pred.txt
+
+  cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
+    runs-on: ubuntu-20.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id Qwen/Qwen1.5-7B-Chat --output_dir ./Qwen1.5-7B-Chat/ --precision FP16 &
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake --build ./build/ --config Release -j
+          wait
+      - name: Run
+        run: |
+          source ./ov/setupvars.sh
+          convert_tokenizer ./Qwen1.5-7B-Chat/pytorch/dldt/FP16/ --output ./Qwen1.5-7B-Chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
+          timeout 50s ./build/beam_search_causal_lm ./Qwen1.5-7B-Chat/pytorch/dldt/FP16/ "你好！" > ./pred_qwen15.txt
+
+  cpp-beam_search_causal_lm-Phi-2:
+    runs-on: ubuntu-20.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id microsoft/phi-2 --output_dir ./Phi-2/ --precision FP16 &
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake --build ./build/ --config Release -j 15
+          wait
+      - name: Compare
+        run: |
+          source ./ov/setupvars.sh
+          convert_tokenizer ./Phi-2/pytorch/dldt/FP16/ --output ./Phi-2/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
+          timeout 50s ./build/beam_search_causal_lm ./Phi-2/pytorch/dldt/FP16/ 69 > ./pred.txt
+
+  cpp-beam_search_causal_lm-notus-7b-v1:
+    runs-on: ubuntu-20.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id argilla/notus-7b-v1 --output_dir ./notus-7b-v1/ --precision FP16 &
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake --build ./build/ --config Release -j
+          wait
+      - name: Compare
+        run: |
+          source ./ov/setupvars.sh
+          convert_tokenizer ./notus-7b-v1/pytorch/dldt/FP16/ --output ./notus-7b-v1/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
+          timeout 50s ./build/beam_search_causal_lm ./notus-7b-v1/pytorch/dldt/FP16/ 69 > ./pred.txt
+
+  cpp-speculative_decoding_lm-ubuntu:
+    runs-on: ubuntu-20.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.3/linux/l_openvino_toolkit_ubuntu20_2023.3.0.13775.ceeafaf64f3_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
+          python ./llm_bench/python/convert.py --model_id databricks/dolly-v2-3b --output_dir ./dolly-v2-3b/ --precision FP16
+          python ./llm_bench/python/convert.py --model_id databricks/dolly-v2-7b --output_dir ./dolly-v2-7b/ --precision FP16
+          convert_tokenizer ./dolly-v2-3b/pytorch/dldt/FP16/ --output ./dolly-v2-3b/pytorch/dldt/FP16/ --with-detokenizer
+          convert_tokenizer ./dolly-v2-7b/pytorch/dldt/FP16/ --output ./dolly-v2-7b/pytorch/dldt/FP16/ --with-detokenizer
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake --build ./build/ --config Release -j
+          wait
+      - name: run and compare
+        run: |
+          source ./ov/setupvars.sh
+          ./build/speculative_decoding_lm ./dolly-v2-3b/pytorch/dldt/FP16/ ./dolly-v2-7b/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_speculative.txt
+          ./build/greedy_causal_lm ./dolly-v2-7b/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_greedy.txt
+          python -c "
+          with open('predictions_greedy.txt', 'r') as f:
+              predicted_greedy = f.readline()
+          with open('predictions_speculative.txt', 'r') as f:
+              predicted_speculative = f.readline()
+          assert predicted_greedy == predicted_speculative
+          "
+          echo "Alan Turing was a" passed
+
+  cpp-Phi-1_5:
+    runs-on: ubuntu-20.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id microsoft/phi-1_5 --output_dir ./Phi-1_5/ --precision FP16 &
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake --build ./build/ --config Release -j 15
+          wait
+      - name: Run Generation
+        run: |
+          source ./ov/setupvars.sh
+          convert_tokenizer ./Phi-1_5/pytorch/dldt/FP16/ --output ./Phi-1_5/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
+          timeout 50s ./build/greedy_causal_lm ./Phi-1_5/pytorch/dldt/FP16/ "Alan Turing was a" > ./pred_greedy.txt
+          timeout 50s ./build/beam_search_causal_lm ./Phi-1_5/pytorch/dldt/FP16/ "Alan Turing was a" > ./pred_beam.txt
+      - name: Compare
+        run: |
+          python -c "
+          import transformers
+          with open('pred_greedy.txt', 'r') as file:
+              predictions = file.read()
+          tokenizer = transformers.AutoTokenizer.from_pretrained('microsoft/phi-1_5')
+          tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
+          for output in transformers.AutoModelForCausalLM.from_pretrained('microsoft/phi-1_5').generate(**tokenized, max_length=100, do_sample=False):
+              ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
+              idx = predictions.find(ref)
+              if -1 == idx:
+                  raise RuntimeError(f'Missing "{ref=}" from predictions')
+              predictions = predictions[:idx] + predictions[idx + len(ref):]
+          "
+          echo "Alan Turing was a" passed

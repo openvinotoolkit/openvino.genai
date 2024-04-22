@@ -23,21 +23,21 @@ std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std:
     }
     partial_match_table.back() = cnd;
     std::vector<int64_t> res;
-    size_t j = 0;  // The position of the current character in haystack
-    int k = 0;  // The position of the current character in needle
-    while (j < haystack.size() - 1) {
-        if (needle.at(size_t(k)) == haystack.at(j)) {
-            ++j;
-            ++k;
-            if (k == int(needle.size())) {
-                res.push_back(haystack.at(j));
-                k = partial_match_table.at(size_t(k));
+    size_t haystack_id = 0;
+    int needle_id = 0;
+    while (haystack_id < haystack.size() - 1) {
+        if (needle.at(size_t(needle_id)) == haystack.at(haystack_id)) {
+            ++haystack_id;
+            ++needle_id;
+            if (needle_id == int(needle.size())) {
+                res.push_back(haystack.at(haystack_id));
+                needle_id = partial_match_table.at(size_t(needle_id));
             }
         } else {
-            k = partial_match_table.at(size_t(k));
-            if (k < 0) {
-                ++j;
-                ++k;
+            needle_id = partial_match_table.at(size_t(needle_id));
+            if (needle_id < 0) {
+                ++haystack_id;
+                ++needle_id;
             }
         }
     }
@@ -81,6 +81,7 @@ enum class StopCriteria {early, heuristic, never};
 
 struct Parameters {
     std::vector<int64_t> prompt;
+    int64_t eos_token;
     size_t n_groups = 3;
     size_t group_size = 5;
     float diversity_penalty = 1.0;
@@ -88,8 +89,7 @@ struct Parameters {
     StopCriteria stop_criteria = StopCriteria::heuristic;
     float length_penalty = 1.0;
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
-    // There's no way to extract special token values from the tokenizer for now
-    int64_t eos_token = 2;
+    
     std::function<bool(const Beam&)> early_finish = [](const Beam&){return false;};
 };
 
@@ -97,8 +97,15 @@ struct Group {
     std::vector<Beam> ongoing;  // Best beams in front
     std::vector<Beam> min_heap;  // The worst of the best completed beams is the first
     bool done = false;
+
     void finish(Beam&& beam, const Parameters& parameters) {
-        beam.score /= std::pow(float(parameters.prompt.size() + beam.tokens.size()), parameters.length_penalty);
+        beam.score /= std::pow(float(beam.tokens.size()), parameters.length_penalty);
+
+        // HF implementation counts eos_token for length penalty calculation
+        if (beam.tokens.back() == parameters.eos_token) {
+            beam.tokens.pop_back();
+        }
+
         min_heap.push_back(std::move(beam));
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
         if (min_heap.size() > parameters.group_size) {
@@ -110,7 +117,7 @@ struct Group {
         if (min_heap.size() < parameters.group_size) {
             return;
         }
-        size_t cur_len = parameters.prompt.size() + ongoing.front().tokens.size();
+        size_t cur_len = ongoing.front().tokens.size();
         float best_sum_logprobs = ongoing.front().score;
         float worst_score = min_heap.front().score;
         switch (parameters.stop_criteria) {
@@ -135,6 +142,9 @@ struct Group {
 
 struct TokenToBeam {int64_t token_idx; int32_t beam_idx;};
 
+// GroupBeamSearcher processes logits prduced by a language model and accumulates beams using group beam search
+// algorithm. select_next_tokens() returns token ids selected by the algorithm and corresponding beam ids. These values
+// are used for next inference. select_next_tokens() returns empty, if all groups are completed
 struct GroupBeamSearcher {
     Parameters parameters;
     std::vector<Group> groups;
@@ -157,7 +167,7 @@ struct GroupBeamSearcher {
             if (!group.done) {
                 for (Beam& beam : group.ongoing) {
                     beam.global_beam_idx = beam_count;
-                    // beam.tokens.empty() holds for the first process() call.
+                    // beam.tokens.empty() holds for the first select_next_tokens() call.
                     // Every beam is constructed from the single batch at first call
                     if (!beam.tokens.empty()) {
                         ++beam_count;
@@ -170,7 +180,7 @@ struct GroupBeamSearcher {
                 continue;
             }
             std::vector<Beam> candidates;
-            candidates.reserve(2 * parameters.group_size);
+            candidates.reserve(parameters.group_size * 2 * parameters.group_size);
             for (const Beam& beam : group->ongoing) {
                 std::vector<Token> tokens = log_softmax(logits, beam.global_beam_idx);
                 for (auto prev_group = groups.cbegin(); prev_group != group; ++prev_group) {
@@ -220,7 +230,6 @@ struct GroupBeamSearcher {
                     if (cand_idx >= parameters.group_size) {
                         continue;
                     }
-                    candidates.at(cand_idx).tokens.resize(candidates.at(cand_idx).tokens.size() - 1);
                     group->finish(std::move(candidates.at(cand_idx)), parameters);
                 } else {
                     group->ongoing.push_back(std::move(candidates.at(cand_idx)));

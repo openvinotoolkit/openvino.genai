@@ -9,9 +9,10 @@ import logging as log
 import torch
 import time
 import types
+import utils.hook_greedy_search
+import utils.hook_beam_search
 
 from utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
-from .ov_model_classes import register_normalized_configs
 import openvino.runtime.opset13 as opset
 
 
@@ -134,7 +135,6 @@ def create_text_gen_model(model_path, device, **kwargs):
         model_path = model_path.parents[2]
 
     ov_config = kwargs['config']
-    register_normalized_configs()
 
     model_path_existed = Path(model_path).exists()
     # load model
@@ -165,26 +165,29 @@ def create_text_gen_model(model_path, device, **kwargs):
             if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
                 patch_inter_processing_and_compile(ov_model, **kwargs)
             end = time.perf_counter()
+    if kwargs['num_beams'] > 1:
+        bench_hook = utils.hook_beam_search.BeamSearchHook()
+    else:
+        bench_hook = utils.hook_greedy_search.GreedySearchHook()
+    bench_hook.new_forward(ov_model, model_type)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     # load token
     tokenizer = token_class.from_pretrained(model_path, trust_remote_code=True)
     if kwargs.get("convert_tokenizer", False):
         tokenizer = build_ov_tokenizer(tokenizer)
-    return ov_model, tokenizer, from_pretrained_time
+    return ov_model, tokenizer, from_pretrained_time, bench_hook
 
 
 def create_image_gen_model(model_path, device, **kwargs):
     default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
     model_type = kwargs.get('model_type', default_model_type)
-    print(model_type)
     model_class = OV_MODEL_CLASSES_MAPPING[model_type]
     model_path = Path(model_path)
     ov_config = kwargs['config']
     if not Path(model_path).exists():
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        log.info(f'model_path={model_path}')
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
         end = time.perf_counter()

@@ -110,6 +110,13 @@ def add_stateful_model_arguments(parser: argparse.ArgumentParser):
         'Additional operations are inserted into the model to handle cache state (Gathers, ShapeOf, etc.)',
     )
 
+    parser.add_argument(
+        '--disable-stateful',
+        action="store_true",
+        default=None,
+        help="Disable stateful transformation for model conversion"
+    )
+
 
 def analyze_args(args):
     model_args = {}
@@ -126,6 +133,8 @@ def analyze_args(args):
     model_args['num_beams'] = args.num_beams
     model_args['torch_compile_backend'] = args.torch_compile_backend
     model_args['convert_tokenizer'] = args.convert_tokenizer
+    model_args['subsequent'] = args.subsequent
+    model_args['output_dir'] = args.output_dir
 
     model_framework = args.framework
     model_path = Path(args.model)
@@ -143,9 +152,9 @@ def analyze_args(args):
             model_args['config'] = config
     if model_framework == 'ov':
         set_default_param_for_ov_config(model_args['config'])
-        log.info(f"ov_config={model_args['config']}")
+        log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
-        log.info(f"pt_config={model_args['config']}")
+        log.info(f"PT Config={model_args['config']}")
     model_args['model_type'] = get_model_type(model_name, use_case, model_framework)
     model_args['model_name'] = model_name
     return model_path, model_framework, model_args, model_name
@@ -202,7 +211,7 @@ def get_model_type(model_name, use_case, model_framework):
 
 
 def normalize_model_ids(model_ids_list):
-    return [m_id[:-1] if m_id.ends_with('_') else m_id for m_id in model_ids_list]
+    return [m_id[:-1] if m_id.endswith('_') else m_id for m_id in model_ids_list]
 
 
 def get_ir_conversion_frontend(cur_model_name, model_name_list):
@@ -219,9 +228,14 @@ def get_ir_conversion_frontend(cur_model_name, model_name_list):
 
 def get_model_precision(model_name_list):
     precision_list = [
-        'FP32', 'FP16', 'FP16-INT8', 'INT8', 'INT8_compressed_weights', 'INT8_quantized', 'PT_compressed_weights',
-        'OV_FP32-INT8', 'OV_FP16-INT8', 'PT_FP32-INT8', 'PT_FP16-INT8', 'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4',
-        'OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM', 'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT']
+        'FP32', 'FP16',
+        'FP16-INT8', 'INT8', 'INT8_compressed_weights', 'INT8_quantized', 'PT_compressed_weights',
+        'OV_FP32-INT8', 'OV_FP16-INT8',
+        'OV_FP32-INT8_ASYM', 'OV_FP32-INT8_SYM', 'OV_FP16-INT8_ASYM', 'OV_FP16-INT8_SYM',
+        'PT_FP32-INT8', 'PT_FP16-INT8', 'PT_FP32-INT8_ASYM', 'PT_FP32-INT8_SYM', 'PT_FP16-INT8_ASYM', 'PT_FP16-INT8_SYM',
+        'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4',
+        'OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM',
+        'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT', 'OV_FP32-4BIT_MAXIMUM', 'OV_FP16-4BIT_MAXIMUM']
     model_precision = 'unknown'
     # Search from right to left of model path
     for i in range(len(model_name_list) - 1, -1, -1):

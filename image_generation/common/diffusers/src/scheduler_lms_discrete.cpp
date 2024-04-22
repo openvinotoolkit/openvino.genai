@@ -160,7 +160,7 @@ std::vector<int64_t> LMSDiscreteScheduler::get_timesteps() const {
     return m_timesteps;
 }
 
-ov::Tensor LMSDiscreteScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) {
+std::map<std::string, ov::Tensor> LMSDiscreteScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) {
     // LMS step function:
     std::vector<float> derivative;
     derivative.reserve(latents.get_size());
@@ -193,7 +193,7 @@ ov::Tensor LMSDiscreteScheduler::step(ov::Tensor noise_pred, ov::Tensor latents,
     // 4. Compute previous sample based on the derivatives path
     // prev_sample = sample + sum(coeff * derivative for coeff, derivative in zip(lms_coeffs, reversed(self.derivatives)))
     ov::Tensor prev_sample(latents.get_element_type(), latents.get_shape());
-    float * prev_sample_data = prev_sample.data<float>();
+    float* prev_sample_data = prev_sample.data<float>();
     const float* latents_data = latents.data<const float>();
     for (size_t i = 0; i < prev_sample.get_size(); ++i) {
         float derivative_sum = 0.0f;
@@ -204,5 +204,7 @@ ov::Tensor LMSDiscreteScheduler::step(ov::Tensor noise_pred, ov::Tensor latents,
         prev_sample_data[i] = latents_data[i] + derivative_sum;
     }
 
-    return prev_sample;
+    std::map<std::string, ov::Tensor> result{{"latent", prev_sample}};
+
+    return result;
 }

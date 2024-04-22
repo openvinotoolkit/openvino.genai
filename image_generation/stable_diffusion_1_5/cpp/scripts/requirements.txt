@@ -1,6 +1,0 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
-diffusers
-# optimum-intel[nncf,openvino]  # TODO: remove git installation after optimum-intel>1.12.2 is reeleased
-git+https://github.com/huggingface/optimum-intel.git@8375cf8895377e359a2ac30d88f9a68bb9f47743#egg=optimum-intel[nncf,openvino]
-huggingface_hub[cli]
