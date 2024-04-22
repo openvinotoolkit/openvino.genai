@@ -100,7 +100,15 @@ public:
     }
 
     void add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
-        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, m_tokenizer->encode(prompt),
+        ov::Tensor input_ids;
+        {
+            static ScopedTimer timer("tokenize");
+            timer.start();
+            input_ids = m_tokenizer->encode(prompt);
+            timer.end();
+        }
+
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
                                                                             sampling_params, m_scheduler->get_config().block_size);
         m_requests.push_back(sequence_group);
     }
