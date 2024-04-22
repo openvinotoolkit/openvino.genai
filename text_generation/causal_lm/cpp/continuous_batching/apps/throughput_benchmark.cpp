@@ -42,9 +42,10 @@ std::vector<std::pair<std::string, GenerationConfig>> filtered_dataset(const std
         std::string gpt_answer = json_data["conversations"][1]["value"];
 
         ov::Tensor _input_ids_prompt = tokenizer.encode(human_question);
-        ov::Tensor _input_ids_answer = tokenizer.encode(gpt_answer);
+        size_t input_len = _input_ids_prompt.get_size();
 
-        size_t input_len = _input_ids_prompt.get_size(), output_len = _input_ids_answer.get_size();
+        ov::Tensor _input_ids_answer = tokenizer.encode(gpt_answer);
+        size_t output_len = _input_ids_answer.get_size();
 
         // Prune too short sequences.
         if (input_len < 4 || output_len < 4)
