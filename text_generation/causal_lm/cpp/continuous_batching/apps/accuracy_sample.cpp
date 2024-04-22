@@ -2,13 +2,41 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/openvino.hpp>
+#include <cxxopts.hpp>
 
 #include "continuous_batching_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
+    // Command line options
+
+    cxxopts::Options options("accuracy_sample", "Help command");
+
+    options.add_options()
+    ("n,num_prompts", "A number of prompts", cxxopts::value<size_t>()->default_value("1"))
+    ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("false"))
+    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
+    ("h,help", "Print usage");
+
+    cxxopts::ParseResult result;
+    try {
+        result = options.parse(argc, argv);
+    } catch (const cxxopts::exceptions::exception& e) {
+        std::cout << e.what() << "\n\n";
+        std::cout << options.help() << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    if (result.count("help")) {
+        std::cout << options.help() << std::endl;
+        return EXIT_SUCCESS;
+    }
+
+    const size_t num_prompts = result["num_prompts"].as<size_t>();
+    const bool dynamic_split_fuse = result["dynamic_split_fuse"].as<bool>();
+    const std::string models_path = result["model"].as<std::string>();
+
     // create dataset
 
-    const size_t dataset_size = 1;
     std::vector<std::string> prompt_examples = {
         "What is OpenVINO?",
         "How are you?",
@@ -23,10 +51,10 @@ int main(int argc, char* argv[]) try {
         // GenerationConfig::multinomial(),
     };
 
-    std::vector<std::string> prompts(dataset_size);
-    std::vector<GenerationConfig> sampling_params(dataset_size);
+    std::vector<std::string> prompts(num_prompts);
+    std::vector<GenerationConfig> sampling_params(num_prompts);
 
-    for (size_t request_id = 0; request_id < dataset_size; ++request_id) {
+    for (size_t request_id = 0; request_id < num_prompts; ++request_id) {
         prompts[request_id] = prompt_examples[request_id % prompt_examples.size()];
         sampling_params[request_id] = sampling_params_examples[request_id % sampling_params_examples.size()];
     }
@@ -40,13 +68,13 @@ int main(int argc, char* argv[]) try {
         .num_kv_blocks = 36400,
         .block_size = 16,
         // mode - vLLM or dynamic_split_fuse
-        .dynamic_split_fuse = false,
+        .dynamic_split_fuse = dynamic_split_fuse,
         // vLLM specific params
         .max_num_seqs = 2,
         .max_paddings = 8,
     };
 
-    ContinuousBatchingPipeline pipe("/home/sandye51/Documents/Programming/git_repo/vllm/", scheduler_config);
+    ContinuousBatchingPipeline pipe(models_path, scheduler_config);
     std::vector<GenerationResult> generation_results = pipe.generate(prompts, sampling_params);
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {

@@ -70,7 +70,7 @@ public:
         std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
         ModelConfig model_config(model);
 
-        const std::string device = "CPU"; 
+        const std::string device = "CPU";
         DeviceConfig device_config(core, scheduler_config, model_config, device);
 
         apply_paged_attention_transformations(model, model_config, device_config);

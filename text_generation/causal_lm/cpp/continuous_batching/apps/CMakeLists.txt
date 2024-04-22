@@ -22,7 +22,7 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 
 set(TARGET_NAME accuracy_sample)
 add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
-target_link_libraries(${TARGET_NAME} PRIVATE openvino_continuous_batching openvino::runtime)
+target_link_libraries(${TARGET_NAME} PRIVATE openvino_continuous_batching openvino::runtime cxxopts::cxxopts)
 
 set(TARGET_NAME throughput_benchmark)
 add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
