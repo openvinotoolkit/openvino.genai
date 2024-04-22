@@ -198,9 +198,9 @@ int main(int argc, char* argv[]) try {
 
     for (size_t num_finished = 0; pipe.has_running_requests(); ) {
         std::vector<GenerationResult> results = pipe.step();
-        if (!results.empty()) {
-            std::cout << "Finished: " << (num_finished += results.size()) << std::endl;
-        }
+        // if (!results.empty()) {
+        //     std::cout << "Finished: " << (num_finished += results.size()) << std::endl;
+        // }
     }
 
     double total_time_in_ms = timer.current_in_milli();
