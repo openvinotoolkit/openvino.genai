@@ -31,9 +31,8 @@ public:
     ov::AnyMap m_config;
     size_t kv_cache_len = 0;
     ov::Tensor m_attentions_mask_cache;
-    std::function<void (std::string)> m_callback = [](std::string ){ ;};
-    TextCoutStreamer m_streamer;
     bool is_streamer_set = false;
+    std::string m_chat_template = "";
     
     // TODO: add constructor for specifying manually tokenizer path
     // dir path
@@ -75,7 +74,7 @@ public:
 
     std::vector<std::string> operator()(std::initializer_list<std::string> text, GenerationConfig sampling_parameters);
 
-    GenerationResult generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params);
+    GenerationResult generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params, bool first = true);
 
     GenerationResult generate(ov::Tensor input_ids, ov::Tensor attention_mask);
 
@@ -86,4 +85,8 @@ public:
     Tokenizer get_tokenizer();
 
     void set_streamer_callback(std::function<void (std::string)> callback);
+private:
+    TextCoutStreamer m_streamer;
+    std::function<void (std::string)> m_streamer_callback = [](std::string ){ ;};
+
 };

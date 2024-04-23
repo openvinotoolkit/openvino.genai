@@ -15,10 +15,6 @@ std::pair<ov::Tensor, ov::Tensor> pad_left(ov::Tensor&& input_ids, ov::Tensor&& 
 
 
 class Tokenizer {
-    ov::InferRequest m_tokenize_request;
-    ov::InferRequest m_detokenizer_request;
-    std::string m_device;
-
 public:
     int64_t m_eos_token = 2;
 
@@ -38,20 +34,25 @@ public:
     std::vector<std::string> detokenize(ov::Tensor tokens);
     
     std::vector<std::string> detokenize(GenerationResult lines);
+private:
+    ov::InferRequest m_tokenize_request;
+    ov::InferRequest m_detokenizer_request;
+    std::string m_device;
 };
 
 
 class TextCoutStreamer {
-    Tokenizer tokenizer;
-    std::vector<int64_t> token_cache;
-    size_t print_len = 0;
-    std::function<void (std::string)> m_callback = [](std::string words){ ;};
-    
 public:
-    void put(int64_t token);
+    std::string put(int64_t token);
 
-    void end();
-    TextCoutStreamer(const Tokenizer& tokenizer);
+    std::string end();
+    TextCoutStreamer(const Tokenizer& tokenizer, bool m_print_eos_token = false);
     TextCoutStreamer() = default;
     void set_tokenizer(Tokenizer tokenizer);
+private:
+    bool m_print_eos_token = false;
+    Tokenizer m_tokenizer;
+    std::vector<int64_t> m_tokens_cache;
+    size_t print_len = 0;
+    std::function<void (std::string)> m_callback = [](std::string words){ ;};
 };

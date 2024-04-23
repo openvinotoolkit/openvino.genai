@@ -118,41 +118,46 @@ std::vector<std::string> Tokenizer::detokenize(GenerationResult lines) {
     return strings;
 }
 
-TextCoutStreamer::TextCoutStreamer(const Tokenizer& tokenizer) {
-    this->tokenizer = tokenizer;
+TextCoutStreamer::TextCoutStreamer(const Tokenizer& tokenizer, bool print_eos_token) {
+    m_tokenizer = tokenizer;
+    m_print_eos_token = print_eos_token;
 }
 
-void TextCoutStreamer::put(int64_t token) {
+std::string TextCoutStreamer::put(int64_t token) {
+    std::stringstream res;
+
     // do not print anything and flush cache if EOS token is met
-    if (token == tokenizer.m_eos_token) {
-        end();
-        return ;
+    if (token == m_tokenizer.m_eos_token) {
+        return end();
     }
 
-    token_cache.push_back(token);
-    std::string text = tokenizer.detokenize(token_cache);
+    m_tokens_cache.push_back(token);
+    std::string text = m_tokenizer.detokenize(m_tokens_cache);
     if (!text.empty() && '\n' == text.back()) {
         // Flush the cache after the new line symbol
-        std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
-        token_cache.clear();
+        res << std::string_view{text.data() + print_len, text.size() - print_len};
+        m_tokens_cache.clear();
         print_len = 0;
-        return;
+        return res.str();
     }
     if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
         // Don't print incomplete text
-        return;
+        return res.str();
     }
-    std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
+    res << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
     print_len = text.size();
+    return res.str();
 }
 
-void TextCoutStreamer::end() {
-    std::string text = tokenizer.detokenize(token_cache);
-    std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
-    token_cache.clear();
+std::string TextCoutStreamer::end() {
+    std::stringstream res;
+    std::string text = m_tokenizer.detokenize(m_tokens_cache);
+    res << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
+    m_tokens_cache.clear();
     print_len = 0;
+    return res.str();
 }
 
 void TextCoutStreamer::set_tokenizer(Tokenizer tokenizer) {
-    this->tokenizer = tokenizer;
+    this->m_tokenizer = tokenizer;
 }
