@@ -29,6 +29,11 @@ public:
     GenerationConfig m_sampling_parameters;
     std::string m_device;
     ov::AnyMap m_config;
+    size_t kv_cache_len = 0;
+    ov::Tensor m_attentions_mask_cache;
+    std::function<void (std::string)> m_callback = [](std::string ){ ;};
+    TextCoutStreamer m_streamer;
+    bool is_streamer_set = false;
     
     // TODO: add constructor for specifying manually tokenizer path
     // dir path
@@ -58,7 +63,7 @@ public:
 
     std::string call(std::string text);
 
-    std::string call(std::string text, GenerationConfig generation_config);
+    std::string call(std::string text, GenerationConfig generation_config, bool first_time = false);
 
     std::vector<std::string> call(std::vector<std::string> text, GenerationConfig sampling_parameters);
 
@@ -79,4 +84,6 @@ public:
     GenerationResult generate(ov::Tensor input_ids);
 
     Tokenizer get_tokenizer();
+
+    void set_streamer_callback(std::function<void (std::string)> callback);
 };

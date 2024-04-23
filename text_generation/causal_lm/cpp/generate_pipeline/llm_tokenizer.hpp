@@ -20,6 +20,8 @@ class Tokenizer {
     std::string m_device;
 
 public:
+    int64_t m_eos_token = 2;
+
     Tokenizer() = default;
     Tokenizer(std::string& tokenizers_path, std::string device="CPU");
 
@@ -39,36 +41,17 @@ public:
 };
 
 
-// 1 printable token may consist of 2 token ids: detokenize(incomplete_token_idx) == "�"
-// class TextStreamer {
-//     LLMPipeline pipe;
-//     std::vector<int64_t> token_cache;
-//     size_t print_len = 0;
+class TextCoutStreamer {
+    Tokenizer tokenizer;
+    std::vector<int64_t> token_cache;
+    size_t print_len = 0;
+    std::function<void (std::string)> m_callback = [](std::string words){ ;};
+    
+public:
+    void put(int64_t token);
 
-//     // TextStreamer(Tokenizer)
-
-//     void put(int64_t token) {
-//         token_cache.push_back(token);
-//         std::string text = pipe.detokenize(token_cache);
-//         if (!text.empty() && '\n' == text.back()) {
-//             // Flush the cache after the new line symbol
-//             std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
-//             token_cache.clear();
-//             print_len = 0;
-// 	        return;
-//         }
-//         if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
-//             // Don't print incomplete text
-//             return;
-//         }
-//         std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
-//         print_len = text.size();
-//     }
-
-//     void end() {
-//         std::string text = pipe.detokenize(token_cache);
-//         std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
-//         token_cache.clear();
-//         print_len = 0;
-//     }
-// };
+    void end();
+    TextCoutStreamer(const Tokenizer& tokenizer);
+    TextCoutStreamer() = default;
+    void set_tokenizer(Tokenizer tokenizer);
+};

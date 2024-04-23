@@ -52,7 +52,7 @@ void update_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_m
     }
 }
 
-void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask) {
+void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos = 0) {
     const size_t batch_size = attention_mask.get_shape()[0];
     const size_t seq_length = attention_mask.get_shape()[1];
 
@@ -60,7 +60,7 @@ void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attenti
     int64_t* position_ids_data = position_ids.data<int64_t>();
 
     for (size_t batch = 0; batch < batch_size; batch++) {
-        size_t sum = 0;
+        size_t sum = start_pos;
         for (size_t i = 0; i < seq_length; i++) {
             const size_t element_offset = batch * seq_length + i;
             position_ids_data[element_offset] = sum;
@@ -178,6 +178,15 @@ GenerationConfig LLMPipeline::generation_config() const {
     return m_sampling_parameters;
 }
 
+void print_tensor(const ov::Tensor& tensor) {
+    std::vector<int64_t> res;
+
+    auto t_shape = tensor.get_shape()[1];
+    for (size_t i = 0; i < t_shape; ++i) {
+        res.emplace_back(tensor.data<int64_t>()[i]);
+    }
+    cout << "";
+}
 
 GenerationResult LLMPipeline::greedy_search(ov::Tensor input_ids, 
                                 ov::Tensor attention_mask, 
@@ -186,20 +195,57 @@ GenerationResult LLMPipeline::greedy_search(ov::Tensor input_ids,
     size_t batch_size = prompts_shape[0];
     
     GenerationResult results(batch_size);
+    
+    if (!sampling_params.m_do_reset_state && kv_cache_len > 0) {
+        // m_attentions_mask_cache extent with attention_mask;
+
+        size_t new_prompt_len = attention_mask.get_shape()[1];
+        size_t context_len = m_attentions_mask_cache.get_shape()[1];
+        ov::Tensor new_attention_mask =  ov::Tensor{ov::element::i64, {1, context_len + new_prompt_len}};
+        // print_tensor(m_attentions_mask_cache);
+        // print_tensor(attention_mask);
+
+        for (size_t i = 0; i < context_len; ++i) {
+            auto r = m_attentions_mask_cache.data<int64_t>()[i];
+            new_attention_mask.data<int64_t>()[i] = m_attentions_mask_cache.data<int64_t>()[i];
+        }
+        for (size_t i = context_len; i < context_len + new_prompt_len; ++i) {
+            auto r = attention_mask.data<int64_t>()[i];
+            new_attention_mask.data<int64_t>()[i] = attention_mask.data<int64_t>()[i - context_len];
+        }
+        // attention_mask = new_attention_mask;
+    // }
+        m_model_runner.set_tensor("attention_mask", new_attention_mask);
+    } else {
+        m_model_runner.set_tensor("attention_mask", attention_mask);
+    }
+    
+    // print_tensor(attention_mask);
+
 
     auto position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
     // todo: make this work even if position_ids are not specified
-    initialize_position_ids(position_ids, attention_mask);
+    initialize_position_ids(position_ids, attention_mask, kv_cache_len);
+    // initialize_position_ids(position_ids, attention_mask, 0);
 
     size_t prompt_len = input_ids.get_shape()[1];
 
+    auto atten_shape = attention_mask.get_shape();
+    auto pos_shape = position_ids.get_shape();
+    auto input_ids_shape = input_ids.get_shape();
+
     m_model_runner.set_tensor("input_ids", input_ids);
-    m_model_runner.set_tensor("attention_mask", attention_mask);
+    // print_tensor(m_model_runner.get_tensor("input_ids"));
+    // m_model_runner.set_tensor("attention_mask", attention_mask);
     m_model_runner.set_tensor("position_ids", position_ids);
 
     m_model_runner.get_tensor("beam_idx").set_shape({batch_size});
     auto beam_data = m_model_runner.get_tensor("beam_idx").data<int32_t>();
     std::iota(beam_data, beam_data + batch_size, 0);
+
+    print_tensor(m_model_runner.get_tensor("input_ids"));
+    print_tensor(m_model_runner.get_tensor("attention_mask"));
+    print_tensor(m_model_runner.get_tensor("position_ids"));
 
     for (size_t i = 0; i < sampling_params.get_max_new_tokens(prompt_len); ++i) {
         // todo: consider replacing with start_async and run callback right after that
@@ -209,8 +255,10 @@ GenerationResult LLMPipeline::greedy_search(ov::Tensor input_ids,
         size_t seq_len = logits_shape[1], vocab_size = logits_shape[2];
 
         m_model_runner.get_tensor("input_ids").set_shape({batch_size, 1});
+        m_attentions_mask_cache = m_model_runner.get_tensor("attention_mask");
         m_model_runner.set_tensor("attention_mask", extend_attention(m_model_runner.get_tensor("attention_mask")));
-        update_position_ids(position_ids, attention_mask);  // todo: check why does not always work correctly
+
+        update_position_ids(position_ids, m_model_runner.get_tensor("attention_mask"));  // todo: check why does not always work correctly
         
         std::vector<int64_t> token_iter_results(batch_size);  // results of a single infer request
         std::vector<int> eos_met(batch_size, 0);  // use int because can not use std::all_of with vector<bool>
@@ -219,13 +267,19 @@ GenerationResult LLMPipeline::greedy_search(ov::Tensor input_ids,
             int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
             results[batch].second.emplace_back(out_token);
             token_iter_results[batch] = out_token;
-            eos_met[batch] != (out_token == sampling_params.m_eos_token_id);
+            eos_met[batch] = (out_token == sampling_params.m_eos_token_id);
 
             m_model_runner.get_tensor("input_ids").data<int64_t>()[batch] = out_token;
             m_model_runner.get_tensor("position_ids").data<int64_t>()[batch] = int64_t(prompt_len + i);
+
+            kv_cache_len = prompt_len + i;
         }
         // place
-        sampling_params.m_callback(std::move(token_iter_results), *this);
+        // sampling_params.m_callback(std::move(token_iter_results), *this);
+        
+        if (is_streamer_set) {
+            m_streamer.put(token_iter_results[0]);
+        }
         
         // stop generation when EOS is met in all batches
         bool all_are_eos = std::all_of(eos_met.begin(), eos_met.end(), [](int elem) { return elem == 1; });
@@ -286,8 +340,11 @@ GenerationResult LLMPipeline::beam_search(ov::Tensor prompts, ov::Tensor attenti
         m_model_runner.get_tensor("position_ids").set_shape({batch_size, 1});
         std::fill_n(m_model_runner.get_tensor("position_ids").data<int64_t>(), batch_size, mask_shape.at(1) - 1);
         
-        // place
-        sampling_params.m_callback(std::move(next_tokens), *this);
+        // sampling_params.m_callback(std::move(next_tokens), *this);
+        // m_callback(std::move(next_tokens);
+        if (is_streamer_set) {
+            m_streamer.put(next_tokens[0]);
+        }
 
     }
 
@@ -468,8 +525,14 @@ std::string LLMPipeline::call(std::string text) {
     return m_tokenizer.detokenize(generate_results)[0];
 }
 
-std::string LLMPipeline::call(std::string text, GenerationConfig generation_config) {
+std::string LLMPipeline::call(std::string text, GenerationConfig generation_config, bool first_time) {
     auto [input_ids, attention_mask] = m_tokenizer.tokenize(text);
+    if (generation_config.m_do_reset_state == false && !first_time) {
+        auto size = input_ids.get_shape();
+        int64_t* inputs_data = input_ids.data<int64_t>();
+
+        // std::replace(inputs_data, inputs_data + input_ids.get_shape()[1], 1, 2);
+    }
     // to keep config specified during LLMPipeline creation need to get existing 
     // and modify only after that, e.g.:
     // GenerationConfig config = pipe.generation_config();
@@ -503,15 +566,20 @@ std::vector<std::string> LLMPipeline::operator()(std::initializer_list<std::stri
     return call(text, sampling_parameters);
 }
 
-GenerationResult LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params) {
-    if (sampling_params.is_gready_sampling()) {
-        return greedy_search(input_ids, attention_mask, sampling_params);
-    } else if (sampling_params.is_beam_search()) {
-        return beam_search(input_ids, attention_mask, sampling_params);
-    } else if (sampling_params.is_multimomial()) {
-        return multinomial_sampling(input_ids, sampling_params);
+GenerationResult LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config) {
+    if (generation_config.m_do_reset_state) {
+        m_model_runner.reset_state();
+        kv_cache_len = 0;
+    }
+
+    if (generation_config.is_gready_sampling()) {
+        return greedy_search(input_ids, attention_mask, generation_config);
+    } else if (generation_config.is_beam_search()) {
+        return beam_search(input_ids, attention_mask, generation_config);
+    } else if (generation_config.is_multimomial()) {
+        return multinomial_sampling(input_ids, generation_config);
     } else { // speculative
-        return speculative_sampling(input_ids, attention_mask, sampling_params);
+        return speculative_sampling(input_ids, attention_mask, generation_config);
     }
 }
 
@@ -530,4 +598,10 @@ GenerationResult LLMPipeline::generate(ov::Tensor input_ids) {
 
 Tokenizer LLMPipeline::get_tokenizer() {
     return m_tokenizer;
+}
+
+void LLMPipeline::set_streamer_callback(std::function<void (std::string)> callback) {
+    is_streamer_set = true;
+    m_callback = callback;
+    m_streamer = TextCoutStreamer(m_tokenizer);
 }
