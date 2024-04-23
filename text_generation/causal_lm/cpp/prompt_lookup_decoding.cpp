@@ -229,8 +229,8 @@ int main(int argc, char* argv[]) try {
 
     const int64_t EOS_TOKEN = get_eos_token(tokenizer_model);
 
-    // Prompt lookup decoding is a speculative decoding technic where the draft model replaced with simple string
-    // matching in the prompt to generate candidate token sequences.
+    // Prompt lookup decoding is a speculative decoding technic where the draft model replaced
+    // with string matching in the prompt to generate candidate token sequences.
     int max_sequence_length = 600;
     PromptLookupCandidateGenerator candidateGenerator{3, 5};
 
@@ -238,9 +238,8 @@ int main(int argc, char* argv[]) try {
         auto candidates = candidateGenerator.generate_candidates(full_input_ids);
         size_t K = candidates.size();
 
-        // For the main network, K tokens will be fed at once in a single infer request.
+        // K + 1 tokens will be fed at once in a single infer request.
         input_ids.set_shape({BATCH_SIZE, K + 1});
-        // Set the first token for the main model to be the same as for the draft model.
         input_ids.data<int64_t>()[0] = first_token;
         for (int i = 0; i < K; i++) {
             input_ids.data<int64_t>()[i + 1] = candidates[i];
