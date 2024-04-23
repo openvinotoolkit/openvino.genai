@@ -141,7 +141,7 @@ def create_text_gen_model(model_path, device, **kwargs):
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if model_type in ['replit', 'codegen2', 'chatglm', 'mpt']:
+        if model_type in ['replit', 'codegen2', 'chatglm']:
             start = time.perf_counter()
             ov_model = model_class.from_pretrained(
                 model_path,
@@ -151,7 +151,8 @@ def create_text_gen_model(model_path, device, **kwargs):
                 stateful=kwargs.get("stateful", None)
             )
             end = time.perf_counter()
-        elif model_type in ['falcon']:
+        elif model_type in ['falcon', "mpt"]:
+            start = time.perf_counter()
             ov_model = model_class.from_pretrained(
                 model_path,
                 device=device,
