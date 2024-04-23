@@ -11,6 +11,7 @@ struct SchedulerConfig {
     // TODO: benchmark this value and understand a required value to ensure inference is not memory bound
     const std::size_t max_num_batched_tokens = 16;
 
+    // TODO: specify size in GBs instead of number of KV blocks
     // total number of KV blocks available to scheduler logic
     const std::size_t num_kv_blocks = 36400;
 

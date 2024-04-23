@@ -119,6 +119,14 @@ public:
     }
 
     void add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
+        if (sampling_params.eos_token_id < 0) {
+            sampling_params.eos_token_id = m_tokenizer->get_eos_token_id();
+        } else {
+            OPENVINO_ASSERT(sampling_params.eos_token_id == m_tokenizer->get_eos_token_id(),
+                "EOS token ID is different in generation config (", sampling_params.eos_token_id, ") and tokenizer (",
+                m_tokenizer->get_eos_token_id(), ")");
+        }
+
         ov::Tensor input_ids;
         {
             static ManualTimer timer("tokenize");

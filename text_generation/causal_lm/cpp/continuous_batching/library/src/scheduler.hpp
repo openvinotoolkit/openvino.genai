@@ -220,6 +220,7 @@ private:
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
                 // TODO: below functions can_append_slot / append_slot can allocate just a single slot, while we require multiple ones in generic case
+                // (generic case is speculative deconding, where we can check multiple tokens at once)
                 // So, let's state this as current limitation of scheduler logic
                 OPENVINO_ASSERT(num_scheduled_tokens_per_seq == 1);
 

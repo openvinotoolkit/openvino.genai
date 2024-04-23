@@ -173,7 +173,6 @@ class GroupBeamSearcher {
     GenerationConfig m_parameters;
     std::vector<Group> m_groups;
 public:
-    GroupBeamSearcher(const GroupBeamSearcher&) = default;
     explicit GroupBeamSearcher(SequenceGroup::Ptr sequence_group);
 
     void select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output);
@@ -249,7 +248,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 running_sequences[0]->append_token(sampled_token_id, sequence_group_logits.data<const float>()[sampled_token_id]);
 
                 if (sampling_params.max_new_tokens == running_sequences[0]->get_generated_len() ||
-                    sampled_token_id == sampling_params.eos_token && !sampling_params.ignore_eos) {
+                    sampled_token_id == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
                     // stop sequence by max_output_length or EOS token
                     running_sequences[0]->set_status(SequenceStatus::FINISHED);
                     // drop sequence from scheduler
@@ -365,8 +364,8 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                 }
             }
 
-            // HF implementation counts eos_token for length penalty calculation
-            if (candidate.m_token_id != m_parameters.eos_token) {
+            // HF implementation counts eos_token_id for length penalty calculation
+            if (candidate.m_token_id != m_parameters.eos_token_id) {
                 // append token from candidate to actual sequence
                 forked_sequence->append_token(candidate.m_token_id, candidate.m_log_prob);
             }
@@ -436,7 +435,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
 
         for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
             Beam & candidate = candidates[cand_idx];
-            if (m_parameters.eos_token == candidate.m_token_id) {
+            if (m_parameters.eos_token_id == candidate.m_token_id) {
                 // If beam_token does not belong to top num_beams tokens, it should not be added
                 if (cand_idx >= m_parameters.group_size)
                     continue;
