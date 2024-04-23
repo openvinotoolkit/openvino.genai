@@ -209,58 +209,26 @@ int main(int argc, char* argv[]) try {
         std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     TextStreamer text_streamer{std::move(detokenizer)};
 
-    // draft model
-    //ov::InferRequest draft_model = core.compile_model(std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
-
-    //draft_model.set_tensor("input_ids", draft_input_ids);
-    //draft_model.set_tensor("attention_mask", draft_attention_mask);
-    
-    //ov::Tensor draft_position_ids = draft_model.get_tensor("position_ids");
-    //draft_position_ids.set_shape(draft_input_ids.get_shape());
-    //std::iota(draft_position_ids.data<int64_t>(), draft_position_ids.data<int64_t>() + draft_position_ids.get_size(), 0);
-    //uint64_t seq_len = draft_input_ids.get_shape()[1];
     std::cout << "Load LLM start ...\n";
-    // main model
     ov::InferRequest main_model = core.compile_model(std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
     std::cout << "Load LLM finished\n";
 
-    // Input tensors for the main model should not be mixed with draft.
-    // Do not feed the same draft_postion_ids to the main, but copy input_ids from the draft_input_ids
-    //auto input_ids = main_model.get_tensor("input_ids");
     main_model.set_tensor("input_ids", input_ids);
     main_model.set_tensor("attention_mask", attention_mask);
     uint64_t seq_len = input_ids.get_shape()[1];
-    //input_ids.set_shape(draft_input_ids.get_shape());
-    //draft_input_ids.copy_to(input_ids);
-
-    //auto attention_mask = main_model.get_tensor("attention_mask");
-    //attention_mask.set_shape(draft_input_ids.get_shape());
-    //attention_mask.set_shape(input_ids.get_shape());
-    //std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
 
     auto position_ids = main_model.get_tensor("position_ids");
-    //position_ids.set_shape(draft_input_ids.get_shape());
     position_ids.set_shape(input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
     // set beam_idx for stateful model: no beam search is used and BATCH_SIZE = 1
     main_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
     main_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
-    /* 
-    // set beam_idx for stateful model: no beam search is used and BATCH_SIZE = 1
-    draft_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
-    draft_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
-    main_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
-    main_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
-    */
     // To collect kv-cache for the <PROMPT> and to get the next token run the very first infer request
-    //draft_model.infer();
     std::cout << "LLM first infer start...\n";
     main_model.infer();
     std::cout << "LLM first infer end...\n";
 
-    //size_t vocab_size = draft_model.get_tensor("logits").get_shape().back();
     size_t vocab_size = main_model.get_tensor("logits").get_shape().back();
-    //OPENVINO_ASSERT(vocab_size == main_model.get_tensor("logits").get_shape().back(), "vocab size should be the same for the both models");
        
     // logits shape is [BATCH_SIZE, seq_len, vocab_size]
     auto logits = main_model.get_tensor("logits");
@@ -271,13 +239,6 @@ int main(int argc, char* argv[]) try {
     auto first_token = out_token;
     text_streamer.put(out_token);
     
-    // run K infer requests on draft model and get next K prediction tokens on each iteration
-    uint64_t K = 5;
-    //std::vector<int64_t> draft_tokens;
-
-    // The draft model predicts tokens one by one in an auto-regressive manner, draft_input_ids length should be 1.
-    //draft_input_ids.set_shape({BATCH_SIZE, 1});
-    //draft_position_ids.set_shape({BATCH_SIZE, 1});
     std::cout << "Get runtime information from tokenizer start...\n";
     auto rt_info = tokenizer_model->get_rt_info(); //Get the runtime info for the model
     std::cout << "Get runtime information from tokenizer finished...\n";
@@ -288,39 +249,31 @@ int main(int argc, char* argv[]) try {
         throw std::runtime_error("EOS token ID not found in model's runtime information.");
     }
 
-   /* Speculative decoding works the following way. The draft model predicts the next K
-   tokens one by one in an autoregressive manner, while the main model validates these
+   /* Prompt lookup decoding works the following way. The find_candidate_pred_token 
+   function extract K candidate tokens from input prompt, while the main model validates these
    predictions and corrects them if necessary. We go through each predicted token, and
-   if a difference is detected between the draft and main model, we stop and keep the
-   last token predicted by the main model. Then the draft model gets the latest main
-   prediction and again tries to predict the next K tokens, repeating the cycle.
+   if a difference is detected between the candidate tokens and main model, we stop and keep the
+   last token predicted by the main model. Then we find K candidate tokens from latest main
+   prediction, repeating the cycle.
 
    This approach reduces the need for multiple infer requests to the main model,
    enhancing performance. For instance, in more predictable parts of text generation,
-   the draft model can, in best-case scenarios, generate the next K tokens that exactly
-   match the target. In tha caste the are validated in a single inference request to
-   the main model (which is bigger, more accurate but slower) instead of running K
-   subsequent requests. 
+   then find candidate predition token can, in best-case scenarios, generate the next K tokens that exactly
+   match the target. In that case, they are validated in a single inference request to
+   the main model instead of running K subsequent requests with main model. 
    */
     int max_sequence_length = 60;
     std::vector<int64_t> input_ids_vec = {};
-    //std::cout << "Original main model input ids: [";
+
+    // Extract input_ids data in vector
     for (size_t i=0; i < seq_len; i++){
-        //std::cout << input_ids.data<int64_t>()[i] << ", ";
 	input_ids_vec.push_back(input_ids.data<int64_t>()[i]);
     }
-    //std::cout << "]\n";
 
+    // Get K candidate prediction tokens via find_candidate_pred_tokens base on input ids
+    uint64_t K = 5;
     int32_t max_ngram_size = 3;
     int32_t num_pred_tokens = K; // K=5
-    /*
-    std::vector<int64_t> candidate_tokens_vec = find_candidate_pred_tokens(input_ids_vec, max_ngram_size, num_pred_tokens);
-    std::cout << "Find candidate tokens: [";
-        for (auto& ct: candidate_tokens_vec) {
-            std::cout << ct << ", ";
-        }
-    std::cout << " ]\n";
-    */
     while (out_token != SPECIAL_EOS_TOKEN && seq_len < max_sequence_length) {
 	std::cout << "\nStart new 2nd token generation, current seq_len: " << seq_len << "\n";
 	std::cout << "Current Input ids: [";
@@ -338,37 +291,10 @@ int main(int argc, char* argv[]) try {
             std::cout << ct << ", ";
         }
 	std::cout << " ]\n";
-
-	// infer the K next tokens with draft model
-	/*
-        for (int i = 0; i < K; ++i) {
-            draft_input_ids.data<int64_t>()[0] = out_token;
-            draft_attention_mask.set_shape({BATCH_SIZE, seq_len + i + 1});
-            std::fill_n(draft_attention_mask.data<int64_t>(), draft_attention_mask.get_size(), 1);
-            draft_position_ids.data<int64_t>()[0] = int64_t(draft_attention_mask.get_size() - 1);
-
-            draft_model.infer();
-
-            auto draft_logits = draft_model.get_tensor("logits").data<float>();
-            int64_t arg_max_token = std::max_element(draft_logits, draft_logits + vocab_size) - draft_logits;
-            out_token = arg_max_token;
-            draft_tokens.emplace_back(arg_max_token);
-        }
-	
-	std::cout << "Draft tokens: [";
-	for (auto& dt: draft_tokens) {
-	    std::cout << dt << ", ";
-	}
-	std::cout << " ]\n";
-	*/
-        // For the main network, K tokens will be fed at once in a single infer request.
+        // For the main model, K tokens will be fed at once in a single infer request.
         input_ids.set_shape({BATCH_SIZE, K});
         // Set the first token for the main model to be the same as for the draft model.
         input_ids.data<int64_t>()[0] = first_token;
-	/*
-        for (int i = 0; i < K - 1; i++)
-            input_ids.data<int64_t>()[i + 1] = draft_tokens[i];
-	*/
 	for (int i = 0; i < K - 1; i++)
             input_ids.data<int64_t>()[i + 1] = candidate_tokens_vec[i];
 	std::cout << "Updated main model 2nd token input ids: [ ";
@@ -387,7 +313,7 @@ int main(int argc, char* argv[]) try {
 
         data_logits = logits.data<float>();  // [BATCH_SIZE, K, vocab_size]
         size_t disagree_idx = K - 1;
-        // Iterate through the predicted tokens from the main model and compare them with draft predictions.
+        // Iterate through the predicted tokens from the main model and compare them with candidate predictions.
         // In the worst-case scenario (disagreement at the beginning), iter will increase by 1.
         // In the best-case scenario, all elements match, and K predicted tokens will be taken.
 	std::vector<int64_t> selected_tokens;
@@ -399,9 +325,7 @@ int main(int argc, char* argv[]) try {
 	    //text_streamer.put(out_token);
 
             disagree_idx = i;                
-	    //std::cout << "start: " << *start << " , stop: " << *stop << " , out_token: " << out_token << "\n";
 	    std::cout << "disagree_idx: " << disagree_idx << "\n";
-	    //if (out_token != draft_tokens[i] || out_token == SPECIAL_EOS_TOKEN || seq_len + disagree_idx + 1 >= max_sequence_length)
 	    selected_tokens.push_back(out_token);
 	    if (out_token != candidate_tokens_vec[i] || out_token == SPECIAL_EOS_TOKEN || seq_len + disagree_idx + 1 >= max_sequence_length)
                 break;
@@ -412,20 +336,15 @@ int main(int argc, char* argv[]) try {
         // trim the KV cache to match the new sequence length.
         seq_len += disagree_idx + 1;
 	
-	//std::vector<int64_t> selected_tokens = candidate_tokens_vec
-	//std::copy(candidate, std::back_inserter(input_ids_vec));
 	std::cout << "Selected tokens: [";
         for (auto& st: selected_tokens) {
             std::cout << st << ", ";
         }
         std::cout << " ]\n";
-        //update_kv_cache(draft_model, SEQ_LEN_AXIS, seq_len);		
         update_kv_cache(main_model, SEQ_LEN_AXIS, seq_len);
 	std::copy(selected_tokens.begin(), selected_tokens.end(), std::back_inserter(input_ids_vec));
-        //draft_tokens.clear();
 	
         first_token = out_token;
-	//break;
     }
     text_streamer.end();
     // Model is stateful which means that context (kv-cache) which belongs to a particular
