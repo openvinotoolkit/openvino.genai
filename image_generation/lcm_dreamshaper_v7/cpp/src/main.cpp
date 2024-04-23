@@ -263,20 +263,20 @@ int32_t main(int32_t argc, char* argv[]) try {
     cxxopts::Options options("lcm_dreamshaper", "LCM_Dreamshaper_v7 implementation in C++ using OpenVINO\n");
 
     options.add_options()
-    ("p,posPrompt", "Initial positive prompt for LCM ", cxxopts::value<std::string>()->default_value("a beautiful pink unicorn"))
+    ("p,posPrompt", "Initial positive prompt for LCM", cxxopts::value<std::string>()->default_value("a beautiful pink unicorn"))
     ("d,device", "AUTO, CPU, or GPU.\nDoesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only", cxxopts::value<std::string>()->default_value("CPU"))
     ("step", "Number of diffusion steps", cxxopts::value<size_t>()->default_value("4"))
     ("s,seed", "Number of random seed to generate latent for one image output", cxxopts::value<size_t>()->default_value("42"))
     ("num", "Number of image output", cxxopts::value<size_t>()->default_value("1"))
-    ("height","Destination image height",cxxopts::value<size_t>()->default_value("512"))
-    ("width", "Destination image width", cxxopts::value<size_t>()->default_value("512"))
+    ("height","Height of output image",cxxopts::value<size_t>()->default_value("512"))
+    ("width", "Width of output image", cxxopts::value<size_t>()->default_value("512"))
     ("c,useCache", "Use model caching", cxxopts::value<bool>()->default_value("false"))
     ("r,readNPLatent", "Read numpy generated latents from file, only supported for one output image", cxxopts::value<bool>()->default_value("false"))
-    ("m,modelPath", "Specify path of LCM model IRs", cxxopts::value<std::string>()->default_value("./models/lcm_dreamshaper_v7"))
+    ("m,modelPath", "Specify path to LCM model IRs", cxxopts::value<std::string>()->default_value("./models/lcm_dreamshaper_v7"))
     ("t,type", "Specify the type of LCM model IRs (e.g., FP32, FP16 or INT8)", cxxopts::value<std::string>()->default_value("FP16"))
     ("dynamic","Specify the model input shape to use dynamic shape",cxxopts::value<bool>()->default_value("false"))
     ("l,loraPath", "Specify path of LoRA file. (*.safetensors).", cxxopts::value<std::string>()->default_value(""))
-    ("a,alpha", "alpha for LoRA", cxxopts::value<float>()->default_value("0.75"))
+    ("a,alpha", "Specify alpha for LoRA", cxxopts::value<float>()->default_value("0.75"))
     ("h,help", "Print usage");
     cxxopts::ParseResult result;
 
