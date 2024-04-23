@@ -422,15 +422,15 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           convert_tokenizer ./redpajama-3b-chat/pytorch/dldt/FP16/ --output ./redpajama-3b-chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
-          timeout 50s ./build/beam_search_causal_lm ./redpajama-3b-chat/pytorch/dldt/FP16/ 69 > ./pred.txt 
+          timeout 50s ./build/greedy_causal_lm ./redpajama-3b-chat/pytorch/dldt/FP16/ "Alan Turing was a" > ./pred_greedy.txt 
       - name: Compare
         run: |
           python -c "
           import transformers
-          with open('pred.txt', 'r') as file:
+          with open('pred_greedy', 'r') as file:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('ikala/redpajama-3b-chat')
-          tokenized = tokenizer('69', return_tensors='pt')
+          tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
           for output in transformers.AutoModelForCausalLM.from_pretrained('ikala/redpajama-3b-chat').generate(**tokenized, max_length=100, do_sample=False):
               ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
               idx = predictions.find(ref)
@@ -438,4 +438,4 @@ jobs:
                   raise RuntimeError(f'Missing "{ref}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo "69" passed
+          echo "Alan Turing was a" passed
