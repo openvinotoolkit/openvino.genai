@@ -31,7 +31,7 @@ ov::Tensor randn_tensor(uint32_t height, uint32_t width, bool use_np_latents, ui
     ov::Tensor noise(ov::element::f32, {1, UNET_IN_CHANNELS, height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
     if (use_np_latents) {
         // read np generated latents with defaut seed 42
-        const char * latent_file_name = "./scripts/np_latents_512x512.txt";
+        const char * latent_file_name = "./latents/np_latents_512x512.txt";
         std::ifstream latent_copy_file(latent_file_name, std::ios::ate);
         OPENVINO_ASSERT(latent_copy_file.is_open(), "Cannot open ", latent_file_name);
 
