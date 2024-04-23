@@ -25,6 +25,7 @@ OV_MODEL_CLASSES_MAPPING = {
     'decoder': OVModelForCausalLM,
     't5': OVModelForSeq2SeqLM,
     'blenderbot': OVModelForSeq2SeqLM,
+    'falcon': OVModelForCausalLM,
     'mpt': OVMPTModel,
     'stable-diffusion-xl': OVStableDiffusionXLPipeline,
     'sdxl': OVStableDiffusionXLPipeline,
@@ -97,6 +98,7 @@ USE_CASES = {
         'minicpm',
         'gemma',
         "deci",
+        "internlm"
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }

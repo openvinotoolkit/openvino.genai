@@ -148,7 +148,7 @@ std::vector<std::string> prompts_arguments_to_vector(int argc, char* argv[]) {
 
 int main(int argc, char* argv[]) try {
     if (argc < 3) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>'...");
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT 1>' ['<PROMPT 2>' ...]");
     }
 
     // Compile models
