@@ -9,9 +9,9 @@
 #include <functional>
 
 enum class StopCriteria {
-    early,
-    heuristic,
-    never
+    EARLY,
+    HEURISTIC,
+    NEVER
 };
 
 // forward declaration
@@ -28,7 +28,7 @@ struct GenerationConfig {
     size_t num_groups = 1;
     size_t group_size = 1; // beam_width
     float diversity_penalty = 1.0f; // 0.0 means no diversity
-    StopCriteria stop_criteria = StopCriteria::heuristic;
+    StopCriteria stop_criteria = StopCriteria::HEURISTIC;
     size_t num_return_sequences = 3;  // is used by beam search, in other case is equal to batch size
 
     float repetition_penalty = 1.0f;
@@ -43,7 +43,7 @@ struct GenerationConfig {
     bool do_sample;
 
     // reads generation config from HF generation_config.json
-    static GenerationConfig from_file();
+    static GenerationConfig from_file(const std::string& generation_config_json);
 
     static GenerationConfig greedy();
 

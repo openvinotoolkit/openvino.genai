@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <cstdlib>
+#include <cstddef>
 
 struct SchedulerConfig {
     // a maximum number of tokens to batch

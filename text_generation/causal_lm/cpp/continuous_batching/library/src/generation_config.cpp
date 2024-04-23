@@ -5,9 +5,9 @@
 
 #include "nlohmann/json.hpp"
 
-#include "generation_config_helpers.hpp"
+#include "generation_config.hpp"
 
-GenerationConfig from_file(const std::string& generation_config_json) {
+GenerationConfig GenerationConfig::from_file(const std::string& generation_config_json) {
     std::ifstream f(generation_config_json);
     nlohmann::json json_data = nlohmann::json::parse(f);
 

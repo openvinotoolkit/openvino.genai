@@ -105,12 +105,12 @@ struct Beam {
         float cumulative_log_prob = m_sequence->get_cumulative_log_probs(), highest_attainable_score = 0.0f;
         float current_length = m_sequence->get_generated_len() + 1;
 
-        if (StopCriteria::heuristic == sampling_params.stop_criteria) {
+        if (StopCriteria::HEURISTIC == sampling_params.stop_criteria) {
             highest_attainable_score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
-        } else if (StopCriteria::never == sampling_params.stop_criteria) {
+        } else if (StopCriteria::NEVER == sampling_params.stop_criteria) {
             size_t length = sampling_params.length_penalty > 0.0 ? sampling_params.max_new_tokens : current_length;
             highest_attainable_score = cumulative_log_prob / std::pow(length, sampling_params.length_penalty);
-        } else if (StopCriteria::early == sampling_params.stop_criteria) {
+        } else if (StopCriteria::EARLY == sampling_params.stop_criteria) {
             // nothing to do
         }
 
@@ -150,7 +150,7 @@ struct Group {
             const float highest_attainable_score = best_running_sequence.get_beam_search_score(sampling_params);
             const float worst_finished_score = worst_finished_sequence.get_beam_search_score(sampling_params);
 
-            done = sampling_params.stop_criteria == StopCriteria::early ? true :
+            done = sampling_params.stop_criteria == StopCriteria::EARLY ? true :
                 // we cannot get finished sequence with score better than worst finished one
                 worst_finished_score >= highest_attainable_score;
         }

@@ -6,6 +6,7 @@
 
 #include <string>
 #include <memory>
+#include <vector>
 
 #include "openvino/runtime/tensor.hpp"
 
