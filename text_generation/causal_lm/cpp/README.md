@@ -99,15 +99,16 @@ convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyL
 2. `speculative_decoding_lm <DRAFT_MODEL_DIR> <MAIN_MODEL_DIR> "<PROMPT>"`
 
 ### Examples:
-#### Windows:
-1. `/build/Release/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-2. `/build/Release/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-3. `/build/Release/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ ./Llama-2-7b-chat-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
 
 #### Linux/MacOS:
 1. `./build/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
 2. `./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
 3. `./build/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ ./Llama-2-7b-chat-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+
+#### Windows:
+1. `.\build\Release\greedy_causal_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
+2. `.\build\Release\beam_search_causal_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
+3. `.\build\Release\speculative_decoding_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ .\Llama-2-7b-chat-hf\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
 
