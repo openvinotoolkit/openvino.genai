@@ -48,7 +48,7 @@ struct GenerationConfig {
 
     // special tokens
     int64_t m_bos_token_id = 0;
-    int64_t m_eos_token_id = 0;  // todo: do we need both m_eos_token and m_eos_token_id?
+    int64_t m_eos_token_id = 2;  // todo: do we need both m_eos_token and m_eos_token_id?
     int64_t m_pad_token_id = 0;
 
     std::function<void (std::vector<int64_t>&&, LLMPipeline&)> m_callback = [](std::vector<int64_t>&& tokens, LLMPipeline& pipe){ ;};

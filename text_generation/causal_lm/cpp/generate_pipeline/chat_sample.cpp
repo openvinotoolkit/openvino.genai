@@ -5,7 +5,10 @@
 #include "llm_pipeline.hpp"
 
 
-std::string generate_chat_prompt(const std::string& input, bool first_iter = false) {
+std::string generate_chat_prompt(const LLMPipeline& pipe, std::string& input, bool first_iter = false, bool use_chat_template = true) {
+    if (use_chat_template)
+        return pipe.apply_chat_template(input);
+
     std::stringstream result_prompt;
     string prefix = (first_iter) ? "" : "<\n>";
 
@@ -65,7 +68,7 @@ int main(int argc, char* argv[]) try {
         std::cout << "question:\n";
         // std::getline(std::cin, prompt);
         cout << prompt << endl;
-        prompt = generate_chat_prompt(prompt, first_iter);
+        prompt = generate_chat_prompt(pipe, prompt, first_iter);
         accumulated_str += prompt;
         
         std::string prefix = (first_iter) ? "" : "</s>";

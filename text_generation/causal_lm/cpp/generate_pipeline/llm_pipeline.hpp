@@ -84,6 +84,8 @@ public:
 
     Tokenizer get_tokenizer();
 
+    std::string apply_chat_template(std::string prompt, std::string role = "user") const;
+
     void set_streamer_callback(std::function<void (std::string)> callback);
 private:
     TextCoutStreamer m_streamer;

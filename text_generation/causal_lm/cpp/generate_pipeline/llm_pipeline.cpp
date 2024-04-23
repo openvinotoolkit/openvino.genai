@@ -5,7 +5,8 @@
 #include "generate_pipeline/llm_pipeline.hpp"
 #include "group_beam_searcher.hpp"
 #include <filesystem>
-
+#include <jinja2cpp/template.h>
+#include <jinja2cpp/template_env.h>
 
 using GenerationResult = std::vector<std::pair<float, std::vector<int64_t>>>;
 using namespace std;
@@ -172,6 +173,7 @@ LLMPipeline::LLMPipeline(std::string& path, std::string device, const ov::AnyMap
         std::ifstream f(path + "/" + tokenizer_config_fname);
         nlohmann::json data = nlohmann::json::parse(f);
         m_chat_template = data.value("chat_template", "");
+
     }
     
     m_device = device;
@@ -637,6 +639,23 @@ GenerationResult LLMPipeline::generate(ov::Tensor input_ids) {
 
 Tokenizer LLMPipeline::get_tokenizer() {
     return m_tokenizer;
+}
+
+std::string LLMPipeline::apply_chat_template(std::string prompt, std::string role) const {
+    jinja2::TemplateEnv env;
+    env.GetSettings().lstripBlocks = true;
+    env.GetSettings().trimBlocks = true;
+    jinja2::Template tpl(&env);
+    tpl.Load(m_chat_template);
+    
+    jinja2::ValuesMap message {{"role", role}, {"content", prompt}};
+    jinja2::ValuesMap params = {
+        {"messages", jinja2::ValuesList({message})},
+        {"eos_token", "</s>"},  // todo: load from config
+        {"add_generation_prompt", true},
+    };
+ 
+    return tpl.RenderAsString(params).value();
 }
 
 void LLMPipeline::set_streamer_callback(std::function<void (std::string)> callback) {
