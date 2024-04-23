@@ -4,7 +4,7 @@ import os
 import pytest
 from dataclasses import dataclass
 from pathlib import Path
-from py_continuous_batching import GenerationConfig, GenerationResult
+from py_continuous_batching import GenerationConfig
 from typing import List
 
 from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, \

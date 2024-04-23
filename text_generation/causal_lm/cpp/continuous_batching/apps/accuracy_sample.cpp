@@ -5,6 +5,7 @@
 #include <cxxopts.hpp>
 
 #include "continuous_batching_pipeline.hpp"
+#include "tokenizer.hpp"
 
 void print_generation_result(const GenerationResult& generation_result) {
     for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
@@ -46,14 +47,14 @@ int main(int argc, char* argv[]) try {
     std::vector<std::string> prompt_examples = {
         "What is OpenVINO?",
         "How are you?",
-        "What is OpenVINO?",
-        "What is the current time",
+        "What is your name?",
+        "Tell me something about Canada",
         "What is OpenVINO?",
     };
 
     std::vector<GenerationConfig> sampling_params_examples {
-        GenerationConfig::beam_search(),
-        // GenerationConfig::greedy(),
+         GenerationConfig::beam_search(),
+         GenerationConfig::greedy(),
         // GenerationConfig::multinomial(),
     };
 
@@ -66,7 +67,7 @@ int main(int argc, char* argv[]) try {
     }
 
     // Perform the inference
-
+    
     SchedulerConfig scheduler_config {
         // batch size
         .max_num_batched_tokens = 32,
@@ -84,7 +85,6 @@ int main(int argc, char* argv[]) try {
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
         const GenerationResult & generation_result = generation_results[request_id];
-
         std::cout << "Question: " << prompts[request_id] << std::endl;
         switch (generation_result.m_status)
         {
@@ -110,7 +110,6 @@ int main(int argc, char* argv[]) try {
         }
         std::cout << std::endl;
     }
-
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return EXIT_FAILURE;

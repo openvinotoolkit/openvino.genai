@@ -241,7 +241,7 @@ def _generate_and_compare_with_reference_results(model_path: Path, prompts: List
     assert len(prompts) == len(ov_results)
 
     for prompt, ref_result, ov_result, generation_config in zip(prompts, reference_results, ov_results, generation_configs):
-        print(f"Prompt = {prompt}\nref result = {ref_result}\nOV result = {ov_result}")
+        print(f"Prompt = {prompt}\nref result = {ref_result}\nOV result = {ov_result.m_generation_ids}")
         compare_results(ref_result, ov_result, generation_config)
 
 
@@ -252,7 +252,7 @@ def generate_and_compare_with_reference_text(model_path: Path, prompts: List[str
     assert len(prompts) == len(ov_results)
 
     for prompt, ref_texts_for_this_prompt, ov_result, generation_config in zip(prompts, reference_texts_per_prompt, ov_results, generation_configs):
-        print(f"Prompt = {prompt}\nref text = {ref_texts_for_this_prompt}\nOV result = {ov_result}")
+        print(f"Prompt = {prompt}\nref text = {ref_texts_for_this_prompt}\nOV result = {ov_result.m_generation_ids}")
 
         assert len(ref_texts_for_this_prompt) == len(ov_result.m_generation_ids)
         for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):

@@ -3,6 +3,13 @@
 
 #include <fstream>
 #include <cstdlib>
+#include <chrono>
+#include <random>
+#include <stdexcept>
+#include <thread>
+#include <mutex>
+#include <atomic>
+
 
 #include <openvino/openvino.hpp>
 #include <nlohmann/json.hpp>
@@ -10,6 +17,7 @@
 
 #include "tokenizer.hpp"
 #include "continuous_batching_pipeline.hpp"
+#include "generation_handle.hpp"
 
 namespace {
 
@@ -130,6 +138,223 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
     return sampled_dataset;
 }
 
+class GenerationInfo {
+
+    struct SequenceInfo {
+        std::chrono::milliseconds ttft;
+        std::chrono::milliseconds cumulated_tpot;
+        std::chrono::milliseconds mean_tpot;
+        size_t num_output_tokens;
+    
+        std::chrono::steady_clock::time_point start_time;
+        std::chrono::steady_clock::time_point last_read_time;
+
+        SequenceInfo(std::chrono::steady_clock::time_point& start_time) {
+            num_output_tokens = 0;
+            ttft = std::chrono::milliseconds::zero();
+            cumulated_tpot = std::chrono::milliseconds::zero();
+            this->start_time = start_time;
+        }
+
+        void update() {
+            std::chrono::steady_clock::time_point new_read_time = std::chrono::steady_clock::now();
+            if (last_read_time.time_since_epoch() == std::chrono::milliseconds::zero()) {
+                ttft = std::chrono::duration_cast<std::chrono::milliseconds>(new_read_time - start_time);
+            } else {
+                cumulated_tpot += std::chrono::duration_cast<std::chrono::milliseconds>(new_read_time - last_read_time);
+                mean_tpot = cumulated_tpot / num_output_tokens;
+
+            }
+            num_output_tokens++;
+            last_read_time = new_read_time;
+        }
+    };
+
+    struct GenerationMetrics {
+        std::chrono::milliseconds mean_ttft = std::chrono::milliseconds::zero();
+        std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
+        size_t num_output_tokens = 0;
+        size_t num_input_tokens;
+    };
+
+    GenerationHandle generation_handle;
+    std::chrono::steady_clock::time_point start_time;
+    std::unordered_map<int64_t, SequenceInfo> sequences_info;
+    bool active = true;
+    size_t input_len;
+
+public:
+    GenerationInfo(GenerationHandle generation_handle, size_t input_len) : input_len(input_len)
+    {
+        this->generation_handle = std::move(generation_handle);
+        start_time = std::chrono::steady_clock::now();
+    }
+
+    void update_sequence(int64_t sequence_id) {
+        if (sequences_info.find(sequence_id) == sequences_info.end())
+            sequences_info.emplace(sequence_id, SequenceInfo(start_time));
+        sequences_info.at(sequence_id).update();
+    }
+
+    void update(GenerationOutputs& outputs){
+        for (auto const& output: outputs) {
+            update_sequence(output.first);
+        }
+    }
+
+    GenerationOutputs read() {
+        return generation_handle->read();
+    }
+
+    bool can_read() {
+        return generation_handle->can_read();
+    }
+
+    bool is_finished() {
+        return generation_handle->generation_finished();
+    }
+
+    void set_inactive() {
+        active = false;
+    }
+
+    bool is_active() {
+        return active;
+    }
+
+    GenerationMetrics get_metrics() {
+        GenerationMetrics generation_metrics;
+        for (auto& sequenceInfoPair : sequences_info) {
+            generation_metrics.mean_ttft += sequenceInfoPair.second.ttft;
+            generation_metrics.mean_tpot += sequenceInfoPair.second.mean_tpot;
+            generation_metrics.num_output_tokens += sequenceInfoPair.second.num_output_tokens;
+        }
+        generation_metrics.mean_ttft /= sequences_info.size();
+        generation_metrics.mean_tpot /= sequences_info.size();
+        generation_metrics.num_input_tokens = input_len;
+        return generation_metrics;
+    }
+};
+
+class GenerationInfoCollector {
+    std::mutex mutex;
+    std::vector<GenerationInfo> generations_info;
+    size_t num_finished = 0;
+    std::chrono::steady_clock::time_point start_time;
+
+public:
+
+    void set_start_time(std::chrono::steady_clock::time_point start_time) {
+        this->start_time = start_time;
+    }
+
+    void add_generation(ContinuousBatchingPipeline* pipe, Dataset* dataset, size_t request_id) {
+        GenerationHandle generation_handle = pipe->add_request(request_id, dataset->m_prompts[request_id], dataset->m_sampling_params[request_id]);
+        std::lock_guard<std::mutex> lock(mutex);
+        generations_info.emplace_back(std::move(generation_handle), dataset->m_input_lens[request_id]);
+    }
+
+    int run() {
+        std::lock_guard<std::mutex> lock(mutex);
+        for (GenerationInfo& generation_info : generations_info) {
+            if (!generation_info.is_active())
+                continue;
+            
+            if (generation_info.is_finished()) {
+                num_finished++;
+                generation_info.set_inactive();
+            } else if (generation_info.can_read()) {
+                auto outputs = generation_info.read();
+                generation_info.update(outputs);
+            }
+        }
+        return num_finished;
+    }
+
+    void print_statistics() {
+        std::chrono::seconds total_duration = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start_time);
+        std::chrono::milliseconds mean_ttft = std::chrono::milliseconds::zero();
+        std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
+        size_t total_input_len = 0;
+        size_t total_output_len = 0;
+        
+    
+        for (GenerationInfo& generation_info : generations_info){
+            auto generation_metrics = generation_info.get_metrics();
+            mean_ttft += generation_metrics.mean_ttft;
+            mean_tpot += generation_metrics.mean_tpot;
+            total_input_len += generation_metrics.num_input_tokens;
+            total_output_len += generation_metrics.num_output_tokens;
+        }
+        mean_ttft /= generations_info.size();
+        mean_tpot /= generations_info.size();
+        std::cout << "Benchmark duration: " << total_duration.count() << " s" << std::endl;
+        std::cout << "Total number of input tokens: " << total_input_len << std::endl;
+        std::cout << "Total number of output tokens: " << total_output_len << std::endl;
+        std::cout << "Input throughput: " << total_input_len / total_duration.count() << " tokens / s" << std::endl;
+        std::cout << "Output throughput: " << total_output_len / total_duration.count() << " tokens / s" << std::endl;
+        std::cout << "Mean TTFT: " << mean_ttft.count() << " ms" << std::endl;
+        std::cout << "Mean TPOT: " << mean_tpot.count() << " ms" << std::endl; 
+    }
+};
+
+void trafficSimulator(ContinuousBatchingPipeline* pipe, Dataset* dataset, std::string request_rate, GenerationInfoCollector* generation_info_collector) {
+    double numeric_request_rate;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::exponential_distribution<> distribution;
+
+    if (request_rate == "inf") {
+        numeric_request_rate = -1.0;
+    } else {
+        numeric_request_rate = std::stod(request_rate);
+        if (numeric_request_rate < 0)
+            throw std::invalid_argument("request_rate cannot be a negative number");
+
+        distribution = std::exponential_distribution<>(numeric_request_rate);
+    }
+
+    /*
+    std::cout << "Total input tokens: " << dataset->m_total_input_len << std::endl;
+    std::cout << "Total output tokens: " << dataset->m_total_output_len << std::endl;
+    std::cout << "Average input len: " << dataset->get_average_input_len() << " tokens" << std::endl;
+    std::cout << "Average output len: " << dataset->get_average_output_len() << " tokens" << std::endl;
+    */
+
+    std::cout << "Launching traffic simulator thread with request_rate: " << request_rate << std::endl;
+    generation_info_collector->set_start_time(std::chrono::steady_clock::now());
+    for (size_t request_id = 0; request_id < dataset->size(); ++request_id) {
+        std::cout << "Traffic thread adding request to the queue..." << std::endl;
+        generation_info_collector->add_generation(pipe, dataset, request_id);
+        if (numeric_request_rate > 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(int(distribution(gen) * 1000)));
+    }
+    std::cout << "All requests sent, traffic simulation finished. Exiting thread." << std::endl;
+}
+
+void llmEngineLoop(ContinuousBatchingPipeline* pipe, Dataset* dataset, std::atomic<bool>* finishThread) {
+    std::cout << "Launching LLM engine thread" << std::endl;
+    size_t num_finished = 0;
+
+    while (!(*finishThread)) {
+        while (pipe->has_running_requests() || pipe->has_awaiting_requests()) {
+            pipe->step();
+        }
+    }
+    std::cout << "All requests processed, LLM Engine loop escaped. Exiting thread." << std::endl;
+}
+
+void statisticsReporter(GenerationInfoCollector* generations_info_collector, int num_prompts) {
+    int num_finished = 0;
+    while (num_finished < num_prompts) {
+        num_finished = generations_info_collector->run();
+    }
+    std::cout << "Benchmark finished, summarizing statistics..." << std::endl;
+    generations_info_collector->print_statistics();
+
+    std::cout << "Exiting statistics reporter thread." << std::endl;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) try {
@@ -147,6 +372,7 @@ int main(int argc, char* argv[]) try {
     ("dataset", "Path to dataset .json file", cxxopts::value<std::string>()->default_value("./ShareGPT_V3_unfiltered_cleaned_split.json"))
     ("max_input_len", "Max input length take from dataset", cxxopts::value<size_t>()->default_value("1024"))
     ("max_output_len", "Max output length", cxxopts::value<size_t>()->default_value("2048"))
+    ("request_rate", "Number of requests per second. If this is inf, then all the requests are sent at time 0. Otherwise, we use Poisson process to synthesize the request arrival times.", cxxopts::value<std::string>()->default_value("inf"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -170,6 +396,7 @@ int main(int argc, char* argv[]) try {
     const std::string dataset_path = result["dataset"].as<std::string>();
     const size_t max_input_len = result["max_input_len"].as<size_t>();
     const size_t max_output_len = result["max_output_len"].as<size_t>();
+    const std::string request_rate = result["request_rate"].as<std::string>();
 
     // Create requests for generation
     Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
@@ -177,7 +404,7 @@ int main(int argc, char* argv[]) try {
     // Perform the first inference
     SchedulerConfig scheduler_config {
         .max_num_batched_tokens = max_batch_size,
-        .num_kv_blocks = 15000,
+        .num_kv_blocks = 1500,
         .block_size = 32,
         .dynamic_split_fuse = dynamic_split_fuse,
         .max_num_seqs = 256, // not used if dynamic_split_fuse=True
@@ -195,24 +422,24 @@ int main(int argc, char* argv[]) try {
     std::cout << "\tMax output length: " << max_output_len << std::endl;
 
     // Benchmarking
+    std::cout << "Loading models, creating pipelines, preparing environment..." << std::endl;
     ContinuousBatchingPipeline pipe(models_path, scheduler_config);
 
-    for (size_t request_id = 0; request_id < dataset.size(); ++request_id) {
-        pipe.add_request(request_id, dataset.m_prompts[request_id], dataset.m_sampling_params[request_id]);
-    }
+    std::cout << "Setup finished, launching LLM executor, traffic simulation and statistics reporter threads" << std::endl;
 
-    AutoStartTimer timer;
-    while (pipe.has_running_requests())
-        pipe.step();
-    double total_time_in_ms = timer.current_in_milli();
+    GenerationInfoCollector generation_info_collector;
 
-    std::cout << "Total input tokens: " << dataset.m_total_input_len << std::endl;
-    std::cout << "Total output tokens: " << dataset.m_total_output_len << std::endl;
-    std::cout << "Average input len: " << dataset.get_average_input_len() << " tokens" << std::endl;
-    std::cout << "Average output len: " << dataset.get_average_output_len() << " tokens" << std::endl;
-    std::cout << "Total execution time secs: " << total_time_in_ms / 1000. << " secs" << std::endl;
-    std::cout << "Tput: " << (dataset.m_total_input_len + dataset.m_total_output_len) / (total_time_in_ms / 1000.) << " tokens / sec " << std::endl << std::endl;
+    std::atomic<bool> finishGenerationThread = false;
+    std::thread lmmEngineThread(llmEngineLoop, &pipe, &dataset, &finishGenerationThread);
+    std::thread statisticsReporterThread(statisticsReporter, &generation_info_collector, num_prompts);
+    std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector);
 
+    trafficSimulatorThread.join();
+    statisticsReporterThread.join();
+    finishGenerationThread = true;
+    lmmEngineThread.join();
+
+    std::cout << "Benchmark finished" << std::endl;
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return EXIT_FAILURE;

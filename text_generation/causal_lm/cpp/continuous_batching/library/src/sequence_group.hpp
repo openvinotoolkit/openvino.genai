@@ -7,7 +7,9 @@
 #include <set>
 #include <cstdlib>
 
+#include "generation_handle.hpp"
 #include "generation_config.hpp"
+#include "generation_stream.hpp"
 
 enum class SequenceStatus {
     RUNNING = 0,
@@ -17,15 +19,18 @@ enum class SequenceStatus {
 };
 
 using TokenIds = std::vector<int64_t>;
+using IterationOutput = std::pair<int64_t, int64_t>;
 
 class Sequence {
-    static uint64_t _get_next_sequence_id() {
+    // This can be a problem if we launch two pipelines in the same application.
+    static uint64_t _get_next_global_sequence_id() {
         static uint64_t m_counter = 0;
         return m_counter++;
     }
 
     TokenIds m_generated_ids;
-    uint64_t m_id = _get_next_sequence_id();
+    uint64_t m_grouped_id;
+    uint64_t m_id = _get_next_global_sequence_id();
     SequenceStatus m_status = SequenceStatus::RUNNING;
     float m_cumulative_log_prob = 0.0f;
 
@@ -34,22 +39,23 @@ public:
     using CPtr = std::shared_ptr<const Sequence>;
 
     // don't use directly
-    Sequence() = default;
+    Sequence(const uint64_t id) : m_grouped_id(id) {};
 
     // don't use directly
-    Sequence(const Sequence& seq) :
+    Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
+        m_grouped_id(id),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob) {
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
 
-    static Sequence::Ptr create() {
-        return std::make_shared<Sequence>();
+    static Sequence::Ptr create(const uint64_t id) {
+        return std::make_shared<Sequence>(id);
     }
 
-    static Sequence::Ptr fork(Sequence::CPtr sequence) {
-        return std::make_shared<Sequence>(*sequence);
+    static Sequence::Ptr fork(Sequence::CPtr sequence, const uint64_t id) {
+        return std::make_shared<Sequence>(*sequence, id);
     }
 
     bool operator ==(const Sequence& other) const {
@@ -58,6 +64,10 @@ public:
 
     uint64_t get_id() const {
         return m_id;
+    }
+
+    uint64_t get_grouped_id() const {
+        return m_grouped_id;
     }
 
     bool has_finished() const {
@@ -83,7 +93,14 @@ public:
     // appends new tokens to a generated part
     void append_token(int64_t token_id, float log_prob) {
         m_cumulative_log_prob += log_prob;
-        m_generated_ids.push_back(token_id);
+        m_generated_ids.push_back(token_id);     
+    }
+
+    GenerationOutput get_last_generation_output(const GenerationConfig& sampling_params) {
+        GenerationOutput output;
+        output.score = get_beam_search_score(sampling_params);
+        output.generated_token_ids = std::vector<int64_t> {m_generated_ids[m_generated_ids.size()-1]};
+        return output;
     }
 
     size_t get_generated_len() const {
@@ -116,6 +133,11 @@ class SequenceGroup {
     std::size_t m_block_size;
     TokenIds m_prompt_ids;
     std::set<int64_t> m_unique_generated_ids;
+    GenerationStream::Ptr m_generation_stream;
+
+    uint64_t m_next_sequence_id = 0;
+
+    bool m_preempted = false;
  
     // amount of processed tokens, e.g. prompt can be processed using multiple consequence inferences
     // so, we need to track which part of the prompt we have already processed
@@ -128,7 +150,9 @@ class SequenceGroup {
     SequenceGroup(uint64_t request_id, const GenerationConfig& sampling_params, std::size_t block_size)
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
-          m_block_size(block_size) { }
+          m_block_size(block_size) {
+            m_generation_stream = GenerationStream::create();    
+           }
 public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
@@ -139,7 +163,7 @@ public:
 
     SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const GenerationConfig& sampling_params, std::size_t block_size)
         : SequenceGroup(request_id, sampling_params, block_size) {
-        add_sequence(Sequence::create());
+        add_sequence(Sequence::create(m_next_sequence_id++));
 
         m_prompt_ids.resize(input_ids.get_size());
         std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), m_prompt_ids.begin());
@@ -252,6 +276,7 @@ public:
     void preempt_tokens(size_t num_preempt_tokens) {
         OPENVINO_ASSERT(num_preempt_tokens <= m_num_processed_tokens);
         m_num_processed_tokens -= num_preempt_tokens;
+        m_preempted = true;
     }
 
     // returns context length taking into account scheduled tokens
@@ -326,7 +351,7 @@ public:
     }
 
     Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
-        m_sequences.emplace_back(Sequence::fork(sequence));
+        m_sequences.emplace_back(Sequence::fork(sequence, m_next_sequence_id++));
         return m_sequences.back();
     }
 
@@ -336,7 +361,8 @@ public:
 
     void reset() {
         m_sequences.clear();
-        add_sequence(Sequence::create());
+        m_next_sequence_id = 0;
+        add_sequence(Sequence::create(m_next_sequence_id++));
         clear_scheduled_tokens();
         m_num_processed_tokens = 0;
         m_max_content_len = 0;
@@ -383,5 +409,59 @@ public:
             }
         }
         return false;
+    }
+    
+    GenerationStream::Ptr get_generation_stream() {
+        return m_generation_stream;
+    }
+
+    void finish_generation_stream(GenerationResultStatus status) {
+        m_generation_stream->finish_generation_stream(status);
+    }
+
+    bool handle_dropped() {
+        return m_generation_stream->handle_dropped();
+    }
+
+    void notify_handle() {
+        GenerationOutputs outputs;
+
+        // For beam search streaming is not available, so we notify only upon finishing
+        if(m_sampling_params.is_beam_search()) {
+            if (has_finished()) {
+                std::vector<Sequence::CPtr> finished_sequences = get_finished_sequences();
+
+                OPENVINO_ASSERT(finished_sequences.size() == num_total_seqs() && has_finished());
+                for (auto& sequence: finished_sequences) {
+                    GenerationOutput output;
+                    output.generated_token_ids = sequence->get_generated_ids();
+                    output.score = sequence->get_beam_search_score(m_sampling_params);
+                    outputs.emplace(sequence->get_grouped_id(), output);
+                }
+
+                if (outputs.size()) {
+                    m_generation_stream->push(outputs);
+                }
+            }
+        // For greedy or multinomial sampling we decide whever to stream partial results depending on the user parameter
+        } else if (m_sampling_params.is_greedy_sampling() || m_sampling_params.is_multinomial()) {
+            // TO DO: Now we always stream for greedy search for the sake of benchmarking
+            if (true /* m_sampling_params.stream */) {
+                // If sequence group has been preempted we skip retriving the results as seqeunce tokens have not been cleared and
+                // there's no new token. We reset preemption flag, so when it's scheduled again we process it normally.
+                if (m_preempted) {
+                    m_preempted = false;
+                    return;
+                }
+                for (auto& sequence : m_sequences) {
+                    if (sequence->get_generated_len() > 0) {
+                        outputs.emplace(sequence->get_grouped_id(), sequence->get_last_generation_output(m_sampling_params));
+                    }
+                }
+                if (outputs.size()) {
+                    m_generation_stream->push(outputs);
+                }
+            }
+        }
     }
 };

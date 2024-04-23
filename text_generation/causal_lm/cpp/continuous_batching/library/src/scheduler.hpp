@@ -62,6 +62,7 @@ public:
         if (scheduler_output.m_total_num_scheduled_tokens == 0) {
             for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
                 sequence_groups[sequence_group_id]->set_out_of_memory();
+                sequence_groups[sequence_group_id]->finish_generation_stream(GenerationResultStatus::IGNORED);
             }
         }
         return scheduler_output;
