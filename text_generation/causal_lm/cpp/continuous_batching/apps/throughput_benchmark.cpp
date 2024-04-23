@@ -9,10 +9,22 @@
 #include <cxxopts.hpp>
 
 #include "tokenizer.hpp"
-#include "timer.hpp"
 #include "continuous_batching_pipeline.hpp"
 
 namespace {
+
+class AutoStartTimer {
+    const decltype(std::chrono::steady_clock::now()) m_start;
+public:
+    AutoStartTimer() :
+        m_start(std::chrono::steady_clock::now()) {
+    }
+
+    double current_in_milli() const {
+        auto m_end = std::chrono::steady_clock::now();
+        return std::chrono::duration<double, std::milli>(m_end - m_start).count();
+    }
+};
 
 struct Dataset {
     std::vector<std::string> m_prompts;
@@ -191,7 +203,7 @@ int main(int argc, char* argv[]) try {
         pipe.add_request(request_id, dataset.m_prompts[request_id], dataset.m_sampling_params[request_id]);
     }
 
-    Timer timer;
+    AutoStartTimer timer;
     while (pipe.has_running_requests())
         pipe.step();
     double total_time_in_ms = timer.current_in_milli();

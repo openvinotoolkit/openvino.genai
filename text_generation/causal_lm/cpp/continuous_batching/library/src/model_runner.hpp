@@ -130,7 +130,7 @@ private:
         // print_tensor("block_tables", block_tables);
 
         {
-            static ScopedTimer timer("pure prompt inference");
+            static ManualTimer timer("pure prompt inference");
             timer.start();
             m_request.infer();
             timer.end();
@@ -239,7 +239,7 @@ private:
         // print_tensor("block_tables", block_tables);
 
         {
-            static ScopedTimer timer("pure generate inference");
+            static ManualTimer timer("pure generate inference");
             timer.start();
             m_request.infer();
             timer.end();

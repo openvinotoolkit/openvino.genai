@@ -30,7 +30,7 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
         result.m_scores.push_back(sequence->get_cumulative_log_probs());
 
         {
-            static ScopedTimer timer("detokenize");
+            static ManualTimer timer("detokenize");
             timer.start();
             std::string output_text = tokenizer->decode(sequence->get_generated_ids());
             timer.end();
@@ -121,7 +121,7 @@ public:
     void add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
         ov::Tensor input_ids;
         {
-            static ScopedTimer timer("tokenize");
+            static ManualTimer timer("tokenize");
             timer.start();
             input_ids = m_tokenizer->encode(prompt);
             timer.end();
@@ -133,12 +133,12 @@ public:
     }
 
     std::vector<GenerationResult> step() {
-        static ScopedTimer step_timer("step()");
+        static ManualTimer step_timer("step()");
         step_timer.start();
 
         Scheduler::Output scheduler_output;
         {
-            static ScopedTimer timer("scheduling");
+            static ManualTimer timer("scheduling");
             timer.start();
             scheduler_output = m_scheduler->schedule(m_requests);
             m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
@@ -147,7 +147,7 @@ public:
 
         ov::Tensor logits;
         {
-            static ScopedTimer timer("forward");
+            static ManualTimer timer("forward");
             timer.start();
             logits = m_model_runner->forward(m_requests, scheduler_output);
             timer.end();
@@ -167,7 +167,7 @@ public:
 
         SamplerOutput sampler_output;
         {
-            static ScopedTimer timer("sample");
+            static ManualTimer timer("sample");
             timer.start();
             sampler_output = m_sampler->sample(m_requests, logits);
             timer.end();
@@ -175,7 +175,7 @@ public:
 
         // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
         {
-            static ScopedTimer timer("fork / free sequence");
+            static ManualTimer timer("fork / free sequence");
             timer.start();
 
             for (const auto& pair : sampler_output.m_forked_sequences) {
@@ -195,7 +195,7 @@ public:
 
         std::vector<GenerationResult> currently_finished_requests;
         {
-            static ScopedTimer timer("create finished results");
+            static ManualTimer timer("create finished results");
             timer.start();
 
             for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
