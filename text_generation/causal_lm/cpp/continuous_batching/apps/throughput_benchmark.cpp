@@ -75,7 +75,6 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
     dataset.reserve(num_prompt_candidates);
 
     Tokenizer tokenizer(models_path);
-    std::map<std::string, double> perf_counters;
 
     for (auto json_data_iterator = json_dataset.begin(); json_data_iterator != json_dataset.end() && dataset.size() < num_prompt_candidates; ++json_data_iterator) {
         auto & json_data = *json_data_iterator;
@@ -193,20 +192,9 @@ int main(int argc, char* argv[]) try {
     }
 
     Timer timer;
-    size_t total_input_tokens = 0, total_output_tokens = 0;
-    double paged_attention_time_ms = 0.0, matmul_time_ms = 0.0, infer_total_ms = 0.0;
-
-    for (size_t num_finished = 0; pipe.has_running_requests(); ) {
-        std::vector<GenerationResult> results = pipe.step();
-        // if (!results.empty()) {
-        //     std::cout << "Finished: " << (num_finished += results.size()) << std::endl;
-        // }
-    }
-
+    while (pipe.has_running_requests())
+        pipe.step();
     double total_time_in_ms = timer.current_in_milli();
-    infer_total_ms /= 1000;
-    paged_attention_time_ms /= 1000;
-    matmul_time_ms /= 1000;
 
     std::cout << "Total input tokens: " << dataset.m_total_input_len << std::endl;
     std::cout << "Total output tokens: " << dataset.m_total_output_len << std::endl;
