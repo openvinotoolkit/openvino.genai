@@ -431,7 +431,7 @@ jobs:
               predictions = file.read()
           tokenizer = transformers.AutoTokenizer.from_pretrained('ikala/redpajama-3b-chat')
           model = transformers.AutoModelForCausalLM.from_pretrained('ikala/redpajama-3b-chat')
-          input_text = 'Alan Turin was a'
+          input_text = '69'
           tokenized_input = tokenizer(input_text, return_tensors='pt')
           generated_texts = []
           for output in model.generate(**tokenized_input, max_length=100, do_sample=False):
@@ -448,4 +448,4 @@ jobs:
           if not found_match:
               raise RuntimeError(f'Missing a sentence from predictions')
           "
-          echo redpajama-3b passed
+          echo "69" passed
