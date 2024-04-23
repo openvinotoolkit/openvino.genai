@@ -395,4 +395,47 @@ jobs:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
+          echo Phi-1_5 passed
+          
+  cpp-greedy_causal_lm-redpajama-3b-chat:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.0/linux/l_openvino_toolkit_ubuntu20_2024.0.0.14509.34caeefd078_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id ikala/redpajama-3b-chat --output_dir ./redpajama-3b-chat/ --precision FP16 &
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake --build ./build/ --config Release -j
+          wait
+      - name: Run Generation
+        run: |
+          source ./ov/setupvars.sh
+          convert_tokenizer ./redpajama-3b-chat/pytorch/dldt/FP16/ --output ./redpajama-3b-chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
+          timeout 50s ./build/greedy_causal_lm ./redpajama-3b-chat/pytorch/dldt/FP16/ "Alan Turing was a" > ./pred_greedy.txt 
+      - name: Compare
+        run: |
+          python -c "
+          import transformers
+          with open('pred_greedy.txt', 'r') as file:
+              predictions = file.read()
+          tokenizer = transformers.AutoTokenizer.from_pretrained('ikala/redpajama-3b-chat')
+          tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
+          for output in transformers.AutoModelForCausalLM.from_pretrained('ikala/redpajama-3b-chat').generate(**tokenized, max_length=100, do_sample=False):
+              ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
+              idx = predictions.find(ref)
+              if -1 == idx:
+                  raise RuntimeError(f'Missing "{ref}" from predictions')
+              predictions = predictions[:idx] + predictions[idx + len(ref):]
+          "
           echo "Alan Turing was a" passed
