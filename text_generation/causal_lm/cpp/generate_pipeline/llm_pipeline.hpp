@@ -29,7 +29,6 @@ public:
     GenerationConfig m_sampling_parameters;
     std::string m_device;
     ov::AnyMap m_config;
-    size_t kv_cache_len = 0;
     ov::Tensor m_attentions_mask_cache;
     bool is_streamer_set = false;
     std::string m_chat_template = "";
@@ -87,8 +86,11 @@ public:
     std::string apply_chat_template(std::string prompt, std::string role = "user") const;
 
     void set_streamer_callback(std::function<void (std::string)> callback);
+    void start_conversation();
+    void stop_conversation();
+    void reset_state();
 private:
     TextCoutStreamer m_streamer;
     std::function<void (std::string)> m_streamer_callback = [](std::string ){ ;};
-
+    bool is_chat_conversation = false;
 };

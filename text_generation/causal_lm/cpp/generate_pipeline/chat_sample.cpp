@@ -39,10 +39,9 @@ int main(int argc, char* argv[]) try {
     LLMPipeline pipe(model_path, device);
 
     GenerationConfig config = pipe.generation_config();
-    config.reset_state(false);
     config.max_new_tokens(2000000);
     config.eos_token_id(2);
-    pipe.set_streamer_callback([](std::string word) { std::cout << word; });
+    pipe.set_streamer_callback([](std::string word) { std::cout << word << std::flush; });
     
     vector<string> questions = {
         "1+1=", 
@@ -51,6 +50,7 @@ int main(int argc, char* argv[]) try {
         "4+10=",
         "Who was Alan Turing?",
         "But why did he killed himself?",
+        // "What is Intel OpenVINO?",
         // "4+10=", 
         // "sum up all the numeric answers in the current chat session"
         // "Why is the sky blue?",
@@ -59,6 +59,7 @@ int main(int argc, char* argv[]) try {
     };
 
     std::string accumulated_str = "";
+    // pipe.start_conversation();
     for (size_t i = 0; i < questions.size(); i++) {
         prompt = questions[i];
         
@@ -72,14 +73,15 @@ int main(int argc, char* argv[]) try {
         accumulated_str += prompt;
         
         std::string prefix = (first_iter) ? "" : "</s>";
-        auto answer_str = pipe.call(prefix + prompt, config.reset_state(false), first_iter);
-        // auto answer_str = pipe(accumulated_str, config.reset_state(true));
+        // auto answer_str = pipe.call(prefix + prompt, config, first_iter);
+        auto answer_str = pipe(accumulated_str, config);
         accumulated_str += answer_str;
         cout << "\n----------\n";
         
         // if (last_iter)
         //     cout << accumulated_str;
     }
+    pipe.stop_conversation();
 
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
@@ -88,22 +90,3 @@ int main(int argc, char* argv[]) try {
     std::cerr << "Non-exception object thrown\n";
     return EXIT_FAILURE;
 }
-
-// using namespace inja;
-// #include <inja.hpp>
-// using namespace nlohmann;
-// #include <jinja2cpp/template.h>
-// string my_template = "{% for message in messages %}{% if message.role == 'user' %}{{ ' ' }}{% endif %}{{ message.content }}{% endfor %}";
-
-// nlohmann::json data;
-// data["messages"] = {
-//     {{"role", "system"}, {"content", "You are a friendly chatbot who always responds in the style of a pirate"}},
-//     {{"role", "user"}, {"content", "1+1="}},
-// };
-// data["eos_token"] = "</s>";
-
-// cout << data.dump() << endl;
-// auto res = inja::render(my_template, data);
-// json data;
-// data["messages"] = {"Jeff", "Tom", "Patrick"};
-// auto res = render("{% for message in messages %}{{message}}{% endfor %}", data); // Turn up the music!

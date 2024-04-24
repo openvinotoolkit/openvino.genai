@@ -26,7 +26,6 @@ struct GenerationConfig {
     size_t m_max_length = SIZE_MAX; // m_max_new_tokens should have priority over m_max_length
     bool m_ignore_eos = false;
     int64_t m_eos_token = 2; // There's no way to extract special token values from the tokenizer for now
-    bool m_reset_state = true;
 
     // Beam search specific
     size_t m_num_groups = 1;
@@ -150,11 +149,6 @@ struct GenerationConfig {
 
     GenerationConfig& pad_token_id(int64_t pad_token_id) {
         m_pad_token_id = pad_token_id;
-        return *this;
-    }
-
-    GenerationConfig& reset_state(bool do_reset_state) {
-        m_reset_state = do_reset_state;
         return *this;
     }
 
