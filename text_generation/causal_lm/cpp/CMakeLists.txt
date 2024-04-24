@@ -5,6 +5,7 @@ cmake_minimum_required(VERSION 3.15)
 project(causal_lm)
 
 add_subdirectory(../../../thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
+
 add_executable(greedy_causal_lm greedy_causal_lm.cpp)
 target_compile_definitions(greedy_causal_lm PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
