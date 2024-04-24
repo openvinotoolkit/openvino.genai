@@ -40,7 +40,7 @@ class OVMPTModel(OVModelForCausalLM):
             else:
                 if '.key' in inputs.get_any_name():
                     shapes[inputs][3] = -1
-                else:
+                elif inputs.get_any_name() != "beam_idx":
                     shapes[inputs][2] = -1
         model.reshape(shapes)
         return model
