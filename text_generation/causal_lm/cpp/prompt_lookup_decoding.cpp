@@ -82,22 +82,13 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
     if (seq_len_axis == 0) {
         shape[0] = new_seq_len;
         tensor.set_shape(shape);
+        return tensor;
     }
 
-    // if seq_len_axis == 2, then data is not contiguous, in order to trim need to repack tensor
-    auto new_tensor = ov::Tensor{ov::element::f32, {batch_size, num_kv_heads, new_seq_len, head_size}};
-    auto new_tensor_data = new_tensor.data<float>();
-    for (size_t batch = 0; batch < batch_size; ++batch) {
-        for (size_t i = 0; i < num_kv_heads; ++i) {
-            for (size_t j = 0; j < new_seq_len; ++j) {
-                auto dst_ptr = new_tensor_data + num_kv_heads * new_seq_len * head_size * batch +
-                               new_seq_len * head_size * i + head_size * j;
-                auto src_ptr = old_tensor_data + num_kv_heads * new_seq_len * head_size * batch +
-                               old_seq_len * head_size * i + head_size * j;
-                std::memcpy(dst_ptr, src_ptr, head_size * sizeof(float));
-            }
-        }
-    }
+    ov::Coordinate new_shape_begin{0, 0, 0, 0};
+    ov::Coordinate new_shape_end{batch_size, num_kv_heads, new_seq_len, head_size};
+    auto new_tensor = ov::Tensor(tensor, new_shape_begin, new_shape_end);
+
     return new_tensor;
 }
 
