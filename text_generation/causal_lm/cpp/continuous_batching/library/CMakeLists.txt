@@ -37,8 +37,14 @@ set_target_properties(${TARGET_NAME} PROPERTIES PUBLIC_HEADER "${headers}")
 
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::runtime nlohmann_json::nlohmann_json)
 
-install(TARGETS ${TARGET_NAME}         
-        ARCHIVE DESTINATION lib
-        LIBRARY DESTINATION lib
-        RUNTIME DESTINATION bin 
-        PUBLIC_HEADER DESTINATION include)
+#
+# Installation
+#
+
+include(GNUInstallDirs)
+
+install(TARGETS ${TARGET_NAME}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
