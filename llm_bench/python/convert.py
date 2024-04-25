@@ -1241,7 +1241,7 @@ def convert_qwen(args):
     )
     if post_init is not None:
         model_kwargs = {
-            "torch_dtype": torch.float32,,
+            "torch_dtype": torch.float32,
         }
     model = None
     if not compression_only:
