@@ -95,6 +95,7 @@ USE_CASES = {
         'mixtral',
         'yi-',
         'phi-',
+        'phi2-',
         'minicpm',
         'gemma',
         "deci",
