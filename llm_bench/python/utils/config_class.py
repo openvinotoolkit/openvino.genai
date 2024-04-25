@@ -77,7 +77,7 @@ USE_CASES = {
         'pythia-',
         'stablelm-',
         'stable-zephyr-',
-        'rocket-'
+        'rocket-',
         'blenderbot',
         'vicuna',
         'dolly',
