@@ -222,7 +222,7 @@ int main(int argc, char* argv[]) try {
 
     // Prompt lookup decoding is a speculative decoding technic where the draft model replaced
     // with string matching in the prompt to generate candidate token sequences.
-    int max_sequence_length = 600;
+    int max_sequence_length = 100;
     PromptLookupCandidateGenerator candidateGenerator{3, 5};
 
     while (out_token != EOS_TOKEN && seq_len < max_sequence_length) {
