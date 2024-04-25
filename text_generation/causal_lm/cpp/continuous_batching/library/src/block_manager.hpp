@@ -142,7 +142,7 @@ public:
     }
 
     bool can_append_slot(SequenceGroup::CPtr seq_group) {
-        // TODO: optimize this heuristic
+        // TODO: optimize this HEURISTIC
         // it assumes that all sequences require new block, but maybe some of them
         // don't share the same block
         // let's count actual number of sequences, where last_block_id is the same

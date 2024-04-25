@@ -29,8 +29,13 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
         // we need to pass beam score instead of cumulative log probs (e.g. normalized by length)
         result.m_scores.push_back(sequence->get_cumulative_log_probs());
 
-        std::string output_text = tokenizer->decode(sequence->get_generated_ids());
-        result.m_generation_ids.push_back(output_text);
+        {
+            static ManualTimer timer("detokenize");
+            timer.start();
+            std::string output_text = tokenizer->decode(sequence->get_generated_ids());
+            timer.end();
+            result.m_generation_ids.push_back(output_text);
+        }
     }
 
     return result;
@@ -47,6 +52,22 @@ class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
+
+    GenerationConfig m_generation_config;
+
+    struct PerfTime {
+        float m_paged_attention_time_ms = 0.0f;
+        float m_matmul_time_ms = 0.0f;
+        float m_infer_total_ms = 0.0f;
+
+        ~PerfTime() {
+            std::cout << "Inference requests aggregated statistic: " << std::endl;
+            std::cout << "Paged attention % of inference execution: " << (m_paged_attention_time_ms / m_infer_total_ms) * 100 << std::endl;
+            std::cout << "MatMul % of inference execution: " << (m_matmul_time_ms / m_infer_total_ms) * 100 << std::endl;
+            std::cout << "Total inference execution secs: " << m_infer_total_ms / 1000. << std::endl;
+            std::cout << std::endl;
+        }
+    } m_perf;
 
     // current requests to process
     std::vector<SequenceGroup::Ptr> m_requests;
@@ -68,11 +89,11 @@ public:
         std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
         ModelConfig model_config(model);
 
-        const std::string device = "CPU"; 
+        const std::string device = "CPU";
         DeviceConfig device_config(core, scheduler_config, model_config, device);
 
         apply_paged_attention_transformations(model, model_config, device_config);
-        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device()).create_infer_request();
+        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), ov::enable_profiling(true)).create_infer_request();
 
         // setup KV caches
         m_cache_manager = std::make_shared<CacheManager>(model_config, device_config);
@@ -85,21 +106,47 @@ public:
         // and finally create model runner
         m_model_runner = std::make_shared<ModelRunner>(infer_request, scheduler_config);
         m_sampler = std::make_shared<Sampler>();
+
+        // read default generation config
+    }
+
+    GenerationConfig get_config() const {
+        return m_generation_config;
+    }
+
+    std::shared_ptr<Tokenizer> get_tokenizer() {
+        return m_tokenizer;
     }
 
     void add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
-        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, m_tokenizer->encode(prompt),
+        if (sampling_params.eos_token_id < 0) {
+            sampling_params.eos_token_id = m_tokenizer->get_eos_token_id();
+        } else {
+            OPENVINO_ASSERT(sampling_params.eos_token_id == m_tokenizer->get_eos_token_id(),
+                "EOS token ID is different in generation config (", sampling_params.eos_token_id, ") and tokenizer (",
+                m_tokenizer->get_eos_token_id(), ")");
+        }
+
+        ov::Tensor input_ids;
+        {
+            static ManualTimer timer("tokenize");
+            timer.start();
+            input_ids = m_tokenizer->encode(prompt);
+            timer.end();
+        }
+
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
                                                                             sampling_params, m_scheduler->get_config().block_size);
         m_requests.push_back(sequence_group);
     }
 
     std::vector<GenerationResult> step() {
-        static ScopedTimer step_timer("step()");
+        static ManualTimer step_timer("step()");
         step_timer.start();
 
         Scheduler::Output scheduler_output;
         {
-            static ScopedTimer timer("scheduling");
+            static ManualTimer timer("scheduling");
             timer.start();
             scheduler_output = m_scheduler->schedule(m_requests);
             m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
@@ -108,15 +155,27 @@ public:
 
         ov::Tensor logits;
         {
-            static ScopedTimer timer("forward");
+            static ManualTimer timer("forward");
             timer.start();
             logits = m_model_runner->forward(m_requests, scheduler_output);
             timer.end();
+
+            // collect detailed statistic
+            std::vector<ov::ProfilingInfo> profiling_info = m_model_runner->get_infer_request().get_profiling_info();
+            for (const ov::ProfilingInfo& info : profiling_info) {
+                double current_time = info.real_time.count();
+                if (info.node_type == "PagedAttentionExtension") {
+                    m_perf.m_paged_attention_time_ms += current_time;
+                } else if (info.node_type == "FullyConnected") {
+                    m_perf.m_matmul_time_ms += current_time;
+                }
+                m_perf.m_infer_total_ms += current_time;
+            }
         }
 
         SamplerOutput sampler_output;
         {
-            static ScopedTimer timer("sample");
+            static ManualTimer timer("sample");
             timer.start();
             sampler_output = m_sampler->sample(m_requests, logits);
             timer.end();
@@ -124,7 +183,7 @@ public:
 
         // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
         {
-            static ScopedTimer timer("fork / free sequence");
+            static ManualTimer timer("fork / free sequence");
             timer.start();
 
             for (const auto& pair : sampler_output.m_forked_sequences) {
@@ -144,7 +203,7 @@ public:
 
         std::vector<GenerationResult> currently_finished_requests;
         {
-            static ScopedTimer timer("create finished results");
+            static ManualTimer timer("create finished results");
             timer.start();
 
             for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
@@ -197,6 +256,10 @@ public:
 ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::string& models_path,
                      const SchedulerConfig& scheduler_config) {
     m_impl = std::make_shared<Impl>(models_path, scheduler_config);
+}
+
+std::shared_ptr<Tokenizer> ContinuousBatchingPipeline::get_tokenizer() {
+    return m_impl->get_tokenizer();
 }
 
 void ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {

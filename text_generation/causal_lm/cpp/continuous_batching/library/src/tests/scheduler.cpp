@@ -4,9 +4,10 @@
 
 #include <gtest/gtest.h>
 #include "openvino/runtime/core.hpp"
+#include "continuous_batching_pipeline.hpp"
 #include "sequence_group.hpp"
 #include "scheduler.hpp"
-
+#include "generation_config.hpp"
 
 
 TEST(TestScheduler, general_test) {
@@ -25,8 +26,10 @@ TEST(TestScheduler, general_test) {
     std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7};
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
                                                                             GenerationConfig::greedy(), scheduler_config.block_size);
+    auto idx0 = (*sequence_group1)[0]->get_id();
     SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
                                                                             GenerationConfig::greedy(), scheduler_config.block_size);
+    auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
                                                                        
     
@@ -36,16 +39,16 @@ TEST(TestScheduler, general_test) {
 
     std::vector<size_t> ref_ids = {0, 1};
     EXPECT_EQ(out1.m_scheduled_sequence_groups_ids, ref_ids);
-    EXPECT_EQ(out1.m_block_tables[0].size(), 2);
-    EXPECT_EQ(out1.m_block_tables[1].size(), 2);
-    EXPECT_EQ(out1.m_block_tables[0][0]->is_free(), false);
-    EXPECT_EQ(out1.m_block_tables[0][0]->get_index(), 0);
-    EXPECT_EQ(out1.m_block_tables[0][1]->is_free(), false);
-    EXPECT_EQ(out1.m_block_tables[0][1]->get_index(), 1);
-    EXPECT_EQ(out1.m_block_tables[1][0]->is_free(), false);
-    EXPECT_EQ(out1.m_block_tables[1][0]->get_index(), 2);
-    EXPECT_EQ(out1.m_block_tables[1][1]->is_free(), false);
-    EXPECT_EQ(out1.m_block_tables[1][1]->get_index(), 3);
+    EXPECT_EQ(out1.m_block_tables[idx0].size(), 2);
+    EXPECT_EQ(out1.m_block_tables[idx1].size(), 2);
+    EXPECT_EQ(out1.m_block_tables[idx0][0]->is_free(), false);
+    EXPECT_EQ(out1.m_block_tables[idx0][0]->get_index(), 0);
+    EXPECT_EQ(out1.m_block_tables[idx0][1]->is_free(), false);
+    EXPECT_EQ(out1.m_block_tables[idx0][1]->get_index(), 1);
+    EXPECT_EQ(out1.m_block_tables[idx1][0]->is_free(), false);
+    EXPECT_EQ(out1.m_block_tables[idx1][0]->get_index(), 2);
+    EXPECT_EQ(out1.m_block_tables[idx1][1]->is_free(), false);
+    EXPECT_EQ(out1.m_block_tables[idx1][1]->get_index(), 3);
     // tokens.size() * 2 tockens should be scheduled on promt phase, corresponding to first two sequences 
     EXPECT_EQ(out1.m_total_num_scheduled_tokens, tokens.size() * 2);
     EXPECT_EQ(out1.is_prompt, true);
@@ -56,6 +59,7 @@ TEST(TestScheduler, general_test) {
 
     SequenceGroup::Ptr sequence_group3 = std::make_shared<SequenceGroup>(2, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
                                                                             GenerationConfig::greedy(), scheduler_config.block_size);
+    auto idx2 = (*sequence_group3)[0]->get_id();
 
     // schedule 1 more sequence group that use 2 kv blocks 
     std::vector<SequenceGroup::Ptr> requests1 = {sequence_group1, sequence_group2, sequence_group3};
@@ -63,11 +67,11 @@ TEST(TestScheduler, general_test) {
 
     std::vector<size_t> ref_ids1 = {2};
     EXPECT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids1);
-    EXPECT_EQ(out2.m_block_tables[2].size(), 2);
-    EXPECT_EQ(out2.m_block_tables[2][0]->is_free(), false);
-    EXPECT_EQ(out2.m_block_tables[2][0]->get_index(), 4);
-    EXPECT_EQ(out2.m_block_tables[2][1]->is_free(), false);
-    EXPECT_EQ(out2.m_block_tables[2][1]->get_index(), 5);
+    EXPECT_EQ(out2.m_block_tables[idx2].size(), 2);
+    EXPECT_EQ(out2.m_block_tables[idx2][0]->is_free(), false);
+    EXPECT_EQ(out2.m_block_tables[idx2][0]->get_index(), 4);
+    EXPECT_EQ(out2.m_block_tables[idx2][1]->is_free(), false);
+    EXPECT_EQ(out2.m_block_tables[idx2][1]->get_index(), 5);
     // tokens.size() tockens should be scheduled on promt phase, corresponding to third sequence
     EXPECT_EQ(out2.m_total_num_scheduled_tokens, tokens.size()); 
     for (auto seq: requests1) {
@@ -83,18 +87,18 @@ TEST(TestScheduler, general_test) {
 
     std::vector<size_t> ref_ids2 = {0, 1};
     EXPECT_EQ(out3.m_scheduled_sequence_groups_ids, ref_ids2);
-    EXPECT_EQ(out3.m_block_tables[0][0]->is_free(), false);
-    EXPECT_EQ(out3.m_block_tables[0][0]->get_index(), 0);
-    EXPECT_EQ(out3.m_block_tables[0][1]->is_free(), false);
-    EXPECT_EQ(out3.m_block_tables[0][1]->get_index(), 1);
-    EXPECT_EQ(out3.m_block_tables[0][2]->is_free(), false);
-    EXPECT_EQ(out3.m_block_tables[0][2]->get_index(), 4);
-    EXPECT_EQ(out3.m_block_tables[1][0]->is_free(), false);
-    EXPECT_EQ(out3.m_block_tables[1][0]->get_index(), 2);
-    EXPECT_EQ(out3.m_block_tables[1][1]->is_free(), false);
-    EXPECT_EQ(out3.m_block_tables[1][1]->get_index(), 3);
-    EXPECT_EQ(out3.m_block_tables[1][2]->is_free(), false);
-    EXPECT_EQ(out3.m_block_tables[1][2]->get_index(), 5);
+    EXPECT_EQ(out3.m_block_tables[idx0][0]->is_free(), false);
+    EXPECT_EQ(out3.m_block_tables[idx0][0]->get_index(), 0);
+    EXPECT_EQ(out3.m_block_tables[idx0][1]->is_free(), false);
+    EXPECT_EQ(out3.m_block_tables[idx0][1]->get_index(), 1);
+    EXPECT_EQ(out3.m_block_tables[idx0][2]->is_free(), false);
+    EXPECT_EQ(out3.m_block_tables[idx0][2]->get_index(), 4);
+    EXPECT_EQ(out3.m_block_tables[idx1][0]->is_free(), false);
+    EXPECT_EQ(out3.m_block_tables[idx1][0]->get_index(), 2);
+    EXPECT_EQ(out3.m_block_tables[idx1][1]->is_free(), false);
+    EXPECT_EQ(out3.m_block_tables[idx1][1]->get_index(), 3);
+    EXPECT_EQ(out3.m_block_tables[idx1][2]->is_free(), false);
+    EXPECT_EQ(out3.m_block_tables[idx1][2]->get_index(), 5);
     // 2 tockens should be scheduled on generate phase for "0" and "1" sequence, "2" sequence should be preempted
     EXPECT_EQ(out3.m_total_num_scheduled_tokens, 2); 
 
@@ -103,8 +107,8 @@ TEST(TestScheduler, general_test) {
     // At this point scheduler preempts "1" sequence, as it assumes "0" sequence requires new block, but in fact it doesn't. 
     // This part of test should be updated when preemtion algorithm finished.
     
-    EXPECT_EQ(out4.m_block_tables[2][0]->is_free(), false);
-    EXPECT_EQ(out4.m_block_tables[2][0]->get_index(), 2); // index here should be updated later
+    EXPECT_EQ(out4.m_block_tables[idx2][0]->is_free(), false);
+    EXPECT_EQ(out4.m_block_tables[idx2][0]->get_index(), 2); // index here should be updated later
 }
 
 
@@ -125,9 +129,12 @@ TEST(TestScheduler, test_case1) {
     std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7};
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
                                                                             GenerationConfig::greedy(), scheduler_config.block_size);
+    auto idx0 = (*sequence_group1)[0]->get_id();
     SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
                                                                             GenerationConfig::greedy(), scheduler_config.block_size);
+    auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
+    
                                                                        
     
     Scheduler scheduler = Scheduler(scheduler_config);
@@ -135,16 +142,16 @@ TEST(TestScheduler, test_case1) {
 
     std::vector<size_t> ref_ids = {0, 1};
     EXPECT_EQ(out1.m_scheduled_sequence_groups_ids, ref_ids);
-    EXPECT_EQ(out1.m_block_tables[0].size(), 2);
-    EXPECT_EQ(out1.m_block_tables[1].size(), 2);
-    EXPECT_EQ(out1.m_block_tables[0][0]->is_free(), false);
-    EXPECT_EQ(out1.m_block_tables[0][0]->get_index(), 0);
-    EXPECT_EQ(out1.m_block_tables[0][1]->is_free(), false);
-    EXPECT_EQ(out1.m_block_tables[0][1]->get_index(), 1);
-    EXPECT_EQ(out1.m_block_tables[1][0]->is_free(), false);
-    EXPECT_EQ(out1.m_block_tables[1][0]->get_index(), 2);
-    EXPECT_EQ(out1.m_block_tables[1][1]->is_free(), false);
-    EXPECT_EQ(out1.m_block_tables[1][1]->get_index(), 3);
+    EXPECT_EQ(out1.m_block_tables[idx0].size(), 2);
+    EXPECT_EQ(out1.m_block_tables[idx1].size(), 2);
+    EXPECT_EQ(out1.m_block_tables[idx0][0]->is_free(), false);
+    EXPECT_EQ(out1.m_block_tables[idx0][0]->get_index(), 0);
+    EXPECT_EQ(out1.m_block_tables[idx0][1]->is_free(), false);
+    EXPECT_EQ(out1.m_block_tables[idx0][1]->get_index(), 1);
+    EXPECT_EQ(out1.m_block_tables[idx1][0]->is_free(), false);
+    EXPECT_EQ(out1.m_block_tables[idx1][0]->get_index(), 2);
+    EXPECT_EQ(out1.m_block_tables[idx1][1]->is_free(), false);
+    EXPECT_EQ(out1.m_block_tables[idx1][1]->get_index(), 3);
     EXPECT_EQ(out1.m_total_num_scheduled_tokens, tokens.size() * 2);
     EXPECT_EQ(out1.is_prompt, true);
     for (auto seq: requests) {

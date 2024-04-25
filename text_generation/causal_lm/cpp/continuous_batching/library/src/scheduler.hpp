@@ -125,7 +125,7 @@ private:
                 continue;
 
             // check whether current sequence requires a new slot / block
-            // TODO: we use simple heuristic like in vLLM (see impl. of "can_append_slot"), but it can be implemented more precise
+            // TODO: we use simple HEURISTIC like in vLLM (see impl. of "can_append_slot"), but it can be implemented more precise
             while (!m_block_manager.can_append_slot(high_priority_sequence_group)) {
                 // let's run a sequence for eviction
                 size_t evicted_sequence_group_id = _get_low_priority_sequence_group_id(sequence_groups);
@@ -233,6 +233,7 @@ private:
 
 
                 // TODO: below functions can_append_slot / append_slot can allocate just a single slot, while we require multiple ones in generic case
+                // (generic case is speculative deconding, where we can check multiple tokens at once)
                 // So, let's state this as current limitation of scheduler logic
                 OPENVINO_ASSERT(num_scheduled_tokens_per_seq == 1);
 

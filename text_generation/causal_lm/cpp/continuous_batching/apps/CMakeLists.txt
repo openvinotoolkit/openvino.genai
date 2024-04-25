@@ -10,8 +10,8 @@ FetchContent_Declare(cxxopts
     URL_HASH SHA256=523175f792eb0ff04f9e653c90746c12655f10cb70f1d5e6d6d9491420298a08)
 
 FetchContent_Declare(nlohmann_json
-    URL https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip
-    URL_HASH SHA256=a22461d13119ac5c78f205d3df1db13403e58ce1bb1794edc9313677313f4a9d)
+    URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
+    URL_HASH SHA256=0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406)
 
 FetchContent_MakeAvailable(cxxopts)
 FetchContent_MakeAvailable(nlohmann_json)
@@ -22,8 +22,8 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 
 set(TARGET_NAME accuracy_sample)
 add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
-target_link_libraries(${TARGET_NAME} PRIVATE openvino_continuous_batching openvino::runtime)
+target_link_libraries(${TARGET_NAME} PRIVATE openvino_continuous_batching openvino::runtime cxxopts::cxxopts)
 
 set(TARGET_NAME throughput_benchmark)
 add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
-target_link_libraries(${TARGET_NAME} PRIVATE openvino_continuous_batching openvino::runtime cxxopts::cxxopts)
+target_link_libraries(${TARGET_NAME} PRIVATE openvino_continuous_batching openvino::runtime nlohmann_json::nlohmann_json cxxopts::cxxopts)

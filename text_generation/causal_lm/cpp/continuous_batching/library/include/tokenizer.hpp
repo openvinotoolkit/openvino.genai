@@ -6,6 +6,7 @@
 
 #include <string>
 #include <memory>
+#include <vector>
 
 #include "openvino/runtime/tensor.hpp"
 
@@ -16,6 +17,8 @@ class Tokenizer {
 public:
     explicit Tokenizer(const std::string& models_path);
 
+    // note, that returned tensor is shared with internal state of InferRequest
+    // so, it can be changed. Please, copy values
     ov::Tensor encode(std::string prompt);
 
     std::string decode(std::vector<int64_t> tokens);
