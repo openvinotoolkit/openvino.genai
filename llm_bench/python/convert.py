@@ -1231,7 +1231,7 @@ def convert_baichaun(args):
 def convert_qwen(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     cuda, post_init = patch_gptq(config)
-    model_kwargs = {"code_revision": "2abd8e5777bb4ce9c8ab4be7dbbd0fe4526db78d"}
+    model_kwargs = {}
     precision = args.precision
     compression_only = (
         args.compress_weights
@@ -1242,7 +1242,6 @@ def convert_qwen(args):
     if post_init is not None:
         model_kwargs = {
             "torch_dtype": torch.float32,
-            "code_revision": "c02ede58c0ab0045f5e4788c35842bec6a7baa0a",
         }
     model = None
     if not compression_only:
