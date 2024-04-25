@@ -144,7 +144,7 @@ public:
         return std::vector<int64_t>{};
     }
 
-    void update_cadidate_strategy(const size_t num_matches) {
+    void update_candidate_strategy(const size_t num_matches) {
         // dynamically adjust number of generated candidates based on number of matches
         // we want to balance the benefits of getting assistant tokens correct with the
         // cost of forecasting incorrect assistant tokens.
@@ -271,7 +271,7 @@ int main(int argc, char* argv[]) try {
         }
 
         if (accepted_tokens_number > 0) {
-            candidateGenerator.update_cadidate_strategy(accepted_tokens_number - 1);
+            candidateGenerator.update_candidate_strategy(accepted_tokens_number - 1);
         }
 
         // After the inference request, key/values have shape [BATCH_SIZE, seq_len + candidates_size, vocab_size].
