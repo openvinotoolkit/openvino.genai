@@ -49,7 +49,7 @@ TEST(TestScheduler, general_test) {
     EXPECT_EQ(out1.m_block_tables[idx1][0]->get_index(), 2);
     EXPECT_FALSE(out1.m_block_tables[idx1][1]->is_free());
     EXPECT_EQ(out1.m_block_tables[idx1][1]->get_index(), 3);
-    // tokens.size() * 2 tokens should be scheduled on promt phase, corresponding to first two sequences 
+    // tokens.size() * 2 tokens should be scheduled on prompt phase, corresponding to first two sequences 
     EXPECT_EQ(out1.m_total_num_scheduled_tokens, tokens.size() * 2);
     EXPECT_EQ(out1.is_prompt, true);
     for (auto seq: requests) {
@@ -72,7 +72,7 @@ TEST(TestScheduler, general_test) {
     EXPECT_EQ(out2.m_block_tables[idx2][0]->get_index(), 4);
     EXPECT_FALSE(out2.m_block_tables[idx2][1]->is_free());
     EXPECT_EQ(out2.m_block_tables[idx2][1]->get_index(), 5);
-    // tokens.size() tokens should be scheduled on promt phase, corresponding to third sequence
+    // tokens.size() tokens should be scheduled on prompt phase, corresponding to third sequence
     EXPECT_EQ(out2.m_total_num_scheduled_tokens, tokens.size()); 
     for (auto seq: requests1) {
         seq->finish_iteration();
