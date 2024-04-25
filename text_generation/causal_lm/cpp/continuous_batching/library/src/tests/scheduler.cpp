@@ -41,15 +41,15 @@ TEST(TestScheduler, general_test) {
     EXPECT_EQ(out1.m_scheduled_sequence_groups_ids, ref_ids);
     EXPECT_EQ(out1.m_block_tables[idx0].size(), 2);
     EXPECT_EQ(out1.m_block_tables[idx1].size(), 2);
-    EXPECT_EQ(out1.m_block_tables[idx0][0]->is_free(), false);
+    EXPECT_FALSE(out1.m_block_tables[idx0][0]->is_free());
     EXPECT_EQ(out1.m_block_tables[idx0][0]->get_index(), 0);
-    EXPECT_EQ(out1.m_block_tables[idx0][1]->is_free(), false);
+    EXPECT_FALSE(out1.m_block_tables[idx0][1]->is_free());
     EXPECT_EQ(out1.m_block_tables[idx0][1]->get_index(), 1);
-    EXPECT_EQ(out1.m_block_tables[idx1][0]->is_free(), false);
+    EXPECT_FALSE(out1.m_block_tables[idx1][0]->is_free());
     EXPECT_EQ(out1.m_block_tables[idx1][0]->get_index(), 2);
-    EXPECT_EQ(out1.m_block_tables[idx1][1]->is_free(), false);
+    EXPECT_FALSE(out1.m_block_tables[idx1][1]->is_free());
     EXPECT_EQ(out1.m_block_tables[idx1][1]->get_index(), 3);
-    // tokens.size() * 2 tockens should be scheduled on promt phase, corresponding to first two sequences 
+    // tokens.size() * 2 tokens should be scheduled on promt phase, corresponding to first two sequences 
     EXPECT_EQ(out1.m_total_num_scheduled_tokens, tokens.size() * 2);
     EXPECT_EQ(out1.is_prompt, true);
     for (auto seq: requests) {
@@ -68,11 +68,11 @@ TEST(TestScheduler, general_test) {
     std::vector<size_t> ref_ids1 = {2};
     EXPECT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids1);
     EXPECT_EQ(out2.m_block_tables[idx2].size(), 2);
-    EXPECT_EQ(out2.m_block_tables[idx2][0]->is_free(), false);
+    EXPECT_FALSE(out2.m_block_tables[idx2][0]->is_free());
     EXPECT_EQ(out2.m_block_tables[idx2][0]->get_index(), 4);
-    EXPECT_EQ(out2.m_block_tables[idx2][1]->is_free(), false);
+    EXPECT_FALSE(out2.m_block_tables[idx2][1]->is_free());
     EXPECT_EQ(out2.m_block_tables[idx2][1]->get_index(), 5);
-    // tokens.size() tockens should be scheduled on promt phase, corresponding to third sequence
+    // tokens.size() tokens should be scheduled on promt phase, corresponding to third sequence
     EXPECT_EQ(out2.m_total_num_scheduled_tokens, tokens.size()); 
     for (auto seq: requests1) {
         seq->finish_iteration();
@@ -87,19 +87,19 @@ TEST(TestScheduler, general_test) {
 
     std::vector<size_t> ref_ids2 = {0, 1};
     EXPECT_EQ(out3.m_scheduled_sequence_groups_ids, ref_ids2);
-    EXPECT_EQ(out3.m_block_tables[idx0][0]->is_free(), false);
+    EXPECT_FALSE(out3.m_block_tables[idx0][0]->is_free());
     EXPECT_EQ(out3.m_block_tables[idx0][0]->get_index(), 0);
-    EXPECT_EQ(out3.m_block_tables[idx0][1]->is_free(), false);
+    EXPECT_FALSE(out3.m_block_tables[idx0][1]->is_free());
     EXPECT_EQ(out3.m_block_tables[idx0][1]->get_index(), 1);
-    EXPECT_EQ(out3.m_block_tables[idx0][2]->is_free(), false);
+    EXPECT_FALSE(out3.m_block_tables[idx0][2]->is_free());
     EXPECT_EQ(out3.m_block_tables[idx0][2]->get_index(), 4);
-    EXPECT_EQ(out3.m_block_tables[idx1][0]->is_free(), false);
+    EXPECT_FALSE(out3.m_block_tables[idx1][0]->is_free());
     EXPECT_EQ(out3.m_block_tables[idx1][0]->get_index(), 2);
-    EXPECT_EQ(out3.m_block_tables[idx1][1]->is_free(), false);
+    EXPECT_FALSE(out3.m_block_tables[idx1][1]->is_free());
     EXPECT_EQ(out3.m_block_tables[idx1][1]->get_index(), 3);
-    EXPECT_EQ(out3.m_block_tables[idx1][2]->is_free(), false);
+    EXPECT_FALSE(out3.m_block_tables[idx1][2]->is_free());
     EXPECT_EQ(out3.m_block_tables[idx1][2]->get_index(), 5);
-    // 2 tockens should be scheduled on generate phase for "0" and "1" sequence, "2" sequence should be preempted
+    // 2 tokens should be scheduled on generate phase for "0" and "1" sequence, "2" sequence should be preempted
     EXPECT_EQ(out3.m_total_num_scheduled_tokens, 2); 
 
     // check that 1 token was scheduled for "2" sequence (preempted on previous iteraition) 
@@ -107,7 +107,7 @@ TEST(TestScheduler, general_test) {
     // At this point scheduler preempts "1" sequence, as it assumes "0" sequence requires new block, but in fact it doesn't. 
     // This part of test should be updated when preemtion algorithm finished.
     
-    EXPECT_EQ(out4.m_block_tables[idx2][0]->is_free(), false);
+    EXPECT_FALSE(out4.m_block_tables[idx2][0]->is_free());
     EXPECT_EQ(out4.m_block_tables[idx2][0]->get_index(), 2); // index here should be updated later
 }
 
@@ -144,13 +144,13 @@ TEST(TestScheduler, test_case1) {
     EXPECT_EQ(out1.m_scheduled_sequence_groups_ids, ref_ids);
     EXPECT_EQ(out1.m_block_tables[idx0].size(), 2);
     EXPECT_EQ(out1.m_block_tables[idx1].size(), 2);
-    EXPECT_EQ(out1.m_block_tables[idx0][0]->is_free(), false);
+    EXPECT_FALSE(out1.m_block_tables[idx0][0]->is_free());
     EXPECT_EQ(out1.m_block_tables[idx0][0]->get_index(), 0);
-    EXPECT_EQ(out1.m_block_tables[idx0][1]->is_free(), false);
+    EXPECT_FALSE(out1.m_block_tables[idx0][1]->is_free());
     EXPECT_EQ(out1.m_block_tables[idx0][1]->get_index(), 1);
-    EXPECT_EQ(out1.m_block_tables[idx1][0]->is_free(), false);
+    EXPECT_FALSE(out1.m_block_tables[idx1][0]->is_free());
     EXPECT_EQ(out1.m_block_tables[idx1][0]->get_index(), 2);
-    EXPECT_EQ(out1.m_block_tables[idx1][1]->is_free(), false);
+    EXPECT_FALSE(out1.m_block_tables[idx1][1]->is_free());
     EXPECT_EQ(out1.m_block_tables[idx1][1]->get_index(), 3);
     EXPECT_EQ(out1.m_total_num_scheduled_tokens, tokens.size() * 2);
     EXPECT_EQ(out1.is_prompt, true);
