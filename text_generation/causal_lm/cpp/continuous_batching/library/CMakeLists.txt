@@ -29,4 +29,19 @@ target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<T
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
 
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::runtime)
+
+# gtest
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+)
+FetchContent_MakeAvailable(googletest)
+
+
+set(TEST_TARGET_NAME "tests_continuous_batching")
+add_executable(${TEST_TARGET_NAME} "src/tests/scheduler.cpp")
+target_link_libraries(${TEST_TARGET_NAME} PRIVATE openvino::runtime gtest_main)
+target_include_directories(${TEST_TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
+                                          PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")

@@ -106,6 +106,8 @@ class SequenceGroup {
     size_t m_num_scheduled_tokens = 0;
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
+    // a number of evicted tockens
+    size_t m_num_evicted_tokens = 0;
 
     SequenceGroup(uint64_t request_id, const GenerationConfig& sampling_params, std::size_t block_size)
         : m_request_id(request_id),
@@ -230,10 +232,19 @@ public:
         return m_num_processed_tokens;
     }
 
+    size_t get_num_evicted_tokens() const {
+        return m_num_evicted_tokens;
+    }
+
+    void set_num_evicted_tokens(size_t num_evicted_tokens) {
+        m_num_evicted_tokens = num_evicted_tokens;
+    }
+
     void preempt_tokens(size_t num_preempt_tokens) {
         OPENVINO_ASSERT(num_preempt_tokens <= m_num_processed_tokens);
         m_num_processed_tokens -= num_preempt_tokens;
         // Note, that m_max_content_len is kept as is
+        m_num_evicted_tokens += num_preempt_tokens;
     }
 
     // returns context length taking into account scheduled tokens
@@ -268,6 +279,7 @@ public:
         // if some processed tokens were evicted, max content len is greater than number of processed tokens
         m_max_content_len = std::max(m_max_content_len, m_num_processed_tokens);
         m_num_scheduled_tokens = 0;
+        m_num_evicted_tokens = 0;
     }
 
     const TokenIds& get_prompt_ids() const {

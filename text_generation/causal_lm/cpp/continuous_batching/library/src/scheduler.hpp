@@ -101,11 +101,12 @@ private:
 
     static size_t _get_low_priority_sequence_group_id(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         for (size_t seq_group_id = 0, num_groups = sequence_groups.size(); seq_group_id < num_groups; ++seq_group_id) {
-            SequenceGroup::CPtr sequence_group = sequence_groups[num_groups - seq_group_id - 1];
+            size_t group_idx = num_groups - seq_group_id - 1;
+            SequenceGroup::CPtr sequence_group = sequence_groups[group_idx];
             if (sequence_group->get_num_processed_tokens() > 0) {
                 // we are here, because current sequence group has some reserved KV blocks in block manager
                 // which can be freed
-                return seq_group_id;
+                return group_idx;
             }
         }
 
@@ -129,7 +130,7 @@ private:
                 // let's run a sequence for eviction
                 size_t evicted_sequence_group_id = _get_low_priority_sequence_group_id(sequence_groups);
             
-                if (evicted_sequence_group_id >= sequence_group_id) {
+                if (evicted_sequence_group_id <= sequence_group_id) {
                     // we have a cycle when current group need to evict itself to be in a running state
                     return;
                 }
@@ -214,10 +215,22 @@ private:
 
                 // Note: current function can return more than 1 token even for generation phase in case of some tokens
                 // of current sequence group were evicted before
-                size_t num_available_tokens_per_seq = sequence_group->get_num_available_tokens_for_batching();
+                size_t num_available_tokens_per_seq = sequence_group->get_num_available_tokens_for_batching() - sequence_group->get_num_evicted_tokens();
 
                 size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
+                
+                if (num_scheduled_tokens_per_seq == 0)
+                    // case when all tockens were evicted for this sequence
+                    continue;
+                
+                if (num_scheduled_tokens_per_seq > 1) {
+                    // case when we want to schedule previously evicted tockens
+                    // schedule 1 tocken, others wait
+                    sequence_group->set_num_evicted_tokens(num_scheduled_tokens_per_seq - 1);
+                    num_scheduled_tokens_per_seq = 1;
+                }
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
+
 
                 // TODO: below functions can_append_slot / append_slot can allocate just a single slot, while we require multiple ones in generic case
                 // So, let's state this as current limitation of scheduler logic
