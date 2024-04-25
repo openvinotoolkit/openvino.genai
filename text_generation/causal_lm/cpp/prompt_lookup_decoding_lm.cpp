@@ -227,31 +227,31 @@ int main(int argc, char* argv[]) try {
 
     while (out_token != EOS_TOKEN && seq_len < max_sequence_length) {
         auto candidates = candidateGenerator.generate_candidates(full_input_ids);
-        size_t K = candidates.size();
+        size_t candidates_size = candidates.size();
 
-        // K + 1 tokens will be fed at once in a single infer request.
-        input_ids.set_shape({BATCH_SIZE, K + 1});
+        // candidates_size + 1 tokens will be fed at once in a single infer request.
+        input_ids.set_shape({BATCH_SIZE, candidates_size + 1});
         input_ids.data<int64_t>()[0] = first_token;
-        for (int i = 0; i < K; i++) {
+        for (int i = 0; i < candidates_size; i++) {
             input_ids.data<int64_t>()[i + 1] = candidates[i];
         }
 
-        attention_mask.set_shape({BATCH_SIZE, seq_len + K + 1});
+        attention_mask.set_shape({BATCH_SIZE, seq_len + candidates_size + 1});
         std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
 
-        position_ids.set_shape({BATCH_SIZE, K + 1});
+        position_ids.set_shape({BATCH_SIZE, candidates_size + 1});
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), seq_len);
 
         model.infer();
 
-        data_logits = logits.data<float>();  // [BATCH_SIZE, 1 + K, vocab_size]
+        data_logits = logits.data<float>();  // [BATCH_SIZE, 1 + candidates_size, vocab_size]
 
         // Find candidates matches.
         // Accept first token (if not EOS) as it generated from the valid input_ids sequence.
         // Iterate only if canidate token matches model predicted token.
         // Accept last token as it generated from the valid predicted tokens sequence.
         size_t accepted_tokens_number = 0;
-        for (size_t i = 0; i < K + 1; i++) {
+        for (size_t i = 0; i < candidates_size + 1; i++) {
             auto start = data_logits + vocab_size * i;
             auto stop = data_logits + vocab_size * (i + 1);
             auto candidate_out_token = std::max_element(start, stop) - start;
@@ -265,7 +265,7 @@ int main(int argc, char* argv[]) try {
             full_input_ids.push_back(candidate_out_token);
             accepted_tokens_number++;
 
-            if (i == K || candidate_out_token != candidates[i] || seq_len + i >= max_sequence_length) {
+            if (i == candidates_size || candidate_out_token != candidates[i] || seq_len + i >= max_sequence_length) {
                 break;
             }
         }
@@ -274,7 +274,7 @@ int main(int argc, char* argv[]) try {
             candidateGenerator.update_cadidate_strategy(accepted_tokens_number - 1);
         }
 
-        // After the inference request, key/values have shape [BATCH_SIZE, seq_len + K, vocab_size].
+        // After the inference request, key/values have shape [BATCH_SIZE, seq_len + candidates_size, vocab_size].
         // Increment the sequence length by the number of matched tokens, and
         // trim the KV cache to match the new sequence length.
         seq_len += accepted_tokens_number;
