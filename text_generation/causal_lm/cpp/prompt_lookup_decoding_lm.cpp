@@ -204,7 +204,7 @@ int main(int argc, char* argv[]) try {
     model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
     model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
-    // To coollect kv-cache for the <PROMPT> and to get the next token run the very first infer request
+    // To collect kv-cache for the <PROMPT> and to get the next token run the very first infer request
     model.infer();
 
     // logits shape is [BATCH_SIZE, seq_len, vocab_size]
@@ -230,18 +230,13 @@ int main(int argc, char* argv[]) try {
 
         // cut redundant candidates on last iteration
         size_t tokens_to_generate = max_sequence_length - seq_len;
-        if (candidates.size() > tokens_to_generate - 1) {
-            candidates.resize(tokens_to_generate - 1);
-        }
-
+        candidates.resize(std::min(candidates.size(), tokens_to_generate - 1));
         size_t candidates_size = candidates.size();
 
         // candidates_size + 1 tokens will be fed at once in a single infer request.
         input_ids.set_shape({BATCH_SIZE, candidates_size + 1});
         input_ids.data<int64_t>()[0] = first_token;
-        for (int i = 0; i < candidates_size; i++) {
-            input_ids.data<int64_t>()[i + 1] = candidates[i];
-        }
+        std::copy_n(candidates.begin(), candidates_size, input_ids.data<int64_t>() + 1);
 
         attention_mask.set_shape({BATCH_SIZE, seq_len + candidates_size + 1});
         std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
