@@ -112,6 +112,8 @@ convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyL
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
 
+The suggestion is to run on dGPU (32GB+ RAM) models that work extremely slowly on CPU. For example, meta-llama/Llama-2-13b-chat-hf. Modify the source code to change the device for inference to GPU.
+
 ## Supported models
 
 1. chatglm
