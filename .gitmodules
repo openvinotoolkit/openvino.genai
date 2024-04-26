@@ -4,3 +4,6 @@
 [submodule "thirdparty/nlohmann_json"]
 	path = thirdparty/nlohmann_json
 	url = https://github.com/nlohmann/json.git
+[submodule "thirdparty/Jinja2Cpp"]
+	path = thirdparty/Jinja2Cpp
+	url = https://github.com/jinja2cpp/Jinja2Cpp
