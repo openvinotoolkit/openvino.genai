@@ -193,15 +193,15 @@ void print_tensor(const ov::Tensor& tensor) {
     std::vector<int64_t> res;
 
     auto t_shape = tensor.get_shape();
-    // cout << "[";
-    // for (size_t i = 0; i < t_shape[1]; ++i) {
-    //     if (tensor.get_element_type() == ov::element::i64) {
-    //         res.emplace_back(tensor.data<int64_t>()[i]);
-    //         cout << tensor.data<int64_t>()[i] << " ";
-    //     }
-    // }
-    // cout << "]" << endl;
-    // cout << "---------" << endl;
+    cout << "[";
+    for (size_t i = 0; i < t_shape[1]; ++i) {
+        if (tensor.get_element_type() == ov::element::i64) {
+            res.emplace_back(tensor.data<int64_t>()[i]);
+            cout << tensor.data<int64_t>()[i] << " ";
+        }
+    }
+    cout << "]" << endl;
+    cout << "---------" << endl;
 }
 
 GenerationResult LLMPipeline::greedy_search(ov::Tensor input_ids, 
@@ -212,7 +212,8 @@ GenerationResult LLMPipeline::greedy_search(ov::Tensor input_ids,
     size_t prompt_len = prompts_shape[1];
     
     auto kv_cache_len = m_model_runner.query_state()[0].get_state().get_shape()[2];
-    
+
+    // todo: make this work even if position_ids are not specified
     auto position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
     initialize_position_ids(position_ids, attention_mask, kv_cache_len);
 
@@ -224,8 +225,6 @@ GenerationResult LLMPipeline::greedy_search(ov::Tensor input_ids,
         size_t new_prompt_len = attention_mask.get_shape()[1];
         size_t context_len = m_attentions_mask_cache.get_shape()[1];
         ov::Tensor new_attention_mask =  ov::Tensor{ov::element::i64, {1, context_len + new_prompt_len}};
-        // print_tensor(m_attentions_mask_cache);
-        // print_tensor(attention_mask);
 
         for (size_t i = 0; i < context_len; ++i) {
             auto r = m_attentions_mask_cache.data<int64_t>()[i];
@@ -235,22 +234,17 @@ GenerationResult LLMPipeline::greedy_search(ov::Tensor input_ids,
             auto r = attention_mask.data<int64_t>()[i];
             new_attention_mask.data<int64_t>()[i] = attention_mask.data<int64_t>()[i - context_len];
         }
-        // attention_mask = new_attention_mask;
-    // }
         m_model_runner.set_tensor("attention_mask", new_attention_mask);
     } else {
         m_model_runner.set_tensor("attention_mask", attention_mask);
     }
     
-    // todo: make this work even if position_ids are not specified
 
     auto atten_shape = attention_mask.get_shape();
     auto pos_shape = position_ids.get_shape();
     auto input_ids_shape = input_ids.get_shape();
 
     m_model_runner.set_tensor("input_ids", input_ids);
-    // print_tensor(m_model_runner.get_tensor("input_ids"));
-    // m_model_runner.set_tensor("attention_mask", attention_mask);
     m_model_runner.set_tensor("position_ids", position_ids);
 
     m_model_runner.get_tensor("beam_idx").set_shape({batch_size});
@@ -259,10 +253,6 @@ GenerationResult LLMPipeline::greedy_search(ov::Tensor input_ids,
 
     size_t max_tokens = sampling_params.get_max_new_tokens(prompt_len);
     for (size_t i = 0; i < max_tokens; ++i) {
-        // print_tensor(m_model_runner.query_state()[0].get_state());
-        // print_tensor(m_model_runner.get_tensor("attention_mask"));
-        // print_tensor(m_model_runner.get_tensor("position_ids"));
-        print_tensor(m_model_runner.get_tensor("input_ids"));
         
         // todo: consider replacing with start_async and run callback right after that
         m_model_runner.infer();
@@ -536,14 +526,19 @@ GenerationResult LLMPipeline::multinomial_sampling(ov::Tensor prompts, Generatio
 }
 
 std::string LLMPipeline::call(std::string text) {
-    auto [input_ids, attention_mask] = m_tokenizer.tokenize(text);
-
-    auto generate_results = generate(input_ids, attention_mask, m_sampling_parameters);
-
-    return m_tokenizer.detokenize(generate_results)[0];
+    return call(text, m_sampling_parameters);
 }
 
-std::string LLMPipeline::call(std::string text, GenerationConfig generation_config, bool first_time) {
+std::string LLMPipeline::call(std::string text, GenerationConfig generation_config) {
+    if (is_chat_conversation) {
+        text = apply_chat_template(text);
+    }
+    auto kv_cache_len = m_model_runner.query_state()[0].get_state().get_shape()[2];
+    
+    // if (is_chat_conversation && kv_cache_len > 0) {
+    //     text += generation_config.m_eos_token;
+    // }
+
     auto [input_ids, attention_mask] = m_tokenizer.tokenize(text);
 
     // todo: W/A If sentence begins with a special tokens (<bos>, <s>, etc.) openvino_tokenizer inserts 2 special extra tokens <bos> and "▁",
@@ -576,8 +571,7 @@ std::string LLMPipeline::call(std::string text, GenerationConfig generation_conf
     // and modify only after that, e.g.:
     // GenerationConfig config = pipe.generation_config();
     // config.do_sample(false).max_new_tokens(20);
-    // print_tensor(input_ids);
-    auto generate_results = generate(input_ids, attention_mask, generation_config, first_time);
+    auto generate_results = generate(input_ids, attention_mask, generation_config);
 
     return m_tokenizer.detokenize(generate_results)[0];
 }
@@ -606,7 +600,7 @@ std::vector<std::string> LLMPipeline::operator()(std::initializer_list<std::stri
     return call(text, sampling_parameters);
 }
 
-GenerationResult LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config, bool first_time) {
+GenerationResult LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config) {
     GenerationResult result;
 
     if (generation_config.is_gready_sampling()) {
@@ -659,7 +653,7 @@ std::string LLMPipeline::apply_chat_template(std::string prompt, std::string rol
     return tpl.RenderAsString(params).value();
 }
 
-void LLMPipeline::set_streamer_callback(std::function<void (std::string)> callback) {
+void LLMPipeline::set_streamer(std::function<void (std::string)> callback) {
     is_streamer_set = true;
     m_streamer_callback = callback;
     m_streamer = TextCoutStreamer(m_tokenizer);

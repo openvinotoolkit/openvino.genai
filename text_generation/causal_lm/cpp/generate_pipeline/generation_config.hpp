@@ -25,7 +25,7 @@ struct GenerationConfig {
     size_t m_max_new_tokens = SIZE_MAX;
     size_t m_max_length = SIZE_MAX; // m_max_new_tokens should have priority over m_max_length
     bool m_ignore_eos = false;
-    int64_t m_eos_token = 2; // There's no way to extract special token values from the tokenizer for now
+    std::string m_eos_token = "</s>";
 
     // Beam search specific
     size_t m_num_groups = 1;
@@ -47,7 +47,7 @@ struct GenerationConfig {
 
     // special tokens
     int64_t m_bos_token_id = 0;
-    int64_t m_eos_token_id = 2;  // todo: do we need both m_eos_token and m_eos_token_id?
+    int64_t m_eos_token_id = 2;  // todo: check form where it's better to extract rt_info or tokenizer_config.json
     int64_t m_pad_token_id = 0;
 
     std::function<void (std::vector<int64_t>&&, LLMPipeline&)> m_callback = [](std::vector<int64_t>&& tokens, LLMPipeline& pipe){ ;};
@@ -77,7 +77,7 @@ struct GenerationConfig {
         return *this;
     }
 
-    GenerationConfig& eos_token(int64_t eos_token) {
+    GenerationConfig& eos_token(std::string eos_token) {
         m_eos_token = eos_token;
         return *this;
     }
@@ -160,6 +160,7 @@ struct GenerationConfig {
 
         m_bos_token_id = data.value("bos_token_id", 0);
         m_eos_token_id = data.value("eos_token_id", 0);
+        m_eos_token = data.value("eos_token", "</s>");
 
         m_pad_token_id = data.value("pad_token_id", 0);
         m_num_return_sequences = data.value("num_return_sequences", 1);

@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) try {
     ov::Tensor input_ids, attention_mask;
     std::tie(input_ids, attention_mask) = tokenizer.tokenize(prompt);
     // max_new_tokens should be 15 for reproducer case
-    auto result = pipe.generate(input_ids, attention_mask, config.max_new_tokens(55), true)[0].second;
+    auto result = pipe.generate(input_ids, attention_mask, config.max_new_tokens(55))[0].second;
     all_results.insert(all_results.end(), result.begin(), result.end());
 
     string text = tokenizer.detokenize(result);
@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) try {
     data[0] = 1;
     data = new_input_ids.data<int64_t>();
     data[0] = result.back();
-    auto new_result = pipe.generate(new_input_ids, new_attention_mask, config.max_new_tokens(1000), true)[0].second;
+    auto new_result = pipe.generate(new_input_ids, new_attention_mask, config.max_new_tokens(1000))[0].second;
     all_results.insert(all_results.end(), new_result.begin(), new_result.end());
     cout << tokenizer.detokenize(all_results);
 } catch (const std::exception& error) {

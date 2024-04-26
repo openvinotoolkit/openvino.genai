@@ -9,7 +9,6 @@
 #include "generate_pipeline/llm_tokenizer.hpp"
 #include <filesystem>
 
-
 using GenerationResult = std::vector<std::pair<float, std::vector<int64_t>>>;
 using namespace std;
 
@@ -61,7 +60,7 @@ public:
 
     std::string call(std::string text);
 
-    std::string call(std::string text, GenerationConfig generation_config, bool first_time = false);
+    std::string call(std::string text, GenerationConfig generation_config);
 
     std::vector<std::string> call(std::vector<std::string> text, GenerationConfig sampling_parameters);
 
@@ -73,7 +72,7 @@ public:
 
     std::vector<std::string> operator()(std::initializer_list<std::string> text, GenerationConfig sampling_parameters);
 
-    GenerationResult generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params, bool first = true);
+    GenerationResult generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params);
 
     GenerationResult generate(ov::Tensor input_ids, ov::Tensor attention_mask);
 
@@ -85,7 +84,7 @@ public:
 
     std::string apply_chat_template(std::string prompt, std::string role = "user") const;
 
-    void set_streamer_callback(std::function<void (std::string)> callback);
+    void set_streamer(std::function<void (std::string)> callback);
     void start_conversation();
     void stop_conversation();
     void reset_state();

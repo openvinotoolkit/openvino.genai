@@ -23,10 +23,7 @@ std::string generate_chat_prompt(const LLMPipeline& pipe, std::string& input, bo
     return result_prompt.str();
 }
 
-int main(int argc, char* argv[]) try {
-    // if (2 >= argc && argc <= 4)
-    //     throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> \"<PROMPT>\" <DEVICE>");
-    
+int main(int argc, char* argv[]) try { 
     std::string prompt = "table is made of";
     std::string device = "CPU"; // can be replaced with GPU
 
@@ -39,9 +36,8 @@ int main(int argc, char* argv[]) try {
     LLMPipeline pipe(model_path, device);
 
     GenerationConfig config = pipe.generation_config();
-    config.max_new_tokens(2000000);
-    config.eos_token_id(2);
-    pipe.set_streamer_callback([](std::string word) { std::cout << word << std::flush; });
+    config.max_new_tokens(10000);
+    pipe.set_streamer([](std::string word) { std::cout << word << std::flush; });
     
     vector<string> questions = {
         "1+1=", 
@@ -73,13 +69,10 @@ int main(int argc, char* argv[]) try {
         accumulated_str += prompt;
         
         std::string prefix = (first_iter) ? "" : "</s>";
-        auto answer_str = pipe.call(prefix + prompt, config, first_iter);
+        auto answer_str = pipe.call(prefix + prompt, config);
         // auto answer_str = pipe(accumulated_str, config);
         accumulated_str += answer_str;
         cout << "\n----------\n";
-        
-        // if (last_iter)
-        //     cout << accumulated_str;
     }
     pipe.stop_conversation();
 
