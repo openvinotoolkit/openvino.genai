@@ -59,7 +59,7 @@ int main(int argc, char* argv[]) try {
     };
 
     std::string accumulated_str = "";
-    // pipe.start_conversation();
+    pipe.start_conversation();
     for (size_t i = 0; i < questions.size(); i++) {
         prompt = questions[i];
         
@@ -73,8 +73,8 @@ int main(int argc, char* argv[]) try {
         accumulated_str += prompt;
         
         std::string prefix = (first_iter) ? "" : "</s>";
-        // auto answer_str = pipe.call(prefix + prompt, config, first_iter);
-        auto answer_str = pipe(accumulated_str, config);
+        auto answer_str = pipe.call(prefix + prompt, config, first_iter);
+        // auto answer_str = pipe(accumulated_str, config);
         accumulated_str += answer_str;
         cout << "\n----------\n";
         

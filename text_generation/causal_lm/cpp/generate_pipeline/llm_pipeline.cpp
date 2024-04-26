@@ -276,8 +276,8 @@ GenerationResult LLMPipeline::greedy_search(ov::Tensor input_ids,
         m_model_runner.get_tensor("attention_mask").copy_to(m_attentions_mask_cache);
         // m_attentions_mask_cache = m_model_runner.get_tensor("attention_mask");
         
+        update_position_ids(position_ids, m_model_runner.get_tensor("attention_mask"));
         m_model_runner.set_tensor("attention_mask", extend_attention(m_model_runner.get_tensor("attention_mask")));
-        update_position_ids(position_ids, m_model_runner.get_tensor("attention_mask"));  // todo: check why does not always work correctly
         
         std::vector<int64_t> token_iter_results(batch_size);  // results of a single infer request
         std::vector<int> eos_met(batch_size, 0);  // use int because can not use std::all_of with vector<bool>
@@ -546,7 +546,31 @@ std::string LLMPipeline::call(std::string text) {
 std::string LLMPipeline::call(std::string text, GenerationConfig generation_config, bool first_time) {
     auto [input_ids, attention_mask] = m_tokenizer.tokenize(text);
 
+    // todo: W/A If sentence begins with a special tokens (<bos>, <s>, etc.) openvino_tokenizer inserts 2 special extra tokens <bos> and "▁",
+    // but HF does not do that. Moreover openvino_tokenizer always inserts <bos> but in chat scenario HF does not do that because skip_special_tokens=True.
+    // Need to remove both of that tokens manually to get exact token by token alignment with HF
+    auto size = input_ids.get_shape();
+    int64_t* inputs_data = input_ids.data<int64_t>();
+    std::vector<int64_t> tmp_ids(inputs_data, inputs_data + input_ids.get_size()); // todo: works only for batch 1
+    tmp_ids.erase(tmp_ids.begin());
 
+    auto attention_mask_data = attention_mask.data<int64_t>();
+    std::vector<float> tmp_attn_mask(attention_mask_data, attention_mask_data + attention_mask.get_size());
+    tmp_attn_mask.erase(tmp_attn_mask.begin());
+
+    std::vector<std::string> prefixes_to_exclude = {"<s>", "</s>"};  // todo: for TinyLlama, need to get them form generation_config
+    auto prefix_match = [&text](std::string prefix) { return text.substr(0, prefix.length()) == prefix; };
+    if (std::any_of(prefixes_to_exclude.begin(), prefixes_to_exclude.end(), prefix_match)) {
+        tmp_ids.erase(tmp_ids.begin());
+        tmp_attn_mask.erase(tmp_attn_mask.begin());
+    }
+
+    input_ids = ov::Tensor(input_ids.get_element_type(), {1, tmp_ids.size()});
+    for (size_t i = 0; i < tmp_ids.size(); i++)
+        input_ids.data<int64_t>()[i] = tmp_ids.data()[i];
+    attention_mask = ov::Tensor(attention_mask.get_element_type(), {1, tmp_attn_mask.size()});
+    for (size_t i = 0; i < tmp_attn_mask.size(); i++)
+        attention_mask.data<int64_t>()[i] = tmp_attn_mask.data()[i];
 
     // to keep config specified during LLMPipeline creation need to get existing 
     // and modify only after that, e.g.:
