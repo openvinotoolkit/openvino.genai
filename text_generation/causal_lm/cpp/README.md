@@ -119,7 +119,7 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
    [chatglm2-6b - AttributeError: can't set attribute](../../../llm_bench/python/doc/NOTES.md#chatglm2-6b---attributeerror-cant-set-attribute)
    in case of `AttributeError`
    2. https://huggingface.co/THUDM/chatglm3-6b
-2. LLaMA 2
+2. LLaMA 2 (require access request submission on its Hugging Face page to be downloaded)
    1. https://huggingface.co/meta-llama/Llama-2-13b-chat-hf
    2. https://huggingface.co/meta-llama/Llama-2-13b-hf
    3. https://huggingface.co/meta-llama/Llama-2-7b-chat-hf
@@ -152,3 +152,7 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
 12. [Mistral-7B-v0.1](https://huggingface.co/mistralai/Mistral-7B-v0.1)
 
 This pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature.
+
+Some models may require access request submission on their Hugging Face page to be downloaded.
+
+If https://huggingface.co/ is down, the conversion step won't be able to download the models.

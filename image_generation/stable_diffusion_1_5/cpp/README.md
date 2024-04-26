@@ -52,6 +52,8 @@ python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
 
    Please, refer to the official website for [🤗 Optimum](https://huggingface.co/docs/optimum/main/en/index) and [optimum-intel](https://github.com/huggingface/optimum-intel) to read more details.
 
+   If https://huggingface.co/ is down, the script won't be able to download the model.
+
 > [!NOTE]
 > Now the pipeline support batch size = 1 only, i.e. static model `(1, 3, 512, 512)`
 

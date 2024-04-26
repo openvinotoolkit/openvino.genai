@@ -37,6 +37,8 @@ conda install -c conda-forge openvino c-compiler cxx-compiler make
     python convert_model.py -lcm "SimianLuo/LCM_Dreamshaper_v7" -t FP16
     ```
 
+If https://huggingface.co/ is down, the script won't be able to download the model.
+
 > [!NOTE]
 >Only static model is currently supported for this sample.
 
