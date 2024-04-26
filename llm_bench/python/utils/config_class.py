@@ -99,7 +99,9 @@ USE_CASES = {
         'minicpm',
         'gemma',
         "deci",
-        "internlm"
+        "internlm",
+        "olmo",
+        "phi3"
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }
