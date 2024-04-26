@@ -163,8 +163,9 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     if num > 0:
         warmup_md5_list = warmup_md5[prompt_index]
         if result_md5_list != warmup_md5_list:
-            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} is different from warm-up's md5 {warmup_md5_list}")
             utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+            log.error(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} is different from warm-up's md5 {warmup_md5_list}")
+            assert(result_md5_list == warmup_md5_list)
     else:
         utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
     bench_hook.clear_time_list()
