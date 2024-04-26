@@ -24,7 +24,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/linux/l_openvino_toolkit_ubuntu20_2024.1.0.15008.f4afc983258_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -51,7 +51,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/linux/l_openvino_toolkit_ubuntu20_2024.1.0.15008.f4afc983258_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -141,12 +141,12 @@ jobs:
       - name: Install OpenVINO
         shell: bash
         run: |
-          curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64.zip
+          curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/windows/w_openvino_toolkit_windows_2024.1.0.15008.f4afc983258_x86_64.zip
           unzip ov.zip
       - name: Download, convert and build
         shell: cmd
         run: |
-          call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64\setupvars.bat
+          call w_openvino_toolkit_windows_2024.1.0.15008.f4afc983258_x86_64\setupvars.bat
           python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
           python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0/ --precision FP16
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
@@ -154,7 +154,7 @@ jobs:
       - name: Compare
         shell: cmd
         run: |
-          call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64\setupvars.bat
+          call w_openvino_toolkit_windows_2024.1.0.15008.f4afc983258_x86_64\setupvars.bat
           convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --with-detokenizer
 
           .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "69" > .\pred.txt
@@ -182,7 +182,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/linux/l_openvino_toolkit_ubuntu20_2024.1.0.15008.f4afc983258_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -209,7 +209,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/linux/l_openvino_toolkit_ubuntu20_2024.1.0.15008.f4afc983258_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -236,7 +236,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/linux/l_openvino_toolkit_ubuntu20_2024.1.0.15008.f4afc983258_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -263,7 +263,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/linux/l_openvino_toolkit_ubuntu20_2024.1.0.15008.f4afc983258_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -290,7 +290,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.3/linux/l_openvino_toolkit_ubuntu20_2023.3.0.13775.ceeafaf64f3_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/linux/l_openvino_toolkit_ubuntu20_2024.1.0.15008.f4afc983258_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -329,7 +329,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/linux/l_openvino_toolkit_ubuntu20_2024.1.0.15008.f4afc983258_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
