@@ -14,6 +14,7 @@ Prepare a python environment and install dependencies:
 ```shell
 conda create -n openvino_lcm_cpp python==3.10
 conda activate openvino_lcm_cpp
+conda update -c conda-forge --all
 conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
 # Ensure that Conda standard libraries are used
 conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH

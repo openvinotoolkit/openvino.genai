@@ -38,6 +38,7 @@ jobs:
       - name: Install OpenVINO and other conda dependencies
         run: |
           conda activate openvino_lcm_cpp
+          conda update -c conda-forge --all
           conda install -c conda-forge openvino=2024.0.0 c-compiler cxx-compiler make cmake
           conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
       
@@ -85,6 +86,7 @@ jobs:
       - name: Install OpenVINO and other conda dependencies
         run: |
           conda activate openvino_lcm_cpp
+          conda update -c conda-forge --all
           conda install -c conda-forge openvino=2024.0.0 c-compiler cxx-compiler make cmake
           conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
       
