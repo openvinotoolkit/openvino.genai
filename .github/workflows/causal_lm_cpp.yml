@@ -51,7 +51,7 @@ jobs:
                    raise RuntimeError(f'Missing "{ref=}" from predictions') 
                predictions = predictions[:idx] + predictions[idx + len(ref):] 
            " 
-           echo "69" passed 
+           echo 69 passed 
 
   cpp-beam_search_causal_lm-Mistral-7B:
     runs-on: ubuntu-20.04-16-cores
