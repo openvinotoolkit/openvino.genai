@@ -69,7 +69,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id togethercomputer/RedPajama-INCITE-Instruct-3B-v1 --output_dir ./open_llama_3b_v2/ --precision FP16  &
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id openlm-research/open_llama_3b_v2 --output_dir ./open_llama_3b_v2/ --precision FP16  &
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
           wait
