@@ -360,7 +360,10 @@ def convert_seq2seq(args):
             compile=False,
             trust_remote_code=True,
             config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
+            load_in_8bit=False
         )
+        if is_fp16(args):
+            model.half()
         end = time.perf_counter()
         log.info(f"Conversion total time {end - start}s")
 
@@ -1231,7 +1234,7 @@ def convert_baichaun(args):
 def convert_qwen(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     cuda, post_init = patch_gptq(config)
-    model_kwargs = {"code_revision": "2abd8e5777bb4ce9c8ab4be7dbbd0fe4526db78d"}
+    model_kwargs = {}
     precision = args.precision
     compression_only = (
         args.compress_weights
@@ -1242,7 +1245,6 @@ def convert_qwen(args):
     if post_init is not None:
         model_kwargs = {
             "torch_dtype": torch.float32,
-            "code_revision": "c02ede58c0ab0045f5e4788c35842bec6a7baa0a",
         }
     model = None
     if not compression_only:
@@ -1350,11 +1352,12 @@ def main():
         "-c",
         "--compress_weights",
         type=str,
-        choices=["INT8", "INT8_ASYM", "INT8_SYM", "4BIT_DEFAULT", "INT4_SYM", "INT4_ASYM"],
+        choices=["INT8", "INT8_ASYM", "INT8_SYM", "4BIT_DEFAULT", "4BIT_MAXIMUM", "INT4_SYM", "INT4_ASYM"],
         nargs="+",
         help=(
             "The weight compression option, e.g. INT8 - INT8 weights (deprecated, please use INT8_ASYM instead), "
-            "4BIT_DEFAULT - for 4-bit compression with predefined configs, "
+            "4BIT_DEFAULT - for 4-bit compression with predefined configs with performance-accuracy trade-off, "
+            "4BIT_MAXIMUM - for 4-bit compression with predefined configs for the best performance, "
             "INT4_* - for INT4 compressed weights."
         ),
     )
