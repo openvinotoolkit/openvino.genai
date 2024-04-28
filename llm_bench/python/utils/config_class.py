@@ -101,7 +101,8 @@ USE_CASES = {
         "deci",
         "internlm",
         "olmo",
-        "phi3"
+        "phi3",
+        "starcoder"
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }
