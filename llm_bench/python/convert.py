@@ -360,7 +360,10 @@ def convert_seq2seq(args):
             compile=False,
             trust_remote_code=True,
             config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
+            load_in_8bit=False
         )
+        if is_fp16(args):
+            model.half()
         end = time.perf_counter()
         log.info(f"Conversion total time {end - start}s")
 
