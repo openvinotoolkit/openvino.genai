@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-   cpp-beam_search_causal_lm-red-pajama-3b-instruct:
+  cpp-beam_search_causal_lm-red-pajama-3b-instruct:
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -29,29 +29,28 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python3 -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python3 ./llm_bench/python/convert.py --model_id togethercomputer/RedPajama-INCITE-Instruct-3B-v1 --output_dir .RedPajama-INCITE-Instruct-3B-v1/ --precision FP16 &7B-v0.1/ --precision FP16 &
+          python3 -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python3 ./llm_bench/python/convert.py --model_id togethercomputer/RedPajama-INCITE-Instruct-3B-v1 --output_dir .RedPajama-INCITE-Instruct-3B-v1/ --precision FP16
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
-          cmake --build ./build/ --config Release -j --parallel 8
-          wait
+          cmake --build ./build/ --config Release -j8
       - name: Compare
         run: |
           source ./ov/setupvars.sh
           convert_tokenizer ./RedPajama-INCITE-Instruct-3B-v1/pytorch/dldt/FP16/ --output ./RedPajama-INCITE-Instruct-3B-v1/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
           timeout 50s ./build/beam_search_causal_lm .RedPajama-INCITE-Instruct-3B-v1/pytorch/dldt/FP16/ 69 > ./pred.txt
-          python -c " 
-           import transformers 
-           with open('pred.txt', 'r') as file: 
-               predictions = file.read() 
-           tokenizer = transformers.LlamaTokenizer.from_pretrained('togethercomputer/RedPajama-INCITE-Instruct-3B-v1') 
-           tokenized = tokenizer('69', return_tensors='pt') 
-           for beam in transformers.LlamaForCausalLM.from_pretrained('togethercomputer/RedPajama-INCITE-Instruct-3B-v1').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False): 
-               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n' 
-               idx = predictions.find(ref) 
-               if -1 == idx: 
-                   raise RuntimeError(f'Missing "{ref=}" from predictions') 
-               predictions = predictions[:idx] + predictions[idx + len(ref):] 
-           " 
-           echo 69 passed 
+          python -c "
+          import transformers
+          with open('pred.txt', 'r') as file:
+              predictions = file.read()
+          tokenizer = transformers.LlamaTokenizer.from_pretrained('togethercomputer/RedPajama-INCITE-Instruct-3B-v1')
+          tokenized = tokenizer('69', return_tensors='pt')
+          for beam in transformers.LlamaForCausalLM.from_pretrained('togethercomputer/RedPajama-INCITE-Instruct-3B-v1').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_length=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9, do_sample=False):
+              ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
+              idx = predictions.find(ref)
+              if -1 == idx:
+                  raise RuntimeError(f'Missing "{ref=}" from predictions')
+              predictions = predictions[:idx] + predictions[idx + len(ref):]
+          "
+          echo 69 passed
 
   cpp-beam_search_causal_lm-Mistral-7B:
     runs-on: ubuntu-20.04-16-cores
