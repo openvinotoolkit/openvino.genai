@@ -18,6 +18,7 @@ Assume there are two running beams. To proceed with generating both beams at the
 ![](beam_idx-drop.gif)
 
 The images below represent stateless and stateful LLM pipelines. The model has 4 inputs:
+
 1. `input_ids` contains the next selected token
 2. `attention_mask` is filled with `1`
 3. `position_ids` encodes a position of currently generating token in the sequence
@@ -45,7 +46,7 @@ Speculative decoding works the following way. The draft model predicts the next 
 This approach reduces the need for multiple infer requests to the main model, enhancing performance. For instance, in more predictable parts of text generation, the draft model can, in best-case scenarios, generate the next K tokens that exactly match the target. In tha caste the are validated in a single inference request to the main model (which is bigger, more accurate but slower) instead of running K subsequent requests. More details can be found in the original paper https://arxiv.org/pdf/2211.17192.pdf, https://arxiv.org/pdf/2302.01318.pdf
 
 > [!NOTE]
->Models should belong to the same family and have same tokenizers.
+> Models should belong to the same family and have same tokenizers.
 
 ## Install OpenVINO
 
@@ -94,11 +95,13 @@ convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyL
 ## Run
 
 Usage:
+
 1. `greedy_causal_lm <MODEL_DIR> "<PROMPT>"`
 2. `beam_search_causal_lm <MODEL_DIR> "<PROMPT>"`
-2. `speculative_decoding_lm <DRAFT_MODEL_DIR> <MAIN_MODEL_DIR> "<PROMPT>"`
+3. `speculative_decoding_lm <DRAFT_MODEL_DIR> <MAIN_MODEL_DIR> "<PROMPT>"`
 
 Examples:
+
 1. `./build/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
 2. `./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
 3. `./build/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ ./Llama-2-7b-chat-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
@@ -109,8 +112,8 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
 
 1. chatglm
    1. https://huggingface.co/THUDM/chatglm2-6b - refer to
-   [chatglm2-6b - AttributeError: can't set attribute](../../../llm_bench/python/doc/NOTES.md#chatglm2-6b---attributeerror-cant-set-attribute)
-   in case of `AttributeError`
+      [chatglm2-6b - AttributeError: can't set attribute](../../../llm_bench/python/doc/NOTES.md#chatglm2-6b---attributeerror-cant-set-attribute)
+      in case of `AttributeError`
    2. https://huggingface.co/THUDM/chatglm3-6b
 2. LLaMA 2
    1. https://huggingface.co/meta-llama/Llama-2-13b-chat-hf
@@ -132,8 +135,8 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
    2. https://huggingface.co/Qwen/Qwen-7B-Chat-Int4 - refer to
    3. https://huggingface.co/Qwen/Qwen1.5-7B-Chat
    4. https://huggingface.co/Qwen/Qwen1.5-7B-Chat-GPTQ-Int4
-   [Qwen-7B-Chat-Int4 - Torch not compiled with CUDA enabled](../../../llm_bench/python/doc/NOTES.md#qwen-7b-chat-int4---torch-not-compiled-with-cuda-enabled)
-   in case of `AssertionError`
+      [Qwen-7B-Chat-Int4 - Torch not compiled with CUDA enabled](../../../llm_bench/python/doc/NOTES.md#qwen-7b-chat-int4---torch-not-compiled-with-cuda-enabled)
+      in case of `AssertionError`
 7. Dolly
    1. https://huggingface.co/databricks/dolly-v2-3b
 8. Phi
@@ -141,6 +144,6 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
    2. https://huggingface.co/microsoft/phi-1_5
 9. [notus-7b-v1](https://huggingface.co/argilla/notus-7b-v1)
 10. [zephyr-7b-beta](https://huggingface.co/HuggingFaceH4/zephyr-7b-beta)
-
+11. [RedPajama-INCITE-Instruct-3B-v1](https://huggingface.co/togethercomputer/RedPajama-INCITE-Instruct-3B-v1)
 
 This pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature.

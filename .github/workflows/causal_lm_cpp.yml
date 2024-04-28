@@ -11,6 +11,47 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  cpp-greedy_causal_lm-Red_pjama:
+    runs-on: ubuntu-20.04-8-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id togethercomputer/RedPajama-INCITE-Instruct-3B-v1 --output_dir ./RedPajama-INCITE-Instruct-3B-v1/ --precision FP16  &
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake --build ./build/ --config Release -j
+          wait
+      - name: convert_tokenizer and run
+        run: |
+          source ./ov/setupvars.sh
+          convert_tokenizer ./RedPajama-INCITE-Instruct-3B-v1/pytorch/dldt/FP16/ --output ./RedPajama-INCITE-Instruct-3B-v1/pytorch/dldt/FP16/ --with-detokenizer
+          ./build/greedy_causal_lm ./RedPajama-INCITE-Instruct-3B-v1/pytorch/dldt/FP16/ "return 0"
+          python -c " 
+          import transformers 
+          with open('pred.txt', 'r') as file: 
+              predictions = file.read() 
+          tokenizer = transformers.LlamaTokenizer.from_pretrained('togethercomputer/RedPajama-INCITE-Instruct-3B-v1') 
+          tokenized = tokenizer('69', return_tensors='pt') 
+          for beam in transformers.LlamaForCausalLM.from_pretrained('togethercomputer/RedPajama-INCITE-Instruct-3B-v1').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False): 
+              ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n' 
+              idx = predictions.find(ref) 
+              if -1 == idx: 
+                  raise RuntimeError(f'Missing "{ref=}" from predictions') 
+              predictions = predictions[:idx] + predictions[idx + len(ref):] 
+          " 
+          echo "Red Pajama" passed
+
   cpp-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
     steps:
@@ -28,7 +69,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id openlm-research/open_llama_3b_v2 --output_dir ./open_llama_3b_v2/ --precision FP16  &
+          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id togethercomputer/RedPajama-INCITE-Instruct-3B-v1 --output_dir ./open_llama_3b_v2/ --precision FP16  &
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
           wait
@@ -76,8 +117,8 @@ jobs:
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
-          "
-          echo 69 passed
+          """
+          echo "69" passed
 
           timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ Hi > ./pred.txt
           python -c "
@@ -109,7 +150,7 @@ jobs:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo return 0 passed
+          echo "return 0" passed
 
           ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "你好！ 你好嗎？" > ./pred.txt
           python -c "
@@ -125,7 +166,7 @@ jobs:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo 你好！ 你好嗎？ passed
+          echo "你好！ 你好嗎？" passed
   cpp-beam_search_causal_lm-windows:
     runs-on: windows-latest
     steps:
@@ -243,7 +284,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           convert_tokenizer ./Phi-2/pytorch/dldt/FP16/ --output ./Phi-2/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
-          timeout 50s ./build/beam_search_causal_lm ./Phi-2/pytorch/dldt/FP16/ 69 > ./pred.txt        
+          timeout 50s ./build/beam_search_causal_lm ./Phi-2/pytorch/dldt/FP16/ 69 > ./pred.txt
   cpp-beam_search_causal_lm-notus-7b-v1:
     runs-on: ubuntu-20.04-16-cores
     steps:
@@ -350,4 +391,4 @@ jobs:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo Phi-1_5 passed
+          echo "Phi-1_5" passed
