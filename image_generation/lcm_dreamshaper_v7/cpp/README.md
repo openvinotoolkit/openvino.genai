@@ -8,14 +8,14 @@ The pure C++ text-to-image pipeline, driven by the OpenVINO native API for SD v1
 
 C++ Packages:
 * [CMake](https://cmake.org/download/): Cross-platform build tool
-* [OpenVINO](https://docs.openvino.ai/2023.2/openvino_docs_install_guides_overview.html): Model inference
+* [OpenVINO](https://docs.openvino.ai/2024/get-started/install-openvino.html): Model inference
 
 Prepare a python environment and install dependencies:
 ```shell
 conda create -n openvino_lcm_cpp python==3.10
 conda activate openvino_lcm_cpp
 conda update -c conda-forge --all
-conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
+conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler make cmake
 # Ensure that Conda standard libraries are used
 conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 ```
