@@ -60,7 +60,8 @@ INT4_MODEL_CONFIGURATION = {
     "bloomz-560m": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 64, "ratio": 0.8,
                     "dataset": {"name": "wikitext,wikitext-2-v1,train[:1000],text", "awq": True}},
     "mixtral-8x7b-v0.1": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.8},
-    "baichuan2-7b-chat": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.8},
+    "baichuan2-7b-chat": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.8,
+                          "dataset": {"name": "wikitext,wikitext-2-v1,train[:1000],text", "awq": True}},
     "mistral-7b-v0.1": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.9},
-    "llama-7b": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.8},
+    "llama-7b": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.7},
 }
