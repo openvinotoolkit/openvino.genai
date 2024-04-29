@@ -77,7 +77,7 @@ USE_CASES = {
         'pythia-',
         'stablelm-',
         'stable-zephyr-',
-        'rocket-'
+        'rocket-',
         'blenderbot',
         'vicuna',
         'dolly',
@@ -95,10 +95,14 @@ USE_CASES = {
         'mixtral',
         'yi-',
         'phi-',
+        'phi2-',
         'minicpm',
         'gemma',
         "deci",
-        "internlm"
+        "internlm",
+        "olmo",
+        "phi3",
+        "starcoder"
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }

@@ -360,7 +360,10 @@ def convert_seq2seq(args):
             compile=False,
             trust_remote_code=True,
             config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
+            load_in_8bit=False
         )
+        if is_fp16(args):
+            model.half()
         end = time.perf_counter()
         log.info(f"Conversion total time {end - start}s")
 
@@ -1198,6 +1201,44 @@ def convert_falcon(args):
         unpatch_gptq(cuda, post_init)
 
 
+def convert_phi(args):
+    trust_remote_code = False
+    try:
+        config = AutoConfig.from_pretrained(args.model_id)
+    except Exception:
+        config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+        trust_remote_code = True
+    cuda, post_init = patch_gptq(config)
+    model_kwargs = {}
+    if trust_remote_code:
+        model_kwargs["trust_remote_code"] = trust_remote_code
+    precision = args.precision
+    compression_only = (
+        args.compress_weights
+        and not args.force_convert
+        and not is_torch_compression(args)
+        and is_ov_model_provided(args.model_id, args.output_dir, args.precision)
+    )
+    if post_init is not None:
+        model_kwargs["torch_dtype"] = torch.float32
+    pt_model = None
+    gptq_applied = is_gptq(config)
+    precision = precision if not gptq_applied else GPTQ_DIR.format(precision=args.precision)
+    if not compression_only:
+        pt_model = AutoModelForCausalLM.from_pretrained(
+            args.model_id,
+            config=AutoConfig.from_pretrained(args.model_id),
+            **model_kwargs,
+        )
+        pt_model.config.use_cache = True
+        pt_model.eval()
+
+    convert_optimum_causallm_base(pt_model, args, config, compression_only)
+
+    if post_init is not None:
+        unpatch_gptq(cuda, post_init)
+
+
 def convert_baichaun(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     cuda, post_init = patch_gptq(config)
@@ -1231,7 +1272,7 @@ def convert_baichaun(args):
 def convert_qwen(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     cuda, post_init = patch_gptq(config)
-    model_kwargs = {"code_revision": "2abd8e5777bb4ce9c8ab4be7dbbd0fe4526db78d"}
+    model_kwargs = {}
     precision = args.precision
     compression_only = (
         args.compress_weights
@@ -1242,7 +1283,6 @@ def convert_qwen(args):
     if post_init is not None:
         model_kwargs = {
             "torch_dtype": torch.float32,
-            "code_revision": "c02ede58c0ab0045f5e4788c35842bec6a7baa0a",
         }
     model = None
     if not compression_only:
@@ -1302,6 +1342,7 @@ converters = {
     "lcm": convert_lcm,
     "ldm": convert_ldm_super_res,
     "mpt": convert_mpt,
+    "phi-": convert_phi,
     "replit": convert_mpt,
     "chatglm2": convert_causal_lm,
     "chatglm3": convert_causal_lm,
