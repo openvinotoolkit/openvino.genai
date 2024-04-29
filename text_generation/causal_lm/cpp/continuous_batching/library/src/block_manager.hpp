@@ -146,7 +146,9 @@ public:
         OPENVINO_ASSERT(block_table.size() >= block_num);
         for (size_t idx = 0; idx < block_num; idx++) {
             m_allocator.free(block_table.back());
-            m_block_table[seq_id].erase(block_table.end()-1);
+            if (block_table.back()->is_free()) {
+                m_block_table[seq_id].erase(m_block_table[seq_id].end()-1);
+            }
         }
         if (m_block_table.size() == 0) {
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
