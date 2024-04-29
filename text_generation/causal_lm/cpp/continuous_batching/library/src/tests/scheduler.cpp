@@ -9,6 +9,13 @@
 #include "scheduler.hpp"
 #include "generation_config.hpp"
 
+void clear_finished_sequences(std::vector<SequenceGroup::Ptr>& requests) {
+    auto new_end = std::remove_if(requests.begin(), requests.end(), [] (SequenceGroup::CPtr seq_group) -> bool {
+            return seq_group->has_finished();
+    });
+    requests.erase(new_end, requests.end());
+}
+
 
 TEST(TestScheduler, general_test) {
     SchedulerConfig scheduler_config {
@@ -51,8 +58,11 @@ TEST(TestScheduler, general_test) {
     EXPECT_EQ(out1.m_block_tables[idx1][1]->get_index(), 3);
     // tokens.size() * 2 tokens should be scheduled on prompt phase, corresponding to first two sequences 
     EXPECT_EQ(out1.m_total_num_scheduled_tokens, tokens.size() * 2);
-    EXPECT_EQ(out1.is_prompt, true);
+    EXPECT_TRUE(out1.is_prompt);
+
     for (auto seq: requests) {
+        std::vector<Sequence::Ptr> running_sequences = seq->get_running_sequences();
+        // prompt phase
         seq->finish_iteration();
     }
 
@@ -74,14 +84,24 @@ TEST(TestScheduler, general_test) {
     EXPECT_EQ(out2.m_block_tables[idx2][1]->get_index(), 5);
     // tokens.size() tokens should be scheduled on prompt phase, corresponding to third sequence
     EXPECT_EQ(out2.m_total_num_scheduled_tokens, tokens.size()); 
+    EXPECT_TRUE(out2.is_prompt);
+
     for (auto seq: requests1) {
+        std::vector<Sequence::Ptr> running_sequences = seq->get_running_sequences();
+        // prompt phase
         seq->finish_iteration();
     }
+    
+
     // at this point we scheduled all available kv blocks
 
     // sequence_group3 should be evicted
     auto out3 = scheduler.schedule(requests1);
+
     for (auto seq: requests1) {
+        std::vector<Sequence::Ptr> running_sequences = seq->get_running_sequences();
+        // generate phase, append a token to each sequence
+        running_sequences[0]->append_token(16, 0.9);
         seq->finish_iteration();
     }
 
@@ -92,28 +112,50 @@ TEST(TestScheduler, general_test) {
     EXPECT_FALSE(out3.m_block_tables[idx0][1]->is_free());
     EXPECT_EQ(out3.m_block_tables[idx0][1]->get_index(), 1);
     EXPECT_FALSE(out3.m_block_tables[idx0][2]->is_free());
-    EXPECT_EQ(out3.m_block_tables[idx0][2]->get_index(), 4);
+    EXPECT_EQ(out3.m_block_tables[idx0][2]->get_index(), 5);
     EXPECT_FALSE(out3.m_block_tables[idx1][0]->is_free());
     EXPECT_EQ(out3.m_block_tables[idx1][0]->get_index(), 2);
     EXPECT_FALSE(out3.m_block_tables[idx1][1]->is_free());
     EXPECT_EQ(out3.m_block_tables[idx1][1]->get_index(), 3);
     EXPECT_FALSE(out3.m_block_tables[idx1][2]->is_free());
-    EXPECT_EQ(out3.m_block_tables[idx1][2]->get_index(), 5);
+    EXPECT_EQ(out3.m_block_tables[idx1][2]->get_index(), 4);
     // 2 tokens should be scheduled on generate phase for "0" and "1" sequence, "2" sequence should be preempted
     EXPECT_EQ(out3.m_total_num_scheduled_tokens, 2); 
+    EXPECT_FALSE(out3.is_prompt);
 
-    // check that 1 token was scheduled for "2" sequence (preempted on previous iteraition) 
+    // check that scheduler has no block table for sequence_group3
+    EXPECT_THROW(scheduler.get_block_table(*(*sequence_group3)[0]), ::ov::AssertFailure);
+
+    // finish first sequence
+    requests1[0]->get_running_sequences()[0]->set_status(SequenceStatus::FINISHED);
+    scheduler.free_sequence(idx0);
+    clear_finished_sequences(requests1);
+    // KV blocks 0,1,5 are free now
+
+
     auto out4 = scheduler.schedule(requests1);
-    // At this point scheduler preempts "1" sequence, as it assumes "0" sequence requires new block, but in fact it doesn't. 
-    // This part of test should be updated when preemtion algorithm finished.
     
+    EXPECT_FALSE(out4.m_block_tables[idx1][0]->is_free());
+    EXPECT_EQ(out4.m_block_tables[idx1][0]->get_index(), 2);
+    EXPECT_FALSE(out4.m_block_tables[idx1][1]->is_free());
+    EXPECT_EQ(out4.m_block_tables[idx1][1]->get_index(), 3);
+    EXPECT_FALSE(out4.m_block_tables[idx1][2]->is_free());
+    EXPECT_EQ(out4.m_block_tables[idx1][2]->get_index(), 4);
+
+    // check that sequence_group3 is fully scehuled 
     EXPECT_FALSE(out4.m_block_tables[idx2][0]->is_free());
-    EXPECT_EQ(out4.m_block_tables[idx2][0]->get_index(), 2); // index here should be updated later
+    EXPECT_EQ(out4.m_block_tables[idx2][0]->get_index(), 0);
+    EXPECT_FALSE(out4.m_block_tables[idx2][1]->is_free());
+    EXPECT_EQ(out4.m_block_tables[idx2][1]->get_index(), 1);
+
+    // requests1[1] should be fully scheduled plus 1 slot for requests1[0]
+    EXPECT_EQ(out4.m_total_num_scheduled_tokens, requests1[1]->get_context_len() + 1);
+
+    EXPECT_FALSE(out4.is_prompt);
+
 }
 
-
-
-TEST(TestScheduler, test_case1) {
+TEST(TestScheduler, test_append_slots_considers_all_sequences) {
     SchedulerConfig scheduler_config {
         // batch size
         .max_num_batched_tokens = 32,
@@ -135,8 +177,6 @@ TEST(TestScheduler, test_case1) {
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
     
-                                                                       
-    
     Scheduler scheduler = Scheduler(scheduler_config);
     auto out1 = scheduler.schedule(requests);
 
@@ -155,10 +195,105 @@ TEST(TestScheduler, test_case1) {
     EXPECT_EQ(out1.m_total_num_scheduled_tokens, tokens.size() * 2);
     EXPECT_EQ(out1.is_prompt, true);
     for (auto seq: requests) {
+        std::vector<Sequence::Ptr> running_sequences = seq->get_running_sequences();
+        // prompt phase
         seq->finish_iteration();
     }
 
-    // at this point we used 4/5 KV blocks. Both sequences requre new KV block, but we have space for only one.
-    auto out2 = scheduler.schedule(requests); // fails currently as we check can append slot for each sequence separetely. First sequence schedule 1 new block, second fails on scheduling.
+    // at this point we used 4/5 KV blocks. Both sequences require new KV block, but we have space for only one.
+    auto out2 = scheduler.schedule(requests); 
+
+    // 1-st sequence now should use 3 kv-blocks
+    EXPECT_EQ(out2.m_block_tables[idx0].size(), 3);
+    EXPECT_FALSE(out2.m_block_tables[idx0][0]->is_free());
+    EXPECT_EQ(out2.m_block_tables[idx0][0]->get_index(), 0);
+    EXPECT_FALSE(out2.m_block_tables[idx0][1]->is_free());
+    EXPECT_EQ(out2.m_block_tables[idx0][1]->get_index(), 1);
+    EXPECT_FALSE(out2.m_block_tables[idx0][2]->is_free());
+    EXPECT_EQ(out2.m_block_tables[idx0][2]->get_index(), 4);
+
+    // 1 token was scheduled for generate phase
+    EXPECT_EQ(out2.m_total_num_scheduled_tokens, 1); 
+
+    EXPECT_FALSE(out2.is_prompt); 
+}
+
+
+TEST(TestScheduler, test_partial_preemption) {
+    SchedulerConfig scheduler_config {
+        // batch size
+        .max_num_batched_tokens = 32,
+        // cache params
+        .num_kv_blocks = 6,
+        .block_size = 4,
+        // mode - vLLM or dynamic_split_fuse
+        .dynamic_split_fuse = false,
+        // vLLM specific params
+        .max_num_seqs = 5,
+        .max_paddings = 8,
+    };
+    std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7,8,9,10,11};
+    SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                            GenerationConfig::greedy(), scheduler_config.block_size);
+    auto idx0 = (*sequence_group1)[0]->get_id();
+    SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                            GenerationConfig::greedy(), scheduler_config.block_size);
+    auto idx1 = (*sequence_group2)[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
+                                                                       
     
+    // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
+    Scheduler scheduler = Scheduler(scheduler_config);
+    auto out1 = scheduler.schedule(requests);
+
+    for (auto seq: requests) {
+        std::vector<Sequence::Ptr> running_sequences = seq->get_running_sequences();
+        // prompt phase
+        seq->finish_iteration();
+    }
+
+    // sequence_group2 should be partially preempted
+    auto out2 = scheduler.schedule(requests);
+    
+    std::vector<size_t> ref_ids = {0};
+    EXPECT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
+    auto block_table1 = scheduler.get_block_table(*(*sequence_group1)[0]);
+    auto block_table2 = scheduler.get_block_table(*(*sequence_group2)[0]);
+    EXPECT_EQ(block_table1.size(), 4);
+    EXPECT_EQ(block_table1[0]->get_index(), 0);
+    EXPECT_EQ(block_table1[1]->get_index(), 1);
+    EXPECT_EQ(block_table1[2]->get_index(), 2);
+    EXPECT_EQ(block_table1[3]->get_index(), 5);
+    EXPECT_EQ(block_table2.size(), 2);
+    EXPECT_EQ(block_table2[0]->get_index(), 3);
+    EXPECT_EQ(block_table2[1]->get_index(), 4);
+
+    EXPECT_EQ(out2.m_total_num_scheduled_tokens, 1); 
+    EXPECT_EQ(out2.m_block_tables[idx0][0]->get_index(), 0);
+    EXPECT_EQ(out2.m_block_tables[idx0][1]->get_index(), 1);
+    EXPECT_EQ(out2.m_block_tables[idx0][2]->get_index(), 2);
+    EXPECT_EQ(out2.m_block_tables[idx0][3]->get_index(), 5);
+
+    // finish first sequence
+    requests[0]->get_running_sequences()[0]->set_status(SequenceStatus::FINISHED);
+    scheduler.free_sequence(idx0);
+    clear_finished_sequences(requests);
+    // KV blocks 0,1,2,5 are free now
+
+    // sequence_group2 should be scheduled
+    auto out3 = scheduler.schedule(requests);
+
+    // scheduled 4 tokens which should be recomputed in last block
+    EXPECT_EQ(out3.m_total_num_scheduled_tokens, 4); 
+    EXPECT_EQ(out3.m_block_tables[idx1][0]->get_index(), 3);
+    EXPECT_EQ(out3.m_block_tables[idx1][1]->get_index(), 4);
+    EXPECT_EQ(out3.m_block_tables[idx1][2]->get_index(), 0);
+
+    block_table2 = scheduler.get_block_table(*(*sequence_group2)[0]);
+    EXPECT_EQ(block_table2.size(), 3);
+    EXPECT_EQ(block_table2[0]->get_index(), 3);
+    EXPECT_EQ(block_table2[1]->get_index(), 4);
+    EXPECT_EQ(block_table2[2]->get_index(), 0);
+
+    EXPECT_THROW(scheduler.get_block_table(*(*sequence_group1)[0]), ::ov::AssertFailure);
 }
