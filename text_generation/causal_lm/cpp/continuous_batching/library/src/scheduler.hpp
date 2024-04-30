@@ -296,36 +296,6 @@ private:
         }
     }
 
-    bool _allocate_slots(SequenceGroup::Ptr sequence_group, size_t group_idx, size_t sequence_len, Output& scheduler_output) {
-        // apply KV cache limitations
-        const size_t num_required_blocks = (sequence_len + m_config.block_size - 1) / m_config.block_size;
-        if (!m_block_manager.can_allocate_blocks(num_required_blocks))
-            return false;
-
-        // add scheduling information
-        {
-            Sequence::Ptr sequence = (*sequence_group)[0];
-            uint64_t seq_id = sequence->get_id();
-
-            // allocate KV blocks
-            m_block_manager.allocate(seq_id, num_required_blocks);
-            // and schedule tokens
-            sequence_group->schedule_tokens(sequence_len);
-
-            // add information to scheduler_output
-            {
-                scheduler_output.m_scheduled_sequence_groups_ids.push_back(group_idx);
-                scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_table(seq_id);
-                scheduler_output.m_total_num_scheduled_tokens = sequence_len * scheduler_output.m_scheduled_sequence_groups_ids.size();
-            }
-
-            // update "is_prompt" flag
-            scheduler_output.is_prompt = true;
-        }
-        return true;
-    }
-
-
 
     void _schedule_prompt_phase_vllm(std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
         // Current scheduling method schedules prompts only in a manner similar to vLLM:
