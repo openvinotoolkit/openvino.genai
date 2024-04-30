@@ -249,7 +249,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
 
                 if (sampling_params.max_new_tokens == running_sequences[0]->get_generated_len() ||
                     sampled_token_id == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
-                    // stop sequence by max_output_length or EOS token
+                    // stop sequence by max_new_tokens or EOS token
                     running_sequences[0]->set_status(SequenceStatus::FINISHED);
                     // drop sequence from scheduler
                     sampler_output.m_dropped_sequences.push_back(running_sequences[0]->get_id());
@@ -268,7 +268,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 // check max length stop criteria
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
                 if (!sequence_group->has_finished() && running_sequences[0]->get_generated_len() == sampling_params.max_new_tokens) {
-                    // stop sequence by max_output_length
+                    // stop sequence by max_new_tokens
                     m_beam_search_info.at(request_id).finalize(sampler_output);
                 }
             }
@@ -276,12 +276,12 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
             // we are in prompt processing phase when prompt is split into chunks and processed step by step
         }
 
-        // accumulate a number of processed tokens
-        currently_processed_tokens += padded_amount_of_processed_tokens * num_running_sequences;
-
         // NOTE: it should be before 'get_num_scheduled_tokens' is used
         // update internal state of sequence group to reset scheduler tokens and update currently processed ones
         sequence_group->finish_iteration();
+
+        // accumulate a number of processed tokens
+        currently_processed_tokens += padded_amount_of_processed_tokens * num_running_sequences;
     }
 
     return sampler_output;

@@ -265,7 +265,8 @@ private:
         //   - max_num_batched_tokens (max_model_length (and at least 2048) in vLLM's defaults)
 
         OPENVINO_ASSERT(!m_config.dynamic_split_fuse, "Internal error: we are in vLLM scheduling");
-        OPENVINO_ASSERT(m_config.max_num_seqs <= m_config.max_num_batched_tokens, "Max num batched tokens must be greater or equal to max num sequences");
+        OPENVINO_ASSERT(m_config.max_num_seqs <= m_config.max_num_batched_tokens, "Max num batched tokens (", m_config.max_num_batched_tokens,
+            ") must be greater or equal to max num sequences (", m_config.max_num_seqs, ")");
         OPENVINO_ASSERT(scheduler_output.m_scheduled_sequence_groups_ids.empty(), "Internal error: in vLLM scheduling, prompt phase is always first one");
 
         // TODO: it currently does not handle beam search, where beam width should contribute to total number of "num running sequences"

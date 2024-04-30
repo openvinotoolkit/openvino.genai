@@ -262,6 +262,10 @@ std::shared_ptr<Tokenizer> ContinuousBatchingPipeline::get_tokenizer() {
     return m_impl->get_tokenizer();
 }
 
+GenerationConfig ContinuousBatchingPipeline::get_config() const{
+    return m_impl->get_config();
+}
+
 void ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
     return m_impl->add_request(request_id, prompt, sampling_params);
 }
