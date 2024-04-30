@@ -106,6 +106,10 @@ public:
         return m_block_table[seq_id];
     }
 
+    const bool has_block_table(uint64_t seq_id) {
+        return m_block_table.count(seq_id) > 0;
+    }
+
     size_t num_free_blocks() const {
         return m_allocator.num_free_blocks();
     }

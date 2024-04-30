@@ -86,6 +86,11 @@ public:
     float get_cumulative_log_probs() const {
         return m_cumulative_log_prob;
     }
+
+    void remove_tokens(size_t count) {
+        OPENVINO_ASSERT(m_generated_ids.size() >= count);
+        m_generated_ids.erase(m_generated_ids.end() - count, m_generated_ids.end());
+    }
 };
 
 // contains a list of Sequences in generic case (beam search or parallel sampling)
@@ -233,7 +238,11 @@ public:
     void preempt_tokens(size_t num_preempt_tokens) {
         OPENVINO_ASSERT(num_preempt_tokens <= m_num_processed_tokens);
         m_num_processed_tokens -= num_preempt_tokens;
-        // Note, that m_max_content_len is kept as is
+        m_max_content_len -= num_preempt_tokens;
+
+        for (auto seq: m_sequences) {
+            seq->remove_tokens(std::min<size_t>(num_preempt_tokens, seq->get_generated_len()));
+        }
     }
 
     // returns context length taking into account scheduled tokens

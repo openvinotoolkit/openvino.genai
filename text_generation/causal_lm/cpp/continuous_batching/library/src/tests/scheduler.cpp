@@ -124,7 +124,7 @@ TEST(TestScheduler, general_test) {
     EXPECT_FALSE(out3.is_prompt);
 
     // check that scheduler has no block table for sequence_group3
-    EXPECT_THROW(scheduler.get_block_table(*(*sequence_group3)[0]), ::ov::AssertFailure);
+    EXPECT_FALSE(scheduler.has_block_table(idx2));
 
     // finish first sequence
     requests1[0]->get_running_sequences()[0]->set_status(SequenceStatus::FINISHED);
@@ -134,13 +134,6 @@ TEST(TestScheduler, general_test) {
 
 
     auto out4 = scheduler.schedule(requests1);
-    
-    EXPECT_FALSE(out4.m_block_tables[idx1][0]->is_free());
-    EXPECT_EQ(out4.m_block_tables[idx1][0]->get_index(), 2);
-    EXPECT_FALSE(out4.m_block_tables[idx1][1]->is_free());
-    EXPECT_EQ(out4.m_block_tables[idx1][1]->get_index(), 3);
-    EXPECT_FALSE(out4.m_block_tables[idx1][2]->is_free());
-    EXPECT_EQ(out4.m_block_tables[idx1][2]->get_index(), 4);
 
     // check that sequence_group3 is fully scehuled 
     EXPECT_FALSE(out4.m_block_tables[idx2][0]->is_free());
@@ -149,9 +142,9 @@ TEST(TestScheduler, general_test) {
     EXPECT_EQ(out4.m_block_tables[idx2][1]->get_index(), 1);
 
     // requests1[1] should be fully scheduled plus 1 slot for requests1[0]
-    EXPECT_EQ(out4.m_total_num_scheduled_tokens, requests1[1]->get_context_len() + 1);
+    EXPECT_EQ(out4.m_total_num_scheduled_tokens, requests1[1]->get_context_len());
 
-    EXPECT_FALSE(out4.is_prompt);
+    EXPECT_TRUE(out4.is_prompt);
 
 }
 
@@ -232,6 +225,97 @@ TEST(TestScheduler, test_partial_preemption) {
         .max_num_seqs = 5,
         .max_paddings = 8,
     };
+    std::vector<uint64_t> tokens1 = {0,1,2,3,4,5,6,7,8,9,10};
+    SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens1.size()}, tokens1.data()),
+                                                                            GenerationConfig::greedy(), scheduler_config.block_size);
+    std::vector<uint64_t> tokens2 = {0,1,2,3,4,5,6,7};
+    auto idx0 = (*sequence_group1)[0]->get_id();
+    SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens2.size()}, tokens2.data()),
+                                                                            GenerationConfig::greedy(), scheduler_config.block_size);
+    auto idx1 = (*sequence_group2)[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
+                                                                       
+    
+    // schedule 2 sequence groups that use 5 kv blocks
+    Scheduler scheduler = Scheduler(scheduler_config);
+    auto out0 = scheduler.schedule(requests);
+
+    for (auto seq: requests) {
+        std::vector<Sequence::Ptr> running_sequences = seq->get_running_sequences();
+        // prompt phase
+        seq->finish_iteration();
+    }
+
+
+    // schedule generate, all 6 kv blocks are used.
+    auto out1 = scheduler.schedule(requests);
+
+    for (auto seq: requests) {
+        std::vector<Sequence::Ptr> running_sequences = seq->get_running_sequences();
+        // generate phase
+        running_sequences[0]->append_token(16, 0.9);
+        seq->finish_iteration();
+    }
+
+    // sequence_group2 should be partially preempted
+    auto out2 = scheduler.schedule(requests);
+    
+    std::vector<size_t> ref_ids = {0};
+    EXPECT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
+    auto block_table1 = scheduler.get_block_table(*(*sequence_group1)[0]);
+    auto block_table2 = scheduler.get_block_table(*(*sequence_group2)[0]);
+    EXPECT_EQ(block_table1.size(), 4);
+    EXPECT_EQ(block_table1[0]->get_index(), 0);
+    EXPECT_EQ(block_table1[1]->get_index(), 1);
+    EXPECT_EQ(block_table1[2]->get_index(), 2);
+    EXPECT_EQ(block_table1[3]->get_index(), 5);
+    EXPECT_EQ(block_table2.size(), 2);
+    EXPECT_EQ(block_table2[0]->get_index(), 3);
+    EXPECT_EQ(block_table2[1]->get_index(), 4);
+
+    EXPECT_EQ(out2.m_total_num_scheduled_tokens, 1); 
+    EXPECT_EQ(out2.m_block_tables[idx0][0]->get_index(), 0);
+    EXPECT_EQ(out2.m_block_tables[idx0][1]->get_index(), 1);
+    EXPECT_EQ(out2.m_block_tables[idx0][2]->get_index(), 2);
+    EXPECT_EQ(out2.m_block_tables[idx0][3]->get_index(), 5);
+
+    // finish first sequence
+    requests[0]->get_running_sequences()[0]->set_status(SequenceStatus::FINISHED);
+    scheduler.free_sequence(idx0);
+    clear_finished_sequences(requests);
+    // KV blocks 0,1,2,5 are free now
+
+    // sequence_group2 should be scheduled
+    auto out3 = scheduler.schedule(requests);
+
+    // last token should be recomputed
+    EXPECT_EQ(out3.m_total_num_scheduled_tokens, 1); 
+    EXPECT_EQ(out3.m_block_tables[idx1][0]->get_index(), 3);
+    EXPECT_EQ(out3.m_block_tables[idx1][1]->get_index(), 4);
+    EXPECT_EQ(out3.m_block_tables[idx1][2]->get_index(), 0);
+
+    block_table2 = scheduler.get_block_table(*(*sequence_group2)[0]);
+    EXPECT_EQ(block_table2.size(), 3);
+    EXPECT_EQ(block_table2[0]->get_index(), 3);
+    EXPECT_EQ(block_table2[1]->get_index(), 4);
+    EXPECT_EQ(block_table2[2]->get_index(), 0);
+
+    EXPECT_FALSE(scheduler.has_block_table(idx0));
+}
+
+TEST(TestScheduler, test_partially_preempted_prompt) {
+    SchedulerConfig scheduler_config {
+        // batch size
+        .max_num_batched_tokens = 32,
+        // cache params
+        .num_kv_blocks = 6,
+        .block_size = 4,
+        // mode - vLLM or dynamic_split_fuse
+        .dynamic_split_fuse = false,
+        // vLLM specific params
+        .max_num_seqs = 5,
+        .max_paddings = 8,
+    };
     std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7,8,9,10,11};
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
                                                                             GenerationConfig::greedy(), scheduler_config.block_size);
@@ -283,8 +367,8 @@ TEST(TestScheduler, test_partial_preemption) {
     // sequence_group2 should be scheduled
     auto out3 = scheduler.schedule(requests);
 
-    // scheduled 4 tokens which should be recomputed in last block
-    EXPECT_EQ(out3.m_total_num_scheduled_tokens, 4); 
+    // prompt should be recomputed
+    EXPECT_EQ(out3.m_total_num_scheduled_tokens, 12); 
     EXPECT_EQ(out3.m_block_tables[idx1][0]->get_index(), 3);
     EXPECT_EQ(out3.m_block_tables[idx1][1]->get_index(), 4);
     EXPECT_EQ(out3.m_block_tables[idx1][2]->get_index(), 0);
@@ -295,5 +379,5 @@ TEST(TestScheduler, test_partial_preemption) {
     EXPECT_EQ(block_table2[1]->get_index(), 4);
     EXPECT_EQ(block_table2[2]->get_index(), 0);
 
-    EXPECT_THROW(scheduler.get_block_table(*(*sequence_group1)[0]), ::ov::AssertFailure);
+    EXPECT_FALSE(scheduler.has_block_table(idx0));
 }
