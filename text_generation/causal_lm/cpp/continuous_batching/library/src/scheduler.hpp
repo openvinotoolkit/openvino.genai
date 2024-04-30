@@ -170,7 +170,6 @@ private:
         return true;
     }
 
-
     void _schedule_prompt_phase_dynamic_split_fuse(std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
         // in the current method we need to balance multiple prompts (or parts of prompts) between
         // available amount of tokens in megabatch
@@ -249,8 +248,6 @@ private:
                 size_t num_available_tokens_per_seq = sequence_group->get_num_available_tokens_for_batching();
 
                 size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
-                
-                // schedule tokens
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
                 // check that all scheduled tokens can be allocated and apply preemtion if needed
@@ -295,7 +292,6 @@ private:
             }
         }
     }
-
 
     void _schedule_prompt_phase_vllm(std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
         // Current scheduling method schedules prompts only in a manner similar to vLLM:
