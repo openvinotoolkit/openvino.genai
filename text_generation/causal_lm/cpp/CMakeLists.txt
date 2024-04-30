@@ -27,24 +27,6 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 # end of dependencies
 
-set(TARGET_NAME continuous_batching_sample)
-add_executable(${TARGET_NAME} continuous_batching/main.cpp continuous_batching/paged_attention.cpp)
-target_include_directories(${TARGET_NAME} PRIVATE continuous_batching)
-target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
-find_package(OpenVINO REQUIRED COMPONENTS Runtime)
-target_link_libraries(${TARGET_NAME} PRIVATE openvino::runtime)
-set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 20)
-set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON)
-
-set(TARGET_NAME benchmark_sample)
-add_executable(${TARGET_NAME} continuous_batching/benchmark.cpp continuous_batching/paged_attention.cpp)
-target_include_directories(${TARGET_NAME} PRIVATE continuous_batching "${nlohmann_json_SOURCE_DIR}/include")
-target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
-find_package(OpenVINO REQUIRED COMPONENTS Runtime)
-target_link_libraries(${TARGET_NAME} PRIVATE openvino::runtime cxxopts::cxxopts)
-set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 20)
-set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON)
-
 set(TARGET_NAME greedy_sample)
 add_executable(${TARGET_NAME} greedy_causal_lm.cpp)
 target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
