@@ -123,15 +123,12 @@ private:
 
 
             // calculate the number of preempted tokens
-            // TODO: will it work for forked sequence?
             auto tokens_in_last_block = processed_tokens % block_size;
             if (tokens_in_last_block == 0) {    
                 tokens_in_last_block = block_size;
             }
 
             preempted_tokens += tokens_in_last_block + std::max<size_t>((int)released_blocks - 1, 0) * block_size;
-            //preempted_tokens += released_blocks * block_size;  
-
             if (m_block_manager.num_free_blocks() >= blocks_needed) {
                 break;
             }
@@ -298,6 +295,7 @@ private:
             }
         }
     }
+
     bool _allocate_slots(SequenceGroup::Ptr sequence_group, size_t group_idx, size_t sequence_len, Output& scheduler_output) {
         // apply KV cache limitations
         const size_t num_required_blocks = (sequence_len + m_config.block_size - 1) / m_config.block_size;
@@ -410,7 +408,6 @@ private:
                     // update "is_prompt" flag
                     scheduler_output.is_prompt = true;
                 }
-
 
                 num_scheduled_tokens += sequence_len;
                 num_running_sequence_groups += 1;
