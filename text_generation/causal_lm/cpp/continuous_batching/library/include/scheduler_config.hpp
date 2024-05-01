@@ -19,7 +19,7 @@ struct SchedulerConfig {
     std::size_t block_size = 16;
 
     // whether to split prompt / generate to different scheduling phases
-    bool dynamic_split_fuse = false;
+    bool dynamic_split_fuse = true;
 
     //
     // vLLM-like settings

@@ -46,8 +46,8 @@ int main(int argc, char* argv[]) try {
     };
 
     std::vector<GenerationConfig> sampling_params_examples {
-        GenerationConfig::beam_search(),
-        // GenerationConfig::greedy(),
+        // GenerationConfig::beam_search(),
+        GenerationConfig::greedy(),
         // GenerationConfig::multinomial(),
     };
 
