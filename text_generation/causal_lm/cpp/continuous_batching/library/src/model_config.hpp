@@ -22,14 +22,9 @@ public:
         // number of variables is 2 (K and V) multiplied by number of decoder layers
         m_num_layers = variables.size() >> 1;
         ov::PartialShape variable_shape = variables[0]->get_info().data_shape;
-        OPENVINO_ASSERT(variable_shape.size() == 4, "Partial shape should have 3 dimensions, got ", variable_shape);
+        OPENVINO_ASSERT(variable_shape.size() == 4, "Partial shape should have 4 dimensions, got ", variable_shape);
         m_num_kv_heads = variable_shape[1].get_length();
         m_head_size = variable_shape[3].get_length();
-
-        std::cout << "Auto-extracted model parameters: " << std::endl;
-        std::cout << "m_num_layers = " << m_num_layers << std::endl;
-        std::cout << "m_num_kv_heads = " << m_num_kv_heads << std::endl;
-        std::cout << "m_head_size = " << m_head_size << std::endl;
     }
 
     std::size_t get_num_kv_heads() const {

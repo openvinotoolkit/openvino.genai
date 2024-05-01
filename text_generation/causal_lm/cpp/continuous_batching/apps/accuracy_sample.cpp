@@ -46,8 +46,8 @@ int main(int argc, char* argv[]) try {
     };
 
     std::vector<GenerationConfig> sampling_params_examples {
-        // GenerationConfig::beam_search(),
-        GenerationConfig::greedy(),
+        GenerationConfig::beam_search(),
+        // GenerationConfig::greedy(),
         // GenerationConfig::multinomial(),
     };
 
@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) try {
         // batch size
         .max_num_batched_tokens = 32,
         // cache params
-        .num_kv_blocks = 36400,
+        .num_kv_blocks = 364,
         .block_size = 16,
         // mode - vLLM or dynamic_split_fuse
         .dynamic_split_fuse = dynamic_split_fuse,

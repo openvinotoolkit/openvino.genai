@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 cmake_minimum_required(VERSION 3.15)
+
 # start of dependencies
 
 add_subdirectory(../../../../../thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
@@ -15,6 +16,14 @@ FetchContent_Declare(nlohmann_json
 FetchContent_MakeAvailable(nlohmann_json)
 
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+
+# check that SDPA to PA transformtion exists
+get_target_property(ov_include_dirs openvino::runtime INTERFACE_INCLUDE_DIRECTORIES)
+find_file(spda_to_pa_header sdpa_to_paged_attention.hpp
+    PATHS ${ov_include_dirs}
+    PATH_SUFFIXES openvino/pass
+    DOC "Path to sdpa_to_paged_attention.hpp header"
+    NO_CACHE REQUIRED NO_DEFAULT_PATH)
 
 # end of dependencies
 
