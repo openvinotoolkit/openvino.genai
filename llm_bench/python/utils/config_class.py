@@ -11,7 +11,7 @@ from optimum.intel.openvino import (
     OVLatentConsistencyModelPipeline,
     OVStableDiffusionXLPipeline
 )
-from utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel, OVChatGLM2Model, OVQwenModel
+from utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 
 TOKENIZE_CLASSES_MAPPING = {
     'decoder': AutoTokenizer,
@@ -25,6 +25,7 @@ OV_MODEL_CLASSES_MAPPING = {
     'decoder': OVModelForCausalLM,
     't5': OVModelForSeq2SeqLM,
     'blenderbot': OVModelForSeq2SeqLM,
+    'falcon': OVModelForCausalLM,
     'mpt': OVMPTModel,
     'stable-diffusion-xl': OVStableDiffusionXLPipeline,
     'sdxl': OVStableDiffusionXLPipeline,
@@ -37,10 +38,9 @@ OV_MODEL_CLASSES_MAPPING = {
     'codet5': OVModelForSeq2SeqLM,
     'codegen2': OVModelForCausalLM,
     'ldm_super_resolution': OVLDMSuperResolutionPipeline,
-    'chatglm2': OVChatGLM2Model,
-    'chatglm3': OVChatGLM2Model,
+    'chatglm2': OVModelForCausalLM,
+    'chatglm3': OVModelForCausalLM,
     'chatglm': OVChatGLMModel,
-    'qwen': OVQwenModel,
 }
 
 PT_MODEL_CLASSES_MAPPING = {
@@ -77,7 +77,7 @@ USE_CASES = {
         'pythia-',
         'stablelm-',
         'stable-zephyr-',
-        'rocket-'
+        'rocket-',
         'blenderbot',
         'vicuna',
         'dolly',
@@ -95,8 +95,14 @@ USE_CASES = {
         'mixtral',
         'yi-',
         'phi-',
+        'phi2-',
         'minicpm',
         'gemma',
+        "deci",
+        "internlm",
+        "olmo",
+        "phi3",
+        "starcoder"
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }
