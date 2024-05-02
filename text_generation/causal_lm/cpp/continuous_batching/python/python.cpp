@@ -9,11 +9,27 @@
 
 namespace py = pybind11;
 
+std::ostream& operator << (std::ostream& stream, const GenerationResult& generation_result) {
+    stream << generation_result.m_request_id << std::endl;
+    for (size_t i = 0; i < generation_result.m_generation_ids.size(); ++i) {
+        stream << "{ " << generation_result.m_scores[i] << ", " << generation_result.m_generation_ids[i] << " }" << std::endl;
+    }
+    return stream << std::endl;
+}
+
 PYBIND11_MODULE(py_continuous_batching, m) {
     py::class_<GenerationResult>(m, "GenerationResult")
+        .def(py::init<>())
         .def_readonly("m_request_id", &GenerationResult::m_request_id)
-        .def_readonly("m_generation_ids", &GenerationResult::m_generation_ids)
-        .def_readonly("m_scores", &GenerationResult::m_scores);
+        .def_readwrite("m_generation_ids", &GenerationResult::m_generation_ids)
+        .def_readwrite("m_scores", &GenerationResult::m_scores)
+        .def("__repr__",
+            [](const GenerationResult &r) {
+                std::stringstream stream;
+                stream << "<py_continuous_batching.GenerationResult " << r << ">";
+                return stream.str();
+            }
+        );
 
     py::enum_<StopCriteria>(m, "StopCriteria")
         .value("EARLY", StopCriteria::EARLY)

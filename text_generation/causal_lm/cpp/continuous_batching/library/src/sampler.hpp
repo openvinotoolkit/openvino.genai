@@ -132,6 +132,11 @@ struct Group {
         float generated_len = beam.get_generated_len() + 1;
         beam.m_score /= std::pow(generated_len, sampling_params.length_penalty);
 
+        // HF implementation counts eos_token for length penalty calculation
+        // if (beam.tokens.back() == parameters.eos_token) {
+        //     beam.tokens.pop_back();
+        // }
+
         min_heap.push_back(beam);
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
         if (min_heap.size() > sampling_params.group_size) {

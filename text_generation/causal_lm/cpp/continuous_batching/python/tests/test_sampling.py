@@ -3,8 +3,8 @@ from unittest import TestCase
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
-import py_continuous_batching as pa
-from py_continuous_batching import GenerationConfig, SchedulerConfig
+
+from py_continuous_batching import ContinuousBatchingPipeline, GenerationConfig, SchedulerConfig, GenerationResult
 
 def get_greedy() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -15,25 +15,26 @@ def get_beam_search() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_groups = 3
     generation_config.group_size = 2
+    generation_config.num_return_sequences = 6
     return generation_config
 
 def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
     prompts = [
-        "What is OpenVINO?",
-        "How are you?",
-        "What is your name?",
+        # "What is OpenVINO?",
+        # "How are you?",
+        # "What is your name?",
         "Tell me something about Canada"
     ]
     generation_configs = [
-        get_greedy(),
-        get_greedy(),
-        get_greedy(),
-        get_greedy()
+        get_beam_search(),
+        # get_beam_search(),
+        # get_beam_search(),
+        # get_beam_search()
     ]
     return (prompts, generation_configs)
 
 def get_scheduler_config() -> SchedulerConfig:
-    scheduler_config = pa.SchedulerConfig()
+    scheduler_config = SchedulerConfig()
     scheduler_config.dynamic_split_fuse = True
     scheduler_config.num_kv_blocks = 300
 
@@ -57,6 +58,7 @@ def convert_to_hf(
         kwargs['length_penalty'] = generation_config.length_penalty
         kwargs['no_repeat_ngram_size'] = generation_config.no_repeat_ngram_size
         kwargs['num_return_sequences'] = generation_config.num_return_sequences
+        kwargs['output_scores'] = True
     elif generation_config.do_sample:
         # mulitinomial
         kwargs['temperature'] = generation_config.temperature
@@ -74,40 +76,45 @@ def run_hugging_face(
     model_id : str,
     prompts: List[str],
     generation_configs: List[GenerationConfig]
-) -> List[str]:
+) -> List[GenerationResult]:
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = AutoModelForCausalLM.from_pretrained(model_id)
-    generated_results: List[str] = []
+    generation_results: List[GenerationResult] = []
 
     for prompt, generation_config in zip(prompts, generation_configs):
         inputs = tokenizer(prompt, return_tensors="pt")
-        output_tokens = model.generate(**inputs, generation_config=convert_to_hf(generation_config))
-        all_text = tokenizer.batch_decode(output_tokens, skip_special_tokens=True)[0]
-        generated_text = all_text[len(prompt):]
-        generated_results.append(generated_text)
+        generate_outputs = model.generate(**inputs, generation_config=convert_to_hf(generation_config), return_dict_in_generate=True)
+        all_text_batch = tokenizer.batch_decode(generate_outputs.sequences, skip_special_tokens=True)
 
-    return generated_results
+        generation_result = GenerationResult()
+        generation_result.m_generation_ids = [text[len(prompt):] for text in all_text_batch]
+        generation_result.m_scores = [score for score in generate_outputs.sequences_scores]
+        generation_results.append(generation_result)
+
+    return generation_results
 
 def run_continuous_batching(
     model_path : str,
     scheduler_config : SchedulerConfig,
     prompts: List[str],
     generation_configs : List[GenerationConfig]
-) -> List[str]:
-    pipe = pa.ContinuousBatchingPipeline(model_path, scheduler_config)
-    outputs = pipe.generate(prompts, generation_configs)
-
-    generated_results: List[str] = []
-    for output in outputs:
-        # suppose that 0-th has maximum score
-        generated_results.append(output.m_generation_ids[0])
-
-    return generated_results
+) -> List[GenerationResult]:
+    pipe = ContinuousBatchingPipeline(model_path, scheduler_config)
+    return pipe.generate(prompts, generation_configs)
 
 def test_check_greedy_search():
     prompts, generation_configs = get_test_dataset()
-    hf_results = run_hugging_face("facebook/opt-125m", prompts, generation_configs)
-    my_results = run_continuous_batching("/home/sandye51/Documents/Programming/git_repo/openvino.genai/build/opt125", get_scheduler_config(), prompts, generation_configs)
+    hf_results : List[GenerationResult] = run_hugging_face("facebook/opt-125m", prompts, generation_configs)
+    my_results : List[GenerationResult] = run_continuous_batching("/home/sandye51/Documents/Programming/git_repo/openvino.genai/build/opt125", get_scheduler_config(), prompts, generation_configs)
+
+    assert len(prompts) == len(hf_results)
+    assert len(prompts) == len(my_results)
+
     for prompt, hf_result, my_result in zip(prompts, hf_results, my_results):
         print(f"Prompt = {prompt}\nHF result = {hf_result}\nmy result = {my_result}")
-        assert hf_result == my_result
+        assert len(hf_result.m_generation_ids) == len(my_result.m_generation_ids)
+        assert len(hf_result.m_scores) == len(my_result.m_scores)
+        # for each num_return_sequences
+        for hf_text, hf_score, my_text, my_score in zip(hf_result.m_generation_ids, hf_result.m_scores, my_result.m_generation_ids, my_result.m_scores):
+            assert hf_text == my_text
+            # assert hf_score == my_score

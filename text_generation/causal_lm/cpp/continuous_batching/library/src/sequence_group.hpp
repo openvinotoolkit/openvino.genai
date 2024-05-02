@@ -86,6 +86,22 @@ public:
     float get_cumulative_log_probs() const {
         return m_cumulative_log_prob;
     }
+
+    float get_beam_search_score(const GenerationConfig& sampling_params) const {
+        float cumulative_log_prob = get_cumulative_log_probs(), highest_attainable_score = 0.0f;
+        float current_length = get_generated_len() + 1;
+
+        if (StopCriteria::HEURISTIC == sampling_params.stop_criteria) {
+            highest_attainable_score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
+        } else if (StopCriteria::NEVER == sampling_params.stop_criteria) {
+            size_t length = sampling_params.length_penalty > 0.0 ? sampling_params.max_new_tokens : current_length;
+            highest_attainable_score = cumulative_log_prob / std::pow(length, sampling_params.length_penalty);
+        } else if (StopCriteria::EARLY == sampling_params.stop_criteria) {
+            // nothing to do
+        }
+
+        return highest_attainable_score;
+    }
 };
 
 // contains a list of Sequences in generic case (beam search or parallel sampling)
@@ -180,8 +196,8 @@ public:
         return !has_finished();
     }
 
-    std::vector<Sequence::Ptr> get_finished_sequences() const {
-        std::vector<Sequence::Ptr> finished_seqs;
+    std::vector<Sequence::CPtr> get_finished_sequences() const {
+        std::vector<Sequence::CPtr> finished_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->has_finished()) {
                 finished_seqs.push_back(m_sequences[seq_id]);
@@ -189,8 +205,8 @@ public:
         }
 
         // do we need to sort sequences here or sampler can handle it for us?
-        std::sort(finished_seqs.begin(), finished_seqs.end(), [] (Sequence::CPtr s1, Sequence::CPtr s2) {
-            return s1->get_cumulative_log_probs() > s2->get_cumulative_log_probs();
+        std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) {
+            return s1->get_beam_search_score(m_sampling_params) > s2->get_beam_search_score(m_sampling_params);
         });
 
         return finished_seqs;
@@ -206,7 +222,7 @@ public:
 
         return running_seqs;
     }
-    
+
     std::vector<Sequence::CPtr> get_running_sequences() const {
         std::vector<Sequence::CPtr> running_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
