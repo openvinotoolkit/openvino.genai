@@ -55,18 +55,18 @@ int main(int argc, char* argv[]) try {
 
     // Example 1: TextStreaming example with greedy search
     
-    LLMPipeline pipe(model_path, device);
+    ov::LLMPipeline pipe(model_path, device);
     // Will try to load config from generation_config.json.
     // but if not found default velues for gready search will be used
     GenerationConfig config = pipe.generation_config();
 
     auto text_streamer = TextStreamer{pipe.get_tokenizer()};
-    auto text_streamer_callback = [&text_streamer](std::vector<int64_t>&& tokens, LLMPipeline& pipe){
+    auto text_streamer_callback = [&text_streamer](std::vector<int64_t>&& tokens, ov::LLMPipeline& pipe){
         text_streamer.put(tokens[0]);
     };
 
     cout << "greedy generate streaming mode:" << endl;
-    config.max_new_tokens(20).set_callback(text_streamer_callback);
+    config.max_new_tokens(20).set_streamer(text_streamer_callback);
     pipe(prompt, config);
     text_streamer.end();
     
@@ -84,7 +84,7 @@ int main(int argc, char* argv[]) try {
     //     cout << "candidate " << i << ": " << generation_results[i] << endl;
 
     // Example 3: Greedy Decoding with multiple batch
-    pipe = LLMPipeline(model_path, device);
+    pipe = ov::LLMPipeline(model_path, device);
     config = pipe.generation_config();
 
     cout << endl << "greedy decoding with multiple batches:" << endl;

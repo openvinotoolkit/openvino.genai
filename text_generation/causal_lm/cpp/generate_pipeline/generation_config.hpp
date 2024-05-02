@@ -14,8 +14,11 @@
 // forward declaration
 class Sequence;
 
+namespace ov {
 // forward declaration
 class LLMPipeline;
+
+}
 
 // Similar to HuggingFace GenerationConfig
 struct GenerationConfig {
@@ -50,7 +53,7 @@ struct GenerationConfig {
     int64_t m_eos_token_id = 2;  // todo: check form where it's better to extract rt_info or tokenizer_config.json
     int64_t m_pad_token_id = 0;
 
-    std::function<void (std::vector<int64_t>&&, LLMPipeline&)> m_callback = [](std::vector<int64_t>&& tokens, LLMPipeline& pipe){ ;};
+    std::function<void (std::vector<int64_t>&&, ov::LLMPipeline&)> m_callback = [](std::vector<int64_t>&& tokens, ov::LLMPipeline& pipe){ ;};
 
     size_t get_max_new_tokens(size_t prompt_length = 0) {
         // max_new_tokens has priority over max_length,
@@ -261,7 +264,7 @@ struct GenerationConfig {
             return *this;
         }
 
-        GenerationConfig& set_callback(std::function<void (std::vector<int64_t>&&, LLMPipeline&)> callback) {
+        GenerationConfig& set_streamer(std::function<void (std::vector<int64_t>&&, ov::LLMPipeline&)> callback) {
             m_callback = callback;
             return *this;
         }

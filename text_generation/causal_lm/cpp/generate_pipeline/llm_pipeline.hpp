@@ -21,6 +21,8 @@ void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t n
 
 class Tokenizer; // forward declaration
 
+namespace ov {
+
 class LLMPipeline {
 public:
     ov::InferRequest m_model_runner;
@@ -93,3 +95,5 @@ private:
     std::function<void (std::string)> m_streamer_callback = [](std::string ){ ;};
     bool is_chat_conversation = false;
 };
+
+} // namespace ov

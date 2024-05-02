@@ -141,7 +141,7 @@ void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t n
     }
 }
    
-LLMPipeline::LLMPipeline(
+ov::LLMPipeline::LLMPipeline(
     std::string& model_path,
     std::string& tokenizer_path,
     std::string& detokenizer_path,
@@ -162,7 +162,7 @@ LLMPipeline::LLMPipeline(
     // todo: add loading Tokenizers from separate folders
 }
 
-LLMPipeline::LLMPipeline(std::string& path, std::string device, const ov::AnyMap& config) {
+ov::LLMPipeline::LLMPipeline(std::string& path, std::string device, const ov::AnyMap& config) {
     std::string tokenizer_config_fname = "tokenizer_config.json";
     std::string generation_config_fname = "generation_config.json";
 
@@ -185,7 +185,7 @@ LLMPipeline::LLMPipeline(std::string& path, std::string device, const ov::AnyMap
     m_tokenizer = Tokenizer(path);
 }
 
-GenerationConfig LLMPipeline::generation_config() const {
+GenerationConfig ov::LLMPipeline::generation_config() const {
     return m_sampling_parameters;
 }
 
@@ -204,7 +204,7 @@ void print_tensor(const ov::Tensor& tensor) {
     cout << "---------" << endl;
 }
 
-GenerationResult LLMPipeline::greedy_search(ov::Tensor input_ids, 
+GenerationResult ov::LLMPipeline::greedy_search(ov::Tensor input_ids, 
                                 ov::Tensor attention_mask, 
                                 GenerationConfig sampling_params) {
     ov::Shape prompts_shape = input_ids.get_shape();
@@ -297,7 +297,7 @@ GenerationResult LLMPipeline::greedy_search(ov::Tensor input_ids,
     return results;
 }
 
-GenerationResult LLMPipeline::beam_search(ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig sampling_params) {
+GenerationResult ov::LLMPipeline::beam_search(ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig sampling_params) {
     ov::Shape prompts_shape = prompts.get_shape();
     size_t batch_size = prompts_shape[0];
     // todo: implement for batch > 1
@@ -387,7 +387,7 @@ match the target. In tha caste the are validated in a single inference request t
 the main model (which is bigger, more accurate but slower) instead of running K
 subsequent requests. 
 */
-GenerationResult LLMPipeline::speculative_sampling(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params) {
+GenerationResult ov::LLMPipeline::speculative_sampling(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params) {
     auto batch_size = input_ids.get_shape()[0];
     OPENVINO_ASSERT(batch_size == 1);
     auto draft_model = sampling_params.get_assistant_model(m_device, m_config);
@@ -519,25 +519,27 @@ GenerationResult LLMPipeline::speculative_sampling(ov::Tensor input_ids, ov::Ten
     return results;
 }
 
-GenerationResult LLMPipeline::multinomial_sampling(ov::Tensor prompts, GenerationConfig sampling_params) {
+GenerationResult ov::LLMPipeline::multinomial_sampling(ov::Tensor prompts, GenerationConfig sampling_params) {
     // todo: implement
     GenerationResult results;
     return results;
 }
 
-std::string LLMPipeline::call(std::string text) {
+std::string ov::LLMPipeline::call(std::string text) {
     return call(text, m_sampling_parameters);
 }
 
-std::string LLMPipeline::call(std::string text, GenerationConfig generation_config) {
+std::string ov::LLMPipeline::call(std::string text, GenerationConfig generation_config) {
     if (is_chat_conversation) {
         text = apply_chat_template(text);
     }
     auto kv_cache_len = m_model_runner.query_state()[0].get_state().get_shape()[2];
     
-    // if (is_chat_conversation && kv_cache_len > 0) {
-    //     text += generation_config.m_eos_token;
-    // }
+    // previous prompt generation in chat dialog stops with the end of sentence token, 
+    // need to append this token to the current prompt
+    if (is_chat_conversation && kv_cache_len > 0) {
+        text = generation_config.m_eos_token + text;
+    }
 
     auto [input_ids, attention_mask] = m_tokenizer.tokenize(text);
 
@@ -576,7 +578,7 @@ std::string LLMPipeline::call(std::string text, GenerationConfig generation_conf
     return m_tokenizer.detokenize(generate_results)[0];
 }
 
-std::vector<std::string> LLMPipeline::call(std::vector<std::string> text, GenerationConfig sampling_parameters) {
+std::vector<std::string> ov::LLMPipeline::call(std::vector<std::string> text, GenerationConfig sampling_parameters) {
     auto [input_ids, attention_mask] = m_tokenizer.tokenize(text);
 
     auto generate_results = generate(input_ids, attention_mask, sampling_parameters);
@@ -584,23 +586,23 @@ std::vector<std::string> LLMPipeline::call(std::vector<std::string> text, Genera
     return m_tokenizer.detokenize(generate_results);
 }
 
-std::string LLMPipeline::operator()(std::string text) {
+std::string ov::LLMPipeline::operator()(std::string text) {
     return call(text);
 }
 
-std::string LLMPipeline::operator()(std::string text, GenerationConfig sampling_parameters) {
+std::string ov::LLMPipeline::operator()(std::string text, GenerationConfig sampling_parameters) {
     return call(text, sampling_parameters);
 }
 
-std::vector<std::string> LLMPipeline::operator()(std::vector<std::string> text, GenerationConfig sampling_parameters) {
+std::vector<std::string> ov::LLMPipeline::operator()(std::vector<std::string> text, GenerationConfig sampling_parameters) {
     return call(text, sampling_parameters);
 }
 
-std::vector<std::string> LLMPipeline::operator()(std::initializer_list<std::string> text, GenerationConfig sampling_parameters) {
+std::vector<std::string> ov::LLMPipeline::operator()(std::initializer_list<std::string> text, GenerationConfig sampling_parameters) {
     return call(text, sampling_parameters);
 }
 
-GenerationResult LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config) {
+GenerationResult ov::LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config) {
     GenerationResult result;
 
     if (generation_config.is_gready_sampling()) {
@@ -619,24 +621,24 @@ GenerationResult LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attentio
     return result;
 }
 
-GenerationResult LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask) {
+GenerationResult ov::LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask) {
     return generate(input_ids, attention_mask, m_sampling_parameters);
 }
 
-GenerationResult LLMPipeline::generate(ov::Tensor input_ids, GenerationConfig sampling_params) {
+GenerationResult ov::LLMPipeline::generate(ov::Tensor input_ids, GenerationConfig sampling_params) {
 
     return generate(input_ids, init_attention_mask(input_ids), sampling_params);
 }
 
-GenerationResult LLMPipeline::generate(ov::Tensor input_ids) {
+GenerationResult ov::LLMPipeline::generate(ov::Tensor input_ids) {
     return generate(input_ids, init_attention_mask(input_ids), m_sampling_parameters);
 }
 
-Tokenizer LLMPipeline::get_tokenizer() {
+Tokenizer ov::LLMPipeline::get_tokenizer() {
     return m_tokenizer;
 }
 
-std::string LLMPipeline::apply_chat_template(std::string prompt, std::string role) const {
+std::string ov::LLMPipeline::apply_chat_template(std::string prompt, std::string role) const {
     jinja2::TemplateEnv env;
     env.GetSettings().lstripBlocks = true;
     env.GetSettings().trimBlocks = true;
@@ -653,21 +655,21 @@ std::string LLMPipeline::apply_chat_template(std::string prompt, std::string rol
     return tpl.RenderAsString(params).value();
 }
 
-void LLMPipeline::set_streamer(std::function<void (std::string)> callback) {
+void ov::LLMPipeline::set_streamer(std::function<void (std::string)> callback) {
     is_streamer_set = true;
     m_streamer_callback = callback;
     m_streamer = TextCoutStreamer(m_tokenizer);
 }
 
-void LLMPipeline::start_conversation() {
+void ov::LLMPipeline::start_conversation() {
     is_chat_conversation = true;
 }
 
-void LLMPipeline::stop_conversation() {
+void ov::LLMPipeline::stop_conversation() {
     is_chat_conversation = false;
     reset_state();
 }
 
-void LLMPipeline::reset_state() {
+void ov::LLMPipeline::reset_state() {
     m_model_runner.reset_state();
 }
