@@ -28,6 +28,8 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 target_link_libraries(speculative_decoding_lm PRIVATE openvino::runtime)
 set_target_properties(speculative_decoding_lm PROPERTIES CXX_STANDARD 17)
 set_target_properties(speculative_decoding_lm PROPERTIES CXX_STANDARD_REQUIRED ON)
+find_package(TBB COMPONENTS tbb)
+target_link_libraries(speculative_decoding_lm PRIVATE TBB::tbb)
 
 add_executable(prompt_lookup_decoding_lm prompt_lookup_decoding_lm.cpp)
 target_compile_definitions(prompt_lookup_decoding_lm PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
