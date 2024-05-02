@@ -104,10 +104,10 @@ python ./benchmark.py -h # for more information
 The option `--torch_compile_backend` uses `torch.compile()` to speed up
 the PyTorch code by compiling it into optimized kernels using a selected backend.
 
-Prerequisites: install benchmarking dependencies using requirements.txt
+Prerequisites: install benchmarking dependencies using requirements.txt. `--no-build-isolation` solves https://github.com/AutoGPTQ/AutoGPTQ/issues/535, if there's no prebuilt `auto-gptq` for your environment, ARM64 for example.
 
 ``` bash
-pip install -r requirements.txt
+pip install --no-build-isolation -r requirements.txt
 ```
 
 In order to run the `torch.compile()` on CUDA GPU, install additionally the nightly PyTorch version:
