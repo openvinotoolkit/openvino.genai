@@ -969,7 +969,13 @@ def convert_mpt(args):
 
         save_ov_model_helper(ov_model, out_path, fp16=compress_to_fp16, tok=tok, config=pt_model.config)
 
-    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    remote_code = False
+    pt_model = None
+    try:
+        config = AutoConfig.from_pretrained(args.model_id)
+    except Exception:
+        config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+        remote_code = True
     cuda, post_init = patch_gptq(config)
     model_kwargs = {}
     precision = args.precision
@@ -991,13 +997,16 @@ def convert_mpt(args):
 
         def create_model(model_id, config, model_kwargs):
             pt_model = AutoModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=True, config=config, **model_kwargs
+                model_id, trust_remote_code=remote_code, config=config, **model_kwargs
             )
             pt_model.config.use_cache = True
             pt_model.eval()
             return pt_model
 
         pt_model = create_model(args.model_id, config, model_kwargs)
+
+        if not remote_code:
+            return convert_optimum_causallm_base(pt_model, args, config, compression_only)
 
         if args.save_orig:
             pt_out_dir = Path(args.output_dir) / PYTORCH_DIR
@@ -1038,6 +1047,8 @@ def convert_mpt(args):
                 convert_to_ov(compressed_pt_model, tok, pt_path, compress_to_fp16)
 
     if is_ov_compression(args):
+        if not remote_code:
+            return convert_optimum_causallm_base(pt_model, args, config, compression_only)
         ov_path = get_fp_path(args, "openvino_model.xml")
         if compression_only:
             log.info(
