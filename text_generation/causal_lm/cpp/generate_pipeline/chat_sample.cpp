@@ -12,8 +12,8 @@ std::string generate_chat_prompt(const ov::LLMPipeline& pipe, std::string& input
     std::stringstream result_prompt;
     // result_prompt << "<bos><start_of_turn>user\n" << input << "<end_of_turn>\n<start_of_turn>model";  // Gemma-7b-it
     // result_prompt << "<s>[INST] " << input << " [/INST]";  // LLama-2-7b
-    
     result_prompt << "<|user|>\n" << input << "</s>\n<|assistant|>\n";  // TinyLlama
+    
     return result_prompt.str();
 }
 
@@ -38,8 +38,9 @@ int main(int argc, char* argv[]) try {
 
     std::string model_path = argv[1];
     ov::LLMPipeline pipe(model_path, device);
-
+    
     GenerationConfig config = pipe.generation_config();
+
     config.max_new_tokens(10000);
     pipe.set_streamer([](std::string word) { std::cout << word << std::flush; });
 

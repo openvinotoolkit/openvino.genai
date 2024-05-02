@@ -91,33 +91,39 @@ int main(int argc, char* argv[]) try {
     std::vector<std::string> prompts = {"table is made of", "Alan Turing was a", "1 + 1 = ", "Why is the Sun yellow?"};
     auto results = pipe(prompts, config.max_new_tokens(20));
     for (int i = 0; i < prompts.size(); i++)
-        cout << prompts[i] << ": " << results[i] << endl;
+        cout << prompts[i] << ": " << results.texts[i] << endl;
 
     // Example 4: Calling tokenizer/detokenizer manually and getting beam scores for all candidates
-    // pipe = LLMPipeline(model_path);
-    // auto [input_ids, attention_mask] = pipe.tokenize({prompt});
-    // config = GenerationConfig::beam_search();
-    // // config for grouped beam search
-    // config.max_new_tokens(30).num_groups(3).group_size(5).num_return_sequences(15);
+    pipe = ov::LLMPipeline(model_path);
+    auto [input_ids, attention_mask] = pipe.get_tokenizer().tokenize({prompt});
+    config = GenerationConfig::beam_search();
+    // config for grouped beam search
+    config.max_new_tokens(30).num_groups(3).group_size(5).num_return_sequences(15);
     
-    // cout << endl << "beam search with printing of all candidates:" << endl;
-    // auto beams = pipe.generate(input_ids, attention_mask, config);
-    // for (const auto& beam : beams)
+    cout << endl << "beam search with printing of all candidates:" << endl;
+    auto beams = pipe.generate(input_ids, attention_mask, config);
+    for (size_t i = 0; i < beams.scores.size(); i++) {
+        std::cout << beams.scores[i] << ": " << pipe.get_tokenizer().detokenize(beams.tokens[i]) << std::endl;
+    }
+
+    // for (const auto& beam : beams.second)
     //     std::cout << beam.first << ": " << pipe.detokenize(beam.second) << std::endl;
 
-    // {
-    //     // Example 5: Speculative sampling
-    //     std::string assitive_model_path = "text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16";
-    //     pipe = LLMPipeline(model_path);
-    //     auto [input_ids, attention_mask] = pipe.tokenize({prompt});
-    //     // config = GenerationConfig::assistive_decoding(assitive_model_path).num_assistant_tokens(5).max_new_tokens(20);
-    //     pipe.generation_config().assistant_model(assitive_model_path);
+    {
+        // Example 5: Speculative sampling
+        std::string assitive_model_path = "text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16";
+        pipe = ov::LLMPipeline(model_path);
+        auto [input_ids, attention_mask] = pipe.get_tokenizer().tokenize({prompt});
+        // config = GenerationConfig::assistive_decoding(assitive_model_path).num_assistant_tokens(5).max_new_tokens(20);
+        pipe.generation_config().assistant_model(assitive_model_path);
         
-    //     cout << endl << "Speculative sampling with TinyLlama assistance:" << endl;
-    //     auto results = pipe.generate(input_ids, attention_mask, config);
-    //     for (const auto& result : results)
-    //         std::cout << pipe.detokenize(result.second) << std::endl;
-    // }
+        cout << endl << "Speculative sampling with TinyLlama assistance:" << endl;
+        auto results = pipe.generate(input_ids, attention_mask, config);
+        for (size_t i = 0; i < beams.scores.size(); i++) {
+        for (const auto& result : results)
+            std::cout << pipe.get_tokenizer().detokenize(result.tokens) << std::endl;
+        }
+    }
 
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

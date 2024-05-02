@@ -8,7 +8,6 @@
 #include <filesystem>
 
 
-using GenerationResult = std::vector<std::pair<float, std::vector<int64_t>>>;
 using namespace std;
 
 std::pair<ov::Tensor, ov::Tensor> pad_left(ov::Tensor&& input_ids, ov::Tensor&& attention_mask, int64_t pad_token=2);
@@ -33,7 +32,7 @@ public:
     
     std::vector<std::string> detokenize(ov::Tensor tokens);
     
-    std::vector<std::string> detokenize(GenerationResult lines);
+    std::vector<std::string> detokenize(std::vector<std::vector<int64_t>> lines);
 private:
     ov::InferRequest m_tokenize_request;
     ov::InferRequest m_detokenizer_request;

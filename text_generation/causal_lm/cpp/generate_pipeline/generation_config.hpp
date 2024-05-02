@@ -46,7 +46,7 @@ struct GenerationConfig {
     float m_temperature = 0.0f; // by default we use greedy sampling
     int m_top_k = -1; // maybe to assign vocab_size ?
     float m_top_p = 1.0f; // by default convsider all tokens
-    bool m_do_sample;
+    bool m_do_sample = false;
 
     // special tokens
     int64_t m_bos_token_id = 0;

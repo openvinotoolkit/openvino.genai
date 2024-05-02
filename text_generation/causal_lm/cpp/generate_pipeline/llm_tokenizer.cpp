@@ -102,20 +102,20 @@ std::vector<std::string> Tokenizer::detokenize(ov::Tensor tokens) {
     return strings;
 }
 
-std::vector<std::string> Tokenizer::detokenize(GenerationResult lines) {
+std::vector<std::string> Tokenizer::detokenize(std::vector<std::vector<int64_t>> lines) {
     // todo: implement calling detokenizer in a single batch
 
-    std::vector<std::string> strings;
-    for (auto& [score, line]: lines){
+    std::vector<std::string> results;
+    for (auto& line: lines){
         ov::Tensor tokens = ov::Tensor{ov::element::i64, {1, line.size()}, line.data()};
         m_detokenizer_request.set_input_tensor(tokens);
         m_detokenizer_request.infer();
         auto res = m_detokenizer_request.get_output_tensor();
         auto res_str = res.data<std::string>()[0];
-        strings.emplace_back(res_str);
+        results.emplace_back(res_str);
     }
     
-    return strings;
+    return results;
 }
 
 TextCoutStreamer::TextCoutStreamer(const Tokenizer& tokenizer, bool print_eos_token) {
