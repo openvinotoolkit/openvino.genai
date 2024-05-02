@@ -126,7 +126,7 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
    [chatglm2-6b - AttributeError: can't set attribute](../../../llm_bench/python/doc/NOTES.md#chatglm2-6b---attributeerror-cant-set-attribute)
    in case of `AttributeError`
    2. https://huggingface.co/THUDM/chatglm3-6b
-2. LLaMA 2 (requires access request submission on its Hugging Face page to be downloaded)
+2. LLaMA 2 (require access request submission on its Hugging Face page to be downloaded)
    1. https://huggingface.co/meta-llama/Llama-2-13b-chat-hf
    2. https://huggingface.co/meta-llama/Llama-2-13b-hf
    3. https://huggingface.co/meta-llama/Llama-2-7b-chat-hf
