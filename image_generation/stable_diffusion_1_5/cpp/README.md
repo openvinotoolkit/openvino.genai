@@ -12,13 +12,13 @@ Prerequisites:
 
 C++ Packages:
 * [CMake](https://cmake.org/download/): Cross-platform build tool
-* [OpenVINO](https://docs.openvino.ai/install): Model inference
+* [OpenVINO](https://docs.openvino.ai/install): Model inference. `master` and possibly the latest `releases/*` branch correspond to not yet released OpenVINO versions. https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for these branches early testing.
 
 Prepare a python environment and install dependencies:
 ```shell
 conda create -n openvino_sd_cpp python==3.10
 conda activate openvino_sd_cpp
-conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
+conda install -c conda-forge openvino=2024.0.0 c-compiler cxx-compiler make cmake
 # Ensure that Conda standard libraries are used
 conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 ```
