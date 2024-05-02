@@ -1,3 +1,3 @@
 openvino>=2024.2
-optimum-intel
+transformers
 pytest

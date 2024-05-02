@@ -1,9 +1,8 @@
 from typing import List, Tuple
 from unittest import TestCase
 
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
-from optimum.intel import OVModelForCausalLM
 import py_continuous_batching as pa
 from py_continuous_batching import GenerationConfig, SchedulerConfig
 
@@ -26,16 +25,17 @@ def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
         "Tell me something about Canada"
     ]
     generation_configs = [
-        get_beam_search(),
-        get_beam_search(),
-        get_beam_search(),
-        get_beam_search()
+        get_greedy(),
+        get_greedy(),
+        get_greedy(),
+        get_greedy()
     ]
     return (prompts, generation_configs)
 
 def get_scheduler_config() -> SchedulerConfig:
     scheduler_config = pa.SchedulerConfig()
     scheduler_config.dynamic_split_fuse = True
+    scheduler_config.num_kv_blocks = 300
 
     return scheduler_config
 
@@ -76,14 +76,14 @@ def run_hugging_face(
     generation_configs: List[GenerationConfig]
 ) -> List[str]:
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = OVModelForCausalLM.from_pretrained(model_id, export=True)
+    model = AutoModelForCausalLM.from_pretrained(model_id)
     generated_results: List[str] = []
 
     for prompt, generation_config in zip(prompts, generation_configs):
         inputs = tokenizer(prompt, return_tensors="pt")
         output_tokens = model.generate(**inputs, generation_config=convert_to_hf(generation_config))
         all_text = tokenizer.batch_decode(output_tokens, skip_special_tokens=True)[0]
-        generated_text = all_text[len(prompt):-1]
+        generated_text = all_text[len(prompt):]
         generated_results.append(generated_text)
 
     return generated_results
@@ -94,23 +94,20 @@ def run_continuous_batching(
     prompts: List[str],
     generation_configs : List[GenerationConfig]
 ) -> List[str]:
-    scheduler_config = pa.SchedulerConfig()
-    scheduler_config.dynamic_split_fuse = True
-
     pipe = pa.ContinuousBatchingPipeline(model_path, scheduler_config)
     outputs = pipe.generate(prompts, generation_configs)
 
     generated_results: List[str] = []
     for output in outputs:
         # suppose that 0-th has maximum score
-        generated_results.append(output.m_generation_ids[4])
+        generated_results.append(output.m_generation_ids[0])
 
     return generated_results
 
 def test_check_greedy_search():
     prompts, generation_configs = get_test_dataset()
     hf_results = run_hugging_face("facebook/opt-125m", prompts, generation_configs)
-    my_results = run_continuous_batching("/home/sandye51/Documents/Programming/git_repo/vllm", get_scheduler_config(), prompts, generation_configs)
+    my_results = run_continuous_batching("/home/sandye51/Documents/Programming/git_repo/openvino.genai/build/opt125", get_scheduler_config(), prompts, generation_configs)
     for prompt, hf_result, my_result in zip(prompts, hf_results, my_results):
         print(f"Prompt = {prompt}\nHF result = {hf_result}\nmy result = {my_result}")
         assert hf_result == my_result
