@@ -157,7 +157,7 @@ public:
                 m_allocator.free(block_table.back());
             }
         } 
-        m_block_table[seq_id].erase(m_block_table[seq_id].end() - block_num);
+        m_block_table[seq_id].resize(m_block_table[seq_id].size() - block_num);
 
         if (m_block_table.size() == 0) {
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
