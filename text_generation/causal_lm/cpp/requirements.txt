@@ -1,0 +1,5 @@
+--upgrade-strategy eager  # needed to ensure optimum-intel is upgraded to the latest version.
+--extra-index-url https://download.pytorch.org/whl/cpu
+#transformers<4.38 TODO
+..\..\..\thirdparty\openvino_tokenizers\[transformers]
+optimum[openvino]  # optimum-intel comes from this
