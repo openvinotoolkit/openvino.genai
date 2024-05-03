@@ -65,7 +65,7 @@ jobs:
           source ./ov/setupvars.sh
           convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --with-detokenizer
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?" > ./pred.txt
+          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Tell me something about Canada" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
