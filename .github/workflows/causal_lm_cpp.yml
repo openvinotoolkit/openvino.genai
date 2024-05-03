@@ -38,7 +38,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           convert_tokenizer ./open_llama_3b_v2/ --output ./open_llama_3b_v2/ --with-detokenizer
-          ./build/greedy_causal_lm ./open_llama_3b_v2/pytorch/dldt/FP16/ "return 0"
+          ./build/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
 
   cpp-beam_search_causal_lm-ubuntu:
     runs-on: ubuntu-20.04
@@ -60,12 +60,12 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-          convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/ --output ./TinyLlama-1.1B-Chat-v1.0/ --with-detokenizer
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
       - name: Compare
         run: |
           source ./ov/setupvars.sh
+          convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/ --output ./TinyLlama-1.1B-Chat-v1.0/ --with-detokenizer
 
           timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ 69 > ./pred.txt
           python -c "
@@ -152,7 +152,6 @@ jobs:
           python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-          convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/ --output ./TinyLlama-1.1B-Chat-v1.0/ --with-detokenizer
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
       - name: Compare
@@ -257,8 +256,8 @@ jobs:
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          convert_tokenizer ./Phi-2/ --output ./Phi-2/ --with-detokenizer --trust-remote-code
-          timeout 50s ./build/beam_search_causal_lm ./Phi-2/ 69 > ./pred.txt
+          convert_tokenizer ./phi-2/ --output ./phi-2/ --with-detokenizer --trust-remote-code
+          timeout 50s ./build/beam_search_causal_lm ./phi-2/ 69 > ./pred.txt
 
   cpp-beam_search_causal_lm-notus-7b-v1:
     runs-on: ubuntu-20.04-16-cores
@@ -355,9 +354,9 @@ jobs:
       - name: Run Generation
         run: |
           source ./ov/setupvars.sh
-          convert_tokenizer ./Phi-1_5/ --output ./Phi-1_5/ --with-detokenizer --trust-remote-code
-          timeout 50s ./build/greedy_causal_lm ./Phi-1_5/ "Alan Turing was a" > ./pred_greedy.txt
-          timeout 50s ./build/beam_search_causal_lm ./Phi-1_5/ "Alan Turing was a" > ./pred_beam.txt
+          convert_tokenizer ./phi-1_5/ --output ./phi-1_5/ --with-detokenizer --trust-remote-code
+          timeout 50s ./build/greedy_causal_lm ./phi-1_5/ "Alan Turing was a" > ./pred_greedy.txt
+          timeout 50s ./build/beam_search_causal_lm ./phi-1_5/ "Alan Turing was a" > ./pred_beam.txt
       - name: Compare
         run: |
           python -c "
