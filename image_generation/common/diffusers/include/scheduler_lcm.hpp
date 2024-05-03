@@ -19,7 +19,8 @@ public:
                  float clip_sample_range = 1.0f,
                  float dynamic_thresholding_ratio = 0.995f,
                  float sample_max_value = 1.0f,
-                 bool read_torch_noise = false);
+                 bool read_torch_noise = false,
+                 uint32_t seed = 42);
 
     void set_timesteps(size_t num_inference_steps) override;
 
@@ -47,6 +48,10 @@ private:
     float dynamic_thresholding_ratio;
     float sample_max_value;
     bool read_torch_noise;
+    std::mt19937 gen;
+    std::normal_distribution<float> normal;
+    uint32_t seed;
 
     std::vector<float> threshold_sample(const std::vector<float>& flat_sample);
+    std::vector<float> randn_function(uint32_t size, uint32_t seed);
 };

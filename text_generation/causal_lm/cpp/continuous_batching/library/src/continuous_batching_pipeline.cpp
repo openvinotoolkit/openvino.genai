@@ -10,7 +10,6 @@
 #include "model_config.hpp"
 #include "model_config.hpp"
 #include "tokenizer.hpp"
-#include "paged_attention.hpp"
 
 #include "debug_utils.hpp"
 
@@ -20,14 +19,13 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
     GenerationResult result;
     result.m_request_id = sequence_group->get_request_id();
 
-    OPENVINO_ASSERT(sequence_group->num_finished_seqs() == sequence_group->num_total_seqs() &&
-                    sequence_group->has_finished());
-    for (size_t sequence_id = 0; sequence_id < sequence_group->num_finished_seqs(); ++sequence_id) {
-        Sequence::CPtr sequence = (*sequence_group)[sequence_id];
+    std::vector<Sequence::CPtr> finished_sequences = sequence_group->get_finished_sequences();
 
-        // TODO: they are not correct in case of beam search at least
-        // we need to pass beam score instead of cumulative log probs (e.g. normalized by length)
-        result.m_scores.push_back(sequence->get_cumulative_log_probs());
+    OPENVINO_ASSERT(finished_sequences.size() == sequence_group->num_total_seqs() && sequence_group->has_finished());
+    for (size_t sequence_id = 0; sequence_id < finished_sequences.size(); ++sequence_id) {
+        Sequence::CPtr sequence = finished_sequences[sequence_id];
+
+        result.m_scores.push_back(sequence->get_beam_search_score(sequence_group->get_sampling_parameters()));
 
         {
             static ManualTimer timer("detokenize");
@@ -82,7 +80,6 @@ class ContinuousBatchingPipeline::Impl {
 public:
     Impl(const std::string& models_path, const SchedulerConfig& scheduler_config) {
         ov::Core core;
-        core.add_extension<PagedAttention>();
         m_tokenizer = std::make_shared<Tokenizer>(models_path);
 
         // The model can be compiled for GPU as well
@@ -260,6 +257,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::string& models
 
 std::shared_ptr<Tokenizer> ContinuousBatchingPipeline::get_tokenizer() {
     return m_impl->get_tokenizer();
+}
+
+GenerationConfig ContinuousBatchingPipeline::get_config() const{
+    return m_impl->get_config();
 }
 
 void ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {

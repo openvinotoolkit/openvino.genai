@@ -19,7 +19,7 @@ class Sequence;
 
 struct GenerationConfig {
     // Generic
-    size_t max_new_tokens = 100;
+    size_t max_new_tokens = 30;
     size_t max_length = std::numeric_limits<std::size_t>::max(); // m_max_new_tokens should have priority over m_max_length
     bool ignore_eos = false;
 
