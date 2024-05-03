@@ -167,60 +167,60 @@ int main(int argc, char* argv[]) try {
     auto [input_ids, attention_mask] = tokenize(tokenizer, prompts_arguments_to_vector(argc, argv));
 
     // Initialize beam search
-    // const int64_t* prompt_data = input_ids.data<const int64_t>();
-    // std::vector<std::vector<int64_t>> prompts;
-    // prompts.reserve(input_ids.get_shape().at(0));
-    // for (size_t batch = 0; batch < input_ids.get_shape().at(0); batch++) {
-    //     size_t sequence_length = input_ids.get_shape().at(1);
-    //     size_t batch_offset = batch * sequence_length;
-    //     const int64_t* prompt_start = prompt_data + batch_offset;
-    //     prompts.push_back(std::vector<int64_t>{prompt_start, prompt_start + sequence_length});
-    // }
+    const int64_t* prompt_data = input_ids.data<const int64_t>();
+    std::vector<std::vector<int64_t>> prompts;
+    prompts.reserve(input_ids.get_shape().at(0));
+    for (size_t batch = 0; batch < input_ids.get_shape().at(0); batch++) {
+        size_t sequence_length = input_ids.get_shape().at(1);
+        size_t batch_offset = batch * sequence_length;
+        const int64_t* prompt_start = prompt_data + batch_offset;
+        prompts.push_back(std::vector<int64_t>{prompt_start, prompt_start + sequence_length});
+    }
 
-    // // Get the runtime info from the tokenizer model that we read earlier
-    // auto rt_info = tokenizer_model->get_rt_info();  // Get the runtime info for the model
-    // int64_t SPECIAL_EOS_TOKEN;
+    // Get the runtime info from the tokenizer model that we read earlier
+    auto rt_info = tokenizer_model->get_rt_info();  // Get the runtime info for the model
+    int64_t SPECIAL_EOS_TOKEN;
 
-    // if (rt_info.count("eos_token_id") > 0) {  // check if the runtime information has a valid EOS token ID
-    //     SPECIAL_EOS_TOKEN = rt_info["eos_token_id"].as<int64_t>();
+    if (rt_info.count("eos_token_id") > 0) {  // check if the runtime information has a valid EOS token ID
+        SPECIAL_EOS_TOKEN = rt_info["eos_token_id"].as<int64_t>();
 
-    // } else {
-    //     throw std::runtime_error("EOS token ID not found in model's runtime information.");
-    // }
+    } else {
+        throw std::runtime_error("EOS token ID not found in model's runtime information.");
+    }
 
-    // Parameters parameters{std::move(prompts), SPECIAL_EOS_TOKEN};
-    // GroupBeamSearcher group_beam_searcher{parameters};
+    Parameters parameters{std::move(prompts), SPECIAL_EOS_TOKEN};
+    GroupBeamSearcher group_beam_searcher{parameters};
 
-    // initialize_inputs(input_ids, attention_mask, lm);
+    initialize_inputs(input_ids, attention_mask, lm);
 
-    // std::vector<int64_t> next_tokens;
-    // std::vector<int32_t> next_beams;
+    std::vector<int64_t> next_tokens;
+    std::vector<int32_t> next_beams;
 
-    // for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
-    //     lm.infer();
+    for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
+        lm.infer();
 
-    //     std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(lm.get_tensor("logits"));
-    //     if (next_tokens.empty()) {
-    //         break;
-    //     }
-    //     size_t batch_size = next_tokens.size();
-    //     // Set pointers
-    //     lm.set_tensor("input_ids", ov::Tensor{ov::element::i64, {batch_size, 1}, next_tokens.data()});
-    //     lm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
-    //     // Set auxiliary inputs
-    //     set_attention_mask(lm.get_tensor("attention_mask"), next_beams);
-    //     set_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
-    // }
+        std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(lm.get_tensor("logits"));
+        if (next_tokens.empty()) {
+            break;
+        }
+        size_t batch_size = next_tokens.size();
+        // Set pointers
+        lm.set_tensor("input_ids", ov::Tensor{ov::element::i64, {batch_size, 1}, next_tokens.data()});
+        lm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
+        // Set auxiliary inputs
+        set_attention_mask(lm.get_tensor("attention_mask"), next_beams);
+        set_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
+    }
 
-    // for (const std::vector<std::vector<Beam>>& prompt_group : finalize(std::move(group_beam_searcher))) {
-    //     std::cout << "Prompt:\n";
-    //     for (const std::vector<Beam> group : prompt_group) {
-    //         std::cout << "Group:\n";
-    //         for (const Beam& beam : group) {
-    //             std::cout << beam.score << ": " << detokenize(detokenizer, beam.tokens) << '\n';
-    //         }
-    //     }
-    // }
+    for (const std::vector<std::vector<Beam>>& prompt_group : finalize(std::move(group_beam_searcher))) {
+        std::cout << "Prompt:\n";
+        for (const std::vector<Beam> group : prompt_group) {
+            std::cout << "Group:\n";
+            for (const Beam& beam : group) {
+                std::cout << beam.score << ": " << detokenize(detokenizer, beam.tokens) << '\n';
+            }
+        }
+    }
     // Model is stateful which means that context (kv-cache) which belongs to a particular
     // text sequence is accumulated inside the model during the generation loop above.
     // This context should be reset before processing the next text sequence.

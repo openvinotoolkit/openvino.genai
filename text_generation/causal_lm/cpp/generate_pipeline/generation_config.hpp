@@ -202,6 +202,8 @@ public:
 
     GenerationConfig(std::string json_path) {
         std::ifstream f(json_path);
+        OPENVINO_ASSERT(f.is_open(), "Failed to open '" + json_path + "' with generation config");
+
         nlohmann::json data = nlohmann::json::parse(f);
 
         m_bos_token_id = data.value("bos_token_id", 0);
@@ -223,6 +225,7 @@ public:
         m_diversity_penalty = data.value("diversity_penalty", 1.0f);
         int num_beams = data.value("num_beams", 1);
         m_group_size = num_beams / m_num_groups;
+        OPENVINO_ASSERT(num_beams % m_num_groups == 0, "number of beams should be divisible by number of groups");
     }
 
 

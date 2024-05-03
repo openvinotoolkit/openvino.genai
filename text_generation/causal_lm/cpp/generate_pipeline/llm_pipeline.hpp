@@ -115,12 +115,6 @@ public:
 
     GenerationResults multinomial_sampling(ov::Tensor prompts, GenerationConfig sampling_params);
 
-    std::string call(std::string text);
-
-    std::string call(std::string text, GenerationConfig generation_config);
-
-    PipelineResults call(std::vector<std::string> text, GenerationConfig sampling_parameters);
-
     std::string operator()(std::string text);
 
     std::string operator()(std::string text, GenerationConfig sampling_parameters);
@@ -149,6 +143,12 @@ private:
     TextCoutStreamer m_streamer;
     std::function<void (std::string)> m_streamer_callback = [](std::string ){ ;};
     bool is_chat_conversation = false;
+
+    std::string call(std::string text);
+
+    std::string call(std::string text, GenerationConfig generation_config);
+
+    PipelineResults call(std::vector<std::string> text, GenerationConfig sampling_parameters);
 };
 
 

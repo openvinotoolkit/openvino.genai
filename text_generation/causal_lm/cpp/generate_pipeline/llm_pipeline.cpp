@@ -242,7 +242,6 @@ ov::LLMPipeline::LLMPipeline(std::string& path, std::string device, const ov::An
         std::ifstream f(path + "/" + tokenizer_config_fname);
         nlohmann::json data = nlohmann::json::parse(f);
         m_chat_template = data.value("chat_template", "");
-
     }
     
     m_device = device;

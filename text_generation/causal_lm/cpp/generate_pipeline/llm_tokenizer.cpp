@@ -56,23 +56,6 @@ std::pair<ov::Tensor, ov::Tensor> Tokenizer::tokenize(std::vector<std::string> p
     int64_t* attention_mask_data = attention_mask.data<int64_t>();
     std::replace(attention_mask_data, attention_mask_data + attention_mask.get_size(), 2, 0);
     
-    vector<vector<int64_t>> input_ids_vec;
-    vector<vector<int64_t>> atten_mask_vec;
-    
-    input_ids_vec.reserve(prompts.size());
-    atten_mask_vec.reserve(prompts.size());
-    auto res_tensor = m_tokenize_request.get_tensor("input_ids");
-    auto atten_tensor = m_tokenize_request.get_tensor("attention_mask");
-    auto res_shape = res_tensor.get_shape();
-    
-    for (int i = 0; i < res_shape[0]; ++i) {
-        int64_t* start = res_tensor.data<int64_t>() + i * res_shape[1];
-        input_ids_vec.emplace_back(std::vector<int64_t>(start, start + res_shape[1]));
-        
-        int64_t* atten_start = atten_tensor.data<int64_t>() + i * res_shape[1];
-        atten_mask_vec.emplace_back(std::vector<int64_t>(atten_start, atten_start + res_shape[1]));
-    }
-
     return {m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask")};
 }
 
