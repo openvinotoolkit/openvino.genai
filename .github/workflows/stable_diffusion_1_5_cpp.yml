@@ -7,6 +7,7 @@ on:
       - image_generation/common/**
       - .github/workflows/stable_diffusion_1_5_cpp.yml
       - thirdparty/openvino_tokenizers
+      - "!**.md"
 
 env:
   working_directory: "./image_generation/stable_diffusion_1_5/cpp/"
@@ -38,7 +39,7 @@ jobs:
       - name: Install OpenVINO and other conda dependencies
         run: |
           conda activate openvino_sd_cpp
-          conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
+          conda install -c conda-forge openvino=2024.0.0 c-compiler cxx-compiler make cmake
           conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
       - name: Install python dependencies
@@ -85,7 +86,7 @@ jobs:
         - name: Install OpenVINO and other conda dependencies
           run: |
             conda activate openvino_sd_cpp
-            conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
+            conda install -c conda-forge openvino=2024.0.0 c-compiler cxx-compiler make cmake
   
         - name: Install python dependencies
           working-directory: ${{ env.working_directory }}

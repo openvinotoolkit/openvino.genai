@@ -141,39 +141,24 @@ def create_text_gen_model(model_path, device, **kwargs):
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if model_type in ['replit', 'codegen2', 'chatglm', 'mpt']:
-            start = time.perf_counter()
-            ov_model = model_class.from_pretrained(
-                model_path,
-                device=device,
-                ov_config=ov_config,
-                config=AutoConfig.from_pretrained(model_path, trust_remote_code=True),
-                stateful=kwargs.get("stateful", None)
-            )
-            end = time.perf_counter()
-        elif model_type in ['falcon']:
-            ov_model = model_class.from_pretrained(
-                model_path,
-                device=device,
-                ov_config=ov_config,
-                stateful=kwargs.get("stateful", None),
-                trust_remote_code=False
-            )
-            end = time.perf_counter()
-        else:
-            start = time.perf_counter()
-            config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-            ov_model = model_class.from_pretrained(
-                model_path,
-                device=device,
-                ov_config=ov_config,
-                config=config,
-                compile=False,
-                stateful=kwargs.get("stateful", None)
-            )
-            if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
-                patch_inter_processing_and_compile(ov_model, **kwargs)
-            end = time.perf_counter()
+        remote_code = False
+        try:
+            model_config = AutoConfig.from_pretrained(model_path)
+        except Exception:
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+            remote_code = True
+        start = time.perf_counter()
+        ov_model = model_class.from_pretrained(
+            model_path,
+            device=device,
+            ov_config=ov_config,
+            config=model_config,
+            stateful=kwargs.get("stateful", None),
+            trust_remote_code=remote_code
+        )
+        if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
+            patch_inter_processing_and_compile(ov_model, **kwargs)
+        end = time.perf_counter()
     if kwargs['num_beams'] > 1:
         bench_hook = utils.hook_beam_search.BeamSearchHook()
     else:
