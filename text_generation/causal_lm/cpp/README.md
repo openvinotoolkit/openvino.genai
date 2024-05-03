@@ -78,7 +78,8 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 ```sh
 source <INSTALL_DIR>/setupvars.sh
 python3 -m pip install --upgrade-strategy eager -r requirements.txt
-python3 -m pip isntall ./../../../thirdparty/openvino_tokenizers/[transformers]
+# Update openvino_tokenizers from the submodule
+python3 -m pip install ./../../../thirdparty/openvino_tokenizers/[transformers]
 optimum-cli export openvino --task text-generation --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 
@@ -87,7 +88,8 @@ optimum-cli export openvino --task text-generation --trust-remote-code --weight-
 ```bat
 <INSTALL_DIR>\setupvars.bat
 python -m pip install --upgrade-strategy eager -r requirements.txt
-python -m pip isntall .\..\..\..\thirdparty\openvino_tokenizers\[transformers]
+REM Update openvino_tokenizers from the submodule
+python -m pip install .\..\..\..\thirdparty\openvino_tokenizers\[transformers]
 optimum-cli export openvino --task text-generation --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 
