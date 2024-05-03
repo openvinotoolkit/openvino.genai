@@ -54,17 +54,16 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.0/linux/l_openvino_toolkit_ubuntu20_2024.0.0.14509.34caeefd078_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager -r requirements.txt
           python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
-          optimum-cli export openvino --task text-generation --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - name: Compare
         run: |
           source ./ov/setupvars.sh
@@ -145,21 +144,21 @@ jobs:
       - name: Install OpenVINO
         shell: bash
         run: |
-          curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64.zip
+          curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.0/windows/w_openvino_toolkit_windows_2024.0.0.14509.34caeefd078_x86_64.zip
           unzip ov.zip
       - name: Download, convert and build
         shell: cmd
         run: |
-          call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64\setupvars.bat
+          call w_openvino_toolkit_windows_2024.0.0.14509.34caeefd078_x86_64\setupvars.bat
           python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
-          python -m pip install .\thirdparty\openvino_tokenizers\[transformers]
-          optimum-cli export openvino --task text-generation --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
       - name: Compare
         shell: cmd
         run: |
-          call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64\setupvars.bat
+          call w_openvino_toolkit_windows_2024.0.0.14509.34caeefd078_x86_64\setupvars.bat
           convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\ --output .\TinyLlama-1.1B-Chat-v1.0\ --with-detokenizer
 
           .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ "69" > .\pred.txt

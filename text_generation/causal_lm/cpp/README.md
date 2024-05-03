@@ -80,7 +80,7 @@ source <INSTALL_DIR>/setupvars.sh
 python3 -m pip install --upgrade-strategy eager -r requirements.txt
 # Update openvino_tokenizers from the submodule
 python3 -m pip install ./../../../thirdparty/openvino_tokenizers/[transformers]
-optimum-cli export openvino --task text-generation --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 
 #### Windows
@@ -90,7 +90,7 @@ optimum-cli export openvino --task text-generation --trust-remote-code --weight-
 python -m pip install --upgrade-strategy eager -r requirements.txt
 REM Update openvino_tokenizers from the submodule
 python -m pip install .\..\..\..\thirdparty\openvino_tokenizers\[transformers]
-optimum-cli export openvino --task text-generation --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 
 ## Run
