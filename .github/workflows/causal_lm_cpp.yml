@@ -67,9 +67,8 @@ jobs:
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          # convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --with-detokenizer
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ 69 > ./pred.txt
+          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ 69 > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -85,7 +84,7 @@ jobs:
           "
           echo "69" passed
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ Hi > ./pred.txt
+          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ Hi > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -101,7 +100,7 @@ jobs:
           "
           echo "Hi" passed
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "return 0" > ./pred.txt
+          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "return 0" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -117,7 +116,7 @@ jobs:
           "
           echo "return 0" passed
 
-          ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "你好！ 你好嗎？" > ./pred.txt
+          ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
