@@ -41,6 +41,9 @@ jobs:
 
   cpp-beam_search_causal_lm-ubuntu:
     runs-on: ubuntu-20.04
+    defaults:
+      run:
+        working-directory: ./text_generation/causal_lm/cpp/
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,9 +59,9 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
+          python -m pip install --upgrade-strategy eager -r requirements.txt
           optimum-cli export openvino --task text-generation --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
           wait
       - name: Compare
