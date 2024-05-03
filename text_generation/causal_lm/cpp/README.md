@@ -79,7 +79,6 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 source <INSTALL_DIR>/setupvars.sh
 python3 -m pip install --upgrade-strategy eager requirements.txt
 optimum-cli export openvino --task text-generation --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
 ```
 
 #### Windows
@@ -88,7 +87,6 @@ convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --output ./TinyL
 <INSTALL_DIR>\setupvars.bat
 python -m pip install -r requirements.txt
 optimum-cli export openvino --task text-generation --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --with-detokenizer --trust-remote-code
 ```
 
 ## Run
@@ -100,14 +98,14 @@ convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyL
 
 ### Examples:
 #### Windows:
-1. `/build/Release/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-2. `/build/Release/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-3. `/build/Release/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ ./Llama-2-7b-chat-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+1. `/build/Release/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?"`
+2. `/build/Release/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?"`
+3. `/build/Release/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ ./Llama-2-7b-chat-hf/ "Why is the Sun yellow?"`
 
 #### Linux/MacOS:
-1. `./build/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-2. `./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-3. `./build/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ ./Llama-2-7b-chat-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+1. `./build/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?"`
+2. `./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?"`
+3. `./build/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ ./Llama-2-7b-chat-hf/ "Why is the Sun yellow?"`
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
 

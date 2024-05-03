@@ -1,4 +1,2 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-#transformers<4.38 TODO
-../../../thirdparty/openvino_tokenizers/[transformers]
-optimum[openvino]==1.19.1  # optimum-intel comes from this
+optimum[openvino]==1.19.1
