@@ -222,7 +222,6 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen1.5-7B-Chat Qwen1.5-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - name: Run
         run: |
           source ./ov/setupvars.sh
@@ -251,7 +250,6 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-2 phi-2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j 15
-          wait
       - name: Compare
         run: |
           source ./ov/setupvars.sh
@@ -280,7 +278,6 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model argilla/notus-7b-v1 notus-7b-v1
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - name: Compare
         run: |
           source ./ov/setupvars.sh
@@ -312,7 +309,6 @@ jobs:
           convert_tokenizer ./dolly-v2-7b/ --output ./dolly-v2-7b/ --with-detokenizer
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
@@ -349,7 +345,6 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-1_5 phi-1_5
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j 15
-          wait
       - name: Run Generation
         run: |
           source ./ov/setupvars.sh
