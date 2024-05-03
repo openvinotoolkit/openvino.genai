@@ -15,7 +15,8 @@ def get_beam_search() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_groups = 3
     generation_config.group_size = 2
-    generation_config.num_return_sequences = 6
+    generation_config.max_new_tokens = 30
+    generation_config.num_return_sequences = generation_config.num_groups * generation_config.group_size
     return generation_config
 
 def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:

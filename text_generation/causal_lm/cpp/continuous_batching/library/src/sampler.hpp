@@ -92,6 +92,8 @@ struct Beam {
     // beam is made on top of sequence
     float m_log_prob = 0.0f;
     int64_t m_token_id = -1;
+
+    // cumulative log probabilities
     float m_score = -std::numeric_limits<float>::infinity();
 
     Beam(Sequence::Ptr sequence)
@@ -99,22 +101,6 @@ struct Beam {
 
     size_t get_generated_len() const {
         return m_sequence->get_generated_len();
-    }
-
-    float get_beam_search_score(const GenerationConfig& sampling_params) const {
-        float cumulative_log_prob = m_sequence->get_cumulative_log_probs(), highest_attainable_score = 0.0f;
-        float current_length = m_sequence->get_generated_len() + 1;
-
-        if (StopCriteria::HEURISTIC == sampling_params.stop_criteria) {
-            highest_attainable_score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
-        } else if (StopCriteria::NEVER == sampling_params.stop_criteria) {
-            size_t length = sampling_params.length_penalty > 0.0 ? sampling_params.max_new_tokens : current_length;
-            highest_attainable_score = cumulative_log_prob / std::pow(length, sampling_params.length_penalty);
-        } else if (StopCriteria::EARLY == sampling_params.stop_criteria) {
-            // nothing to do
-        }
-
-        return highest_attainable_score;
     }
 };
 
@@ -129,13 +115,8 @@ struct Group {
 
     int64_t finish(Beam beam, const GenerationConfig& sampling_params) {
         int64_t preeempted_sequence_id = -1;
-        float generated_len = beam.get_generated_len() + 1;
+        float generated_len = beam.get_generated_len() + (beam.m_token_id == sampling_params.eos_token_id ? 1 : 0); // HF counts EOS token in generation length
         beam.m_score /= std::pow(generated_len, sampling_params.length_penalty);
-
-        // HF implementation counts eos_token for length penalty calculation
-        // if (beam.tokens.back() == parameters.eos_token) {
-        //     beam.tokens.pop_back();
-        // }
 
         min_heap.push_back(beam);
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
@@ -148,19 +129,32 @@ struct Group {
         return preeempted_sequence_id;
     }
 
-    bool is_done(const GenerationConfig& sampling_params) {
-        if (min_heap.size() == sampling_params.group_size) {
-            const Beam& best_running_sequence = ongoing.front(), & worst_finished_sequence = min_heap.front();
+    void is_done(const GenerationConfig& sampling_params) {
+        if (min_heap.size() < sampling_params.group_size)
+            return;
 
-            const float highest_attainable_score = best_running_sequence.get_beam_search_score(sampling_params);
-            const float worst_finished_score = worst_finished_sequence.get_beam_search_score(sampling_params);
-
-            done = sampling_params.stop_criteria == StopCriteria::EARLY ? true :
-                // we cannot get finished sequence with score better than worst finished one
-                worst_finished_score >= highest_attainable_score;
+        const Beam& best_running_sequence = ongoing.front(), & worst_finished_sequence = min_heap.front();
+        size_t cur_len = best_running_sequence.m_sequence->get_generated_len();
+        float best_sum_logprobs = best_running_sequence.m_score;
+        float worst_score = worst_finished_sequence.m_score;
+        switch (sampling_params.stop_criteria) {
+        case StopCriteria::EARLY:
+            done = true;
+            return;
+        case StopCriteria::HEURISTIC: {
+            float highest_attainable_score = best_sum_logprobs / std::pow(float(cur_len), sampling_params.length_penalty);
+            done = worst_score >= highest_attainable_score;
+            return;
         }
-
-        return done;
+        case StopCriteria::NEVER: {
+            size_t length = sampling_params.length_penalty > 0.0 ? sampling_params.max_new_tokens : cur_len;
+            float highest_attainable_score = best_sum_logprobs / std::pow(float(length), sampling_params.length_penalty);
+            done = worst_score >= highest_attainable_score;
+            return;
+        }
+        default:
+            OPENVINO_THROW("Beam search internal error: unkown mode");
+        }
     }
 };
 
@@ -460,7 +454,6 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
 
         // check whether group has finished
         group.is_done(m_parameters);
-
         if (group.done) {
             // group has finished, group all running sequences
             for (const Beam& beam : group.ongoing) {

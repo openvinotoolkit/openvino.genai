@@ -88,19 +88,9 @@ public:
     }
 
     float get_beam_search_score(const GenerationConfig& sampling_params) const {
-        float cumulative_log_prob = get_cumulative_log_probs(), highest_attainable_score = 0.0f;
-        float current_length = get_generated_len() + 1;
-
-        if (StopCriteria::HEURISTIC == sampling_params.stop_criteria) {
-            highest_attainable_score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
-        } else if (StopCriteria::NEVER == sampling_params.stop_criteria) {
-            size_t length = sampling_params.length_penalty > 0.0 ? sampling_params.max_new_tokens : current_length;
-            highest_attainable_score = cumulative_log_prob / std::pow(length, sampling_params.length_penalty);
-        } else if (StopCriteria::EARLY == sampling_params.stop_criteria) {
-            // nothing to do
-        }
-
-        return highest_attainable_score;
+        float cumulative_log_prob = get_cumulative_log_probs(), current_length = get_generated_len();
+        float score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
+        return score;
     }
 };
 
