@@ -3,7 +3,6 @@ on:
   pull_request:
     paths:
       - .github/workflows/causal_lm_cpp.yml
-      - llm_bench/python/**
       - text_generation/causal_lm/cpp/*
       - thirdparty/openvino_tokenizers
       - "!**.md"
