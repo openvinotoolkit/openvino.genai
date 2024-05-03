@@ -20,38 +20,79 @@ class LLMPipeline;
 
 }
 
-// Similar to HuggingFace GenerationConfig
-struct GenerationConfig {
-    // todo: add copy constructor
-    
+namespace {
+
+// TODO: LEAVE ONLY ONE PLACE FOR DEFAULT VALUES
+static const ov::AnyMap default_generation_config_map = {
     // Generic
-    size_t m_max_new_tokens = SIZE_MAX;
-    size_t m_max_length = SIZE_MAX; // m_max_new_tokens should have priority over m_max_length
-    bool m_ignore_eos = false;
-    std::string m_eos_token = "</s>";
+    {"max_new_tokens", SIZE_MAX},
+    {"max_length", SIZE_MAX},
+    {"m_ignore_eos", false},
+    {"m_bos_token", "</s>"},
+    {"m_eos_token", "</s>"},
+    
+    // Beam search specific
+    {"m_num_groups", 1},
+    {"m_group_size", 1},
+    {"m_diversity_penalty", 1.0f},  // 0.0 means no diversity
+    {"m_num_return_sequences", 1},  // is used by beam search, in other case is equal to batch size
+    // {"stop_criteria", StopCriteria::heuristic},  // todo: align with the latest beam searcher
+
+    {"m_repetition_penalty", 1.0f},
+    {"m_length_penalty", 1.0f},
+    {"m_no_repeat_ngram_size", std::numeric_limits<size_t>::max()},
+    {"early_finish", [](const Sequence&) {return false; }},
+    
+    // Multinomial
+    {"m_temperature", 0.0f},
+    {"m_top_k", -1},
+    {"m_top_p", 1.0f},
+    {"m_do_sample", false},
+    
+    // special tokens
+    {"m_bos_token_id", 0},
+    {"m_eos_token_id", 2}, // todo: check form where it's better to extract from rt_info or from tokenizer_config.json
+    {"m_pad_token_id", 0},
+    
+    // assistive decoding
+    {"m_assistant_model", ov::InferRequest()},
+    {"m_num_assistant_tokens", 5},
+    {"m_seq_len_axis", 2},
+};
+
+}
+
+// Similar to HuggingFace GenerationConfig
+class GenerationConfig {
+public:  
+    // Generic
+    size_t m_max_new_tokens;
+    size_t m_max_length;
+    bool m_ignore_eos;
+    std::string m_eos_token;
 
     // Beam search specific
-    size_t m_num_groups = 1;
-    size_t m_group_size = 1; // beam_width
-    float m_diversity_penalty = 1.0f; // 0.0 means no diversity
-    size_t m_num_return_sequences = 3;  // is used by beam search, in other case is equal to batch size
+    size_t m_num_groups;
+    size_t m_group_size;
+    float m_diversity_penalty;
+    size_t m_num_return_sequences;
     // StopCriteria stop_criteria = StopCriteria::heuristic;
     
-    float m_repetition_penalty = 1.0f;
-    float m_length_penalty = 1.0f;
-    size_t m_no_repeat_ngram_size = std::numeric_limits<size_t>::max();
+    float m_repetition_penalty;
+    float m_length_penalty;
+    size_t m_no_repeat_ngram_size;
     std::function<bool(const Sequence&)> early_finish = [](const Sequence&) {return false; };
 
     // Multinomial
-    float m_temperature = 0.0f; // by default we use greedy sampling
-    int m_top_k = -1; // maybe to assign vocab_size ?
-    float m_top_p = 1.0f; // by default convsider all tokens
-    bool m_do_sample = false;
+    float m_temperature;
+    int m_top_k;
+    float m_top_p;
+    bool m_do_sample;
 
     // special tokens
-    int64_t m_bos_token_id = 0;
-    int64_t m_eos_token_id = 2;  // todo: check form where it's better to extract rt_info or tokenizer_config.json
-    int64_t m_pad_token_id = 0;
+    int64_t m_bos_token_id;
+    int64_t m_eos_token_id;
+    int64_t m_pad_token_id;
 
     std::function<void (std::vector<int64_t>&&, ov::LLMPipeline&)> m_callback = [](std::vector<int64_t>&& tokens, ov::LLMPipeline& pipe){ ;};
 
@@ -66,6 +107,8 @@ struct GenerationConfig {
     }
 
     GenerationConfig& max_new_tokens(size_t max_new_tokens) {
+        const auto& r = ::default_generation_config_map.find("sdf") != ::default_generation_config_map.end();
+
         m_max_new_tokens = max_new_tokens;
         return *this;
     }
@@ -182,6 +225,7 @@ struct GenerationConfig {
         m_group_size = num_beams / m_num_groups;
     }
 
+
     static GenerationConfig greedy() {
         GenerationConfig greedy_params;
         greedy_params.m_temperature = 0.0f;
@@ -226,67 +270,107 @@ struct GenerationConfig {
         return m_do_sample;
     }
 
+    // for speculative decoding
+    GenerationConfig& assistant_model(const ov::InferRequest& assistant_model) {
+        m_assistant_model = assistant_model;
+        is_assistant_request_defined = true;
+        return *this;
+    }
+
+    GenerationConfig& assistant_model(ov::CompiledModel& assistant_model) {
+        m_assistant_model = assistant_model.create_infer_request();
+        is_assistant_request_defined = true;
+        return *this;
+    }
+
+    GenerationConfig& assistant_model(const std::shared_ptr<const ov::Model>& assistant_model) {
+        m_assistant_ov_model = assistant_model;
+        is_assistant_ov_defined = true;
+        return *this;
+    }
+
+    GenerationConfig& assistant_model(std::string assistant_model) {
+        auto is_xml = [](std::string path) -> bool { return path.compare(path.length() - 4, 4, ".xml") == 0;};
+        if (!is_xml(assistant_model))
+            assistant_model += "/openvino_model.xml";
+
+        m_assistant_ov_model = ov::Core().read_model(assistant_model);
+        is_assistant_ov_defined = true;
+        return *this;
+    }
+
+    GenerationConfig& set_streamer(std::function<void (std::vector<int64_t>&&, ov::LLMPipeline&)> callback) {
+        m_callback = callback;
+        return *this;
+    }
+
+    ov::InferRequest get_assistant_model(std::string device="CPU", const ov::AnyMap& config={}) {
+        if (is_assistant_request_defined) {
+            return m_assistant_model;
+        } else if (is_assistant_ov_defined) {
+            m_assistant_model = ov::Core().compile_model(m_assistant_ov_model, device, config).create_infer_request();
+            is_assistant_request_defined = true;
+            return m_assistant_model;
+        } else {
+            OPENVINO_THROW("assistant model is not specified");
+        }
+    }
+    
+    GenerationConfig& num_assistant_tokens(int64_t num_assistant_tokens) {
+        m_num_assistant_tokens = num_assistant_tokens;
+        return *this;
+    }
+
+    bool is_speculative() const {
+        return is_assistant_ov_defined || is_assistant_request_defined;
+    }
+
     // for Assistive/Speculative decoding
     ov::InferRequest m_assistant_model;
     size_t m_num_assistant_tokens = 5;
     size_t m_seq_len_axis = 2;
-    private:
-        std::shared_ptr<const ov::Model> m_assistant_ov_model;
-        bool is_assistant_request_defined = false;
-        bool is_assistant_ov_defined = false;
+private:
+    std::shared_ptr<const ov::Model> m_assistant_ov_model;
+    bool is_assistant_request_defined = false;
+    bool is_assistant_ov_defined = false;
 
-    public:
-        GenerationConfig& assistant_model(const ov::InferRequest& assistant_model) {
-            m_assistant_model = assistant_model;
-            is_assistant_request_defined = true;
-            return *this;
-        }
-
-        GenerationConfig& assistant_model(ov::CompiledModel& assistant_model) {
-            m_assistant_model = assistant_model.create_infer_request();
-            is_assistant_request_defined = true;
-            return *this;
-        }
-
-        GenerationConfig& assistant_model(const std::shared_ptr<const ov::Model>& assistant_model) {
-            m_assistant_ov_model = assistant_model;
-            is_assistant_ov_defined = true;
-            return *this;
-        }
-
-        GenerationConfig& assistant_model(std::string assistant_model) {
-            auto is_xml = [](std::string path) -> bool { return path.compare(path.length() - 4, 4, ".xml") == 0;};
-            if (!is_xml(assistant_model))
-                assistant_model += "/openvino_model.xml";
-
-            m_assistant_ov_model = ov::Core().read_model(assistant_model);
-            is_assistant_ov_defined = true;
-            return *this;
-        }
-
-        GenerationConfig& set_streamer(std::function<void (std::vector<int64_t>&&, ov::LLMPipeline&)> callback) {
-            m_callback = callback;
-            return *this;
-        }
-
-        ov::InferRequest get_assistant_model(std::string device="CPU", const ov::AnyMap& config={}) {
-            if (is_assistant_request_defined) {
-                return m_assistant_model;
-            } else if (is_assistant_ov_defined) {
-                m_assistant_model = ov::Core().compile_model(m_assistant_ov_model, device, config).create_infer_request();
-                is_assistant_request_defined = true;
-                return m_assistant_model;
-            } else {
-                OPENVINO_THROW("assistant model is not specified");
-            }
-        }
+    static GenerationConfig anymap_to_generation_config(const ov::AnyMap& genereation_config_map = {}) {
+        // need to load default values and update only those keys that are specified in genereation_config_map
+        auto tmp_map = default_generation_config_map;
         
-        GenerationConfig& num_assistant_tokens(int64_t num_assistant_tokens) {
-            m_num_assistant_tokens = num_assistant_tokens;
-        return *this;
-    }
-    
-    bool is_speculative() const {
-        return is_assistant_ov_defined || is_assistant_request_defined;
+        for (auto it = genereation_config_map.begin(); it != genereation_config_map.end(); ++it) {
+            tmp_map[it->first] = it->second;
+        }
+
+        GenerationConfig config;
+        
+        // general arguments
+        config.m_max_new_tokens = tmp_map.at("m_max_new_tokens").as<size_t>();
+        config.m_max_length = tmp_map.at("m_max_length").as<size_t>();
+        config.m_ignore_eos = tmp_map.at("m_ignore_eos").as<bool>();
+        config.m_eos_token = tmp_map.at("m_eos_token").as<int64_t>();
+
+        // Beam search specific
+        config.m_num_groups = tmp_map.at("m_num_groups").as<size_t>();
+        config.m_group_size = tmp_map.at("m_group_size").as<size_t>();
+        config.m_diversity_penalty = tmp_map.at("m_diversity_penalty").as<size_t>();
+        config.m_num_return_sequences = tmp_map.at("m_num_return_sequences").as<size_t>();
+        
+        config.m_repetition_penalty = tmp_map.at("m_repetition_penalty").as<size_t>();
+        config.m_length_penalty = tmp_map.at("m_length_penalty").as<size_t>();
+        config.m_no_repeat_ngram_size = tmp_map.at("m_no_repeat_ngram_size").as<size_t>();
+        config.early_finish = tmp_map.at("early_finish").as<std::function<bool(const Sequence&)>>();
+
+        // Multinomial
+        config.m_temperature = tmp_map.at("m_temperature").as<size_t>();
+        config.m_top_k = tmp_map.at("m_top_k").as<size_t>();
+        config.m_top_p = tmp_map.at("m_top_p").as<size_t>();
+        config.m_do_sample = tmp_map.at("m_do_sample").as<bool>();
+
+        // special tokens
+        config.m_bos_token_id = tmp_map.at("m_bos_token_id").as<int64_t>();
+        config.m_eos_token_id = tmp_map.at("m_eos_token_id").as<int64_t>();
+        config.m_pad_token_id = tmp_map.at("m_pad_token_id").as<int64_t>();
+        return config;
     }
 };
