@@ -87,6 +87,7 @@ public:
         return m_cumulative_log_prob;
     }
 
+    // TODO: need to remove this when sampling is fixed to properly handle the case when sequnce group is returned after preemption 
     void remove_tokens(size_t count) {
         OPENVINO_ASSERT(m_generated_ids.size() >= count);
         m_generated_ids.erase(m_generated_ids.end() - count, m_generated_ids.end());
@@ -240,6 +241,8 @@ public:
         m_num_processed_tokens -= num_preempt_tokens;
         m_max_content_len -= num_preempt_tokens;
 
+        // this removal of tokens prevents duplicating of generated tokens after preemption of a sequence
+        // TODO: need to remove this when sampling is fixed to properly handle the case when sequnce group is returned after preemption
         for (auto seq: m_sequences) {
             seq->remove_tokens(std::min<size_t>(num_preempt_tokens, seq->get_generated_len()));
         }
@@ -280,7 +283,7 @@ public:
         m_num_processed_tokens += m_num_scheduled_tokens;
         // if some processed tokens were evicted, max content len is greater than number of processed tokens
         m_max_content_len = std::max(m_max_content_len, m_num_processed_tokens);
-        m_num_scheduled_tokens = 0;
+        clear_scheduled_tokens();
     }
 
     const TokenIds& get_prompt_ids() const {

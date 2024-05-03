@@ -147,13 +147,18 @@ public:
 
     void free_sequence_partially(size_t seq_id, size_t block_num) {
         auto block_table = m_block_table[seq_id];
+
+        if (block_num == block_table.size())
+            return free_sequence(seq_id);
+
         OPENVINO_ASSERT(block_table.size() >= block_num);
         for (size_t idx = 0; idx < block_num; idx++) {
-            m_allocator.free(block_table.back());
-            if (block_table.back()->is_free()) {
-                m_block_table[seq_id].erase(m_block_table[seq_id].end()-1);
+            while (!block_table.back()->is_free()) {
+                m_allocator.free(block_table.back());
             }
-        }
+        } 
+        m_block_table[seq_id].erase(m_block_table[seq_id].end() - block_num);
+
         if (m_block_table.size() == 0) {
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
         }
@@ -165,7 +170,6 @@ public:
 
     size_t required_blocks_count(SequenceGroup::CPtr seq_group) {
         std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
-        std::set<size_t> last_block_ids; // unique last block indices
         size_t blocks_count= 0; // totat number of needed blocks for sequence group
 
         for (auto seq: running_sequences) {
@@ -177,20 +181,15 @@ public:
             }
             auto& block_table = m_block_table[seq_id];
             size_t num_physical_blocks = block_table.size();
-            size_t needed_blocks_for_current_seq = seq_group->get_num_logical_blocks() - num_physical_blocks;
-            if (num_physical_blocks == 0) {
-                blocks_count += needed_blocks_for_current_seq;
-                continue;
-            }
+            OPENVINO_ASSERT(num_physical_blocks > 0);
+            if (num_physical_blocks < seq_group->get_num_logical_blocks()) {
+                size_t needed_blocks_for_current_seq = seq_group->get_num_logical_blocks() - num_physical_blocks;
 
-            // check that last_block_id for this sequence is unique, as sequences with the same last_block_id share the same block
-            KVCacheBlock::Ptr last_block = block_table.back();
-            size_t last_block_id = block_table.back()->get_index();
-            if (last_block_ids.find(last_block_id) == last_block_ids.end()) {
-
-                // if the last_block_id is unique add needed blocks count to the total nomber of needed blocks
+                // If last block needed to be copied add 1 additional block to required blocks
+                KVCacheBlock::Ptr last_block = block_table.back();
+                if (needed_blocks_for_current_seq == 0 && last_block->copy_on_write())
+                    needed_blocks_for_current_seq+=1;
                 blocks_count += needed_blocks_for_current_seq;
-                last_block_ids.insert(last_block_id);
             }
         }
         return blocks_count;

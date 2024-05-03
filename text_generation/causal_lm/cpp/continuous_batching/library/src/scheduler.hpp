@@ -98,8 +98,18 @@ private:
         size_t prev_blocks_count = m_block_manager.num_free_blocks();
         size_t preempted_tokens = 0;
 
+        // preempt whole sequence group for non-grady sampling
+        if (!sequence_group->get_sampling_parameters().is_gready_sampling()) {
+            for (size_t s = 0; s < sequence_group->num_running_seqs(); ++s) {
+                auto seq_id = (*sequence_group)[s]->get_id();
+                m_block_manager.free_sequence(seq_id);
+            }
+            sequence_group->preempt_tokens(processed_tokens);
+            return m_block_manager.num_free_blocks() > prev_blocks_count;
+        }
 
-        // currently, we support only preemption by (TODO: implement "partial") recompute
+        // currently partial preemtion is enabled only for greedy sampling 
+        // TODO: implement partial preemption for case with muliple sequences in group
         for (size_t s = 0; s < sequence_group->num_running_seqs(); ++s) {
             auto seq_id = (*sequence_group)[s]->get_id();
             if (!m_block_manager.has_block_table(seq_id)) {
@@ -315,8 +325,10 @@ private:
                 OPENVINO_ASSERT(num_running_seqs == 1);
                 
                 size_t previously_allocated_blocks = 0;
+                size_t previously_processed = 0;
                 // can happen due to partial preemprion
                 if (sequence_group->get_context_len()>0) {
+                    previously_processed = sequence_group->get_num_processed_tokens();
                     // clear the part of previously generated prompt
                     sequence_group->preempt_tokens(sequence_group->get_num_processed_tokens());
 
@@ -351,9 +363,14 @@ private:
 
                 // apply KV cache limitations
                 const size_t num_required_blocks = (sequence_len + m_config.block_size - 1) / m_config.block_size - previously_allocated_blocks;
-                if (!m_block_manager.can_allocate_blocks(num_required_blocks))
+                if (!m_block_manager.can_allocate_blocks(num_required_blocks)) {
+                    if (previously_processed > 0) {
+                        // free remaining allocated KV-blocks
+                        uint64_t seq_id = (*sequence_group)[0]->get_id();
+                        m_block_manager.free_sequence(seq_id);
+                    }
                     break;
-
+                }
                 // add scheduling information
                 {
                     Sequence::Ptr sequence = (*sequence_group)[0];
