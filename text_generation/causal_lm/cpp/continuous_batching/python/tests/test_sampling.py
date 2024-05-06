@@ -1,5 +1,5 @@
+import pytest
 from typing import List, Tuple
-from unittest import TestCase
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
@@ -28,9 +28,9 @@ def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
         "Tell me something about Canada"
     ]
     generation_configs = [
+        get_greedy(),
         get_beam_search(),
-        get_beam_search(),
-        get_beam_search(),
+        get_greedy(),
         get_beam_search()
     ]
     return (prompts, generation_configs)
@@ -39,8 +39,9 @@ def get_scheduler_config() -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
     scheduler_config.dynamic_split_fuse = True
     scheduler_config.num_kv_blocks = 300
-    # scheduler_config.max_num_batched_tokens = 256
-    # scheduler_config.max_num_seqs = 256
+    # vLLM specific
+    scheduler_config.max_num_batched_tokens = 256
+    scheduler_config.max_num_seqs = 256
 
     return scheduler_config
 
@@ -95,7 +96,9 @@ def run_hugging_face(
 
         generation_result = GenerationResult()
         generation_result.m_generation_ids = all_text_batch
-        generation_result.m_scores = [score for score in generate_outputs.sequences_scores]
+        # sequences_scores are available only for beam search case
+        if generation_config.is_beam_search:
+            generation_result.m_scores = [score for score in generate_outputs.sequences_scores]
         generation_results.append(generation_result)
 
     return generation_results
@@ -110,8 +113,8 @@ def run_continuous_batching(
     return pipe.generate(prompts, generation_configs)
 
 # export models via
-# optimum-cli export openvino -m meta-llama/Llama-2-7b-chat-hf llama2 --convert-tokenizer --trust-remote-code
-# optimum-cli export openvino -m meta-llama/Llama-2-7b-chat-hf llama2-fp16 --convert-tokenizer --trust-remote-code --fp16
+# optimum-cli export openvino -m meta-llama/Llama-2-7b-chat-hf llama2
+# optimum-cli export openvino -m meta-llama/Llama-2-7b-chat-hf --fp16 llama2-fp16
 
 # tested models:
 # - facebook/opt-125m (opt125)
@@ -119,17 +122,21 @@ def run_continuous_batching(
 
 def test_check_greedy_search():
     prompts, generation_configs = get_test_dataset()
-    hf_results : List[GenerationResult] = run_hugging_face(model_id="meta-llama/Llama-2-7b-chat-hf", prompts=prompts, generation_configs=generation_configs, use_optimum=True)
-    my_results : List[GenerationResult] = run_continuous_batching("/home/sandye51/Documents/Programming/git_repo/openvino.genai/build/llama2", get_scheduler_config(), prompts, generation_configs)
+    hf_results : List[GenerationResult] = run_hugging_face(model_id="facebook/opt-125m", prompts=prompts, generation_configs=generation_configs, use_optimum=True)
+    my_results : List[GenerationResult] = run_continuous_batching("/home/sandye51/Documents/Programming/git_repo/openvino.genai/build/opt125", get_scheduler_config(), prompts, generation_configs)
 
     assert len(prompts) == len(hf_results)
     assert len(prompts) == len(my_results)
 
-    for prompt, hf_result, my_result in zip(prompts, hf_results, my_results):
+    for prompt, hf_result, my_result, generation_config in zip(prompts, hf_results, my_results, generation_configs):
         print(f"Prompt = {prompt}\nHF result = {hf_result}\nmy result = {my_result}")
+
+        if generation_config.is_beam_search:
+            assert len(hf_result.m_scores) == len(my_result.m_scores)
+            for hf_score, my_score in zip(hf_result.m_scores, my_result.m_scores):
+                # Note, that for fp32 / fp16 models scores are different less than 0.001
+                assert abs(hf_score - my_score) < 0.02
+
         assert len(hf_result.m_generation_ids) == len(my_result.m_generation_ids)
-        assert len(hf_result.m_scores) == len(my_result.m_scores)
-        # for each num_return_sequences
-        for hf_text, hf_score, my_text, my_score in zip(hf_result.m_generation_ids, hf_result.m_scores, my_result.m_generation_ids, my_result.m_scores):
+        for hf_text, my_text in zip(hf_result.m_generation_ids, my_result.m_generation_ids):
             assert hf_text == my_text
-            assert abs(hf_score - my_score) < 0.02

@@ -11,8 +11,12 @@ namespace py = pybind11;
 
 std::ostream& operator << (std::ostream& stream, const GenerationResult& generation_result) {
     stream << generation_result.m_request_id << std::endl;
+    const bool has_scores = !generation_result.m_scores.empty();
     for (size_t i = 0; i < generation_result.m_generation_ids.size(); ++i) {
-        stream << "{ " << generation_result.m_scores[i] << ", " << generation_result.m_generation_ids[i] << " }" << std::endl;
+        stream << "{ ";
+        if (has_scores)
+            stream << generation_result.m_scores[i] << ", ";
+        stream << generation_result.m_generation_ids[i] << " }" << std::endl;
     }
     return stream << std::endl;
 }
@@ -53,7 +57,9 @@ PYBIND11_MODULE(py_continuous_batching, m) {
         .def_readwrite("temperature", &GenerationConfig::temperature)
         .def_readwrite("top_k", &GenerationConfig::top_k)
         .def_readwrite("top_p", &GenerationConfig::top_p)
-        .def_readwrite("do_sample", &GenerationConfig::do_sample);
+        .def_readwrite("do_sample", &GenerationConfig::do_sample)
+        .def_property_readonly("is_gready_sampling", &GenerationConfig::is_gready_sampling)
+        .def_property_readonly("is_beam_search", &GenerationConfig::is_beam_search);
 
     py::class_<SchedulerConfig>(m, "SchedulerConfig")
         .def(py::init<>())
