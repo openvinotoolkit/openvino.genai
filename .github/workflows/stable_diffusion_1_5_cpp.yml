@@ -54,7 +54,7 @@ jobs:
         run: |
           conda activate openvino_sd_cpp
           export MODEL_PATH="models/stable_diffusion_v1_5_ov/FP16"
-          optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --convert-tokenizer --weight-format fp16 $MODEL_PATH
+          optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --weight-format fp16 $MODEL_PATH
           convert_tokenizer $MODEL_PATH/tokenizer/ --tokenizer-output-type i32 -o $MODEL_PATH/tokenizer/
 
       - name: Build app
