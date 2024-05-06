@@ -444,7 +444,7 @@ jobs:
           echo Phi-1_5 passed
           
   cpp-greedy_causal_lm-redpajama-3b-chat:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-20.04-4-cores
     steps:
       - uses: actions/checkout@v4
         with:
