@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) try {
         
         cout << "\n----------\n";
     }
-    pipe.stop_conversation();
+    pipe.finish_chat();
 
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

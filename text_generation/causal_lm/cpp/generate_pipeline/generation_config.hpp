@@ -332,11 +332,7 @@ public:
     ov::InferRequest m_assistant_model;
     size_t m_num_assistant_tokens = 5;
     size_t m_seq_len_axis = 2;
-private:
-    std::shared_ptr<const ov::Model> m_assistant_ov_model;
-    bool is_assistant_request_defined = false;
-    bool is_assistant_ov_defined = false;
-
+    
     static GenerationConfig anymap_to_generation_config(const ov::AnyMap& genereation_config_map = {}) {
         // need to load default values and update only those keys that are specified in genereation_config_map
         auto tmp_map = default_generation_config_map;
@@ -376,4 +372,8 @@ private:
         config.m_pad_token_id = tmp_map.at("m_pad_token_id").as<int64_t>();
         return config;
     }
+private:
+    std::shared_ptr<const ov::Model> m_assistant_ov_model;
+    bool is_assistant_request_defined = false;
+    bool is_assistant_ov_defined = false;
 };

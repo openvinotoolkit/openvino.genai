@@ -70,18 +70,18 @@ int main(int argc, char* argv[]) try {
     pipe(prompt, config);
     text_streamer.end();
     
-    // // Example 2: Grouped Beam Search decoding example
-    // pipe = LLMPipeline(model_path, device);  
-    // config = pipe.generation_config();
+    // Example 2: Grouped Beam Search decoding example
+    pipe = ov::LLMPipeline(model_path, device);  
+    config = pipe.generation_config();
 
-    // // will return vector with num_return_sequences strings
-    // auto num_return_sequences = 3;
-    // config.max_new_tokens(20).num_groups(3).group_size(5).num_return_sequences(num_return_sequences);
+    // will return vector with num_return_sequences strings
+    auto num_return_sequences = 3;
+    config.max_new_tokens(20).num_groups(3).group_size(5).num_return_sequences(num_return_sequences);
     
-    // cout << endl << "grouped beam search generated candidates:" << endl;
-    // auto generation_results = pipe({prompt}, config);
-    // for (int i = 0; i < num_return_sequences; ++i)
-    //     cout << "candidate " << i << ": " << generation_results[i] << endl;
+    cout << endl << "grouped beam search generated candidates:" << endl;
+    auto generation_results = pipe({prompt}, config);
+    for (int i = 0; i < num_return_sequences; ++i)
+        cout << generation_results[i].score << ": " << generation_results[i].text << endl;
 
     // Example 3: Greedy Decoding with multiple batch
     pipe = ov::LLMPipeline(model_path, device);
@@ -90,8 +90,8 @@ int main(int argc, char* argv[]) try {
     cout << endl << "greedy decoding with multiple batches:" << endl;
     std::vector<std::string> prompts = {"table is made of", "Alan Turing was a", "1 + 1 = ", "Why is the Sun yellow?"};
     auto results = pipe(prompts, config.max_new_tokens(20));
-    for (int i = 0; i < prompts.size(); i++)
-        cout << prompts[i] << ": " << results.texts[i] << endl;
+    for (const auto& res: results)
+        std::cout << res.text << std::endl;
 
     // Example 4: Calling tokenizer/detokenizer manually and getting beam scores for all candidates
     pipe = ov::LLMPipeline(model_path);

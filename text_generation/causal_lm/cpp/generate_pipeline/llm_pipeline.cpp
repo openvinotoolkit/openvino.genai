@@ -215,10 +215,10 @@ ov::LLMPipeline::LLMPipeline(
     std::string& tokenizer_path,
     std::string& detokenizer_path,
     std::string device,
-    const ov::AnyMap& config
+    const ov::AnyMap& plugin_config
 ) {
     m_device = device;
-    m_config = config;
+    m_plugin_config = plugin_config;
     ov::Core core;
     
     auto is_xml = [](std::string path) -> bool { return path.compare(path.length() - 4, 4, ".xml") == 0;};
@@ -226,7 +226,7 @@ ov::LLMPipeline::LLMPipeline(
     std::string full_path = model_path;
     if (!is_xml(full_path))
         full_path += "/openvino_model.xml";
-    m_model_runner = core.compile_model(full_path, device, config).create_infer_request();
+    m_model_runner = core.compile_model(full_path, device, plugin_config).create_infer_request();
     
     // todo: add loading Tokenizers from separate folders
 }
@@ -435,11 +435,13 @@ ov::GenerationResults ov::LLMPipeline::beam_search(ov::Tensor prompts, ov::Tenso
     }
 
     std::vector<Beam> beams;
-    // for (const std::vector<Beam>& group : finalize(std::move(group_beam_searcher))) {
-    //     for (const Beam& beam : group) {
-    //         beams.emplace_back(beam);
-    //     }
-    // }
+    for (const std::vector<std::vector<Beam>>& prompt_group : finalize(std::move(group_beam_searcher))) {
+        for (const std::vector<Beam> group : prompt_group) {
+            for (const Beam& beam : group) {
+                beams.emplace_back(beam);
+            }
+        }
+    }
 
     auto compare_scores = [](Beam left, Beam right) { return (left.score > right.score); };
     std::sort(beams.begin(), beams.end(), compare_scores);
@@ -470,7 +472,7 @@ subsequent requests.
 ov::GenerationResults ov::LLMPipeline::speculative_sampling(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params) {
     auto batch_size = input_ids.get_shape()[0];
     OPENVINO_ASSERT(batch_size == 1);
-    auto draft_model = sampling_params.get_assistant_model(m_device, m_config);
+    auto draft_model = sampling_params.get_assistant_model(m_device, m_plugin_config);
     auto main_model = m_model_runner;
     
     auto draft_input_ids = ov::Tensor{input_ids.get_element_type(), input_ids.get_shape()};
@@ -743,15 +745,28 @@ void ov::LLMPipeline::set_streamer(std::function<void (std::string)> callback) {
     m_streamer = TextCoutStreamer(m_tokenizer);
 }
 
-void ov::LLMPipeline::start_conversation() {
+void ov::LLMPipeline::set_streamer() {
+    is_streamer_set = false;
+    m_streamer_callback = [](std::string){ ;};
+}
+
+void ov::LLMPipeline::start_chat() {
     is_chat_conversation = true;
 }
 
-void ov::LLMPipeline::stop_conversation() {
+void ov::LLMPipeline::finish_chat() {
     is_chat_conversation = false;
     reset_state();
 }
 
 void ov::LLMPipeline::reset_state() {
     m_model_runner.reset_state();
+}
+
+void ov::LLMPipeline::set_default_config(const GenerationConfig& generation_config) {
+    m_sampling_parameters = generation_config;
+}
+
+void ov::LLMPipeline::set_default_config(const AnyMap& generation_config_map) {
+    m_sampling_parameters = GenerationConfig::anymap_to_generation_config(generation_config_map);
 }

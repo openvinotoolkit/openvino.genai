@@ -77,14 +77,13 @@ public:
 };
 
 
-
 class LLMPipeline {
 public:
     ov::InferRequest m_model_runner;
     Tokenizer m_tokenizer;
     GenerationConfig m_sampling_parameters;
     std::string m_device;
-    ov::AnyMap m_config;
+    ov::AnyMap m_plugin_config;
     ov::Tensor m_attentions_mask_cache;
     bool is_streamer_set = false;
     std::string m_chat_template = "";
@@ -101,10 +100,11 @@ public:
         std::string& tokenizer_path,
         std::string& detokenizer_path,
         std::string device="CPU",
-        const ov::AnyMap& config={}
+        const ov::AnyMap& plugin_config={}
     );
 
     LLMPipeline(std::string& path, std::string device="CPU", const ov::AnyMap& config={});
+    
     GenerationConfig generation_config() const;
 
     GenerationResults greedy_search(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params);
@@ -136,21 +136,21 @@ public:
     std::string apply_chat_template(std::string prompt, std::string role = "user") const;
 
     void set_streamer(std::function<void (std::string)> callback);
-    void start_conversation();
-    void stop_conversation();
+    void set_streamer();
+    void start_chat();
+    void finish_chat();
     void reset_state();
+    void set_default_config(const GenerationConfig& generation_config);
+    void set_default_config(const AnyMap& generation_config_map);
 private:
     TextCoutStreamer m_streamer;
     std::function<void (std::string)> m_streamer_callback = [](std::string ){ ;};
     bool is_chat_conversation = false;
 
     std::string call(std::string text);
-
     std::string call(std::string text, GenerationConfig generation_config);
-
     PipelineResults call(std::vector<std::string> text, GenerationConfig sampling_parameters);
+
 };
-
-
 
 } // namespace ov
