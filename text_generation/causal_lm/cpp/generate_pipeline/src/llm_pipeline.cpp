@@ -5,8 +5,8 @@
 #include "llm_pipeline.hpp"
 #include "group_beam_searcher.hpp"
 #include <filesystem>
-#include <jinja2cpp/template.h>
-#include <jinja2cpp/template_env.h>
+// #include <jinja2cpp/template.h>
+// #include <jinja2cpp/template_env.h>
 #include "generation_config.hpp"
 
 void update_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask);
@@ -777,21 +777,26 @@ std::string ov::LLMPipeline::apply_chat_template(std::string prompt, std::string
 }
 
 std::string ov::LLMPipeline::LLMPipelineImpl::apply_chat_template(std::string prompt, std::string role) const {
-    jinja2::TemplateEnv env;
-    env.GetSettings().lstripBlocks = true;
-    env.GetSettings().trimBlocks = true;
-    jinja2::Template tpl(&env);
-    tpl.Load(m_chat_template);
+    // jinja2::TemplateEnv env;
+    // env.GetSettings().lstripBlocks = true;
+    // env.GetSettings().trimBlocks = true;
+    // jinja2::Template tpl(&env);
+    // tpl.Load(m_chat_template);
     
-    jinja2::ValuesMap message {{"role", role}, {"content", prompt}};
-    jinja2::ValuesMap params = {
-        {"messages", jinja2::ValuesList({message})},
-        {"bos_token",  "<s>"},
-        {"eos_token", "</s>"},  // todo: load from config
-        {"add_generation_prompt", true},
-    };
+    // jinja2::ValuesMap message {{"role", role}, {"content", prompt}};
+    // jinja2::ValuesMap params = {
+    //     {"messages", jinja2::ValuesList({message})},
+    //     {"bos_token",  "<s>"},
+    //     {"eos_token", "</s>"},  // todo: load from config
+    //     {"add_generation_prompt", true},
+    // };
  
-    return tpl.RenderAsString(params).value();
+    // return tpl.RenderAsString(params).value();
+
+    std::stringstream result_prompt;
+    result_prompt << "<|user|>\n" << prompt << "</s>\n<|assistant|>\n";  // hardcode template for TinyLlama
+    
+    return result_prompt.str();
 }
 
 void ov::LLMPipeline::set_streamer(std::function<void (std::string)> callback) {
