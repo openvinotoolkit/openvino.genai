@@ -43,7 +43,7 @@ python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
    ```shell
    export MODEL_PATH="models/dreamlike_anime_1_0_ov/FP16"
    # Using optimum-cli for exporting model to OpenVINO format
-   optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --convert-tokenizer --weight-format fp16 $MODEL_PATH
+   optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 $MODEL_PATH
    # Converting tokenizer manually (`--convert-tokenizer` flag of `optimum-cli` results in "OpenVINO Tokenizer export for CLIPTokenizer is not supported.")
    convert_tokenizer $MODEL_PATH/tokenizer/ --tokenizer-output-type i32 -o $MODEL_PATH/tokenizer/
    ```
