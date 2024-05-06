@@ -129,17 +129,14 @@ def run_continuous_batching(
     pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config)
     return pipe.generate(prompts, generation_configs)
 
-# export models via
-# optimum-cli export openvino -m meta-llama/Llama-2-7b-chat-hf llama2
-# optimum-cli export openvino -m meta-llama/Llama-2-7b-chat-hf --fp16 llama2-fp16
-
 # tested models:
-# - facebook/opt-125m (opt125)
-# - meta-llama/Llama-2-7b-chat-hf (llama2 or llama2-fp16)
+# - facebook/opt-125m
+# - meta-llama/Llama-2-7b-chat-hf
+# - mistralai/Mistral-7B-Instruct-v0.2
 
 def test_check_greedy_search(tmp_path):
     prompts, generation_configs = get_test_dataset()
-    model_id : str = "meta-llama/Llama-2-7b-chat-hf"
+    model_id : str = "facebook/opt-125m"
 
     (hf_results, model_path) = run_hugging_face(model_id=model_id, prompts=prompts, generation_configs=generation_configs, tmp_path=tmp_path, use_optimum=True)
     my_results : List[GenerationResult] = run_continuous_batching(model_path, get_scheduler_config(), prompts, generation_configs)
