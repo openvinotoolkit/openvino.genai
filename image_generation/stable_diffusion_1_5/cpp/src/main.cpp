@@ -17,8 +17,6 @@
 #include "scheduler_lms_discrete.hpp"
 
 const size_t TOKENIZER_MODEL_MAX_LENGTH = 77;   // 'model_max_length' parameter from 'tokenizer_config.json'
-const int64_t UNET_IN_CHANNELS = 4;             // 'in_channels' parameter from 'unet/config.json'
-const int64_t VAE_DECODER_LATENT_CHANNELS = 4;  // 'latent_channels' parameter from 'vae_decoder/config.json'
 const size_t VAE_SCALE_FACTOR = 8;
 
 class Timer {
@@ -35,8 +33,8 @@ public:
     }
 };
 
-ov::Tensor randn_tensor(uint32_t height, uint32_t width, bool use_np_latents, uint32_t seed = 42) {
-    ov::Tensor noise(ov::element::f32, {1, UNET_IN_CHANNELS, height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
+ov::Tensor randn_tensor(ov::Shape shape, bool use_np_latents, uint32_t seed = 42) {
+    ov::Tensor noise(ov::element::f32, shape);
     if (use_np_latents) {
         // read np generated latents with defaut seed 42
         const char* latent_file_name = "../np_latents_512x512.txt";
@@ -111,7 +109,7 @@ void reshape_unet_encoder(std::shared_ptr<ov::Model> model,
         if (input_name == "timestep") {
             name_to_shape[input_name][0] = 1;
         } else if (input_name == "sample") {
-            name_to_shape[input_name] = {batch_size, UNET_IN_CHANNELS, height, width};
+            name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1], height, width};
         } else if (input_name == "time_ids") {
             name_to_shape[input_name][0] = batch_size;
         } else {
@@ -127,7 +125,8 @@ void reshape_vae_decoder(std::shared_ptr<ov::Model> model, int64_t height, int64
     height = height / VAE_SCALE_FACTOR;
     width = width / VAE_SCALE_FACTOR;
 
-    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {1, VAE_DECODER_LATENT_CHANNELS, height, width}}};
+    ov::PartialShape input_shape = model->input(0).get_partial_shape();
+    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {1, input_shape[1], height, width}}};
     model->reshape(idx_to_shape);
 }
 
@@ -397,10 +396,11 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     for (uint32_t n = 0; n < num_images; n++) {
         std::uint32_t seed = num_images == 1 ? user_seed : user_seed + n;
-        ov::Tensor noise = randn_tensor(height, width, read_np_latent, seed);
 
         // latents are multiplied by 'init_noise_sigma'
-        ov::Shape latent_shape = noise.get_shape(), latent_model_input_shape = latent_shape;
+        ov::Shape latent_shape = ov::Shape({batch_size, sample_shape[1].get_length(), height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
+        ov::Shape latent_model_input_shape = latent_shape;
+        ov::Tensor noise = randn_tensor(latent_shape, read_np_latent, seed);
         latent_model_input_shape[0] = 2;  // Unet accepts batch 2
         ov::Tensor latent(ov::element::f32, latent_shape),
             latent_model_input(ov::element::f32, latent_model_input_shape);
