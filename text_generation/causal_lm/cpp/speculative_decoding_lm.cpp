@@ -12,8 +12,6 @@ constexpr size_t BATCH_SIZE = 1;
 // threfore usually SEQ_LEN_AXIS = 2
 constexpr size_t SEQ_LEN_AXIS = 2;
 
-int64_t SPECIAL_EOS_TOKEN;
-
 namespace {
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
     tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
@@ -104,6 +102,113 @@ void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t n
         states.at(i).set_state(trimm_tensor(old_tensor, seq_len_axis, new_seq_len));
     });
 }
+
+class AssistedCandidateGenerator {
+private:
+    ov::InferRequest assistant_model;
+    size_t max_seq_length;
+    size_t num_pred_tokens = 5;
+    const size_t max_pred_tokens = 10;
+    int64_t out_of_kv_cache_token = -1;
+    size_t assistant_model_seq_length = 0;
+
+public:
+    AssistedCandidateGenerator(ov::InferRequest assistant_model,
+                               const size_t max_seq_length,
+                               const size_t num_pred_tokens)
+        : assistant_model{assistant_model},
+          max_seq_length{max_seq_length},
+          num_pred_tokens{num_pred_tokens} {};
+
+    int64_t generate_next_token(const std::vector<int64_t> tokens) {
+        size_t tokens_size = tokens.size();
+        auto input_ids = assistant_model.get_tensor("input_ids");
+        input_ids.set_shape({BATCH_SIZE, tokens_size});
+        std::copy_n(tokens.begin(), tokens_size, input_ids.data<int64_t>());
+
+        auto attention_mask = assistant_model.get_tensor("attention_mask");
+        attention_mask.set_shape({BATCH_SIZE, assistant_model_seq_length + tokens_size});
+        std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
+
+        auto position_ids = assistant_model.get_tensor("position_ids");
+        position_ids.set_shape({BATCH_SIZE, tokens_size});
+        std::iota(position_ids.data<int64_t>(),
+                  position_ids.data<int64_t>() + position_ids.get_size(),
+                  assistant_model_seq_length);
+
+        assistant_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
+        assistant_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
+
+        assistant_model.infer();
+
+        auto logits = assistant_model.get_tensor("logits");
+        size_t vocab_size = logits.get_shape().back();
+        auto sequence_logits = logits.data<float>() + (tokens_size - 1) * vocab_size;
+
+        assistant_model_seq_length += tokens_size;
+
+        return std::max_element(sequence_logits, sequence_logits + vocab_size) - sequence_logits;
+    }
+
+    std::vector<int64_t> generate_candidates(const int64_t token) {
+        int64_t out_token = token;
+
+        std::vector<int64_t> candidates;
+
+        size_t candidates_to_generate = std::min(num_pred_tokens, max_seq_length - assistant_model_seq_length - 1);
+
+        candidates.reserve(candidates_to_generate);
+
+        for (size_t i = 0; i < candidates_to_generate; i++) {
+            if (out_of_kv_cache_token != -1) {
+                out_token = generate_next_token(std::vector{out_of_kv_cache_token, out_token});
+                out_of_kv_cache_token = -1;
+            } else {
+                out_token = generate_next_token(std::vector{out_token});
+            }
+
+            candidates.push_back(out_token);
+        }
+
+        out_of_kv_cache_token = candidates.back();
+        return candidates;
+    }
+
+    void update_candidate_strategy(const size_t num_matches) {
+        // dynamically adjust number of generated candidates based on number of matches
+        // we want to balance the benefits of getting candidates tokens correct with the
+        // cost of forecasting incorrect candidates tokens.
+        if (num_matches == num_pred_tokens) {
+            num_pred_tokens = std::min(num_pred_tokens + 2, max_pred_tokens);
+        } else {
+            num_pred_tokens = std::max(int64_t(num_pred_tokens) - 1, int64_t(1));
+        }
+    }
+
+    void update_kv_cache(const size_t seq_length) {
+        // main model accepted all candidates from assistant model
+        // assistant model needs to infer last candidate token as it is not present in kv cache
+        // on next candidates generation prefix out_of_kv_cache_token to main model out_token
+        if (assistant_model_seq_length < seq_length) {
+            return;
+        }
+
+        out_of_kv_cache_token = -1;
+        ::update_kv_cache(assistant_model, SEQ_LEN_AXIS, seq_length);
+        assistant_model_seq_length = seq_length;
+    }
+};
+
+int64_t get_eos_token(const std::shared_ptr<ov::Model> tokenizer) {
+    auto rt_info = tokenizer->get_rt_info();  // Get the runtime info for the model
+
+    auto it = rt_info.find("eos_token_id");
+    if (it == rt_info.end()) {
+        throw std::runtime_error("EOS token ID not found in model's runtime information.");
+    }
+    return it->second.as<int64_t>();
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) try {
@@ -126,19 +231,15 @@ int main(int argc, char* argv[]) try {
     ov::InferRequest draft_model =
         core.compile_model(std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
 
-    draft_model.set_tensor("input_ids", draft_input_ids);
-    draft_model.set_tensor("attention_mask", draft_attention_mask);
-
-    ov::Tensor draft_position_ids = draft_model.get_tensor("position_ids");
-    draft_position_ids.set_shape(draft_input_ids.get_shape());
-    std::iota(draft_position_ids.data<int64_t>(),
-              draft_position_ids.data<int64_t>() + draft_position_ids.get_size(),
-              0);
     uint64_t seq_len = draft_input_ids.get_shape()[1];
 
     // main model
     ov::InferRequest main_model =
         core.compile_model(std::string{argv[2]} + "/openvino_model.xml", "CPU").create_infer_request();
+
+    size_t max_sequence_length = 100;
+
+    AssistedCandidateGenerator candidateGenerator{draft_model, max_sequence_length, 5};
 
     // Input tensors for the main model should not be mixed with draft.
     // Do not feed the same draft_postion_ids to the main, but copy input_ids from the draft_input_ids
@@ -155,13 +256,13 @@ int main(int argc, char* argv[]) try {
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
 
     // set beam_idx for stateful model: no beam search is used and BATCH_SIZE = 1
-    draft_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
-    draft_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
     main_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
     main_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
     // To coollect kv-cache for the <PROMPT> and to get the next token run the very first infer request
-    draft_model.infer();
+    candidateGenerator.generate_next_token(
+        std::vector<int64_t>(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size()));
+
     main_model.infer();
 
     size_t vocab_size = draft_model.get_tensor("logits").get_shape().back();
@@ -178,20 +279,11 @@ int main(int argc, char* argv[]) try {
     text_streamer.put(out_token);
 
     // run K infer requests on draft model and get next K prediction tokens on each iteration
-    uint64_t K = 5;
-    std::vector<int64_t> draft_tokens;
 
     // The draft model predicts tokens one by one in an auto-regressive manner, draft_input_ids length should be 1.
     draft_input_ids.set_shape({BATCH_SIZE, 1});
-    draft_position_ids.set_shape({BATCH_SIZE, 1});
 
-    auto rt_info = tokenizer_model->get_rt_info();  // Get the runtime info for the model
-
-    if (rt_info.count("eos_token_id") > 0) {  // check if the runtime information has a valid EOS token ID
-        SPECIAL_EOS_TOKEN = rt_info["eos_token_id"].as<int64_t>();
-    } else {
-        throw std::runtime_error("EOS token ID not found in model's runtime information.");
-    }
+    const int64_t EOS_TOKEN = get_eos_token(tokenizer_model);
 
     /* Speculative decoding works the following way. The draft model predicts the next K
        tokens one by one in an autoregressive manner, while the main model validates these
@@ -207,63 +299,61 @@ int main(int argc, char* argv[]) try {
        the main model (which is bigger, more accurate but slower) instead of running K
        subsequent requests.
        */
-    int max_sequence_length = 100;
-    while (out_token != SPECIAL_EOS_TOKEN && seq_len < max_sequence_length) {
+
+    while (out_token != EOS_TOKEN && seq_len < max_sequence_length) {
         // infer the K next tokens with draft model
-        for (int i = 0; i < K; ++i) {
-            draft_input_ids.data<int64_t>()[0] = out_token;
-            draft_attention_mask.set_shape({BATCH_SIZE, seq_len + i + 1});
-            std::fill_n(draft_attention_mask.data<int64_t>(), draft_attention_mask.get_size(), 1);
-            draft_position_ids.data<int64_t>()[0] = int64_t(draft_attention_mask.get_size() - 1);
-
-            draft_model.infer();
-
-            auto draft_logits = draft_model.get_tensor("logits").data<float>();
-            int64_t arg_max_token = std::max_element(draft_logits, draft_logits + vocab_size) - draft_logits;
-            out_token = arg_max_token;
-            draft_tokens.emplace_back(arg_max_token);
-        }
+        std::vector<int64_t> candidates = candidateGenerator.generate_candidates(out_token);
+        size_t candidates_size = candidates.size();
 
         // For the main network, K tokens will be fed at once in a single infer request.
-        input_ids.set_shape({BATCH_SIZE, K});
+        input_ids.set_shape({BATCH_SIZE, candidates_size + 1});
         // Set the first token for the main model to be the same as for the draft model.
         input_ids.data<int64_t>()[0] = first_token;
-        for (int i = 0; i < K - 1; i++)
-            input_ids.data<int64_t>()[i + 1] = draft_tokens[i];
+        if (candidates_size > 0) {
+            std::copy_n(candidates.begin(), candidates_size, input_ids.data<int64_t>() + 1);
+        }
 
-        attention_mask.set_shape({BATCH_SIZE, seq_len + K});
+        attention_mask.set_shape({BATCH_SIZE, seq_len + candidates_size + 1});
         std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
 
-        position_ids.set_shape({BATCH_SIZE, K});
+        position_ids.set_shape({BATCH_SIZE, candidates_size + 1});
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), seq_len);
 
         main_model.infer();
 
         data_logits = logits.data<float>();  // [BATCH_SIZE, K, vocab_size]
-        size_t disagree_idx = K - 1;
-        // Iterate through the predicted tokens from the main model and compare them with draft predictions.
-        // In the worst-case scenario (disagreement at the beginning), iter will increase by 1.
-        // In the best-case scenario, all elements match, and K predicted tokens will be taken.
-        for (size_t i = 0; i < K; i++) {
+
+        size_t accepted_tokens_number = 0;
+        for (size_t i = 0; i < candidates_size + 1; i++) {
             auto start = data_logits + vocab_size * i;
             auto stop = data_logits + vocab_size * (i + 1);
             out_token = std::max_element(start, stop) - start;
-            text_streamer.put(out_token);
 
-            disagree_idx = i;
-            if (out_token != draft_tokens[i] || out_token == SPECIAL_EOS_TOKEN ||
-                seq_len + disagree_idx + 1 >= max_sequence_length)
+            if (out_token == EOS_TOKEN) {
                 break;
+            }
+
+            text_streamer.put(out_token);
+            accepted_tokens_number++;
+
+            if (i == candidates_size || out_token != candidates[i]) {
+                break;
+            }
         }
 
         // After the inference request, key/values have shape [BATCH_SIZE, seq_len + K, vocab_size].
         // Increment the sequence length by the number of matched tokens, and
         // trim the KV cache to match the new sequence length.
-        seq_len += disagree_idx + 1;
-        update_kv_cache(draft_model, SEQ_LEN_AXIS, seq_len);
+        seq_len += accepted_tokens_number;
+
+        if (accepted_tokens_number > 0) {
+            candidateGenerator.update_candidate_strategy(accepted_tokens_number - 1);
+        }
+
+        candidateGenerator.update_kv_cache(seq_len);
         update_kv_cache(main_model, SEQ_LEN_AXIS, seq_len);
 
-        draft_tokens.clear();
+        candidates.clear();
         first_token = out_token;
     }
     text_streamer.end();
