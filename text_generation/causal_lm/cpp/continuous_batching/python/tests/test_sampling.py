@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 from typing import List, Tuple
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -46,6 +47,7 @@ def get_scheduler_config() -> SchedulerConfig:
     return scheduler_config
 
 def convert_to_hf(
+    default_generation_config : HFGenerationConfig,
     generation_config : GenerationConfig
 ) -> HFGenerationConfig:
     kwargs = {}
@@ -53,6 +55,10 @@ def convert_to_hf(
     # generic parameters
     kwargs['max_length'] = generation_config.max_length
     kwargs['max_new_tokens'] = generation_config.max_new_tokens
+
+    # copy default parameters
+    kwargs['eos_token_id'] = default_generation_config.eos_token_id
+    kwargs['pad_token_id'] = default_generation_config.pad_token_id
 
     if generation_config.num_groups * generation_config.group_size > 1:
         # beam search case
@@ -81,18 +87,29 @@ def run_hugging_face(
     model_id : str,
     prompts: List[str],
     generation_configs: List[GenerationConfig],
-    use_optimum: bool
-) -> List[GenerationResult]:
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    use_optimum: bool,
+    tmp_path: Path
+) -> Tuple[List[GenerationResult], str]:
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = OVModelForCausalLM.from_pretrained(model_id, export=True) if use_optimum else \
             AutoModelForCausalLM.from_pretrained(model_id)
     generation_results: List[GenerationResult] = []
+    model_path : Path = tmp_path / model_id
+
+    if use_optimum:
+        model.save_pretrained(model_path)
+        # convert tokenizers as well
+        from openvino_tokenizers import convert_tokenizer
+        from openvino import serialize
+        tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
+        serialize(tokenizer, model_path / "openvino_tokenizer.xml")
+        serialize(detokenizer, model_path / "openvino_detokenizer.xml")
 
     for prompt, generation_config in zip(prompts, generation_configs):
-        inputs = tokenizer(prompt, return_tensors="pt")
+        inputs = hf_tokenizer(prompt, return_tensors="pt")
         prompt_len = len(inputs['input_ids'][0])
-        generate_outputs = model.generate(**inputs, generation_config=convert_to_hf(generation_config), return_dict_in_generate=True)
-        all_text_batch = tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
+        generate_outputs = model.generate(**inputs, generation_config=convert_to_hf(model.generation_config, generation_config), return_dict_in_generate=True)
+        all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
 
         generation_result = GenerationResult()
         generation_result.m_generation_ids = all_text_batch
@@ -101,15 +118,15 @@ def run_hugging_face(
             generation_result.m_scores = [score for score in generate_outputs.sequences_scores]
         generation_results.append(generation_result)
 
-    return generation_results
+    return (generation_results, model_path)
 
 def run_continuous_batching(
-    model_path : str,
+    model_path : Path,
     scheduler_config : SchedulerConfig,
     prompts: List[str],
     generation_configs : List[GenerationConfig]
 ) -> List[GenerationResult]:
-    pipe = ContinuousBatchingPipeline(model_path, scheduler_config)
+    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config)
     return pipe.generate(prompts, generation_configs)
 
 # export models via
@@ -120,10 +137,12 @@ def run_continuous_batching(
 # - facebook/opt-125m (opt125)
 # - meta-llama/Llama-2-7b-chat-hf (llama2 or llama2-fp16)
 
-def test_check_greedy_search():
+def test_check_greedy_search(tmp_path):
     prompts, generation_configs = get_test_dataset()
-    hf_results : List[GenerationResult] = run_hugging_face(model_id="facebook/opt-125m", prompts=prompts, generation_configs=generation_configs, use_optimum=True)
-    my_results : List[GenerationResult] = run_continuous_batching("/home/sandye51/Documents/Programming/git_repo/openvino.genai/build/opt125", get_scheduler_config(), prompts, generation_configs)
+    model_id : str = "meta-llama/Llama-2-7b-chat-hf"
+
+    (hf_results, model_path) = run_hugging_face(model_id=model_id, prompts=prompts, generation_configs=generation_configs, tmp_path=tmp_path, use_optimum=True)
+    my_results : List[GenerationResult] = run_continuous_batching(model_path, get_scheduler_config(), prompts, generation_configs)
 
     assert len(prompts) == len(hf_results)
     assert len(prompts) == len(my_results)
