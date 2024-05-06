@@ -37,7 +37,25 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           convert_tokenizer ./open_llama_3b_v2/pytorch/dldt/FP16/ --output ./open_llama_3b_v2/pytorch/dldt/FP16/ --with-detokenizer
-          ./build/greedy_causal_lm ./open_llama_3b_v2/pytorch/dldt/FP16/ "return 0"
+          ./build/greedy_causal_lm ./open_llama_3b_v2/pytorch/dldt/FP16/ "Who is Alan Turing" "false" > no_set_cache_pred.txt
+
+          echo "No set cache predictions:\n"
+          echo "$(<no_set_cache_pred.txt)"
+
+          ./build/greedy_causal_lm ./open_llama_3b_v2/pytorch/dldt/FP16/ "Who is Alan Turing" "true" > set_cache_pred.txt
+
+          echo "Set cache predictions:\n"
+          echo "$(<set_cache_pred.txt)"
+
+          python -c "
+          import transformers
+          with open('no_set_cache_pred.txt', 'r') as file:
+              no_set_cache_pred = file.read()
+          with open('set_cache_pred.txt', 'r') as file:
+              set_cache_pred = file.read()
+          if no_set_cache_pred != set_cache_pred:
+              raise RuntimeError("Failed")
+          "
 
   cpp-beam_search_causal_lm-ubuntu:
     runs-on: ubuntu-20.04

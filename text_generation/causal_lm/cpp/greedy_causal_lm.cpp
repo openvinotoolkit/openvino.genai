@@ -35,7 +35,7 @@ struct TextStreamer {
             std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
             token_cache.clear();
             print_len = 0;
-	    return;
+            return;
         }
         if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
             // Don't print incomplete text
@@ -52,12 +52,22 @@ struct TextStreamer {
         print_len = 0;
     }
 };
+
+void update_kv_cache(ov::InferRequest request) {
+    for (auto& state : request.query_state()) {
+        state.set_state(state.get_state());
+    }
 }
 
+}  // namespace
+
 int main(int argc, char* argv[]) try {
-    if (argc != 3) {
+    if (argc != 4) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>'");
     }
+
+    const bool set_cache = std::string{argv[3]} == "true";
+
     // Compile models
     ov::Core core;
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
@@ -116,6 +126,9 @@ int main(int argc, char* argv[]) try {
         lm.wait();
         logits = lm.get_tensor("logits").data<float>();
         out_token = std::max_element(logits, logits + vocab_size) - logits;
+        if (set_cache) {
+            update_kv_cache(lm);
+        }
     }
     text_streamer.end();
     // Model is stateful which means that context (kv-cache) which belongs to a particular
