@@ -54,7 +54,7 @@ jobs:
           with open('set_cache_pred.txt', 'r') as file:
               set_cache_pred = file.read()
           if no_set_cache_pred != set_cache_pred:
-              raise RuntimeError("Failed")
+              raise RuntimeError('Failed')
           "
 
   cpp-beam_search_causal_lm-ubuntu:
