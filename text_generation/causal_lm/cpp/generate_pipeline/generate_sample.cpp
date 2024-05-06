@@ -66,64 +66,65 @@ int main(int argc, char* argv[]) try {
     };
 
     cout << "greedy generate streaming mode:" << endl;
-    config.max_new_tokens(20).set_streamer(text_streamer_callback);
+    config.max_new_tokens(20);
+    config.set_streamer(text_streamer_callback);
     pipe(prompt, config);
     text_streamer.end();
     
     // Example 2: Grouped Beam Search decoding example
-    pipe = ov::LLMPipeline(model_path, device);  
-    config = pipe.generation_config();
+    // pipe = ov::LLMPipeline(model_path, device);
+    // config = pipe.generation_config();
 
-    // will return vector with num_return_sequences strings
-    auto num_return_sequences = 3;
-    config.max_new_tokens(20).num_groups(3).group_size(5).num_return_sequences(num_return_sequences);
+    // // will return vector with num_return_sequences strings
+    // auto num_return_sequences = 3;
+    // config.max_new_tokens(20).num_groups(3).group_size(5).num_return_sequences(num_return_sequences);
     
-    cout << endl << "grouped beam search generated candidates:" << endl;
-    auto generation_results = pipe({prompt}, config);
-    for (int i = 0; i < num_return_sequences; ++i)
-        cout << generation_results[i].score << ": " << generation_results[i].text << endl;
+    // cout << endl << "grouped beam search generated candidates:" << endl;
+    // auto generation_results = pipe({prompt}, config);
+    // for (int i = 0; i < num_return_sequences; ++i)
+    //     cout << generation_results[i].score << ": " << generation_results[i].text << endl;
 
-    // Example 3: Greedy Decoding with multiple batch
-    pipe = ov::LLMPipeline(model_path, device);
-    config = pipe.generation_config();
+    // // Example 3: Greedy Decoding with multiple batch
+    // pipe = ov::LLMPipeline(model_path, device);
+    // config = pipe.generation_config();
 
-    cout << endl << "greedy decoding with multiple batches:" << endl;
-    std::vector<std::string> prompts = {"table is made of", "Alan Turing was a", "1 + 1 = ", "Why is the Sun yellow?"};
-    auto results = pipe(prompts, config.max_new_tokens(20));
-    for (const auto& res: results)
-        std::cout << res.text << std::endl;
+    // cout << endl << "greedy decoding with multiple batches:" << endl;
+    // std::vector<std::string> prompts = {"table is made of", "Alan Turing was a", "1 + 1 = ", "Why is the Sun yellow?"};
+    // auto results = pipe(prompts, config.max_new_tokens(20));
+    // for (const auto& res: results)
+    //     std::cout << res.text << std::endl;
 
-    // Example 4: Calling tokenizer/detokenizer manually and getting beam scores for all candidates
-    pipe = ov::LLMPipeline(model_path);
-    auto [input_ids, attention_mask] = pipe.get_tokenizer().tokenize({prompt});
-    config = GenerationConfig::beam_search();
-    // config for grouped beam search
-    config.max_new_tokens(30).num_groups(3).group_size(5).num_return_sequences(15);
+    // // Example 4: Calling tokenizer/detokenizer manually and getting beam scores for all candidates
+    // pipe = ov::LLMPipeline(model_path);
+    // auto [input_ids, attention_mask] = pipe.get_tokenizer().tokenize({prompt});
+    // config = GenerationConfig::beam_search();
+    // // config for grouped beam search
+    // config.max_new_tokens(30).num_groups(3).group_size(5).num_return_sequences(15);
     
-    cout << endl << "beam search with printing of all candidates:" << endl;
-    auto beams = pipe.generate(input_ids, attention_mask, config);
-    for (size_t i = 0; i < beams.scores.size(); i++) {
-        std::cout << beams.scores[i] << ": " << pipe.get_tokenizer().detokenize(beams.tokens[i]) << std::endl;
-    }
+    // cout << endl << "beam search with printing of all candidates:" << endl;
+    // auto beams = pipe.generate(input_ids, attention_mask, config);
+    // for (size_t i = 0; i < beams.scores.size(); i++) {
+    //     std::cout << beams.scores[i] << ": " << pipe.get_tokenizer().detokenize(beams.tokens[i]) << std::endl;
+    // }
 
-    // for (const auto& beam : beams.second)
-    //     std::cout << beam.first << ": " << pipe.detokenize(beam.second) << std::endl;
+    // // for (const auto& beam : beams.second)
+    // //     std::cout << beam.first << ": " << pipe.detokenize(beam.second) << std::endl;
 
-    {
-        // Example 5: Speculative sampling
-        std::string assitive_model_path = "text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16";
-        pipe = ov::LLMPipeline(model_path);
-        auto [input_ids, attention_mask] = pipe.get_tokenizer().tokenize({prompt});
-        // config = GenerationConfig::assistive_decoding(assitive_model_path).num_assistant_tokens(5).max_new_tokens(20);
-        pipe.generation_config().assistant_model(assitive_model_path);
+    // {
+    //     // Example 5: Speculative sampling
+    //     std::string assitive_model_path = "text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16";
+    //     pipe = ov::LLMPipeline(model_path);
+    //     auto [input_ids, attention_mask] = pipe.get_tokenizer().tokenize({prompt});
+    //     // config = GenerationConfig::assistive_decoding(assitive_model_path).num_assistant_tokens(5).max_new_tokens(20);
+    //     pipe.generation_config().assistant_model(assitive_model_path);
         
-        cout << endl << "Speculative sampling with TinyLlama assistance:" << endl;
-        auto results = pipe.generate(input_ids, attention_mask, config);
-        for (size_t i = 0; i < beams.scores.size(); i++) {
-        for (const auto& result : results)
-            std::cout << pipe.get_tokenizer().detokenize(result.tokens) << std::endl;
-        }
-    }
+    //     cout << endl << "Speculative sampling with TinyLlama assistance:" << endl;
+    //     auto results = pipe.generate(input_ids, attention_mask, config);
+    //     for (size_t i = 0; i < beams.scores.size(); i++) {
+    //     for (const auto& result : results)
+    //         std::cout << pipe.get_tokenizer().detokenize(result.tokens) << std::endl;
+    //     }
+    // }
 
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

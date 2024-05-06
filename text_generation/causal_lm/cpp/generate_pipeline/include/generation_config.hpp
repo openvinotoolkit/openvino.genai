@@ -106,96 +106,78 @@ public:
         }
     }
 
-    GenerationConfig& max_new_tokens(size_t max_new_tokens) {
+    void max_new_tokens(size_t max_new_tokens) {
         const auto& r = ::default_generation_config_map.find("sdf") != ::default_generation_config_map.end();
 
         m_max_new_tokens = max_new_tokens;
-        return *this;
     }
 
-    GenerationConfig& max_length(size_t max_length) {
+    void max_length(size_t max_length) {
         m_max_length = max_length;
-        return *this;
     }
 
-    GenerationConfig& ignore_eos(bool ignore_eos) {
+    void ignore_eos(bool ignore_eos) {
         m_ignore_eos = ignore_eos;
-        return *this;
     }
 
-    GenerationConfig& eos_token(std::string eos_token) {
+    void eos_token(std::string eos_token) {
         m_eos_token = eos_token;
-        return *this;
     }
 
-    GenerationConfig& num_return_sequences(size_t num_return_sequences) {
+    void num_return_sequences(size_t num_return_sequences) {
         m_num_return_sequences = num_return_sequences;
-        return *this;
     }
 
-    GenerationConfig& num_groups(size_t num_groups) {
+    void num_groups(size_t num_groups) {
         m_num_groups = num_groups;
-        return *this;
     }
 
-    GenerationConfig& group_size(size_t group_size) {
+    void group_size(size_t group_size) {
         m_group_size = group_size;
-        return *this;
     }
 
-    GenerationConfig& diversity_penalty(float diversity_penalty) {
+    void diversity_penalty(float diversity_penalty) {
         m_diversity_penalty = diversity_penalty;
-        return *this;
     }
 
-    GenerationConfig& length_penalty(float length_penalty) {
+    void length_penalty(float length_penalty) {
         m_length_penalty = length_penalty;
-        return *this;
     }
 
-    GenerationConfig& no_repeat_ngram_size(size_t no_repeat_ngram_size) {
+    void no_repeat_ngram_size(size_t no_repeat_ngram_size) {
         m_no_repeat_ngram_size = no_repeat_ngram_size;
-        return *this;
     }
 
-    GenerationConfig& temperature(float temperature) {
+    void temperature(float temperature) {
         m_temperature = temperature;
-        return *this;
     }
 
-    GenerationConfig& top_k(size_t top_k) {
+    void top_k(size_t top_k) {
         m_top_k = top_k;
-        return *this;
     }
 
-    GenerationConfig& top_p(size_t top_p) {
+    void top_p(size_t top_p) {
         m_top_p = top_p;
-        return *this;
     }
 
-    GenerationConfig& do_sample(bool do_sample) {
+    void do_sample(bool do_sample) {
         m_do_sample = do_sample;
-        return *this;
     }
 
-    GenerationConfig& repetition_penalty(float repetition_penalty) {
+    void repetition_penalty(float repetition_penalty) {
         m_repetition_penalty = repetition_penalty;
-        return *this;
     }
 
-    GenerationConfig& bos_token_id(int64_t bos_token_id) {
+    void bos_token_id(int64_t bos_token_id) {
         m_bos_token_id = bos_token_id;
-        return *this;
     }
 
-    GenerationConfig& eos_token_id(int64_t eos_token_id) {
+    void eos_token_id(int64_t eos_token_id) {
         m_eos_token_id = eos_token_id;
-        return *this;
     }
 
-    GenerationConfig& pad_token_id(int64_t pad_token_id) {
+    void pad_token_id(int64_t pad_token_id) {
         m_pad_token_id = pad_token_id;
-        return *this;
     }
 
     GenerationConfig() = default;
@@ -274,37 +256,32 @@ public:
     }
 
     // for speculative decoding
-    GenerationConfig& assistant_model(const ov::InferRequest& assistant_model) {
+    void assistant_model(const ov::InferRequest& assistant_model) {
         m_assistant_model = assistant_model;
         is_assistant_request_defined = true;
-        return *this;
     }
 
-    GenerationConfig& assistant_model(ov::CompiledModel& assistant_model) {
+    void assistant_model(ov::CompiledModel& assistant_model) {
         m_assistant_model = assistant_model.create_infer_request();
         is_assistant_request_defined = true;
-        return *this;
     }
 
-    GenerationConfig& assistant_model(const std::shared_ptr<const ov::Model>& assistant_model) {
+    void assistant_model(const std::shared_ptr<const ov::Model>& assistant_model) {
         m_assistant_ov_model = assistant_model;
         is_assistant_ov_defined = true;
-        return *this;
     }
 
-    GenerationConfig& assistant_model(std::string assistant_model) {
+    void assistant_model(std::string assistant_model) {
         auto is_xml = [](std::string path) -> bool { return path.compare(path.length() - 4, 4, ".xml") == 0;};
         if (!is_xml(assistant_model))
             assistant_model += "/openvino_model.xml";
 
         m_assistant_ov_model = ov::Core().read_model(assistant_model);
         is_assistant_ov_defined = true;
-        return *this;
     }
 
-    GenerationConfig& set_streamer(std::function<void (std::vector<int64_t>&&, ov::LLMPipeline&)> callback) {
+    void set_streamer(std::function<void (std::vector<int64_t>&&, ov::LLMPipeline&)> callback) {
         m_callback = callback;
-        return *this;
     }
 
     ov::InferRequest get_assistant_model(std::string device="CPU", const ov::AnyMap& config={}) {
@@ -319,9 +296,8 @@ public:
         }
     }
     
-    GenerationConfig& num_assistant_tokens(int64_t num_assistant_tokens) {
+    void num_assistant_tokens(int64_t num_assistant_tokens) {
         m_num_assistant_tokens = num_assistant_tokens;
-        return *this;
     }
 
     bool is_speculative() const {

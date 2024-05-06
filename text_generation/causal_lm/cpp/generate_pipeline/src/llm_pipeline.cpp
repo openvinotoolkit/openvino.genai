@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <jinja2cpp/template.h>
 #include <jinja2cpp/template_env.h>
+#include "generation_config.hpp"
 
 void update_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask);
 void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask);
@@ -17,6 +18,61 @@ void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t n
 
 std::pair<int64_t, float> softmax(const ov::Tensor& logits, const size_t batch_idx);
 
+namespace ov {
+
+class LLMPipeline::LLMPipelineImpl {
+public:
+    ov::InferRequest m_model_runner;
+    Tokenizer m_tokenizer;
+    GenerationConfig m_sampling_parameters;
+    std::string m_device;
+    ov::AnyMap m_plugin_config;
+    ov::Tensor m_attentions_mask_cache;
+    bool is_streamer_set = false;
+    std::string m_chat_template = "";
+    
+    // TODO: add constructor for specifying manually tokenizer path
+    // dir path
+    // xml file path
+    // compiled model
+    // infer request
+    // ov::Model
+    
+    LLMPipelineImpl(
+        std::string& model_path,
+        std::string& tokenizer_path,
+        std::string& detokenizer_path,
+        std::string device="CPU",
+        const ov::AnyMap& plugin_config={}
+    );
+
+    LLMPipelineImpl(std::string& path, std::string device="CPU", const ov::AnyMap& config={});
+    
+    GenerationConfig generation_config() const;
+
+    EncodedResults greedy_search(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params);
+
+    EncodedResults beam_search(ov::Tensor prompts, ov::Tensor attention_mask, GenerationConfig sampling_params);
+
+    EncodedResults speculative_sampling(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params);
+
+    EncodedResults multinomial_sampling(ov::Tensor prompts, GenerationConfig sampling_params);
+
+    EncodedResults generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params);
+
+    std::string apply_chat_template(std::string prompt, std::string role = "user") const;
+
+    TextCoutStreamer m_streamer;
+    std::function<void (std::string)> m_streamer_callback = [](std::string ){ ;};
+    bool is_chat_conversation = false;
+
+    std::string call(std::string text);
+    std::string call(std::string text, GenerationConfig generation_config);
+    DecodedResults call(std::vector<std::string> text, GenerationConfig sampling_parameters);
+
+};
+
+} // namespace ov
 
 using namespace std;
 
@@ -170,57 +226,17 @@ std::pair<int64_t, float> softmax(const ov::Tensor& logits, const size_t batch_i
     return {out_token, log_sum};
 }
 
-template <class T, class ItemType>
-bool ov::ResultsIterator<T, ItemType>::operator!=(const ResultsIterator& other) const {
-    return index != other.index;
-}
-
-template <class T, class ItemType>
-ItemType ov::ResultsIterator<T, ItemType>::operator*() const {
-    return ItemType{results[index]};
-}
-
-template <class T, class ItemType>
-ov::ResultsIterator<T, ItemType>& ov::ResultsIterator<T, ItemType>::operator++() {
-    ++index;
-    return *this;
-}
-
-
-template class ov::ResultsIterator<ov::GenerationResults, ov::TokensScorePair>;
-template class ov::ResultsIterator<ov::PipelineResults, ov::TextScorePair>;
-
-ov::TokensScorePair ov::GenerationResults::operator[](size_t index) const {
-    if (index >= tokens.size() || index >= scores.size()) {
-        OPENVINO_THROW("Index out of range");
-    }
-    return TokensScorePair{tokens[index], scores[index]};
-}
-
-ov::ResultsIterator<ov::GenerationResults, ov::TokensScorePair> ov::GenerationResults::begin() const {
-    return ov::ResultsIterator<ov::GenerationResults, ov::TokensScorePair>(*this, 0);
-}
-
-ov::ResultsIterator<ov::GenerationResults, ov::TokensScorePair> ov::GenerationResults::end() const {
-    return ResultsIterator<ov::GenerationResults, TokensScorePair>(*this, tokens.size());
-}
-
-ov::TextScorePair ov::PipelineResults::operator[](size_t index) const {
-    if (index >= texts.size() || index >= scores.size()) {
-        OPENVINO_THROW("Index out of range");
-    }
-    return TextScorePair{texts[index], scores[index]};
-}
-
-ov::ResultsIterator<ov::PipelineResults, ov::TextScorePair> ov::PipelineResults::begin() const {
-    return ov::ResultsIterator<ov::PipelineResults, ov::TextScorePair>(*this, 0);
-}
-
-ov::ResultsIterator<ov::PipelineResults, ov::TextScorePair> ov::PipelineResults::end() const {
-    return ov::ResultsIterator<ov::PipelineResults, ov::TextScorePair>(*this, texts.size());
-}
-
 ov::LLMPipeline::LLMPipeline(
+    std::string& model_path,
+    std::string& tokenizer_path,
+    std::string& detokenizer_path,
+    std::string device,
+    const ov::AnyMap& plugin_config
+) {
+    m_pimpl = make_unique<LLMPipelineImpl>(model_path, tokenizer_path, detokenizer_path, device, plugin_config);
+}
+
+ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
     std::string& model_path,
     std::string& tokenizer_path,
     std::string& detokenizer_path,
@@ -242,6 +258,10 @@ ov::LLMPipeline::LLMPipeline(
 }
 
 ov::LLMPipeline::LLMPipeline(std::string& path, std::string device, const ov::AnyMap& config) {
+    m_pimpl = make_unique<LLMPipelineImpl>(path, device, config);
+}
+
+ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(std::string& path, std::string device, const ov::AnyMap& config) {
     std::string tokenizer_config_fname = "tokenizer_config.json";
     std::string generation_config_fname = "generation_config.json";
 
@@ -263,8 +283,12 @@ ov::LLMPipeline::LLMPipeline(std::string& path, std::string device, const ov::An
     m_tokenizer = Tokenizer(path);
 }
 
-GenerationConfig ov::LLMPipeline::generation_config() const {
+GenerationConfig ov::LLMPipeline::LLMPipelineImpl::generation_config() const {
     return m_sampling_parameters;
+}
+
+GenerationConfig ov::LLMPipeline::generation_config() const {
+    return m_pimpl->generation_config();
 }
 
 void print_tensor(const ov::Tensor& tensor) {
@@ -282,7 +306,7 @@ void print_tensor(const ov::Tensor& tensor) {
     cout << "---------" << endl;
 }
 
-ov::GenerationResults ov::LLMPipeline::greedy_search(ov::Tensor input_ids, 
+ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::greedy_search(ov::Tensor input_ids, 
                                 ov::Tensor attention_mask, 
                                 GenerationConfig sampling_params) {
     ov::Shape prompts_shape = input_ids.get_shape();
@@ -295,7 +319,7 @@ ov::GenerationResults ov::LLMPipeline::greedy_search(ov::Tensor input_ids,
     auto position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
     initialize_position_ids(position_ids, attention_mask, kv_cache_len);
 
-    ov::GenerationResults results;
+    ov::EncodedResults results;
     results.scores.resize(batch_size);
     results.tokens.resize(batch_size);
     std::fill(results.scores.begin(), results.scores.end(), 0);
@@ -385,7 +409,7 @@ ov::GenerationResults ov::LLMPipeline::greedy_search(ov::Tensor input_ids,
     return results;
 }
 
-ov::GenerationResults ov::LLMPipeline::beam_search(ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig sampling_params) {
+ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::beam_search(ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig sampling_params) {
     ov::Shape prompts_shape = prompts.get_shape();
     size_t batch_size = prompts_shape[0];
     // todo: implement for batch > 1
@@ -456,7 +480,7 @@ ov::GenerationResults ov::LLMPipeline::beam_search(ov::Tensor prompts, ov::Tenso
     auto compare_scores = [](Beam left, Beam right) { return (left.score > right.score); };
     std::sort(beams.begin(), beams.end(), compare_scores);
     
-    ov::GenerationResults results;
+    ov::EncodedResults results;
     for (auto beam = beams.begin(); beam != beams.begin() + sampling_params.m_num_return_sequences; ++beam) {
         // todo: convert to string 
         results.scores.emplace_back(beam->score);
@@ -479,7 +503,7 @@ match the target. In tha caste the are validated in a single inference request t
 the main model (which is bigger, more accurate but slower) instead of running K
 subsequent requests. 
 */
-ov::GenerationResults ov::LLMPipeline::speculative_sampling(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params) {
+ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::speculative_sampling(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params) {
     auto batch_size = input_ids.get_shape()[0];
     OPENVINO_ASSERT(batch_size == 1);
     auto draft_model = sampling_params.get_assistant_model(m_device, m_plugin_config);
@@ -536,7 +560,7 @@ ov::GenerationResults ov::LLMPipeline::speculative_sampling(ov::Tensor input_ids
     // the first token which is fed to both draft and main netwoks on each iteration
     auto first_token = out_token;
 
-    ov::GenerationResults results;
+    ov::EncodedResults results;
     results.tokens.resize(batch_size);
 
     results.tokens[0].emplace_back(out_token);
@@ -617,17 +641,25 @@ ov::GenerationResults ov::LLMPipeline::speculative_sampling(ov::Tensor input_ids
     return results;
 }
 
-ov::GenerationResults ov::LLMPipeline::multinomial_sampling(ov::Tensor prompts, GenerationConfig sampling_params) {
+ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::multinomial_sampling(ov::Tensor prompts, GenerationConfig sampling_params) {
     // todo: implement
-    ov::GenerationResults results;
+    ov::EncodedResults results;
     return results;
 }
 
-std::string ov::LLMPipeline::call(std::string text) {
+std::string ov::LLMPipeline::LLMPipelineImpl::call(std::string text) {
     return call(text, m_sampling_parameters);
 }
 
+std::string ov::LLMPipeline::call(std::string text) {
+    return m_pimpl->call(text);
+}
+
 std::string ov::LLMPipeline::call(std::string text, GenerationConfig generation_config) {
+    return m_pimpl->call(text, generation_config);
+}
+
+std::string ov::LLMPipeline::LLMPipelineImpl::call(std::string text, GenerationConfig generation_config) {
     if (is_chat_conversation) {
         text = apply_chat_template(text);
     }
@@ -671,7 +703,11 @@ std::string ov::LLMPipeline::call(std::string text, GenerationConfig generation_
     return m_tokenizer.detokenize(generate_results.tokens)[0];
 }
 
-ov::PipelineResults ov::LLMPipeline::call(std::vector<std::string> text, GenerationConfig sampling_parameters) {
+ov::DecodedResults ov::LLMPipeline::call(std::vector<std::string> text, GenerationConfig sampling_parameters) {
+    return m_pimpl->call(text, sampling_parameters);
+}
+
+ov::DecodedResults ov::LLMPipeline::LLMPipelineImpl::call(std::vector<std::string> text, GenerationConfig sampling_parameters) {
     auto [input_ids, attention_mask] = m_tokenizer.tokenize(text);
 
     auto generate_results = generate(input_ids, attention_mask, sampling_parameters);
@@ -687,16 +723,20 @@ std::string ov::LLMPipeline::operator()(std::string text, GenerationConfig sampl
     return call(text, sampling_parameters);
 }
 
-ov::PipelineResults ov::LLMPipeline::operator()(std::vector<std::string> text, GenerationConfig sampling_parameters) {
+ov::DecodedResults ov::LLMPipeline::operator()(std::vector<std::string> text, GenerationConfig sampling_parameters) {
     return call(text, sampling_parameters);
 }
 
-ov::PipelineResults ov::LLMPipeline::operator()(std::initializer_list<std::string> text, GenerationConfig sampling_parameters) {
+ov::DecodedResults ov::LLMPipeline::operator()(std::initializer_list<std::string> text, GenerationConfig sampling_parameters) {
     return call(text, sampling_parameters);
 }
 
-ov::GenerationResults ov::LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config) {
-    ov::GenerationResults result;
+ov::EncodedResults ov::LLMPipeline::LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config) {
+    return m_pimpl->generate(input_ids, attention_mask, generation_config);
+}
+
+ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config) {
+    ov::EncodedResults result;
 
     if (generation_config.is_gready_sampling()) {
         result = greedy_search(input_ids, attention_mask, generation_config);
@@ -709,29 +749,34 @@ ov::GenerationResults ov::LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor
     }
 
     if (!is_chat_conversation)
-        reset_state();
+        // reset_state(); todo: implement in m_mimpl
+        m_model_runner.reset_state();
 
     return result;
 }
 
-ov::GenerationResults ov::LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask) {
-    return generate(input_ids, attention_mask, m_sampling_parameters);
+ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask) {
+    return generate(input_ids, attention_mask, m_pimpl->m_sampling_parameters);
 }
 
-ov::GenerationResults ov::LLMPipeline::generate(ov::Tensor input_ids, GenerationConfig sampling_params) {
+ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids, GenerationConfig sampling_params) {
 
     return generate(input_ids, init_attention_mask(input_ids), sampling_params);
 }
 
-ov::GenerationResults ov::LLMPipeline::generate(ov::Tensor input_ids) {
-    return generate(input_ids, init_attention_mask(input_ids), m_sampling_parameters);
+ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids) {
+    return generate(input_ids, init_attention_mask(input_ids), m_pimpl->m_sampling_parameters);
 }
 
 Tokenizer ov::LLMPipeline::get_tokenizer() {
-    return m_tokenizer;
+    return m_pimpl->m_tokenizer;
 }
 
 std::string ov::LLMPipeline::apply_chat_template(std::string prompt, std::string role) const {
+    return m_pimpl->apply_chat_template(prompt, role);
+}
+
+std::string ov::LLMPipeline::LLMPipelineImpl::apply_chat_template(std::string prompt, std::string role) const {
     jinja2::TemplateEnv env;
     env.GetSettings().lstripBlocks = true;
     env.GetSettings().trimBlocks = true;
@@ -750,33 +795,35 @@ std::string ov::LLMPipeline::apply_chat_template(std::string prompt, std::string
 }
 
 void ov::LLMPipeline::set_streamer(std::function<void (std::string)> callback) {
-    is_streamer_set = true;
-    m_streamer_callback = callback;
-    m_streamer = TextCoutStreamer(m_tokenizer);
+    m_pimpl->is_streamer_set = true;
+    m_pimpl->m_streamer_callback = callback;
+    m_pimpl->m_streamer = TextCoutStreamer(m_pimpl->m_tokenizer);
 }
 
 void ov::LLMPipeline::set_streamer() {
-    is_streamer_set = false;
-    m_streamer_callback = [](std::string){ ;};
+    m_pimpl->is_streamer_set = false;
+    m_pimpl->m_streamer_callback = [](std::string){ ;};
 }
 
 void ov::LLMPipeline::start_chat() {
-    is_chat_conversation = true;
+    m_pimpl->is_chat_conversation = true;
 }
 
 void ov::LLMPipeline::finish_chat() {
-    is_chat_conversation = false;
+    m_pimpl->is_chat_conversation = false;
     reset_state();
 }
 
 void ov::LLMPipeline::reset_state() {
-    m_model_runner.reset_state();
+    m_pimpl->m_model_runner.reset_state();
 }
 
 void ov::LLMPipeline::set_default_config(const GenerationConfig& generation_config) {
-    m_sampling_parameters = generation_config;
+    m_pimpl->m_sampling_parameters = generation_config;
 }
 
 void ov::LLMPipeline::set_default_config(const AnyMap& generation_config_map) {
-    m_sampling_parameters = GenerationConfig::anymap_to_generation_config(generation_config_map);
+    m_pimpl->m_sampling_parameters = GenerationConfig::anymap_to_generation_config(generation_config_map);
 }
+
+ov::LLMPipeline::~LLMPipeline() = default;

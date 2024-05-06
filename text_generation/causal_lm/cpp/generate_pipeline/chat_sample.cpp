@@ -45,7 +45,7 @@ int main(int argc, char* argv[]) try {
     pipe.set_streamer([](std::string word) { std::cout << word << std::flush; });
 
     std::string accumulated_str = "";
-    // pipe.start_conversation();
+    pipe.start_chat();
     for (size_t i = 0; i < questions.size(); i++) {
         prompt = questions[i];
         
@@ -53,10 +53,7 @@ int main(int argc, char* argv[]) try {
         cout << prompt << endl;
         // std::getline(std::cin, prompt);
 
-        // auto answer_str = pipe.call(prompt, config);
-        
-        accumulated_str += pipe.apply_chat_template(prompt);
-        auto answer_str = pipe(accumulated_str, config);
+        auto answer_str = pipe(prompt, config);
         accumulated_str += answer_str;
         
         cout << "\n----------\n";

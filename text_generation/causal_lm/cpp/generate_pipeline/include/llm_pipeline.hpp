@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#pragma once
+// #pragma once
 
 #include <openvino/openvino.hpp>
 #include <openvino/core/any.hpp>
@@ -15,112 +15,49 @@ class Tokenizer; // forward declaration
 
 namespace ov {
 
-template <class T, class ItemType>
-class ResultsIterator {
-    public:
-        ResultsIterator(const T& results, size_t index) : results(results), index(index) {}
-
-        bool operator!=(const ResultsIterator& other) const;
-
-        ItemType operator*() const;
-
-        ResultsIterator& operator++();
-
-    private:
-        const T& results;
-        size_t index;
-};
-
-class TextScorePair {
-public:
-    std::string text;
-    float score;
-};
-
-class TokensScorePair {
-public:
-    std::vector<int64_t> tokens;
-    float score;
-};
-
-class GenerationResults {
+class EncodedResults {
 public:
     std::vector<std::vector<int64_t>> tokens;
     std::vector<float> scores;
-
-    TokensScorePair operator[](size_t index) const;
-
-    ResultsIterator<GenerationResults, TokensScorePair> begin() const;
-
-    ResultsIterator<GenerationResults, TokensScorePair> end() const;
 };
 
-class PipelineResults {
+class DecodedResults {
 public:
     std::vector<std::string> texts;
     std::vector<float> scores;
-    
-    TextScorePair operator[](size_t index) const;
-
-    ResultsIterator<PipelineResults, TextScorePair> begin() const;
-
-    ResultsIterator<PipelineResults, TextScorePair> end() const;
 };
-
 
 class LLMPipeline {
 public:
-    ov::InferRequest m_model_runner;
-    Tokenizer m_tokenizer;
-    GenerationConfig m_sampling_parameters;
-    std::string m_device;
-    ov::AnyMap m_plugin_config;
-    ov::Tensor m_attentions_mask_cache;
-    bool is_streamer_set = false;
-    std::string m_chat_template = "";
-    
-    // TODO: add constructor for specifying manually tokenizer path
-    // dir path
-    // xml file path
-    // compiled model
-    // infer request
-    // ov::Model
-
     LLMPipeline(
         std::string& model_path,
-        std::string& tokenizer_path,
+        std::string& tokenizer_path,  // todo: make available also specifying ov::Model, ov::CompiledModel, etc. tokenizers
         std::string& detokenizer_path,
         std::string device="CPU",
         const ov::AnyMap& plugin_config={}
     );
-
-    LLMPipeline(std::string& path, std::string device="CPU", const ov::AnyMap& config={});
+    
+    LLMPipeline(std::string& path, std::string device="CPU", const ov::AnyMap& plugin_config={});
+    
+    ~LLMPipeline();  // Declare the destructor
     
     GenerationConfig generation_config() const;
-
-    GenerationResults greedy_search(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params);
-
-    GenerationResults beam_search(ov::Tensor prompts, ov::Tensor attention_mask, GenerationConfig sampling_params);
-
-    GenerationResults speculative_sampling(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params);
-
-    GenerationResults multinomial_sampling(ov::Tensor prompts, GenerationConfig sampling_params);
 
     std::string operator()(std::string text);
 
     std::string operator()(std::string text, GenerationConfig sampling_parameters);
 
-    PipelineResults operator()(std::vector<std::string> text, GenerationConfig sampling_parameters);
+    DecodedResults operator()(std::vector<std::string> text, GenerationConfig sampling_parameters);
 
-    PipelineResults operator()(std::initializer_list<std::string> text, GenerationConfig sampling_parameters);
+    DecodedResults operator()(std::initializer_list<std::string> text, GenerationConfig sampling_parameters);
 
-    GenerationResults generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params);
+    EncodedResults generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params);
 
-    GenerationResults generate(ov::Tensor input_ids, ov::Tensor attention_mask);
+    EncodedResults generate(ov::Tensor input_ids, ov::Tensor attention_mask);
 
-    GenerationResults generate(ov::Tensor input_ids, GenerationConfig sampling_params);
+    EncodedResults generate(ov::Tensor input_ids, GenerationConfig sampling_params);
 
-    GenerationResults generate(ov::Tensor input_ids);
+    EncodedResults generate(ov::Tensor input_ids);
 
     Tokenizer get_tokenizer();
 
@@ -133,15 +70,14 @@ public:
     void reset_state();
     void set_default_config(const GenerationConfig& generation_config);
     void set_default_config(const AnyMap& generation_config_map);
+
 private:
-    TextCoutStreamer m_streamer;
-    std::function<void (std::string)> m_streamer_callback = [](std::string ){ ;};
-    bool is_chat_conversation = false;
+    class LLMPipelineImpl;
+    std::unique_ptr<LLMPipelineImpl> m_pimpl;
 
     std::string call(std::string text);
     std::string call(std::string text, GenerationConfig generation_config);
-    PipelineResults call(std::vector<std::string> text, GenerationConfig sampling_parameters);
-
+    DecodedResults call(std::vector<std::string> text, GenerationConfig sampling_parameters);
 };
 
 } // namespace ov
