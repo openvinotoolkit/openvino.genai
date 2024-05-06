@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <openvino/openvino.hpp>
+// #include <openvino/openvino.hpp>
 #include "llm_pipeline.hpp"
 
 

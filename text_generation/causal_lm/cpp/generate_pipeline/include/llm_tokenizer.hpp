@@ -7,7 +7,6 @@
 #include <openvino/core/any.hpp>
 #include <filesystem>
 
-
 using namespace std;
 
 std::pair<ov::Tensor, ov::Tensor> pad_left(ov::Tensor&& input_ids, ov::Tensor&& attention_mask, int64_t pad_token=2);

@@ -5,20 +5,11 @@
 
 #include <openvino/openvino.hpp>
 #include <openvino/core/any.hpp>
-#include "generate_pipeline/generation_config.hpp"
-#include "generate_pipeline/llm_tokenizer.hpp"
+#include "generation_config.hpp"
+#include "llm_tokenizer.hpp"
 #include <filesystem>
 
 using namespace std;
-
-void update_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask);
-void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask);
-ov::Tensor init_attention_mask(ov::Tensor& position_ids);
-ov::Tensor extend_attention(ov::Tensor attention_mask);
-ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_seq_len);
-void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t new_seq_len);
-
-std::pair<int64_t, float> softmax(const ov::Tensor& logits, const size_t batch_idx);
 
 class Tokenizer; // forward declaration
 
