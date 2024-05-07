@@ -6,23 +6,29 @@
 #include <filesystem>
 #include "generation_config_helper.hpp"
 #include "text_callback_streamer.hpp"
+#include "utils.hpp"
 
 // #include <jinja2cpp/template.h>
 // #include <jinja2cpp/template_env.h>
 // #include "generation_config.hpp"
 
-void update_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask);
-void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask);
-ov::Tensor init_attention_mask(ov::Tensor& position_ids);
-ov::Tensor extend_attention(ov::Tensor attention_mask);
-ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_seq_len);
-void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t new_seq_len);
 
 std::pair<int64_t, float> softmax(const ov::Tensor& logits, const size_t batch_idx);
 
 namespace ov {
 
+ov::EncodedResults assistive_decoding(ov::InferRequest& m_model_runner, ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config);
 ov::EncodedResults beam_search(ov::InferRequest& model_runner, ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig sampling_params);
+
+ov::EncodedResults greedy_decoding(
+    ov::InferRequest& model_runner, 
+    ov::Tensor prompts, 
+    ov::Tensor attentin_mask, 
+    GenerationConfig sampling_params, 
+    std::shared_ptr<StreamerBase> streamer, 
+    bool is_chat_conversation = false
+);
+
 
 class LLMPipeline::LLMPipelineImpl {
 public:
@@ -52,12 +58,6 @@ public:
     LLMPipelineImpl(std::string& path, std::string device="CPU", const ov::AnyMap& config={});
     
     GenerationConfig generation_config() const;
-
-    EncodedResults greedy_search(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config);
-
-    // EncodedResults beam_search(ov::Tensor prompts, ov::Tensor attention_mask, GenerationConfig generation_config);
-
-    EncodedResults speculative_sampling(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config);
 
     EncodedResults multinomial_sampling(ov::Tensor prompts, GenerationConfig generation_config);
 
@@ -107,125 +107,6 @@ std::pair<ov::Tensor, ov::Tensor> pad_left(ov::Tensor&& input_ids, ov::Tensor&& 
     }
 
     return {input_ids, attention_mask};
-}
-
-void update_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask) {
-    const size_t batch_size = attention_mask.get_shape()[0];
-    const size_t atten_length = attention_mask.get_shape()[1];
-    position_ids.set_shape({batch_size, 1});
-
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        int64_t* start = attention_mask.data<int64_t>() + batch * atten_length;
-        position_ids.data<int64_t>()[batch] = std::accumulate(start, start + atten_length, 0);
-    }
-}
-
-void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos = 0) {
-    const size_t batch_size = attention_mask.get_shape()[0];
-    const size_t seq_length = attention_mask.get_shape()[1];
-
-    const int64_t* attention_mask_data = attention_mask.data<int64_t>();
-    int64_t* position_ids_data = position_ids.data<int64_t>();
-
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        size_t sum = start_pos;
-        for (size_t i = 0; i < seq_length; i++) {
-            const size_t element_offset = batch * seq_length + i;
-            position_ids_data[element_offset] = sum;
-            if (attention_mask_data[element_offset] == 1) {
-                sum += 1;
-            }
-        }
-    }
-}
-
-ov::Tensor init_attention_mask(ov::Tensor& position_ids) {
-    auto shape = position_ids.get_shape();
-    auto attention_mask = ov::Tensor{position_ids.get_element_type(), shape};
-    std::fill_n(attention_mask.data<int64_t>(), shape[0] * shape[1], 1);
-    return attention_mask;
-}
-
-ov::Tensor extend_attention(ov::Tensor attention_mask) {
-    auto shape = attention_mask.get_shape();
-    auto batch_size = shape[0];
-    auto seq_len = shape[1];
-
-    ov::Tensor new_atten_mask = ov::Tensor{attention_mask.get_element_type(), {batch_size, seq_len + 1}};
-    auto old_data = attention_mask.data<int64_t>();
-    auto new_data = new_atten_mask.data<int64_t>();
-    for (size_t batch = 0; batch < batch_size; ++batch) {
-        std::memcpy(new_data + batch * (seq_len + 1), old_data + batch * seq_len, seq_len * sizeof(int64_t));
-        new_data[batch * (seq_len + 1) + seq_len] = 1;
-    }
-    return new_atten_mask;
-}
-
-ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_seq_len) {
-    // Copy elements from the old to a new tensor and return it.
-    // It's assumed that key/values tensor has a shape [BATCH_SIZE, num_kv_heads, seq_len, head_size] or [seq_len, ...],
-    // It that's not the case for your model please implement your own trim method.
-    OPENVINO_ASSERT(seq_len_axis == 2 || seq_len_axis == 0, "Cannot trim key/values with sequence length axis = ", seq_len_axis);
-    
-    auto old_tensor_data = tensor.data<float>();
-    auto shape = tensor.get_shape();
-    size_t batch_size = shape[0];
-    size_t num_kv_heads = shape[1];
-    size_t old_seq_len = shape[2];
-    size_t head_size = shape[3];
-    
-    OPENVINO_ASSERT(new_seq_len <= old_seq_len);
-    
-    // if new_seq_len equal to old one no need to copy tensor, return as is
-    if (old_seq_len == new_seq_len)
-        return tensor;
-
-    if (seq_len_axis == 0) {
-        shape[0] = new_seq_len;
-        tensor.set_shape(shape);
-    }
-
-    // if seq_len_axis == 2, then data is not contiguous, in order to trim need to repack tensor
-    auto new_tensor = ov::Tensor{ov::element::f32, {batch_size, num_kv_heads, new_seq_len, head_size}};
-    auto new_tensor_data = new_tensor.data<float>();
-    for (size_t batch = 0; batch < batch_size; ++batch){
-        for (size_t i = 0; i < num_kv_heads; ++i) {
-            for (size_t j = 0; j < new_seq_len; ++j) {
-                auto dst_ptr = new_tensor_data + num_kv_heads * new_seq_len * head_size * batch + new_seq_len * head_size * i +  head_size * j;
-                auto src_ptr = old_tensor_data + num_kv_heads * new_seq_len * head_size * batch + old_seq_len * head_size * i +  head_size * j;
-                std::memcpy(dst_ptr, src_ptr, head_size * sizeof(float));
-            }
-        }
-    }
-    return new_tensor;
-}
-
-void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t new_seq_len) {
-    // trim kv_cache values up to the new_seq_len
-    for (auto& state: request.query_state()) {
-        ov::Tensor old_tensor = state.get_state();
-        state.set_state(trimm_tensor(old_tensor, seq_len_axis, new_seq_len));
-    }
-}
-
-std::pair<int64_t, float> softmax(const ov::Tensor& logits, const size_t batch_idx) {
-    if (logits.get_shape()[0] <= batch_idx) {
-        OPENVINO_THROW("logits batch size doesn't match the number of beams");
-    }
-
-    size_t vocab_size = logits.get_shape().back();
-    size_t batch_offset = batch_idx * logits.get_shape()[1] * vocab_size;
-    size_t sequence_offset = (logits.get_shape()[1] - 1) * vocab_size;
-    const float* logits_data = logits.data<const float>() + batch_offset + sequence_offset;
-    
-    int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
-    float max_logit = logits_data[out_token];
-
-    float log_sum = std::log(
-        std::accumulate(logits_data, logits_data + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
-            return accumulated + std::exp(to_add - max_logit);
-        }));
-    return {out_token, log_sum};
 }
 
 ov::LLMPipeline::LLMPipeline(
@@ -291,279 +172,6 @@ ov::GenerationConfig ov::LLMPipeline::LLMPipelineImpl::generation_config() const
 
 ov::GenerationConfig ov::LLMPipeline::generation_config() const {
     return m_pimpl->generation_config();
-}
-
-void print_tensor(const ov::Tensor& tensor) {
-    std::vector<int64_t> res;
-
-    auto t_shape = tensor.get_shape();
-    cout << "[";
-    for (size_t i = 0; i < t_shape[1]; ++i) {
-        if (tensor.get_element_type() == ov::element::i64) {
-            res.emplace_back(tensor.data<int64_t>()[i]);
-            cout << tensor.data<int64_t>()[i] << " ";
-        }
-    }
-    cout << "]" << endl;
-    cout << "---------" << endl;
-}
-
-ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::greedy_search(ov::Tensor input_ids, 
-                                ov::Tensor attention_mask, 
-                                GenerationConfig generation_config) {
-    
-    GenerationConfigHelper config_helper = generation_config;
-    ov::Shape prompts_shape = input_ids.get_shape();
-    size_t batch_size = prompts_shape[0];
-    size_t prompt_len = prompts_shape[1];
-    
-    auto kv_cache_len = m_model_runner.query_state()[0].get_state().get_shape()[2];
-
-    // todo: make this work even if position_ids are not specified
-    auto position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
-    initialize_position_ids(position_ids, attention_mask, kv_cache_len);
-
-    ov::EncodedResults results;
-    results.scores.resize(batch_size);
-    results.tokens.resize(batch_size);
-    std::fill(results.scores.begin(), results.scores.end(), 0);
-    
-    if (is_chat_conversation && kv_cache_len > 0) {
-        // m_attentions_mask_cache extent with attention_mask;
-
-        size_t new_prompt_len = attention_mask.get_shape()[1];
-        size_t context_len = m_attentions_mask_cache.get_shape()[1];
-        ov::Tensor new_attention_mask =  ov::Tensor{ov::element::i64, {1, context_len + new_prompt_len}};
-
-        for (size_t i = 0; i < context_len; ++i) {
-            auto r = m_attentions_mask_cache.data<int64_t>()[i];
-            new_attention_mask.data<int64_t>()[i] = m_attentions_mask_cache.data<int64_t>()[i];
-        }
-        for (size_t i = context_len; i < context_len + new_prompt_len; ++i) {
-            auto r = attention_mask.data<int64_t>()[i];
-            new_attention_mask.data<int64_t>()[i] = attention_mask.data<int64_t>()[i - context_len];
-        }
-        m_model_runner.set_tensor("attention_mask", new_attention_mask);
-    } else {
-        m_model_runner.set_tensor("attention_mask", attention_mask);
-    }
-    
-
-    auto atten_shape = attention_mask.get_shape();
-    auto pos_shape = position_ids.get_shape();
-    auto input_ids_shape = input_ids.get_shape();
-
-    m_model_runner.set_tensor("input_ids", input_ids);
-    m_model_runner.set_tensor("position_ids", position_ids);
-
-    m_model_runner.get_tensor("beam_idx").set_shape({batch_size});
-    auto beam_data = m_model_runner.get_tensor("beam_idx").data<int32_t>();
-    std::iota(beam_data, beam_data + batch_size, 0);
-
-    size_t max_tokens = config_helper.get_max_new_tokens(prompt_len);
-    for (size_t i = 0; i < max_tokens; ++i) {
-        
-        // todo: consider replacing with start_async and run callback right after that
-        m_model_runner.infer();
-        auto logits = m_model_runner.get_tensor("logits");
-        ov::Shape logits_shape = logits.get_shape();
-        size_t seq_len = logits_shape[1], vocab_size = logits_shape[2];
-
-        m_model_runner.get_tensor("input_ids").set_shape({batch_size, 1});
-        
-        m_attentions_mask_cache = ov::Tensor{attention_mask.get_element_type(),  m_model_runner.get_tensor("attention_mask").get_shape()};
-        m_model_runner.get_tensor("attention_mask").copy_to(m_attentions_mask_cache);
-        // m_attentions_mask_cache = m_model_runner.get_tensor("attention_mask");
-        
-        update_position_ids(position_ids, m_model_runner.get_tensor("attention_mask"));
-        m_model_runner.set_tensor("attention_mask", extend_attention(m_model_runner.get_tensor("attention_mask")));
-        
-        std::vector<int64_t> token_iter_results(batch_size);  // results of a single infer request
-        std::vector<int> eos_met(batch_size, 0);  // use int because can not use std::all_of with vector<bool>
-        for (size_t batch = 0; batch < batch_size; ++batch) {
-            // const float * logits_data = logits.data<const float>() + seq_len * vocab_size * batch + (seq_len - 1) * vocab_size;
-            // int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
-            // results.tokens[batch].emplace_back(out_token);
-            // results.scores[batch] += logits_data[out_token];
-
-            auto res = softmax(logits, batch);
-            auto out_token = res.first;
-            results.tokens[batch].emplace_back(res.first);
-            results.scores[batch] += res.second;
-
-            token_iter_results[batch] = out_token;
-            eos_met[batch] = (out_token == generation_config.eos_token_id);
-
-            m_model_runner.get_tensor("input_ids").data<int64_t>()[batch] = out_token;
-        }
-        // place
-        // sampling_params.m_callback(std::move(token_iter_results), *this);
-        
-        m_streamer->put(token_iter_results[0]);
-
-        // stop generation when EOS is met in all batches
-        bool all_are_eos = std::all_of(eos_met.begin(), eos_met.end(), [](int elem) { return elem == 1; });
-        if (!generation_config.ignore_eos && all_are_eos)
-            break;
-        // if (i != sampling_params.get_max_new_tokens(prompt_len) - 1)
-        //     kv_cache_len += 1;
-    }
-    return results;
-}
-
-// ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::beam_search(ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig sampling_params) {
-// }
-
-/* Speculative decoding works the following way. The draft model predicts the next K
-tokens one by one in an autoregressive manner, while the main model validates these
-predictions and corrects them if necessary. We go through each predicted token, and
-if a difference is detected between the draft and main model, we stop and keep the
-last token predicted by the main model. Then the draft model gets the latest main
-prediction and again tries to predict the next K tokens, repeating the cycle.
-
-This approach reduces the need for multiple infer requests to the main model,
-enhancing performance. For instance, in more predictable parts of text generation,
-the draft model can, in best-case scenarios, generate the next K tokens that exactly
-match the target. In tha caste the are validated in a single inference request to
-the main model (which is bigger, more accurate but slower) instead of running K
-subsequent requests. 
-*/
-ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::speculative_sampling(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config) {
-    GenerationConfigHelper config_helper = generation_config;
-
-    auto batch_size = input_ids.get_shape()[0];
-    OPENVINO_ASSERT(batch_size == 1);
-    auto draft_model = config_helper.get_assistant_model(m_device, m_plugin_config);
-    auto main_model = m_model_runner;
-    
-    auto draft_input_ids = ov::Tensor{input_ids.get_element_type(), input_ids.get_shape()};
-    input_ids.copy_to(draft_input_ids);
-    auto draft_attention_mask = ov::Tensor{input_ids.get_element_type(), input_ids.get_shape()};
-    
-    draft_model.set_tensor("input_ids", draft_input_ids);
-    draft_model.set_tensor("attention_mask", draft_attention_mask);
-    
-    ov::Tensor draft_position_ids = draft_model.get_tensor("position_ids");
-    draft_position_ids.set_shape(draft_input_ids.get_shape());
-    std::iota(draft_position_ids.data<int64_t>(), draft_position_ids.data<int64_t>() + draft_position_ids.get_size(), 0);
-    uint64_t seq_len = draft_input_ids.get_shape()[1];
-
-    // Input tensors for the main model should not be mixed with draft.
-    // Do not feed the same draft_postion_ids to the main, but copy input_ids from the draft_input_ids
-    // auto input_ids = main_model.get_tensor("input_ids");
-    // input_ids.set_shape(draft_input_ids.get_shape());
-    // draft_input_ids.copy_to(input_ids);
-
-    // auto attention_mask = main_model.get_tensor("attention_mask");
-    // attention_mask.set_shape(draft_input_ids.get_shape());
-    // std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
-
-    auto position_ids = main_model.get_tensor("position_ids");
-    position_ids.set_shape(draft_input_ids.get_shape());
-    std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
-    
-    // set beam_idx for stateful model: no beam search is used and batch_size = 1
-    draft_model.get_tensor("beam_idx").set_shape({batch_size});
-    draft_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
-    main_model.get_tensor("beam_idx").set_shape({batch_size});
-    main_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
-
-    main_model.set_tensor("input_ids", input_ids);
-    main_model.set_tensor("attention_mask", attention_mask);
-    main_model.set_tensor("position_ids", position_ids);
-
-    // To coollect kv-cache for the <PROMPT> and to get the next token run the very first infer request
-    draft_model.infer();
-    main_model.infer();
-
-    size_t vocab_size = draft_model.get_tensor("logits").get_shape().back();
-    OPENVINO_ASSERT(vocab_size == main_model.get_tensor("logits").get_shape().back(), "vocab size should be the same for the both models");
-    
-    // logits shape is [batch_size, seq_len, vocab_size]
-    auto logits = main_model.get_tensor("logits");
-    auto data_logits = logits.data<float>() + (seq_len - 1) * vocab_size;
-    int64_t out_token = std::max_element(data_logits, data_logits + vocab_size) - data_logits;
-    
-    // the first token which is fed to both draft and main netwoks on each iteration
-    auto first_token = out_token;
-
-    ov::EncodedResults results;
-    results.tokens.resize(batch_size);
-
-    results.tokens[0].emplace_back(out_token);
-    
-    // run K infer requests on draft model and get next K prediction tokens on each iteration
-    uint64_t K = config_helper.num_assistant_tokens;
-    std::vector<int64_t> draft_tokens;
-
-    // The draft model predicts tokens one by one in an auto-regressive manner, draft_input_ids length should be 1.
-    draft_input_ids.set_shape({batch_size, 1});
-    draft_position_ids.set_shape({batch_size, 1});
-
-    int max_sequence_length = generation_config.max_new_tokens;
-    auto eos_token = generation_config.eos_token_id;
-    
-    while (out_token != eos_token && seq_len < max_sequence_length) {
-        // infer the K next tokens with draft model
-        for (int i = 0; i < K; ++i) {
-            draft_input_ids.data<int64_t>()[0] = out_token;
-            draft_attention_mask.set_shape({batch_size, seq_len + i + 1});
-            std::fill_n(draft_attention_mask.data<int64_t>(), draft_attention_mask.get_size(), 1);
-            draft_position_ids.data<int64_t>()[0] = int64_t(draft_attention_mask.get_size() - 1);
-
-            draft_model.infer();
-
-            auto draft_logits = draft_model.get_tensor("logits").data<float>();
-            int64_t arg_max_token = std::max_element(draft_logits, draft_logits + vocab_size) - draft_logits;
-            out_token = arg_max_token;
-            draft_tokens.emplace_back(arg_max_token);
-        }
-
-        // For the main network, K tokens will be fed at once in a single infer request.
-        input_ids.set_shape({batch_size, K});
-        // Set the first token for the main model to be the same as for the draft model.
-        input_ids.data<int64_t>()[0] = first_token;
-        for (int i = 0; i < K - 1; i++)
-            input_ids.data<int64_t>()[i + 1] = draft_tokens[i];
-
-        attention_mask.set_shape({batch_size, seq_len + K});
-        std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
-
-        position_ids.set_shape({batch_size, K});
-        std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), seq_len);
-
-        main_model.infer();
-
-        data_logits = logits.data<float>();  // [batch_size, K, vocab_size]
-        size_t disagree_idx = K - 1;
-        // Iterate through the predicted tokens from the main model and compare them with draft predictions.
-        // In the worst-case scenario (disagreement at the beginning), iter will increase by 1.
-        // In the best-case scenario, all elements match, and K predicted tokens will be taken.
-        for (size_t i = 0; i < K; i++) {
-            auto start = data_logits + vocab_size * i;
-            auto stop = data_logits + vocab_size * (i + 1);
-            out_token = std::max_element(start, stop) - start;
-            results.tokens[0].emplace_back(out_token);
-
-            m_streamer->put(out_token);
-
-            disagree_idx = i;                
-            if (out_token != draft_tokens[i] || out_token == eos_token || seq_len + disagree_idx + 1 >= max_sequence_length)
-                break;
-        }
-
-        // After the inference request, key/values have shape [batch_size, seq_len + K, vocab_size].
-        // Increment the sequence length by the number of matched tokens, and
-        // trim the KV cache to match the new sequence length.
-        seq_len += disagree_idx + 1;
-        update_kv_cache(draft_model, config_helper.seq_len_axis, seq_len);
-        update_kv_cache(main_model, config_helper.seq_len_axis, seq_len);
-        
-        draft_tokens.clear();
-        first_token = out_token;
-    }
-
-    return results;
 }
 
 ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::multinomial_sampling(ov::Tensor prompts, GenerationConfig generation_config) {
@@ -665,14 +273,14 @@ ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(ov::Tensor input_i
     GenerationConfigHelper config_helper = generation_config;
 
     if (config_helper.is_greedy_sampling()) {
-        result = greedy_search(input_ids, attention_mask, generation_config);
+        result = ov::greedy_decoding(m_model_runner, input_ids, attention_mask, generation_config, m_streamer, is_chat_conversation);
     } else if (config_helper.is_beam_search()) {
         result = beam_search(m_model_runner, input_ids, attention_mask, generation_config);
         
     } else if (config_helper.is_multimomial()) {
         result = multinomial_sampling(input_ids, generation_config);
-    } else { // speculative
-        result = speculative_sampling(input_ids, attention_mask, generation_config);
+    } else {
+        result = ov::assistive_decoding(m_model_runner, input_ids, attention_mask, generation_config);
     }
 
     if (!is_chat_conversation)
@@ -688,11 +296,11 @@ ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor at
 
 ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids, GenerationConfig sampling_params) {
 
-    return generate(input_ids, init_attention_mask(input_ids), sampling_params);
+    return generate(input_ids, ov::generate_utils::init_attention_mask(input_ids), sampling_params);
 }
 
 ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids) {
-    return generate(input_ids, init_attention_mask(input_ids), m_pimpl->m_sampling_parameters);
+    return generate(input_ids, ov::generate_utils::init_attention_mask(input_ids), m_pimpl->m_sampling_parameters);
 }
 
 ov::Tokenizer ov::LLMPipeline::get_tokenizer() {
