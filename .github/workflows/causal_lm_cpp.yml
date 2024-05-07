@@ -3,7 +3,6 @@ on:
   pull_request:
     paths:
       - .github/workflows/causal_lm_cpp.yml
-      - llm_bench/python/**
       - text_generation/causal_lm/cpp/*
       - thirdparty/openvino_tokenizers
       - "!**.md"
@@ -29,15 +28,16 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id openlm-research/open_llama_3b_v2 --output_dir ./open_llama_3b_v2/ --precision FP16  &
+          python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - name: convert_tokenizer and run
         run: |
           source ./ov/setupvars.sh
-          convert_tokenizer ./open_llama_3b_v2/pytorch/dldt/FP16/ --output ./open_llama_3b_v2/pytorch/dldt/FP16/ --with-detokenizer
-          ./build/greedy_causal_lm ./open_llama_3b_v2/pytorch/dldt/FP16/ "return 0"
+          convert_tokenizer ./open_llama_3b_v2/ --output ./open_llama_3b_v2/ --with-detokenizer
+          ./build/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
 
   cpp-beam_search_causal_lm-ubuntu:
     runs-on: ubuntu-20.04
@@ -56,16 +56,17 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0/ --precision FP16 &
+          python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --with-detokenizer
+          convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/ --output ./TinyLlama-1.1B-Chat-v1.0/ --with-detokenizer
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ 69 > ./pred.txt
+          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ 69 > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -81,7 +82,7 @@ jobs:
           "
           echo "69" passed
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ Hi > ./pred.txt
+          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ Hi > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -97,7 +98,7 @@ jobs:
           "
           echo "Hi" passed
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "return 0" > ./pred.txt
+          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "return 0" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -113,7 +114,7 @@ jobs:
           "
           echo "return 0" passed
 
-          ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "你好！ 你好嗎？" > ./pred.txt
+          ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -147,17 +148,18 @@ jobs:
         shell: cmd
         run: |
           call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64\setupvars.bat
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-          python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0/ --precision FP16
+          python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
       - name: Compare
         shell: cmd
         run: |
           call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64\setupvars.bat
-          convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --with-detokenizer
+          convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\ --output .\TinyLlama-1.1B-Chat-v1.0\ --with-detokenizer
 
-          .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "69" > .\pred.txt
+          .\build\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ "69" > .\pred.txt
           echo import transformers > ref.py
           echo predictions = open('pred.txt', 'r').read() >> ref.py
           echo tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0') >> ref.py
@@ -187,15 +189,16 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id Qwen/Qwen-7B-Chat --output_dir ./Qwen-7B-Chat/ --precision FP16 &
+          python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          convert_tokenizer ./Qwen-7B-Chat/pytorch/dldt/FP16/ --output ./Qwen-7B-Chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
-          timeout 50s ./build/beam_search_causal_lm ./Qwen-7B-Chat/pytorch/dldt/FP16/ 69 > ./pred.txt
+          convert_tokenizer Qwen/Qwen-7B-Chat --output ./Qwen-7B-Chat/ --with-detokenizer --trust-remote-code
+          timeout 50s ./build/beam_search_causal_lm ./Qwen-7B-Chat/ 69 > ./pred.txt
 
   cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
@@ -214,15 +217,16 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id Qwen/Qwen1.5-7B-Chat --output_dir ./Qwen1.5-7B-Chat/ --precision FP16 &
+          python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen1.5-7B-Chat Qwen1.5-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - name: Run
         run: |
           source ./ov/setupvars.sh
-          convert_tokenizer ./Qwen1.5-7B-Chat/pytorch/dldt/FP16/ --output ./Qwen1.5-7B-Chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
-          timeout 50s ./build/beam_search_causal_lm ./Qwen1.5-7B-Chat/pytorch/dldt/FP16/ "你好！" > ./pred_qwen15.txt
+          convert_tokenizer ./Qwen1.5-7B-Chat/ --output ./Qwen1.5-7B-Chat/ --with-detokenizer --trust-remote-code
+          timeout 50s ./build/beam_search_causal_lm ./Qwen1.5-7B-Chat/ "你好！" > ./pred_qwen15.txt
 
   cpp-beam_search_causal_lm-Phi-2:
     runs-on: ubuntu-20.04-16-cores
@@ -241,15 +245,16 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id microsoft/phi-2 --output_dir ./Phi-2/ --precision FP16 &
+          python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-2 phi-2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j 15
-          wait
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          convert_tokenizer ./Phi-2/pytorch/dldt/FP16/ --output ./Phi-2/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
-          timeout 50s ./build/beam_search_causal_lm ./Phi-2/pytorch/dldt/FP16/ 69 > ./pred.txt
+          convert_tokenizer ./phi-2/ --output ./phi-2/ --with-detokenizer --trust-remote-code
+          timeout 50s ./build/beam_search_causal_lm ./phi-2/ 69 > ./pred.txt
 
   cpp-beam_search_causal_lm-notus-7b-v1:
     runs-on: ubuntu-20.04-16-cores
@@ -268,15 +273,16 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id argilla/notus-7b-v1 --output_dir ./notus-7b-v1/ --precision FP16 &
+          python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model argilla/notus-7b-v1 notus-7b-v1
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          convert_tokenizer ./notus-7b-v1/pytorch/dldt/FP16/ --output ./notus-7b-v1/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
-          timeout 50s ./build/beam_search_causal_lm ./notus-7b-v1/pytorch/dldt/FP16/ 69 > ./pred.txt
+          convert_tokenizer ./notus-7b-v1/ --output ./notus-7b-v1/ --with-detokenizer --trust-remote-code
+          timeout 50s ./build/beam_search_causal_lm ./notus-7b-v1/ 69 > ./pred.txt
 
   cpp-speculative_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
@@ -290,24 +296,24 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2023.3/linux/l_openvino_toolkit_ubuntu20_2023.3.0.13775.ceeafaf64f3_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/linux/l_openvino_toolkit_ubuntu20_2024.1.0.15008.f4afc983258_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-          python ./llm_bench/python/convert.py --model_id databricks/dolly-v2-3b --output_dir ./dolly-v2-3b/ --precision FP16
-          python ./llm_bench/python/convert.py --model_id databricks/dolly-v2-7b --output_dir ./dolly-v2-7b/ --precision FP16
-          convert_tokenizer ./dolly-v2-3b/pytorch/dldt/FP16/ --output ./dolly-v2-3b/pytorch/dldt/FP16/ --with-detokenizer
-          convert_tokenizer ./dolly-v2-7b/pytorch/dldt/FP16/ --output ./dolly-v2-7b/pytorch/dldt/FP16/ --with-detokenizer
+          python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-3b dolly-v2-3b
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-7b dolly-v2-7b
+          convert_tokenizer ./dolly-v2-3b/ --output ./dolly-v2-3b/ --with-detokenizer
+          convert_tokenizer ./dolly-v2-7b/ --output ./dolly-v2-7b/ --with-detokenizer
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
-          ./build/speculative_decoding_lm ./dolly-v2-3b/pytorch/dldt/FP16/ ./dolly-v2-7b/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_speculative.txt
-          ./build/greedy_causal_lm ./dolly-v2-7b/pytorch/dldt/FP16/ "Alan Turing was a" > predictions_greedy.txt
+          ./build/speculative_decoding_lm ./dolly-v2-3b/ ./dolly-v2-7b/ "Alan Turing was a" > predictions_speculative.txt
+          ./build/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -334,16 +340,17 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id microsoft/phi-1_5 --output_dir ./Phi-1_5/ --precision FP16 &
+          python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-1_5 phi-1_5
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j 15
-          wait
       - name: Run Generation
         run: |
           source ./ov/setupvars.sh
-          convert_tokenizer ./Phi-1_5/pytorch/dldt/FP16/ --output ./Phi-1_5/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
-          timeout 50s ./build/greedy_causal_lm ./Phi-1_5/pytorch/dldt/FP16/ "Alan Turing was a" > ./pred_greedy.txt
-          timeout 50s ./build/beam_search_causal_lm ./Phi-1_5/pytorch/dldt/FP16/ "Alan Turing was a" > ./pred_beam.txt
+          convert_tokenizer ./phi-1_5/ --output ./phi-1_5/ --with-detokenizer --trust-remote-code
+          timeout 50s ./build/greedy_causal_lm ./phi-1_5/ "Alan Turing was a" > ./pred_greedy.txt
+          timeout 50s ./build/beam_search_causal_lm ./phi-1_5/ "Alan Turing was a" > ./pred_beam.txt
       - name: Compare
         run: |
           python -c "
