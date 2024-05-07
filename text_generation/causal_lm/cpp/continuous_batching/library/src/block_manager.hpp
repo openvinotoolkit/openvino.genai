@@ -39,6 +39,10 @@ public:
     bool copy_on_write() const {
         return m_ref_count > 1;
     }
+
+    int get_references_count() const {
+        return m_ref_count;
+    }
 };
 
 
@@ -146,6 +150,8 @@ public:
     }
 
     void free_sequence_partially(size_t seq_id, size_t block_num) {
+        // currently this method is applicable only for groups with single sequences
+        // TODO: support for groups with multiple sequences
         auto block_table = m_block_table[seq_id];
 
         if (block_num == block_table.size())
@@ -153,9 +159,8 @@ public:
 
         OPENVINO_ASSERT(block_table.size() >= block_num);
         for (size_t idx = 0; idx < block_num; idx++) {
-            while (!block_table.back()->is_free()) {
-                m_allocator.free(block_table.back());
-            }
+            m_allocator.free(block_table.back());
+            OPENVINO_ASSERT(block_table.back()->is_free());
         } 
         m_block_table[seq_id].resize(m_block_table[seq_id].size() - block_num);
 
@@ -171,6 +176,7 @@ public:
     size_t required_blocks_count(SequenceGroup::CPtr seq_group) {
         std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
         size_t blocks_count= 0; // totat number of needed blocks for sequence group
+        std::set<size_t> last_block_ids; // unique last block indices
 
         for (auto seq: running_sequences) {
             auto seq_id = seq->get_id();
@@ -182,14 +188,35 @@ public:
             auto& block_table = m_block_table[seq_id];
             size_t num_physical_blocks = block_table.size();
             OPENVINO_ASSERT(num_physical_blocks > 0);
-            if (num_physical_blocks < seq_group->get_num_logical_blocks()) {
-                size_t needed_blocks_for_current_seq = seq_group->get_num_logical_blocks() - num_physical_blocks;
 
-                // If last block needed to be copied add 1 additional block to required blocks
-                KVCacheBlock::Ptr last_block = block_table.back();
-                if (needed_blocks_for_current_seq == 0 && last_block->copy_on_write())
-                    needed_blocks_for_current_seq+=1;
-                blocks_count += needed_blocks_for_current_seq;
+            if (num_physical_blocks > seq_group->get_num_logical_blocks())
+                // new blocks are not required
+                continue;
+
+            size_t last_block_id = block_table.back()->get_index();
+
+            if (last_block_ids.find(last_block_id) != last_block_ids.end()) 
+                // this block was already processed
+                continue;
+
+            size_t needed_blocks_per_sequence = seq_group->get_num_logical_blocks() - num_physical_blocks;
+
+            KVCacheBlock::Ptr last_block = block_table.back();
+            if (last_block->copy_on_write()) {
+                // block is used only by multiple sequences
+                auto references_count = last_block->get_references_count();
+
+                if (needed_blocks_per_sequence == 0) {
+                    // case when last block is not completely filled and needs to be copied n - 1 times, where n - references count
+                    blocks_count += references_count - 1;
+                }
+                else {
+                    blocks_count += needed_blocks_per_sequence * references_count;
+                }
+            }
+            else {
+                // block is used only by one sequence
+                blocks_count += needed_blocks_per_sequence;
             }
         }
         return blocks_count;

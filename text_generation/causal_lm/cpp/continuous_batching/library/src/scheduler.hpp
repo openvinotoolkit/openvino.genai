@@ -96,21 +96,21 @@ private:
         size_t processed_tokens = sequence_group->get_num_processed_tokens();
         size_t block_size = m_config.block_size;
         size_t prev_blocks_count = m_block_manager.num_free_blocks();
+        size_t num_running_sequences = sequence_group->num_running_seqs();
         size_t preempted_tokens = 0;
 
-        // preempt whole sequence group for non-grady sampling
-        if (!sequence_group->get_sampling_parameters().is_gready_sampling()) {
+        if (num_running_sequences > 1) {
             for (size_t s = 0; s < sequence_group->num_running_seqs(); ++s) {
                 auto seq_id = (*sequence_group)[s]->get_id();
                 m_block_manager.free_sequence(seq_id);
             }
-            sequence_group->preempt_tokens(processed_tokens);
+            sequence_group->reset();
             return m_block_manager.num_free_blocks() > prev_blocks_count;
         }
 
-        // currently partial preemtion is enabled only for greedy sampling 
+        // currently partial preemtion is enabled only for single running sequence case
         // TODO: implement partial preemption for case with muliple sequences in group
-        for (size_t s = 0; s < sequence_group->num_running_seqs(); ++s) {
+        for (size_t s = 0; s < num_running_sequences; ++s) {
             auto seq_id = (*sequence_group)[s]->get_id();
             if (!m_block_manager.has_block_table(seq_id)) {
                 // no blocks are allocated for this sequence, so it can't be preempted
@@ -143,8 +143,15 @@ private:
                 break;
             }
         }
+        // case when preemption requires preempt prompt tokens
+        if (processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
+            // preempt prompt fully to not leave partially generated prompt
+            preempted_tokens = processed_tokens;
+            auto seq_id = (*sequence_group)[0]->get_id();
+            m_block_manager.free_sequence(seq_id);
+        } 
         sequence_group->preempt_tokens(preempted_tokens);
-        return true;
+        return total_num_released_blocks > 0;
     }
 
     static size_t _get_low_priority_sequence_group_id(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
@@ -161,8 +168,9 @@ private:
         return std::numeric_limits<size_t>::max();
     }
 
-    bool _apply_preemption(size_t sequence_group_id, const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+    void _apply_preemption(size_t sequence_group_id, const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
+
         // check whether current sequence requires a new slot / block
         while (!m_block_manager.can_append_slots(sequence_group)) {
             // let's run a sequence for eviction
@@ -170,14 +178,13 @@ private:
         
             if (evicted_sequence_group_id <= sequence_group_id) {
                 // we have a cycle when current group need to evict itself to be in a running state
-                return false;
+                break;
             }
             size_t blocks_needed = m_block_manager.required_blocks_count(sequence_group);
             if (!_preempt_by_recompute(sequence_groups[evicted_sequence_group_id], blocks_needed)){
-                return false;
+                break;
             }
         }
-        return true;
     }
 
     void _schedule_prompt_phase_dynamic_split_fuse(std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
@@ -260,11 +267,7 @@ private:
                 size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
-                // check that all scheduled tokens can be allocated and apply preemtion if needed
-                while (!m_block_manager.can_append_slots(sequence_group)) {
-                    if (!_apply_preemption(sequence_group_id, sequence_groups))
-                        break;
-                }
+                _apply_preemption(sequence_group_id, sequence_groups);
 
                 // if we can't preemt any more sequences, clear scheduled tokens and move to next sequence
                 if (!m_block_manager.can_append_slots(sequence_group)){
@@ -324,22 +327,8 @@ private:
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
-                
-                size_t previously_allocated_blocks = 0;
-                size_t previously_processed = 0;
-                // can happen due to partial preemprion
-                if (sequence_group->get_context_len()>0) {
-                    previously_processed = sequence_group->get_num_processed_tokens();
-                    // clear the part of previously generated prompt
-                    sequence_group->preempt_tokens(sequence_group->get_num_processed_tokens());
-
-                    // calculate allocated blocks
-                    uint64_t seq_id = (*sequence_group)[0]->get_id();
-                    if (m_block_manager.has_block_table(seq_id)) {
-                        auto table = m_block_manager.get_block_table(seq_id);
-                        previously_allocated_blocks += table.size();
-                    }
-                }
+                // here we also assume that sequence must be scheduler in a single shot and has no already generated context
+                OPENVINO_ASSERT(sequence_group->get_context_len() == 0);
 
                 size_t num_available_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t sequence_len = sequence_group->get_num_available_tokens_for_batching();
@@ -363,15 +352,7 @@ private:
                     break;
 
                 // apply KV cache limitations
-                const size_t num_required_blocks = (sequence_len + m_config.block_size - 1) / m_config.block_size - previously_allocated_blocks;
-                if (!m_block_manager.can_allocate_blocks(num_required_blocks)) {
-                    if (previously_processed > 0) {
-                        // free remaining allocated KV-blocks
-                        uint64_t seq_id = (*sequence_group)[0]->get_id();
-                        m_block_manager.free_sequence(seq_id);
-                    }
-                    break;
-                }
+                const size_t num_required_blocks = (sequence_len + m_config.block_size - 1) / m_config.block_size;
                 // add scheduling information
                 {
                     Sequence::Ptr sequence = (*sequence_group)[0];

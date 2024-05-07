@@ -327,4 +327,23 @@ public:
     const GenerationConfig& get_sampling_parameters() const {
         return m_sampling_params;
     }
+
+    void reset() {
+        m_sequences.clear();
+        add_sequence(Sequence::create());
+        clear_scheduled_tokens();
+        m_num_processed_tokens = 0;
+        m_max_content_len = 0;
+    }
+
+    bool is_empty() {
+        if (m_max_content_len > 0 || m_num_processed_tokens > 0)
+            return false;
+        if (m_sequences.size() > 1)
+            return false;
+        OPENVINO_ASSERT(m_sequences.size() == 1);
+        if (m_sequences[0]->get_generated_len() > 0 || m_sequences[0]->get_cumulative_log_probs() != 0.0f)
+            return false;
+        return true; 
+    }
 };
