@@ -7,6 +7,7 @@
 #include <openvino/core/any.hpp>
 #include "generation_config.hpp"
 #include "llm_tokenizer.hpp"
+#include "streamer_base.hpp"
 #include <filesystem>
 
 using namespace std;
@@ -31,7 +32,7 @@ class LLMPipeline {
 public:
     LLMPipeline(
         std::string& model_path,
-        std::string& tokenizer_path,  // todo: make available also specifying ov::Model, ov::CompiledModel, etc. tokenizers
+        std::string& tokenizer_path,  // todo: make possible to specify tokenizers with ov::Model, ov::CompiledModel, etc. 
         std::string& detokenizer_path,
         std::string device="CPU",
         const ov::AnyMap& plugin_config={}
@@ -39,7 +40,7 @@ public:
     
     LLMPipeline(std::string& path, std::string device="CPU", const ov::AnyMap& plugin_config={});
     
-    ~LLMPipeline();  // Declare the destructor
+    ~LLMPipeline();
     
     GenerationConfig generation_config() const;
 
@@ -59,17 +60,18 @@ public:
 
     EncodedResults generate(ov::Tensor input_ids);
 
-    Tokenizer get_tokenizer();
+    ov::Tokenizer get_tokenizer();
 
     std::string apply_chat_template(std::string prompt, std::string role = "user") const;
 
     void set_streamer(std::function<void (std::string)> callback);
+    void set_streamer(std::shared_ptr<StreamerBase> streamer);
     void set_streamer();
     void start_chat();
     void finish_chat();
     void reset_state();
     void set_default_config(const GenerationConfig& generation_config);
-    void set_default_config(const AnyMap& generation_config_map);
+    // void set_default_config(const AnyMap& generation_config_map);
 
 private:
     class LLMPipelineImpl;

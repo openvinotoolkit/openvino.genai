@@ -5,8 +5,31 @@
 #include "llm_tokenizer.hpp"
 #include <filesystem>
 
+std::pair<ov::Tensor, ov::Tensor> pad_left(ov::Tensor&& input_ids, ov::Tensor&& attention_mask, int64_t pad_token=2);
 
-Tokenizer::Tokenizer(std::string& tokenizers_path, std::string device): m_device(device) {
+namespace ov {
+
+class Tokenizer::TokenizerImpl {
+public:
+    ov::InferRequest m_tokenize_request;
+    ov::InferRequest m_detokenizer_request;
+    std::string m_device;
+
+    TokenizerImpl() = default;
+    TokenizerImpl(std::string& tokenizers_path, std::string device);
+
+    std::pair<ov::Tensor, ov::Tensor> encode(std::string prompt);
+
+    std::pair<ov::Tensor, ov::Tensor> encode(std::vector<std::string> prompts);
+      
+    std::string decode(std::vector<int64_t> tokens);
+    
+    std::vector<std::string> decode(ov::Tensor tokens);
+    
+    std::vector<std::string> decode(std::vector<std::vector<int64_t>> lines);
+};
+
+Tokenizer::TokenizerImpl::TokenizerImpl(std::string& tokenizers_path, std::string device): m_device(device) {
     ov::Core core;
     
     auto is_xml = [](std::string path) -> bool { return path.compare(path.length() - 4, 4, ".xml") == 0;};
@@ -23,16 +46,20 @@ Tokenizer::Tokenizer(std::string& tokenizers_path, std::string device): m_device
     m_detokenizer_request = core.compile_model(tokenizers_path + "/openvino_detokenizer.xml", "CPU").create_infer_request();
 }
 
-// Tokenizer::Tokenizer(std::string& tokenizer_path, std::string& detokenizer_path, std::string device="CPU") {
+Tokenizer::Tokenizer(std::string& tokenizers_path, std::string device) {
+    m_pimpl = std::make_shared<TokenizerImpl>(tokenizers_path, device);
+}
 
-// }
+std::pair<ov::Tensor, ov::Tensor> Tokenizer::encode(std::string prompt) {
+    return m_pimpl->encode(prompt);
+}
 
-std::pair<ov::Tensor, ov::Tensor> Tokenizer::tokenize(std::string prompt) {
+std::pair<ov::Tensor, ov::Tensor> Tokenizer::TokenizerImpl::encode(std::string prompt) {
     size_t batch_size = 1;
     m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
     m_tokenize_request.infer();
 
-    vector<vector<int64_t>> input_ids_vec;
+    std::vector<std::vector<int64_t>> input_ids_vec;
     input_ids_vec.reserve(1);
     auto res_tensor = m_tokenize_request.get_tensor("input_ids");
     auto res_shape = res_tensor.get_shape();
@@ -45,7 +72,11 @@ std::pair<ov::Tensor, ov::Tensor> Tokenizer::tokenize(std::string prompt) {
     return {m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask")};
 }
 
-std::pair<ov::Tensor, ov::Tensor> Tokenizer::tokenize(std::vector<std::string> prompts) {
+std::pair<ov::Tensor, ov::Tensor> Tokenizer::encode(std::vector<std::string> prompts) {
+    return m_pimpl->encode(prompts);
+}
+
+std::pair<ov::Tensor, ov::Tensor> Tokenizer::TokenizerImpl::encode(std::vector<std::string> prompts) {
     m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
     auto size_ = m_tokenize_request.get_input_tensor().get_shape();
     m_tokenize_request.infer();
@@ -59,19 +90,27 @@ std::pair<ov::Tensor, ov::Tensor> Tokenizer::tokenize(std::vector<std::string> p
     return {m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask")};
 }
 
-std::pair<ov::Tensor, ov::Tensor> Tokenizer::tokenize(std::initializer_list<std::string> text) {
-    return tokenize(std::vector<std::string>(text.begin(), text.end()));
+std::pair<ov::Tensor, ov::Tensor> Tokenizer::encode(std::initializer_list<std::string> text) {
+    return encode(std::vector<std::string>(text.begin(), text.end()));
 }
 
 
-std::string Tokenizer::detokenize(std::vector<int64_t> tokens) {
+std::string Tokenizer::decode(std::vector<int64_t> tokens) {
+    return m_pimpl->decode(tokens);
+}
+
+std::string Tokenizer::TokenizerImpl::decode(std::vector<int64_t> tokens) {
     size_t batch_size = 1;
     m_detokenizer_request.set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
     m_detokenizer_request.infer();
     return m_detokenizer_request.get_output_tensor().data<std::string>()[0];
 }
 
-std::vector<std::string> Tokenizer::detokenize(ov::Tensor tokens) {
+std::vector<std::string> Tokenizer::decode(ov::Tensor tokens) {
+    return m_pimpl->decode(tokens);
+}
+
+std::vector<std::string> Tokenizer::TokenizerImpl::decode(ov::Tensor tokens) {
     m_detokenizer_request.set_input_tensor(tokens);
     auto shape = tokens.get_shape();
     auto data = tokens.data<int64_t>();
@@ -85,7 +124,11 @@ std::vector<std::string> Tokenizer::detokenize(ov::Tensor tokens) {
     return strings;
 }
 
-std::vector<std::string> Tokenizer::detokenize(std::vector<std::vector<int64_t>> lines) {
+std::vector<std::string> Tokenizer::decode(std::vector<std::vector<int64_t>> lines) {
+    return m_pimpl->decode(lines);
+}
+
+std::vector<std::string> Tokenizer::TokenizerImpl::decode(std::vector<std::vector<int64_t>> lines) {
     // todo: implement calling detokenizer in a single batch
 
     std::vector<std::string> results;
@@ -101,46 +144,6 @@ std::vector<std::string> Tokenizer::detokenize(std::vector<std::vector<int64_t>>
     return results;
 }
 
-TextCoutStreamer::TextCoutStreamer(const Tokenizer& tokenizer, bool print_eos_token) {
-    m_tokenizer = tokenizer;
-    m_print_eos_token = print_eos_token;
-}
+Tokenizer::~Tokenizer() = default;
 
-std::string TextCoutStreamer::put(int64_t token) {
-    std::stringstream res;
-
-    // do not print anything and flush cache if EOS token is met
-    if (token == m_tokenizer.m_eos_token) {
-        return end();
-    }
-
-    m_tokens_cache.push_back(token);
-    std::string text = m_tokenizer.detokenize(m_tokens_cache);
-    if (!text.empty() && '\n' == text.back()) {
-        // Flush the cache after the new line symbol
-        res << std::string_view{text.data() + print_len, text.size() - print_len};
-        m_tokens_cache.clear();
-        print_len = 0;
-        return res.str();
-    }
-    if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
-        // Don't print incomplete text
-        return res.str();
-    }
-    res << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
-    print_len = text.size();
-    return res.str();
-}
-
-std::string TextCoutStreamer::end() {
-    std::stringstream res;
-    std::string text = m_tokenizer.detokenize(m_tokens_cache);
-    res << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
-    m_tokens_cache.clear();
-    print_len = 0;
-    return res.str();
-}
-
-void TextCoutStreamer::set_tokenizer(Tokenizer tokenizer) {
-    this->m_tokenizer = tokenizer;
-}
+} // namespace ov

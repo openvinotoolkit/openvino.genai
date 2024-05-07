@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.15)
 project(causal_lm)
 
 set(JINJA2CPP_DEPS_MODE internal)
-
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 add_subdirectory(../../../thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
 add_subdirectory(../../../thirdparty/nlohmann_json/ "${CMAKE_CURRENT_BINARY_DIR}/nlohmann_json/")
@@ -55,14 +55,14 @@ set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON)
 # Generate Pipeline library
 set(TARGET_NAME generate_pipeline_lib)
 file(GLOB SOURCE_FILES "generate_pipeline/src/*.cpp")
-add_library(${TARGET_NAME} ${SOURCE_FILES})
+add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/generate_pipeline/include)
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime)
 target_link_libraries(${TARGET_NAME} PUBLIC nlohmann_json::nlohmann_json)
 target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
-# target_link_libraries(${TARGET_NAME} PRIVATE $ENV{HOME}/opt/jinja2cpp/lib/static/libjinja2cpp.a)  # todo: remove hardcode
+target_link_libraries(${TARGET_NAME} PRIVATE $ENV{HOME}/opt/jinja2cpp/lib/static/libjinja2cpp.a)  # todo: remove hardcode
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 17)
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON)
 
@@ -79,3 +79,19 @@ target_link_libraries(${TARGET_NAME} PRIVATE generate_pipeline_lib)
 target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 17)
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON)
+
+include(FetchContent)
+FetchContent_Declare(
+    pybind11
+    GIT_REPOSITORY https://github.com/pybind/pybind11
+    GIT_TAG        v2.12.0
+)
+
+FetchContent_GetProperties(pybind11)
+if(NOT pybind11_POPULATED)
+    FetchContent_Populate(pybind11)
+    add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
+endif()
+
+pybind11_add_module(py_generate_pipeline generate_pipeline/python/py_generate_pipeline.cpp)
+target_link_libraries(py_generate_pipeline PRIVATE generate_pipeline_lib)

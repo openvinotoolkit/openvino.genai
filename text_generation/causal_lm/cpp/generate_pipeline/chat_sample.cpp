@@ -39,9 +39,9 @@ int main(int argc, char* argv[]) try {
     std::string model_path = argv[1];
     ov::LLMPipeline pipe(model_path, device);
     
-    GenerationConfig config = pipe.generation_config();
+    ov::GenerationConfig config = pipe.generation_config();
 
-    config.max_new_tokens(10000);
+    config.max_new_tokens = 10000;
     pipe.set_streamer([](std::string word) { std::cout << word << std::flush; });
 
     std::string accumulated_str = "";
