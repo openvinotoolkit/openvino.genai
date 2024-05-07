@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) try {
     ov::LLMPipeline pipe(model_path, device);
     // Will try to load config from generation_config.json.
     // but if not found default velues for gready search will be used
-    ov::GenerationConfig config = pipe.generation_config();
+    ov::GenerationConfig config = pipe.get_generation_config();
 
     auto text_streamer = TextStreamer{pipe.get_tokenizer()};
     auto text_streamer_callback = [&text_streamer](std::vector<int64_t>&& tokens, ov::LLMPipeline& pipe){

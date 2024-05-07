@@ -40,16 +40,18 @@ public:
 
     // Multinomial
     float temperature;
-    int top_k;
     float top_p;
+    size_t top_k;
     bool do_sample;
-    std::variant<std::string, ov::CompiledModel, ov::InferRequest> draft_model;  // todo: remove or try to add ov::Model const ov::Model&,
 
     // special tokens
     int64_t bos_token_id;
     int64_t eos_token_id;
     int64_t pad_token_id;
-
+    
+    // speculative sampling
+    std::variant<std::string, ov::CompiledModel, ov::InferRequest> draft_model;  // todo: remove or try to add ov::Model const ov::Model&,
+    
     GenerationConfig() = default;
 
     GenerationConfig(std::string json_path);

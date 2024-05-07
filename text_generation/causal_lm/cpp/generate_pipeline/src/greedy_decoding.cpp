@@ -140,7 +140,7 @@ ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner,
     if (!generation_config.ignore_eos && all_are_eos)
         return results;
     
-    for (size_t i = 0; i < max_tokens; ++i) {
+    for (size_t i = 0; i < max_tokens - 1; ++i) {
         update_position_ids(position_ids, m_model_runner.get_tensor("attention_mask"));
         m_model_runner.set_tensor("attention_mask", extend_attention(m_model_runner.get_tensor("attention_mask")));
 

@@ -13,8 +13,6 @@
 // #include "generation_config.hpp"
 
 
-std::pair<int64_t, float> softmax(const ov::Tensor& logits, const size_t batch_idx);
-
 namespace ov {
 
 ov::EncodedResults assistive_decoding(ov::InferRequest& m_model_runner, ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config);
@@ -170,7 +168,7 @@ ov::GenerationConfig ov::LLMPipeline::LLMPipelineImpl::generation_config() const
     return m_sampling_parameters;
 }
 
-ov::GenerationConfig ov::LLMPipeline::generation_config() const {
+ov::GenerationConfig ov::LLMPipeline::get_generation_config() const {
     return m_pimpl->generation_config();
 }
 
@@ -312,6 +310,7 @@ std::string ov::LLMPipeline::apply_chat_template(std::string prompt, std::string
 }
 
 std::string ov::LLMPipeline::LLMPipelineImpl::apply_chat_template(std::string prompt, std::string role) const {
+    // todo: temporary disable for easier and faster build
     // jinja2::TemplateEnv env;
     // env.GetSettings().lstripBlocks = true;
     // env.GetSettings().trimBlocks = true;
@@ -336,7 +335,6 @@ std::string ov::LLMPipeline::LLMPipelineImpl::apply_chat_template(std::string pr
 
 void ov::LLMPipeline::set_streamer(std::function<void (std::string)> callback) {
     m_pimpl->m_streamer = std::make_shared<TextCallbackStreamer>(m_pimpl->m_tokenizer, callback);
-    // m_pimpl->m_streamer->set_callback(callback);
 }
 
 void ov::LLMPipeline::set_streamer(std::shared_ptr<StreamerBase> streamer) {
@@ -344,7 +342,7 @@ void ov::LLMPipeline::set_streamer(std::shared_ptr<StreamerBase> streamer) {
 }
 
 void ov::LLMPipeline::set_streamer() {
-    // m_pimpl->m_streamer->set_callback();
+    m_pimpl->m_streamer = nullptr;
 }
 
 void ov::LLMPipeline::start_chat() {
@@ -360,12 +358,8 @@ void ov::LLMPipeline::reset_state() {
     m_pimpl->m_model_runner.reset_state();
 }
 
-void ov::LLMPipeline::set_default_config(const GenerationConfig& generation_config) {
+void ov::LLMPipeline::set_generation_config(const GenerationConfig& generation_config) {
     m_pimpl->m_sampling_parameters = generation_config;
 }
-
-// void ov::LLMPipeline::set_default_config(const AnyMap& generation_config_map) {
-//     m_pimpl->m_sampling_parameters = GenerationConfig::anymap_to_generation_config(generation_config_map);
-// }
 
 ov::LLMPipeline::~LLMPipeline() = default;
