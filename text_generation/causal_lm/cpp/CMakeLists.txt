@@ -21,10 +21,6 @@ target_link_libraries(beam_search_causal_lm PRIVATE openvino::runtime)
 set_target_properties(beam_search_causal_lm PROPERTIES CXX_STANDARD 17)
 set_target_properties(beam_search_causal_lm PROPERTIES CXX_STANDARD_REQUIRED ON)
 
-message("finding tbb")
-_ov_find_tbb()
-message("executed")
-
 add_executable(speculative_decoding_lm speculative_decoding_lm.cpp)
 target_compile_definitions(speculative_decoding_lm PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
 target_include_directories(speculative_decoding_lm PRIVATE ./)
@@ -33,7 +29,11 @@ target_link_libraries(speculative_decoding_lm PRIVATE openvino::runtime)
 set_target_properties(speculative_decoding_lm PROPERTIES CXX_STANDARD 17)
 set_target_properties(speculative_decoding_lm PROPERTIES CXX_STANDARD_REQUIRED ON)
 # find_package(TBB COMPONENTS tbb)
-target_link_libraries(speculative_decoding_lm PRIVATE TBB::tbb)
+# target_link_libraries(speculative_decoding_lm PRIVATE TBB::tbb)
+
+target_link_libraries(speculative_decoding_lm PRIVATE openvino::runtime "$INTEL_OPENVINO_DIR/runtime/3rdparty/tbb/lib/libtbb.so")
+include_directories(PRIVATE "$INTEL_OPENVINO_DIR/runtime/3rdparty/tbb/include")
+
 
 add_executable(prompt_lookup_decoding_lm prompt_lookup_decoding_lm.cpp)
 target_compile_definitions(prompt_lookup_decoding_lm PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
@@ -43,4 +43,7 @@ target_link_libraries(prompt_lookup_decoding_lm PRIVATE openvino::runtime)
 set_target_properties(prompt_lookup_decoding_lm PROPERTIES CXX_STANDARD 17)
 set_target_properties(prompt_lookup_decoding_lm PROPERTIES CXX_STANDARD_REQUIRED ON)
 # find_package(TBB COMPONENTS tbb)
-target_link_libraries(prompt_lookup_decoding_lm PRIVATE TBB::tbb)
+# target_link_libraries(prompt_lookup_decoding_lm PRIVATE TBB::tbb)
+
+target_link_libraries(prompt_lookup_decoding_lm PRIVATE openvino::runtime "$INTEL_OPENVINO_DIR/runtime/3rdparty/tbb/lib/libtbb.so")
+include_directories(PRIVATE "$INTEL_OPENVINO_DIR/runtime/3rdparty/tbb/include")
