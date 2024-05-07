@@ -1,7 +1,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.16)
 project(causal_lm)
 
 add_subdirectory(../../../thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
@@ -28,8 +28,9 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 target_link_libraries(speculative_decoding_lm PRIVATE openvino::runtime)
 set_target_properties(speculative_decoding_lm PROPERTIES CXX_STANDARD 17)
 set_target_properties(speculative_decoding_lm PROPERTIES CXX_STANDARD_REQUIRED ON)
+_ov_find_tbb()
 # find_package(TBB COMPONENTS tbb)
-# target_link_libraries(speculative_decoding_lm PRIVATE TBB::tbb)
+target_link_libraries(speculative_decoding_lm PRIVATE TBB::tbb)
 
 target_link_libraries(speculative_decoding_lm PRIVATE openvino::runtime "$INTEL_OPENVINO_DIR/runtime/3rdparty/tbb/lib/libtbb.so")
 include_directories(PRIVATE "$INTEL_OPENVINO_DIR/runtime/3rdparty/tbb/include")
@@ -42,8 +43,9 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 target_link_libraries(prompt_lookup_decoding_lm PRIVATE openvino::runtime)
 set_target_properties(prompt_lookup_decoding_lm PROPERTIES CXX_STANDARD 17)
 set_target_properties(prompt_lookup_decoding_lm PROPERTIES CXX_STANDARD_REQUIRED ON)
+_ov_find_tbb()
 # find_package(TBB COMPONENTS tbb)
-# target_link_libraries(prompt_lookup_decoding_lm PRIVATE TBB::tbb)
+target_link_libraries(prompt_lookup_decoding_lm PRIVATE TBB::tbb)
 
-target_link_libraries(prompt_lookup_decoding_lm PRIVATE openvino::runtime "$INTEL_OPENVINO_DIR/runtime/3rdparty/tbb/lib/libtbb.so")
-include_directories(PRIVATE "$INTEL_OPENVINO_DIR/runtime/3rdparty/tbb/include")
+target_link_libraries(prompt_lookup_decoding_lm PRIVATE openvino::runtime "${INTEL_OPENVINO_DIR}/runtime/3rdparty/tbb/lib/libtbb.so")
+include_directories(PRIVATE "${INTEL_OPENVINO_DIR}/runtime/3rdparty/tbb/include")
