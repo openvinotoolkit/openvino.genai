@@ -43,7 +43,7 @@ endmacro()
 
 
 # we have to use our own version of find_dependency because of support cmake 3.7
-macro(_ov_find_dependency dep)
+macro(_genai_find_dependency dep)
     set(cmake_fd_quiet_arg)
     if(${CMAKE_FIND_PACKAGE_NAME}_FIND_QUIETLY)
         set(cmake_fd_quiet_arg QUIET)
@@ -74,14 +74,14 @@ macro(_ov_find_dependency dep)
     unset(cmake_fd_quiet_arg)
 endmacro()
 
-macro(_ov_find_tbb)
+macro(_genai_find_tbb)
     set(THREADING "TBB")
     if(THREADING STREQUAL "TBB" OR THREADING STREQUAL "TBB_AUTO")
         set(enable_pkgconfig_tbb "")
 
         # try tbb.pc
         if(enable_pkgconfig_tbb AND NOT ANDROID)
-            _ov_find_dependency(PkgConfig)
+            _genai_find_dependency(PkgConfig)
             if(PkgConfig_FOUND)
                 if(${CMAKE_FIND_PACKAGE_NAME}_FIND_QUIETLY)
                     set(pkg_config_quiet_arg QUIET)
@@ -147,7 +147,7 @@ macro(_ov_find_tbb)
             endif()
             unset(enable_system_tbb)
 
-            _ov_find_dependency(TBB
+            _genai_find_dependency(TBB
                                 COMPONENTS tbb tbbmalloc
                                 ${find_package_tbb_extra_args})
             unset(find_package_tbb_extra_args)
@@ -157,7 +157,7 @@ macro(_ov_find_tbb)
         set(install_tbbbind "")
         if(install_tbbbind)
             set_and_check(_tbb_bind_dir "")
-            _ov_find_dependency(TBBBIND_2_5
+            _genai_find_dependency(TBBBIND_2_5
                                 PATHS ${_tbb_bind_dir}
                                 NO_CMAKE_FIND_ROOT_PATH
                                 NO_DEFAULT_PATH)
@@ -178,7 +178,7 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 target_link_libraries(speculative_decoding_lm PRIVATE openvino::runtime)
 set_target_properties(speculative_decoding_lm PROPERTIES CXX_STANDARD 17)
 set_target_properties(speculative_decoding_lm PROPERTIES CXX_STANDARD_REQUIRED ON)
-_ov_find_tbb()
+_genai_find_tbb()
 target_link_libraries(speculative_decoding_lm PRIVATE TBB::tbb)
 
 add_executable(prompt_lookup_decoding_lm prompt_lookup_decoding_lm.cpp)
@@ -188,5 +188,5 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 target_link_libraries(prompt_lookup_decoding_lm PRIVATE openvino::runtime)
 set_target_properties(prompt_lookup_decoding_lm PROPERTIES CXX_STANDARD 17)
 set_target_properties(prompt_lookup_decoding_lm PROPERTIES CXX_STANDARD_REQUIRED ON)
-_ov_find_tbb()
+_genai_find_tbb()
 target_link_libraries(prompt_lookup_decoding_lm PRIVATE TBB::tbb)
