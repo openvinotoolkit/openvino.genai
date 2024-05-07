@@ -39,6 +39,10 @@ public:
     bool copy_on_write() const {
         return m_ref_count > 1;
     }
+
+    int get_references_count() const {
+        return m_ref_count;
+    }
 };
 
 
@@ -106,6 +110,10 @@ public:
         return m_block_table[seq_id];
     }
 
+    const bool has_block_table(uint64_t seq_id) {
+        return m_block_table.count(seq_id) > 0;
+    }
+
     size_t num_free_blocks() const {
         return m_allocator.num_free_blocks();
     }
@@ -141,16 +149,81 @@ public:
         OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
     }
 
-    bool can_append_slot(SequenceGroup::CPtr seq_group) {
-        // TODO: optimize this HEURISTIC
-        // it assumes that all sequences require new block, but maybe some of them
-        // don't share the same block
-        // let's count actual number of sequences, where last_block_id is the same
-        return seq_group->num_running_seqs() <= m_allocator.num_free_blocks();
+    void free_sequence_partially(size_t seq_id, size_t block_num) {
+        // currently this method is applicable only for groups with single sequences
+        // TODO: support for groups with multiple sequences
+        auto block_table = m_block_table[seq_id];
+
+        if (block_num == block_table.size())
+            return free_sequence(seq_id);
+
+        OPENVINO_ASSERT(block_table.size() >= block_num);
+        for (size_t idx = 0; idx < block_num; idx++) {
+            m_allocator.free(block_table.back());
+            OPENVINO_ASSERT(block_table.back()->is_free());
+        } 
+        m_block_table[seq_id].resize(m_block_table[seq_id].size() - block_num);
+
+        if (m_block_table.size() == 0) {
+            OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
+        }
     }
 
-    std::map<size_t, std::list<size_t>> append_slot(SequenceGroup::CPtr seq_group) {
-        OPENVINO_ASSERT(can_append_slot(seq_group));
+    bool can_append_slots(SequenceGroup::CPtr seq_group) {
+        return required_blocks_count(seq_group) <= m_allocator.num_free_blocks();
+    }
+
+    size_t required_blocks_count(SequenceGroup::CPtr seq_group) {
+        std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
+        size_t blocks_count= 0; // totat number of needed blocks for sequence group
+        std::set<size_t> last_block_ids; // unique last block indices
+
+        for (auto seq: running_sequences) {
+            auto seq_id = seq->get_id();
+            if (m_block_table.find(seq_id) == m_block_table.end()) {
+                // the block table is empty, so we need to allocate the number of blocks equal to number of logical blocks
+                blocks_count += seq_group->get_num_logical_blocks();
+                continue;
+            }
+            auto& block_table = m_block_table[seq_id];
+            size_t num_physical_blocks = block_table.size();
+            OPENVINO_ASSERT(num_physical_blocks > 0);
+
+            if (num_physical_blocks > seq_group->get_num_logical_blocks())
+                // new blocks are not required
+                continue;
+
+            size_t last_block_id = block_table.back()->get_index();
+
+            if (last_block_ids.find(last_block_id) != last_block_ids.end()) 
+                // this block was already processed
+                continue;
+
+            size_t needed_blocks_per_sequence = seq_group->get_num_logical_blocks() - num_physical_blocks;
+
+            KVCacheBlock::Ptr last_block = block_table.back();
+            if (last_block->copy_on_write()) {
+                // block is used only by multiple sequences
+                auto references_count = last_block->get_references_count();
+
+                if (needed_blocks_per_sequence == 0) {
+                    // case when last block is not completely filled and needs to be copied n - 1 times, where n - references count
+                    blocks_count += references_count - 1;
+                }
+                else {
+                    blocks_count += needed_blocks_per_sequence * references_count;
+                }
+            }
+            else {
+                // block is used only by one sequence
+                blocks_count += needed_blocks_per_sequence;
+            }
+        }
+        return blocks_count;
+    }
+
+    std::map<size_t, std::list<size_t>> append_slots(SequenceGroup::CPtr seq_group) {
+
         size_t num_logical_blocks = seq_group->get_num_logical_blocks();
         std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
 
@@ -162,8 +235,8 @@ public:
             size_t num_physical_blocks = block_table.size();
 
             if (num_logical_blocks > num_physical_blocks) {
-                // we require to allocate a new physical block
-                block_table.push_back(m_allocator.allocate_block());
+                OPENVINO_ASSERT(can_allocate_blocks(num_logical_blocks - num_physical_blocks));
+                allocate(seq_id, num_logical_blocks - num_physical_blocks);
             } else {
                 OPENVINO_ASSERT(num_logical_blocks == num_physical_blocks, "A number of physical and logic blocks must be the same in this code path");
                 KVCacheBlock::Ptr last_block = block_table.back();

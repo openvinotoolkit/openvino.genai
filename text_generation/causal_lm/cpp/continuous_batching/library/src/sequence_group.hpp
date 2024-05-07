@@ -87,6 +87,12 @@ public:
         return m_cumulative_log_prob;
     }
 
+    // TODO: need to remove this when sampling is fixed to properly handle the case when sequnce group is returned after preemption 
+    void remove_tokens(size_t count) {
+        OPENVINO_ASSERT(m_generated_ids.size() >= count);
+        m_generated_ids.erase(m_generated_ids.end() - count, m_generated_ids.end());    
+    }
+
     float get_beam_search_score(const GenerationConfig& sampling_params) const {
         float cumulative_log_prob = get_cumulative_log_probs(), current_length = get_generated_len();
         float score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
@@ -239,7 +245,13 @@ public:
     void preempt_tokens(size_t num_preempt_tokens) {
         OPENVINO_ASSERT(num_preempt_tokens <= m_num_processed_tokens);
         m_num_processed_tokens -= num_preempt_tokens;
-        // Note, that m_max_content_len is kept as is
+        m_max_content_len -= num_preempt_tokens;
+
+        // this removal of tokens prevents duplicating of generated tokens after preemption of a sequence
+        // TODO: need to remove this when sampling is fixed to properly handle the case when sequnce group is returned after preemption
+        for (auto seq: m_sequences) {
+            seq->remove_tokens(std::min<size_t>(num_preempt_tokens, seq->get_generated_len()));
+        }
     }
 
     // returns context length taking into account scheduled tokens
@@ -254,6 +266,10 @@ public:
 
     void schedule_tokens(size_t num_tokens) {
         m_num_scheduled_tokens = num_tokens;
+    }
+
+    void clear_scheduled_tokens() {
+        m_num_scheduled_tokens = 0;
     }
 
     bool is_scheduled() const {
@@ -273,7 +289,7 @@ public:
         m_num_processed_tokens += m_num_scheduled_tokens;
         // if some processed tokens were evicted, max content len is greater than number of processed tokens
         m_max_content_len = std::max(m_max_content_len, m_num_processed_tokens);
-        m_num_scheduled_tokens = 0;
+        clear_scheduled_tokens();
     }
 
     const TokenIds& get_prompt_ids() const {
@@ -289,6 +305,10 @@ public:
         return get_num_logical_blocks();
     }
 
+    size_t get_block_size() const {
+        return m_block_size;
+    }
+
     Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
         m_sequences.emplace_back(Sequence::fork(sequence));
         return m_sequences.back();
@@ -296,5 +316,24 @@ public:
 
     const GenerationConfig& get_sampling_parameters() const {
         return m_sampling_params;
+    }
+
+    void reset() {
+        m_sequences.clear();
+        add_sequence(Sequence::create());
+        clear_scheduled_tokens();
+        m_num_processed_tokens = 0;
+        m_max_content_len = 0;
+    }
+
+    bool is_empty() {
+        if (m_max_content_len > 0 || m_num_processed_tokens > 0)
+            return false;
+        if (m_sequences.size() > 1)
+            return false;
+        OPENVINO_ASSERT(m_sequences.size() == 1);
+        if (m_sequences[0]->get_generated_len() > 0 || m_sequences[0]->get_cumulative_log_probs() != 0.0f)
+            return false;
+        return true; 
     }
 };

@@ -36,13 +36,17 @@ def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
     ]
     return (prompts, generation_configs)
 
-def get_scheduler_config() -> SchedulerConfig:
+def get_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
-    scheduler_config.dynamic_split_fuse = True
-    scheduler_config.num_kv_blocks = 300
-    # vLLM specific
-    scheduler_config.max_num_batched_tokens = 256
-    scheduler_config.max_num_seqs = 256
+    if scheduler_params is None:
+        scheduler_config.dynamic_split_fuse = True
+        scheduler_config.num_kv_blocks = 300
+        # vLLM specific
+        scheduler_config.max_num_batched_tokens = 256
+        scheduler_config.max_num_seqs = 256
+    else:
+        for param, value in scheduler_params.items():
+            setattr(scheduler_config, param, value)
 
     return scheduler_config
 
@@ -134,12 +138,17 @@ def run_continuous_batching(
 # - meta-llama/Llama-2-7b-chat-hf
 # - mistralai/Mistral-7B-Instruct-v0.2
 
-def test_check_greedy_search(tmp_path):
+scheduler_params_list = [{"num_kv_blocks": 300, "block_size": 16, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256},
+                         {"num_kv_blocks": 40, "block_size": 4, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, # test preemption for dynamic_split_fuse
+                         {"num_kv_blocks": 40, "block_size": 4, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}] # test preemption for vllm
+@pytest.mark.parametrize("scheduler_params", scheduler_params_list)
+def test_preemption(tmp_path, scheduler_params):
     prompts, generation_configs = get_test_dataset()
     model_id : str = "facebook/opt-125m"
+    scheduler_config = get_scheduler_config(scheduler_params)
 
     (hf_results, model_path) = run_hugging_face(model_id=model_id, prompts=prompts, generation_configs=generation_configs, tmp_path=tmp_path, use_optimum=True)
-    my_results : List[GenerationResult] = run_continuous_batching(model_path, get_scheduler_config(), prompts, generation_configs)
+    my_results : List[GenerationResult] = run_continuous_batching(model_path, scheduler_config, prompts, generation_configs)
 
     assert len(prompts) == len(hf_results)
     assert len(prompts) == len(my_results)

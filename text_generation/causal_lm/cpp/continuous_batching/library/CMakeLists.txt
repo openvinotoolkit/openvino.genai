@@ -56,3 +56,18 @@ install(TARGETS ${TARGET_NAME}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.hpp")
+
+
+# gtest
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+)
+FetchContent_MakeAvailable(googletest)
+
+
+set(TEST_TARGET_NAME "tests_continuous_batching")
+add_executable(${TEST_TARGET_NAME} "src/tests/scheduler.cpp")
+target_link_libraries(${TEST_TARGET_NAME} PUBLIC ${TARGET_NAME} openvino::runtime gtest_main)
+target_include_directories(${TEST_TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/"
+                                          PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
