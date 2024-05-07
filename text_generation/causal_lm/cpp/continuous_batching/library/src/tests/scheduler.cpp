@@ -350,22 +350,19 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         EXPECT_EQ(out2.m_block_tables[idx0][2]->get_index(), 2);
         EXPECT_EQ(out2.m_block_tables[idx0][3]->get_index(), 5);
 
-        if (scheduler_config.dynamic_split_fuse) {
-            // for dynamic_split_fuse case sequence_group2 is partially scheduled
-            std::vector<size_t> ref_ids = {0, 1};
-            EXPECT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
-            EXPECT_EQ(out2.m_block_tables[idx1].size(), 2);
+        std::vector<size_t> ref_ids = {0};
+        EXPECT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
+        EXPECT_EQ(out2.m_total_num_scheduled_tokens, 1); 
 
-            // 1 token for sequence_group1 + 8 tokens of partial prompt of sequence_group2
-            EXPECT_EQ(out2.m_total_num_scheduled_tokens, 9); 
+        if (scheduler_config.dynamic_split_fuse) {
+            // for dynamic_split_fuse sequence_group2 is preemted partially, part of prompt is left
+            EXPECT_TRUE(scheduler.has_block_table(idx1));
+            auto block_table2 = scheduler.get_block_table(*(*sequence_group2)[0]);
+            EXPECT_EQ(block_table2.size(), 2); // full prompt requires 3 blocks, 2 are left in scheduler
 
         } else {
-            // for vllm case sequence_group2 is not scheduled, as there is not enough space for prompt
-            std::vector<size_t> ref_ids = {0};
-            EXPECT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
+            // for vllm case sequence_group2 is fully preempted
             EXPECT_FALSE(scheduler.has_block_table(idx1));
-
-            EXPECT_EQ(out2.m_total_num_scheduled_tokens, 1); 
         }
         
         for (auto seq: requests) {

@@ -144,12 +144,12 @@ private:
             }
         }
         // case when preemption requires preempt prompt tokens
-        if (processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
+        if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
             // preempt prompt fully to not leave partially generated prompt
             preempted_tokens = processed_tokens;
             auto seq_id = (*sequence_group)[0]->get_id();
             m_block_manager.free_sequence(seq_id);
-        } 
+        }
         sequence_group->preempt_tokens(preempted_tokens);
         return total_num_released_blocks > 0;
     }
