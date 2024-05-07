@@ -6,6 +6,9 @@ The pure C++ text-to-image pipeline, driven by the OpenVINO native API for SD v1
 
 ## Step 1: Prepare build environment
 
+Prerequisites:
+- Conda ([installation guide](https://conda.io/projects/conda/en/latest/user-guide/install/index.html))
+
 C++ Packages:
 * [CMake](https://cmake.org/download/): Cross-platform build tool
 * [OpenVINO](https://docs.openvino.ai/2024/get-started/install-openvino.html): Model inference
