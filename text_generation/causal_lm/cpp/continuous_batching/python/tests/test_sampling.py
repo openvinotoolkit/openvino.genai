@@ -1,8 +1,10 @@
+import pytest
+from pathlib import Path
 from typing import List, Tuple
-from unittest import TestCase
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
+from optimum.intel import OVModelForCausalLM
 
 from py_continuous_batching import ContinuousBatchingPipeline, GenerationConfig, SchedulerConfig, GenerationResult
 
@@ -15,21 +17,22 @@ def get_beam_search() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_groups = 3
     generation_config.group_size = 2
-    generation_config.num_return_sequences = 6
+    generation_config.max_new_tokens = 30
+    generation_config.num_return_sequences = generation_config.num_groups * generation_config.group_size
     return generation_config
 
 def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
     prompts = [
-        # "What is OpenVINO?",
-        # "How are you?",
-        # "What is your name?",
+        "What is OpenVINO?",
+        "How are you?",
+        "What is your name?",
         "Tell me something about Canada"
     ]
     generation_configs = [
+        get_greedy(),
         get_beam_search(),
-        # get_beam_search(),
-        # get_beam_search(),
-        # get_beam_search()
+        get_greedy(),
+        get_beam_search()
     ]
     return (prompts, generation_configs)
 
@@ -37,10 +40,14 @@ def get_scheduler_config() -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
     scheduler_config.dynamic_split_fuse = True
     scheduler_config.num_kv_blocks = 300
+    # vLLM specific
+    scheduler_config.max_num_batched_tokens = 256
+    scheduler_config.max_num_seqs = 256
 
     return scheduler_config
 
 def convert_to_hf(
+    default_generation_config : HFGenerationConfig,
     generation_config : GenerationConfig
 ) -> HFGenerationConfig:
     kwargs = {}
@@ -48,6 +55,10 @@ def convert_to_hf(
     # generic parameters
     kwargs['max_length'] = generation_config.max_length
     kwargs['max_new_tokens'] = generation_config.max_new_tokens
+
+    # copy default parameters
+    kwargs['eos_token_id'] = default_generation_config.eos_token_id
+    kwargs['pad_token_id'] = default_generation_config.pad_token_id
 
     if generation_config.num_groups * generation_config.group_size > 1:
         # beam search case
@@ -75,46 +86,73 @@ def convert_to_hf(
 def run_hugging_face(
     model_id : str,
     prompts: List[str],
-    generation_configs: List[GenerationConfig]
-) -> List[GenerationResult]:
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForCausalLM.from_pretrained(model_id)
+    generation_configs: List[GenerationConfig],
+    use_optimum: bool,
+    tmp_path: Path
+) -> Tuple[List[GenerationResult], str]:
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True) if use_optimum else \
+            AutoModelForCausalLM.from_pretrained(model_id)
     generation_results: List[GenerationResult] = []
+    model_path : Path = tmp_path / model_id
+
+    if use_optimum:
+        model.save_pretrained(model_path)
+        # convert tokenizers as well
+        from openvino_tokenizers import convert_tokenizer
+        from openvino import serialize
+        tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
+        serialize(tokenizer, model_path / "openvino_tokenizer.xml")
+        serialize(detokenizer, model_path / "openvino_detokenizer.xml")
 
     for prompt, generation_config in zip(prompts, generation_configs):
-        inputs = tokenizer(prompt, return_tensors="pt")
-        generate_outputs = model.generate(**inputs, generation_config=convert_to_hf(generation_config), return_dict_in_generate=True)
-        all_text_batch = tokenizer.batch_decode(generate_outputs.sequences, skip_special_tokens=True)
+        inputs = hf_tokenizer(prompt, return_tensors="pt")
+        prompt_len = len(inputs['input_ids'][0])
+        generate_outputs = model.generate(**inputs, generation_config=convert_to_hf(model.generation_config, generation_config), return_dict_in_generate=True)
+        all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
 
         generation_result = GenerationResult()
-        generation_result.m_generation_ids = [text[len(prompt):] for text in all_text_batch]
-        generation_result.m_scores = [score for score in generate_outputs.sequences_scores]
+        generation_result.m_generation_ids = all_text_batch
+        # sequences_scores are available only for beam search case
+        if generation_config.is_beam_search:
+            generation_result.m_scores = [score for score in generate_outputs.sequences_scores]
         generation_results.append(generation_result)
 
-    return generation_results
+    return (generation_results, model_path)
 
 def run_continuous_batching(
-    model_path : str,
+    model_path : Path,
     scheduler_config : SchedulerConfig,
     prompts: List[str],
     generation_configs : List[GenerationConfig]
 ) -> List[GenerationResult]:
-    pipe = ContinuousBatchingPipeline(model_path, scheduler_config)
+    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config)
     return pipe.generate(prompts, generation_configs)
 
-def test_check_greedy_search():
+# tested models:
+# - facebook/opt-125m
+# - meta-llama/Llama-2-7b-chat-hf
+# - mistralai/Mistral-7B-Instruct-v0.2
+
+def test_check_greedy_search(tmp_path):
     prompts, generation_configs = get_test_dataset()
-    hf_results : List[GenerationResult] = run_hugging_face("facebook/opt-125m", prompts, generation_configs)
-    my_results : List[GenerationResult] = run_continuous_batching("/home/sandye51/Documents/Programming/git_repo/openvino.genai/build/opt125", get_scheduler_config(), prompts, generation_configs)
+    model_id : str = "facebook/opt-125m"
+
+    (hf_results, model_path) = run_hugging_face(model_id=model_id, prompts=prompts, generation_configs=generation_configs, tmp_path=tmp_path, use_optimum=True)
+    my_results : List[GenerationResult] = run_continuous_batching(model_path, get_scheduler_config(), prompts, generation_configs)
 
     assert len(prompts) == len(hf_results)
     assert len(prompts) == len(my_results)
 
-    for prompt, hf_result, my_result in zip(prompts, hf_results, my_results):
+    for prompt, hf_result, my_result, generation_config in zip(prompts, hf_results, my_results, generation_configs):
         print(f"Prompt = {prompt}\nHF result = {hf_result}\nmy result = {my_result}")
+
+        if generation_config.is_beam_search:
+            assert len(hf_result.m_scores) == len(my_result.m_scores)
+            for hf_score, my_score in zip(hf_result.m_scores, my_result.m_scores):
+                # Note, that for fp32 / fp16 models scores are different less than 0.001
+                assert abs(hf_score - my_score) < 0.02
+
         assert len(hf_result.m_generation_ids) == len(my_result.m_generation_ids)
-        assert len(hf_result.m_scores) == len(my_result.m_scores)
-        # for each num_return_sequences
-        for hf_text, hf_score, my_text, my_score in zip(hf_result.m_generation_ids, hf_result.m_scores, my_result.m_generation_ids, my_result.m_scores):
+        for hf_text, my_text in zip(hf_result.m_generation_ids, my_result.m_generation_ids):
             assert hf_text == my_text
-            # assert hf_score == my_score
