@@ -24,6 +24,7 @@ conda install -c conda-forge openvino c-compiler cxx-compiler make
 1. Install dependencies to import models from HuggingFace:
 
     ```shell
+    git submodule update --init
     conda activate openvino_lcm_cpp
     python -m pip install -r scripts/requirements.txt
     python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
@@ -35,6 +36,8 @@ conda install -c conda-forge openvino c-compiler cxx-compiler make
     cd scripts
     python convert_model.py -lcm "SimianLuo/LCM_Dreamshaper_v7" -t FP16
     ```
+
+If https://huggingface.co/ is down, the script won't be able to download the model.
 
 > [!NOTE]
 >Only static model is currently supported for this sample.

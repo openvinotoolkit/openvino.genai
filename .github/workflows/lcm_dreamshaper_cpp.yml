@@ -6,6 +6,7 @@ on:
       - image_generation/common/**
       - .github/workflows/lcm_dreamshaper_cpp.yml
       - thirdparty/openvino_tokenizers
+      - "!**.md"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

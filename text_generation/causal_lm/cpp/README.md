@@ -1,6 +1,6 @@
 # Text generation C++ samples that support most popular models like LLaMA 2
 
-These examples showcase inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The applications don't have many configuration options to encourage the reader to explore and modify the source code. Loading `openvino_tokenizers` to `ov::Core` enables tokenization. Run `convert_tokenizer` to generate IRs for the samples. [group_beam_searcher.hpp](group_beam_searcher.hpp) implements the algorithm of the same name, which is used by `beam_search_causal_lm`. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
+These examples showcase inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The applications don't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. Loading `openvino_tokenizers` to `ov::Core` enables tokenization. Run `convert_tokenizer` to generate IRs for the samples. [group_beam_searcher.hpp](group_beam_searcher.hpp) implements the algorithm of the same name, which is used by `beam_search_causal_lm`. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
 
 ## How it works
 
@@ -36,9 +36,24 @@ The program loads a tokenizer, a detokenizer and a model (`.xml` and `.bin`) to 
 
 The program loads a tokenizer, a detokenizer and a model (`.xml` and `.bin`) to OpenVINO. A prompt is tokenized and passed to the model. The model predicts a distribution over the next tokens and group beam search samples from that distribution to explore possible sequesnses. The result is converted to chars and printed.
 
+### speculative_decoding_lm
+
+Speculative decoding (or [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) in HF terminology) is a recent technique, that allows to speed up token generation when an additional smaller draft model is used alonside with the main model.
+
+Speculative decoding works the following way. The draft model predicts the next K tokens one by one in an autoregressive manner, while the main model validates these predictions and corrects them if necessary. We go through each predicted token, and if a difference is detected between the draft and main model, we stop and keep the last token predicted by the main model. Then the draft model gets the latest main prediction and again tries to predict the next K tokens, repeating the cycle.
+
+This approach reduces the need for multiple infer requests to the main model, enhancing performance. For instance, in more predictable parts of text generation, the draft model can, in best-case scenarios, generate the next K tokens that exactly match the target. In tha caste the are validated in a single inference request to the main model (which is bigger, more accurate but slower) instead of running K subsequent requests. More details can be found in the original paper https://arxiv.org/pdf/2211.17192.pdf, https://arxiv.org/pdf/2302.01318.pdf
+
+### prompt_lookup_decoding_lm
+
+[Prompt Lookup decoding](https://github.com/apoorvumang/prompt-lookup-decoding) is [assested-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) technique where the draft model is replaced with simple string matching the prompt to generate candidate token sequences. This method highly effective for input grounded generation (summarization, document QA, multi-turn chat, code editing), where there is high n-gram overlap between LLM input (prompt) and LLM output. This could be entity names, phrases, or code chunks that the LLM directly copies from the input while generating the output. Prompt lookup exploits this pattern to speed up autoregressive decoding in LLMs. This results in significant speedups with no effect on output quality.
+
+> [!NOTE]
+>Models should belong to the same family and have same tokenizers.
+
 ## Install OpenVINO
 
-Install [OpenVINO Archives >= 2023.3](https://docs.openvino.ai/install). `<INSTALL_DIR>` below refers to the extraction location.
+Install [OpenVINO Archives >= 2024.0](docs.openvino.ai/install). `master` and possibly the latest `releases/*` branch correspond to not yet released OpenVINO versions. https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for these branches early testing. `<INSTALL_DIR>` below refers to the extraction location.
 
 ## Build `greedy_causal_lm`, `beam_search_causal_lm` and `openvino_tokenizers`
 
@@ -82,13 +97,25 @@ convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyL
 
 ## Run
 
-Usage:
+### Usage:
 1. `greedy_causal_lm <MODEL_DIR> "<PROMPT>"`
 2. `beam_search_causal_lm <MODEL_DIR> "<PROMPT>"`
+3. `speculative_decoding_lm <DRAFT_MODEL_DIR> <MAIN_MODEL_DIR> "<PROMPT>"`
+4. `prompt_lookup_decoding_lm <MODEL_DIR> "<PROMPT>"`
 
-Examples:
+### Examples:
+
+#### Linux/MacOS:
 1. `./build/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
 2. `./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+3. `./build/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ ./Llama-2-7b-chat-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+4. `./build/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+
+#### Windows:
+1. `.\build\Release\greedy_causal_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
+2. `.\build\Release\beam_search_causal_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
+3. `.\build\Release\speculative_decoding_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ .\Llama-2-7b-chat-hf\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
+4. `.\build\Release\prompt_lookup_decoding_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
 
@@ -99,7 +126,7 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
    [chatglm2-6b - AttributeError: can't set attribute](../../../llm_bench/python/doc/NOTES.md#chatglm2-6b---attributeerror-cant-set-attribute)
    in case of `AttributeError`
    2. https://huggingface.co/THUDM/chatglm3-6b
-2. LLaMA 2
+2. LLaMA 2 (requires access request submission on its Hugging Face page to be downloaded)
    1. https://huggingface.co/meta-llama/Llama-2-13b-chat-hf
    2. https://huggingface.co/meta-llama/Llama-2-13b-hf
    3. https://huggingface.co/meta-llama/Llama-2-7b-chat-hf
@@ -117,12 +144,23 @@ To enable Unicode characters for Windows cmd open `Region` settings from `Contro
 6. Qwen
    1. https://huggingface.co/Qwen/Qwen-7B-Chat
    2. https://huggingface.co/Qwen/Qwen-7B-Chat-Int4 - refer to
+   3. https://huggingface.co/Qwen/Qwen1.5-7B-Chat
+   4. https://huggingface.co/Qwen/Qwen1.5-7B-Chat-GPTQ-Int4
    [Qwen-7B-Chat-Int4 - Torch not compiled with CUDA enabled](../../../llm_bench/python/doc/NOTES.md#qwen-7b-chat-int4---torch-not-compiled-with-cuda-enabled)
    in case of `AssertionError`
 7. Dolly
    1. https://huggingface.co/databricks/dolly-v2-3b
 8. Phi
    1. https://huggingface.co/microsoft/phi-2
+   2. https://huggingface.co/microsoft/phi-1_5
 9. [notus-7b-v1](https://huggingface.co/argilla/notus-7b-v1)
+10. [zephyr-7b-beta](https://huggingface.co/HuggingFaceH4/zephyr-7b-beta)
+11. [redpajama-3b-chat](https://huggingface.co/ikala/redpajama-3b-chat)
+12. [Mistral-7B-v0.1](https://huggingface.co/mistralai/Mistral-7B-v0.1)
+13. [Gemma-2B-it](https://huggingface.co/google/gemma-2b-it)
 
 This pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature.
+
+Some models may require access request submission on their Hugging Face page to be downloaded.
+
+If https://huggingface.co/ is down, the conversion step won't be able to download the models.
