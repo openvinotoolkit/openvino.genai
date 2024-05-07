@@ -353,6 +353,9 @@ private:
 
                 // apply KV cache limitations
                 const size_t num_required_blocks = (sequence_len + m_config.block_size - 1) / m_config.block_size;
+                if (!m_block_manager.can_allocate_blocks(num_required_blocks))
+                    break;
+
                 // add scheduling information
                 {
                     Sequence::Ptr sequence = (*sequence_group)[0];
