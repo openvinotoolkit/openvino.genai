@@ -1,9 +1,9 @@
 [project]
-name = "py_continuous_batching"
+name = "openvino.genai"
 version = "2024.2.0.0"
-description = "Convert tokenizers into OpenVINO models"
+description = "Python bindings for https://github.com/openvinotoolkit/openvino.genai"
 requires-python = ">=3.8"
-readme = {file = "../../../../../README.md", content-type="text/markdown"}
+readme = {file = "text_generation/causal_lm/cpp/README.md", content-type="text/markdown"}
 license = {text = "OSI Approved :: Apache Software License"}
 
 authors = [
@@ -19,11 +19,11 @@ classifiers = [
 ]
 
 dependencies = [
-    # support of nightly openvino packages with dev suffix
-    "openvino~=2024.1.0.0"
+    "openvino_tokenizers~=2024.1.0.0"
 ]
 
 [project.optional-dependencies]
+# TODO: do I need to propagate all this to openvino_tokenizers
 transformers = [
     "transformers[sentencepiece] >= 4.36.0",
     "tiktoken"
@@ -71,23 +71,25 @@ select = ["C", "E", "F", "I", "W"]
 lines-after-imports = 2
 
 [tool.scikit-build]
+install.components = ["openvino_genai_bindings_install_target"]
+cmake.source-dir = "text_generation/causal_lm/cpp"
 cmake.build-type = "Release"
-#cmake.args = [
+cmake.args = [
+    "-DBUILD_SHARED_LIBS=NO"
 #    "-DCMAKE_INSTALL_BINDIR=lib",
 #    "-DCMAKE_INSTALL_LIBDIR=lib"
-#]
-cmake.targets = ["py_continuous_batching"]
+]
+cmake.targets = ["openvino_genai_bindings"]
 wheel.build-tag = "000"
-#wheel.packages = ["py_continuous_batching"] # my python files
-wheel.install-dir = "py_continuous_batching"
+wheel.packages = ["text_generation/causal_lm/cpp/generate_pipeline/python-bindings/openvino"]
+wheel.install-dir = "openvino/genai"
 wheel.py-api = "py3"
-# TODO: how to get files from top folders
-#wheel.license-files = ["../../../../../LICENSE", "../../../../../third-party-programs.txt", "../../../../../SECURITY.md"]
+wheel.license-files = ["LICENSE", "SECURITY.md"]  # TODO: Do we need third-party-programs.txt like openvino_tokenizers?
 sdist.exclude = ["dist", "tests", "examples", "python/tests"]
 sdist.cmake = true
 
 [[tool.scikit-build.generate]]
-path = "__version__.py"
+path = "openvino/genai/__version__.py"
 template = '''
 __version__ = "${version}"
 '''
