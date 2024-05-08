@@ -1,7 +1,6 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <openvino/core/parallel.hpp>
 #include <openvino/openvino.hpp>
 
 namespace {
@@ -95,11 +94,10 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
 
 void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t new_seq_len) {
     // trim kv_cache values up to the new_seq_len
-    auto states = request.query_state();
-    ov::parallel_for(states.size(), [&](size_t i) {
-        ov::Tensor old_tensor = states.at(i).get_state();
-        states.at(i).set_state(trimm_tensor(old_tensor, seq_len_axis, new_seq_len));
-    });
+    for (auto& state : request.query_state()) {
+        ov::Tensor old_tensor = state.get_state();
+        state.set_state(trimm_tensor(old_tensor, seq_len_axis, new_seq_len));
+    }
 }
 
 class PromptLookupCandidateGenerator {
@@ -224,11 +222,8 @@ int main(int argc, char* argv[]) try {
 
     // Prompt lookup decoding is a speculative decoding technic where the draft model replaced
     // with string matching in the prompt to generate candidate token sequences.
-    int max_sequence_length = 600;
+    int max_sequence_length = 100;
     PromptLookupCandidateGenerator candidateGenerator{3, 5};
-
-    float total_trim_tensor_latency = 0.0;
-    size_t number_of_trims = 0;
 
     while (out_token != EOS_TOKEN && seq_len < max_sequence_length) {
         auto candidates = candidateGenerator.generate_candidates(full_input_ids);
@@ -286,6 +281,8 @@ int main(int argc, char* argv[]) try {
         // trim the KV cache to match the new sequence length.
         seq_len += accepted_tokens_number;
         update_kv_cache(model, SEQ_LEN_AXIS, seq_len);
+
+        first_token = out_token;
     }
 
     text_streamer.end();
