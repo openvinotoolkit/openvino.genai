@@ -129,7 +129,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
             utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
-        result_md5_list.append(hashlib.md5(result_text.encode()).hexdigest())
+        result_md5_list.append(hashlib.md5(result_text.encode(), usedforsecurity=False).hexdigest())
     if num == 0:
         warmup_md5[prompt_index] = result_md5_list
     per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
@@ -239,7 +239,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         mem_consumption.clear_max_memory_consumption()
     for bs_idx in range(args['batch_size']):
         rslt_img_fn = utils.output_file.output_gen_image(res[bs_idx], args, image_id, num, bs_idx, proc_id, '.png')
-        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
+        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
     generation_time = end - start
     iter_data = gen_iterate_data(
         iter_idx=num,
@@ -339,7 +339,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     result_md5_list = []
     if framework == 'ov':
         rslt_img_fn = utils.output_file.output_gen_image(res[0], args, image_id, num, None, proc_id, '.png')
-        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
+        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
 
     generation_time = end - start
     iter_data = gen_iterate_data(
