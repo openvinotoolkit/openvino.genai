@@ -46,13 +46,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
              py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap{})
         .def(py::init<std::string&, std::string, const ov::AnyMap&>(),
              py::arg("path"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap{})
-         .def("__call__", py::overload_cast<std::string>(&ov::LLMPipeline::operator()), "Process single text input")
-        .def("__call__", py::overload_cast<std::string, ov::GenerationConfig>(&ov::LLMPipeline::operator()), "Process text input with specific generation config")
-        .def("__call__", py::overload_cast<std::vector<std::string>, ov::GenerationConfig>(&ov::LLMPipeline::operator()), "Process multiple text inputs with generation config")
         .def("__call__", &call_with_config)
-        .def("generate", (EncodedResults (LLMPipeline::*)(ov::Tensor, ov::Tensor, GenerationConfig)) &LLMPipeline::generate)
-        .def("generate", (EncodedResults (LLMPipeline::*)(ov::Tensor, ov::Tensor)) &LLMPipeline::generate)
-        // Bind other methods similarly
         .def("get_tokenizer", &LLMPipeline::get_tokenizer)
         .def("start_chat", &ov::LLMPipeline::start_chat)
         .def("finish_chat", &ov::LLMPipeline::finish_chat)
@@ -71,6 +65,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("decode", py::overload_cast<ov::Tensor>(&ov::Tokenizer::decode), "Decode a tensor of tokens")
         .def("decode", py::overload_cast<std::vector<std::vector<int64_t>>>(&ov::Tokenizer::decode), "Decode multiple lines of tokens");
 
+     // Binding for GenerationConfig
     py::class_<ov::GenerationConfig>(m, "GenerationConfig")
         .def(py::init<>())
         .def(py::init<std::string>())

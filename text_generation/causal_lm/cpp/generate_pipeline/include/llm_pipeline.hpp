@@ -9,6 +9,7 @@
 #include "llm_tokenizer.hpp"
 #include "streamer_base.hpp"
 #include <filesystem>
+#include <optional>
 
 using namespace std;
 
@@ -18,6 +19,7 @@ namespace ov {
 
 
 using StreamerVariant = std::variant<std::monostate, std::function<void (std::string)>, std::shared_ptr<StreamerBase>>;
+using OptionalGenerationConfig = std::optional<GenerationConfig>;
 
 class EncodedResults {
 public:
@@ -45,28 +47,19 @@ public:
     
     ~LLMPipeline();
 
-    EncodedResults generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config);
-    EncodedResults generate(ov::Tensor input_ids, ov::Tensor attention_mask);
-    EncodedResults generate(ov::Tensor input_ids);
-    EncodedResults generate(ov::Tensor input_ids, GenerationConfig generation_config);
-    
-    ov::Tokenizer get_tokenizer();
+    EncodedResults generate(ov::Tensor input_ids, std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config);
+    std::string generate(std::string text, OptionalGenerationConfig generation_config);
+    DecodedResults generate(std::vector<std::string> text, OptionalGenerationConfig generation_config);
 
-    std::string generate(std::string text);
-    std::string generate(std::string text, GenerationConfig generation_config);
-    DecodedResults generate(std::vector<std::string> text, GenerationConfig generation_config);
-
-    std::string operator()(std::string text);
-    std::string operator()(std::string text, GenerationConfig generation_config);
-    DecodedResults operator()(std::vector<std::string> text, GenerationConfig generation_config);
-    DecodedResults operator()(std::initializer_list<std::string> text, GenerationConfig generation_config);
+    std::string operator()(std::string text, OptionalGenerationConfig generation_config);
+    DecodedResults operator()(std::vector<std::string> text, OptionalGenerationConfig generation_config);
+    DecodedResults operator()(std::initializer_list<std::string> text, OptionalGenerationConfig generation_config);
 
     // generate with streamers
-    std::string generate(std::string text, StreamerVariant streamer);
-    std::string generate(std::string text, GenerationConfig generation_config, StreamerVariant streamer);
-    std::string operator()(std::string text, StreamerVariant streamer);
-    std::string operator()(std::string text, GenerationConfig generation_config, StreamerVariant streamer);
-
+    std::string generate(std::string text, OptionalGenerationConfig generation_config, StreamerVariant streamer);
+    std::string operator()(std::string text, OptionalGenerationConfig generation_config, StreamerVariant streamer);
+    
+    ov::Tokenizer get_tokenizer();
     GenerationConfig get_generation_config() const;
     void set_generation_config(const GenerationConfig& generation_config);
 

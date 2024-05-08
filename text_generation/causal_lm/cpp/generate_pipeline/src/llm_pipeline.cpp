@@ -62,18 +62,18 @@ public:
 
     EncodedResults multinomial_sampling(ov::Tensor prompts, GenerationConfig generation_config);
 
-    EncodedResults generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config);
-    EncodedResults generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config, StreamerVariant streamer);
+    EncodedResults generate(ov::Tensor input_ids, std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config);
+
+    EncodedResults generate(ov::Tensor input_ids, std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config, StreamerVariant streamer);
 
     std::string apply_chat_template(std::string prompt, std::string role = "user") const;
 
     // std::shared_ptr<StreamerBase> m_streamer;
     bool is_chat_conversation = false;
 
-    std::string generate(std::string text);
-    std::string generate(std::string text, GenerationConfig generation_config);
-    std::string generate(std::string text, GenerationConfig generation_config, StreamerVariant streamer);
-    DecodedResults generate(std::vector<std::string> text, GenerationConfig generation_config);
+    std::string generate(std::string text, OptionalGenerationConfig generation_config);
+    std::string generate(std::string text, OptionalGenerationConfig generation_config, StreamerVariant streamer);
+    DecodedResults generate(std::vector<std::string> text, OptionalGenerationConfig generation_config);
 
 };
 
@@ -183,19 +183,11 @@ ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::multinomial_sampling(ov::Te
     return results;
 }
 
-std::string ov::LLMPipeline::LLMPipelineImpl::generate(std::string text) {
-    return generate(text, m_generation_config);
-}
-
-std::string ov::LLMPipeline::generate(std::string text) {
-    return m_pimpl->generate(text);
-}
-
-std::string ov::LLMPipeline::generate(std::string text, GenerationConfig generation_config) {
+std::string ov::LLMPipeline::generate(std::string text, OptionalGenerationConfig generation_config) {
     return m_pimpl->generate(text, generation_config);
 }
 
-std::string ov::LLMPipeline::LLMPipelineImpl::generate(std::string text, GenerationConfig generation_config) {
+std::string ov::LLMPipeline::LLMPipelineImpl::generate(std::string text, OptionalGenerationConfig generation_config) {
     std::cout << "WE ARE HEEEEEEEEEEEEEEERE" << std::endl;
     StreamerVariant var;
     return generate(text, generation_config, var);
@@ -203,9 +195,11 @@ std::string ov::LLMPipeline::LLMPipelineImpl::generate(std::string text, Generat
 
 std::string ov::LLMPipeline::LLMPipelineImpl::generate(
     std::string text, 
-    GenerationConfig generation_config,
+    OptionalGenerationConfig generation_config,
     StreamerVariant streamer
 ) {
+    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+
     if (is_chat_conversation) {
         text = apply_chat_template(text);
     }
@@ -214,7 +208,7 @@ std::string ov::LLMPipeline::LLMPipelineImpl::generate(
     // previous prompt generation in chat dialog stops with the end of sentence token, 
     // need to append this token to the current prompt
     if (is_chat_conversation && kv_cache_len > 0) {
-        text = generation_config.eos_token + text;
+        text = config.eos_token + text;
     }
 
     auto [input_ids, attention_mask] = m_tokenizer.encode(text);
@@ -245,15 +239,15 @@ std::string ov::LLMPipeline::LLMPipelineImpl::generate(
     for (size_t i = 0; i < tmp_attn_mask.size(); i++)
         attention_mask.data<int64_t>()[i] = tmp_attn_mask.data()[i];
 
-    auto generate_results = generate(input_ids, attention_mask, generation_config, streamer);
+    auto generate_results = generate(input_ids, attention_mask, config, streamer);
     return m_tokenizer.decode(generate_results.tokens)[0];
 }
 
-ov::DecodedResults ov::LLMPipeline::generate(std::vector<std::string> text, GenerationConfig generation_config) {
+ov::DecodedResults ov::LLMPipeline::generate(std::vector<std::string> text, OptionalGenerationConfig generation_config) {
     return m_pimpl->generate(text, generation_config);
 }
 
-ov::DecodedResults ov::LLMPipeline::LLMPipelineImpl::generate(std::vector<std::string> text, GenerationConfig generation_config) {
+ov::DecodedResults ov::LLMPipeline::LLMPipelineImpl::generate(std::vector<std::string> text, OptionalGenerationConfig generation_config) {
     auto [input_ids, attention_mask] = m_tokenizer.encode(text);
 
     auto generate_results = generate(input_ids, attention_mask, generation_config);
@@ -261,42 +255,35 @@ ov::DecodedResults ov::LLMPipeline::LLMPipelineImpl::generate(std::vector<std::s
     return {m_tokenizer.decode(generate_results.tokens), generate_results.scores};
 }
 
-std::string ov::LLMPipeline::operator()(std::string text) {
-    return generate(text);
-}
-
-std::string ov::LLMPipeline::operator()(std::string text, GenerationConfig generation_config) {
+std::string ov::LLMPipeline::operator()(std::string text, OptionalGenerationConfig generation_config) {
     return generate(text, generation_config);
 }
 
-// std::string ov::LLMPipeline::operator()(std::string text, GenerationConfig generation_config, std::function<void (std::string)> streamer) {
-//     return "";
-// }
-
-ov::DecodedResults ov::LLMPipeline::operator()(std::vector<std::string> text, GenerationConfig generation_config) {
+ov::DecodedResults ov::LLMPipeline::operator()(std::vector<std::string> text, OptionalGenerationConfig generation_config) {
     return generate(text, generation_config);
 }
 
-ov::DecodedResults ov::LLMPipeline::operator()(std::initializer_list<std::string> text, GenerationConfig generation_config) {
+ov::DecodedResults ov::LLMPipeline::operator()(std::initializer_list<std::string> text, OptionalGenerationConfig generation_config) {
     return generate(text, generation_config);
 }
 
-ov::EncodedResults ov::LLMPipeline::LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config) {
+ov::EncodedResults ov::LLMPipeline::LLMPipeline::generate(ov::Tensor input_ids, std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config) {
     return m_pimpl->generate(input_ids, attention_mask, generation_config);
 }
 
-ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config) {
+ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(ov::Tensor input_ids, std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config) {
     return generate(input_ids, attention_mask, generation_config);
 }
 
 ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(
     ov::Tensor input_ids, 
-    ov::Tensor attention_mask, 
-    GenerationConfig generation_config,
+    std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config, 
     StreamerVariant streamer
 ) {
     ov::EncodedResults result;
-    GenerationConfigHelper config_helper = generation_config;
+    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    GenerationConfigHelper config_helper = config;
+    
     std::shared_ptr<StreamerBase> streamer_ptr;
 
     if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
@@ -305,15 +292,17 @@ ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(
         streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
     }
     
+    auto attention_mask_data = attention_mask.has_value() ? *attention_mask : ov::generate_utils::init_attention_mask(input_ids);
+
     if (config_helper.is_greedy_decoding()) {
-        result = ov::greedy_decoding(m_model_runner, input_ids, attention_mask, generation_config, streamer_ptr, is_chat_conversation);
+        result = ov::greedy_decoding(m_model_runner, input_ids, attention_mask_data, config, streamer_ptr, is_chat_conversation);
     } else if (config_helper.is_beam_search()) {
-        result = beam_search(m_model_runner, input_ids, attention_mask, generation_config);
+        result = beam_search(m_model_runner, input_ids, attention_mask_data, config);
         
     } else if (config_helper.is_multimomial()) {
-        result = multinomial_sampling(input_ids, generation_config);
+        result = multinomial_sampling(input_ids, config);
     } else {
-        result = ov::assistive_decoding(m_model_runner, input_ids, attention_mask, generation_config);
+        result = ov::assistive_decoding(m_model_runner, input_ids, attention_mask_data, config);
     }
 
     if (!is_chat_conversation)
@@ -323,32 +312,11 @@ ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(
     return result;
 }
 
-ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask) {
-    return generate(input_ids, attention_mask, m_pimpl->m_generation_config);
-}
-
-ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids, GenerationConfig sampling_params) {
-
-    return generate(input_ids, ov::generate_utils::init_attention_mask(input_ids), sampling_params);
-}
-
-ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids) {
-    return generate(input_ids, ov::generate_utils::init_attention_mask(input_ids), m_pimpl->m_generation_config);
-}
-
-std::string ov::LLMPipeline::generate(std::string text, StreamerVariant streamer) {
-    return "";
-}
-
-std::string ov::LLMPipeline::generate(std::string text, GenerationConfig generation_config, StreamerVariant streamer) {
+std::string ov::LLMPipeline::generate(std::string text, OptionalGenerationConfig generation_config, StreamerVariant streamer) {
     return m_pimpl->generate(text, generation_config, streamer);
 }
 
-std::string ov::LLMPipeline::operator()(std::string text, StreamerVariant streamer) {
-    return "";
-}
-
-std::string ov::LLMPipeline::operator()(std::string text, GenerationConfig generation_config, StreamerVariant streamer) {
+std::string ov::LLMPipeline::operator()(std::string text, OptionalGenerationConfig generation_config, StreamerVariant streamer) {
     return generate(text, generation_config, streamer);
 }
 
