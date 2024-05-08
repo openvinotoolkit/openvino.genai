@@ -63,16 +63,18 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
     // Copy elements from the old to a new tensor and return it.
     // It's assumed that key/values tensor has a shape [BATCH_SIZE, num_kv_heads, seq_len, head_size] or [seq_len, ...],
     // It that's not the case for your model please implement your own trim method.
-    OPENVINO_ASSERT(seq_len_axis == 2 || seq_len_axis == 0, "Cannot trim key/values with sequence length axis = ", seq_len_axis);
-    
+    OPENVINO_ASSERT(seq_len_axis == 2 || seq_len_axis == 0,
+                    "Cannot trim key/values with sequence length axis = ",
+                    seq_len_axis);
+
     auto old_tensor_data = tensor.data<float>();
     auto shape = tensor.get_shape();
     size_t num_kv_heads = shape[1];
     size_t old_seq_len = shape[2];
     size_t head_size = shape[3];
-    
+
     OPENVINO_ASSERT(new_seq_len <= old_seq_len);
-    
+
     // if new_seq_len equal to old one no need to copy tensor, return as is
     if (old_seq_len == new_seq_len)
         return tensor;
@@ -85,11 +87,13 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
     // if seq_len_axis == 2, then data is not contiguous, in order to trim need to repack tensor
     auto new_tensor = ov::Tensor{ov::element::f32, {BATCH_SIZE, num_kv_heads, new_seq_len, head_size}};
     auto new_tensor_data = new_tensor.data<float>();
-    for (size_t batch = 0; batch < BATCH_SIZE; ++batch){
+    for (size_t batch = 0; batch < BATCH_SIZE; ++batch) {
         for (size_t i = 0; i < num_kv_heads; ++i) {
             for (size_t j = 0; j < new_seq_len; ++j) {
-                auto dst_ptr = new_tensor_data + num_kv_heads * new_seq_len * head_size * batch + new_seq_len * head_size * i +  head_size * j;
-                auto src_ptr = old_tensor_data + num_kv_heads * new_seq_len * head_size * batch + old_seq_len * head_size * i +  head_size * j;
+                auto dst_ptr = new_tensor_data + num_kv_heads * new_seq_len * head_size * batch +
+                               new_seq_len * head_size * i + head_size * j;
+                auto src_ptr = old_tensor_data + num_kv_heads * new_seq_len * head_size * batch +
+                               old_seq_len * head_size * i + head_size * j;
                 std::memcpy(dst_ptr, src_ptr, head_size * sizeof(float));
             }
         }
@@ -99,7 +103,7 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
 
 void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t new_seq_len) {
     // trim kv_cache values up to the new_seq_len
-    for (auto& state: request.query_state()) {
+    for (auto& state : request.query_state()) {
         ov::Tensor old_tensor = state.get_state();
         state.set_state(trimm_tensor(old_tensor, seq_len_axis, new_seq_len));
     }
@@ -150,9 +154,7 @@ public:
         return std::max_element(sequence_logits, sequence_logits + vocab_size) - sequence_logits;
     }
 
-    std::vector<int64_t> generate_candidates(const int64_t token) {
-        int64_t out_token = token;
-
+    std::vector<int64_t> generate_candidates(int64_t out_token) {
         std::vector<int64_t> candidates;
 
         // limit candidates size by num_pred_tokens or by max_seq_length
@@ -162,7 +164,7 @@ public:
 
         // generate cadidates
         for (size_t i = 0; i < candidates_to_generate; i++) {
-            // if out_of_kv_cache_token present - prepend it to out_token in order to collect kv cache for it
+            // if out_of_kv_cache_token is present, prepend it to out_token in order to collect kv cache for it
             if (out_of_kv_cache_token != -1) {
                 out_token = generate_next_token(std::vector{out_of_kv_cache_token, out_token});
                 out_of_kv_cache_token = -1;
@@ -231,13 +233,13 @@ int main(int argc, char* argv[]) try {
         core.compile_model(std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     TextStreamer text_streamer{std::move(detokenizer)};
 
-    // draft model
+    // draft model (which is smaller, less accurate but faster)
     ov::InferRequest draft_model =
         core.compile_model(std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
 
     uint64_t seq_len = input_ids.get_shape()[1];
 
-    // main model
+    // main model (which is bigger, more accurate but slower)
     ov::InferRequest main_model =
         core.compile_model(std::string{argv[2]} + "/openvino_model.xml", "CPU").create_infer_request();
 
@@ -285,8 +287,8 @@ int main(int argc, char* argv[]) try {
        This approach reduces the need for multiple infer requests to the main model,
        enhancing performance. For instance, in more predictable parts of text generation,
        the draft model can, in best-case scenarios, generate the next K tokens that exactly
-       match the target. In tha caste the are validated in a single inference request to
-       the main model (which is bigger, more accurate but slower) instead of running K
+       match the target. In that case they are validated in a single inference call to
+       the main model instead of running K
        subsequent requests.
        */
 
