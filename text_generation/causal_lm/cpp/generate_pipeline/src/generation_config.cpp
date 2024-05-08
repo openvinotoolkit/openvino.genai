@@ -52,7 +52,7 @@ size_t GenerationConfigHelper::get_max_new_tokens(size_t prompt_length) {
     }
 }
 
-bool GenerationConfigHelper::is_greedy_sampling() const {
+bool GenerationConfigHelper::is_greedy_decoding() const {
     return !config.do_sample && !is_beam_search() && !is_speculative();
 }
 

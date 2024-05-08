@@ -7,7 +7,7 @@ def test_tiny_llama():
     tokenizer = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
     model = AutoModelForCausalLM.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
 
-    max_new_tokens = 500
+    max_new_tokens = 32
     prompt = 'table is made of'
 
     encoded_prompt = tokenizer.encode(prompt, return_tensors='pt', add_special_tokens=False)

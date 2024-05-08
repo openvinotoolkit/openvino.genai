@@ -5,6 +5,7 @@
 #include "llm_pipeline.hpp"
 #include <filesystem>
 #include <fstream>
+#include <variant>
 #include "generation_config_helper.hpp"
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
@@ -62,14 +63,16 @@ public:
     EncodedResults multinomial_sampling(ov::Tensor prompts, GenerationConfig generation_config);
 
     EncodedResults generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config);
+    EncodedResults generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config, StreamerVariant streamer);
 
     std::string apply_chat_template(std::string prompt, std::string role = "user") const;
 
-    std::shared_ptr<StreamerBase> m_streamer;
+    // std::shared_ptr<StreamerBase> m_streamer;
     bool is_chat_conversation = false;
 
-    std::string call(std::string text);
-    std::string call(std::string text, GenerationConfig generation_config);
+    std::string generate(std::string text);
+    std::string generate(std::string text, GenerationConfig generation_config);
+    std::string generate(std::string text, GenerationConfig generation_config, StreamerVariant streamer);
     DecodedResults generate(std::vector<std::string> text, GenerationConfig generation_config);
 
 };
@@ -180,19 +183,29 @@ ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::multinomial_sampling(ov::Te
     return results;
 }
 
-std::string ov::LLMPipeline::LLMPipelineImpl::call(std::string text) {
-    return call(text, m_generation_config);
+std::string ov::LLMPipeline::LLMPipelineImpl::generate(std::string text) {
+    return generate(text, m_generation_config);
 }
 
 std::string ov::LLMPipeline::generate(std::string text) {
-    return m_pimpl->call(text);
+    return m_pimpl->generate(text);
 }
 
 std::string ov::LLMPipeline::generate(std::string text, GenerationConfig generation_config) {
-    return m_pimpl->call(text, generation_config);
+    return m_pimpl->generate(text, generation_config);
 }
 
-std::string ov::LLMPipeline::LLMPipelineImpl::call(std::string text, GenerationConfig generation_config) {
+std::string ov::LLMPipeline::LLMPipelineImpl::generate(std::string text, GenerationConfig generation_config) {
+    std::cout << "WE ARE HEEEEEEEEEEEEEEERE" << std::endl;
+    StreamerVariant var;
+    return generate(text, generation_config, var);
+}
+
+std::string ov::LLMPipeline::LLMPipelineImpl::generate(
+    std::string text, 
+    GenerationConfig generation_config,
+    StreamerVariant streamer
+) {
     if (is_chat_conversation) {
         text = apply_chat_template(text);
     }
@@ -232,7 +245,7 @@ std::string ov::LLMPipeline::LLMPipelineImpl::call(std::string text, GenerationC
     for (size_t i = 0; i < tmp_attn_mask.size(); i++)
         attention_mask.data<int64_t>()[i] = tmp_attn_mask.data()[i];
 
-    auto generate_results = generate(input_ids, attention_mask, generation_config);
+    auto generate_results = generate(input_ids, attention_mask, generation_config, streamer);
     return m_tokenizer.decode(generate_results.tokens)[0];
 }
 
@@ -273,11 +286,27 @@ ov::EncodedResults ov::LLMPipeline::LLMPipeline::generate(ov::Tensor input_ids, 
 }
 
 ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config) {
+    return generate(input_ids, attention_mask, generation_config);
+}
+
+ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(
+    ov::Tensor input_ids, 
+    ov::Tensor attention_mask, 
+    GenerationConfig generation_config,
+    StreamerVariant streamer
+) {
     ov::EncodedResults result;
     GenerationConfigHelper config_helper = generation_config;
+    std::shared_ptr<StreamerBase> streamer_ptr;
 
-    if (config_helper.is_greedy_sampling()) {
-        result = ov::greedy_decoding(m_model_runner, input_ids, attention_mask, generation_config, m_streamer, is_chat_conversation);
+    if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
+        streamer_ptr = *streamer_obj;
+    } else if (auto callback = std::get_if<std::function<void(std::string)>>(&streamer)) {
+        streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
+    }
+    
+    if (config_helper.is_greedy_decoding()) {
+        result = ov::greedy_decoding(m_model_runner, input_ids, attention_mask, generation_config, streamer_ptr, is_chat_conversation);
     } else if (config_helper.is_beam_search()) {
         result = beam_search(m_model_runner, input_ids, attention_mask, generation_config);
         
@@ -306,6 +335,23 @@ ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids, GenerationCon
 ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids) {
     return generate(input_ids, ov::generate_utils::init_attention_mask(input_ids), m_pimpl->m_generation_config);
 }
+
+std::string ov::LLMPipeline::generate(std::string text, StreamerVariant streamer) {
+    return "";
+}
+
+std::string ov::LLMPipeline::generate(std::string text, GenerationConfig generation_config, StreamerVariant streamer) {
+    return m_pimpl->generate(text, generation_config, streamer);
+}
+
+std::string ov::LLMPipeline::operator()(std::string text, StreamerVariant streamer) {
+    return "";
+}
+
+std::string ov::LLMPipeline::operator()(std::string text, GenerationConfig generation_config, StreamerVariant streamer) {
+    return generate(text, generation_config, streamer);
+}
+
 
 ov::Tokenizer ov::LLMPipeline::get_tokenizer() {
     return m_pimpl->m_tokenizer;
@@ -339,18 +385,6 @@ std::string ov::LLMPipeline::LLMPipelineImpl::apply_chat_template(std::string pr
     // result_prompt << "<s>[INST] " << input << " [/INST]";  // LLama-2-7b
     
     return result_prompt.str();
-}
-
-void ov::LLMPipeline::set_streamer(std::function<void (std::string)> callback) {
-    m_pimpl->m_streamer = std::make_shared<TextCallbackStreamer>(m_pimpl->m_tokenizer, callback);
-}
-
-void ov::LLMPipeline::set_streamer(std::shared_ptr<StreamerBase> streamer) {
-    m_pimpl->m_streamer = streamer;
-}
-
-void ov::LLMPipeline::set_streamer() {
-    m_pimpl->m_streamer = nullptr;
 }
 
 void ov::LLMPipeline::start_chat() {

@@ -16,6 +16,9 @@ class Tokenizer; // forward declaration
 
 namespace ov {
 
+
+using StreamerVariant = std::variant<std::monostate, std::function<void (std::string)>, std::shared_ptr<StreamerBase>>;
+
 class EncodedResults {
 public:
     std::vector<std::vector<int64_t>> tokens;
@@ -57,13 +60,15 @@ public:
     std::string operator()(std::string text, GenerationConfig generation_config);
     DecodedResults operator()(std::vector<std::string> text, GenerationConfig generation_config);
     DecodedResults operator()(std::initializer_list<std::string> text, GenerationConfig generation_config);
-    
+
+    // generate with streamers
+    std::string generate(std::string text, StreamerVariant streamer);
+    std::string generate(std::string text, GenerationConfig generation_config, StreamerVariant streamer);
+    std::string operator()(std::string text, StreamerVariant streamer);
+    std::string operator()(std::string text, GenerationConfig generation_config, StreamerVariant streamer);
+
     GenerationConfig get_generation_config() const;
     void set_generation_config(const GenerationConfig& generation_config);
-
-    void set_streamer(std::function<void (std::string)> callback);
-    void set_streamer(std::shared_ptr<StreamerBase> streamer);
-    void set_streamer();
 
     void start_chat();
     void finish_chat();

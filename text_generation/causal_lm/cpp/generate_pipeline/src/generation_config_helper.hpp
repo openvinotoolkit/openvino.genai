@@ -24,7 +24,7 @@ public:
     //     return assistive;
     // }
 
-    bool is_greedy_sampling() const;
+    bool is_greedy_decoding() const;
 
     bool is_beam_search() const;
 
