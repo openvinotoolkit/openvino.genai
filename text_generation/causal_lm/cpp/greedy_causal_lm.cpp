@@ -35,7 +35,7 @@ struct TextStreamer {
             std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
             token_cache.clear();
             print_len = 0;
-            return;
+	    return;
         }
         if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
             // Don't print incomplete text
@@ -52,37 +52,28 @@ struct TextStreamer {
         print_len = 0;
     }
 };
-
-void update_kv_cache(ov::InferRequest request) {
-    for (auto& state : request.query_state()) {
-        state.set_state(state.get_state());
-    }
 }
 
-}  // namespace
-
 int main(int argc, char* argv[]) try {
-    if (argc != 4) {
+    if (argc != 3) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>'");
     }
-
-    const bool set_cache = std::string{argv[3]} == "true";
-
     // Compile models
     ov::Core core;
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
-    // Read the tokenizer model information from the file to later get the runtime information
+    //Read the tokenizer model information from the file to later get the runtime information
     auto tokenizer_model = core.read_model(std::string{argv[1]} + "/openvino_tokenizer.xml");
     // tokenizer and detokenizer work on CPU only
-    ov::InferRequest tokenizer = core.compile_model(tokenizer_model, "CPU").create_infer_request();
+    ov::InferRequest tokenizer = core.compile_model(
+        tokenizer_model, "CPU").create_infer_request();
     auto [input_ids, attention_mask] = tokenize(tokenizer, argv[2]);
-    ov::InferRequest detokenizer =
-        core.compile_model(std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
+    ov::InferRequest detokenizer = core.compile_model(
+        std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     // The model can be compiled for GPU as well
-    ov::InferRequest lm =
-        core.compile_model(std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
+    ov::InferRequest lm = core.compile_model(
+        std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
     auto seq_len = input_ids.get_size();
-
+    
     // Initialize inputs
     lm.set_tensor("input_ids", input_ids);
     lm.set_tensor("attention_mask", attention_mask);
@@ -104,10 +95,10 @@ int main(int argc, char* argv[]) try {
     TextStreamer text_streamer{std::move(detokenizer)};
 
     // Get the runtime info from the tokenizer model that we read earlier
-    auto rt_info = tokenizer_model->get_rt_info();  // Get the runtime info for the model
+    auto rt_info = tokenizer_model->get_rt_info(); //Get the runtime info for the model
     int64_t SPECIAL_EOS_TOKEN;
 
-    if (rt_info.count("eos_token_id") > 0) {  // check if the runtime information has a valid EOS token ID
+    if (rt_info.count("eos_token_id") > 0) { //check if the runtime information has a valid EOS token ID
         SPECIAL_EOS_TOKEN = rt_info["eos_token_id"].as<int64_t>();
     } else {
         throw std::runtime_error("EOS token ID not found in model's runtime information.");
@@ -125,9 +116,6 @@ int main(int argc, char* argv[]) try {
         lm.wait();
         logits = lm.get_tensor("logits").data<float>();
         out_token = std::max_element(logits, logits + vocab_size) - logits;
-        if (set_cache) {
-            update_kv_cache(lm);
-        }
     }
     text_streamer.end();
     // Model is stateful which means that context (kv-cache) which belongs to a particular
