@@ -159,7 +159,7 @@ public:
 
         OPENVINO_ASSERT(block_table.size() >= block_num);
         for (size_t idx = 0; idx < block_num; idx++) {
-             size_t block_idx = m_block_table[seq_id].size() - idx - 1;
+            size_t block_idx = m_block_table[seq_id].size() - idx - 1;
             m_allocator.free(block_table[block_idx]);
             OPENVINO_ASSERT(block_table[block_idx]->is_free());
         } 
