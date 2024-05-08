@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cmath>
-// #include <openvino/core/parallel.hpp>
 #include <openvino/openvino.hpp>
 #include <random>
 
@@ -64,19 +63,16 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
     // Copy elements from the old to a new tensor and return it.
     // It's assumed that key/values tensor has a shape [BATCH_SIZE, num_kv_heads, seq_len, head_size] or [seq_len, ...],
     // It that's not the case for your model please implement your own trim method.
-    OPENVINO_ASSERT(seq_len_axis == 2 || seq_len_axis == 0,
-                    "Cannot trim key/values with sequence length axis = ",
-                    seq_len_axis);
-
+    OPENVINO_ASSERT(seq_len_axis == 2 || seq_len_axis == 0, "Cannot trim key/values with sequence length axis = ", seq_len_axis);
+    
     auto old_tensor_data = tensor.data<float>();
     auto shape = tensor.get_shape();
-    size_t batch_size = shape[0];
     size_t num_kv_heads = shape[1];
     size_t old_seq_len = shape[2];
     size_t head_size = shape[3];
-
+    
     OPENVINO_ASSERT(new_seq_len <= old_seq_len);
-
+    
     // if new_seq_len equal to old one no need to copy tensor, return as is
     if (old_seq_len == new_seq_len)
         return tensor;
@@ -84,28 +80,28 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
     if (seq_len_axis == 0) {
         shape[0] = new_seq_len;
         tensor.set_shape(shape);
-        return tensor;
     }
 
-    ov::Coordinate new_shape_begin{0, 0, 0, 0};
-    ov::Coordinate new_shape_end{batch_size, num_kv_heads, new_seq_len, head_size};
-    auto new_tensor = ov::Tensor(tensor, new_shape_begin, new_shape_end);
-
+    // if seq_len_axis == 2, then data is not contiguous, in order to trim need to repack tensor
+    auto new_tensor = ov::Tensor{ov::element::f32, {BATCH_SIZE, num_kv_heads, new_seq_len, head_size}};
+    auto new_tensor_data = new_tensor.data<float>();
+    for (size_t batch = 0; batch < BATCH_SIZE; ++batch){
+        for (size_t i = 0; i < num_kv_heads; ++i) {
+            for (size_t j = 0; j < new_seq_len; ++j) {
+                auto dst_ptr = new_tensor_data + num_kv_heads * new_seq_len * head_size * batch + new_seq_len * head_size * i +  head_size * j;
+                auto src_ptr = old_tensor_data + num_kv_heads * new_seq_len * head_size * batch + old_seq_len * head_size * i +  head_size * j;
+                std::memcpy(dst_ptr, src_ptr, head_size * sizeof(float));
+            }
+        }
+    }
     return new_tensor;
 }
 
 void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t new_seq_len) {
     // trim kv_cache values up to the new_seq_len
-    // auto states = request.query_state();
-    // ov::parallel_for(states.size(), [&](size_t i) {
-    //     ov::Tensor old_tensor = states.at(i).get_state();
-    //     states.at(i).set_state(trimm_tensor(old_tensor, seq_len_axis, new_seq_len));
-    // });
-
-    // todo: use parallel_for once tbb linking issue solved
-    for (auto& state : request.query_state()) {
-        ov::Tensor tensor = state.get_state();
-        state.set_state(trimm_tensor(tensor, seq_len_axis, new_seq_len));
+    for (auto& state: request.query_state()) {
+        ov::Tensor old_tensor = state.get_state();
+        state.set_state(trimm_tensor(old_tensor, seq_len_axis, new_seq_len));
     }
 }
 
