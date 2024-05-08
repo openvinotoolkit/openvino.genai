@@ -444,7 +444,7 @@ jobs:
           echo Phi-1_5 passed
           
   cpp-greedy_causal_lm-redpajama-3b-chat:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-20.04-4-cores
     steps:
       - uses: actions/checkout@v4
         with:
@@ -464,10 +464,10 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
           wait
+      - run: source ./ov/setupvars.sh && convert_tokenizer ./redpajama-3b-chat/pytorch/dldt/FP16/ --output ./redpajama-3b-chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
       - name: Run Generation
         run: |
           source ./ov/setupvars.sh
-          convert_tokenizer ./redpajama-3b-chat/pytorch/dldt/FP16/ --output ./redpajama-3b-chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
           timeout 50s ./build/greedy_causal_lm ./redpajama-3b-chat/pytorch/dldt/FP16/ "Alan Turing was a" > ./pred_greedy.txt 
       - name: Compare
         run: |
