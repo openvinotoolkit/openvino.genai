@@ -34,7 +34,6 @@ DEFAULT_IMAGE_HEIGHT = 512
 DEFAULT_SUPER_RESOLUTION_STEPS = 50
 DEFAULT_SUPER_RESOLUTION_WIDTH = 128
 DEFAULT_SUPER_RESOLUTION_HEIGHT = 128
-DEFAULT_OUTPUT_TOKEN_SIZE = 512
 MAX_OUTPUT_TOKEN_SIZE = 64 * 1024
 
 mem_consumption = MemConsumption()
@@ -88,26 +87,20 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     # Remove `token_type_ids` from inputs
     input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
     input_token_size = input_tokens[0].numel()
-
-    max_output_token_size = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
-    max_output_token_size = MAX_OUTPUT_TOKEN_SIZE if max_output_token_size > MAX_OUTPUT_TOKEN_SIZE else max_output_token_size
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
         out_str += " Batch_size={}, ".format(args['batch_size'])
         out_str += 'all input token size after padding: {} * {}, '.format(input_token_size, args['batch_size'])
-        out_str += 'all max_output_token_size: {} * {}'.format(max_output_token_size, args['batch_size'])
+        if args['infer_count'] is not None:
+            out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
 
     max_rss_mem_consumption = ''
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
-    # Don't stop at end token by default
-    min_gen_tokens = max_output_token_size
-    max_gen_tokens = max_output_token_size
-    if args['end_token_stopping'] is True:
-        min_gen_tokens = 0
-        max_gen_tokens = max_output_token_size
+    min_gen_tokens = 0 if args['infer_count'] is None else args['infer_count']
+    max_gen_tokens = MAX_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     start = time.perf_counter()
     result = model.generate(**input_data, min_new_tokens=int(min_gen_tokens), max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True)
     end = time.perf_counter()
@@ -130,7 +123,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         else:
             generated_text_len = len(result[bs_idx])
         num_tokens += generated_text_len
-        if generated_text_len > max_output_token_size:
+        if generated_text_len > max_gen_tokens:
             log.error('Output token size is over max output token size!')
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
@@ -139,10 +132,14 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     if num == 0:
         warmup_md5[prompt_index] = result_md5_list
     per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+    tm_list = bench_hook.get_time_list()
+    log.debug('latency of all tokens:')
+    [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
+    tm_infer_list = bench_hook.get_time_infer_list()
     iter_data = gen_iterate_data(
         num,
         input_token_size * args['batch_size'],
-        max_output_token_size,
+        len(tm_infer_list),
         num_tokens,
         generation_time,
         per_token_time,
@@ -153,8 +150,6 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         tokenization_time=(tok_encode_time, tok_decode_time)
     )
     iter_data_list.append(iter_data)
-    tm_list = bench_hook.get_time_list()
-    tm_infer_list = bench_hook.get_time_infer_list()
     utils.metrics_print.print_metrics(
         num,
         iter_data,
@@ -422,6 +417,8 @@ def num_infer_count_type(x):
     x = int(x)
     if x < 1:
         raise argparse.ArgumentTypeError('Minimum input value is 1')
+    elif x > MAX_OUTPUT_TOKEN_SIZE:
+        raise argparse.ArgumentTypeError(f'Max input value is {MAX_OUTPUT_TOKEN_SIZE}')
     return x
 
 
@@ -439,9 +436,7 @@ def get_argprser():
         '--infer_count',
         default=None,
         type=num_infer_count_type,
-        help='limit the output token size '
-        f'(default {DEFAULT_OUTPUT_TOKEN_SIZE}) of text_gen and code_gen models. '
-        f'The value must be greater than 0.',
+        help='set the output token size, the value must be greater than 0.'
     )
     parser.add_argument(
         '-n',
@@ -500,7 +495,6 @@ def get_argprser():
         'if the value is False (default), input prompts are processed in interleave manner'
     )
     parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
-    parser.add_argument('--end_token_stopping', action='store_true', help='Token is generated until end token is encountered')
     utils.model_utils.add_stateful_model_arguments(parser)
 
     return parser.parse_args()
@@ -516,7 +510,7 @@ CASE_TO_BENCH = {
 
 
 def main():
-    log.basicConfig(format='[ %(levelname)s ] %(message)s', level=log.INFO, stream=sys.stdout)
+    log.basicConfig(format='[ %(levelname)s ] %(message)s', level=os.environ.get("LOGLEVEL", log.INFO), stream=sys.stdout)
     args = get_argprser()
     model_path, framework, model_args, model_name = utils.model_utils.analyze_args(args)
 
