@@ -92,8 +92,6 @@ jobs:
           run: |
             conda activate openvino_sd_cpp
             python -m pip install -r requirements.txt
-            $env:SPM_PROTOBUF_PROVIDER = 'internal'
-            $env:SPM_ABSL_PROVIDER = 'internal'
             python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
   
         - name: Download and convert model and tokenizer
