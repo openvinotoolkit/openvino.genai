@@ -38,7 +38,7 @@ jobs:
       - name: Install OpenVINO and other conda dependencies
         run: |
           conda activate openvino_sd_cpp
-          conda install -c conda-forge openvino=2024.0.0 c-compiler cxx-compiler make cmake
+          conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler make cmake
           conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
       - name: Install python dependencies
@@ -85,13 +85,15 @@ jobs:
         - name: Install OpenVINO and other conda dependencies
           run: |
             conda activate openvino_sd_cpp
-            conda install -c conda-forge openvino=2024.0.0 c-compiler cxx-compiler make cmake
+            conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler make cmake
   
         - name: Install python dependencies
           working-directory: ${{ env.working_directory }}
           run: |
             conda activate openvino_sd_cpp
             python -m pip install -r requirements.txt
+            $env:SPM_PROTOBUF_PROVIDER = 'internal'
+            $env:SPM_ABSL_PROVIDER = 'internal'
             python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
   
         - name: Download and convert model and tokenizer
