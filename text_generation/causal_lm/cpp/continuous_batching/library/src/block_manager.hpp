@@ -154,13 +154,11 @@ public:
         // TODO: support for groups with multiple sequences
         auto block_table = m_block_table[seq_id];
 
-        if (block_num == block_table.size())
-            return free_sequence(seq_id);
-
         OPENVINO_ASSERT(block_table.size() >= block_num);
         for (size_t idx = 0; idx < block_num; idx++) {
-            m_allocator.free(block_table.back());
-            OPENVINO_ASSERT(block_table.back()->is_free());
+            size_t block_idx = m_block_table[seq_id].size() - idx - 1;
+            m_allocator.free(block_table[block_idx]);
+            OPENVINO_ASSERT(block_table[block_idx]->is_free());
         } 
         m_block_table[seq_id].resize(m_block_table[seq_id].size() - block_num);
 
