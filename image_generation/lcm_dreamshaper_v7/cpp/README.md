@@ -37,13 +37,8 @@ conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
     ```
 
 2. Download the model from Huggingface and convert it to OpenVINO IR via [optimum-intel CLI](https://github.com/huggingface/optimum-intel). Example command for downloading and exporting FP16 model:
-    ```shell
-    export MODEL_PATH="models/lcm_dreamshaper_v7/FP16"
-    # Using optimum-cli for exporting model to OpenVINO format
-    optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 --weight-format fp16 $MODEL_PATH
-    # Converting tokenizer
-    convert_tokenizer $MODEL_PATH/tokenizer/ --tokenizer-output-type i32 -o $MODEL_PATH/tokenizer/
-    ```
+
+    `optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 --convert-tokenizer --weight-format fp16 models/lcm_dreamshaper_v7/FP16`
 
 ### LoRA enabling with safetensors
 

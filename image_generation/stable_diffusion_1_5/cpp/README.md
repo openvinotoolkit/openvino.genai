@@ -40,13 +40,8 @@ python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
 - [dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0) to run Stable Diffusion with LoRA adapters.
 
    Example command for downloading and exporting FP16 model:
-   ```shell
-   export MODEL_PATH="models/dreamlike_anime_1_0_ov/FP16"
-   # Using optimum-cli for exporting model to OpenVINO format
-   optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --convert-tokenizer --weight-format fp16 $MODEL_PATH
-   # Converting tokenizer manually (`--convert-tokenizer` flag of `optimum-cli` results in "OpenVINO Tokenizer export for CLIPTokenizer is not supported.")
-   convert_tokenizer $MODEL_PATH/tokenizer/ --tokenizer-output-type i32 -o $MODEL_PATH/tokenizer/
-   ```
+
+   `optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --convert-tokenizer --weight-format fp16 models/dreamlike_anime_1_0_ov/FP16`
 
    You can also choose other precision and export FP32 or INT8 model.
 
