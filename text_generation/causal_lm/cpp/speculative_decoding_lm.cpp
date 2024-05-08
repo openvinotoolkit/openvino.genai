@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cmath>
-#include <openvino/core/parallel.hpp>
+// #include <openvino/core/parallel.hpp>
 #include <openvino/openvino.hpp>
 #include <random>
 
@@ -96,11 +96,17 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
 
 void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t new_seq_len) {
     // trim kv_cache values up to the new_seq_len
-    auto states = request.query_state();
-    ov::parallel_for(states.size(), [&](size_t i) {
-        ov::Tensor old_tensor = states.at(i).get_state();
-        states.at(i).set_state(trimm_tensor(old_tensor, seq_len_axis, new_seq_len));
-    });
+    // auto states = request.query_state();
+    // ov::parallel_for(states.size(), [&](size_t i) {
+    //     ov::Tensor old_tensor = states.at(i).get_state();
+    //     states.at(i).set_state(trimm_tensor(old_tensor, seq_len_axis, new_seq_len));
+    // });
+
+    // todo: use parallel_for once tbb linking issue solved
+    for (auto& state : request.query_state()) {
+        ov::Tensor tensor = state.get_state();
+        state.set_state(trimm_tensor(tensor, seq_len_axis, new_seq_len));
+    }
 }
 
 class AssistedCandidateGenerator {
