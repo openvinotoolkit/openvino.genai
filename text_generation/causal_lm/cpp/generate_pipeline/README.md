@@ -2,9 +2,73 @@
 
 ## Usage 
 
+Firs of all you need to convert your model with optimum-cli
+``` sh
+optimum-cli export openvino --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --weight-format fp16 --trust-remote-code "TinyLlama-1.1B-Chat-v1.0"
+pip install openvino-genai
+```
+
+LLMPipeline is the main object used for decoding. You can initiliza it straigh away from the folder with the converted model. It will automanically load the main model, tokenizer, detokenizer and default generation configuration.
+
+### In Python
+
+A minimalist example:
+```python
+import py_generate_pipeline as genai # set more friendly module name
+pipe = genai.LLMPipeline(model_path, "CPU")
+print(pipe.generate("The Sun is yellow bacause"))
+```
+
+A simples chat in python:
+```python
+import openvino_genai as ov_genai
+pipe = ov_genai.LLMPipeline(model_path)
+
+config = {'num_groups': 3, 'group_size': 5, 'diversity_penalty': 1.1}
+pipe.set_generation_cofnig(config)
+
+pipe.start_chat()
+while True:
+    print('question:')
+    prompt = input()
+    if prompt == 'Stop!':
+        break
+    print(pipe(prompt))
+pipe.finish_chat()
+
+```
+
+Test to compare with Huggingface outputs
+```python
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+tokenizer = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+model = AutoModelForCausalLM.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+
+max_new_tokens = 32
+prompt = 'table is made of'
+
+encoded_prompt = tokenizer.encode(prompt, return_tensors='pt', add_special_tokens=False)
+hf_encoded_output = model.generate(encoded_prompt, max_new_tokens=max_new_tokens, do_sample=False)
+hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:])
+print(f'hf_output: {hf_output}')
+
+import sys
+sys.path.append('build-Debug/')
+import py_generate_pipeline as genai # set more friendly module name
+
+pipe = genai.LLMPipeline('text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/')
+ov_output = pipe(prompt, max_new_tokens=max_new_tokens)
+print(f'ov_output: {ov_output}')
+
+assert hf_output == ov_output
+
+```
+
+
 ### In C++
 
-
+Minimalistc example
 ```cpp
 int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
@@ -74,39 +138,4 @@ int main(int argc, char* argv[]) {
     }
     pipe.finish_chat();
 }
-```
-
-### In Python
-   
-
-``` python
-pip install openvino-genai
-optimum-cli export openvino --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --weight-format fp16 --trust-remote-code "TinyLlama-1.1B-Chat-v1.0"
-```
-
-
-```python
-from transformers import AutoTokenizer, AutoModelForCausalLM
-
-tokenizer = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
-model = AutoModelForCausalLM.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
-
-max_new_tokens = 32
-prompt = 'table is made of'
-
-encoded_prompt = tokenizer.encode(prompt, return_tensors='pt', add_special_tokens=False)
-hf_encoded_output = model.generate(encoded_prompt, max_new_tokens=max_new_tokens, do_sample=False)
-hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:])
-print(f'hf_output: {hf_output}')
-
-import sys
-sys.path.append('build-Debug/')
-import py_generate_pipeline as genai # set more friendly module name
-
-pipe = genai.LLMPipeline('text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/')
-ov_output = pipe(prompt, max_new_tokens=max_new_tokens)
-print(f'ov_output: {ov_output}')
-
-assert hf_output == ov_output
-
 ```
