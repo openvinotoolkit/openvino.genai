@@ -77,18 +77,22 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 
 ```sh
 source <INSTALL_DIR>/setupvars.sh
-python3 -m pip install --upgrade-strategy eager "transformers<4.38" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-python3 ../../../llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0/ --precision FP16
-convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
+python3 -m pip install --upgrade-strategy eager -r requirements.txt
+# Update openvino_tokenizers from the submodule
+python3 -m pip install ./../../../thirdparty/openvino_tokenizers/[transformers]
+optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/ --output ./TinyLlama-1.1B-Chat-v1.0/ --with-detokenizer --trust-remote-code
 ```
 
 #### Windows
 
 ```bat
 <INSTALL_DIR>\setupvars.bat
-python -m pip install --upgrade-strategy eager "transformers<4.38" -r ..\..\..\llm_bench\python\requirements.txt ..\..\..\thirdparty\openvino_tokenizers\[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-python ..\..\..\llm_bench\python\convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir .\TinyLlama-1.1B-Chat-v1.0\ --precision FP16
-convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --with-detokenizer --trust-remote-code
+python -m pip install --upgrade-strategy eager -r requirements.txt
+REM Update openvino_tokenizers from the submodule
+python -m pip install .\..\..\..\thirdparty\openvino_tokenizers\[transformers]
+optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\ --output .\TinyLlama-1.1B-Chat-v1.0\ --with-detokenizer --trust-remote-code
 ```
 
 ## Run
@@ -100,14 +104,14 @@ convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyL
 
 ### Examples:
 #### Windows:
-1. `/build/Release/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-2. `/build/Release/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-3. `/build/Release/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ ./Llama-2-7b-chat-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+1. `/build/Release/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?"`
+2. `/build/Release/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?"`
+3. `/build/Release/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ ./Llama-2-7b-chat-hf/ "Why is the Sun yellow?"`
 
 #### Linux/MacOS:
-1. `./build/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-2. `./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-3. `./build/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ ./Llama-2-7b-chat-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+1. `./build/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?"`
+2. `./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?"`
+3. `./build/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ ./Llama-2-7b-chat-hf/ "Why is the Sun yellow?"`
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
 
