@@ -320,6 +320,9 @@ std::string ov::LLMPipeline::operator()(std::string text, OptionalGenerationConf
     return generate(text, generation_config, streamer);
 }
 
+std::string ov::LLMPipeline::operator()(std::string text, StreamerVariant streamer) {
+    return generate(text, m_pimpl->m_generation_config, streamer);
+}
 
 ov::Tokenizer ov::LLMPipeline::get_tokenizer() {
     return m_pimpl->m_tokenizer;

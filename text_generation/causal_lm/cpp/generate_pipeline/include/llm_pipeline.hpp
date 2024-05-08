@@ -46,7 +46,7 @@ public:
     LLMPipeline(std::string& path, std::string device="CPU", const ov::AnyMap& plugin_config={});
     
     ~LLMPipeline();
-
+    
     EncodedResults generate(ov::Tensor input_ids, std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config);
     std::string generate(std::string text, OptionalGenerationConfig generation_config);
     DecodedResults generate(std::vector<std::string> text, OptionalGenerationConfig generation_config);
@@ -58,6 +58,7 @@ public:
     // generate with streamers
     std::string generate(std::string text, OptionalGenerationConfig generation_config, StreamerVariant streamer);
     std::string operator()(std::string text, OptionalGenerationConfig generation_config, StreamerVariant streamer);
+    std::string operator()(std::string text, StreamerVariant streamer);
     
     ov::Tokenizer get_tokenizer();
     GenerationConfig get_generation_config() const;
