@@ -14,5 +14,7 @@ void print_tensor(const ov::Tensor& tensor);
 
 std::pair<int64_t, float> softmax(const ov::Tensor& logits, const size_t batch_idx);
 
+enum class StopCriteria { early, heuristic, never };
+
 }  // namespace generate_utils
 }  // namespace ov

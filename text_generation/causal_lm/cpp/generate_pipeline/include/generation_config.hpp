@@ -5,9 +5,6 @@
 
 #include <cstdlib>
 #include <functional>
-#include <nlohmann/json.hpp>
-#include <fstream>
-// #include <group_beam_searcher.hpp>  // used only for StopCriteria
 #include <limits>
 #include "llm_tokenizer.hpp"
 #include <variant>
@@ -17,44 +14,43 @@ class Sequence;
 
 namespace ov {
 
-// Similar to HuggingFace GenerationConfig
 class GenerationConfig {
 public:
+    GenerationConfig() = default;
+    GenerationConfig(std::string json_path);
+
     // Generic
     size_t max_new_tokens;
     size_t max_length;
     bool ignore_eos;
-    std::string eos_token;
 
     // Beam search specific
     size_t num_groups;
     size_t group_size;
     float diversity_penalty;
-    size_t m_num_return_sequences;
-    // StopCriteria stop_criteria = StopCriteria::heuristic;
-    
-    float repetition_penalty;
     float length_penalty;
+    size_t m_num_return_sequences;
     size_t no_repeat_ngram_size;
-    std::function<bool(const Sequence&)> early_finish = [](const Sequence&) {return false; };
-
+    std::variant<std::string, bool> early_stopping;
+    
     // Multinomial
     float temperature;
     float top_p;
     size_t top_k;
     bool do_sample;
+    float repetition_penalty;
 
     // special tokens
     int64_t bos_token_id;
     int64_t eos_token_id;
     int64_t pad_token_id;
     
+    // used for chat scenario
+    std::string eos_token;  
+    std::string bos_token; 
+    
     // speculative sampling
     std::variant<std::string, ov::CompiledModel, ov::InferRequest> draft_model;  // todo: remove or try to add ov::Model const ov::Model&,
-    
-    GenerationConfig() = default;
-
-    GenerationConfig(std::string json_path);
 };
 
 } // namespace ov

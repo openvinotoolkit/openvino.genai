@@ -4,9 +4,11 @@
 #include <openvino/openvino.hpp>
 #include "llm_pipeline.hpp"
 #include <filesystem>
+#include <fstream>
 #include "generation_config_helper.hpp"
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
+#include <nlohmann/json.hpp>
 
 // #include <jinja2cpp/template.h>
 // #include <jinja2cpp/template_env.h>
@@ -32,7 +34,7 @@ class LLMPipeline::LLMPipelineImpl {
 public:
     ov::InferRequest m_model_runner;
     Tokenizer m_tokenizer;
-    GenerationConfig m_sampling_parameters;
+    GenerationConfig m_generation_config;
     std::string m_device;
     ov::AnyMap m_plugin_config;
     ov::Tensor m_attentions_mask_cache;
@@ -68,7 +70,7 @@ public:
 
     std::string call(std::string text);
     std::string call(std::string text, GenerationConfig generation_config);
-    DecodedResults call(std::vector<std::string> text, GenerationConfig sampling_parameters);
+    DecodedResults generate(std::vector<std::string> text, GenerationConfig generation_config);
 
 };
 
@@ -147,7 +149,7 @@ ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(std::string& path, std::string
     std::string generation_config_fname = "generation_config.json";
 
     if (std::filesystem::exists(path + "/" + generation_config_fname)) {
-        m_sampling_parameters = GenerationConfig(path + "/" + generation_config_fname);
+        m_generation_config = GenerationConfig(path + "/" + generation_config_fname);
     }
     if (std::filesystem::exists(path + "/" + tokenizer_config_fname)) {
         std::ifstream f(path + "/" + tokenizer_config_fname);
@@ -165,7 +167,7 @@ ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(std::string& path, std::string
 }
 
 ov::GenerationConfig ov::LLMPipeline::LLMPipelineImpl::generation_config() const {
-    return m_sampling_parameters;
+    return m_generation_config;
 }
 
 ov::GenerationConfig ov::LLMPipeline::get_generation_config() const {
@@ -179,14 +181,14 @@ ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::multinomial_sampling(ov::Te
 }
 
 std::string ov::LLMPipeline::LLMPipelineImpl::call(std::string text) {
-    return call(text, m_sampling_parameters);
+    return call(text, m_generation_config);
 }
 
-std::string ov::LLMPipeline::call(std::string text) {
+std::string ov::LLMPipeline::generate(std::string text) {
     return m_pimpl->call(text);
 }
 
-std::string ov::LLMPipeline::call(std::string text, GenerationConfig generation_config) {
+std::string ov::LLMPipeline::generate(std::string text, GenerationConfig generation_config) {
     return m_pimpl->call(text, generation_config);
 }
 
@@ -234,32 +236,36 @@ std::string ov::LLMPipeline::LLMPipelineImpl::call(std::string text, GenerationC
     return m_tokenizer.decode(generate_results.tokens)[0];
 }
 
-ov::DecodedResults ov::LLMPipeline::call(std::vector<std::string> text, GenerationConfig sampling_parameters) {
-    return m_pimpl->call(text, sampling_parameters);
+ov::DecodedResults ov::LLMPipeline::generate(std::vector<std::string> text, GenerationConfig generation_config) {
+    return m_pimpl->generate(text, generation_config);
 }
 
-ov::DecodedResults ov::LLMPipeline::LLMPipelineImpl::call(std::vector<std::string> text, GenerationConfig sampling_parameters) {
+ov::DecodedResults ov::LLMPipeline::LLMPipelineImpl::generate(std::vector<std::string> text, GenerationConfig generation_config) {
     auto [input_ids, attention_mask] = m_tokenizer.encode(text);
 
-    auto generate_results = generate(input_ids, attention_mask, sampling_parameters);
+    auto generate_results = generate(input_ids, attention_mask, generation_config);
 
     return {m_tokenizer.decode(generate_results.tokens), generate_results.scores};
 }
 
 std::string ov::LLMPipeline::operator()(std::string text) {
-    return call(text);
+    return generate(text);
 }
 
-std::string ov::LLMPipeline::operator()(std::string text, GenerationConfig sampling_parameters) {
-    return call(text, sampling_parameters);
+std::string ov::LLMPipeline::operator()(std::string text, GenerationConfig generation_config) {
+    return generate(text, generation_config);
 }
 
-ov::DecodedResults ov::LLMPipeline::operator()(std::vector<std::string> text, GenerationConfig sampling_parameters) {
-    return call(text, sampling_parameters);
+// std::string ov::LLMPipeline::operator()(std::string text, GenerationConfig generation_config, std::function<void (std::string)> streamer) {
+//     return "";
+// }
+
+ov::DecodedResults ov::LLMPipeline::operator()(std::vector<std::string> text, GenerationConfig generation_config) {
+    return generate(text, generation_config);
 }
 
-ov::DecodedResults ov::LLMPipeline::operator()(std::initializer_list<std::string> text, GenerationConfig sampling_parameters) {
-    return call(text, sampling_parameters);
+ov::DecodedResults ov::LLMPipeline::operator()(std::initializer_list<std::string> text, GenerationConfig generation_config) {
+    return generate(text, generation_config);
 }
 
 ov::EncodedResults ov::LLMPipeline::LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config) {
@@ -289,7 +295,7 @@ ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(ov::Tensor input_i
 }
 
 ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids, ov::Tensor attention_mask) {
-    return generate(input_ids, attention_mask, m_pimpl->m_sampling_parameters);
+    return generate(input_ids, attention_mask, m_pimpl->m_generation_config);
 }
 
 ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids, GenerationConfig sampling_params) {
@@ -298,7 +304,7 @@ ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids, GenerationCon
 }
 
 ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids) {
-    return generate(input_ids, ov::generate_utils::init_attention_mask(input_ids), m_pimpl->m_sampling_parameters);
+    return generate(input_ids, ov::generate_utils::init_attention_mask(input_ids), m_pimpl->m_generation_config);
 }
 
 ov::Tokenizer ov::LLMPipeline::get_tokenizer() {
@@ -329,6 +335,8 @@ std::string ov::LLMPipeline::LLMPipelineImpl::apply_chat_template(std::string pr
 
     std::stringstream result_prompt;
     result_prompt << "<|user|>\n" << prompt << "</s>\n<|assistant|>\n";  // hardcode template for TinyLlama
+    // result_prompt << "<bos><start_of_turn>user\n" << prompt << "<end_of_turn>\n<start_of_turn>model";  // Gemma-7b-it
+    // result_prompt << "<s>[INST] " << input << " [/INST]";  // LLama-2-7b
     
     return result_prompt.str();
 }
@@ -359,7 +367,7 @@ void ov::LLMPipeline::reset_state() {
 }
 
 void ov::LLMPipeline::set_generation_config(const GenerationConfig& generation_config) {
-    m_pimpl->m_sampling_parameters = generation_config;
+    m_pimpl->m_generation_config = generation_config;
 }
 
 ov::LLMPipeline::~LLMPipeline() = default;

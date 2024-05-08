@@ -41,45 +41,37 @@ public:
     LLMPipeline(std::string& path, std::string device="CPU", const ov::AnyMap& plugin_config={});
     
     ~LLMPipeline();
-    
-    GenerationConfig get_generation_config() const;
 
-    std::string operator()(std::string text);
-
-    std::string operator()(std::string text, GenerationConfig sampling_parameters);
-
-    DecodedResults operator()(std::vector<std::string> text, GenerationConfig sampling_parameters);
-
-    DecodedResults operator()(std::initializer_list<std::string> text, GenerationConfig sampling_parameters);
-
-    EncodedResults generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig sampling_params);
-
+    EncodedResults generate(ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config);
     EncodedResults generate(ov::Tensor input_ids, ov::Tensor attention_mask);
-
-    EncodedResults generate(ov::Tensor input_ids, GenerationConfig sampling_params);
-
     EncodedResults generate(ov::Tensor input_ids);
-
+    EncodedResults generate(ov::Tensor input_ids, GenerationConfig generation_config);
+    
     ov::Tokenizer get_tokenizer();
 
-    std::string apply_chat_template(std::string prompt, std::string role = "user") const;
+    std::string generate(std::string text);
+    std::string generate(std::string text, GenerationConfig generation_config);
+    DecodedResults generate(std::vector<std::string> text, GenerationConfig generation_config);
+
+    std::string operator()(std::string text);
+    std::string operator()(std::string text, GenerationConfig generation_config);
+    DecodedResults operator()(std::vector<std::string> text, GenerationConfig generation_config);
+    DecodedResults operator()(std::initializer_list<std::string> text, GenerationConfig generation_config);
+    
+    GenerationConfig get_generation_config() const;
+    void set_generation_config(const GenerationConfig& generation_config);
 
     void set_streamer(std::function<void (std::string)> callback);
     void set_streamer(std::shared_ptr<StreamerBase> streamer);
     void set_streamer();
+
     void start_chat();
     void finish_chat();
     void reset_state();
-    
-    void set_generation_config(const GenerationConfig& generation_config);
-
+    std::string apply_chat_template(std::string prompt, std::string role = "user") const;
 private:
     class LLMPipelineImpl;
     std::unique_ptr<LLMPipelineImpl> m_pimpl;
-
-    std::string call(std::string text);
-    std::string call(std::string text, GenerationConfig generation_config);
-    DecodedResults call(std::vector<std::string> text, GenerationConfig sampling_parameters);
 };
 
 } // namespace ov

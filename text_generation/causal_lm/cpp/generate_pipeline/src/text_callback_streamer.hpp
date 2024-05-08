@@ -23,6 +23,7 @@ public:
     
     std::function<void (std::string)> m_callback = [](std::string words){ ;};
     bool m_enabled = false;
+    int64_t m_eos_token;
 private:
     bool m_print_eos_token = false;
     Tokenizer m_tokenizer;

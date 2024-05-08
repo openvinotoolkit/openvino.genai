@@ -3,7 +3,7 @@
 
 #include <cstdlib>
 #include <functional>
-// #include <nlohmann/json.hpp>
+#include <nlohmann/json.hpp>
 #include <fstream>
 // #include <group_beam_searcher.hpp>  // used only for StopCriteria
 #include <limits>

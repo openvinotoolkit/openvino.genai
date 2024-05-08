@@ -17,7 +17,7 @@ public:
 
     TokenizerImpl() = default;
     TokenizerImpl(std::string& tokenizers_path, std::string device);
-
+    TokenizerImpl(std::string& tokenizer_path, std::string& detokenizer_path, std::string device);
     std::pair<ov::Tensor, ov::Tensor> encode(std::string prompt);
 
     std::pair<ov::Tensor, ov::Tensor> encode(std::vector<std::string> prompts);
@@ -44,6 +44,25 @@ Tokenizer::TokenizerImpl::TokenizerImpl(std::string& tokenizers_path, std::strin
     
     m_tokenize_request = core.compile_model(tokenizers_path + "/openvino_tokenizer.xml", "CPU").create_infer_request();
     m_detokenizer_request = core.compile_model(tokenizers_path + "/openvino_detokenizer.xml", "CPU").create_infer_request();
+    // todo: read eos, bos here
+}
+
+Tokenizer::TokenizerImpl::TokenizerImpl(std::string& tokenizer_path, std::string& detokenizer_path, std::string device): m_device(device) {
+    ov::Core core;
+    
+    auto is_xml = [](std::string path) -> bool { return path.compare(path.length() - 4, 4, ".xml") == 0;};
+    if (!is_xml(tokenizer_path))
+        OPENVINO_THROW("tokenizers_path should be a path to a xml file");
+    if (!is_xml(detokenizer_path))
+        OPENVINO_THROW("detokenizer_path should be a path to a xml file");
+  
+    // todo: add loading EOS_TOKEN_ID from IR
+    // todo:: OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
+    core.add_extension(OPENVINO_TOKENIZERS_PATH);  
+    // tokenizer and detokenizer work on CPU only
+    
+    m_tokenize_request = core.compile_model(tokenizer_path, "CPU").create_infer_request();
+    m_detokenizer_request = core.compile_model(detokenizer_path, "CPU").create_infer_request();
 }
 
 Tokenizer::Tokenizer(std::string& tokenizers_path, std::string device) {

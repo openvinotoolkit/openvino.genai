@@ -4,7 +4,6 @@
 #include <openvino/openvino.hpp>
 #include "llm_pipeline.hpp"
 
-
 std::string generate_chat_prompt(const ov::LLMPipeline& pipe, std::string& input, bool use_chat_template = true) {
     if (use_chat_template)
         return pipe.apply_chat_template(input);
