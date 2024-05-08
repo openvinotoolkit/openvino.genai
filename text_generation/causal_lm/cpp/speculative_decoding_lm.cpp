@@ -288,8 +288,7 @@ int main(int argc, char* argv[]) try {
        enhancing performance. For instance, in more predictable parts of text generation,
        the draft model can, in best-case scenarios, generate the next K tokens that exactly
        match the target. In that case they are validated in a single inference call to
-       the main model instead of running K
-       subsequent requests.
+       the main model instead of running K subsequent requests.
        */
 
     while (out_token != EOS_TOKEN && seq_len < max_sequence_length) {
