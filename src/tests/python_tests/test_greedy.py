@@ -16,9 +16,9 @@ def test_tiny_llama():
     print(f'hf_output: {hf_output}')
 
     import sys
-    sys.path.append('build-Debug/')
+    sys.path.append('build-Debug/src/python-bindings')
     import py_generate_pipeline as genai
-
+    
     pipe = genai.LLMPipeline('text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/')
     ov_output = pipe(prompt, max_new_tokens=max_new_tokens, do_sample=False)
     print(f'ov_output: {ov_output}')
