@@ -9,11 +9,11 @@ namespace ov {
 
 class GenerationConfigHelper {
 public:
-    GenerationConfig config;
+    GenerationConfig m_config;
 
     GenerationConfigHelper() = default;
     
-    GenerationConfigHelper(const GenerationConfig& config): config(config) {};
+    GenerationConfigHelper(const GenerationConfig& config): m_config(config) {};
 
     size_t get_max_new_tokens(size_t prompt_length = 0);
     
@@ -68,6 +68,9 @@ public:
     ov::InferRequest assistant_model;
     size_t num_assistant_tokens = 5;
     size_t seq_len_axis = 2;
+    
+    GenerationConfig anymap_to_generation_config(const ov::AnyMap& config_map = {});
+
 private:
 
     std::shared_ptr<const ov::Model> m_assistant_ov_model;

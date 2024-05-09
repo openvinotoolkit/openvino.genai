@@ -33,7 +33,8 @@ int main(int argc, char* argv[]) try {
         std::cout << "question:\n";
         cout << prompt << endl;
 
-        auto answer_str = pipe(prompt, config, streamer);
+        // auto answer_str = pipe(prompt, config, streamer);
+        auto answer_str = pipe.generate(prompt, ov::max_new_tokens(10000), ov::streamer_lambda(streamer));
         accumulated_str += answer_str;
         
         cout << "\n----------\n";

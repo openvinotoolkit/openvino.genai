@@ -15,7 +15,7 @@ using namespace std;
 
 namespace ov {
 
-using StreamerVariant = std::variant<std::monostate, std::function<void (std::string)>, std::shared_ptr<StreamerBase>>;
+using StreamerVariant = std::variant<std::function<void (std::string)>, std::shared_ptr<StreamerBase>>;
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using OptionalStreamerVariant = std::optional<StreamerVariant>;
 
@@ -49,7 +49,7 @@ public:
 class LLMPipeline {
 public:
     /**
-    * @brief Constructs a LLMPipeline when convert model xml/bin files, tokenizers and configuration and in the same dir
+    * @brief Constructs a LLMPipeline when convert model xml/bin files, tokenizers and configuration and in the same dir.
     *
     * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
     * @param device optional device
@@ -58,20 +58,18 @@ public:
     LLMPipeline(std::string& path, std::string device="CPU", const ov::AnyMap& plugin_config={});
     
     /**
-    * @brief Constructs a LLMPipeline when model and tokenizers are in separate dirs
+    * @brief Constructs a LLMPipeline when ov::Tokenizer is initialized manually using file from the different dirs.
     *
     * @param model_path Path to the dir with model, tokenizer .xml/.bin files, and generation_configs.json
-    * @param tokenizer_path path to the tokenizer
-    * @param detokenizer_path path to the detokenizer_path
+    * @param tokenizer manually initialized ov::Tokenizer 
     * @param device optional device
     * @param plugin_config optional plugin_config
     */
     LLMPipeline(
-        std::string& model_path,
-        std::string& tokenizer_path,  // todo: make possible to specify tokenizers with ov::Model, ov::CompiledModel, etc. 
-        std::string& detokenizer_path, // todo: do we deen separate detokenizer path?
-        std::string device="CPU",
-        const ov::AnyMap& plugin_config={}
+        const std::string model_path,
+        const ov::Tokenizer& tokenizer,
+        const std::string device="CPU",
+        const ov::AnyMap& plugin_config = {}
     );
     
     ~LLMPipeline();
@@ -85,6 +83,16 @@ public:
     * @return std::string decoded resulting text
     */
     std::string generate(std::string text, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer);
+    
+
+    template <typename... Properties>
+    util::EnableIfAllStringAny<std::string, Properties...> generate(
+        std::string text,
+        Properties&&... properties) {
+        return generate(text, AnyMap{std::forward<Properties>(properties)...});
+    }
+
+    std::string generate(std::string text, const ov::AnyMap& config);
 
     /**
     * @brief High level generate for batched prompts which encodes inputs and returns decoded outputs. 
@@ -132,5 +140,10 @@ private:
     class LLMPipelineImpl;
     std::unique_ptr<LLMPipelineImpl> m_pimpl;
 };
+
+static constexpr ov::Property<size_t> max_new_tokens{"max_new_tokens"};
+static constexpr ov::Property<float> temperature{"temperature"};
+static constexpr ov::Property<std::function<void (std::string)>> streamer_lambda{"streamer_lambda"};
+static constexpr ov::Property<std::shared_ptr<StreamerBase>> streamer{"streamer"};
 
 } // namespace ov

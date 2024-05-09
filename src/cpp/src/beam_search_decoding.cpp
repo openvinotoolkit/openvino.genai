@@ -7,8 +7,8 @@
 
 namespace ov {
 
-EncodedResults beam_search(ov::InferRequest& model_runner, ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig sampling_params) {
-    GenerationConfigHelper config_helper = sampling_params;
+EncodedResults beam_search(ov::InferRequest& model_runner, ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig config) {
+    GenerationConfigHelper config_helper = config;
 
     ov::Shape prompts_shape = prompts.get_shape();
     size_t batch_size = prompts_shape[0];
@@ -34,9 +34,11 @@ EncodedResults beam_search(ov::InferRequest& model_runner, ov::Tensor prompts, o
     
     // todo: remove this duplication and use the same SamplingParameters for both greedy and beam
     Parameters parameters{{std::vector<int64_t>{prompt_data, prompt_data + prompts.get_size()}}};
-    parameters.n_groups = sampling_params.num_groups;
-    parameters.diversity_penalty = sampling_params.diversity_penalty;
-    parameters.group_size = sampling_params.group_size;
+    parameters.n_groups = config.num_beam_groups;
+    parameters.diversity_penalty = config.diversity_penalty;
+    parameters.group_size = config.num_beams / config.num_beam_groups;
+    OPENVINO_ASSERT(config.num_beams % config.num_beam_groups == 0, "number of beams should be divisible by number of groups");
+
     
     GroupBeamSearcher group_beam_searcher{parameters};
     std::vector<int64_t> next_tokens;
@@ -78,7 +80,7 @@ EncodedResults beam_search(ov::InferRequest& model_runner, ov::Tensor prompts, o
     std::sort(beams.begin(), beams.end(), compare_scores);
     
     ov::EncodedResults results;
-    for (auto beam = beams.begin(); beam != beams.begin() + sampling_params.m_num_return_sequences; ++beam) {
+    for (auto beam = beams.begin(); beam != beams.begin() + config.num_return_sequences; ++beam) {
         // todo: convert to string 
         results.scores.emplace_back(beam->score);
         results.tokens.emplace_back(beam->tokens);

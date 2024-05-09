@@ -38,37 +38,25 @@ public:
     GenerationConfig m_generation_config;
     std::string m_device;
     ov::AnyMap m_plugin_config;
-    ov::Tensor m_attentions_mask_cache;
     std::string m_chat_template = "";
-    
-    // TODO: add constructor for specifying manually tokenizer path
-    // dir path
-    // xml file path
-    // compiled model
-    // infer request
-    // ov::Model
-    
+    bool is_chat_conversation = false;
+
     LLMPipelineImpl(
-        std::string& model_path,
-        std::string& tokenizer_path,
-        std::string& detokenizer_path,
-        std::string device="CPU",
-        const ov::AnyMap& plugin_config={}
+        const std::string model_path,
+        const ov::Tokenizer& tokenizer,
+        const std::string device,
+        const ov::AnyMap& plugin_config
     );
 
-    LLMPipelineImpl(std::string& path, std::string device="CPU", const ov::AnyMap& config={});
+    LLMPipelineImpl(std::string& path, std::string device, const ov::AnyMap& config);
     
     GenerationConfig generation_config() const;
-
-    EncodedResults multinomial_sampling(ov::Tensor prompts, GenerationConfig generation_config);
 
     std::string generate(std::string text, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer);
     DecodedResults generate(std::vector<std::string> texts, OptionalGenerationConfig generation_config);
     EncodedResults generate(ov::Tensor input_ids, std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer);
 
     std::string apply_chat_template(std::string prompt, std::string role = "user") const;
-
-    bool is_chat_conversation = false;
 };
 
 } // namespace ov
@@ -107,24 +95,20 @@ std::pair<ov::Tensor, ov::Tensor> pad_left(ov::Tensor&& input_ids, ov::Tensor&& 
 }
 
 ov::LLMPipeline::LLMPipeline(
-    std::string& model_path,
-    std::string& tokenizer_path,
-    std::string& detokenizer_path,
-    std::string device,
+    const std::string model_path,
+    const ov::Tokenizer& tokenizer,
+    const std::string device,
     const ov::AnyMap& plugin_config
 ) {
-    m_pimpl = make_unique<LLMPipelineImpl>(model_path, tokenizer_path, detokenizer_path, device, plugin_config);
+    m_pimpl = make_unique<LLMPipelineImpl>(model_path, tokenizer, device, plugin_config);
 }
 
 ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
-    std::string& model_path,
-    std::string& tokenizer_path,
-    std::string& detokenizer_path,
+    const std::string model_path,
+    const ov::Tokenizer& tokenizer,
     std::string device,
     const ov::AnyMap& plugin_config
-) {
-    m_device = device;
-    m_plugin_config = plugin_config;
+): m_tokenizer(tokenizer), m_device(device), m_plugin_config(plugin_config) {
     ov::Core core;
     
     auto is_xml = [](std::string path) -> bool { return path.compare(path.length() - 4, 4, ".xml") == 0;};
@@ -132,9 +116,11 @@ ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
     std::string full_path = model_path;
     if (!is_xml(full_path))
         full_path += "/openvino_model.xml";
-    m_model_runner = core.compile_model(full_path, device, plugin_config).create_infer_request();
-    
-    // todo: add loading Tokenizers from separate folders
+    try {
+        m_model_runner = core.compile_model(full_path, device, plugin_config).create_infer_request();
+    } catch (...) {
+        OPENVINO_THROW("Cannot compile_model from path " + full_path);
+    }
 }
 
 ov::LLMPipeline::LLMPipeline(std::string& path, std::string device, const ov::AnyMap& config) {
@@ -169,12 +155,6 @@ ov::GenerationConfig ov::LLMPipeline::LLMPipelineImpl::generation_config() const
 
 ov::GenerationConfig ov::LLMPipeline::get_generation_config() const {
     return m_pimpl->generation_config();
-}
-
-ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::multinomial_sampling(ov::Tensor prompts, GenerationConfig generation_config) {
-    // todo: implement
-    ov::EncodedResults results;
-    return results;
 }
 
 std::string ov::LLMPipeline::LLMPipelineImpl::generate(
@@ -284,7 +264,8 @@ ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(
         result = beam_search(m_model_runner, input_ids, attention_mask_data, config);
         
     } else if (config_helper.is_multimomial()) {
-        result = multinomial_sampling(input_ids, config);
+        // todo: implement multinomial sampling
+        // result = multinomial_sampling(input_ids, config);
     } else {
         result = ov::assistive_decoding(m_model_runner, input_ids, attention_mask_data, config);
     }
@@ -298,6 +279,21 @@ ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(
 
 std::string ov::LLMPipeline::generate(std::string text, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer) {
     return m_pimpl->generate(text, generation_config, streamer);
+}
+
+
+std::string ov::LLMPipeline::generate(std::string text, const ov::AnyMap& config_map) {
+    StreamerVariant streamer = {};
+    auto config = GenerationConfigHelper(get_generation_config()).anymap_to_generation_config(config_map);
+
+    // todo: get attentions from properties?
+    if (config_map.count("streamer_lambda")) {
+        streamer = config_map.at("streamer_lambda").as<std::function<void (std::string)>>();
+    } else if (config_map.count("streamer")) {
+        streamer = config_map.at("streamer").as<std::shared_ptr<StreamerBase>>();
+    }
+
+    return m_pimpl->generate(text, config, streamer);
 }
 
 std::string ov::LLMPipeline::operator()(std::string text, OptionalGenerationConfig generation_config, StreamerVariant streamer) {

@@ -81,9 +81,7 @@ ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner,
     std::fill(results.scores.begin(), results.scores.end(), 0);
     
     if (is_chat_conversation && kv_cache_len > 0) {
-        // m_attentions_mask_cache extent with attention_mask;
         auto attentions_mask_history = m_model_runner.get_tensor("attention_mask");
-        // print_tensor(m_attentions_mask_cache);
 
         size_t new_prompt_len = attention_mask.get_shape()[1];
         size_t context_len = attentions_mask_history.get_shape()[1];
