@@ -364,7 +364,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/l_openvino_toolkit_ubuntu20_2024.1.0.dev20240304_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/linux/l_openvino_toolkit_ubuntu20_2024.1.0.15008.f4afc983258_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -462,7 +462,7 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model ikala/redpajama-3b-chat redpajama-3b-chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-      - run: source ./ov/setupvars.sh && convert_tokenizer ./redpajama-3b-chat/pytorch/dldt/FP16/ --output ./redpajama-3b-chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
+      - run: source ./ov/setupvars.sh && convert_tokenizer ./redpajama-3b-chat/ --output ./redpajama-3b-chat/ --with-detokenizer --trust-remote-code
       - name: Run Generation
         run: |
           source ./ov/setupvars.sh
