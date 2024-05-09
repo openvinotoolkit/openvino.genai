@@ -1,4 +1,4 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.2.2+cpu
 diffusers==0.27.2
-optimum-intel[openvino] @ git+https://github.com/apaniukov/optimum-intel.git@ov-tokenizers-leftovers
+optimum-intel[nncf,openvino] @ git+https://github.com/apaniukov/optimum-intel.git@ov-tokenizers-leftovers
