@@ -194,7 +194,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
     {
         Timer t("Loading and compiling tokenizer");
         // Tokenizer model wil be loaded to CPU: OpenVINO Tokenizers can be inferred on a CPU device only.
-        models.tokenizer = core.compile_model(model_path + "/tokenizer/openvino_tokenizer.xml", "CPU");
+        models.tokenizer = core.compile_model(model_path + "/openvino_tokenizer/openvino_tokenizer.xml", "CPU");
     }
 
     return models;

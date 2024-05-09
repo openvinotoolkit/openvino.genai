@@ -38,7 +38,7 @@ jobs:
       - name: Install OpenVINO and other conda dependencies
         run: |
           conda activate openvino_sd_cpp
-          conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler make cmake
+          conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler git make cmake
           conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
       - name: Install python dependencies
@@ -52,7 +52,7 @@ jobs:
         working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_sd_cpp
-          optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --convert-tokenizer --weight-format fp16 models/stable_diffusion_v1_5_ov/FP16
+          optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --weight-format fp16 models/stable_diffusion_v1_5_ov/FP16
 
       - name: Build app
         working-directory: ${{ env.working_directory }}
@@ -82,7 +82,7 @@ jobs:
         - name: Install OpenVINO and other conda dependencies
           run: |
             conda activate openvino_sd_cpp
-            conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler make cmake
+            conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler git make cmake
   
         - name: Install python dependencies
           working-directory: ${{ env.working_directory }}
@@ -95,7 +95,7 @@ jobs:
           working-directory: ${{ env.working_directory }}
           run: |
             conda activate openvino_sd_cpp
-            optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --convert-tokenizer --weight-format fp16 models/stable_diffusion_v1_5_ov/FP16
+            optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --weight-format fp16 models/stable_diffusion_v1_5_ov/FP16
   
         - name: Build app
           working-directory: ${{ env.working_directory }}

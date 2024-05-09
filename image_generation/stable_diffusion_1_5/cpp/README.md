@@ -18,7 +18,7 @@ Prepare a python environment and install dependencies:
 ```shell
 conda create -n openvino_sd_cpp python==3.10
 conda activate openvino_sd_cpp
-conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler make cmake
+conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler git make cmake
 # Ensure that Conda standard libraries are used
 conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 ```
@@ -41,7 +41,7 @@ python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
 
    Example command for downloading and exporting FP16 model:
 
-   `optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --convert-tokenizer --weight-format fp16 models/dreamlike_anime_1_0_ov/FP16`
+   `optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 models/dreamlike_anime_1_0_ov/FP16`
 
    You can also choose other precision and export FP32 or INT8 model.
 
