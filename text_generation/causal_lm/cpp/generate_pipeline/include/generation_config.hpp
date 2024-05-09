@@ -3,16 +3,14 @@
 
 #pragma once
 
-#include <cstdlib>
-#include <functional>
 #include <limits>
 #include "llm_tokenizer.hpp"
 #include <variant>
 
-// forward declaration
-class Sequence;
 
 namespace ov {
+
+enum class StopCriteria { early, heuristic, never };
 
 class GenerationConfig {
 public:
@@ -31,7 +29,7 @@ public:
     float length_penalty;
     size_t m_num_return_sequences;
     size_t no_repeat_ngram_size;
-    std::variant<std::string, bool> early_stopping;
+    StopCriteria stop_criteria;
     
     // Multinomial
     float temperature;

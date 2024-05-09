@@ -20,7 +20,7 @@ def test_tiny_llama():
     import py_generate_pipeline as genai
 
     pipe = genai.LLMPipeline('text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/')
-    ov_output = pipe(prompt, max_new_tokens=max_new_tokens)
+    ov_output = pipe(prompt, max_new_tokens=max_new_tokens, do_sample=False)
     print(f'ov_output: {ov_output}')
 
     assert hf_output == ov_output

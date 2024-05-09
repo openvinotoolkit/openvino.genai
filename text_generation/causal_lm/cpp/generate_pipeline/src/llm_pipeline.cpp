@@ -62,19 +62,13 @@ public:
 
     EncodedResults multinomial_sampling(ov::Tensor prompts, GenerationConfig generation_config);
 
-    EncodedResults generate(ov::Tensor input_ids, std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config);
-
-    EncodedResults generate(ov::Tensor input_ids, std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config, StreamerVariant streamer);
+    std::string generate(std::string text, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer);
+    DecodedResults generate(std::vector<std::string> texts, OptionalGenerationConfig generation_config);
+    EncodedResults generate(ov::Tensor input_ids, std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer);
 
     std::string apply_chat_template(std::string prompt, std::string role = "user") const;
 
-    // std::shared_ptr<StreamerBase> m_streamer;
     bool is_chat_conversation = false;
-
-    std::string generate(std::string text, OptionalGenerationConfig generation_config);
-    std::string generate(std::string text, OptionalGenerationConfig generation_config, StreamerVariant streamer);
-    DecodedResults generate(std::vector<std::string> text, OptionalGenerationConfig generation_config);
-
 };
 
 } // namespace ov
@@ -183,20 +177,10 @@ ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::multinomial_sampling(ov::Te
     return results;
 }
 
-std::string ov::LLMPipeline::generate(std::string text, OptionalGenerationConfig generation_config) {
-    return m_pimpl->generate(text, generation_config);
-}
-
-std::string ov::LLMPipeline::LLMPipelineImpl::generate(std::string text, OptionalGenerationConfig generation_config) {
-    std::cout << "WE ARE HEEEEEEEEEEEEEEERE" << std::endl;
-    StreamerVariant var;
-    return generate(text, generation_config, var);
-}
-
 std::string ov::LLMPipeline::LLMPipelineImpl::generate(
     std::string text, 
     OptionalGenerationConfig generation_config,
-    StreamerVariant streamer
+    OptionalStreamerVariant streamer
 ) {
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
 
@@ -243,55 +227,55 @@ std::string ov::LLMPipeline::LLMPipelineImpl::generate(
     return m_tokenizer.decode(generate_results.tokens)[0];
 }
 
-ov::DecodedResults ov::LLMPipeline::generate(std::vector<std::string> text, OptionalGenerationConfig generation_config) {
-    return m_pimpl->generate(text, generation_config);
+ov::DecodedResults ov::LLMPipeline::generate(std::vector<std::string> texts, OptionalGenerationConfig generation_config) {
+    return m_pimpl->generate(texts, generation_config);
 }
 
-ov::DecodedResults ov::LLMPipeline::LLMPipelineImpl::generate(std::vector<std::string> text, OptionalGenerationConfig generation_config) {
-    auto [input_ids, attention_mask] = m_tokenizer.encode(text);
+ov::DecodedResults ov::LLMPipeline::LLMPipelineImpl::generate(std::vector<std::string> texts, OptionalGenerationConfig generation_config) {
+    auto [input_ids, attention_mask] = m_tokenizer.encode(texts);
 
-    auto generate_results = generate(input_ids, attention_mask, generation_config);
+    auto generate_results = generate(input_ids, attention_mask, generation_config, {});
 
     return {m_tokenizer.decode(generate_results.tokens), generate_results.scores};
 }
 
 std::string ov::LLMPipeline::operator()(std::string text, OptionalGenerationConfig generation_config) {
-    return generate(text, generation_config);
+    return generate(text, generation_config, {});
 }
 
-ov::DecodedResults ov::LLMPipeline::operator()(std::vector<std::string> text, OptionalGenerationConfig generation_config) {
-    return generate(text, generation_config);
+ov::DecodedResults ov::LLMPipeline::operator()(std::vector<std::string> texts, OptionalGenerationConfig generation_config) {
+    return m_pimpl-> generate(texts, generation_config);
 }
 
 ov::DecodedResults ov::LLMPipeline::operator()(std::initializer_list<std::string> text, OptionalGenerationConfig generation_config) {
-    return generate(text, generation_config);
+    return m_pimpl->generate(text, generation_config);
 }
 
-ov::EncodedResults ov::LLMPipeline::LLMPipeline::generate(ov::Tensor input_ids, std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config) {
-    return m_pimpl->generate(input_ids, attention_mask, generation_config);
-}
-
-ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(ov::Tensor input_ids, std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config) {
-    return generate(input_ids, attention_mask, generation_config);
+ov::EncodedResults ov::LLMPipeline::LLMPipeline::generate(ov::Tensor input_ids, 
+                                                          std::optional<ov::Tensor> attention_mask, 
+                                                          OptionalGenerationConfig generation_config,
+                                                          OptionalStreamerVariant streamer) {
+    return m_pimpl->generate(input_ids, attention_mask, generation_config, streamer);
 }
 
 ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(
     ov::Tensor input_ids, 
     std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config, 
-    StreamerVariant streamer
+    OptionalStreamerVariant streamer
 ) {
     ov::EncodedResults result;
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
     GenerationConfigHelper config_helper = config;
     
     std::shared_ptr<StreamerBase> streamer_ptr;
-
-    if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
+    if (!streamer.has_value()){
+        streamer_ptr = nullptr;
+    } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&*streamer)) {
         streamer_ptr = *streamer_obj;
-    } else if (auto callback = std::get_if<std::function<void(std::string)>>(&streamer)) {
+    } else if (auto callback = std::get_if<std::function<void(std::string)>>(&*streamer)) {
         streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
     }
-    
+
     auto attention_mask_data = attention_mask.has_value() ? *attention_mask : ov::generate_utils::init_attention_mask(input_ids);
 
     if (config_helper.is_greedy_decoding()) {
@@ -312,16 +296,16 @@ ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(
     return result;
 }
 
-std::string ov::LLMPipeline::generate(std::string text, OptionalGenerationConfig generation_config, StreamerVariant streamer) {
+std::string ov::LLMPipeline::generate(std::string text, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer) {
     return m_pimpl->generate(text, generation_config, streamer);
 }
 
 std::string ov::LLMPipeline::operator()(std::string text, OptionalGenerationConfig generation_config, StreamerVariant streamer) {
-    return generate(text, generation_config, streamer);
+    return m_pimpl->generate(text, generation_config, streamer);
 }
 
 std::string ov::LLMPipeline::operator()(std::string text, StreamerVariant streamer) {
-    return generate(text, m_pimpl->m_generation_config, streamer);
+    return m_pimpl->generate(text, m_pimpl->m_generation_config, streamer);
 }
 
 ov::Tokenizer ov::LLMPipeline::get_tokenizer() {

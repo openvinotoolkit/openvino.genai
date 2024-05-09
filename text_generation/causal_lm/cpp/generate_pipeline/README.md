@@ -65,7 +65,6 @@ assert hf_output == ov_output
 
 ```
 
-
 ### In C++
 
 Minimalistc example
@@ -139,3 +138,36 @@ int main(int argc, char* argv[]) {
     pipe.finish_chat();
 }
 ```
+
+Streaming exapmle with lambda function
+
+``` cpp
+int main(int argc, char* argv[]) {
+    auto streamer = [](std::string word) { std::cout << word << std::flush; };
+
+    std::string model_path = argv[1];
+    ov::LLMPipeline pipe(model_path, "CPU");
+    cout << pipe.generate("The Sun is yellow bacause", streamer);
+}
+```
+
+Streaming with custom class
+``` cpp
+#include <streamer_base.hpp>
+
+class CustomStreamer: publict StreamerBase {
+public:
+    void put(int64_t token) {/* decode tokens and do process them*/};
+
+    void end() {/* decode tokens and do process them*/};
+};
+
+int main(int argc, char* argv[]) {
+    CustomStreamer custom_streamer;
+
+    std::string model_path = argv[1];
+    ov::LLMPipeline pipe(model_path, "CPU");
+    cout << pipe.generate("The Sun is yellow bacause", custom_streamer);
+}
+```
+
