@@ -144,7 +144,7 @@ jobs:
           "
           echo "你好！ 你好嗎？" passed
 
-          timeout 1m ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
+          timeout 1m ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -369,12 +369,11 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt "transformers<4.38" ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-          python ./llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0/ --precision FP16
-          convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --with-detokenizer
+          python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
@@ -386,8 +385,8 @@ jobs:
           Question: Can you please add 2 and 3
           A:' > ./prompt.txt
 
-          ./build/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
-          ./build/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "$(<prompt.txt)" > predictions_greedy.txt
+          ./build/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
+          ./build/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -458,15 +457,16 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager "optimum>=1.14" -r ./llm_bench/python/requirements.txt ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu && python ./llm_bench/python/convert.py --model_id ikala/redpajama-3b-chat --output_dir ./redpajama-3b-chat/ --precision FP16 &
+          python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model ikala/redpajama-3b-chat redpajama-3b-chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
-          wait
       - run: source ./ov/setupvars.sh && convert_tokenizer ./redpajama-3b-chat/pytorch/dldt/FP16/ --output ./redpajama-3b-chat/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
       - name: Run Generation
         run: |
           source ./ov/setupvars.sh
-          timeout 50s ./build/greedy_causal_lm ./redpajama-3b-chat/pytorch/dldt/FP16/ "Alan Turing was a" > ./pred_greedy.txt 
+          timeout 50s ./build/greedy_causal_lm ./redpajama-3b-chat/ "Alan Turing was a" > ./pred_greedy.txt
       - name: Compare
         run: |
           python -c "
