@@ -1,0 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+optimum[openvino]==1.19.1
+optimum-intel[openvino] @ git+https://github.com/apaniukov/optimum-intel.git@0029e9165a2dad4cfcf787aa63181d9dc0cd49d5
+einops==0.7.0  # For Qwen
+transformers_stream_generator==0.0.4  # For Qwen
