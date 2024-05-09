@@ -1,6 +1,6 @@
 # Text generation C++ samples that support most popular models like LLaMA 2
 
-These examples showcase inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The applications don't have many configuration options to encourage the reader to explore and modify the source code. Loading `openvino_tokenizers` to `ov::Core` enables tokenization. Run `convert_tokenizer` to generate IRs for the samples. [group_beam_searcher.hpp](group_beam_searcher.hpp) implements the algorithm of the same name, which is used by `beam_search_causal_lm`. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
+These examples showcase inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The applications don't have many configuration options to encourage the reader to explore and modify the source code. Loading `openvino_tokenizers` to `ov::Core` enables tokenization. Run `optimum-cli` to generate IRs for the samples. [group_beam_searcher.hpp](group_beam_searcher.hpp) implements the algorithm of the same name, which is used by `beam_search_causal_lm`. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
 
 ## How it works
 
@@ -49,7 +49,7 @@ This approach reduces the need for multiple infer requests to the main model, en
 
 ## Install OpenVINO
 
-Install [OpenVINO Archives >= 2024.0](docs.openvino.ai/install). `master` and possibly the latest `releases/*` branch correspond to not yet released OpenVINO versions. https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for these branches early testing. `<INSTALL_DIR>` below refers to the extraction location.
+Install [OpenVINO Archives >= 2024.1](docs.openvino.ai/install). `master` and possibly the latest `releases/*` branch correspond to not yet released OpenVINO versions. https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for these branches early testing. `<INSTALL_DIR>` below refers to the extraction location.
 
 ## Build `greedy_causal_lm`, `beam_search_causal_lm` and `openvino_tokenizers`
 
@@ -81,7 +81,6 @@ python3 -m pip install --upgrade-strategy eager -r requirements.txt
 # Update openvino_tokenizers from the submodule
 python3 -m pip install ./../../../thirdparty/openvino_tokenizers/[transformers]
 optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/ --output ./TinyLlama-1.1B-Chat-v1.0/ --with-detokenizer --trust-remote-code
 ```
 
 #### Windows
@@ -92,7 +91,6 @@ python -m pip install --upgrade-strategy eager -r requirements.txt
 REM Update openvino_tokenizers from the submodule
 python -m pip install .\..\..\..\thirdparty\openvino_tokenizers\[transformers]
 optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\ --output .\TinyLlama-1.1B-Chat-v1.0\ --with-detokenizer --trust-remote-code
 ```
 
 ## Run

@@ -216,7 +216,7 @@ ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt, s
         tokenizer_req.set_input_tensor(ov::Tensor{ov::element::string, {1}, &prompt});
         tokenizer_req.infer();
         ov::Tensor input_ids_token = tokenizer_req.get_tensor("input_ids");
-        std::copy_n(input_ids_token.data<std::int32_t>(), input_ids_token.get_size(), input_ids.data<int32_t>());
+        std::copy_n(input_ids_token.data<std::int64_t>(), input_ids_token.get_size(), input_ids.data<std::int32_t>());
 
         // text embeddings
         text_encoder_req.set_tensor("input_ids", input_ids);
