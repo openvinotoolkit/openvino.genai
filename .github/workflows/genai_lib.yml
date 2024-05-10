@@ -1,4 +1,5 @@
 name: genai_lib
+on: pull_request
 jobs:
   genai_lib:
     runs-on: ubuntu-20.04
