@@ -72,7 +72,7 @@ lines-after-imports = 2
 
 [tool.scikit-build]
 install.components = ["py_generate_pipeline_install_target"]
-cmake.source-dir = "text_generation/causal_lm/cpp"
+cmake.source-dir = "./"
 cmake.build-type = "Release"
 cmake.args = [
     "-DBUILD_SHARED_LIBS=NO"
