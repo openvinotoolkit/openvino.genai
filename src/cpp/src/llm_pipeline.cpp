@@ -11,9 +11,9 @@
 #include "utils.hpp"
 #include <nlohmann/json.hpp>
 
-// #include <jinja2cpp/template.h>
-// #include <jinja2cpp/template_env.h>
-// #include "generation_config.hpp"
+#include <jinja2cpp/template.h>
+#include <jinja2cpp/template_env.h>
+#include "openvino/genai/generation_config.hpp"
 
 
 namespace ov {
@@ -313,29 +313,21 @@ std::string ov::LLMPipeline::apply_chat_template(std::string prompt, std::string
 }
 
 std::string ov::LLMPipeline::LLMPipelineImpl::apply_chat_template(std::string prompt, std::string role) const {
-    // todo: temporary disable for easier and faster build
-    // jinja2::TemplateEnv env;
-    // env.GetSettings().lstripBlocks = true;
-    // env.GetSettings().trimBlocks = true;
-    // jinja2::Template tpl(&env);
-    // tpl.Load(m_chat_template);
+    jinja2::TemplateEnv env;
+    env.GetSettings().lstripBlocks = true;
+    env.GetSettings().trimBlocks = true;
+    jinja2::Template tpl(&env);
+    tpl.Load(m_chat_template);
     
-    // jinja2::ValuesMap message {{"role", role}, {"content", prompt}};
-    // jinja2::ValuesMap params = {
-    //     {"messages", jinja2::ValuesList({message})},
-    //     {"bos_token",  "<s>"},
-    //     {"eos_token", "</s>"},  // todo: load from config
-    //     {"add_generation_prompt", true},
-    // };
+    jinja2::ValuesMap message {{"role", role}, {"content", prompt}};
+    jinja2::ValuesMap params = {
+        {"messages", jinja2::ValuesList({message})},
+        {"bos_token",  "<s>"},
+        {"eos_token", "</s>"},  // todo: load from config
+        {"add_generation_prompt", true},
+    };
  
-    // return tpl.RenderAsString(params).value();
-
-    std::stringstream result_prompt;
-    result_prompt << "<|user|>\n" << prompt << "</s>\n<|assistant|>\n";  // hardcode template for TinyLlama
-    // result_prompt << "<bos><start_of_turn>user\n" << prompt << "<end_of_turn>\n<start_of_turn>model";  // Gemma-7b-it
-    // result_prompt << "<s>[INST] " << input << " [/INST]";  // LLama-2-7b
-    
-    return result_prompt.str();
+    return tpl.RenderAsString(params).value();
 }
 
 void ov::LLMPipeline::start_chat() {
