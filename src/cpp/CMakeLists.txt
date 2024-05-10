@@ -1,27 +1,61 @@
-# Generate Pipeline library
+# Copyright (C) 2018-2024 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
 
-set(JINJA2CPP_DEPS_MODE internal)
+# Dependencies
 
-add_subdirectory(../../thirdparty/nlohmann_json/ "${CMAKE_CURRENT_BINARY_DIR}/nlohmann_json/")
+include(FetchContent)
 
-# todo: remove hardcodes and make submodule work
-# include_directories($ENV{HOME}/opt/jinja2cpp/include)
-# add_subdirectory(../../../thirdparty/Jinja2Cpp/ "${CMAKE_CURRENT_BINARY_DIR}/Jinja2Cpp/")
-# include_directories(../../../thirdparty/inja/include/Jinja2Cpp)
+FetchContent_Declare(nlohmann_json
+    URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
+    URL_HASH SHA256=0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406)
+FetchContent_MakeAvailable(nlohmann_json)
+
+function(ov_genai_build_jinja2cpp)
+    FetchContent_Declare(jinja2cpp
+        URL https://github.com/ilya-lavrenov/Jinja2Cpp/archive/a5d002cbf44469775556daea14ba3ccdba1e365a.tar.gz
+        URL_HASH SHA256=5aa5378d9acf3c44dfb607fd7f16f48b17ffa6495c219957901e9191ffe28900)
+
+    FetchContent_GetProperties(jinja2cpp)
+    if(NOT jinja2cpp_POPULATED)
+        FetchContent_Populate(jinja2cpp)
+
+        set(BUILD_SHARED_LIBS OFF)
+        set(JINJA2CPP_INSTALL OFF CACHE BOOL "")
+        set(JINJA2CPP_CXX_STANDARD 17 CACHE STRING "")
+        set(JINJA2CPP_BUILD_SHARED OFF CACHE BOOL "")
+        set(JINJA2CPP_USE_REGEX "std" CACHE STRING "")
+        set(JINJA2CPP_WITH_JSON_BINDINGS "none" CACHE STRING "")
+        set(JINJA2CPP_STRICT_WARNINGS OFF CACHE BOOL "")
+        set(JINJA2CPP_PIC ON CACHE BOOL "")
+
+        add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
+    endif()
+endfunction()
+
+ov_genai_build_jinja2cpp()
+
+find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
+# Library
+
+file(GLOB SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+
 set(TARGET_NAME generate_pipeline_lib)
-file(GLOB SOURCE_FILES "src/*.cpp")
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
-target_include_directories(${TARGET_NAME} PRIVATE ../../text_generation/causal_lm/cpp/)
-target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-find_package(OpenVINO REQUIRED COMPONENTS Runtime)
-target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime)
-target_link_libraries(${TARGET_NAME} PUBLIC nlohmann_json::nlohmann_json)
+
+target_include_directories(${TARGET_NAME}
+    # TODO: remove it, because beam_search algo should not be exposed to end users
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../text_generation/causal_lm/cpp/
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
+
 target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
-# target_link_libraries(${TARGET_NAME} PRIVATE $ENV{HOME}/opt/jinja2cpp/lib/static/libjinja2cpp.a)  # todo: remove hardcode
-set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 17)
-set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON)
+set_target_properties(${TARGET_NAME} PROPERTIES
+    CXX_STANDARD_REQUIRED ON
+    CXX_STANDARD 17)
 install(TARGETS ${TARGET_NAME} LIBRARY DESTINATION . COMPONENT generate_pipeline_lib_install_target
     RUNTIME DESTINATION . COMPONENT generate_pipeline_lib_install_target)
