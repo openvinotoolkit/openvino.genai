@@ -397,8 +397,10 @@ int32_t main(int32_t argc, char* argv[]) try {
     for (uint32_t n = 0; n < num_images; n++) {
         std::uint32_t seed = num_images == 1 ? user_seed : user_seed + n;
 
+        const size_t unet_in_channels = static_cast<size_t>(sample_shape[1].get_length());
+
         // latents are multiplied by 'init_noise_sigma'
-        ov::Shape latent_shape = ov::Shape({batch_size, static_cast<size_t>(sample_shape[1].get_length()), height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
+        ov::Shape latent_shape = ov::Shape({batch_size, unet_in_channels, height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
         ov::Shape latent_model_input_shape = latent_shape;
         ov::Tensor noise = randn_tensor(latent_shape, read_np_latent, seed);
         latent_model_input_shape[0] = 2;  // Unet accepts batch 2
