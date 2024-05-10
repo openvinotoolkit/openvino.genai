@@ -11,5 +11,5 @@ jobs:
         with:
           python-version: 3.8
       - run: python -m pip install scikit-build
-      - run: python -m pip isntall .
+      - run: python -m pip install .
       - run: python -c "from openvino.genai.py_generate_pipeline import LLMPipeline"
