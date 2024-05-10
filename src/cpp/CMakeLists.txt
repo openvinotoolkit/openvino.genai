@@ -35,10 +35,6 @@ endfunction()
 
 ov_genai_build_jinja2cpp()
 
-find_package(OpenVINO REQUIRED COMPONENTS Runtime)
-
-set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
-
 # Library
 
 file(GLOB SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
@@ -55,8 +51,6 @@ target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_j
 
 target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
 
-set_target_properties(${TARGET_NAME} PROPERTIES
-    CXX_STANDARD_REQUIRED ON
-    CXX_STANDARD 17)
+target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
 install(TARGETS ${TARGET_NAME} LIBRARY DESTINATION . COMPONENT generate_pipeline_lib_install_target
     RUNTIME DESTINATION . COMPONENT generate_pipeline_lib_install_target)
