@@ -7,6 +7,7 @@ on:
       - image_generation/common/**
       - .github/workflows/stable_diffusion_1_5_cpp.yml
       - thirdparty/openvino_tokenizers
+      - "!**.md"
 
 env:
   working_directory: "./image_generation/stable_diffusion_1_5/cpp/"
@@ -38,7 +39,7 @@ jobs:
       - name: Install OpenVINO and other conda dependencies
         run: |
           conda activate openvino_sd_cpp
-          conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
+          conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler git make cmake
           conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
       - name: Install python dependencies
@@ -52,9 +53,7 @@ jobs:
         working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_sd_cpp
-          export MODEL_PATH="models/stable_diffusion_v1_5_ov/FP16"
-          optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --convert-tokenizer --weight-format fp16 $MODEL_PATH
-          convert_tokenizer $MODEL_PATH/tokenizer/ --tokenizer-output-type i32 -o $MODEL_PATH/tokenizer/
+          optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --weight-format fp16 models/stable_diffusion_v1_5_ov/FP16
 
       - name: Build app
         working-directory: ${{ env.working_directory }}
@@ -65,8 +64,7 @@ jobs:
 
       - name: Run app
         working-directory: ${{ env.working_directory }}
-        run: |
-          ./build/stable_diffusion -m ./models/stable_diffusion_v1_5_ov -t FP16
+        run: ./build/stable_diffusion -m ./models/stable_diffusion_v1_5_ov -t FP16
 
   stable_diffusion_1_5_cpp-windows:
       runs-on: windows-latest
@@ -85,7 +83,7 @@ jobs:
         - name: Install OpenVINO and other conda dependencies
           run: |
             conda activate openvino_sd_cpp
-            conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
+            conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler git make cmake
   
         - name: Install python dependencies
           working-directory: ${{ env.working_directory }}
@@ -98,9 +96,7 @@ jobs:
           working-directory: ${{ env.working_directory }}
           run: |
             conda activate openvino_sd_cpp
-            $env:MODEL_PATH='models/stable_diffusion_v1_5_ov/FP16'
-            optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --convert-tokenizer --weight-format fp16 $env:MODEL_PATH
-            convert_tokenizer $env:MODEL_PATH/tokenizer/ --tokenizer-output-type i32 -o $env:MODEL_PATH/tokenizer/
+            optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --weight-format fp16 models/stable_diffusion_v1_5_ov/FP16
   
         - name: Build app
           working-directory: ${{ env.working_directory }}
@@ -111,5 +107,4 @@ jobs:
   
         - name: Run app
           working-directory: ${{ env.working_directory }}
-          run: |
-            & "./build/Release/stable_diffusion.exe" -m ./models/stable_diffusion_v1_5_ov -t FP16 --dynamic
+          run: '& "./build/Release/stable_diffusion.exe" -m ./models/stable_diffusion_v1_5_ov -t FP16 --dynamic'

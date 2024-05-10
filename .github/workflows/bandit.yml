@@ -1,0 +1,16 @@
+name: python -m bandit --recursive --configfile bandit.yml .
+on:
+  pull_request:
+    paths-ignore:
+      - 'thirdparty'
+      - '**.md'
+jobs:
+  bandit:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - run: python -m pip install bandit
+      - run: python -m bandit --recursive --configfile bandit.yml .

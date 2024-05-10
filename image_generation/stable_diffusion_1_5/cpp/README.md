@@ -12,13 +12,13 @@ Prerequisites:
 
 C++ Packages:
 * [CMake](https://cmake.org/download/): Cross-platform build tool
-* [OpenVINO](https://docs.openvino.ai/install): Model inference
+* [OpenVINO](https://docs.openvino.ai/install): Model inference. `master` and possibly the latest `releases/*` branch correspond to not yet released OpenVINO versions. https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for these branches early testing.
 
 Prepare a python environment and install dependencies:
 ```shell
 conda create -n openvino_sd_cpp python==3.10
 conda activate openvino_sd_cpp
-conda install -c conda-forge openvino c-compiler cxx-compiler make cmake
+conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler git make cmake
 # Ensure that Conda standard libraries are used
 conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 ```
@@ -40,17 +40,14 @@ python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
 - [dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0) to run Stable Diffusion with LoRA adapters.
 
    Example command for downloading and exporting FP16 model:
-   ```shell
-   export MODEL_PATH="models/dreamlike_anime_1_0_ov/FP16"
-   # Using optimum-cli for exporting model to OpenVINO format
-   optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --convert-tokenizer --weight-format fp16 $MODEL_PATH
-   # Converting tokenizer manually (`--convert-tokenizer` flag of `optimum-cli` results in "OpenVINO Tokenizer export for CLIPTokenizer is not supported.")
-   convert_tokenizer $MODEL_PATH/tokenizer/ --tokenizer-output-type i32 -o $MODEL_PATH/tokenizer/
-   ```
+
+   `optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 models/dreamlike_anime_1_0_ov/FP16`
 
    You can also choose other precision and export FP32 or INT8 model.
 
    Please, refer to the official website for [🤗 Optimum](https://huggingface.co/docs/optimum/main/en/index) and [optimum-intel](https://github.com/huggingface/optimum-intel) to read more details.
+
+   If https://huggingface.co/ is down, the script won't be able to download the model.
 
 > [!NOTE]
 > Now the pipeline support batch size = 1 only, i.e. static model `(1, 3, 512, 512)`
