@@ -54,6 +54,7 @@ target_include_directories(${TARGET_NAME}
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
 
 target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
+
 set_target_properties(${TARGET_NAME} PROPERTIES
     CXX_STANDARD_REQUIRED ON
     CXX_STANDARD 17)
