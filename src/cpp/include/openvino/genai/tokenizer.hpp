@@ -3,16 +3,22 @@
 
 #pragma once
 
-#include <openvino/openvino.hpp>
-#include <openvino/core/any.hpp>
 #include <filesystem>
+#include <string>
+#include <vector>
+#include <memory>
+#include <initializer_list>
+
+#include <openvino/runtime/tensor.hpp>
+
+#include "openvino/genai/visibility.hpp"
 
 namespace ov {
 
 /**
 * @brief class used to encode prompts and decode resulting tokens
 */
-class Tokenizer {
+class OPENVINO_GENAI_EXPORTS Tokenizer {
 public:
     /**
     * @brief ov::Tokenizer constructor.

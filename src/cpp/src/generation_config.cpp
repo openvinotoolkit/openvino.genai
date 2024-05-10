@@ -1,10 +1,14 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <nlohmann/json.hpp>
 #include <fstream>
 #include <limits>
+
+#include <nlohmann/json.hpp>
+#include <openvino/runtime/core.hpp>
+
 #include "openvino/genai/generation_config.hpp"
+
 #include "generation_config_helper.hpp"
 
 namespace ov {

@@ -1,15 +1,17 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-// #pragma once
+#pragma once
 
-#include <openvino/openvino.hpp>
+#include <filesystem>
+#include <optional>
+
+#include <openvino/runtime/infer_request.hpp>
 #include <openvino/core/any.hpp>
+
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/streamer_base.hpp"
-#include <filesystem>
-#include <optional>
 
 using namespace std;
 
@@ -46,7 +48,7 @@ public:
 /**
 * @brief This class is used for generation with LLMs.
  */
-class LLMPipeline {
+class OPENVINO_GENAI_EXPORTS LLMPipeline {
 public:
     /**
     * @brief Constructs a LLMPipeline when convert model xml/bin files, tokenizers and configuration and in the same dir.
