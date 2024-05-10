@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // #include <openvino/openvino.hpp>
-#include "llm_pipeline.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
 
 
 // The following reasons require TextStreamer to keep a cache of previous tokens:
@@ -10,13 +10,13 @@
 // but detokenize(tokenize("prefix a")) == "prefix a"
 // 1 printable token may consist of 2 token ids: detokenize(incomplete_token_idx) == "�"
 struct TextStreamer {
-    Tokenizer tokenizer;
+    ov::Tokenizer tokenizer;
     std::vector<int64_t> token_cache;
     size_t print_len = 0;
 
     void put(int64_t token) {
         token_cache.push_back(token);
-        std::string text = tokenizer.detokenize(token_cache);
+        std::string text = tokenizer.decode(token_cache);
         if (!text.empty() && '\n' == text.back()) {
             // Flush the cache after the new line symbol
             std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
@@ -33,7 +33,7 @@ struct TextStreamer {
     }
 
     void end() {
-        std::string text = tokenizer.detokenize(token_cache);
+        std::string text = tokenizer.decode(token_cache);
         std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
         token_cache.clear();
         print_len = 0;
@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) try {
     ov::LLMPipeline pipe(model_path, device);
     // Will try to load config from generation_config.json.
     // but if not found default velues for gready search will be used
-    GenerationConfig config = pipe.generation_config();
+    ov::GenerationConfig config = pipe.get_generation_config();
 
     auto text_streamer = TextStreamer{pipe.get_tokenizer()};
     auto text_streamer_callback = [&text_streamer](std::vector<int64_t>&& tokens, ov::LLMPipeline& pipe){
@@ -66,8 +66,8 @@ int main(int argc, char* argv[]) try {
     };
 
     cout << "greedy generate streaming mode:" << endl;
-    config.max_new_tokens(20);
-    config.set_streamer(text_streamer_callback);
+    config.max_new_tokens = 20;
+    // config.m_set_streamer(text_streamer_callback);
     pipe(prompt, config);
     text_streamer.end();
     
