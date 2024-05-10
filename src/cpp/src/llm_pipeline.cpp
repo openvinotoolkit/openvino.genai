@@ -1,19 +1,20 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <openvino/openvino.hpp>
-#include "openvino/genai/llm_pipeline.hpp"
 #include <filesystem>
 #include <fstream>
 #include <variant>
-#include "generation_config_helper.hpp"
-#include "text_callback_streamer.hpp"
-#include "utils.hpp"
-#include <nlohmann/json.hpp>
 
+#include <nlohmann/json.hpp>
 #include <jinja2cpp/template.h>
 #include <jinja2cpp/template_env.h>
+
+#include <openvino/openvino.hpp>
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
+#include "utils.hpp"
+#include "generation_config_helper.hpp"
+#include "text_callback_streamer.hpp"
 
 
 namespace ov {
@@ -63,36 +64,7 @@ public:
 
 using namespace std;
 
-std::pair<ov::Tensor, ov::Tensor> pad_left(ov::Tensor&& input_ids, ov::Tensor&& attention_mask, int64_t pad_token) {
-    const size_t batch_size = input_ids.get_shape()[0];
-    const size_t sequence_length = input_ids.get_shape()[1];
-    int64_t* inputs_data = input_ids.data<int64_t>();
-    int64_t* attention_mask_data = attention_mask.data<int64_t>();
 
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        const size_t batch_offset = batch * sequence_length;
-
-        // last token in the sequence is not a PAD_TOKEN, skipping
-        if (inputs_data[batch_offset + sequence_length - 1] != pad_token)
-            continue;
-
-        size_t pad_tokens_number = 0;
-        for (int i = sequence_length - 1; i >= 0; i--) {
-            const size_t token_offset = batch_offset + i;
-
-            if (inputs_data[token_offset] == pad_token)
-                continue;
-
-            if (pad_tokens_number == 0)
-                pad_tokens_number = sequence_length - i - 1;
-
-            std::swap(inputs_data[token_offset], inputs_data[token_offset + pad_tokens_number]);
-            std::swap(attention_mask_data[token_offset], attention_mask_data[token_offset + pad_tokens_number]);
-        }
-    }
-
-    return {input_ids, attention_mask};
-}
 
 ov::LLMPipeline::LLMPipeline(
     const std::string model_path,
@@ -111,10 +83,8 @@ ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
 ): m_tokenizer(tokenizer), m_device(device), m_plugin_config(plugin_config) {
     ov::Core core;
     
-    auto is_xml = [](std::string path) -> bool { return path.compare(path.length() - 4, 4, ".xml") == 0;};
-    
     std::string full_path = model_path;
-    if (!is_xml(full_path))
+    if (!ov::generate_utils::is_xml(full_path))
         full_path += "/openvino_model.xml";
     try {
         m_model_runner = core.compile_model(full_path, device, plugin_config).create_infer_request();
@@ -220,7 +190,8 @@ ov::DecodedResults ov::LLMPipeline::LLMPipelineImpl::generate(std::vector<std::s
 }
 
 std::string ov::LLMPipeline::operator()(std::string text, OptionalGenerationConfig generation_config) {
-    return generate(text, generation_config, {});
+    OptionalStreamerVariant empty_streamer;
+    return generate(text, generation_config, empty_streamer);
 }
 
 ov::DecodedResults ov::LLMPipeline::operator()(std::vector<std::string> texts, OptionalGenerationConfig generation_config) {
@@ -283,7 +254,7 @@ std::string ov::LLMPipeline::generate(std::string text, OptionalGenerationConfig
 
 
 std::string ov::LLMPipeline::generate(std::string text, const ov::AnyMap& config_map) {
-    StreamerVariant streamer = {};
+    OptionalStreamerVariant streamer;
     auto config = GenerationConfigHelper(get_generation_config()).anymap_to_generation_config(config_map);
 
     // todo: get attentions from properties?
@@ -296,11 +267,25 @@ std::string ov::LLMPipeline::generate(std::string text, const ov::AnyMap& config
     return m_pimpl->generate(text, config, streamer);
 }
 
-std::string ov::LLMPipeline::operator()(std::string text, OptionalGenerationConfig generation_config, StreamerVariant streamer) {
+ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids, const ov::AnyMap& config_map) {
+    OptionalStreamerVariant streamer;
+    auto config = GenerationConfigHelper(get_generation_config()).anymap_to_generation_config(config_map);
+
+    // todo: get attentions from properties?
+    if (config_map.count("streamer_lambda")) {
+        streamer = config_map.at("streamer_lambda").as<std::function<void (std::string)>>();
+    } else if (config_map.count("streamer")) {
+        streamer = config_map.at("streamer").as<std::shared_ptr<StreamerBase>>();
+    }
+    std::optional<ov::Tensor> attention_mask;
+    return m_pimpl->generate(input_ids, attention_mask, config, streamer);
+}
+
+std::string ov::LLMPipeline::operator()(std::string text, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer) {
     return m_pimpl->generate(text, generation_config, streamer);
 }
 
-std::string ov::LLMPipeline::operator()(std::string text, StreamerVariant streamer) {
+std::string ov::LLMPipeline::operator()(std::string text, OptionalStreamerVariant streamer) {
     return m_pimpl->generate(text, m_pimpl->m_generation_config, streamer);
 }
 
@@ -322,8 +307,8 @@ std::string ov::LLMPipeline::LLMPipelineImpl::apply_chat_template(std::string pr
     jinja2::ValuesMap message {{"role", role}, {"content", prompt}};
     jinja2::ValuesMap params = {
         {"messages", jinja2::ValuesList({message})},
-        {"bos_token",  "<s>"},
-        {"eos_token", "</s>"},  // todo: load from config
+        {"bos_token",  m_generation_config.bos_token},
+        {"eos_token", m_generation_config.eos_token},
         {"add_generation_prompt", true},
     };
  

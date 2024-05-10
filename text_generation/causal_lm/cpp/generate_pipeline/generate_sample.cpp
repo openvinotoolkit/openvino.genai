@@ -1,89 +1,52 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-// #include <openvino/openvino.hpp>
 #include "openvino/genai/llm_pipeline.hpp"
 
+using std::cout;
+using std::endl;
 
-// The following reasons require TextStreamer to keep a cache of previous tokens:
-// detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
-// but detokenize(tokenize("prefix a")) == "prefix a"
-// 1 printable token may consist of 2 token ids: detokenize(incomplete_token_idx) == "�"
-struct TextStreamer {
-    ov::Tokenizer tokenizer;
-    std::vector<int64_t> token_cache;
-    size_t print_len = 0;
-
-    void put(int64_t token) {
-        token_cache.push_back(token);
-        std::string text = tokenizer.decode(token_cache);
-        if (!text.empty() && '\n' == text.back()) {
-            // Flush the cache after the new line symbol
-            std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
-            token_cache.clear();
-            print_len = 0;
-	        return;
-        }
-        if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
-            // Don't print incomplete text
-            return;
-        }
-        std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
-        print_len = text.size();
-    }
-
-    void end() {
-        std::string text = tokenizer.decode(token_cache);
-        std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
-        token_cache.clear();
-        print_len = 0;
-    }
-};
-
-int main(int argc, char* argv[]) try {
-    if (2 >= argc && argc <= 4)
+int main(int argc, char* argv[]) {
+    if (2 > argc && argc > 4)
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> \"<PROMPT>\" <DEVICE>");
+    std::string model_path = argv[1];
     
-    std::string prompt = "table is made of";
+    std::string prompt = "table is made of ";
     std::string device = "CPU"; // can be replaced with GPU
 
-    std::string model_path = argv[1];
     if (argc > 2)
         prompt = argv[2];
     if (argc > 3)
         device = argv[3];
-
-    // Example 1: TextStreaming example with greedy search
+    
+    // Example 1: Simplest example with greedy search
+    // Model, tokenizer and generation_config.json will be loaded from the model_path.
+    // If generation_config.json is not found default velues for gready search will be used
     
     ov::LLMPipeline pipe(model_path, device);
-    // Will try to load config from generation_config.json.
-    // but if not found default velues for gready search will be used
+    // cout << prompt << pipe(prompt) << endl;
+
+    // todo: syntactic sugar to specify generation configs in place
+    // cout << prompt << pipe(prompt, ov::max_new_tokens(100)) << endl;
+
+
+    auto tokenizer = ov::Tokenizer(model_path);
+    auto [input_ids, attention_mask] = tokenizer.encode("table is made of ");
+    auto resuling_tokens = pipe.generate(input_ids, ov::max_new_tokens(1000));
+    cout << tokenizer.decode(resuling_tokens.tokens[0]) << endl;
+
+    // Example 2: Modifying generation_cofnig to use grouped beam search
     ov::GenerationConfig config = pipe.get_generation_config();
+    config.max_new_tokens = 100;
+    config.num_beams = 15;
+    config.num_beam_groups = 3;
+    // cout << prompt << pipe(prompt, config) << endl;
 
-    auto text_streamer = TextStreamer{pipe.get_tokenizer()};
-    auto text_streamer_callback = [&text_streamer](std::vector<int64_t>&& tokens, ov::LLMPipeline& pipe){
-        text_streamer.put(tokens[0]);
-    };
-
-    cout << "greedy generate streaming mode:" << endl;
-    config.max_new_tokens = 20;
-    // config.m_set_streamer(text_streamer_callback);
-    pipe(prompt, config);
-    text_streamer.end();
-    
-    // Example 2: Grouped Beam Search decoding example
-    // pipe = ov::LLMPipeline(model_path, device);
-    // config = pipe.generation_config();
-
-    // // will return vector with num_return_sequences strings
-    // auto num_return_sequences = 3;
-    // config.max_new_tokens(20).num_groups(3).group_size(5).num_return_sequences(num_return_sequences);
-    
     // cout << endl << "grouped beam search generated candidates:" << endl;
-    // auto generation_results = pipe({prompt}, config);
     // for (int i = 0; i < num_return_sequences; ++i)
-    //     cout << generation_results[i].score << ": " << generation_results[i].text << endl;
-
+    // will return vector with num_return_sequences strings
+    // auto num_return_sequences = 3;
+    
     // // Example 3: Greedy Decoding with multiple batch
     // pipe = ov::LLMPipeline(model_path, device);
     // config = pipe.generation_config();
@@ -126,10 +89,5 @@ int main(int argc, char* argv[]) try {
     //     }
     // }
 
-} catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
-    return EXIT_FAILURE;
-} catch (...) {
-    std::cerr << "Non-exception object thrown\n";
-    return EXIT_FAILURE;
+    return 0;
 }

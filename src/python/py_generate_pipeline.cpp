@@ -76,8 +76,9 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
     py::class_<ov::Tokenizer>(m, "Tokenizer")
         .def(py::init<>())
         .def(py::init<std::string&, std::string>(), py::arg("tokenizers_path"), py::arg("device") = "CPU")
-        .def("encode", py::overload_cast<std::string>(&ov::Tokenizer::encode), "Encode a single prompt")
-        .def("encode", py::overload_cast<std::vector<std::string>>(&ov::Tokenizer::encode), "Encode multiple prompts")
+        .def("encode", py::overload_cast<const std::string>(&ov::Tokenizer::encode), "Encode a single prompt")
+        // TODO: common.h(1106...) template argument deduction/substitution failed:
+        // .def("encode", py::overload_cast<std::vector<std::string>&>(&ov::Tokenizer::encode), "Encode multiple prompts")
         .def("decode", py::overload_cast<std::vector<int64_t>>(&ov::Tokenizer::decode), "Decode a list of tokens")
         .def("decode", py::overload_cast<ov::Tensor>(&ov::Tokenizer::decode), "Decode a tensor of tokens")
         .def("decode", py::overload_cast<std::vector<std::vector<int64_t>>>(&ov::Tokenizer::decode), "Decode multiple lines of tokens");

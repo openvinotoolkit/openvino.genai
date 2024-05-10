@@ -31,7 +31,6 @@ enum class StopCriteria { early, heuristic, never };
  * @param num_beam_groups number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
  * @param diversity_penalty this value is subtracted from a beam's score if it generates a token same as any beam from other group at a
  *        particular time. Note that `diversity_penalty` is only effective if `group beam search` is enabled.
- *        [more datails in this paper](https://arxiv.org/pdf/1610.02424.pdf).
  * @param length_penalty exponential penalty to the length that is used with beam-based generation. It is applied as an exponent to
  *        the sequence length, which in turn is used to divide the score of the sequence. Since the score is the log
  *        likelihood of the sequence (i.e. negative), `length_penalty` > 0.0 promotes longer sequences, while
@@ -48,7 +47,6 @@ enum class StopCriteria { early, heuristic, never };
  * @param do_sample whether or not to use multinomial random sampling
  *        that add up to `top_p` or higher are kept.
  * @param repetition_penalty the parameter for repetition penalty. 1.0 means no penalty. 
- *        [more datails in this paper](https://arxiv.org/pdf/1909.05858.pdf).
  * @param pad_token_id id of padding token
  * @param bos_token_id id of <bos> token
  * @param eos_token_id id of <eos> token

@@ -18,7 +18,7 @@ TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, bool prin
 void TextCallbackStreamer::put(int64_t token) {
     std::stringstream res;
     // do not print anything and flush cache if EOS token is met
-    if (token == m_tokenizer.m_eos_token_id) {
+    if (token == m_tokenizer.get_eos_token_id()) {
         end();
         return;
     }

@@ -3,12 +3,10 @@
 
 #pragma once
 
-#include <filesystem>
 #include <optional>
+#include <variant>
 
-#include <openvino/runtime/infer_request.hpp>
 #include <openvino/core/any.hpp>
-
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/streamer_base.hpp"
@@ -93,8 +91,15 @@ public:
         Properties&&... properties) {
         return generate(text, AnyMap{std::forward<Properties>(properties)...});
     }
-
     std::string generate(std::string text, const ov::AnyMap& config);
+
+    template <typename... Properties>
+    util::EnableIfAllStringAny<EncodedResults, Properties...> generate(
+        ov::Tensor input_ids,
+        Properties&&... properties) {
+        return generate(input_ids, AnyMap{std::forward<Properties>(properties)...});
+    }
+    EncodedResults generate(ov::Tensor input_ids, const ov::AnyMap& config);
 
     /**
     * @brief High level generate for batched prompts which encodes inputs and returns decoded outputs. 
@@ -121,14 +126,21 @@ public:
                             std::optional<ov::Tensor> attention_mask, 
                             OptionalGenerationConfig generation_config,
                             OptionalStreamerVariant streamer);
-
-    std::string operator()(std::string text, OptionalGenerationConfig generation_config);
+    
+    template <typename InputsType, typename... Properties>
+    util::EnableIfAllStringAny<std::string, Properties...> operator()(
+        InputsType text,
+        Properties&&... properties) {
+        return generate(text, AnyMap{std::forward<Properties>(properties)...});
+    }
+    std::string operator()(std::string text, OptionalGenerationConfig generation_config={});
+    
     DecodedResults operator()(std::vector<std::string> text, OptionalGenerationConfig generation_config);
     DecodedResults operator()(std::initializer_list<std::string> text, OptionalGenerationConfig generation_config);
 
     // generate with streamers
-    std::string operator()(std::string text, OptionalGenerationConfig generation_config, StreamerVariant streamer);
-    std::string operator()(std::string text, StreamerVariant streamer);
+    std::string operator()(std::string text, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer);
+    std::string operator()(std::string text, OptionalStreamerVariant streamer);
     
     ov::Tokenizer get_tokenizer();
     GenerationConfig get_generation_config() const;
@@ -143,8 +155,16 @@ private:
     std::unique_ptr<LLMPipelineImpl> m_pimpl;
 };
 
+/*
+ * utils that allow to use generate and operarator() in the folllowing way:
+ * pipe.generate(input_ids, ov::max_new_tokens(200), ov::temperature(1.0f),...)
+ * pipe(text, ov::max_new_tokens(200), ov::temperature(1.0f),...)
+ * All names match to names in cofnig except streamer.
+*/
 static constexpr ov::Property<size_t> max_new_tokens{"max_new_tokens"};
 static constexpr ov::Property<float> temperature{"temperature"};
+
+// It's problematic to store and automaticall convert std::variant in AnyMap
 static constexpr ov::Property<std::function<void (std::string)>> streamer_lambda{"streamer_lambda"};
 static constexpr ov::Property<std::shared_ptr<StreamerBase>> streamer{"streamer"};
 
