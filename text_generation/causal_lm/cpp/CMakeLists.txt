@@ -6,6 +6,8 @@ project(causal_lm)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+add_subdirectory(../../../thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
+
 set(TARGET_NAME greedy_causal_lm)
 add_executable(${TARGET_NAME} greedy_causal_lm.cpp)
 target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
