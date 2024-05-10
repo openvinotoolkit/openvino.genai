@@ -4,7 +4,7 @@
 #pragma once
 
 #include <limits>
-#include "llm_tokenizer.hpp"
+#include "openvino/genai/tokenizer.hpp"
 #include <variant>
 
 namespace ov {

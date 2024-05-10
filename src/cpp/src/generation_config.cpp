@@ -4,7 +4,7 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <limits>
-#include "generation_config.hpp"
+#include "openvino/genai/generation_config.hpp"
 #include "generation_config_helper.hpp"
 
 namespace ov {

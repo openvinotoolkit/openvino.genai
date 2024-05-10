@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "generation_config_helper.hpp"
-#include "llm_pipeline.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
 
 ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_seq_len);
 void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t new_seq_len);

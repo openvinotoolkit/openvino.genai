@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/openvino.hpp>
-#include "llm_tokenizer.hpp"
+#include "openvino/genai/tokenizer.hpp"
 #include <filesystem>
 
 std::pair<ov::Tensor, ov::Tensor> pad_left(ov::Tensor&& input_ids, ov::Tensor&& attention_mask, int64_t pad_token=2);

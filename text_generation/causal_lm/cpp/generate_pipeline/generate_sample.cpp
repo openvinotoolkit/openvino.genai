@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // #include <openvino/openvino.hpp>
-#include "llm_pipeline.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
 
 
 // The following reasons require TextStreamer to keep a cache of previous tokens:

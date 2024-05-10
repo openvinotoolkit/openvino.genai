@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
-#include "generation_config.hpp"
+#include "openvino/genai/generation_config.hpp"
 
 namespace ov {
 

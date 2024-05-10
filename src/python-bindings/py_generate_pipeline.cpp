@@ -4,7 +4,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
-#include "llm_pipeline.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
 
 namespace py = pybind11;
 using namespace ov;
