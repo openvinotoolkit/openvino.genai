@@ -2,7 +2,6 @@
 
 set(JINJA2CPP_DEPS_MODE internal)
 
-add_subdirectory(../../thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
 add_subdirectory(../../thirdparty/nlohmann_json/ "${CMAKE_CURRENT_BINARY_DIR}/nlohmann_json/")
 
 # todo: remove hardcodes and make submodule work
