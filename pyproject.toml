@@ -71,7 +71,7 @@ select = ["C", "E", "F", "I", "W"]
 lines-after-imports = 2
 
 [tool.scikit-build]
-install.components = ["openvino_genai_bindings_install_target"]
+install.components = ["py_generate_pipeline_install_target"]
 cmake.source-dir = "text_generation/causal_lm/cpp"
 cmake.build-type = "Release"
 cmake.args = [
@@ -79,9 +79,9 @@ cmake.args = [
 #    "-DCMAKE_INSTALL_BINDIR=lib",
 #    "-DCMAKE_INSTALL_LIBDIR=lib"
 ]
-cmake.targets = ["openvino_genai_bindings"]
+cmake.targets = ["py_generate_pipeline"]
 wheel.build-tag = "000"
-wheel.packages = ["text_generation/causal_lm/cpp/generate_pipeline/python-bindings/openvino"]
+wheel.packages = ["src/python-bindings/openvino"]
 wheel.install-dir = "openvino/genai"
 wheel.py-api = "py3"
 wheel.license-files = ["LICENSE", "SECURITY.md"]  # TODO: Do we need third-party-programs.txt like openvino_tokenizers?

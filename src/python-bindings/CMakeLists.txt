@@ -1,3 +1,6 @@
+# Copyright (C) 2024 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 include(FetchContent)
 FetchContent_Declare(
     pybind11
@@ -13,3 +16,4 @@ endif()
 
 pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
 target_link_libraries(py_generate_pipeline PRIVATE generate_pipeline_lib)
+install(TARGETS py_generate_pipeline LIBRARY DESTINATION . COMPONENT py_generate_pipeline_install_target)

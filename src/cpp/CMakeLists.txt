@@ -10,6 +10,7 @@ add_subdirectory(../../thirdparty/nlohmann_json/ "${CMAKE_CURRENT_BINARY_DIR}/nl
 # add_subdirectory(../../../thirdparty/Jinja2Cpp/ "${CMAKE_CURRENT_BINARY_DIR}/Jinja2Cpp/")
 # include_directories(../../../thirdparty/inja/include/Jinja2Cpp)
 
+set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 set(TARGET_NAME generate_pipeline_lib)
 file(GLOB SOURCE_FILES "src/*.cpp")
