@@ -1,0 +1,14 @@
+name: genai_lib
+jobs:
+  genai_lib:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - run: python -m pip install scikit-build
+      - run: python -m pip isntall .
+      - run: python -c "from openvino.genai.py_generate_pipeline import LLMPipeline"
