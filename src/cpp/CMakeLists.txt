@@ -23,3 +23,5 @@ target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<T
 # target_link_libraries(${TARGET_NAME} PRIVATE $ENV{HOME}/opt/jinja2cpp/lib/static/libjinja2cpp.a)  # todo: remove hardcode
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 17)
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD_REQUIRED ON)
+install(TARGETS ${TARGET_NAME} LIBRARY DESTINATION . COMPONENT generate_pipeline_lib_install_target
+    RUNTIME DESTINATION . COMPONENT generate_pipeline_lib_install_target)

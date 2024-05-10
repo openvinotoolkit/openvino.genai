@@ -71,7 +71,7 @@ select = ["C", "E", "F", "I", "W"]
 lines-after-imports = 2
 
 [tool.scikit-build]
-install.components = ["py_generate_pipeline_install_target"]
+install.components = ["py_generate_pipeline_install_target", "generate_pipeline_lib_install_target"]
 cmake.source-dir = "./"
 cmake.build-type = "Release"
 cmake.args = [
@@ -79,7 +79,7 @@ cmake.args = [
 #    "-DCMAKE_INSTALL_BINDIR=lib",
 #    "-DCMAKE_INSTALL_LIBDIR=lib"
 ]
-cmake.targets = ["py_generate_pipeline"]
+cmake.targets = ["py_generate_pipeline", "generate_pipeline_lib"]
 wheel.build-tag = "000"
 wheel.packages = ["src/python-bindings/openvino"]
 wheel.install-dir = "openvino/genai"
