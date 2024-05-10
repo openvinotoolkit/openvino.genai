@@ -22,7 +22,6 @@
 #include "imwrite.hpp"
 
 const size_t TOKENIZER_MODEL_MAX_LENGTH = 77;   // 'model_max_length' parameter from 'tokenizer_config.json'
-const int64_t VAE_DECODER_LATENT_CHANNELS = 4;  // 'latent_channels' parameter from 'vae_decoder/config.json'
 const size_t VAE_SCALE_FACTOR = 8;
 
 ov::Tensor randn_tensor(ov::Shape shape, bool use_np_latents, uint32_t seed = 42) {
@@ -105,8 +104,8 @@ void reshape_unet(std::shared_ptr<ov::Model> model,
 void reshape_vae_decoder(std::shared_ptr<ov::Model> model, int64_t height, int64_t width) {
     height = height / VAE_SCALE_FACTOR;
     width = width / VAE_SCALE_FACTOR;
-
-    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {1, VAE_DECODER_LATENT_CHANNELS, height, width}}};
+    ov::Dimension vae_decoder_latent_channels = model->input(0).get_partial_shape()[1];
+    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {1, vae_decoder_latent_channels, height, width}}};
     model->reshape(idx_to_shape);
 }
 
