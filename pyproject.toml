@@ -1,15 +1,13 @@
 [project]
-name = "openvino.genai"
+name = "openvino_genai"
 version = "2024.2.0.0"
 description = "Python bindings for https://github.com/openvinotoolkit/openvino.genai"
 requires-python = ">=3.8"
 readme = {file = "text_generation/causal_lm/cpp/README.md", content-type="text/markdown"}
 license = {text = "OSI Approved :: Apache Software License"}
-
 authors = [
     { name = "OpenVINO Developers", email = "openvino@intel.com" },
 ]
-
 classifiers = [
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
@@ -17,76 +15,20 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
-
 dependencies = [
-    "openvino_tokenizers~=2024.1.0.0"
+    "openvino_tokenizers==2024.1.0.0"
 ]
-
-[project.optional-dependencies]
-# TODO: do I need to propagate all this to openvino_tokenizers
-transformers = [
-    "transformers[sentencepiece] >= 4.36.0",
-    "tiktoken"
-]
-# chatglm2 custom tokenizer file imports torch, have to add torch dependency for tests
-torch = [
-    'torch'
-]
-dev = [
-    "ruff",
-    "bandit",
-    "pytest",
-    "pytest_harvest",
-    "pandas",
-    "openvino_tokenizers[transformers, torch]"
-]
-benchmark = [
-    "pandas",
-    "seaborn",
-    "tqdm",
-    "openvino_tokenizers[transformers]"
-]
-#  don't include fuzzing to avoid windows CI issues
-fuzzing = [
-    "atheris",
-    "openvino_tokenizers[transformers]"
-]
-all = [
-    "openvino_tokenizers[dev, transformers]"
-]
-
-
-[tool.ruff]
-line-length = 119
-
-[tool.ruff.lint]
-ignore = ["C901", "E501", "E741", "W605"]
-select = ["C", "E", "F", "I", "W"]
-
-[tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
-"openvino_tokenizers/hf_parser.py" = ["F821"]
-
-[tool.ruff.lint.isort]
-lines-after-imports = 2
 
 [tool.scikit-build]
-install.components = ["py_generate_pipeline_install_target", "generate_pipeline_lib_install_target"]
 cmake.source-dir = "./"
 cmake.build-type = "Release"
-cmake.args = [
-    "-DBUILD_SHARED_LIBS=NO"
-#    "-DCMAKE_INSTALL_BINDIR=lib",
-#    "-DCMAKE_INSTALL_LIBDIR=lib"
-]
 cmake.targets = ["py_generate_pipeline", "generate_pipeline_lib"]
-wheel.build-tag = "000"
-wheel.packages = ["src/python-bindings/openvino"]
+install.components = ["genai", "genai_python"]
+sdist.cmake = true
+wheel.packages = ["src/python/openvino"]
 wheel.install-dir = "openvino/genai"
 wheel.py-api = ""
-wheel.license-files = ["LICENSE", "SECURITY.md"]  # TODO: Do we need third-party-programs.txt like openvino_tokenizers?
-sdist.exclude = ["dist", "tests", "examples", "python/tests"]
-sdist.cmake = true
+wheel.license-files = ["LICENSE", "SECURITY.md", "third-party-programs.txt"]
 
 [[tool.scikit-build.generate]]
 path = "openvino/genai/__version__.py"
@@ -95,5 +37,5 @@ __version__ = "${version}"
 '''
 
 [build-system]
-requires = ["scikit-build-core~=0.8.0"]
+requires = ["scikit-build-core>=0.8.0"]
 build-backend = "scikit_build_core.build"
