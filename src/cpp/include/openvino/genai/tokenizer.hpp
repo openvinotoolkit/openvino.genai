@@ -12,7 +12,7 @@
 namespace ov {
 
 /**
-* @brief class used to encode prompts and decode resulting tokens
+* @brief class is used to encode prompts and decode resulting tokens
 */
 class OPENVINO_GENAI_EXPORTS Tokenizer {
 public:
@@ -27,7 +27,7 @@ public:
     * @brief encode a single prompt
     * @return pair of [input_ids, attention_mask]
     */
-    std::pair<ov::Tensor, ov::Tensor> encode(const std::string prompt);  // todo: passing by reference fails
+    std::pair<ov::Tensor, ov::Tensor> encode(const std::string prompt);
     
     /**
     * @brief encode batch of prompts. Left padding will be applied by default

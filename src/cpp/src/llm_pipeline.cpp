@@ -186,11 +186,6 @@ ov::DecodedResults ov::LLMPipeline::LLMPipelineImpl::generate(std::vector<std::s
     return {m_tokenizer.decode(generate_results.tokens), generate_results.scores};
 }
 
-std::string ov::LLMPipeline::operator()(std::string text, OptionalGenerationConfig generation_config) {
-    OptionalStreamerVariant empty_streamer;
-    return generate(text, generation_config, empty_streamer);
-}
-
 ov::DecodedResults ov::LLMPipeline::operator()(std::vector<std::string> texts, OptionalGenerationConfig generation_config) {
     return m_pimpl-> generate(texts, generation_config);
 }
@@ -245,16 +240,11 @@ std::string ov::LLMPipeline::generate(std::string text, OptionalGenerationConfig
     return m_pimpl->generate(text, generation_config, streamer);
 }
 
-
 std::string ov::LLMPipeline::generate(std::string text, const ov::AnyMap& config_map) {
     OptionalStreamerVariant streamer;
     auto config = GenerationConfigHelper(get_generation_config()).anymap_to_generation_config(config_map);
-
-    // todo: get attentions from properties?
-    if (config_map.count("streamer_lambda")) {
-        streamer = config_map.at("streamer_lambda").as<std::function<void (std::string)>>();
-    } else if (config_map.count("streamer")) {
-        streamer = config_map.at("streamer").as<std::shared_ptr<StreamerBase>>();
+    if (config_map.count("streamer")) {
+        streamer = config_map.at("streamer").as<std::function<void (std::string)>>();
     }
 
     return m_pimpl->generate(text, config, streamer);
@@ -263,13 +253,10 @@ std::string ov::LLMPipeline::generate(std::string text, const ov::AnyMap& config
 ov::EncodedResults ov::LLMPipeline::generate(ov::Tensor input_ids, const ov::AnyMap& config_map) {
     OptionalStreamerVariant streamer;
     auto config = GenerationConfigHelper(get_generation_config()).anymap_to_generation_config(config_map);
-
-    // todo: get attentions from properties?
-    if (config_map.count("streamer_lambda")) {
-        streamer = config_map.at("streamer_lambda").as<std::function<void (std::string)>>();
-    } else if (config_map.count("streamer")) {
-        streamer = config_map.at("streamer").as<std::shared_ptr<StreamerBase>>();
+    if (config_map.count("streamer")) {
+        streamer = config_map.at("streamer").as<std::function<void (std::string)>>();
     }
+    
     std::optional<ov::Tensor> attention_mask;
     return m_pimpl->generate(input_ids, attention_mask, config, streamer);
 }

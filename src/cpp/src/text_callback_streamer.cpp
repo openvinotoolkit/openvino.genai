@@ -1,7 +1,6 @@
 #include "text_callback_streamer.hpp"
 
 namespace ov {
-    
 
 TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, std::function<void (std::string)> callback, bool print_eos_token) {
     m_tokenizer = tokenizer;
@@ -17,11 +16,9 @@ TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, bool prin
 
 void TextCallbackStreamer::put(int64_t token) {
     std::stringstream res;
-    // do not print anything and flush cache if EOS token is met
-    if (token == m_tokenizer.get_eos_token_id()) {
-        end();
+    // do nothing if <eos> token is met and if print_eos_token=false
+    if (!m_print_eos_token && token == m_tokenizer.get_eos_token_id())
         return;
-    }
 
     m_tokens_cache.push_back(token);
     std::string text = m_tokenizer.decode(m_tokens_cache);

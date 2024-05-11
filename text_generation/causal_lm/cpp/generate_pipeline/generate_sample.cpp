@@ -23,8 +23,9 @@ int main(int argc, char* argv[]) {
     // Model, tokenizer and generation_config.json will be loaded from the model_path.
     // If generation_config.json is not found default velues for gready search will be used
     
+    // ov::streamer_lambda([](std::string subword){std::cout << subword << std::flush;})
     ov::LLMPipeline pipe(model_path, device);
-    // cout << prompt << pipe(prompt) << endl;
+    // cout << prompt << pipe(prompt, ov::max_new_tokens(1000)) << endl;
 
     // todo: syntactic sugar to specify generation configs in place
     // cout << prompt << pipe(prompt, ov::max_new_tokens(100)) << endl;

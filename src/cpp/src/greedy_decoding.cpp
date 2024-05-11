@@ -170,6 +170,8 @@ ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner,
         if (!generation_config.ignore_eos && all_are_eos)
             break;
     }
+    if (streamer)
+        streamer->end();
     return results;
 }
 

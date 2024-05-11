@@ -82,9 +82,8 @@ public:
     * @param streamer optional streamer
     * @return std::string decoded resulting text
     */
-    std::string generate(std::string text, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer);
+    std::string generate(std::string text, OptionalGenerationConfig generation_config=nullopt, OptionalStreamerVariant streamer=nullopt);
     
-
     template <typename... Properties>
     util::EnableIfAllStringAny<std::string, Properties...> generate(
         std::string text,
@@ -124,8 +123,8 @@ public:
     */
     EncodedResults generate(ov::Tensor input_ids, 
                             std::optional<ov::Tensor> attention_mask, 
-                            OptionalGenerationConfig generation_config,
-                            OptionalStreamerVariant streamer);
+                            OptionalGenerationConfig generation_config=nullopt,
+                            OptionalStreamerVariant streamer=nullopt);
     
     template <typename InputsType, typename... Properties>
     util::EnableIfAllStringAny<std::string, Properties...> operator()(
@@ -133,13 +132,12 @@ public:
         Properties&&... properties) {
         return generate(text, AnyMap{std::forward<Properties>(properties)...});
     }
-    std::string operator()(std::string text, OptionalGenerationConfig generation_config={});
     
-    DecodedResults operator()(std::vector<std::string> text, OptionalGenerationConfig generation_config);
-    DecodedResults operator()(std::initializer_list<std::string> text, OptionalGenerationConfig generation_config);
+    DecodedResults operator()(std::vector<std::string> text, OptionalGenerationConfig generation_config=nullopt);
+    DecodedResults operator()(std::initializer_list<std::string> text, OptionalGenerationConfig generation_config=nullopt);
 
     // generate with streamers
-    std::string operator()(std::string text, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer);
+    std::string operator()(std::string text, OptionalGenerationConfig generation_config=nullopt, OptionalStreamerVariant streamer=nullopt);
     std::string operator()(std::string text, OptionalStreamerVariant streamer);
     
     ov::Tokenizer get_tokenizer();
@@ -162,10 +160,33 @@ private:
  * All names match to names in cofnig except streamer.
 */
 static constexpr ov::Property<size_t> max_new_tokens{"max_new_tokens"};
-static constexpr ov::Property<float> temperature{"temperature"};
+static constexpr ov::Property<size_t> max_length{"max_length"};
+static constexpr ov::Property<bool> ignore_eos{"ignore_eos"};
 
-// It's problematic to store and automaticall convert std::variant in AnyMap
-static constexpr ov::Property<std::function<void (std::string)>> streamer_lambda{"streamer_lambda"};
-static constexpr ov::Property<std::shared_ptr<StreamerBase>> streamer{"streamer"};
+static constexpr ov::Property<size_t> num_beam_groups{"num_beam_groups"};
+static constexpr ov::Property<size_t> num_beams{"num_beams"};
+static constexpr ov::Property<float> diversity_penalty{"diversity_penalty"};
+static constexpr ov::Property<float> length_penalty{"length_penalty"};
+static constexpr ov::Property<size_t> num_return_sequences{"num_return_sequences"};
+static constexpr ov::Property<size_t> no_repeat_ngram_size{"no_repeat_ngram_size"};
+static constexpr ov::Property<StopCriteria> stop_criteria{"stop_criteria"};
+
+static constexpr ov::Property<float> temperature{"temperature"};
+static constexpr ov::Property<float> top_p{"top_p"};
+static constexpr ov::Property<int> top_k{"top_k"};
+static constexpr ov::Property<bool> do_sample{"do_sample"};
+static constexpr ov::Property<float> repetition_penalty{"repetition_penalty"};
+
+
+static constexpr ov::Property<int64_t> pad_token_id{"pad_token_id"};
+static constexpr ov::Property<int64_t> bos_token_id{"bos_token_id"};
+static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};
+    
+static constexpr ov::Property<std::string> bos_token{"bos_token"};
+static constexpr ov::Property<std::string> eos_token{"eos_token"};
+
+// only lambda streamer can be set via ov::streamer(),... syntaxic sugar,
+// because std::variant<StremaerBase, std::function<>> can not be stored in AnyMap
+static constexpr ov::Property<std::function<void (std::string)>> streamer_lambda{"streamer"};
 
 } // namespace ov

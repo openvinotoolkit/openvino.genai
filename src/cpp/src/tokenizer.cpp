@@ -53,58 +53,99 @@ public:
     int64_t m_eos_token_id = 2;
 
     TokenizerImpl() = default;
-    TokenizerImpl(std::string tokenizers_path, const std::string device);
-
-    std::pair<ov::Tensor, ov::Tensor> encode(std::string prompt);
-    std::pair<ov::Tensor, ov::Tensor> encode(std::vector<std::string>& prompts);
-    std::string decode(std::vector<int64_t> tokens);
-    std::vector<std::string> decode(ov::Tensor tokens);
-    std::vector<std::string> decode(std::vector<std::vector<int64_t>> lines);
-};
-
-Tokenizer::TokenizerImpl::TokenizerImpl(std::string tokenizers_path,  std::string device): m_device(device) {
-    ov::Core core;
+    TokenizerImpl(std::string tokenizers_path, const std::string device) {
+        ov::Core core;
+        
+        if (ov::generate_utils::is_xml(tokenizers_path))
+            OPENVINO_THROW("tokenizers_path should be a path to a dir not a xml file");
     
-    if (ov::generate_utils::is_xml(tokenizers_path))
-        OPENVINO_THROW("tokenizers_path should be a path to a dir not a xml file");
-  
-    // todo:: OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
-    core.add_extension(OPENVINO_TOKENIZERS_PATH);  
-    
-    std::shared_ptr<ov::Model> tokenizer_model, detokenizer_model;
-    try {
-        tokenizer_model = core.read_model(tokenizers_path + "/openvino_tokenizer.xml");
-        detokenizer_model = core.read_model(tokenizers_path + "/openvino_detokenizer.xml");
-    } catch (...) {
-        OPENVINO_THROW("Cannot compile tokenizer and/or detokenizer. Please check that "
-                       "openvino_tokenizer.xml and openvino_detokenizer.xml exist in \"" + tokenizers_path + "\"");
+        // todo:: OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
+        core.add_extension(OPENVINO_TOKENIZERS_PATH);  
+        
+        std::shared_ptr<ov::Model> tokenizer_model, detokenizer_model;
+        try {
+            tokenizer_model = core.read_model(tokenizers_path + "/openvino_tokenizer.xml");
+            detokenizer_model = core.read_model(tokenizers_path + "/openvino_detokenizer.xml");
+        } catch (...) {
+            OPENVINO_THROW("Cannot compile tokenizer and/or detokenizer. Please check that "
+                        "openvino_tokenizer.xml and openvino_detokenizer.xml exist in \"" + tokenizers_path + "\"");
+        }
+        m_tokenize_request = core.compile_model(tokenizer_model, device).create_infer_request();
+        m_detokenizer_request = core.compile_model(detokenizer_model, device).create_infer_request();
+
+        auto rt_info = tokenizer_model->get_rt_info();
+        if (rt_info.count("eos_token_id") > 0)
+            m_eos_token_id = rt_info["eos_token_id"].as<int64_t>();
+        if (rt_info.count("bos_token_id") > 0)
+            m_bos_token_id = rt_info["bos_token_id"].as<int64_t>();
+        if (rt_info.count("pad_token_id") > 0)
+            m_pad_token_id = rt_info["pad_token_id"].as<int64_t>();
     }
-    m_tokenize_request = core.compile_model(tokenizer_model, device).create_infer_request();
-    m_detokenizer_request = core.compile_model(detokenizer_model, device).create_infer_request();
 
-    auto rt_info = tokenizer_model->get_rt_info();
-    if (rt_info.count("eos_token_id") > 0)
-        m_eos_token_id = rt_info["eos_token_id"].as<int64_t>();
-    if (rt_info.count("bos_token_id") > 0)
-        m_bos_token_id = rt_info["bos_token_id"].as<int64_t>();
-    if (rt_info.count("pad_token_id") > 0)
-        m_pad_token_id = rt_info["pad_token_id"].as<int64_t>();
-}
+    std::pair<ov::Tensor, ov::Tensor> encode(std::string prompt) {
+        size_t batch_size = 1;
+        m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
+        m_tokenize_request.infer();
+        return {m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask")};
+    }
+
+    std::pair<ov::Tensor, ov::Tensor> encode(std::vector<std::string>& prompts) {
+        m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
+        auto size_ = m_tokenize_request.get_input_tensor().get_shape();
+        m_tokenize_request.infer();
+
+        ::pad_left(m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask"), m_pad_token_id);
+        // todo: fix mask filled with '2' instead of '0'
+        ov::Tensor attention_mask = m_tokenize_request.get_tensor("attention_mask");
+        int64_t* attention_mask_data = attention_mask.data<int64_t>();
+        std::replace(attention_mask_data, attention_mask_data + attention_mask.get_size(), 2, 0);
+        
+        return {m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask")};
+    }
+
+    std::string decode(std::vector<int64_t> tokens) {
+        size_t batch_size = 1;
+        m_detokenizer_request.set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
+        m_detokenizer_request.infer();
+        return m_detokenizer_request.get_output_tensor().data<std::string>()[0];
+    }
+
+    std::vector<std::string> decode(ov::Tensor tokens) {
+        m_detokenizer_request.set_input_tensor(tokens);
+        auto shape = tokens.get_shape();
+        auto data = tokens.data<int64_t>();
+        m_detokenizer_request.infer();
+        auto res = m_detokenizer_request.get_output_tensor();
+        
+        std::vector<std::string> strings;
+        for (int i = 0; i < res.get_shape()[0]; ++i) {
+            strings.emplace_back(res.data<std::string>()[i]);
+        }
+        return strings;
+    }
+
+    std::vector<std::string> decode(std::vector<std::vector<int64_t>> lines) {
+        // todo: implement calling detokenizer in a single batch
+        std::vector<std::string> results;
+        for (auto& line: lines){
+            ov::Tensor tokens = ov::Tensor{ov::element::i64, {1, line.size()}, line.data()};
+            m_detokenizer_request.set_input_tensor(tokens);
+            m_detokenizer_request.infer();
+            auto res = m_detokenizer_request.get_output_tensor();
+            auto res_str = res.data<std::string>()[0];
+            results.emplace_back(res_str);
+        }
+        
+        return results;
+    }
+};
 
 Tokenizer::Tokenizer(const std::string& tokenizers_path, const std::string& device) {
     m_pimpl = std::make_shared<TokenizerImpl>(tokenizers_path, device);
 }
 
 std::pair<ov::Tensor, ov::Tensor> Tokenizer::encode(const std::string prompt) {
-    return m_pimpl->encode(prompt);
-}
-
-std::pair<ov::Tensor, ov::Tensor> Tokenizer::TokenizerImpl::encode(std::string prompt) {
-    size_t batch_size = 1;   
-    m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
-    m_tokenize_request.infer();
-
-    return {m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask")};
+    return m_pimpl->encode(std::move(prompt));
 }
 
 std::pair<ov::Tensor, ov::Tensor> Tokenizer::encode(std::vector<std::string>& prompts) {
@@ -115,72 +156,20 @@ std::pair<ov::Tensor, ov::Tensor> Tokenizer::encode(std::vector<std::string>&& p
     return m_pimpl->encode(prompts);
 }
 
-std::pair<ov::Tensor, ov::Tensor> Tokenizer::TokenizerImpl::encode(std::vector<std::string>& prompts) {
-    m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
-    auto size_ = m_tokenize_request.get_input_tensor().get_shape();
-    m_tokenize_request.infer();
-
-    ::pad_left(m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask"), m_pad_token_id);
-    // todo: fix mask filled with '2' instead of '0'
-    ov::Tensor attention_mask = m_tokenize_request.get_tensor("attention_mask");
-    int64_t* attention_mask_data = attention_mask.data<int64_t>();
-    std::replace(attention_mask_data, attention_mask_data + attention_mask.get_size(), 2, 0);
-    
-    return {m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask")};
-}
-
 std::pair<ov::Tensor, ov::Tensor> Tokenizer::encode(std::initializer_list<std::string>& text) {
     return encode(std::vector<std::string>(text.begin(), text.end()));
 }
 
-
 std::string Tokenizer::decode(std::vector<int64_t> tokens) {
     return m_pimpl->decode(tokens);
-}
-
-std::string Tokenizer::TokenizerImpl::decode(std::vector<int64_t> tokens) {
-    size_t batch_size = 1;
-    m_detokenizer_request.set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
-    m_detokenizer_request.infer();
-    return m_detokenizer_request.get_output_tensor().data<std::string>()[0];
 }
 
 std::vector<std::string> Tokenizer::decode(ov::Tensor tokens) {
     return m_pimpl->decode(tokens);
 }
 
-std::vector<std::string> Tokenizer::TokenizerImpl::decode(ov::Tensor tokens) {
-    m_detokenizer_request.set_input_tensor(tokens);
-    auto shape = tokens.get_shape();
-    auto data = tokens.data<int64_t>();
-    m_detokenizer_request.infer();
-    auto res = m_detokenizer_request.get_output_tensor();
-    
-    std::vector<std::string> strings;
-    for (int i = 0; i < res.get_shape()[0]; ++i) {
-        strings.emplace_back(res.data<std::string>()[i]);
-    }
-    return strings;
-}
-
 std::vector<std::string> Tokenizer::decode(std::vector<std::vector<int64_t>> lines) {
     return m_pimpl->decode(lines);
-}
-
-std::vector<std::string> Tokenizer::TokenizerImpl::decode(std::vector<std::vector<int64_t>> lines) {
-    // todo: implement calling detokenizer in a single batch
-
-    std::vector<std::string> results;
-    for (auto& line: lines){
-        ov::Tensor tokens = ov::Tensor{ov::element::i64, {1, line.size()}, line.data()};
-        m_detokenizer_request.set_input_tensor(tokens);
-        m_detokenizer_request.infer();
-        auto res = m_detokenizer_request.get_output_tensor();
-        auto res_str = res.data<std::string>()[0];
-        results.emplace_back(res_str);
-    }
-    
-    return results;
 }
 
 int64_t Tokenizer::get_bos_token_id() const {
