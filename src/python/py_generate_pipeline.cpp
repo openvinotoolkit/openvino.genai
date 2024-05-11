@@ -49,7 +49,6 @@ std::string call_with_config(ov::LLMPipeline& pipeline, const std::string& text,
     if (kwargs.contains("eos_token_id")) config.eos_token_id = kwargs["eos_token_id"].cast<int64_t>();
     if (kwargs.contains("eos_token")) config.eos_token = kwargs["eos_token"].cast<std::string>();
     if (kwargs.contains("bos_token")) config.bos_token = kwargs["bos_token"].cast<std::string>();
-    if (kwargs.contains("draft_model")) config.draft_model = kwargs["draft_model"].cast<std::variant<std::string, ov::CompiledModel, ov::InferRequest>>();
 
     return pipeline(text, config);
 }
@@ -106,8 +105,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("bos_token_id", &ov::GenerationConfig::bos_token_id)
         .def_readwrite("eos_token_id", &ov::GenerationConfig::eos_token_id)
         .def_readwrite("eos_token", &ov::GenerationConfig::eos_token)
-        .def_readwrite("bos_token", &ov::GenerationConfig::bos_token)
-        .def_readwrite("draft_model", &ov::GenerationConfig::draft_model);
+        .def_readwrite("bos_token", &ov::GenerationConfig::bos_token);
 
     py::class_<ov::DecodedResults>(m, "DecodedResults")
         .def(py::init<>())

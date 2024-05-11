@@ -19,7 +19,6 @@
 
 namespace ov {
 
-ov::EncodedResults assistive_decoding(ov::InferRequest& m_model_runner, ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig generation_config);
 ov::EncodedResults beam_search(ov::InferRequest& model_runner, ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig sampling_params);
 
 ov::EncodedResults greedy_decoding(
@@ -113,9 +112,7 @@ ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(std::string& path, std::string
     m_device = device;
 
     ov::Core core;
-    auto model_request = core.compile_model(path + "/openvino_model.xml", device, config).create_infer_request();
-    m_model_runner = model_request;
-
+    m_model_runner = core.compile_model(path + "/openvino_model.xml", device, config).create_infer_request();
     m_tokenizer = Tokenizer(path);
 }
 
@@ -233,16 +230,12 @@ ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(
         result = ov::greedy_decoding(m_model_runner, input_ids, attention_mask_data, config, streamer_ptr, is_chat_conversation);
     } else if (config_helper.is_beam_search()) {
         result = beam_search(m_model_runner, input_ids, attention_mask_data, config);
-        
-    } else if (config_helper.is_multimomial()) {
+    } else {
         // todo: implement multinomial sampling
         // result = multinomial_sampling(input_ids, config);
-    } else {
-        result = ov::assistive_decoding(m_model_runner, input_ids, attention_mask_data, config);
-    }
+    } 
 
     if (!is_chat_conversation)
-        // reset_state(); todo: implement in m_mimpl
         m_model_runner.reset_state();
 
     return result;

@@ -88,10 +88,6 @@ public:
     // used for chat scenario
     std::string bos_token = "<s>";
     std::string eos_token = "</s>";
-    
-    // speculative sampling
-    std::variant<std::string, ov::CompiledModel, ov::InferRequest> draft_model;  // todo: remove or try to add ov::Model const ov::Model&,
 };
-
 
 } // namespace ov

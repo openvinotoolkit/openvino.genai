@@ -101,7 +101,7 @@ std::pair<ov::Tensor, ov::Tensor> Tokenizer::encode(const std::string prompt) {
 
 std::pair<ov::Tensor, ov::Tensor> Tokenizer::TokenizerImpl::encode(std::string prompt) {
     size_t batch_size = 1;   
-    m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt[0]});
+    m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
     m_tokenize_request.infer();
 
     return {m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask")};
