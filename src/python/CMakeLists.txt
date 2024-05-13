@@ -37,5 +37,5 @@ elseif(APPLE)
 endif()
 
 if(rpaths)
-    set_target_properties(${TARGET_NAME} PROPERTIES INSTALL_RPATH "${rpaths}")
+    set_target_properties(py_generate_pipeline PROPERTIES INSTALL_RPATH "${rpaths}")
 endif()
