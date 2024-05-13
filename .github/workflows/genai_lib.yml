@@ -11,9 +11,9 @@ jobs:
         with:
           python-version: 3.8
       - run: mkdir ./ov/
-      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/linux/l_openvino_toolkit_centos7_2024.1.0.15008.f4afc983258_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz  # Install centos instead of ubuntu to match PyPI distribution ABI
+      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14758-22bd6ff0494/l_openvino_toolkit_centos7_2024.1.0.dev20240315_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz  # Install centos instead of ubuntu to match PyPI distribution ABI
       - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - run: source ./ov/setupvars.sh && python -m pip install .
+      - run: source ./ov/setupvars.sh && python -m pip install --pre . --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
       - run: python -c "from openvino.genai.py_generate_pipeline import LLMPipeline"
 
   genai_lib_windows:
