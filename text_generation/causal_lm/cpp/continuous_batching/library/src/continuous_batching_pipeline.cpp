@@ -99,6 +99,7 @@ public:
         // and finally create model runner
         m_model_runner = std::make_shared<ModelRunner>(infer_request, scheduler_config);
         m_sampler = std::make_shared<Sampler>();
+        m_sampler->set_seed(m_generation_config.rng_seed);
 
         // read default generation config
     }

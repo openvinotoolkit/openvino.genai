@@ -27,6 +27,33 @@ def get_beam_search() -> GenerationConfig:
     generation_config.num_return_sequences = generation_config.num_groups * generation_config.group_size
     return generation_config
 
+def get_multinomial_temperature() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.do_sample = True
+    generation_config.temperature = 0.8
+    return generation_config
+
+def get_multinomial_temperature_and_top_p() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.do_sample = True
+    generation_config.temperature = 0.8
+    generation_config.top_p = 0.9
+    return generation_config
+
+def get_multinomial_temperature_and_top_k() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.do_sample = True
+    generation_config.temperature = 0.8
+    generation_config.top_k = 2
+    return generation_config
+
+def get_multinomial_temperature_top_p_and_top_k() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.do_sample = True
+    generation_config.temperature = 0.8
+    generation_config.top_p = 0.9
+    generation_config.top_k = 2
+    return generation_config
 
 def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
     prompts = [
@@ -98,27 +125,11 @@ def convert_to_hf(
 
 
 def run_hugging_face(
-    model_id : str,
+    model,
+    hf_tokenizer,
     prompts: List[str],
     generation_configs: List[GenerationConfig],
-    use_optimum: bool,
-    tmp_path: Path
-) -> Tuple[List[GenerationResult], str]:
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True) if use_optimum else \
-            AutoModelForCausalLM.from_pretrained(model_id)
-    generation_results: List[GenerationResult] = []
-    model_path : Path = tmp_path / model_id
-
-    if use_optimum:
-        model.save_pretrained(model_path)
-        # convert tokenizers as well
-        from openvino_tokenizers import convert_tokenizer
-        from openvino import serialize
-        tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True, skip_special_tokens=True)
-        serialize(tokenizer, model_path / "openvino_tokenizer.xml")
-        serialize(detokenizer, model_path / "openvino_detokenizer.xml")
-
+) -> List[GenerationResult]:
     for prompt, generation_config in zip(prompts, generation_configs):
         inputs = hf_tokenizer(prompt, return_tensors="pt")
         prompt_len = inputs['input_ids'].numel()
@@ -135,7 +146,7 @@ def run_hugging_face(
     del hf_tokenizer
     del model
 
-    return (generation_results, model_path)
+    return generation_results
 
 
 def run_continuous_batching(
@@ -163,7 +174,7 @@ def get_models_list(file_name: str):
     return models
 
 
-def compare_results(hf_result, ov_result, generation_config):
+def compare_results(hf_result: GenerationResult, ov_result: GenerationResult, generation_config: GenerationConfig):
     if generation_config.is_beam_search:
         assert len(hf_result.m_scores) == len(ov_result.m_scores)
         for hf_score, ov_score in zip(hf_result.m_scores, ov_result.m_scores):
@@ -174,20 +185,62 @@ def compare_results(hf_result, ov_result, generation_config):
     for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
         assert hf_text == ov_text
 
+def save_ov_model_from_optimum(model, hf_tokenizer, model_path: Path):
+    model.save_pretrained(model_path)
+    # convert tokenizers as well
+    from openvino_tokenizers import convert_tokenizer
+    from openvino import serialize
+    tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
+    serialize(tokenizer, model_path / "openvino_tokenizer.xml")
+    serialize(detokenizer, model_path / "openvino_detokenizer.xml")
+
+def get_model_and_tokenizer(model_id: str, use_optimum = True):
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True) if use_optimum else \
+            AutoModelForCausalLM.from_pretrained(model_id)
+    return model, hf_tokenizer
+
+def _generate_and_compare_with_hf(model_id: str, prompts: List[str], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig, tmp_path: Path):
+    use_optimum = True
+    model_path : Path = tmp_path / model_id
+    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum)
+
+    if use_optimum:
+        save_ov_model_from_optimum(model, hf_tokenizer, model_path)
+
+    hf_results = run_hugging_face(model=model, hf_tokenizer=hf_tokenizer, prompts=prompts, generation_configs=generation_configs)
+    _generate_and_compare_with_reference_results(model_path, prompts, hf_results, generation_configs, scheduler_config)
+
+
+def _generate_and_compare_with_reference_results(model_path: Path, prompts: List[str], reference_results: List[GenerationResult], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig):
+    ov_results : List[GenerationResult] = run_continuous_batching(model_path, scheduler_config, prompts, generation_configs)
+
+    assert len(prompts) == len(reference_results)
+    assert len(prompts) == len(ov_results)
+
+    for prompt, ref_result, ov_result, generation_config in zip(prompts, reference_results, ov_results, generation_configs):
+        print(f"Prompt = {prompt}\nref result = {ref_result}\nOV result = {ov_result}")
+        compare_results(ref_result, ov_result, generation_config)
+
+
+def generate_and_compare_with_reference_text(model_path: Path, prompts: List[str], reference_texts_per_prompt: List[List[str]], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig):
+    ov_results : List[GenerationResult] = run_continuous_batching(model_path, scheduler_config, prompts, generation_configs)
+
+    assert len(prompts) == len(reference_texts_per_prompt)
+    assert len(prompts) == len(ov_results)
+
+    for prompt, ref_texts_for_this_prompt, ov_result, generation_config in zip(prompts, reference_texts_per_prompt, ov_results, generation_configs):
+        print(f"Prompt = {prompt}\nref text = {ref_texts_for_this_prompt}\nOV result = {ov_result}")
+
+        assert len(ref_texts_for_this_prompt) == len(ov_result.m_generation_ids)
+        for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):
+            assert ref_text == ov_text
 
 def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = None):
     prompts, generation_configs = get_test_dataset()
     scheduler_config = get_scheduler_config(scheduler_params)
 
-    (hf_results, model_path) = run_hugging_face(model_id=model_id, prompts=prompts,
-                                                generation_configs=generation_configs, tmp_path=tmp_path,
-                                                use_optimum=True)
-    ov_results: List[GenerationResult] = run_continuous_batching(model_path, scheduler_config, prompts,
-                                                                 generation_configs)
+    _generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
 
-    assert len(prompts) == len(hf_results)
-    assert len(prompts) == len(ov_results)
 
-    for prompt, hf_result, ov_result, generation_config in zip(prompts, hf_results, ov_results, generation_configs):
-        print(f"Prompt = {prompt}\nHF result = {hf_result}\nOV result = {ov_result}")
-        compare_results(hf_result, ov_result, generation_config)
+DEFAULT_SCHEDULER_CONFIG = get_scheduler_config({"num_kv_blocks": 300, "block_size": 16, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256})

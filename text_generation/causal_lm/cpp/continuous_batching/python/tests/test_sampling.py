@@ -3,21 +3,13 @@
 import os
 import pytest
 
-from common import (
-    run_test_pipeline,
-    run_hugging_face,
-    run_continuous_batching,
-    get_models_list,
-    get_greedy,
-    get_beam_search,
-    get_scheduler_config,
-    compare_results
-)
+from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, generate_and_compare_with_reference_text, get_greedy, get_beam_search, get_multinomial_temperature, get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, get_multinomial_temperature_top_p_and_top_k, DEFAULT_SCHEDULER_CONFIG
+from dataclasses import dataclass
+from py_continuous_batching import GenerationConfig, GenerationResult
+from pathlib import Path
+from typing import List
 
-# tested models:
-# - facebook/opt-125m
-# - meta-llama/Llama-2-7b-chat-hf
-# - mistralai/Mistral-7B-Instruct-v0.2
+
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
@@ -91,3 +83,52 @@ def test_eos_greedy(tmp_path):
     for prompt, hf_result, ov_result, generation_config in zip(prompts, hf_results, ov_results, generation_configs):
         print(f"Prompt = {prompt}\nHF result = {hf_result}\nOV result = {ov_result}")
         compare_results(hf_result, ov_result, generation_config)
+
+@pytest.mark.parametrize("generation_config", [get_greedy(), get_beam_search()],
+        ids=["greedy", "beam"])
+def test_individual_generation_configs_deterministic(tmp_path, generation_config):
+    prompts = [
+            "What is OpenVINO?",
+            ]
+    generation_configs = [generation_config]
+    model_id : str = "facebook/opt-125m"
+    _generate_and_compare_with_hf(model_id, prompts, generation_configs, DEFAULT_SCHEDULER_CONFIG, tmp_path)
+
+
+@dataclass
+class RandomSamplingTestStruct:
+    generation_config: GenerationConfig
+    prompts: List[str]
+    ref_texts: List[List[str]]
+
+RANDOM_SAMPLING_TEST_CASES = [RandomSamplingTestStruct(generation_config=get_multinomial_temperature(),
+                                                       prompts=["What is OpenVINO?"],
+                                                       ref_texts=[ ["\n\nOpenVINO is a software development platform developed by OpenVINO, a set of technology companies and startups that enables developers to use the most"] ]),
+                              RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_top_p(),
+                                                       prompts=["What is OpenVINO?"],
+                                                       ref_texts=[ ["\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"] ]),
+                              RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_top_k(),
+                                                       prompts=["What is OpenVINO?"],
+                                                       ref_texts=[ ["\n\nOpenVINO is a software that allows users to create a virtual machine with the ability to create a virtual machine in a virtual environment. Open"] ]),
+                              RandomSamplingTestStruct(generation_config=get_multinomial_temperature_top_p_and_top_k(),
+                                                       prompts=["What is OpenVINO?"],
+                                                       ref_texts=[ ["\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"] ]),
+                              ]
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("test_struct", RANDOM_SAMPLING_TEST_CASES,
+        ids=["multinomial_temperature", "multinomial_temperature_and_top_p", "multinomial_temperature_and_top_k", "multinomial_temperature_top_p_and_top_k"])
+def test_individual_generation_configs_random(tmp_path, test_struct: RandomSamplingTestStruct):
+    generation_config = test_struct.generation_config
+
+    prompts = test_struct.prompts
+    generation_config.rng_seed = 0
+    generation_configs = [generation_config]
+    model_id : str = "facebook/opt-125m"
+    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
+
+    model_path : Path = tmp_path / model_id
+    save_ov_model_from_optimum(model, hf_tokenizer, model_path)
+
+    generate_and_compare_with_reference_text(model_path, prompts, test_struct.ref_texts, generation_configs, DEFAULT_SCHEDULER_CONFIG)
