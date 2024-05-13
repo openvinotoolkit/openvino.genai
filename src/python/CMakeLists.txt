@@ -8,7 +8,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/pybind/pybind11
     GIT_TAG        v2.12.0
 )
-
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 FetchContent_GetProperties(pybind11)
 if(NOT pybind11_POPULATED)
     FetchContent_Populate(pybind11)

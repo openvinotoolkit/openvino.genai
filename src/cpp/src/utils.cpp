@@ -27,6 +27,8 @@ void print_tensor(const ov::Tensor& tensor) {
     std::cout << "]" << std::endl;
 }
 
+bool is_xml(const std::string& path) { return path.compare(path.length() - 4, 4, ".xml") == 0;}
+
 std::pair<int64_t, float> softmax(const ov::Tensor& logits, const size_t batch_idx) {
     if (logits.get_shape()[0] <= batch_idx) {
         OPENVINO_THROW("logits batch size doesn't match the number of beams");

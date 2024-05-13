@@ -4,8 +4,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(causal_lm)
 
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
 set(TARGET_NAME greedy_causal_lm)
 add_executable(${TARGET_NAME} greedy_causal_lm.cpp)
 target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

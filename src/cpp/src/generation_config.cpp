@@ -89,7 +89,7 @@ size_t GenerationConfigHelper::get_max_new_tokens(size_t prompt_length) {
 }
 
 bool GenerationConfigHelper::is_greedy_decoding() const {
-    return !m_config.do_sample && !is_beam_search() && !is_speculative();
+    return !m_config.do_sample && !is_beam_search();
 }
 
 bool GenerationConfigHelper::is_beam_search() const {
@@ -98,22 +98,6 @@ bool GenerationConfigHelper::is_beam_search() const {
 
 bool GenerationConfigHelper::is_multimomial() const {
     return m_config.do_sample;
-}
-
-bool GenerationConfigHelper::is_speculative() const {
-    return is_assistant_ov_defined || is_assistant_request_defined;
-}
-
-ov::InferRequest GenerationConfigHelper::get_assistant_model(std::string device, const ov::AnyMap& config) {
-    if (is_assistant_request_defined) {
-        return assistant_model;
-    } else if (is_assistant_ov_defined) {
-        assistant_model = ov::Core().compile_model(m_assistant_ov_model, device, config).create_infer_request();
-        is_assistant_request_defined = true;
-        return assistant_model;
-    } else {
-        OPENVINO_THROW("assistant model is not specified");
-    }
 }
 
 }  // namespace ov
