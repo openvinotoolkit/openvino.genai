@@ -7,7 +7,6 @@
 #include <cstdlib>
 #include <vector>
 
-#include "model_config.hpp"
 #include "block_manager.hpp"
 #include "sequence_group.hpp"
 #include "block_manager.hpp"
