@@ -95,7 +95,7 @@ def run_hugging_face(
     use_optimum: bool,
     tmp_path: Path
 ) -> Tuple[List[GenerationResult], str]:
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, token=os.environ['MODEL_TOKEN'])
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = OVModelForCausalLM.from_pretrained(model_id, export=True) if use_optimum else \
             AutoModelForCausalLM.from_pretrained(model_id)
     generation_results: List[GenerationResult] = []
