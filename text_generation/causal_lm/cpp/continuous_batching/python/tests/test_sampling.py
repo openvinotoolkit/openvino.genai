@@ -1,12 +1,13 @@
+import os
 import pytest
-from pathlib import Path
-from typing import List, Tuple
 
+from optimum.intel import OVModelForCausalLM
+from pathlib import Path
+from py_continuous_batching import ContinuousBatchingPipeline, GenerationConfig, SchedulerConfig, GenerationResult
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
-from optimum.intel import OVModelForCausalLM
+from typing import List, Tuple
 
-from py_continuous_batching import ContinuousBatchingPipeline, GenerationConfig, SchedulerConfig, GenerationResult
 
 def get_greedy() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -94,7 +95,7 @@ def run_hugging_face(
     use_optimum: bool,
     tmp_path: Path
 ) -> Tuple[List[GenerationResult], str]:
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id)
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, token=os.environ['MODEL_TOKEN'])
     model = OVModelForCausalLM.from_pretrained(model_id, export=True) if use_optimum else \
             AutoModelForCausalLM.from_pretrained(model_id)
     generation_results: List[GenerationResult] = []
@@ -133,6 +134,46 @@ def run_continuous_batching(
     pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config)
     return pipe.generate(prompts, generation_configs)
 
+def get_models_list(file_name: str):
+    models = []
+    with open(file_name) as f:
+        for model_name in f:
+            model_name = model_name.strip()
+            # skip comment in model scope file
+            if model_name.startswith('#'):
+                continue
+            models.append(model_name)
+    return models
+
+def compare_results(hf_result, ov_result, generation_config):
+    if generation_config.is_beam_search:
+        assert len(hf_result.m_scores) == len(ov_result.m_scores)
+        for hf_score, ov_score in zip(hf_result.m_scores, ov_result.m_scores):
+            # Note, that for fp32 / fp16 models scores are different less than 0.001
+            assert abs(hf_score - ov_score) < 0.02
+
+    assert len(hf_result.m_generation_ids) == len(ov_result.m_generation_ids)
+    for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
+        assert hf_text == ov_text
+
+
+def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = None):
+    prompts, generation_configs = get_test_dataset()
+    scheduler_config = get_scheduler_config(scheduler_params)
+
+    (hf_results, model_path) = run_hugging_face(model_id=model_id, prompts=prompts,
+                                                generation_configs=generation_configs, tmp_path=tmp_path,
+                                                use_optimum=True)
+    my_results: List[GenerationResult] = run_continuous_batching(model_path, scheduler_config, prompts,
+                                                                 generation_configs)
+
+    assert len(prompts) == len(hf_results)
+    assert len(prompts) == len(my_results)
+
+    for prompt, hf_result, ov_result, generation_config in zip(prompts, hf_results, my_results, generation_configs):
+        print(f"Prompt = {prompt}\nHF result = {hf_result}\nmy result = {ov_result}")
+        compare_results(hf_result, ov_result, generation_config)
+
 # tested models:
 # - facebook/opt-125m
 # - meta-llama/Llama-2-7b-chat-hf
@@ -142,26 +183,17 @@ scheduler_params_list = [{"num_kv_blocks": 300, "block_size": 16, "dynamic_split
                          {"num_kv_blocks": 40, "block_size": 4, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, # test preemption for dynamic_split_fuse
                          {"num_kv_blocks": 40, "block_size": 4, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}] # test preemption for vllm
 @pytest.mark.parametrize("scheduler_params", scheduler_params_list)
+@pytest.mark.precommit
 def test_preemption(tmp_path, scheduler_params):
-    prompts, generation_configs = get_test_dataset()
-    model_id : str = "facebook/opt-125m"
-    scheduler_config = get_scheduler_config(scheduler_params)
+    run_test_pipeline(tmp_path, "facebook/opt-125m", scheduler_params)
 
-    (hf_results, model_path) = run_hugging_face(model_id=model_id, prompts=prompts, generation_configs=generation_configs, tmp_path=tmp_path, use_optimum=True)
-    my_results : List[GenerationResult] = run_continuous_batching(model_path, scheduler_config, prompts, generation_configs)
 
-    assert len(prompts) == len(hf_results)
-    assert len(prompts) == len(my_results)
+@pytest.mark.precommit
+@pytest.mark.parametrize("model_id", get_models_list("models/precommit"))
+def test_hf_models_precommit(tmp_path, model_id):
+    run_test_pipeline(tmp_path, model_id)
 
-    for prompt, hf_result, my_result, generation_config in zip(prompts, hf_results, my_results, generation_configs):
-        print(f"Prompt = {prompt}\nHF result = {hf_result}\nmy result = {my_result}")
-
-        if generation_config.is_beam_search:
-            assert len(hf_result.m_scores) == len(my_result.m_scores)
-            for hf_score, my_score in zip(hf_result.m_scores, my_result.m_scores):
-                # Note, that for fp32 / fp16 models scores are different less than 0.001
-                assert abs(hf_score - my_score) < 0.02
-
-        assert len(hf_result.m_generation_ids) == len(my_result.m_generation_ids)
-        for hf_text, my_text in zip(hf_result.m_generation_ids, my_result.m_generation_ids):
-            assert hf_text == my_text
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_id", get_models_list("models/nightly"))
+def test_hf_models_nightly(tmp_path, model_id):
+    run_test_pipeline(tmp_path, model_id)

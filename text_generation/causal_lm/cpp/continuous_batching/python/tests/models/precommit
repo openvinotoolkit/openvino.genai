@@ -1,0 +1,6 @@
+facebook/opt-125m
+bigcode/starcoder2-7b
+hf-internal-testing/tiny-random-LlamaForCausalLM
+hf-internal-testing/tiny-random-MistralForCausalLM
+hf-internal-testing/tiny-random-OPTModel
+hf-internal-testing/tiny-random-OPTForQuestionAnswering
