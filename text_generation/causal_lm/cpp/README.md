@@ -55,6 +55,18 @@ This approach reduces the need for multiple infer requests to the main model, en
 
 Install [OpenVINO Archives >= 2024.1](docs.openvino.ai/install). `master` and possibly the latest `releases/*` branch correspond to not yet released OpenVINO versions. https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for these branches early testing. `<INSTALL_DIR>` below refers to the extraction location.
 
+## Install TBB
+
+### Linux
+
+```sh
+sudo apt-get install libtbb-dev
+```
+
+### Windows/macOs
+
+Follow the [installation guide](https://github.com/oneapi-src/oneTBB/blob/master/INSTALL.md). Use `devel` install component.
+
 ## Build `greedy_causal_lm`, `beam_search_causal_lm` and `openvino_tokenizers`
 
 ### Linux/macOS
@@ -84,6 +96,7 @@ source <INSTALL_DIR>/setupvars.sh
 python3 -m pip install --upgrade-strategy eager -r requirements.txt
 # Update openvino_tokenizers from the submodule
 python3 -m pip install ./../../../thirdparty/openvino_tokenizers/[transformers]
+sudo apt-get install libtbb-dev
 optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 
