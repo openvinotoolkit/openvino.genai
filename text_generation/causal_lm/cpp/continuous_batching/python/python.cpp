@@ -26,6 +26,18 @@ PYBIND11_MODULE(py_continuous_batching, m) {
         .def(py::init<>())
         .def_readonly("m_request_id", &GenerationResult::m_request_id)
         .def_readwrite("m_generation_ids", &GenerationResult::m_generation_ids)
+
+        .def("get_generation_ids", 
+            [](GenerationResult &r) -> py::list {
+                py::list res;
+                for (auto s: r.m_generation_ids) {
+                
+                    PyObject* py_s = PyUnicode_DecodeUTF8(s.data(), s.length(), "replace");
+                    res.append(py_s);
+                }
+                return res;
+            }
+        )
         .def_readwrite("m_scores", &GenerationResult::m_scores)
         .def("__repr__",
             [](const GenerationResult &r) {
