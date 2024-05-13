@@ -63,7 +63,7 @@ Install [OpenVINO Archives >= 2024.1](docs.openvino.ai/install). `master` and po
 sudo apt-get install libtbb-dev
 ```
 
-### Windows/macOs
+### macOs
 
 Follow the [installation guide](https://github.com/oneapi-src/oneTBB/blob/master/INSTALL.md). Use `devel` install component.
 
