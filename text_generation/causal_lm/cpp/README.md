@@ -93,7 +93,6 @@ source <INSTALL_DIR>/setupvars.sh
 python3 -m pip install --upgrade-strategy eager -r requirements.txt
 # Update openvino_tokenizers from the submodule
 python3 -m pip install ./../../../thirdparty/openvino_tokenizers/[transformers]
-sudo apt-get install libtbb-dev
 optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 
