@@ -22,13 +22,10 @@
 #include "imwrite.hpp"
 
 const size_t TOKENIZER_MODEL_MAX_LENGTH = 77;   // 'model_max_length' parameter from 'tokenizer_config.json'
-const int64_t UNET_IN_CHANNELS = 4;             // 'in_channels' parameter from 'unet/config.json'
-const int64_t UNET_TIME_COND_PROJ_DIM = 256;    // 'time_cond_proj_dim' parameter from 'unet/config.json'
-const int64_t VAE_DECODER_LATENT_CHANNELS = 4;  // 'latent_channels' parameter from 'vae_decoder/config.json'
 const size_t VAE_SCALE_FACTOR = 8;
 
-ov::Tensor randn_tensor(uint32_t height, uint32_t width, bool use_np_latents, uint32_t seed = 42) {
-    ov::Tensor noise(ov::element::f32, {1, UNET_IN_CHANNELS, height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
+ov::Tensor randn_tensor(ov::Shape shape, bool use_np_latents, uint32_t seed = 42) {
+    ov::Tensor noise(ov::element::f32, shape);
     if (use_np_latents) {
         // read np generated latents with defaut seed 42
         const char * latent_file_name = "./latents/np_latents_512x512.txt";
@@ -90,11 +87,11 @@ void reshape_unet(std::shared_ptr<ov::Model> model,
         if (input_name == "timestep") {
             name_to_shape[input_name][0] = 1;
         } else if (input_name == "sample") {
-            name_to_shape[input_name] = {batch_size, UNET_IN_CHANNELS, height, width};
+            name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1], height, width};
         } else if (input_name == "time_ids") {
             name_to_shape[input_name][0] = batch_size;
         } else if (input_name == "timestep_cond") {
-            name_to_shape[input_name] = {batch_size, UNET_TIME_COND_PROJ_DIM};
+            name_to_shape[input_name][0] = batch_size;
         } else {
             name_to_shape[input_name][0] = batch_size;
             name_to_shape[input_name][1] = TOKENIZER_MODEL_MAX_LENGTH;
@@ -107,8 +104,8 @@ void reshape_unet(std::shared_ptr<ov::Model> model,
 void reshape_vae_decoder(std::shared_ptr<ov::Model> model, int64_t height, int64_t width) {
     height = height / VAE_SCALE_FACTOR;
     width = width / VAE_SCALE_FACTOR;
-
-    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {1, VAE_DECODER_LATENT_CHANNELS, height, width}}};
+    ov::Dimension vae_decoder_latent_channels = model->input(0).get_partial_shape()[1];
+    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {1, vae_decoder_latent_channels, height, width}}};
     model->reshape(idx_to_shape);
 }
 
@@ -351,12 +348,17 @@ int32_t main(int32_t argc, char* argv[]) try {
     std::vector<std::int64_t> timesteps = scheduler->get_timesteps();
 
     float guidance_scale = 8.0;
-    ov::Tensor guidance_scale_embedding = get_w_embedding(guidance_scale, UNET_TIME_COND_PROJ_DIM);
+    const size_t unet_time_cond_proj_dim = static_cast<size_t>(models.unet.input("timestep_cond").get_partial_shape()[1].get_length());
+    ov::Tensor guidance_scale_embedding = get_w_embedding(guidance_scale, unet_time_cond_proj_dim);
 
-    ov::Tensor denoised(ov::element::f32, {1, UNET_IN_CHANNELS, height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
+    const size_t unet_in_channels = static_cast<size_t>(sample_shape[1].get_length());
+    ov::Shape latent_model_input_shape = ov::Shape({1, unet_in_channels, height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
+
+    ov::Tensor denoised(ov::element::f32, latent_model_input_shape);
+
     for (uint32_t n = 0; n < num_images; n++) {
         std::uint32_t seed = num_images == 1 ? user_seed: user_seed + n;
-        ov::Tensor latent_model_input = randn_tensor(height, width, read_np_latent, seed);
+        ov::Tensor latent_model_input = randn_tensor(latent_model_input_shape, read_np_latent, seed);
 
         for (size_t inference_step = 0; inference_step < num_inference_steps; inference_step++) {
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
