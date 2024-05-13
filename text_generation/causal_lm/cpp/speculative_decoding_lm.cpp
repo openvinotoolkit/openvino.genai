@@ -2,10 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cmath>
-<<<<<<< HEAD
 #include <openvino/core/parallel.hpp>
-=======
->>>>>>> upstream/master
 #include <openvino/openvino.hpp>
 #include <random>
 
