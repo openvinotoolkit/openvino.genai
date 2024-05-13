@@ -17,16 +17,13 @@ endif()
 
 pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
 target_link_libraries(py_generate_pipeline PRIVATE generate_pipeline_lib)
+
 install(TARGETS py_generate_pipeline LIBRARY DESTINATION . COMPONENT genai_python)
 
 # setting RPATH / LC_RPATH depending on platform
 if(LINUX)
     # to find libgenerate_pipeline_lib.so in the same folder
     set(rpaths "$ORIGIN")
-    if(DEFINED SKBUILD)
-        # in case we build pip package, we need to refer to libopenvino.so from 'openvino' package
-        list(APPEND rpaths "@ORIGIN/../../openvino/libs")
-    endif()
 elseif(APPLE)
     # to find libgenerate_pipeline_lib.dylib in the same folder
     set(rpaths "@loader_path")
@@ -39,3 +36,10 @@ endif()
 if(rpaths)
     set_target_properties(py_generate_pipeline PROPERTIES INSTALL_RPATH "${rpaths}")
 endif()
+
+# Populate python with the libraries to allow skipping wheel installation
+add_custom_command(TARGET py_generate_pipeline POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy
+        "$<TARGET_FILE:py_generate_pipeline>"
+        "${CMAKE_CURRENT_SOURCE_DIR}/openvino/genai/$<TARGET_FILE_NAME:py_generate_pipeline>"
+    COMMENT "Copy py_generate_pipeline to src/python/openvino/genai")

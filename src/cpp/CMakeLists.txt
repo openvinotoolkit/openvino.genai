@@ -31,10 +31,10 @@ function(ov_genai_build_jinja2cpp)
 
         add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
         # openvino::runtime exports _GLIBCXX_USE_CXX11_ABI=0 on CenOS7.
-        # It needs to be propagated to every lib GenAI links with. It's
-        # enough to propagate it to fmt, because fmt propagates to
+        # It needs to be propagated to every library GenAI links with.
+        # It's enough to propagate to fmt, because fmt propagates to
         # jinja2cpp.
-        target_link_libraries(fmt PUBLIC openvino::runtime)
+        target_compile_definitions(fmt PUBLIC $<TARGET_PROPERTY:openvino::runtime,INTERFACE_COMPILE_DEFINITIONS>)
     endif()
 endfunction()
 
@@ -57,4 +57,12 @@ target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_j
 target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
 
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
+
 install(TARGETS ${TARGET_NAME} LIBRARY DESTINATION . COMPONENT genai RUNTIME DESTINATION . COMPONENT genai)
+
+# Populate python with the libraries to allow skipping wheel installation
+add_custom_command(TARGET generate_pipeline_lib POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy
+        "$<TARGET_FILE:generate_pipeline_lib>"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../python/openvino/genai/$<TARGET_FILE_NAME:generate_pipeline_lib>"
+    COMMENT "Copy generate_pipeline_lib to src/python/openvino/genai")
