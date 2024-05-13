@@ -1,3 +1,7 @@
+# They are copied to python folder during the build to allow skipping wheel installation
+src/python/openvino/genai/*generate_pipeline_lib*
+src/python/openvino/genai/py_generate_pipeline*
+
 # build/artifact dirs
 _*
 [Bb]uild*/
