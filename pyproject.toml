@@ -28,7 +28,6 @@ sdist.cmake = true
 wheel.packages = ["src/python/openvino"]
 wheel.install-dir = "openvino/genai"
 wheel.build-tag = "000"
-wheel.py-api = ""
 wheel.license-files = ["LICENSE", "SECURITY.md", "third-party-programs.txt"]
 
 [[tool.scikit-build.generate]]
