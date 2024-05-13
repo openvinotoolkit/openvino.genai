@@ -189,11 +189,11 @@ def test_preemption(tmp_path, scheduler_params):
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", get_models_list("models/precommit"))
+@pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
 def test_hf_models_precommit(tmp_path, model_id):
     run_test_pipeline(tmp_path, model_id)
 
 @pytest.mark.nightly
-@pytest.mark.parametrize("model_id", get_models_list("models/nightly"))
+@pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
 def test_hf_models_nightly(tmp_path, model_id):
     run_test_pipeline(tmp_path, model_id)
