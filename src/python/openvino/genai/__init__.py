@@ -3,6 +3,8 @@
 
 import openvino  # add_dll_directory for openvino lib
 import os
+from .__version__ import __version__
+
 
 if hasattr(os, "add_dll_directory"):
     os.add_dll_directory(os.path.dirname(__file__))

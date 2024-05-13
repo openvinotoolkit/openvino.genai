@@ -16,6 +16,5 @@ if(NOT pybind11_POPULATED)
 endif()
 
 pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
-target_compile_features(py_generate_pipeline PUBLIC cxx_std_17)
 target_link_libraries(py_generate_pipeline PRIVATE generate_pipeline_lib)
 install(TARGETS py_generate_pipeline LIBRARY DESTINATION . COMPONENT genai_python)
