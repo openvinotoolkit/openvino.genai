@@ -1,6 +1,5 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.2.2+cpu
-diffusers==0.27.2
-transformers==4.39.3
+optimum[openvino]==1.19.2
 optimum-intel[openvino] @ git+https://github.com/apaniukov/optimum-intel.git@0029e9165a2dad4cfcf787aa63181d9dc0cd49d5
-huggingface_hub[cli]==0.22.2
+einops==0.8.0  # For Qwen
+transformers_stream_generator==0.0.5  # For Qwen
