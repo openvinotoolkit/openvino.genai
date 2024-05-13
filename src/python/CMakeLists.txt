@@ -21,17 +21,21 @@ install(TARGETS py_generate_pipeline LIBRARY DESTINATION . COMPONENT genai_pytho
 
 # setting RPATH / LC_RPATH depending on platform
 if(LINUX)
-  # to find libgenerate_pipeline_lib.so in the same folder
-  set(rpaths "$ORIGIN")
+    # to find libgenerate_pipeline_lib.so in the same folder
+    set(rpaths "$ORIGIN")
+    if(DEFINED SKBUILD)
+        # in case we build pip package, we need to refer to libopenvino.so from 'openvino' package
+        list(APPEND rpaths "@ORIGIN/../../openvino/libs")
+    endif()
 elseif(APPLE)
-  # to find libgenerate_pipeline_lib.dylib in the same folder
-  set(rpaths "@loader_path")
-  if(DEFINED SKBUILD)
-    # in case we build pip package, we need to refer to libopenvino.dylib from 'openvino' package
-    list(APPEND rpaths "@loader_path/../../openvino/libs")
-  endif()
+    # to find libgenerate_pipeline_lib.dylib in the same folder
+    set(rpaths "@loader_path")
+    if(DEFINED SKBUILD)
+        # in case we build pip package, we need to refer to libopenvino.dylib from 'openvino' package
+        list(APPEND rpaths "@loader_path/../../openvino/libs")
+    endif()
 endif()
 
 if(rpaths)
-  set_target_properties(${TARGET_NAME} PROPERTIES INSTALL_RPATH "${rpaths}")
+    set_target_properties(${TARGET_NAME} PROPERTIES INSTALL_RPATH "${rpaths}")
 endif()
