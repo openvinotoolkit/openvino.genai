@@ -7,8 +7,6 @@
 #include "model_runner.hpp"
 #include "scheduler.hpp"
 #include "timer.hpp"
-#include "model_config.hpp"
-#include "model_config.hpp"
 #include "tokenizer.hpp"
 
 #include "debug_utils.hpp"
@@ -41,8 +39,7 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
 
 } // namespace
 
-void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model,
-                                           const ModelConfig& model_config, const DeviceConfig& device_config);
+void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
 
 class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<Tokenizer> m_tokenizer;
@@ -84,17 +81,16 @@ public:
 
         // The model can be compiled for GPU as well
         std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
-        ModelConfig model_config(model);
 
         const std::string device = "CPU";
-        DeviceConfig device_config(core, scheduler_config, model_config, device);
+        DeviceConfig device_config(core, scheduler_config, device);
 
-        apply_paged_attention_transformations(model, model_config, device_config);
+        apply_paged_attention_transformations(model, device_config);
         ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), ov::enable_profiling(true)).create_infer_request();
 
         // setup KV caches
-        m_cache_manager = std::make_shared<CacheManager>(model_config, device_config);
-        for (size_t decoder_layer_id = 0; decoder_layer_id < model_config.get_num_layers(); ++decoder_layer_id) {
+        m_cache_manager = std::make_shared<CacheManager>(device_config);
+        for (size_t decoder_layer_id = 0; decoder_layer_id < device_config.get_num_layers(); ++decoder_layer_id) {
             infer_request.set_input_tensor(2 + decoder_layer_id * 2, m_cache_manager->get_key_cache(decoder_layer_id));
             infer_request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager->get_value_cache(decoder_layer_id));
         }

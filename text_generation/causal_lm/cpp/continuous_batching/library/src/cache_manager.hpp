@@ -7,34 +7,27 @@
 
 #include "openvino/runtime/tensor.hpp"
 
-#include "model_config.hpp"
 #include "device_config.hpp"
 
 class CacheManager {
-    ModelConfig m_model_config;
     DeviceConfig m_device_config;
     std::vector<ov::Tensor> m_key_cache;
     std::vector<ov::Tensor> m_value_cache;
 
 public:
-    CacheManager(const ModelConfig& model_config, const DeviceConfig& device_config) :
-        m_model_config(model_config),
+    explicit CacheManager(const DeviceConfig& device_config) :
         m_device_config(device_config) {
-        m_key_cache.reserve(m_model_config.get_num_layers());
-        m_value_cache.reserve(m_model_config.get_num_layers());
+        m_key_cache.reserve(m_device_config.get_num_layers());
+        m_value_cache.reserve(m_device_config.get_num_layers());
 
         // Allocate KV caches
-        for (size_t decoder_layer_id = 0; decoder_layer_id < model_config.get_num_layers(); ++decoder_layer_id) {
+        for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
             ov::Tensor key_cache(device_config.get_cache_precision(), device_config.get_key_cache_shape());
             ov::Tensor value_cache(device_config.get_cache_precision(), device_config.get_value_cache_shape());
 
             m_key_cache.emplace_back(key_cache);
             m_value_cache.emplace_back(value_cache);
         }
-    }
-
-    size_t get_num_layers() const {
-        return m_key_cache.size();
     }
 
     ov::Tensor get_key_cache(size_t decoder_layer_id) const {
@@ -71,7 +64,7 @@ public:
                 key_dst_end_roi[0] = (key_dst_start_roi[0] = dst_block_id) + 1;
                 value_dst_end_roi[0] = (value_dst_start_roi[0] = dst_block_id) + 1;
 
-                for (size_t decoder_layer_id = 0; decoder_layer_id < m_model_config.get_num_layers(); ++decoder_layer_id) {
+                for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
                     ov::Tensor key_src_cache_roi(m_key_cache[decoder_layer_id], key_src_start_roi, key_src_end_roi);
                     ov::Tensor key_dst_cache_roi(m_key_cache[decoder_layer_id], key_dst_start_roi, key_dst_end_roi);
 
