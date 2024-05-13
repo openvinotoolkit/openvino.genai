@@ -164,14 +164,14 @@ def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = Non
     (hf_results, model_path) = run_hugging_face(model_id=model_id, prompts=prompts,
                                                 generation_configs=generation_configs, tmp_path=tmp_path,
                                                 use_optimum=True)
-    my_results: List[GenerationResult] = run_continuous_batching(model_path, scheduler_config, prompts,
+    ov_results: List[GenerationResult] = run_continuous_batching(model_path, scheduler_config, prompts,
                                                                  generation_configs)
 
     assert len(prompts) == len(hf_results)
-    assert len(prompts) == len(my_results)
+    assert len(prompts) == len(ov_results)
 
-    for prompt, hf_result, ov_result, generation_config in zip(prompts, hf_results, my_results, generation_configs):
-        print(f"Prompt = {prompt}\nHF result = {hf_result}\nmy result = {ov_result}")
+    for prompt, hf_result, ov_result, generation_config in zip(prompts, hf_results, ov_results, generation_configs):
+        print(f"Prompt = {prompt}\nHF result = {hf_result}\nOV result = {ov_result}")
         compare_results(hf_result, ov_result, generation_config)
 
 # tested models:
