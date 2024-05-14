@@ -16,7 +16,7 @@ struct SchedulerConfig {
     std::size_t num_kv_blocks = 16;
 
     // block size for KV cache
-    std::size_t block_size = 16;
+    std::size_t block_size = 32;
 
     // whether to split prompt / generate to different scheduling phases
     bool dynamic_split_fuse = true;
