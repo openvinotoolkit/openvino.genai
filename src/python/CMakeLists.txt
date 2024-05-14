@@ -29,7 +29,7 @@ elseif(APPLE)
     set(rpaths "@loader_path")
     if(DEFINED SKBUILD)
         # in case we build pip package, we need to refer to libopenvino.dylib from 'openvino' package
-        list(APPEND rpaths "@loader_path/../../openvino/libs")
+        list(APPEND rpaths "@loader_path/../openvino/libs")
     endif()
 endif()
 
@@ -41,5 +41,5 @@ endif()
 add_custom_command(TARGET py_generate_pipeline POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy
         "$<TARGET_FILE:py_generate_pipeline>"
-        "${CMAKE_CURRENT_SOURCE_DIR}/openvino/genai/$<TARGET_FILE_NAME:py_generate_pipeline>"
-    COMMENT "Copy py_generate_pipeline to src/python/openvino/genai")
+        "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/$<TARGET_FILE_NAME:py_generate_pipeline>"
+    COMMENT "Copy py_generate_pipeline to src/python/openvino_genai/")

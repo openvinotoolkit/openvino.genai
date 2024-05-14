@@ -64,5 +64,5 @@ install(TARGETS ${TARGET_NAME} LIBRARY DESTINATION . COMPONENT genai RUNTIME DES
 add_custom_command(TARGET generate_pipeline_lib POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy
         "$<TARGET_FILE:generate_pipeline_lib>"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../python/openvino/genai/$<TARGET_FILE_NAME:generate_pipeline_lib>"
-    COMMENT "Copy generate_pipeline_lib to src/python/openvino/genai")
+        "${CMAKE_CURRENT_SOURCE_DIR}/../python/openvino_genai/$<TARGET_FILE_NAME:generate_pipeline_lib>"
+    COMMENT "Copy generate_pipeline_lib to src/python/openvino_genai")

@@ -25,13 +25,13 @@ cmake.build-type = "Release"
 cmake.targets = ["py_generate_pipeline", "generate_pipeline_lib"]
 install.components = ["genai", "genai_python"]
 sdist.cmake = true
-wheel.packages = ["src/python/openvino"]
-wheel.install-dir = "openvino/genai"
+wheel.packages = ["src/python/openvino_genai"]
+wheel.install-dir = "openvino_genai"
 wheel.build-tag = "000"
 wheel.license-files = ["LICENSE", "SECURITY.md", "third-party-programs.txt"]
 
 [[tool.scikit-build.generate]]
-path = "openvino/genai/__version__.py"
+path = "openvino_genai/__version__.py"
 template = '''
 __version__ = "${version}"
 '''
