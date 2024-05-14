@@ -9,5 +9,6 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Release" "Debug" "RelWithD
 
 project(openvino_genai)
 
+add_subdirectory(./thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
 add_subdirectory(src)
 add_subdirectory(text_generation/causal_lm/cpp)

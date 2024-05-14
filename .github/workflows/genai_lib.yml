@@ -1,0 +1,42 @@
+name: genai_lib
+on: pull_request
+jobs:
+  genai_lib_ubuntu:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - run: mkdir ./ov/
+      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14758-22bd6ff0494/l_openvino_toolkit_centos7_2024.1.0.dev20240315_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz  # Install CentOS7 instead of Ubuntu to match PyPI distribution ABI
+      - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+      - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
+      - run: python -m pip install openvino  # Can't load CenOS libraries from the archive
+      - run: PYTHONPATH=./src/python/ python -c "from openvino_genai.py_generate_pipeline import LLMPipeline"
+      - run: source ./ov/setupvars.sh && python -m pip install --pre --upgrade . --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+      - run: python -c "from openvino_genai.py_generate_pipeline import LLMPipeline"
+
+  genai_lib_windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - run: curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14645-e6dc0865128/w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64.zip
+      - run: unzip ov.zip
+      - run: call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+      - run: call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64\setupvars.bat && cmake --build ./build/ --config Release -j
+      - run: python -m pip install "numpy<1.27"
+      - run: set "PYTHONPATH=./src/python;" && call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64\setupvars.bat && python -c "from openvino_genai.py_generate_pipeline import LLMPipeline"  # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
+      - run: call w_openvino_toolkit_windows_2024.1.0.dev20240304_x86_64\setupvars.bat && python -m pip install .
+      - run: python -c "from openvino_genai.py_generate_pipeline import LLMPipeline"
