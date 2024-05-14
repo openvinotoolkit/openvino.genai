@@ -152,8 +152,8 @@ def compare_results(hf_result, ov_result, generation_config):
             # Note, that for fp32 / fp16 models scores are different less than 0.001
             assert abs(hf_score - ov_score) < 0.02
 
-    assert len(hf_result.m_generation_ids) == len(ov_result.get_generation_ids())
-    for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.get_generation_ids()):
+    assert len(hf_result.m_generation_ids) == len(ov_result.m_generation_ids)
+    for hf_text, ov_text in zip(hf_result.m_generation_ids, ov_result.m_generation_ids):
         assert hf_text == ov_text
 
 
@@ -171,7 +171,7 @@ def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = Non
     assert len(prompts) == len(ov_results)
 
     for prompt, hf_result, ov_result, generation_config in zip(prompts, hf_results, ov_results, generation_configs):
-        #print(f"Prompt = {prompt}\nHF result = {hf_result}\nOV result = {ov_result}")
+        print(f"Prompt = {prompt}\nHF result = {hf_result}\nOV result = {ov_result}")
         compare_results(hf_result, ov_result, generation_config)
 
 # tested models:
