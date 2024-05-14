@@ -1,7 +1,10 @@
 # Copyright (C) 2018-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+import os
+import pytest
 
-from common import run_test_pipeline
+from common import run_test_pipeline, get_models_list
+
 
 # tested models:
 # - facebook/opt-125m
