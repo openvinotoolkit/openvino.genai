@@ -1215,7 +1215,7 @@ def convert_falcon(args):
 def convert_phi(args):
     trust_remote_code = False
     try:
-        config = AutoConfig.from_pretrained(args.model_id)
+        config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=False)
     except Exception:
         config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
         trust_remote_code = True
@@ -1353,6 +1353,7 @@ converters = {
     "lcm": convert_lcm,
     "ldm": convert_ldm_super_res,
     "mpt": convert_mpt,
+    "phi-3": convert_causal_lm,
     "phi-": convert_phi,
     "replit": convert_mpt,
     "chatglm2": convert_causal_lm,
