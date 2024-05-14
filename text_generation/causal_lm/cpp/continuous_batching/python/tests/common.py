@@ -98,8 +98,8 @@ def run_hugging_face(
     use_optimum: bool,
     tmp_path: Path
 ) -> Tuple[List[GenerationResult], str]:
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = OVModelForCausalLM.from_pretrained(model_id, export=True) if use_optimum else \
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True) if use_optimum else \
             AutoModelForCausalLM.from_pretrained(model_id)
     generation_results: List[GenerationResult] = []
     model_path : Path = tmp_path / model_id
@@ -117,7 +117,7 @@ def run_hugging_face(
         inputs = hf_tokenizer(prompt, return_tensors="pt")
         prompt_len = len(inputs['input_ids'][0])
         generate_outputs = model.generate(**inputs, generation_config=convert_to_hf(model.generation_config, generation_config), return_dict_in_generate=True)
-        all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
+        all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences])
 
         generation_result = GenerationResult()
         generation_result.m_generation_ids = all_text_batch
