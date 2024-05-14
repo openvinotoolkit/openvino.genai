@@ -4,8 +4,6 @@
 
 #include "pybind11/pybind11.h"
 #include <pybind11/stl.h>
-#include <iostream>
-#include <fcntl.h>
 #include "continuous_batching_pipeline.hpp"
 
 namespace py = pybind11;
