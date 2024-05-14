@@ -1,3 +1,6 @@
+# Copyright (C) 2018-2024 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 import pytest
 
@@ -173,27 +176,3 @@ def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = Non
     for prompt, hf_result, ov_result, generation_config in zip(prompts, hf_results, ov_results, generation_configs):
         print(f"Prompt = {prompt}\nHF result = {hf_result}\nOV result = {ov_result}")
         compare_results(hf_result, ov_result, generation_config)
-
-# tested models:
-# - facebook/opt-125m
-# - meta-llama/Llama-2-7b-chat-hf
-# - mistralai/Mistral-7B-Instruct-v0.2
-
-scheduler_params_list = [{"num_kv_blocks": 300, "block_size": 16, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256},
-                         {"num_kv_blocks": 40, "block_size": 4, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, # test preemption for dynamic_split_fuse
-                         {"num_kv_blocks": 40, "block_size": 4, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}] # test preemption for vllm
-@pytest.mark.parametrize("scheduler_params", scheduler_params_list)
-@pytest.mark.precommit
-def test_preemption(tmp_path, scheduler_params):
-    run_test_pipeline(tmp_path, "facebook/opt-125m", scheduler_params)
-
-
-@pytest.mark.precommit
-@pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
-def test_hf_models_precommit(tmp_path, model_id):
-    run_test_pipeline(tmp_path, model_id)
-
-@pytest.mark.nightly
-@pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "nightly")))
-def test_hf_models_nightly(tmp_path, model_id):
-    run_test_pipeline(tmp_path, model_id)

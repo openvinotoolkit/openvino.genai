@@ -1,6 +1,3 @@
-facebook/opt-125m
-bigcode/starcoder2-7b
-hf-internal-testing/tiny-random-LlamaForCausalLM
-hf-internal-testing/tiny-random-MistralForCausalLM
-hf-internal-testing/tiny-random-OPTModel
-hf-internal-testing/tiny-random-OPTForQuestionAnswering
+hf-tiny-model-private/tiny-random-CodeGenForCausalLM
+hf-tiny-model-private/tiny-random-GPT2LMHeadModel
+hf-tiny-model-private/tiny-random-OPTForCausalLM
