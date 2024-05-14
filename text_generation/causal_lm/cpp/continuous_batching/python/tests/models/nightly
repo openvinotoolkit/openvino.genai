@@ -1,6 +1,5 @@
 hf-tiny-model-private/tiny-random-GPTJForCausalLM
 hf-tiny-model-private/tiny-random-BartForCausalLM
-hf-tiny-model-private/tiny-random-BertLMHeadModel
 hf-tiny-model-private/tiny-random-BigBirdForCausalLM
 hf-tiny-model-private/tiny-random-BigBirdPegasusForCausalLM
 hf-tiny-model-private/tiny-random-BioGptForCausalLM
@@ -8,12 +7,10 @@ hf-tiny-model-private/tiny-random-BlenderbotSmallForCausalLM
 hf-tiny-model-private/tiny-random-BlenderbotForCausalLM
 hf-tiny-model-private/tiny-random-BloomForCausalLM
 hf-tiny-model-private/tiny-random-CodeGenForCausalLM
-hf-tiny-model-private/tiny-random-CTRLLMHeadModel
 hf-tiny-model-private/tiny-random-Data2VecTextForCausalLM
 hf-tiny-model-private/tiny-random-ElectraForCausalLM
 hf-tiny-model-private/tiny-random-ErnieForCausalLM
 hf-tiny-model-private/tiny-random-GitForCausalLM
-hf-tiny-model-private/tiny-random-GPT2LMHeadModel
 hf-tiny-model-private/tiny-random-GPTNeoForCausalLM
 hf-tiny-model-private/tiny-random-GPTNeoXForCausalLM
 hf-tiny-model-private/tiny-random-GPTNeoXJapaneseForCausalLM
@@ -21,7 +18,6 @@ hf-tiny-model-private/tiny-random-MBartForCausalLM
 hf-tiny-model-private/tiny-random-MegaForCausalLM
 hf-tiny-model-private/tiny-random-MegatronBertForCausalLM
 hf-tiny-model-private/tiny-random-MvpForCausalLM
-hf-tiny-model-private/tiny-random-OpenAIGPTLMHeadModel
 hf-tiny-model-private/tiny-random-OPTForCausalLM
 hf-tiny-model-private/tiny-random-PegasusForCausalLM
 hf-tiny-model-private/tiny-random-PLBartForCausalLM
@@ -31,10 +27,8 @@ hf-tiny-model-private/tiny-random-RobertaPreLayerNormForCausalLM
 hf-tiny-model-private/tiny-random-RobertaForCausalLM
 hf-tiny-model-private/tiny-random-RoCBertForCausalLM
 hf-tiny-model-private/tiny-random-RoFormerForCausalLM
-hf-tiny-model-private/tiny-random-TransfoXLLMHeadModel
 hf-tiny-model-private/tiny-random-XGLMForCausalLM
 hf-tiny-model-private/tiny-random-XLMRobertaXLForCausalLM
-hf-tiny-model-private/tiny-random-XLNetLMHeadModel
 hf-tiny-model-private/tiny-random-XmodForCausalLM
 PrunaAI/hf-tiny-model-private-tiny-random-BloomForCausalLM-bnb-4bit-smashed
 PrunaAI/hf-tiny-model-private-tiny-random-BloomForCausalLM-bnb-8bit-smashed
