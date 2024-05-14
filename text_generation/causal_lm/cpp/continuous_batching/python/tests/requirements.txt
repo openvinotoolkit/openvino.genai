@@ -8,3 +8,7 @@ pytest
 pytest-html
 # set 'export HF_HUB_ENABLE_HF_TRANSFER=1' to benefits from hf_transfer
 hf_transfer
+
+# requirements for specific models
+# - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
+rjieba

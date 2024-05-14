@@ -17,6 +17,7 @@ def get_greedy() -> GenerationConfig:
     generation_config.num_return_sequences = 1
     return generation_config
 
+
 def get_beam_search() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_groups = 3
@@ -24,6 +25,7 @@ def get_beam_search() -> GenerationConfig:
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = generation_config.num_groups * generation_config.group_size
     return generation_config
+
 
 def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
     prompts = [
@@ -40,6 +42,7 @@ def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
     ]
     return (prompts, generation_configs)
 
+
 def get_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
     if scheduler_params is None:
@@ -53,6 +56,7 @@ def get_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
             setattr(scheduler_config, param, value)
 
     return scheduler_config
+
 
 def convert_to_hf(
     default_generation_config : HFGenerationConfig,
@@ -91,6 +95,7 @@ def convert_to_hf(
     hf_generation_config = HFGenerationConfig(**kwargs)
     return hf_generation_config
 
+
 def run_hugging_face(
     model_id : str,
     prompts: List[str],
@@ -117,7 +122,7 @@ def run_hugging_face(
         inputs = hf_tokenizer(prompt, return_tensors="pt")
         prompt_len = len(inputs['input_ids'][0])
         generate_outputs = model.generate(**inputs, generation_config=convert_to_hf(model.generation_config, generation_config), return_dict_in_generate=True)
-        all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences])
+        all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
 
         generation_result = GenerationResult()
         generation_result.m_generation_ids = all_text_batch
@@ -126,7 +131,11 @@ def run_hugging_face(
             generation_result.m_scores = [score for score in generate_outputs.sequences_scores]
         generation_results.append(generation_result)
 
+    del hf_tokenizer
+    del model
+
     return (generation_results, model_path)
+
 
 def run_continuous_batching(
     model_path : Path,
@@ -135,7 +144,10 @@ def run_continuous_batching(
     generation_configs : List[GenerationConfig]
 ) -> List[GenerationResult]:
     pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config)
-    return pipe.generate(prompts, generation_configs)
+    output = pipe.generate(prompts, generation_configs)
+    del pipe
+    return output
+
 
 def get_models_list(file_name: str):
     models = []
@@ -147,6 +159,7 @@ def get_models_list(file_name: str):
                 continue
             models.append(model_name)
     return models
+
 
 def compare_results(hf_result, ov_result, generation_config):
     if generation_config.is_beam_search:
