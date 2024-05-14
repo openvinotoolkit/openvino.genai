@@ -25,6 +25,7 @@ OV_MODEL_CLASSES_MAPPING = {
     'decoder': OVModelForCausalLM,
     't5': OVModelForSeq2SeqLM,
     'blenderbot': OVModelForSeq2SeqLM,
+    'falcon': OVModelForCausalLM,
     'mpt': OVMPTModel,
     'stable-diffusion-xl': OVStableDiffusionXLPipeline,
     'sdxl': OVStableDiffusionXLPipeline,
@@ -76,7 +77,7 @@ USE_CASES = {
         'pythia-',
         'stablelm-',
         'stable-zephyr-',
-        'rocket-'
+        'rocket-',
         'blenderbot',
         'vicuna',
         'dolly',
@@ -94,9 +95,14 @@ USE_CASES = {
         'mixtral',
         'yi-',
         'phi-',
+        'phi2-',
         'minicpm',
         'gemma',
         "deci",
+        "internlm",
+        "olmo",
+        "phi3",
+        "starcoder"
     ],
     'ldm_super_resolution': ['ldm-super-resolution'],
 }

@@ -45,8 +45,8 @@ class JaisOpenVINOConfig(TextDecoderOnnxConfig):
     NORMALIZED_CONFIG_CLASS = NormalizedTextConfig.with_args(num_layers='n_layer', num_attention_heads='n_head', hidden_size='n_embd')
 
 
-TasksManager._SUPPORTED_MODEL_TYPE['stablelm_epoch'] = TasksManager._SUPPORTED_MODEL_TYPE['llama']
-TasksManager._SUPPORTED_MODEL_TYPE['stablelm-epoch'] = TasksManager._SUPPORTED_MODEL_TYPE['llama']
-TasksManager._SUPPORTED_MODEL_TYPE['stablelm2'] = TasksManager._SUPPORTED_MODEL_TYPE['llama']
-TasksManager._SUPPORTED_MODEL_TYPE["aquila"] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
+TasksManager._SUPPORTED_MODEL_TYPE['stablelm_epoch'] = TasksManager._SUPPORTED_MODEL_TYPE['stablelm']
+TasksManager._SUPPORTED_MODEL_TYPE['stablelm-epoch'] = TasksManager._SUPPORTED_MODEL_TYPE['stablelm']
+TasksManager._SUPPORTED_MODEL_TYPE['stablelm2'] = TasksManager._SUPPORTED_MODEL_TYPE['stablelm']
+TasksManager._SUPPORTED_MODEL_TYPE["aquila"] = TasksManager._SUPPORTED_MODEL_TYPE["stablelm"]
 TasksManager._SUPPORTED_MODEL_TYPE["codegen2"] = TasksManager._SUPPORTED_MODEL_TYPE["codegen"]

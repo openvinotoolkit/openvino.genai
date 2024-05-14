@@ -1,13 +1,13 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 numpy
-openvino>=2024.0.0
+openvino>=2024.1.0
 auto-gptq>=0.5.1 # for gptq
 pillow
 torch
 transformers>=4.33.0
 diffusers>=0.22.0
 #optimum is in dependency list of optimum-intel 
-git+https://github.com/huggingface/optimum-intel.git@c290c55670c309a9671fe7a1a86f6bc56deec54f#egg=optimum-intel
+git+https://github.com/huggingface/optimum-intel.git@e1b6a59c55157d0feb4d53945cbbe191e5c0f243#egg=optimum-intel
 git+https://github.com/openvinotoolkit/nncf.git#egg=nncf
 packaging
 psutil

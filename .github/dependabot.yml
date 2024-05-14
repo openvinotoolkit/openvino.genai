@@ -8,3 +8,7 @@ updates:
     directory: "image_generation/lcm_dreamshaper_v7/cpp/scripts/"
     schedule:
       interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "text_generation/causal_lm/cpp/"
+    schedule:
+      interval: "weekly"
