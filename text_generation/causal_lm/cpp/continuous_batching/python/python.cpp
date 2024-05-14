@@ -47,7 +47,16 @@ PYBIND11_MODULE(py_continuous_batching, m) {
                 PyObject* py_s = PyUnicode_DecodeUTF8(str.data(), str.length(), "replace");
                 return py::reinterpret_steal<py::str>(py_s);
             }
-        );
+        )
+        .def("get_generation_ids", 
+        [](GenerationResult &r) -> py::list {
+            py::list res;
+            for (auto s: r.m_generation_ids) {
+                PyObject* py_s = PyUnicode_DecodeUTF8(s.data(), s.length(), "replace");
+                res.append(py_s);
+            }
+            return res;
+        });
 
     py::enum_<StopCriteria>(m, "StopCriteria")
         .value("EARLY", StopCriteria::EARLY)
