@@ -30,7 +30,7 @@ function(ov_genai_build_jinja2cpp)
         set(JINJA2CPP_PIC ON CACHE BOOL "")
 
         add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
-        # openvino::runtime exports _GLIBCXX_USE_CXX11_ABI=0 on CenOS7.
+        # openvino::runtime exports _GLIBCXX_USE_CXX11_ABI=0 on CentOS7.
         # It needs to be propagated to every library GenAI links with.
         # It's enough to propagate to fmt, because fmt propagates to
         # jinja2cpp.
