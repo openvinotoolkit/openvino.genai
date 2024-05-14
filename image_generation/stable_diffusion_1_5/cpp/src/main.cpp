@@ -17,8 +17,6 @@
 #include "scheduler_lms_discrete.hpp"
 
 const size_t TOKENIZER_MODEL_MAX_LENGTH = 77;   // 'model_max_length' parameter from 'tokenizer_config.json'
-const int64_t UNET_IN_CHANNELS = 4;             // 'in_channels' parameter from 'unet/config.json'
-const int64_t VAE_DECODER_LATENT_CHANNELS = 4;  // 'latent_channels' parameter from 'vae_decoder/config.json'
 const size_t VAE_SCALE_FACTOR = 8;
 
 class Timer {
@@ -35,8 +33,8 @@ public:
     }
 };
 
-ov::Tensor randn_tensor(uint32_t height, uint32_t width, bool use_np_latents, uint32_t seed = 42) {
-    ov::Tensor noise(ov::element::f32, {1, UNET_IN_CHANNELS, height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
+ov::Tensor randn_tensor(ov::Shape shape, bool use_np_latents, uint32_t seed = 42) {
+    ov::Tensor noise(ov::element::f32, shape);
     if (use_np_latents) {
         // read np generated latents with defaut seed 42
         const char* latent_file_name = "../np_latents_512x512.txt";
@@ -111,7 +109,7 @@ void reshape_unet_encoder(std::shared_ptr<ov::Model> model,
         if (input_name == "timestep") {
             name_to_shape[input_name][0] = 1;
         } else if (input_name == "sample") {
-            name_to_shape[input_name] = {batch_size, UNET_IN_CHANNELS, height, width};
+            name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1], height, width};
         } else if (input_name == "time_ids") {
             name_to_shape[input_name][0] = batch_size;
         } else {
@@ -127,7 +125,8 @@ void reshape_vae_decoder(std::shared_ptr<ov::Model> model, int64_t height, int64
     height = height / VAE_SCALE_FACTOR;
     width = width / VAE_SCALE_FACTOR;
 
-    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {1, VAE_DECODER_LATENT_CHANNELS, height, width}}};
+    ov::PartialShape input_shape = model->input(0).get_partial_shape();
+    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {1, input_shape[1], height, width}}};
     model->reshape(idx_to_shape);
 }
 
@@ -216,7 +215,7 @@ ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt, s
         tokenizer_req.set_input_tensor(ov::Tensor{ov::element::string, {1}, &prompt});
         tokenizer_req.infer();
         ov::Tensor input_ids_token = tokenizer_req.get_tensor("input_ids");
-        std::copy_n(input_ids_token.data<std::int32_t>(), input_ids_token.get_size(), input_ids.data<int32_t>());
+        std::copy_n(input_ids_token.data<std::int64_t>(), input_ids_token.get_size(), input_ids.data<std::int32_t>());
 
         // text embeddings
         text_encoder_req.set_tensor("input_ids", input_ids);
@@ -286,44 +285,22 @@ ov::Tensor postprocess_image(ov::Tensor decoded_image) {
 int32_t main(int32_t argc, char* argv[]) try {
     cxxopts::Options options("stable_diffusion", "Stable Diffusion implementation in C++ using OpenVINO\n");
 
-    options.add_options()(
-        "p,posPrompt",
-        "Initial positive prompt for SD ",
-        cxxopts::value<std::string>()->default_value(
-            "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"))(
-        "n,negPrompt",
-        "Defaut is empty with space",
-        cxxopts::value<std::string>()->default_value(" "))(
-        "d,device",
-        "AUTO, CPU, or GPU.\nDoesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device "
-        "only",
-        cxxopts::value<std::string>()->default_value(
-            "CPU"))("step", "Number of diffusion steps", cxxopts::value<size_t>()->default_value("20"))(
-        "s,seed",
-        "Number of random seed to generate latent for one image output",
-        cxxopts::value<size_t>()->default_value(
-            "42"))("num", "Number of image output", cxxopts::value<size_t>()->default_value("1"))(
-        "height",
-        "Destination image height",
-        cxxopts::value<size_t>()->default_value(
-            "512"))("width", "Destination image width", cxxopts::value<size_t>()->default_value("512"))(
-        "c,useCache",
-        "Use model caching",
-        cxxopts::value<bool>()->default_value("false"))("r,readNPLatent",
-                                                        "Read numpy generated latents from file",
-                                                        cxxopts::value<bool>()->default_value("false"))(
-        "m,modelPath",
-        "Specify path of SD model IRs",
-        cxxopts::value<std::string>()->default_value("../models/dreamlike_anime_1_0_ov"))(
-        "t,type",
-        "Specify the type of SD model IRs (FP32, FP16 or INT8)",
-        cxxopts::value<std::string>()->default_value("FP16"))("dynamic",
-                                                              "Specify the model input shape to use dynamic shape",
-                                                              cxxopts::value<bool>()->default_value("false"))(
-        "l,loraPath",
-        "Specify path of LoRA file. (*.safetensors).",
-        cxxopts::value<std::string>()->default_value(
-            ""))("a,alpha", "alpha for LoRA", cxxopts::value<float>()->default_value("0.75"))("h,help", "Print usage");
+    options.add_options()
+    ("p,posPrompt", "Initial positive prompt for SD ", cxxopts::value<std::string>()->default_value("cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"))
+    ("n,negPrompt", "Defaut is empty with space", cxxopts::value<std::string>()->default_value(" "))
+    ("d,device", "AUTO, CPU, or GPU.\nDoesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only", cxxopts::value<std::string>()->default_value("CPU"))
+    ("step", "Number of diffusion steps", cxxopts::value<size_t>()->default_value("20"))
+    ("s,seed", "Number of random seed to generate latent for one image output", cxxopts::value<size_t>()->default_value("42"))
+    ("num", "Number of image output", cxxopts::value<size_t>()->default_value("1"))
+    ("height", "Destination image height", cxxopts::value<size_t>()->default_value("512"))
+    ("width", "Destination image width", cxxopts::value<size_t>()->default_value("512"))
+    ("c,useCache", "Use model caching", cxxopts::value<bool>()->default_value("false"))
+    ("r,readNPLatent", "Read numpy generated latents from file", cxxopts::value<bool>()->default_value("false"))
+    ("m,modelPath", "Specify path of SD model IRs", cxxopts::value<std::string>()->default_value("./models/dreamlike_anime_1_0_ov"))
+    ("t,type", "Specify the type of SD model IRs (FP32, FP16 or INT8)", cxxopts::value<std::string>()->default_value("FP16"))
+    ("dynamic", "Specify the model input shape to use dynamic shape", cxxopts::value<bool>()->default_value("false"))
+    ("l,loraPath", "Specify path of LoRA file. (*.safetensors).", cxxopts::value<std::string>()->default_value(""))
+    ("a,alpha", "alpha for LoRA", cxxopts::value<float>()->default_value("0.75"))("h,help", "Print usage");
     cxxopts::ParseResult result;
 
     try {
@@ -397,10 +374,13 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     for (uint32_t n = 0; n < num_images; n++) {
         std::uint32_t seed = num_images == 1 ? user_seed : user_seed + n;
-        ov::Tensor noise = randn_tensor(height, width, read_np_latent, seed);
+
+        const size_t unet_in_channels = static_cast<size_t>(sample_shape[1].get_length());
 
         // latents are multiplied by 'init_noise_sigma'
-        ov::Shape latent_shape = noise.get_shape(), latent_model_input_shape = latent_shape;
+        ov::Shape latent_shape = ov::Shape({batch_size, unet_in_channels, height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
+        ov::Shape latent_model_input_shape = latent_shape;
+        ov::Tensor noise = randn_tensor(latent_shape, read_np_latent, seed);
         latent_model_input_shape[0] = 2;  // Unet accepts batch 2
         ov::Tensor latent(ov::element::f32, latent_shape),
             latent_model_input(ov::element::f32, latent_model_input_shape);
