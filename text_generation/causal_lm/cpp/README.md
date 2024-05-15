@@ -55,6 +55,15 @@ This approach reduces the need for multiple infer requests to the main model, en
 
 Install [OpenVINO Archives >= 2024.1](docs.openvino.ai/install). `master` and possibly the latest `releases/*` branch correspond to not yet released OpenVINO versions. https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for these branches early testing. `<INSTALL_DIR>` below refers to the extraction location.
 
+## Install `libtbb-dev` on Linux
+
+> [!NOTE]
+> `tbb` development files are installed with OpenVINO Archive on Windows and macOS.
+
+```sh
+sudo apt-get install libtbb-dev
+```
+
 ## Build `greedy_causal_lm`, `beam_search_causal_lm` and `openvino_tokenizers`
 
 ### Linux/macOS

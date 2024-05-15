@@ -972,7 +972,7 @@ def convert_mpt(args):
     remote_code = False
     pt_model = None
     try:
-        config = AutoConfig.from_pretrained(args.model_id)
+        config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=False)
     except Exception:
         config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
         remote_code = True
@@ -1215,14 +1215,13 @@ def convert_falcon(args):
 def convert_phi(args):
     trust_remote_code = False
     try:
-        config = AutoConfig.from_pretrained(args.model_id)
+        config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=False)
     except Exception:
         config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
         trust_remote_code = True
     cuda, post_init = patch_gptq(config)
     model_kwargs = {}
-    if trust_remote_code:
-        model_kwargs["trust_remote_code"] = trust_remote_code
+    model_kwargs["trust_remote_code"] = trust_remote_code
     precision = args.precision
     compression_only = (
         args.compress_weights
@@ -1238,7 +1237,7 @@ def convert_phi(args):
     if not compression_only:
         pt_model = AutoModelForCausalLM.from_pretrained(
             args.model_id,
-            config=AutoConfig.from_pretrained(args.model_id),
+            config=config,
             **model_kwargs,
         )
         pt_model.config.use_cache = True
