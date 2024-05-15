@@ -3,6 +3,10 @@
 
 #include <openvino/genai/llm_pipeline.hpp>
 
+namespace {
+    enum SPECIAL_TOKEN { PAD_TOKEN = 2 };
+}
+
 int main(int argc, char* argv[]) try {
     if (argc < 3) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT 1>' ['<PROMPT 2>' ...]");
@@ -14,10 +18,13 @@ int main(int argc, char* argv[]) try {
 
     ov::LLMPipeline pipe(model_path, device);
     ov::GenerationConfig config = pipe.get_generation_config();
-    config.max_new_tokens = 100;
+    config.max_new_tokens = 20;
     config.num_beam_groups = 3;
     config.num_beams = 15;
     config.num_return_sequences = config.num_beams * prompts.size();
+    
+    // workaround until pad_token_id is not written into IR
+    pipe.get_tokenizer().set_pad_token_id(PAD_TOKEN);
     
     auto beams = pipe.generate(prompts, config);
     for (int i = 0; i < beams.scores.size(); i++)

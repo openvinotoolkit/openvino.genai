@@ -80,7 +80,7 @@ public:
             m_bos_token_id = rt_info["bos_token_id"].as<int64_t>();
         if (rt_info.count("pad_token_id") > 0)
             m_pad_token_id = rt_info["pad_token_id"].as<int64_t>();
-    }
+        }
 
     std::pair<ov::Tensor, ov::Tensor> encode(std::string prompt) {
         size_t batch_size = 1;
@@ -94,6 +94,13 @@ public:
         auto size_ = m_tokenize_request.get_input_tensor().get_shape();
         m_tokenize_request.infer();
         pad_left(m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask"), m_pad_token_id);
+        
+        // todo: fix mask filled with '2' instead of '0' 
+        // https://github.com/openvinotoolkit/openvino_tokenizers/pull/90 should've fixed this
+        ov::Tensor attention_mask = m_tokenize_request.get_tensor("attention_mask");
+        int64_t* attention_mask_data = attention_mask.data<int64_t>();
+        std::replace(attention_mask_data, attention_mask_data + attention_mask.get_size(), 2, 0);
+        
         return {m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask")};
     }
 

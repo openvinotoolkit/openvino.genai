@@ -36,7 +36,12 @@ GenerationConfig::GenerationConfig(std::string json_path) {
     if (data.contains("repetition_penalty")) repetition_penalty = data["repetition_penalty"];
     if (data.contains("pad_token_id")) pad_token_id = data["pad_token_id"];
     if (data.contains("bos_token_id")) bos_token_id = data["bos_token_id"];
-    if (data.contains("eos_token_id")) eos_token_id = data["eos_token_id"];
+    
+    if (data.contains("eos_token_id") && data["eos_token_id"].type() == nlohmann::json::value_t::number_integer) {
+        // todo: qwen contains several eos_token_id
+        eos_token_id = data["eos_token_id"];
+    }
+
     if (data.contains("bos_token")) bos_token = data["bos_token"];
     if (data.contains("eos_token")) eos_token = data["eos_token"];
 
