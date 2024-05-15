@@ -13,7 +13,7 @@ struct SchedulerConfig {
 
     // TODO: specify size in GBs instead of number of KV blocks
     // total number of KV blocks available to scheduler logic
-    std::size_t num_kv_blocks = 16;
+    std::size_t num_kv_blocks = 500;
 
     // block size for KV cache
     std::size_t block_size = 32;

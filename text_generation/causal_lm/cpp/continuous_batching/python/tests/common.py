@@ -48,8 +48,6 @@ def get_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
     if scheduler_params is None:
         scheduler_config.dynamic_split_fuse = True
-        scheduler_config.num_kv_blocks = 300
-        scheduler_config.block_size = 32
         # vLLM specific
         scheduler_config.max_num_batched_tokens = 256
         scheduler_config.max_num_seqs = 256
