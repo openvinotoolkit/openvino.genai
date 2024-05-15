@@ -12,3 +12,17 @@ hf_transfer
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
 rjieba
+# - baichuan-inc/Baichuan2-7B-Chat
+bitsandbytes
+# - nomic-ai/gpt4all-falcon
+# - Qwen/Qwen-7B
+# - Qwen/Qwen-7B-Chat
+# - mosaicml/mpt-7b
+einops
+# - Qwen/Qwen-7B
+# - Qwen/Qwen-7B-Chat
+transformers_stream_generator
+# - openbmb/MiniCPM-V-2
+torchvision
+# - openbmb/MiniCPM-V-2
+timm
