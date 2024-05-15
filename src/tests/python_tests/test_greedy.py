@@ -10,13 +10,13 @@ def test_tiny_llama():
     max_new_tokens = 32
     prompt = 'table is made of'
 
-    encoded_prompt = tokenizer.encode(prompt, return_tensors='pt', add_special_tokens=False)
+    encoded_prompt = tokenizer.encode(prompt, return_tensors='pt', add_special_tokens=True)
     hf_encoded_output = model.generate(encoded_prompt, max_new_tokens=max_new_tokens, do_sample=False)
     hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:])
     print(f'hf_output: {hf_output}')
 
     import sys
-    sys.path.append('build-Debug/src/python-bindings')
+    sys.path.append('src/python/openvino_genai/')
     import py_generate_pipeline as genai
     
     pipe = genai.LLMPipeline('text_generation/causal_lm/TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/')

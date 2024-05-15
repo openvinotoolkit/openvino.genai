@@ -14,12 +14,11 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
 #include "generation_config_helper.hpp"
+#include "group_beam_searcher.hpp"
 #include "text_callback_streamer.hpp"
 
 
 namespace ov {
-
-ov::EncodedResults beam_search(ov::InferRequest& model_runner, ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig sampling_params);
 
 ov::EncodedResults greedy_decoding(
     ov::InferRequest& model_runner, 
@@ -150,11 +149,11 @@ std::string ov::LLMPipeline::LLMPipelineImpl::generate(
     auto size = input_ids.get_shape();
     int64_t* inputs_data = input_ids.data<int64_t>();
     std::vector<int64_t> tmp_ids(inputs_data, inputs_data + input_ids.get_size()); // todo: works only for batch 1
-    tmp_ids.erase(tmp_ids.begin());
+    // tmp_ids.erase(tmp_ids.begin());
 
     auto attention_mask_data = attention_mask.data<int64_t>();
     std::vector<float> tmp_attn_mask(attention_mask_data, attention_mask_data + attention_mask.get_size());
-    tmp_attn_mask.erase(tmp_attn_mask.begin());
+    // tmp_attn_mask.erase(tmp_attn_mask.begin());
 
     std::vector<std::string> prefixes_to_exclude = {"<s>", "</s>"};  // todo: for TinyLlama, need to get them form generation_config
     auto prefix_match = [&text](std::string prefix) { return text.substr(0, prefix.length()) == prefix; };
@@ -176,6 +175,10 @@ std::string ov::LLMPipeline::LLMPipelineImpl::generate(
 
 ov::DecodedResults ov::LLMPipeline::generate(std::vector<std::string> texts, OptionalGenerationConfig generation_config) {
     return m_pimpl->generate(texts, generation_config);
+}
+
+ov::DecodedResults ov::LLMPipeline::generate(std::initializer_list<std::string> text, OptionalGenerationConfig generation_config) {
+    return m_pimpl->generate(text, generation_config);
 }
 
 ov::DecodedResults ov::LLMPipeline::LLMPipelineImpl::generate(std::vector<std::string> texts, OptionalGenerationConfig generation_config) {

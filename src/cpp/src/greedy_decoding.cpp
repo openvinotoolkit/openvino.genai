@@ -5,59 +5,6 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
 
-namespace {
-
-void update_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask);
-void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos = 0);
-ov::Tensor extend_attention(ov::Tensor attention_mask);
-
-void update_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask) {
-    const size_t batch_size = attention_mask.get_shape()[0];
-    const size_t atten_length = attention_mask.get_shape()[1];
-    position_ids.set_shape({batch_size, 1});
-
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        int64_t* start = attention_mask.data<int64_t>() + batch * atten_length;
-        position_ids.data<int64_t>()[batch] = std::accumulate(start, start + atten_length, 0);
-    }
-}
-
-void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos) {
-    const size_t batch_size = attention_mask.get_shape()[0];
-    const size_t seq_length = attention_mask.get_shape()[1];
-
-    const int64_t* attention_mask_data = attention_mask.data<int64_t>();
-    int64_t* position_ids_data = position_ids.data<int64_t>();
-
-    for (size_t batch = 0; batch < batch_size; batch++) {
-        size_t sum = start_pos;
-        for (size_t i = 0; i < seq_length; i++) {
-            const size_t element_offset = batch * seq_length + i;
-            position_ids_data[element_offset] = sum;
-            if (attention_mask_data[element_offset] == 1) {
-                sum += 1;
-            }
-        }
-    }
-}
-
-ov::Tensor extend_attention(ov::Tensor attention_mask) {
-    auto shape = attention_mask.get_shape();
-    auto batch_size = shape[0];
-    auto seq_len = shape[1];
-
-    ov::Tensor new_atten_mask = ov::Tensor{attention_mask.get_element_type(), {batch_size, seq_len + 1}};
-    auto old_data = attention_mask.data<int64_t>();
-    auto new_data = new_atten_mask.data<int64_t>();
-    for (size_t batch = 0; batch < batch_size; ++batch) {
-        std::memcpy(new_data + batch * (seq_len + 1), old_data + batch * seq_len, seq_len * sizeof(int64_t));
-        new_data[batch * (seq_len + 1) + seq_len] = 1;
-    }
-    return new_atten_mask;
-}
-
-}
-
 namespace ov {
 
 ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner, 
@@ -73,7 +20,7 @@ ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner,
 
     // todo: make this work even if position_ids are not specified
     auto position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
-    initialize_position_ids(position_ids, attention_mask, kv_cache_len);
+    generate_utils::initialize_position_ids(position_ids, attention_mask, kv_cache_len);
 
     ov::EncodedResults results;
     results.scores.resize(batch_size);
@@ -139,8 +86,8 @@ ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner,
         return results;
     
     for (size_t i = 0; i < max_tokens - 1; ++i) {
-        update_position_ids(position_ids, m_model_runner.get_tensor("attention_mask"));
-        m_model_runner.set_tensor("attention_mask", extend_attention(m_model_runner.get_tensor("attention_mask")));
+        generate_utils::update_position_ids(m_model_runner.get_tensor("position_ids"), m_model_runner.get_tensor("attention_mask"));
+        m_model_runner.set_tensor("attention_mask", generate_utils::extend_attention(m_model_runner.get_tensor("attention_mask")));
 
         // todo: consider replacing with start_async and run callback right after that
         m_model_runner.infer();

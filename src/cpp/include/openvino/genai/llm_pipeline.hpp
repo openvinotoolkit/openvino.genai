@@ -109,6 +109,7 @@ public:
     * @return DecodedResults a structure with resulting texts & scores
     */
     DecodedResults generate(std::vector<std::string> texts, OptionalGenerationConfig generation_config);
+    DecodedResults generate(std::initializer_list<std::string> text, OptionalGenerationConfig generation_config);
 
     /**
     * @brief Low level generate to be called with already encoded input_ids tokens.
