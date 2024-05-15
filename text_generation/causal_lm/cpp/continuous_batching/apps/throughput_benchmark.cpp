@@ -178,7 +178,7 @@ int main(int argc, char* argv[]) try {
     SchedulerConfig scheduler_config {
         .max_num_batched_tokens = max_batch_size,
         .num_kv_blocks = 36800,
-        .block_size = 16,
+        .block_size = 32,
         .dynamic_split_fuse = dynamic_split_fuse,
         .max_num_seqs = 256, // not used if dynamic_split_fuse=True
         .max_paddings = 256, // not used if dynamic_split_fuse=True
