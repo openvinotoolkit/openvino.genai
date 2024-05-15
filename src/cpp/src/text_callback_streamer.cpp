@@ -5,7 +5,7 @@ namespace ov {
 TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, std::function<void (std::string)> callback, bool print_eos_token) {
     m_tokenizer = tokenizer;
     m_print_eos_token = print_eos_token;
-    m_callback = callback;
+    on_decoded_text_callback = callback;
     m_enabled = true;
 }
 
@@ -55,18 +55,18 @@ void TextCallbackStreamer::set_tokenizer(Tokenizer tokenizer) {
 }
 
 void TextCallbackStreamer::set_callback(std::function<void (std::string)> callback) {
-    m_callback = callback;
+    on_decoded_text_callback = callback;
     m_enabled = true;
 }
 
 void TextCallbackStreamer::set_callback() {
-    m_callback = [](std::string words){ ;};
+    on_decoded_text_callback = [](std::string words){};
     m_enabled = false;
 }
 
 void TextCallbackStreamer::on_finalized_text(const std::string& subword) {
     if (m_enabled) {
-        m_callback(subword);
+        on_decoded_text_callback(subword);
     }
 }
 

@@ -21,7 +21,7 @@ public:
     void set_callback(std::function<void (std::string)> callback);
     void set_callback();
     
-    std::function<void (std::string)> m_callback = [](std::string words){ ;};
+    std::function<void (std::string)> on_decoded_text_callback = [](std::string words){};
     bool m_enabled = false;
     int64_t m_eos_token;
 private:

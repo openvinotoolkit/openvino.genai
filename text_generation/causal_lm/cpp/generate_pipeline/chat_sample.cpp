@@ -4,6 +4,7 @@
 #include <openvino/openvino.hpp>
 #include "openvino/genai/llm_pipeline.hpp"
 
+using namespace std;
 
 std::vector<string> questions = {
     "1+1=", 

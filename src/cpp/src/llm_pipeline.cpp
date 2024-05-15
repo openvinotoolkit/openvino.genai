@@ -107,6 +107,8 @@ ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(std::string& path, std::string
         nlohmann::json data = nlohmann::json::parse(f);
         m_chat_template = data.value("chat_template", "");
     }
+
+    
     
     m_device = device;
 
