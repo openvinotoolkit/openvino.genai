@@ -15,7 +15,7 @@ jobs:
       - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
-      - run: python -m pip install openvino  # Can't load CenOS libraries from the archive
+      - run: python -m pip install openvino  # Can't load CentOS libraries from the archive
       - run: PYTHONPATH=./src/python/ python -c "from openvino_genai.py_generate_pipeline import LLMPipeline"
       - run: source ./ov/setupvars.sh && python -m pip install --pre --upgrade . --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
       - run: python -c "from openvino_genai.py_generate_pipeline import LLMPipeline"
