@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <limits>
+#include <string>
 #include <functional>
 
 enum class StopCriteria {
