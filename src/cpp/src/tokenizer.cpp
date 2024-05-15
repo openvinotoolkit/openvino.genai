@@ -93,13 +93,7 @@ public:
         m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
         auto size_ = m_tokenize_request.get_input_tensor().get_shape();
         m_tokenize_request.infer();
-
-        ::pad_left(m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask"), m_pad_token_id);
-        // todo: fix mask filled with '2' instead of '0'
-        ov::Tensor attention_mask = m_tokenize_request.get_tensor("attention_mask");
-        int64_t* attention_mask_data = attention_mask.data<int64_t>();
-        std::replace(attention_mask_data, attention_mask_data + attention_mask.get_size(), 2, 0);
-        
+        pad_left(m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask"), m_pad_token_id);
         return {m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask")};
     }
 

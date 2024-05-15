@@ -143,7 +143,7 @@ std::string ov::LLMPipeline::LLMPipelineImpl::generate(
 
     auto [input_ids, attention_mask] = m_tokenizer.encode(text);
 
-    // todo: W/A If sentence begins with a special tokens (<bos>, <s>, etc.) openvino_tokenizer inserts 2 special extra tokens <bos> and "▁",
+    // todo: W/A If sentence begins with a specfial tokens (<bos>, <s>, etc.) openvino_tokenizer inserts 2 special extra tokens <bos> and "▁",
     // but HF does not do that. Moreover openvino_tokenizer always inserts <bos> but in chat scenario HF does not do that because skip_special_tokens=True.
     // Need to remove both of that tokens manually to get exact token by token alignment with HF
     auto size = input_ids.get_shape();
@@ -155,7 +155,7 @@ std::string ov::LLMPipeline::LLMPipelineImpl::generate(
     std::vector<float> tmp_attn_mask(attention_mask_data, attention_mask_data + attention_mask.get_size());
     // tmp_attn_mask.erase(tmp_attn_mask.begin());
 
-    std::vector<std::string> prefixes_to_exclude = {"<s>", "</s>"};  // todo: for TinyLlama, need to get them form generation_config
+    std::vector<std::string> prefixes_to_exclude = {config.eos_token, config.bos_token};
     auto prefix_match = [&text](std::string prefix) { return text.substr(0, prefix.length()) == prefix; };
     if (std::any_of(prefixes_to_exclude.begin(), prefixes_to_exclude.end(), prefix_match)) {
         tmp_ids.erase(tmp_ids.begin());
@@ -220,6 +220,10 @@ ov::EncodedResults ov::LLMPipeline::LLMPipelineImpl::generate(
         streamer_ptr = *streamer_obj;
     } else if (auto callback = std::get_if<std::function<void(std::string)>>(&*streamer)) {
         streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
+    }
+    auto batch_size = input_ids.get_shape().at(0);
+    if ((batch_size != 1 || !config_helper.is_greedy_decoding()) && streamer_ptr) {
+        OPENVINO_THROW("Currently streaming is possible only with batch size=1 and greedy decoding");
     }
 
     auto attention_mask_data = attention_mask.has_value() ? *attention_mask : ov::generate_utils::init_attention_mask(input_ids);
