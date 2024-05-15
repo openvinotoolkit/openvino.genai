@@ -347,7 +347,7 @@ jobs:
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
-          ./build/speculative_decoding_lm ./dolly-v2-3b/ ./dolly-v2-7b/ "Alan Turing was a" > predictions_speculative.txt
+          ./build/text_generation/causal_lm/cpp/speculative_decoding_lm ./dolly-v2-3b/ ./dolly-v2-7b/ "Alan Turing was a" > predictions_speculative.txt
           ./build/text_generation/causal_lm/cpp/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
@@ -393,7 +393,7 @@ jobs:
           Question: Can you please add 2 and 3
           A:' > ./prompt.txt
 
-          ./build/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
+          ./build/text_generation/causal_lm/cpp/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
           ./build/text_generation/causal_lm/cpp/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
