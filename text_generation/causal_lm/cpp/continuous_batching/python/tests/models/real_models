@@ -34,7 +34,7 @@ nomic-ai/gpt4all-j
 # optimum-intel: Trying to export a RefinedWebModel model, that is a custom or unsupported architecture: nomic-ai/gpt4all-falcon
 # passed: stabilityai/stablelm-3b-4e1t
 # passed: stabilityai/stablelm-2-zephyr-1_6b
-# optimum-intel: Trying to export a internlm model, that is a custom or unsupported architecture: nternlm/internlm-chat-7b
+# optimum-intel: Trying to export a internlm model, that is a custom or unsupported architecture: internlm/internlm-chat-7b
 # optimum-intel: PermissionError: [Errno 13] Permission denied: internlm/internlm2-7b
 # core42/jais-13b
 # core42/jais-13b-chat
@@ -71,7 +71,7 @@ Qwen/Qwen1.5-7B-Chat
 01-ai/Yi-6B
 # passed: Salesforce/codegen-350M-multi
 # passed: Salesforce/codegen-350M-nl
-# optimum-intel: AttributeError: 'CodeGen25Tokenizer' object has no attribute 'encoder'. Did you mean: 'encode'?: Salesforce/codegen25-7b-instruct_P
+# passed, but with export=False: OpenVINO/codegen25-7b-multi-fp16-ov
 # optimum-intel: AttributeError: 'NoneType' object has no attribute 'device': Salesforce/codegen2-1b
 # optimum-intel: TypeError: Object of type method is not JSON serializable: Salesforce/xgen-7b-8k-base
 # optimum-intel: DeciCoderAttention.forward() got an unexpected keyword argument 'cache_position': Deci/DeciCoder-1b
