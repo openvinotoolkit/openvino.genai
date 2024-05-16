@@ -47,7 +47,6 @@ lmsys/vicuna-7b-v1.3
 # young-geng/koala
 # passed: openlm-research/open_llama_3b
 # passed: openlm-research/open_llama_3b_v2
-# optimum-intel: Trying to export a minicpmv model, that is a custom or unsupported architecture: openbmb/MiniCPM-V-2
 openbmb/MiniCPM-2B-sft-bf16
 openbmb/MiniCPM-2B-dpo-bf16
 # passed: mistralai/Mistral-7B-v0.1
