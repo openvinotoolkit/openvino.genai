@@ -42,8 +42,6 @@ nomic-ai/gpt4all-j
 # passed: meta-llama/Meta-Llama-3-8B-Instruct
 # passed: meta-llama/CodeLlama-7b-hf
 lmsys/vicuna-7b-v1.3
-# optimum-intel: The generation config instance is invalid -- `.validate(): lmsys/vicuna-7b-v1.5
-# optimum-intel: The generation config instance is invalid -- `.validate(): lmsys/longchat-7b-v1.5-32k
 # young-geng/koala
 # passed: openlm-research/open_llama_3b
 # passed: openlm-research/open_llama_3b_v2
@@ -74,13 +72,16 @@ Qwen/Qwen1.5-7B-Chat
 # passed, but with export=False: OpenVINO/codegen25-7b-multi-fp16-ov
 # optimum-intel: AttributeError: 'NoneType' object has no attribute 'device': Salesforce/codegen2-1b
 # optimum-intel: TypeError: Object of type method is not JSON serializable: Salesforce/xgen-7b-8k-base
-# optimum-intel: DeciCoderAttention.forward() got an unexpected keyword argument 'cache_position': Deci/DeciCoder-1b
 rinna/bilingual-gpt-neox-4b
 # RuntimeError: Check 'unregistered_parameters.str().empty()': facebook/opt-350m
 # RuntimeError: Check 'rt_info.find("eos_token_id") != rt_info.end(): facebook/incoder-1B
 # optimum-intel: IndexError: tuple index out of range: facebook/blenderbot-3B
 google/pegasus-big_patent
 google/pegasus-large
-# optimum-intel: The generation config instance is invalid -- `.validate()` throws warnings and/or exceptions: openchat/openchat_3.5
 # CPU: head size must be multiple of 16, current: 100: pankajmathur/orca_mini_3b
 # passed: togethercomputer/RedPajama-INCITE-Chat-3B-v1
+# Looks like the models below are invalid:
+# optimum-intel: DeciCoderAttention.forward() got an unexpected keyword argument 'cache_position': Deci/DeciCoder-1b
+# optimum-intel: The generation config instance is invalid -- `.validate()` throws warnings and/or exceptions: openchat/openchat_3.5
+# optimum-intel: The generation config instance is invalid -- `.validate(): lmsys/vicuna-7b-v1.5
+# optimum-intel: The generation config instance is invalid -- `.validate(): lmsys/longchat-7b-v1.5-32k
