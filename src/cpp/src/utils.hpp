@@ -4,6 +4,7 @@
 #pragma once
 
 #include <openvino/openvino.hpp>
+#include <nlohmann/json.hpp>
 
 namespace ov {
 namespace generate_utils {
@@ -22,5 +23,41 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
 
 bool is_xml(const std::string& path);
 
+template <typename>
+struct json_type_traits {};
+
+template <>
+struct json_type_traits<int> { static constexpr auto json_value_t = nlohmann::json::value_t::number_integer; };
+
+template <>
+struct json_type_traits<int64_t> { static constexpr auto json_value_t = nlohmann::json::value_t::number_integer; };
+
+template <>
+struct json_type_traits<size_t> { static constexpr auto json_value_t = nlohmann::json::value_t::number_unsigned; };
+
+template <>
+struct json_type_traits<float> { static constexpr auto json_value_t = nlohmann::json::value_t::number_float; };
+
+template <>
+struct json_type_traits<std::string> { static constexpr auto json_value_t = nlohmann::json::value_t::string; };
+
+template <>
+struct json_type_traits<bool> { static constexpr auto json_value_t = nlohmann::json::value_t::boolean; };
+
+template <typename T>
+void read_json_param(const nlohmann::json& data, const std::string& name, T& param) {
+    if (data.contains(name) && data[name].type() == json_type_traits<T>::json_value_t) {
+        param = data[name];
+    }
+}
+
+template <typename T>
+void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T& param) {
+    if (config_map.count(name)) {
+        param = config_map.at(name).as<T>();
+    }
+}
+
 }  // namespace generate_utils
 }  // namespace ov
+

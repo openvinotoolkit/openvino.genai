@@ -18,7 +18,17 @@ jobs:
       - run: python -m pip install --pre openvino --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly  # Can't load CentOS libraries from the archive
       - run: PYTHONPATH=./src/python/ python -c "from openvino_genai.py_generate_pipeline import LLMPipeline"
       - run: source ./ov/setupvars.sh && python -m pip install --pre . --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-      - run: python -c "from openvino_genai.py_generate_pipeline import LLMPipeline"
+      - run: python -c "from openvino_genai import LLMPipeline"
+      - name: Install optimum-cli and run for each model
+        run: |
+          cd ./tests/
+          python -m pip install -r requirements.txt
+          models=$(python3 generate_models.py)
+          echo "$models" | while read -r model_name model_path; do
+              echo "Processing model: $model_name at $model_path"
+              optimum-cli export openvino --trust-remote-code --weight-format fp16 --model "$model_name" "$model_path"
+          done
+          python -m pytest test_generate_api.py
 
   windows_genai_python_lib:
     runs-on: windows-latest

@@ -39,6 +39,24 @@ class DecodedResults {
 public:
     std::vector<std::string> texts;
     std::vector<float> scores;
+
+     // @brief Convert DecodedResults to a vector of strings.
+     // @return A std::vector<std::string> containing the texts from the DecodedResults object.
+    operator std::vector<std::string>() const { 
+        return texts; 
+    }
+    
+     // @brief Overloads operator<< to enhance output the contents of DecodedResults.
+     // @return A reference to the output stream with the concatenated texts.
+    friend std::ostream& operator<<(std::ostream& os, const DecodedResults& dr) {
+       for (size_t i = 0; i < dr.texts.size(); ++i) {
+            os << dr.texts[i];
+            if (i != dr.texts.size() - 1) {
+                os << std::endl;
+            }
+        }
+        return os;
+    }
 };
 
 /**
@@ -53,7 +71,9 @@ public:
     * @param device optional device
     * @param plugin_config optional plugin_config
     */
-    LLMPipeline(std::string& path, std::string device="CPU", const ov::AnyMap& plugin_config={});
+    LLMPipeline(std::string& path, std::string device="CPU", 
+                const ov::AnyMap& plugin_config={}, 
+                const std::string& ov_tokenizer_path="");
     
     /**
     * @brief Constructs a LLMPipeline when ov::Tokenizer is initialized manually using file from the different dirs.
@@ -67,7 +87,8 @@ public:
         const std::string model_path,
         const ov::Tokenizer& tokenizer,
         const std::string device="CPU",
-        const ov::AnyMap& plugin_config = {}
+        const ov::AnyMap& plugin_config = {},
+        const std::string& ov_tokenizer_path=""
     );
     
     ~LLMPipeline();
