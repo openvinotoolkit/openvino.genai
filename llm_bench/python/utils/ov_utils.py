@@ -143,12 +143,7 @@ def create_text_gen_model(model_path, device, **kwargs):
     else:
         remote_code = False
         try:
-            remote_models = ['baichuan', 'qwen', 'chatglm']
-            remote_model = [x for x in remote_models if x in kwargs['model_name']]
-            if len(remote_model) > 0:
-                model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-            else:
-                model_config = AutoConfig.from_pretrained(model_path)
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
         except Exception:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
             remote_code = True
