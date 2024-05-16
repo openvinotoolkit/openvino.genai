@@ -95,9 +95,13 @@ void initialize_inputs(const ov::Tensor& input_ids, const ov::Tensor& attention_
 
     ov::Shape input_shape = input_ids.get_shape();
 
-    ov::Tensor position_ids = request.get_tensor("position_ids");
-    position_ids.set_shape(input_shape);
-    initialize_position_ids(position_ids, attention_mask);
+    try {
+        ov::Tensor position_ids = request.get_tensor("position_ids");
+        position_ids.set_shape(input_shape);
+        initialize_position_ids(position_ids, attention_mask);
+    } catch (...) {
+        // no position_ids input
+    }
 
     ov::Tensor beam_idx = request.get_tensor("beam_idx");
     beam_idx.set_shape({input_shape.at(0)});
@@ -209,7 +213,11 @@ int main(int argc, char* argv[]) try {
         lm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
         // Set auxiliary inputs
         set_attention_mask(lm.get_tensor("attention_mask"), next_beams);
-        set_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
+        try {
+            set_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
+        } catch (...) {
+            // no position_ids input
+        }
     }
 
     for (const std::vector<std::vector<Beam>>& prompt_group : finalize(std::move(group_beam_searcher))) {

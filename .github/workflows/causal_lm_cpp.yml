@@ -59,108 +59,28 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
           sudo apt-get install libtbb-dev
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model facebook/opt-125m facebook-opt-125m
           cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
           cmake --build ./build/ --config Release -j
       - name: Compare
         run: |
           source ./ov/setupvars.sh
 
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?" > ./pred.txt
+          timeout 1m ./build/beam_search_causal_lm ./facebook-opt-125m "Tell me something about Canada" "What is your name?" "How are you?" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
               predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('Why is the Sun yellow?', return_tensors='pt')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
-              ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
-              idx = predictions.find(ref)
-              if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref=}" from predictions')
-              predictions = predictions[:idx] + predictions[idx + len(ref):]
-          "
-          echo "Why is the Sun yellow?" passed
-
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ 69 > ./pred.txt
-          python -c "
-          import transformers
-          with open('pred.txt', 'r') as file:
-              predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('69', return_tensors='pt')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
-              ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
-              idx = predictions.find(ref)
-              if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref=}" from predictions')
-              predictions = predictions[:idx] + predictions[idx + len(ref):]
-          "
-          echo "69" passed
-
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ Hi > ./pred.txt
-          python -c "
-          import transformers
-          with open('pred.txt', 'r') as file:
-              predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('Hi', return_tensors='pt')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
-              ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
-              idx = predictions.find(ref)
-              if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref=}" from predictions')
-              predictions = predictions[:idx] + predictions[idx + len(ref):]
-          "
-          echo "Hi" passed
-
-          timeout 25s ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "return 0" > ./pred.txt
-          python -c "
-          import transformers
-          with open('pred.txt', 'r') as file:
-              predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('return 0', return_tensors='pt')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
-              ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
-              idx = predictions.find(ref)
-              if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref=}" from predictions')
-              predictions = predictions[:idx] + predictions[idx + len(ref):]
-          "
-          echo "return 0" passed
-
-          ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "你好！ 你好嗎？" > ./pred.txt
-          python -c "
-          import transformers
-          with open('pred.txt', 'r') as file:
-              predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
-          tokenized = tokenizer('你好！ 你好嗎？', return_tensors='pt')
-          for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
-              ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
-              idx = predictions.find(ref)
-              if -1 == idx:
-                  raise RuntimeError(f'Missing "{ref=}" from predictions')
-              predictions = predictions[:idx] + predictions[idx + len(ref):]
-          "
-          echo "你好！ 你好嗎？" passed
-
-          timeout 1m ./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
-          python -c "
-          import transformers
-          with open('pred.txt', 'r') as file:
-              predictions = file.read()
-          tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
+          tokenizer = transformers.AutoTokenizer.from_pretrained('facebook/opt-125m')
           prompts = [
-            'Alan Turing was a',
-            'return 0',
-            '你好！ 你好嗎？'
+            'Tell me something about Canada',
+            'What is your name?',
+            'How are you?'
           ]
           for prompt in prompts:
             tokenized = tokenizer(prompt, return_tensors='pt')
-            for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
-                ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
+            for beam in transformers.AutoModelForCausalLM.from_pretrained('facebook/opt-125m').generate(**tokenized, num_beam_groups=3, num_beams=6, num_return_sequences=6, diversity_penalty=1.0, max_new_tokens=30, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
+                ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():]) + '\n'
                 idx = predictions.find(ref)
                 if -1 == idx:
                     raise RuntimeError(f'Missing "{ref=}" from predictions')
@@ -201,7 +121,7 @@ jobs:
           echo tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0') >> ref.py
           echo tokenized = tokenizer('69', return_tensors='pt') >> ref.py
           echo for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False): >> ref.py
-          echo     ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n' >> ref.py
+          echo     ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():]) + '\n' >> ref.py
           echo     idx = predictions.find(ref) >> ref.py
           echo     if -1 == idx: >> ref.py
           echo         raise RuntimeError(f'Missing "{ref=}" from predictions') >> ref.py
@@ -441,14 +361,14 @@ jobs:
           tokenizer = transformers.AutoTokenizer.from_pretrained('microsoft/phi-1_5')
           tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
           for output in transformers.AutoModelForCausalLM.from_pretrained('microsoft/phi-1_5').generate(**tokenized, max_length=100, do_sample=False):
-              ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
+              ref = tokenizer.decode(output[tokenized['input_ids'].numel():]) + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo Phi-1_5 passed
-          
+
   cpp-greedy_causal_lm-redpajama-3b-chat:
     runs-on: ubuntu-20.04-4-cores
     steps:
@@ -486,7 +406,7 @@ jobs:
           tokenizer = transformers.AutoTokenizer.from_pretrained('ikala/redpajama-3b-chat')
           tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
           for output in transformers.AutoModelForCausalLM.from_pretrained('ikala/redpajama-3b-chat').generate(**tokenized, max_length=100, do_sample=False):
-              ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
+              ref = tokenizer.decode(output[tokenized['input_ids'].numel():]) + '\n'
               idx = predictions.find(ref)
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref}" from predictions')

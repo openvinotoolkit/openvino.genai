@@ -86,9 +86,9 @@ struct Parameters {
     std::vector<std::vector<int64_t>> prompts;
     int64_t eos_token;
     size_t n_groups = 3;
-    size_t group_size = 5;
+    size_t group_size = 2;
     float diversity_penalty = 1.0;
-    size_t max_new_tokens = 20;
+    size_t max_new_tokens = 30;
     StopCriteria stop_criteria = StopCriteria::heuristic;
     float length_penalty = 1.0;
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
@@ -107,9 +107,9 @@ struct Group {
         beam.score /= std::pow(float(beam.tokens.size()), parameters.length_penalty);
 
         // HF implementation counts eos_token for length penalty calculation
-        if (beam.tokens.back() == parameters.eos_token) {
-            beam.tokens.pop_back();
-        }
+        // if (beam.tokens.back() == parameters.eos_token) {
+        //     beam.tokens.pop_back();
+        // }
 
         min_heap.push_back(std::move(beam));
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
