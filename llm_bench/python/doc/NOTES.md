@@ -62,3 +62,14 @@ Solution: update `tokenization_baichuan.py` as following: <br />
 -        self.sp_model = spm.SentencePieceProcessor(**self.sp_model_kwargs)
 -        self.sp_model.Load(vocab_file)
 ```
+
+## CompressWeights Mode INT4 - ConnectionError: Couldn't reach 'wikitext' on the Hub (SSLError)
+Download LLM from hugginface, convert to OpenVINO IR files and run with convert.py and CompressWeights Mode to INT4, the following error may occur：
+```bash
+raise ConnectionError(f"Couldn't reach '{path}' on the Hub ({type(e)._name_})")
+ConnectionError: Couldn't reach 'wikitext' on the Hub (SSLError)
+```
+root cause: The wikitext data set was not downloaded correctly, or the Hugging Face Hub network could not be connected normally. <br />
+Solution: <br />
+Your data can be stored in various places; they can be on your local machine’s disk, in a Github repository, and in in-memory data structures like Python dictionaries and Pandas DataFrames. Wherever a dataset is stored. Datasets can help you load it from local,
+and how to load the dataset from local, please refer to https://huggingface.co/docs/datasets/loading#arrow <br />
