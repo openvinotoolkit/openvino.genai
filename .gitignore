@@ -38,4 +38,5 @@ CMakeUserPresets.json
 # Python-specific
 *.?env*
 *.pyc
+.env
 __pycache__

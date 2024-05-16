@@ -25,15 +25,38 @@ PYBIND11_MODULE(py_continuous_batching, m) {
     py::class_<GenerationResult>(m, "GenerationResult")
         .def(py::init<>())
         .def_readonly("m_request_id", &GenerationResult::m_request_id)
-        .def_readwrite("m_generation_ids", &GenerationResult::m_generation_ids)
+        .def_property("m_generation_ids",
+            [](GenerationResult &r) -> py::list {
+                py::list res;
+                for (auto s: r.m_generation_ids) {
+                
+                    PyObject* py_s = PyUnicode_DecodeUTF8(s.data(), s.length(), "replace");
+                    res.append(py_s);
+                }
+                return res;
+            },
+            [](GenerationResult &r, std::vector<std::string> &generation_ids) {
+                r.m_generation_ids = generation_ids;
+            })
         .def_readwrite("m_scores", &GenerationResult::m_scores)
         .def("__repr__",
-            [](const GenerationResult &r) {
+            [](const GenerationResult &r) -> py::str{
                 std::stringstream stream;
                 stream << "<py_continuous_batching.GenerationResult " << r << ">";
-                return stream.str();
+                std::string str = stream.str();
+                PyObject* py_s = PyUnicode_DecodeUTF8(str.data(), str.length(), "replace");
+                return py::reinterpret_steal<py::str>(py_s);
             }
-        );
+        )
+        .def("get_generation_ids", 
+        [](GenerationResult &r) -> py::list {
+            py::list res;
+            for (auto s: r.m_generation_ids) {
+                PyObject* py_s = PyUnicode_DecodeUTF8(s.data(), s.length(), "replace");
+                res.append(py_s);
+            }
+            return res;
+        });
 
     py::enum_<StopCriteria>(m, "StopCriteria")
         .value("EARLY", StopCriteria::EARLY)

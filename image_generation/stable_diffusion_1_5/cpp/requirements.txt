@@ -2,5 +2,5 @@
 torch==2.2.2+cpu
 diffusers==0.27.2
 transformers==4.39.3
-optimum-intel[openvino] @ git+https://github.com/apaniukov/optimum-intel.git@0029e9165a2dad4cfcf787aa63181d9dc0cd49d5
+optimum-intel[openvino] @ git+https://github.com/huggingface/optimum-intel.git@fb1b35bef23242d65b2fb057c4a7ac78a7cfd4c3
 huggingface_hub[cli]==0.22.2

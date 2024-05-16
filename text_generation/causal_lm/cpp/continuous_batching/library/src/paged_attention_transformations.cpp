@@ -21,10 +21,6 @@ void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, Dev
 
     const ov::ParameterVector& parameters = model->get_parameters();
 
-    for (auto param : parameters) {
-        std::cout << param->get_friendly_name() << " " << param->get_partial_shape() << std::endl;
-    }
-
     // extract num_kv_heads and head_size
     size_t kv_caches_inputs_offset = 2;
     ov::PartialShape k_shape = parameters[kv_caches_inputs_offset]->get_partial_shape();
