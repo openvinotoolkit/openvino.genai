@@ -16,7 +16,7 @@ EleutherAI/pythia-160m
 bigscience/bloomz-1b7
 bigscience/bloomz-560m
 # passed: THUDM/chatglm2-6b
-THUDM/chatglm3-6b
+# passed: THUDM/chatglm3-6b
 databricks/dolly-v2-3b
 # Exception from src/core/src/shape_util.cpp:65: tiiuae/falcon-7b
 tiiuae/falcon-rw-7b
@@ -29,7 +29,7 @@ tiiuae/falcon-rw-7b
 # RuntimeError: Check 'unregistered_parameters.str().empty()': bigcode/starcoderbase-3b
 bigcode/starcoder2-3b
 # RuntimeError: Check 'unregistered_parameters.str().empty()': bigcode/gpt_bigcode-santacoder
-nomic-ai/gpt4all-j
+# passed: nomic-ai/gpt4all-j
 # RuntimeError: Check 'unregistered_parameters.str().empty()': nomic-ai/gpt4all-mpt
 # optimum-intel: Trying to export a RefinedWebModel model, that is a custom or unsupported architecture: nomic-ai/gpt4all-falcon
 # passed: stabilityai/stablelm-3b-4e1t
@@ -41,7 +41,7 @@ nomic-ai/gpt4all-j
 # passed: meta-llama/Llama-2-7b-hf
 # passed: meta-llama/Meta-Llama-3-8B-Instruct
 # passed: meta-llama/CodeLlama-7b-hf
-lmsys/vicuna-7b-v1.3
+# passed: lmsys/vicuna-7b-v1.3
 # young-geng/koala
 # passed: openlm-research/open_llama_3b
 # passed: openlm-research/open_llama_3b_v2
@@ -54,8 +54,8 @@ openbmb/MiniCPM-2B-dpo-bf16
 # optimum-intel: Trying to export a mosaic-gpt model, that is a custom or unsupported architecture: mosaicml/mpt-1b-redpajama-200b
 # RuntimeError: Check 'unregistered_parameters.str().empty()': mosaicml/mpt-7b
 # mosaicml/mpt-30b
-allenai/OLMo-1B-hf
-allenai/OLMo-7B-hf
+# passed: allenai/OLMo-1B-hf
+# passed: allenai/OLMo-7B-hf
 # OrionStarAI/Orion-14B-Base
 # OrionStarAI/Orion-14B-Chat
 Qwen/Qwen-7B
@@ -66,7 +66,7 @@ Qwen/Qwen1.5-7B-Chat
 # Qwen/Qwen1.5-MoE-A2.7B-Chat
 # optimum-intel: Trying to export a xverse model, that is a custom or unsupported architecture: xverse/XVERSE-7B-Chat
 # xverse/XVERSE-MoE-A4.2B
-01-ai/Yi-6B
+# passed: 01-ai/Yi-6B
 # passed: Salesforce/codegen-350M-multi
 # passed: Salesforce/codegen-350M-nl
 # passed, but with export=False: OpenVINO/codegen25-7b-multi-fp16-ov
