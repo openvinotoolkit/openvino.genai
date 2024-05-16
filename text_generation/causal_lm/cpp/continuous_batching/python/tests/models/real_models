@@ -57,8 +57,8 @@ openbmb/MiniCPM-2B-dpo-bf16
 # optimum-intel: Trying to export a mosaic-gpt model, that is a custom or unsupported architecture: mosaicml/mpt-1b-redpajama-200b
 # RuntimeError: Check 'unregistered_parameters.str().empty()': mosaicml/mpt-7b
 # mosaicml/mpt-30b
-# optimum-intel: The checkpoint you are trying to load has model type `olmo` but Transformers does not recognize this architecture: allenai/OLMo-1B-hf
-# optimum-intel: The checkpoint you are trying to load has model type `olmo` but Transformers does not recognize this architecture: allenai/OLMo-7B-hf
+allenai/OLMo-1B-hf
+allenai/OLMo-7B-hf
 # OrionStarAI/Orion-14B-Base
 # OrionStarAI/Orion-14B-Chat
 Qwen/Qwen-7B
