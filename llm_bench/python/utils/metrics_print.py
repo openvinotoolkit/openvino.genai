@@ -44,7 +44,8 @@ def print_metrics(
             f"other tokens latency: {iter_data['other_tokens_avg_latency']:.2f} ms/{latency_unit}, len of tokens: {len(tms)} * {batch_size}",
         )
     else:
-        log.warning(f'[{iter_str}] No hook data output for first token latency and other tokens latency')
+        if tokenization_time:
+            log.warning(f'[{iter_str}] No hook data output for first token latency and other tokens latency')
     if len(tms_infer) > 0:
         iter_data['first_token_infer_latency'] = tms_infer[0] * 1000 if len(tms_infer) > 0 else -1
         iter_data['other_tokens_infer_avg_latency'] = sum(tms_infer[1:]) / (len(tms_infer) - 1) * 1000 if len(tms_infer) > 1 else -1
@@ -53,7 +54,8 @@ def print_metrics(
             f"other infers latency: {iter_data['other_tokens_infer_avg_latency']:.2f} ms/infer, inference count: {len(tms_infer)}",
         )
     else:
-        log.warning(f'[{iter_str}] No hook data output for first infer latency and other infers latency')
+        if tokenization_time:
+            log.warning(f'[{iter_str}] No hook data output for first infer latency and other infers latency')
     if stable_diffusion is not None:
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion)
     output_str = ''
