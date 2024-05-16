@@ -448,7 +448,68 @@ jobs:
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo Phi-1_5 passed
-          
+
+  cpp-gemma-2b-it:
+    runs-on: ubuntu-20.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/linux/l_openvino_toolkit_ubuntu20_2024.1.0.15008.f4afc983258_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          sudo apt-get install libtbb-dev
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model google/gemma-2b-it gemma-2b-it
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./text_generation/causal_lm/cpp/ -B ./build/
+          cmake --build ./build/ --config Release -j 15
+      - name: Run Generation
+        run: |
+          source ./ov/setupvars.sh
+          timeout 3m ./build/greedy_causal_lm ./gemma-2b-it/ "Alan Turing was a" > ./pred_greedy.txt
+          timeout 3m ./build/beam_search_causal_lm ./gemma-2b-it/ "Alan Turing was a?" > ./pred_beam.txt
+
+      - name: Compare
+        run: |
+          python -c "
+          import transformers
+          with open('pred_greedy.txt', 'r') as file:
+              predictions = file.read()
+          tokenizer = transformers.AutoTokenizer.from_pretrained('google/gemma-2b-it')
+          tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
+          for output in transformers.AutoModelForCausalLM.from_pretrained('google/gemma-2b-it').generate(**tokenized, max_length=100, do_sample=False):
+              ref = tokenizer.decode(output[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
+              idx = predictions.find(ref)
+              if -1 == idx:
+                  raise RuntimeError(f'Missing "{ref=}" from predictions')
+              predictions = predictions[:idx] + predictions[idx + len(ref):]
+          "
+          echo gemma-2b-it greedy decoding passed
+
+          python -c "
+          import transformers
+          with open('pred_beam.txt', 'r') as file:
+              predictions = file.read()
+          tokenizer = transformers.LlamaTokenizer.from_pretrained('google/gemma-2b-it')
+          tokenized = tokenizer('Alan Turing was a', return_tensors='pt')
+          for beam in transformers.LlamaForCausalLM.from_pretrained('google/gemma-2b-it').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
+              ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) + '\n'
+              idx = predictions.find(ref)
+              if -1 == idx:
+                  raise RuntimeError(f'Missing "{ref=}" from predictions')
+              predictions = predictions[:idx] + predictions[idx + len(ref):]
+          "
+          echo gemma-2b-it beam search passed
+
   cpp-greedy_causal_lm-redpajama-3b-chat:
     runs-on: ubuntu-20.04-4-cores
     steps:
