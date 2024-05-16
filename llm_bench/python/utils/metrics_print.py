@@ -123,7 +123,7 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
                 continue
             if iter_data['prompt_idx'] == p_idx:
                 avg_1st_token_latency += iter_data['first_token_latency'] if iter_data['first_token_latency'] != '' else 0
-                avg_2nd_tokens_latency += iter_data['other_tokens_avg_latency']  if iter_data['other_tokens_avg_latency'] != '' else 0
+                avg_2nd_tokens_latency += iter_data['other_tokens_avg_latency'] if iter_data['other_tokens_avg_latency'] != '' else 0
                 avg_input_size += iter_data['input_size'] if iter_data['input_size'] != '' else 0
                 index_num = index_num + 1
         if index_num > 0:
