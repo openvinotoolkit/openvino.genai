@@ -83,5 +83,5 @@ rinna/bilingual-gpt-neox-4b
 google/pegasus-big_patent
 google/pegasus-large
 # optimum-intel: The generation config instance is invalid -- `.validate()` throws warnings and/or exceptions: openchat/openchat_3.5
-pankajmathur/orca_mini_3b
-togethercomputer/RedPajama-INCITE-Chat-3B-v1
+# CPU: head size must be multiple of 16, current: 100: pankajmathur/orca_mini_3b
+# passed: togethercomputer/RedPajama-INCITE-Chat-3B-v1

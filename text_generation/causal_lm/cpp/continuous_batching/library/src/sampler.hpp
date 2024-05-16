@@ -372,11 +372,8 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                 }
             }
 
-            // HF implementation counts eos_token_id for length penalty calculation
-            if (candidate.m_token_id != m_parameters.eos_token_id) {
-                // append token from candidate to actual sequence
-                forked_sequence->append_token(candidate.m_token_id, candidate.m_log_prob);
-            }
+            // append token from candidate to actual sequence
+            forked_sequence->append_token(candidate.m_token_id, candidate.m_log_prob);
         }
     };
 
