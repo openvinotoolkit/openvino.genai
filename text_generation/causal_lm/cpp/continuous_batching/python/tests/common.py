@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import shutil
 import pytest
 
 from optimum.intel import OVModelForCausalLM
@@ -65,6 +66,7 @@ def convert_to_hf(
 
     # generic parameters
     kwargs['max_length'] = generation_config.max_length
+    # has higher priority than 'max_length'
     kwargs['max_new_tokens'] = generation_config.max_new_tokens
 
     # copy default parameters
@@ -119,9 +121,9 @@ def run_hugging_face(
 
     for prompt, generation_config in zip(prompts, generation_configs):
         inputs = hf_tokenizer(prompt, return_tensors="pt")
-        prompt_len = len(inputs['input_ids'][0])
-        generate_outputs = model.generate(**inputs, generation_config=convert_to_hf(model.generation_config, generation_config), return_dict_in_generate=True)
-        all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
+        prompt_len = inputs['input_ids'].numel()
+        generate_outputs = model.generate(input_ids=inputs['input_ids'], attention_mask=inputs['attention_mask'], generation_config=convert_to_hf(model.generation_config, generation_config), return_dict_in_generate=True)
+        all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences])
 
         generation_result = GenerationResult()
         generation_result.m_generation_ids = all_text_batch
@@ -145,6 +147,7 @@ def run_continuous_batching(
     pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config)
     output = pipe.generate(prompts, generation_configs)
     del pipe
+    shutil.rmtree(model_path)
     return output
 
 
