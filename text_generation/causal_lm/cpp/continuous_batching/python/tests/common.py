@@ -115,7 +115,7 @@ def run_hugging_face(
         # convert tokenizers as well
         from openvino_tokenizers import convert_tokenizer
         from openvino import serialize
-        tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
+        tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True, skip_special_tokens=True)
         serialize(tokenizer, model_path / "openvino_tokenizer.xml")
         serialize(detokenizer, model_path / "openvino_detokenizer.xml")
 
@@ -123,7 +123,7 @@ def run_hugging_face(
         inputs = hf_tokenizer(prompt, return_tensors="pt")
         prompt_len = inputs['input_ids'].numel()
         generate_outputs = model.generate(input_ids=inputs['input_ids'], attention_mask=inputs['attention_mask'], generation_config=convert_to_hf(model.generation_config, generation_config), return_dict_in_generate=True)
-        all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences])
+        all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
 
         generation_result = GenerationResult()
         generation_result.m_generation_ids = all_text_batch
