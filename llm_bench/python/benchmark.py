@@ -122,6 +122,10 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             generated_text_len = len(result[bs_idx]) - input_tokens[bs_idx].numel()
         else:
             generated_text_len = len(result[bs_idx])
+        # Encoder-decoder models expect the `decoder_input_ids` to start with a special token
+        # When counting the output length, subtract 1. The last token does not participate in inference.
+        if model.config.is_encoder_decoder and result[bs_idx][0] == model.config.decoder_start_token_id:
+            generated_text_len = generated_text_len -1
         num_tokens += generated_text_len
         if generated_text_len > max_gen_tokens:
             log.error('Output token size is over max output token size!')
