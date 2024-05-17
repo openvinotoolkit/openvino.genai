@@ -966,7 +966,10 @@ def convert_mpt(args):
 
         save_ov_model_helper(ov_model, out_path, fp16=compress_to_fp16, tok=tok, config=pt_model.config)
 
-    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    try:
+        config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=False)
+    except Exception:
+        config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     cuda, post_init = patch_gptq(config)
     model_kwargs = {}
     precision = args.precision
@@ -1201,14 +1204,13 @@ def convert_falcon(args):
 def convert_phi(args):
     trust_remote_code = False
     try:
-        config = AutoConfig.from_pretrained(args.model_id)
+        config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=False)
     except Exception:
         config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
         trust_remote_code = True
     cuda, post_init = patch_gptq(config)
     model_kwargs = {}
-    if trust_remote_code:
-        model_kwargs["trust_remote_code"] = trust_remote_code
+    model_kwargs["trust_remote_code"] = trust_remote_code
     precision = args.precision
     compression_only = (
         args.compress_weights
@@ -1224,7 +1226,7 @@ def convert_phi(args):
     if not compression_only:
         pt_model = AutoModelForCausalLM.from_pretrained(
             args.model_id,
-            config=AutoConfig.from_pretrained(args.model_id),
+            config=config,
             **model_kwargs,
         )
         pt_model.config.use_cache = True
