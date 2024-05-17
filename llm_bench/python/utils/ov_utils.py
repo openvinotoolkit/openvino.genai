@@ -143,7 +143,7 @@ def create_text_gen_model(model_path, device, **kwargs):
     else:
         remote_code = False
         try:
-            model_config = AutoConfig.from_pretrained(model_path)
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
         except Exception:
             model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
             remote_code = True

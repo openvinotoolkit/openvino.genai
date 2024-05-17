@@ -43,6 +43,9 @@ def print_metrics(
             f"[{iter_str}] First token latency: {iter_data['first_token_latency']:.2f} ms/{latency_unit}, "
             f"other tokens latency: {iter_data['other_tokens_avg_latency']:.2f} ms/{latency_unit}, len of tokens: {len(tms)} * {batch_size}",
         )
+    else:
+        if tokenization_time:
+            log.warning(f'[{iter_str}] No hook data output for first token latency and other tokens latency')
     if len(tms_infer) > 0:
         iter_data['first_token_infer_latency'] = tms_infer[0] * 1000 if len(tms_infer) > 0 else -1
         iter_data['other_tokens_infer_avg_latency'] = sum(tms_infer[1:]) / (len(tms_infer) - 1) * 1000 if len(tms_infer) > 1 else -1
@@ -50,6 +53,9 @@ def print_metrics(
             f"[{iter_str}] First infer latency: {iter_data['first_token_infer_latency']:.2f} ms/infer, "
             f"other infers latency: {iter_data['other_tokens_infer_avg_latency']:.2f} ms/infer, inference count: {len(tms_infer)}",
         )
+    else:
+        if tokenization_time:
+            log.warning(f'[{iter_str}] No hook data output for first infer latency and other infers latency')
     if stable_diffusion is not None:
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion)
     output_str = ''
@@ -118,15 +124,16 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
             if iter_data['iteration'] == 0:
                 continue
             if iter_data['prompt_idx'] == p_idx:
-                avg_1st_token_latency += iter_data['first_token_latency']
-                avg_2nd_tokens_latency += iter_data['other_tokens_avg_latency']
-                avg_input_size += iter_data['input_size']
+                avg_1st_token_latency += iter_data['first_token_latency'] if iter_data['first_token_latency'] != '' else 0
+                avg_2nd_tokens_latency += iter_data['other_tokens_avg_latency'] if iter_data['other_tokens_avg_latency'] != '' else 0
+                avg_input_size += iter_data['input_size'] if iter_data['input_size'] != '' else 0
                 index_num = index_num + 1
         if index_num > 0:
             avg_1st_token_latency = avg_1st_token_latency / index_num
             avg_2nd_tokens_latency = avg_2nd_tokens_latency / index_num
             avg_input_size = int(avg_input_size / index_num)
-            avg_2nd_token_tput = (1 / avg_2nd_tokens_latency) * batch_size * 1000
+            if avg_2nd_tokens_latency > 0:
+                avg_2nd_token_tput = (1 / avg_2nd_tokens_latency) * batch_size * 1000
             latency_unit = 'token'
             if batch_size > 1:
                 latency_unit = '{}tokens'.format(batch_size)

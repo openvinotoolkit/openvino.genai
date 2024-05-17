@@ -192,7 +192,7 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
     if (inference_step != num_inference_steps - 1) {
         std::vector<float> noise;
         if (read_torch_noise) {
-            std::string noise_file = "../scripts/torch_noise_step_" + std::to_string(inference_step) + ".txt";
+            std::string noise_file = "./latents/torch_noise_step_" + std::to_string(inference_step) + ".txt";
             noise = read_vector_from_txt(noise_file);
         } else {
             noise = randn_function(noise_pred.get_size(), seed);

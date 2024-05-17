@@ -1,6 +1,6 @@
 # Text generation C++ samples that support most popular models like LLaMA 2
 
-These examples showcase inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The applications don't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. Loading `openvino_tokenizers` to `ov::Core` enables tokenization. Run `convert_tokenizer` to generate IRs for the samples. [group_beam_searcher.hpp](group_beam_searcher.hpp) implements the algorithm of the same name, which is used by `beam_search_causal_lm`. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
+These examples showcase inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The applications don't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. Loading `openvino_tokenizers` to `ov::Core` enables tokenization. Run `optimum-cli` to generate IRs for the samples. [group_beam_searcher.hpp](group_beam_searcher.hpp) implements the algorithm of the same name, which is used by `beam_search_causal_lm`. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
 
 ## How it works
 
@@ -53,7 +53,16 @@ This approach reduces the need for multiple infer requests to the main model, en
 
 ## Install OpenVINO
 
-Install [OpenVINO Archives >= 2024.0](docs.openvino.ai/install). `master` and possibly the latest `releases/*` branch correspond to not yet released OpenVINO versions. https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for these branches early testing. `<INSTALL_DIR>` below refers to the extraction location.
+Install [OpenVINO Archives >= 2024.1](docs.openvino.ai/install). `master` and possibly the latest `releases/*` branch correspond to not yet released OpenVINO versions. https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/ can be used for these branches early testing. `<INSTALL_DIR>` below refers to the extraction location.
+
+## Install `libtbb-dev` on Linux
+
+> [!NOTE]
+> `tbb` development files are installed with OpenVINO Archive on Windows and macOS.
+
+```sh
+sudo apt-get install libtbb-dev
+```
 
 ## Build `greedy_causal_lm`, `beam_search_causal_lm` and `openvino_tokenizers`
 
@@ -81,18 +90,20 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 
 ```sh
 source <INSTALL_DIR>/setupvars.sh
-python3 -m pip install --upgrade-strategy eager "transformers<4.38" -r ../../../llm_bench/python/requirements.txt ../../../thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-python3 ../../../llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir ./TinyLlama-1.1B-Chat-v1.0/ --precision FP16
-convert_tokenizer ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --output ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ --with-detokenizer --trust-remote-code
+python3 -m pip install --upgrade-strategy eager -r requirements.txt
+# Update openvino_tokenizers from the submodule
+python3 -m pip install ./../../../thirdparty/openvino_tokenizers/[transformers]
+optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 
 #### Windows
 
 ```bat
 <INSTALL_DIR>\setupvars.bat
-python -m pip install --upgrade-strategy eager "transformers<4.38" -r ..\..\..\llm_bench\python\requirements.txt ..\..\..\thirdparty\openvino_tokenizers\[transformers] --extra-index-url https://download.pytorch.org/whl/cpu
-python ..\..\..\llm_bench\python\convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir .\TinyLlama-1.1B-Chat-v1.0\ --precision FP16
-convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --with-detokenizer --trust-remote-code
+python -m pip install --upgrade-strategy eager -r requirements.txt
+REM Update openvino_tokenizers from the submodule
+python -m pip install .\..\..\..\thirdparty\openvino_tokenizers\[transformers]
+optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 
 ## Run
@@ -106,18 +117,20 @@ convert_tokenizer .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ --output .\TinyL
 ### Examples:
 
 #### Linux/MacOS:
-1. `./build/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-2. `./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-3. `./build/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ ./Llama-2-7b-chat-hf/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
-4. `./build/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/pytorch/dldt/FP16/ "Why is the Sun yellow?"`
+1. `./build/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?"`
+2. `./build/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?"`
+3. `./build/speculative_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ ./Llama-2-7b-chat-hf/ "Why is the Sun yellow?"`
+4. `./build/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?"`
 
 #### Windows:
-1. `.\build\Release\greedy_causal_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
-2. `.\build\Release\beam_search_causal_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
-3. `.\build\Release\speculative_decoding_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ .\Llama-2-7b-chat-hf\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
-4. `.\build\Release\prompt_lookup_decoding_lm .\TinyLlama-1.1B-Chat-v1.0\pytorch\dldt\FP16\ "Why is the Sun yellow?"`
+1. `.\build\Release\greedy_causal_lm .\TinyLlama-1.1B-Chat-v1.0\ "Why is the Sun yellow?"`
+2. `.\build\Release\beam_search_causal_lm .\TinyLlama-1.1B-Chat-v1.0\ "Why is the Sun yellow?"`
+3. `.\build\Release\speculative_decoding_lm .\TinyLlama-1.1B-Chat-v1.0\ .\Llama-2-7b-chat-hf\ "Why is the Sun yellow?"`
+4. `.\build\Release\prompt_lookup_decoding_lm .\TinyLlama-1.1B-Chat-v1.0\ "Why is the Sun yellow?"`
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
+
+Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a dGPU. Modify the source code to change the device for inference to the GPU.
 
 ## Supported models
 
