@@ -233,7 +233,7 @@ private:
 
 class TopKFilter: public IProbabilityFilter {
 public:
-    TopKFilter(double top_k) : m_top_k(top_k) {}
+    TopKFilter(size_t top_k) : m_top_k(top_k) {}
 
     std::vector<ProbabilityWithIdx> filter(const std::vector<ProbabilityWithIdx>& input_probs) override {
         std::vector<ProbabilityWithIdx> tmp(input_probs);
@@ -248,7 +248,9 @@ private:
 
 class TemperatureLogitTransform {
 public:
-    TemperatureLogitTransform(double temperature) : m_temperature(temperature) {}
+    TemperatureLogitTransform(double temperature) : m_temperature(temperature) {
+        OPENVINO_ASSERT(temperature >= 0.0f, "temperature must be a positive value");
+    }
 
     std::vector<ProbabilityWithIdx> apply(const std::vector<LogitWithIdx>& input_logits) {
         std::vector<ProbabilityWithIdx> output(input_logits.begin(), input_logits.end());

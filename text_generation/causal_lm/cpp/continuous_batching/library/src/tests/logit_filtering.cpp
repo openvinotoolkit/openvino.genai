@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
+#include <openvino/core/except.hpp>
 
 #include "sampler.hpp"
 
@@ -132,3 +133,7 @@ const std::vector<ProbabilityNormalizeTransformTestStruct> NORMALIZE_TRANSFORM_T
 INSTANTIATE_TEST_SUITE_P(VariousInputs,
                          ProbabilityNormalizeTransformTest,
                          testing::ValuesIn(NORMALIZE_TRANSFORM_TEST_CASES));
+
+TEST(TemperatureTransformInitializationTest, ThrowsForNegativeTemperatures) {
+    EXPECT_THROW(TemperatureLogitTransform(-0.1), ov::Exception);
+}
