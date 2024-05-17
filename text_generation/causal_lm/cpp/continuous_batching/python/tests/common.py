@@ -130,6 +130,7 @@ def run_hugging_face(
     prompts: List[str],
     generation_configs: List[GenerationConfig],
 ) -> List[GenerationResult]:
+    generation_results = []
     for prompt, generation_config in zip(prompts, generation_configs):
         inputs = hf_tokenizer(prompt, return_tensors="pt")
         prompt_len = inputs['input_ids'].numel()
