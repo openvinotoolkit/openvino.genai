@@ -132,15 +132,20 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
             avg_input_size = int(avg_input_size / index_num)
             if avg_2nd_tokens_latency > 0:
                 avg_2nd_token_tput = (1 / avg_2nd_tokens_latency) * batch_size * 1000
-            latency_unit = 'token'
+            latency_unit = 'token' if is_text_gen is True else 'step'
             if batch_size > 1:
                 if is_text_gen is True:
                     latency_unit = '{}tokens'.format(batch_size)
                 else:
                     latency_unit = '{}steps'.format(batch_size)
-            prompt_dict[p_idx] = '\n[ INFO ] [Average] Prompt[{}] Input token size: {}, 1st token lantency: {:.2f} ms/{}, ' \
-                '2nd tokens latency: {:.2f} ms/{}, 2nd tokens throughput: {:.2f} tokens/s' \
-                .format(p_idx, avg_input_size, avg_1st_token_latency, latency_unit, avg_2nd_tokens_latency, latency_unit, avg_2nd_token_tput)
+            if is_text_gen is True:
+                prompt_dict[p_idx] = '\n[ INFO ] [Average] Prompt[{}] Input token size: {}, 1st token lantency: {:.2f} ms/{}, ' \
+                    '2nd tokens latency: {:.2f} ms/{}, 2nd tokens throughput: {:.2f} tokens/s' \
+                    .format(p_idx, avg_input_size, avg_1st_token_latency, latency_unit, avg_2nd_tokens_latency, latency_unit, avg_2nd_token_tput)
+            else:
+                prompt_dict[p_idx] = '\n[ INFO ] [Average] Prompt[{}] 1st step of unet latency {:.2f} ms/{}, ' \
+                    '2nd steps of unet latency: {:.2f} ms/{}, 2nd steps throughput: {:.2f} steps/s' \
+                    .format(p_idx, avg_1st_token_latency, latency_unit, avg_2nd_tokens_latency, latency_unit, avg_2nd_token_tput)
 
 
 def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False):

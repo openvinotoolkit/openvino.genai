@@ -391,6 +391,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
+    prompt_idx_list = [image_id for image_id, image_param in enumerate(images)]
     for num in range(num_iters + 1):
         image_id = 0
         for img in images:
@@ -401,7 +402,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list, proc_id)
             tm_list.clear()
             image_id = image_id + 1
-    utils.metrics_print.print_average(iter_data_list, [], 0, False)
+    utils.metrics_print.print_average(iter_data_list, prompt_idx_list, 1, False)
 
     return iter_data_list, pretrain_time
 
