@@ -128,7 +128,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
             utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
-        result_md5_list.append(hashlib.md5(result_text.encode(), usedforsecurity=False).hexdigest())
+        result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
     if num == 0:
         warmup_md5[prompt_index] = result_md5_list
     per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
