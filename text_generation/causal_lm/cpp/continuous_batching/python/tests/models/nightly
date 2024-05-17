@@ -15,9 +15,6 @@ hf-tiny-model-private/tiny-random-MvpForCausalLM
 hf-tiny-model-private/tiny-random-PegasusForCausalLM
 hf-tiny-model-private/tiny-random-PLBartForCausalLM
 hf-tiny-model-private/tiny-random-XGLMForCausalLM
-PrunaAI/hf-tiny-model-private-tiny-random-BloomForCausalLM-bnb-4bit-smashed
-PrunaAI/hf-tiny-model-private-tiny-random-BloomForCausalLM-bnb-8bit-smashed
-PrunaAI/hf-tiny-model-private-tiny-random-BloomForCausalLM-HQQ-2bit-smashed
 hf-internal-testing/tiny-random-PersimmonForCausalLM
 hf-internal-testing/tiny-random-BartForCausalLM
 hf-internal-testing/tiny-random-GPTNeoForCausalLM
