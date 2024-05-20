@@ -46,7 +46,7 @@ public:
             input_ids(ov::element::i64, {total_num_tokens}),
             position_ids(ov::element::i64, {total_num_tokens}),
             // PA specific parameters
-            context_lens(ov::element::i32, {batch_size_in_sequences}),
+            past_lens(ov::element::i32, {batch_size_in_sequences}),
             subsequence_begins(ov::element::i32, {batch_size_in_sequences + 1}),
             block_indices(ov::element::i32, {total_num_blocks}),
             block_indices_begins(ov::element::i32, {batch_size_in_sequences + 1}),
@@ -59,7 +59,7 @@ public:
             * input_ids_data = input_ids.data<int64_t>(),
             * position_ids_data = position_ids.data<int64_t>();
         int32_t 
-            * context_lens_data = context_lens.data<int32_t>(),
+            * past_lens_data = past_lens.data<int32_t>(),
             * subsequence_begins_data = subsequence_begins.data<int32_t>(),
             * block_indices_data = block_indices.data<int32_t>(),
             * block_indices_begins_data = block_indices_begins.data<int32_t>();
@@ -77,7 +77,7 @@ public:
             size_t num_blocks = sequence_group->get_num_blocks();
             size_t group_position_id = sequence_group->get_num_processed_tokens(),
                 // spec: In case of multiple input tokens for current sequence (prompt_len > 1), context_len corresponds to first token within subgroup of scheduled tokens
-                group_context_len = group_position_id + 1;
+                group_context_len = group_position_id;
 
             for (size_t seq_id = 0; seq_id < num_running_sequences; ++seq_id) {
                 Sequence::CPtr sequence = running_sequences[seq_id];
@@ -91,7 +91,7 @@ public:
                     position_ids_data[token_id] = position_id;
                 }
 
-                context_lens_data[0] = group_context_len;
+                past_lens_data[0] = group_context_len;
 
                 subsequence_begins_data[1] = subsequence_begins_data[0] + num_scheduled_tokens;
                 block_indices_begins_data[1] = block_indices_begins_data[0] + num_blocks;
@@ -103,7 +103,7 @@ public:
                 // apply strides to shift to a next sequence
                 input_ids_data += num_scheduled_tokens;
                 position_ids_data += num_scheduled_tokens;
-                context_lens_data += 1;
+                past_lens_data += 1;
                 subsequence_begins_data += 1;
                 block_indices_data += num_blocks;
                 block_indices_begins_data += 1;
@@ -115,7 +115,7 @@ public:
         m_request.set_tensor("position_ids", position_ids);
 
         // PA specific parameters
-        m_request.set_tensor("context_lens", context_lens);
+        m_request.set_tensor("past_lens", past_lens);
         m_request.set_tensor("subsequence_begins", subsequence_begins);
         m_request.set_tensor("block_indices", block_indices);
         m_request.set_tensor("block_indices_begins", block_indices_begins);
@@ -124,7 +124,7 @@ public:
         // print_tensor("input_ids", input_ids);
         // print_tensor("position_ids", position_ids);
 
-        // print_tensor("context_lens", context_lens);
+        // print_tensor("past_lens", past_lens);
         // print_tensor("subsequence_begins", subsequence_begins);
         // print_tensor("block_indices", block_indices);
         // print_tensor("block_indices_begins", block_indices_begins);
