@@ -1,5 +1,5 @@
 # They are copied to python folder during the build to allow skipping wheel installation
-src/python/openvino_genai/*generate_pipeline_lib*
+src/python/openvino_genai/*genai*
 src/python/openvino_genai/py_generate_pipeline*
 
 # build/artifact dirs

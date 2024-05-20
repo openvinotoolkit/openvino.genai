@@ -3,8 +3,8 @@
 
 #include "openvino/core/visibility.hpp"
 
-#ifdef generate_pipeline_lib_EXPORTS
+#ifdef genai_EXPORTS
 #    define OPENVINO_GENAI_EXPORTS OPENVINO_CORE_EXPORTS
 #else
 #    define OPENVINO_GENAI_EXPORTS OPENVINO_CORE_IMPORTS
-#endif  // generate_pipeline_lib_EXPORTS
+#endif  // genai_EXPORTS
