@@ -174,7 +174,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
     model, tokenizer, pretrain_time, bench_hook = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
-    model_precision = utils.model_utils.get_model_precision(model_path.parents._parts)
+    model_precision = utils.model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     warmup_md5 = {}
     input_text_list = utils.model_utils.get_prompts(args)
@@ -533,10 +533,10 @@ def main():
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':
-                ir_conversion_frontend = utils.model_utils.get_ir_conversion_frontend(model_name, model_path.parents._parts)
+                ir_conversion_frontend = utils.model_utils.get_ir_conversion_frontend(model_name, model_path.parts)
                 if ir_conversion_frontend != '':
                     framework = framework + '(' + ir_conversion_frontend + ')'
-                model_precision = utils.model_utils.get_model_precision(model_path.parents._parts)
+                model_precision = utils.model_utils.get_model_precision(model_path.parts)
             if args.report is not None:
                 utils.output_csv.write_result(
                     args.report,
