@@ -27,8 +27,4 @@ struct SchedulerConfig {
 
     // max number of scheduled sequences (you can think of it as "max batch size")
     std::size_t max_num_seqs = 256;
-    // max number of padding tokens applied when we schedule a prompt phase
-    // e.g. if total number of padded tokens within a batch a greater than this value, then
-    // new sequnce is not added to batch
-    std::size_t max_paddings = 256;
 };

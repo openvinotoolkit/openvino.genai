@@ -71,7 +71,6 @@ int main(int argc, char* argv[]) try {
         .dynamic_split_fuse = dynamic_split_fuse,
         // vLLM specific params
         .max_num_seqs = 2,
-        .max_paddings = 8,
     };
 
     ContinuousBatchingPipeline pipe(models_path, scheduler_config);

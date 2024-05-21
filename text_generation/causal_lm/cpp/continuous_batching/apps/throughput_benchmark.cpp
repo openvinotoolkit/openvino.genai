@@ -181,7 +181,6 @@ int main(int argc, char* argv[]) try {
         .block_size = 32,
         .dynamic_split_fuse = dynamic_split_fuse,
         .max_num_seqs = 256, // not used if dynamic_split_fuse=True
-        .max_paddings = 256, // not used if dynamic_split_fuse=True
     };
 
     std::cout << "Benchmarking parameters: " << std::endl;
@@ -189,7 +188,6 @@ int main(int argc, char* argv[]) try {
     std::cout << "\tScheduling type: " << (scheduler_config.dynamic_split_fuse ? "dynamic split-fuse" : "vLLM") << std::endl;
     if (!scheduler_config.dynamic_split_fuse) {
         std::cout << "\tMax number of batched sequences: " << scheduler_config.max_num_seqs << std::endl;
-        std::cout << "\tMax number of padding tokens within prompt batch: " << scheduler_config.max_paddings << std::endl;
     }
     std::cout << "Dataset parameters: " << std::endl;
     std::cout << "\tNum prompts: " << num_prompts << std::endl;
