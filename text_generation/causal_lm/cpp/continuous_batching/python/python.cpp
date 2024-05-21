@@ -90,8 +90,7 @@ PYBIND11_MODULE(py_continuous_batching, m) {
         .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
         .def_readwrite("block_size", &SchedulerConfig::block_size)
         .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
-        .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
-        .def_readwrite("max_paddings", &SchedulerConfig::max_paddings);
+        .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline")
         .def(py::init<const std::string &, const SchedulerConfig&>())

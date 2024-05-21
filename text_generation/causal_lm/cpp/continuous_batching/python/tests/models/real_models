@@ -1,8 +1,8 @@
-# Set of models with accuracy issues, because of PA:
+# Set of models with accuracy issues, because of PA
 EleutherAI/pythia-160m
 bigscience/bloomz-1b7
 bigscience/bloomz-560m
-databricks/dolly-v2-3b
+# XEON: databricks/dolly-v2-3b
 tiiuae/falcon-rw-7b
 bigcode/starcoder2-3b
 openbmb/MiniCPM-2B-sft-bf16
@@ -16,30 +16,28 @@ google/pegasus-big_patent
 google/pegasus-large
 #
 # Set of models, which require support in optimum-intel:
-# optimum-intel: Trying to export a RefinedWebModel model, that is a custom or unsupported architecture: nomic-ai/gpt4all-falcon
-# optimum-intel: Trying to export a internlm model, that is a custom or unsupported architecture: internlm/internlm-chat-7b
-# optimum-intel: Trying to export a mosaic-gpt model, that is a custom or unsupported architecture: mosaicml/mpt-1b-redpajama-200b
-# optimum-intel: AttributeError: Could not find the attribute named "num_key_value_heads" in the normalized config: BAAI/Aquila-7B
-# optimum-intel: PermissionError: [Errno 13] Permission denied: internlm/internlm2-7b
-# optimum-intel: AttributeError: 'NoneType' object has no attribute 'device': Salesforce/codegen2-1b
-# optimum-intel: TypeError: Object of type method is not JSON serializable: Salesforce/xgen-7b-8k-base
-# optimum-intel: IndexError: tuple index out of range: facebook/blenderbot-3B
+internlm/internlm-chat-7b
+BAAI/Aquila-7B
+internlm/internlm2-7b
+Salesforce/codegen2-1b
+Salesforce/xgen-7b-8k-base
+facebook/blenderbot-3B
 #
 # Set of models, failed because of CPU limitation
 # CPU: head size must be multiple of 16, current: 100: pankajmathur/orca_mini_3b
 #
 # Set of failed models, because of PA:
-# Exception from src/core/src/shape_util.cpp:65: BAAI/AquilaChat2-7B
-# Exception from src/core/src/shape_util.cpp:65: BAAI/AquilaChat-7B
-# Exception from src/core/src/shape_util.cpp:65: baichuan-inc/Baichuan-7B
-# Exception from src/core/src/shape_util.cpp:65: tiiuae/falcon-7b
-# RuntimeError: Check 'unregistered_parameters.str().empty()': microsoft/Phi-3-mini-128k-instruct
-# RuntimeError: Check 'unregistered_parameters.str().empty()': microsoft/Phi-3-mini-4k-instruct
-# RuntimeError: Check 'unregistered_parameters.str().empty()': bigcode/starcoderbase-3b
-# RuntimeError: Check 'unregistered_parameters.str().empty()': bigcode/gpt_bigcode-santacoder
-# RuntimeError: Check 'unregistered_parameters.str().empty()': nomic-ai/gpt4all-mpt
-# RuntimeError: Check 'unregistered_parameters.str().empty()': mosaicml/mpt-7b
-# RuntimeError: Check 'unregistered_parameters.str().empty()': facebook/opt-350m
+BAAI/AquilaChat2-7B
+BAAI/AquilaChat-7B
+baichuan-inc/Baichuan-7B
+tiiuae/falcon-7b
+microsoft/Phi-3-mini-128k-instruct
+microsoft/Phi-3-mini-4k-instruct
+bigcode/starcoderbase-3b
+bigcode/gpt_bigcode-santacoder
+nomic-ai/gpt4all-mpt
+mosaicml/mpt-7b
+facebook/opt-350m
 #
 # Set of models, failed because of OpenVINO Tokenizers:
 # RuntimeError: Check 'rt_info.find("eos_token_id") != rt_info.end(): facebook/incoder-1B
@@ -59,8 +57,8 @@ Qwen/Qwen1.5-MoE-A2.7B-Chat
 # big model, not tried: xverse/XVERSE-MoE-A4.2B
 #
 # Set of passed models:
-microsoft/phi-2
-microsoft/phi-1_5
+# XEON: microsoft/phi-2
+# XEON: microsoft/phi-1_5
 EleutherAI/gpt-neo-125m
 EleutherAI/gpt-neo-125m
 EleutherAI/gpt-neo-1.3B
@@ -75,8 +73,8 @@ openai-community/gpt2-xl
 gpt2
 gpt2-xl
 nomic-ai/gpt4all-j
-stabilityai/stablelm-3b-4e1t
-stabilityai/stablelm-2-zephyr-1_6b
+# Xeon: stabilityai/stablelm-3b-4e1t
+# Xeon: stabilityai/stablelm-2-zephyr-1_6b
 meta-llama/Llama-2-7b-hf
 meta-llama/Meta-Llama-3-8B-Instruct
 meta-llama/CodeLlama-7b-hf
@@ -95,7 +93,6 @@ togethercomputer/RedPajama-INCITE-Chat-3B-v1
 #
 # Set of invalid models, because of HF:
 # HF: Exception: data did not match any variant of untagged enum PyPreTokenizerTypeWrapper at line 78 column 3: xverse/XVERSE-7B-Chat
-# HF: DeciCoderAttention.forward() got an unexpected keyword argument 'cache_position': Deci/DeciCoder-1b
-# HF: The generation config instance is invalid -- `.validate()` throws warnings and/or exceptions: openchat/openchat_3.5
-# HF: The generation config instance is invalid -- `.validate(): lmsys/vicuna-7b-v1.5
-# HF: The generation config instance is invalid -- `.validate(): lmsys/longchat-7b-v1.5-32k
+# Xeon: openchat/openchat_3.5
+lmsys/vicuna-7b-v1.5
+lmsys/longchat-7b-v1.5-32k
