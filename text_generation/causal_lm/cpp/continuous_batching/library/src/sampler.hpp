@@ -8,6 +8,9 @@
 #include <cstdlib>
 #include <limits>
 #include <map>
+#include <algorithm>
+#include <cmath>
+#include <random>
 
 #include "openvino/runtime/tensor.hpp"
 
@@ -198,7 +201,90 @@ public:
     }
 };
 
+using LogitWithIdx = std::pair<float, size_t>;
+using ProbabilityWithIdx = std::pair<float, size_t>;
+
+class IProbabilityFilter {
+public:
+    virtual std::vector<LogitWithIdx> filter(const std::vector<LogitWithIdx>& input_logits) = 0;
+};
+
+
+class TopPFilter: public IProbabilityFilter {
+public:
+    TopPFilter(double top_p) : m_top_p(top_p) {
+        OPENVINO_ASSERT(top_p > 0.0f && top_p <= 1.0f, "top_p must be in the interval (0, 1]");
+    }
+
+    std::vector<ProbabilityWithIdx> filter(const std::vector<ProbabilityWithIdx>& input_probs) override {
+        std::vector<ProbabilityWithIdx> tmp(input_probs);
+        std::sort(tmp.begin(), tmp.end(), [](const ProbabilityWithIdx& lhs, const ProbabilityWithIdx& rhs) {return lhs.first > rhs.first; });
+        float probability_sum = 0.0f;
+        size_t nucleus_size = 0;
+        for (const auto& probability : tmp) {
+            probability_sum += probability.first;
+            nucleus_size += 1;
+            if (probability_sum > m_top_p) break;
+        }
+        return std::vector<ProbabilityWithIdx>(tmp.begin(), tmp.begin() + nucleus_size);
+    }
+
+private:
+    double m_top_p;
+};
+
+class TopKFilter: public IProbabilityFilter {
+public:
+    TopKFilter(size_t top_k) : m_top_k(top_k) {}
+
+    std::vector<ProbabilityWithIdx> filter(const std::vector<ProbabilityWithIdx>& input_probs) override {
+        std::vector<ProbabilityWithIdx> tmp(input_probs);
+        std::sort(tmp.begin(), tmp.end(), [](const ProbabilityWithIdx& lhs, const ProbabilityWithIdx& rhs) {return lhs.first > rhs.first; });
+        size_t top_k = input_probs.size() >= m_top_k ? m_top_k : input_probs.size();
+        return std::vector<ProbabilityWithIdx>(tmp.begin(), tmp.begin() + top_k);
+    }
+
+private:
+    size_t m_top_k;
+};
+
+class TemperatureLogitTransform {
+public:
+    TemperatureLogitTransform(double temperature) : m_temperature(temperature) {
+        OPENVINO_ASSERT(temperature >= 0.0f, "temperature must be a positive value");
+    }
+
+    std::vector<ProbabilityWithIdx> apply(const std::vector<LogitWithIdx>& input_logits) {
+        std::vector<ProbabilityWithIdx> output(input_logits.begin(), input_logits.end());
+        float max_logit = output[0].first;
+        std::for_each(output.begin(), output.end(), [max_logit, this](ProbabilityWithIdx& val) {val.first = expf((val.first - max_logit) / this->m_temperature);});
+
+        float norm_sum = 0.0;
+        for (const auto& val : output) {
+            norm_sum += val.first;
+        }
+
+        std::for_each(output.begin(), output.end(), [norm_sum](ProbabilityWithIdx& val) {val.first /= norm_sum;});
+        return output;
+    }
+
+private:
+    double m_temperature;
+};
+
+class ProbabilityNormalizeTransform {
+public:
+    std::vector<ProbabilityWithIdx> apply(const std::vector<ProbabilityWithIdx>& input_probs) {
+        std::vector<ProbabilityWithIdx> output(input_probs);
+        float norm_sum = 0.0;
+        for (const auto& val : output) norm_sum += val.first;
+        for (auto& val : output) val.first /= norm_sum;
+        return output;
+    }
+};
+
 class Sampler {
+
     int64_t _greedy_sample(ov::Tensor logits) const {
         ov::Shape logits_shape = logits.get_shape();
         size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
@@ -209,11 +295,53 @@ class Sampler {
         return out_token;
     }
 
+    int64_t _multinomial_sample(ov::Tensor logits, float temperature, float top_p, size_t top_k) {
+        ov::Shape logits_shape = logits.get_shape();
+        size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
+        OPENVINO_ASSERT(batch_size == 1);
+
+        const float * logits_data = logits.data<const float>() + (seq_len - 1) * vocab_size;
+        std::vector<LogitWithIdx> logit_vector(vocab_size);
+        for (size_t i = 0; i < logit_vector.size(); i++) {
+            logit_vector[i] = LogitWithIdx(logits_data[i], i);
+        }
+
+        auto temperature_transform = TemperatureLogitTransform(temperature);
+        std::vector<ProbabilityWithIdx> softmax_vector = temperature_transform.apply(logit_vector);
+
+        std::vector<ProbabilityWithIdx> filtered(softmax_vector);
+
+        if (top_p != 0.0f) {
+            auto filter = TopPFilter(top_p);
+            filtered = filter.filter(filtered);
+        }
+
+        if (top_k != 0) {
+            auto filter = TopKFilter(top_k);
+            filtered = filter.filter(filtered);
+        }
+
+        auto normalize_transform = ProbabilityNormalizeTransform();
+        filtered = normalize_transform.apply(filtered);
+        std::vector<float> multinomial_weights(filtered.size());
+        for (size_t i = 0; i < filtered.size(); i++) multinomial_weights[i] = filtered[i].first;
+
+        auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
+        size_t element_to_pick = dist(rng_engine);
+        int64_t out_token = filtered[element_to_pick].second;
+
+        return out_token;
+    }
+
     // request ID => beam search tracking information
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
 
+    std::mt19937 rng_engine;
+
 public:
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits);
+
+    void set_seed(size_t seed) { rng_engine.seed(seed); }
 };
 
 SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits) {
@@ -238,11 +366,17 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
 
         if (sequence_group->requires_sampling()) {
-            if (sampling_params.is_gready_sampling()) {
+            if (sampling_params.is_greedy_sampling() || sampling_params.is_multinomial()) {
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
                 OPENVINO_ASSERT(running_sequences.size() == 1);
 
-                int64_t sampled_token_id = _greedy_sample(sequence_group_logits);
+                int64_t sampled_token_id;
+                if (sampling_params.is_greedy_sampling()) {
+                    sampled_token_id = _greedy_sample(sequence_group_logits);
+                }
+                else {  // .is_multinomial()
+                    sampled_token_id = _multinomial_sample(sequence_group_logits, sampling_params.temperature, sampling_params.top_p, sampling_params.top_k);
+                }
                 // in case of greedy search we always have a single parent sequence to sample from
                 running_sequences[0]->append_token(sampled_token_id, sequence_group_logits.data<const float>()[sampled_token_id]);
 
