@@ -212,7 +212,9 @@ public:
 
 class TopPFilter: public IProbabilityFilter {
 public:
-    TopPFilter(double top_p) : m_top_p(top_p) {}
+    TopPFilter(double top_p) : m_top_p(top_p) {
+        OPENVINO_ASSERT(top_p > 0.0f && top_p <= 1.0f, "top_p must be in the interval (0, 1]");
+    }
 
     std::vector<ProbabilityWithIdx> filter(const std::vector<ProbabilityWithIdx>& input_probs) override {
         std::vector<ProbabilityWithIdx> tmp(input_probs);

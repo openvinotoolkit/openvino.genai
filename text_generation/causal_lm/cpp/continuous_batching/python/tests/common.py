@@ -244,4 +244,4 @@ def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = Non
     _generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
 
 
-DEFAULT_SCHEDULER_CONFIG = get_scheduler_config({"num_kv_blocks": 300, "block_size": 16, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256})
+DEFAULT_SCHEDULER_CONFIG = get_scheduler_config({"num_kv_blocks": 300, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256})

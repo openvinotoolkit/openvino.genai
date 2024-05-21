@@ -14,8 +14,7 @@ struct TemperatureTransformTestStruct {
     std::vector<ProbabilityWithIdx> expected_output;
 };
 
-class TemperatureTransformTest : public testing::TestWithParam<TemperatureTransformTestStruct> {
-};
+using TemperatureTransformTest = testing::TestWithParam<TemperatureTransformTestStruct>;
 
 TEST_P(TemperatureTransformTest, TransformResultEqualToReference) {
     auto test_struct = GetParam();
@@ -46,8 +45,7 @@ struct TopPTestStruct {
     std::vector<ProbabilityWithIdx> expected_output;
 };
 
-class TopPFilteringTest : public testing::TestWithParam<TopPTestStruct> {
-};
+using TopPFilteringTest = testing::TestWithParam<TopPTestStruct>;
 
 TEST_P(TopPFilteringTest, FilterResultEqualToReference) {
     auto test_struct = GetParam();
@@ -79,8 +77,7 @@ struct TopKTestStruct {
     std::vector<ProbabilityWithIdx> expected_output;
 };
 
-class TopKFilteringTest : public testing::TestWithParam<TopKTestStruct> {
-};
+using TopKFilteringTest = testing::TestWithParam<TopKTestStruct>;
 
 TEST_P(TopKFilteringTest, FilterResultEqualToReference) {
     auto test_struct = GetParam();
@@ -110,8 +107,7 @@ struct ProbabilityNormalizeTransformTestStruct {
     std::vector<ProbabilityWithIdx> expected_output;
 };
 
-class ProbabilityNormalizeTransformTest : public testing::TestWithParam<ProbabilityNormalizeTransformTestStruct> {
-};
+using ProbabilityNormalizeTransformTest = testing::TestWithParam<ProbabilityNormalizeTransformTestStruct>;
 
 TEST_P(ProbabilityNormalizeTransformTest, TransformResultEqualToReference) {
     auto test_struct = GetParam();
@@ -136,4 +132,10 @@ INSTANTIATE_TEST_SUITE_P(VariousInputs,
 
 TEST(TemperatureTransformInitializationTest, ThrowsForNegativeTemperatures) {
     EXPECT_THROW(TemperatureLogitTransform(-0.1), ov::Exception);
+}
+
+
+TEST(TopPFilterInitializationTest, ThrowsForInvalidProbabilities) {
+    EXPECT_THROW(TopPFilter(-0.5), ov::Exception);
+    EXPECT_THROW(TopPFilter(1.1), ov::Exception);
 }
