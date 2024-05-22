@@ -48,7 +48,6 @@ public:
         const std::string& ov_tokenizers_path=""
     );
 
-    LLMPipelineImpl(std::string& path, std::string device, const ov::AnyMap& config);
     LLMPipelineImpl(std::string& path, std::string device, const ov::AnyMap& config, const std::string& ov_tokenizers_path="");
     
     GenerationConfig generation_config() const;
@@ -73,7 +72,7 @@ ov::LLMPipeline::LLMPipeline(
     const ov::AnyMap& plugin_config,
     const std::string& ov_tokenizers_path
 ) {
-    m_pimpl = make_unique<LLMPipelineImpl>(model_path, tokenizer, device, plugin_config);
+    m_pimpl = make_unique<LLMPipelineImpl>(model_path, tokenizer, device, plugin_config, ov_tokenizers_path);
 }
 
 ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
@@ -130,7 +129,7 @@ ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(std::string& path, std::string
 
     ov::Core core;
     m_model_runner = core.compile_model(path + "/openvino_model.xml", device, config).create_infer_request();
-    m_tokenizer = Tokenizer(path);
+    m_tokenizer = Tokenizer(path, device, ov_tokenizers_path);
 }
 
 ov::GenerationConfig ov::LLMPipeline::LLMPipelineImpl::generation_config() const {

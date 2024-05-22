@@ -1,10 +1,8 @@
-# generate_models.py
-
 def models_list():
     model_ids = [
         ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", "TinyLlama-1.1B-Chat-v1.0"),
-        ("google/gemma-2b-it", "gemma-2b-it"),
-        ("google/gemma-7b-it", "gemma-7b-it"),
+        # ("google/gemma-2b-it", "gemma-2b-it"),
+        # ("google/gemma-7b-it", "gemma-7b-it"),
         # ("meta-llama/Llama-2-7b-chat-hf", "Llama-2-7b-chat-hf"),
         # ("meta-llama/Llama-2-13b-chat-hf", "Llama-2-13b-chat-hf"),
         # ("openlm-research/open_llama_3b", "open_llama_3b"),
