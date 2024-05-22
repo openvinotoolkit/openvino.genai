@@ -71,8 +71,6 @@ install(TARGETS ${TARGET_NAME}
     LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR}
     RUNTIME DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
 
-install(TARGETS ${TARGET_NAME} LIBRARY DESTINATION . COMPONENT pygenai RUNTIME DESTINATION . COMPONENT pygenai)
-
 # - Windows: `<openvino_dir>\runtime\bin\intel64\Release\`
 # - MacOS_x86: `<openvino_dir>/runtime/lib/intel64/Release`
 # - MacOS_arm64: `<openvino_dir>/runtime/lib/arm64/Release/`
@@ -94,14 +92,12 @@ endif()
 if(MSVC OR APPLE)
     set(ARCH_DIR ${ARCH_DIR}/${CMAKE_BUILD_TYPE})
 endif()
-install(TARGETS ${TARGET_NAME}
-    LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai
-    RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai)
 install(TARGETS ${TARGET_NAME} EXPORT openvino_genaiTargets
-    LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai_dev
+    LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai
     ARCHIVE DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai_dev
-    RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai_dev
-    INCLUDES DESTINATION runtime/include COMPONENT core_genai_dev)
+    RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai
+    NAMELINK_COMPONENT DESTINATION runtime/lib/${ARCH_DIR} COMPONENT HIDDEN
+    INCLUDES DESTINATION runtime/include)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION runtime/include COMPONENT core_genai_dev)
 install(EXPORT openvino_genaiTargets FILE openvino_genaiTargets.cmake NAMESPACE openvino:: DESTINATION runtime/cmake)
 include(CMakePackageConfigHelpers)
