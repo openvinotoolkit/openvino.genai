@@ -98,8 +98,10 @@ install(TARGETS ${TARGET_NAME} EXPORT openvino_genaiTargets
     LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai
     RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai)
 install(TARGETS ${TARGET_NAME} EXPORT openvino_genaiTargets
+    LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai_dev
     ARCHIVE DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai_dev
-    INCLUDES DESTINATION runtime/include)
+    RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai_dev
+    INCLUDES DESTINATION runtime/include COMPONENT core_genai_dev)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION runtime/include COMPONENT core_genai_dev)
 install(EXPORT openvino_genaiTargets FILE openvino_genaiTargets.cmake NAMESPACE openvino:: DESTINATION runtime/cmake)
 include(CMakePackageConfigHelpers)
