@@ -99,10 +99,14 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
-    min_gen_tokens = 0 if args['infer_count'] is None else args['infer_count']
     max_gen_tokens = MAX_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     start = time.perf_counter()
-    result = model.generate(**input_data, min_new_tokens=int(min_gen_tokens), max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True)
+    if args['infer_count'] is not None:
+        model.generation_config.eos_token_id = None
+        model.config.eos_token_id = None
+        result = model.generate(**input_data, max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True, eos_token_id=None)
+    else:
+        result = model.generate(**input_data, max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True)
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
