@@ -99,9 +99,9 @@ if(MSVC OR APPLE)
 endif()
 install(TARGETS ${TARGET_NAME} EXPORT openvino_genaiTargets
     LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai
+        NAMELINK_COMPONENT core_genai_dev
     ARCHIVE DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai_dev
     RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai
-    NAMELINK_COMPONENT DESTINATION runtime/lib/${ARCH_DIR} COMPONENT HIDDEN
     INCLUDES DESTINATION runtime/include)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION runtime/include COMPONENT core_genai_dev)
 install(EXPORT openvino_genaiTargets FILE openvino_genaiTargets.cmake NAMESPACE openvino:: DESTINATION runtime/cmake)
