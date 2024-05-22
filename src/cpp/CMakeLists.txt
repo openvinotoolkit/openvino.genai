@@ -59,6 +59,11 @@ target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<T
 
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
 
+set_target_properties(${TARGET_NAME} PROPERTIES
+    VERSION ${CMAKE_PROJECT_VERSION}
+    SOVERSION ${CMAKE_PROJECT_VERSION_MAJOR}
+)
+
 # Copy the library to python to allow skipping wheel installation
 add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy
