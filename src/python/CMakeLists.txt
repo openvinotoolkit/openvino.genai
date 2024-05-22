@@ -47,8 +47,6 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/ DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
 install(TARGETS py_generate_pipeline LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
 
-if(SKBUILD)
-    # wheel_genai component is used for wheel generation in pyproject.toml
-    # Don't even add wheel_genai in other cases to hide it from normal packaging process
-    install(TARGETS genai py_generate_pipeline LIBRARY DESTINATION . COMPONENT wheel_genai RUNTIME DESTINATION . COMPONENT wheel_genai)
-endif()
+# wheel_genai component is used for wheel generation in pyproject.toml.
+# Exclude wheel_genai from normal packaging process.
+install(TARGETS genai py_generate_pipeline LIBRARY DESTINATION . COMPONENT wheel_genai RUNTIME DESTINATION . COMPONENT wheel_genai EXCLUDE_FROM_ALL)
