@@ -21,7 +21,7 @@ public:
     * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
     * @param device device. Currently only 'CPU' is supported
     */
-    Tokenizer(const std::string& tokenizers_path, const std::string& device="CPU");
+    Tokenizer(const std::string& tokenizers_path, const std::string& device="CPU", const std::string& ov_tokenizers_path="");
 
     /**
     * @brief encode a single prompt

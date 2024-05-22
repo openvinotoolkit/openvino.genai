@@ -17,6 +17,7 @@ int main(int argc, char* argv[]) try {
     ov::LLMPipeline pipe(model_path, device);
     ov::GenerationConfig config = pipe.get_generation_config();
     config.max_new_tokens = 100;
+    config.do_sample = false;
     auto streamer = [](std::string subword){std::cout << subword << std::flush;};
     
     // since streamer is set results will be printed each time a new token is generated

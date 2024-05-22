@@ -13,8 +13,8 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 function(ov_genai_build_jinja2cpp)
     FetchContent_Declare(jinja2cpp
-        URL https://github.com/ilya-lavrenov/Jinja2Cpp/archive/a5d002cbf44469775556daea14ba3ccdba1e365a.tar.gz
-        URL_HASH SHA256=5aa5378d9acf3c44dfb607fd7f16f48b17ffa6495c219957901e9191ffe28900)
+        URL https://github.com/ilya-lavrenov/Jinja2Cpp/archive/5433af6b225cd35df700023cf60df4acdd6cbcf3.tar.gz
+        URL_HASH SHA256=b90f6c44908beaacae8eeb2690d11a6ebb183b4560434698ac00017e7bc07d11)
 
     FetchContent_GetProperties(jinja2cpp)
     if(NOT jinja2cpp_POPULATED)
@@ -49,8 +49,6 @@ add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 add_library(openvino::${TARGET_NAME} ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME}
-    # TODO: remove it, because beam_search algo should not be exposed to end users
-    PRIVATE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../text_generation/causal_lm/cpp/>"
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
@@ -75,6 +73,13 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 install(TARGETS ${TARGET_NAME}
     LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR}
     RUNTIME DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+
+# Copy libcore_tokenizers.so to build_dir/openvino_tokenizers/src/
+add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy
+        "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/lib/libcore_tokenizers.so"
+        "${CMAKE_BINARY_DIR}/openvino_tokenizers/src/"
+    COMMENT "Copy libcore_tokenizers.so to build_dir/openvino_tokenizers/src/")
 
 # - Windows: `<openvino_dir>\runtime\bin\intel64\Release\`
 # - MacOS_x86: `<openvino_dir>/runtime/lib/intel64/Release`

@@ -62,15 +62,21 @@ std::string call_with_config(ov::LLMPipeline& pipe, const std::string& text, con
     return pipe(text, config);
 }
 
+std::string ov_tokenizers_module_path() {
+    py::module_ m = py::module_::import("openvino_tokenizers");
+    py::list path_list = m.attr("__path__");
+    return std::string(py::str(path_list[0])) + "/lib";
+}
+
 PYBIND11_MODULE(py_generate_pipeline, m) {
     m.doc() = "Pybind11 binding for LLM Pipeline";
 
-
     py::class_<LLMPipeline>(m, "LLMPipeline")
-        .def(py::init<const std::string, const ov::Tokenizer&, const std::string, const ov::AnyMap&>(),
-             py::arg("model_path"), py::arg("tokenizer"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap{})
-        .def(py::init<std::string&, std::string, const ov::AnyMap&>(),
-             py::arg("path"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap{})
+        .def(py::init<const std::string, const ov::Tokenizer&, const std::string, const ov::AnyMap&, const std::string&>(), 
+             py::arg("model_path"), py::arg("tokenizer"), py::arg("device") = "CPU", 
+             py::arg("plugin_config") = ov::AnyMap{}, py::arg("ov_tokenizers_path") = ov_tokenizers_module_path())
+        .def(py::init<std::string&, std::string, const ov::AnyMap&, const std::string>(),
+             py::arg("path"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap{}, py::arg("ov_tokenizers_path") = ov_tokenizers_module_path())
         .def("__call__", py::overload_cast<ov::LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
         .def("__call__", py::overload_cast<ov::LLMPipeline&, const std::string&, const ov::GenerationConfig&>(&call_with_config))
         .def("generate", py::overload_cast<ov::LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
@@ -96,7 +102,10 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
      // Binding for Tokenizer
     py::class_<ov::Tokenizer>(m, "Tokenizer")
         .def(py::init<>())
-        .def(py::init<std::string&, std::string>(), py::arg("tokenizers_path"), py::arg("device") = "CPU")
+        .def(py::init<std::string&, const std::string&, const std::string&>(), 
+             py::arg("tokenizers_path"), 
+             py::arg("device") = "CPU",
+             py::arg("ov_tokenizers_path") = py::str(ov_tokenizers_module_path()))
 
         // todo: implement encode/decode when for numpy inputs and outputs
         .def("encode", py::overload_cast<const std::string>(&ov::Tokenizer::encode), "Encode a single prompt")

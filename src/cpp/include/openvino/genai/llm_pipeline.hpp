@@ -39,6 +39,24 @@ class DecodedResults {
 public:
     std::vector<std::string> texts;
     std::vector<float> scores;
+
+     // @brief Convert DecodedResults to a vector of strings.
+     // @return A std::vector<std::string> containing the texts from the DecodedResults object.
+    operator std::vector<std::string>() const { 
+        return texts; 
+    }
+    
+     // @brief Overloads operator<< to enhance output the contents of DecodedResults.
+     // @return A reference to the output stream with the concatenated texts.
+    friend std::ostream& operator<<(std::ostream& os, const DecodedResults& dr) {
+       for (size_t i = 0; i < dr.texts.size(); ++i) {
+            os << dr.texts[i];
+            if (i != dr.texts.size() - 1) {
+                os << std::endl;
+            }
+        }
+        return os;
+    }
 };
 
 /**
@@ -47,13 +65,15 @@ public:
 class OPENVINO_GENAI_EXPORTS LLMPipeline {
 public:
     /**
-    * @brief Constructs a LLMPipeline when convert model xml/bin files, tokenizers and configuration and in the same dir.
+    * @brief Constructs an LLMPipeline from xml/bin files, tokenizers and configuration in the same dir.
     *
     * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
     * @param device optional device
     * @param plugin_config optional plugin_config
     */
-    LLMPipeline(std::string& path, std::string device="CPU", const ov::AnyMap& plugin_config={});
+    LLMPipeline(std::string& path, std::string device="CPU", 
+                const ov::AnyMap& plugin_config={}, 
+                const std::string& ov_tokenizers_path="");
     
     /**
     * @brief Constructs a LLMPipeline when ov::Tokenizer is initialized manually using file from the different dirs.
@@ -67,7 +87,8 @@ public:
         const std::string model_path,
         const ov::Tokenizer& tokenizer,
         const std::string device="CPU",
-        const ov::AnyMap& plugin_config = {}
+        const ov::AnyMap& plugin_config = {},
+        const std::string& ov_tokenizers_path=""
     );
     
     ~LLMPipeline();
@@ -84,8 +105,8 @@ public:
     
     template <typename... Properties>
     util::EnableIfAllStringAny<std::string, Properties...> generate(
-        std::string text,
-        Properties&&... properties) {
+            std::string text,
+            Properties&&... properties) {
         return generate(text, AnyMap{std::forward<Properties>(properties)...});
     }
     std::string generate(std::string text, const ov::AnyMap& config);

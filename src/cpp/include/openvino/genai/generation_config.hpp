@@ -14,9 +14,10 @@
 namespace ov {
 
 /**
- * @brief controls the stopping condition for grouped beam search. The following values are  possible:
- *        "early", where the generation stops as soon as there are `num_beams` complete candidates; "heuristic", where an 
- *        heuristic is applied and the generation stops when is it very unlikely to find better candidates;
+ * @brief controls the stopping condition for grouped beam search. The following values are possible:
+ *        "early" stops as soon as there are `num_beams` complete candidates.
+          "heuristic" stops when is it unlikely to find better candidates.
+          "never" stops when there cannot be better candidates.
  */
 enum class StopCriteria { early, heuristic, never };
 
@@ -25,11 +26,11 @@ enum class StopCriteria { early, heuristic, never };
  * 
  * @param max_length the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
  *        `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
- * @param max_new_tokens the maximum numbers of tokens to generate, ignoring the number of tokens in the prompt.
+ * @param max_new_tokens the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
  * @param ignore_eos if set to true, then generation will not stop even if <eos> token is met.
- * @param num_beams  number of beams for beam search. 1 means no beam search.
+ * @param num_beams number of beams for beam search. 1 disables beam search.
  * @param num_beam_groups number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
- * @param diversity_penalty this value is subtracted from a beam's score if it generates a token same as any beam from other group at a
+ * @param diversity_penalty this value is subtracted from a beam's score if it generates the same token as any beam from other group at a
  *        particular time. Note that `diversity_penalty` is only effective if `group beam search` is enabled.
  * @param length_penalty exponential penalty to the length that is used with beam-based generation. It is applied as an exponent to
  *        the sequence length, which in turn is used to divide the score of the sequence. Since the score is the log
@@ -42,11 +43,11 @@ enum class StopCriteria { early, heuristic, never };
  *        heuristic is applied and the generation stops when is it very unlikely to find better candidates;
  *        "never", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
  * @param temperature the value used to modulate token probabilities for random sampling
- * @param top_p if set to float < 1, only the smallest set of most probable tokens with probabilities 
+ * @param top_p - if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
  * @param top_k the number of highest probability vocabulary tokens to keep for top-k-filtering.
  * @param do_sample whether or not to use multinomial random sampling
  *        that add up to `top_p` or higher are kept.
- * @param repetition_penalty the parameter for repetition penalty. 1.0 means no penalty. 
+ * @param repetition_penalty the parameter for repetition penalty. 1.0 means no penalty. See https://arxiv.org/pdf/1909.05858.
  * @param pad_token_id id of padding token
  * @param bos_token_id id of <bos> token
  * @param eos_token_id id of <eos> token

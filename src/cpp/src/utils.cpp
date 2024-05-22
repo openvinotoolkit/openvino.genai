@@ -18,11 +18,15 @@ void print_tensor(const ov::Tensor& tensor) {
 
     auto t_shape = tensor.get_shape();
     std::cout << "[";
-    for (size_t i = 0; i < t_shape[1]; ++i) {
-        if (tensor.get_element_type() == ov::element::i64) {
-            res.emplace_back(tensor.data<int64_t>()[i]);
-            std::cout << tensor.data<int64_t>()[i] << " ";
+    for (size_t i = 0; i < t_shape[0]; ++i) {
+        std::cout << "|";
+        for (size_t j = 0; j < t_shape[1]; ++j) {
+            if (tensor.get_element_type() == ov::element::i64) {
+                res.emplace_back(tensor.data<int64_t>()[t_shape[1] * i + j]);
+                std::cout << tensor.data<int64_t>()[t_shape[1] * i + j] << " ";
+            }
         }
+        std::cout << "|";
     }
     std::cout << "]" << std::endl;
 }

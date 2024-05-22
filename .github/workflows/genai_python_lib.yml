@@ -2,7 +2,7 @@ name: genai_python_lib
 on: pull_request
 jobs:
   ubuntu_genai_python_lib:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
         with:
@@ -16,9 +16,20 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
       - run: python -m pip install --pre openvino --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly  # Can't load CentOS libraries from the archive
-      - run: PYTHONPATH=./src/python/ python -c "from openvino_genai.py_generate_pipeline import LLMPipeline"
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+      - run: PYTHONPATH=./src/python/ python -c "from openvino_genai import LLMPipeline"
       - run: source ./ov/setupvars.sh && python -m pip install --pre . --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-      - run: python -c "from openvino_genai.py_generate_pipeline import LLMPipeline"
+      - run: python -c "from openvino_genai import LLMPipeline"
+      - name: GenAI Python API tests
+        run: |
+          source ./ov/setupvars.sh
+          cd ./tests/python_tests/
+          python -m pip install -r requirements.txt
+          models=$(python list_test_models.py)
+          echo "$models" | while read -r model_name model_path; do
+              optimum-cli export openvino --trust-remote-code --weight-format fp16 --model "$model_name" "$model_path"
+          done
+          python -m pytest test_generate_api.py
 
   windows_genai_python_lib:
     runs-on: windows-latest
@@ -37,6 +48,7 @@ jobs:
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && cmake --build ./build/ --config Release -j
       - run: python -m pip install "numpy<1.27"
-      - run: set "PYTHONPATH=./src/python;" && call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -c "from openvino_genai.py_generate_pipeline import LLMPipeline"  # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
-      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install .
-      - run: python -c "from openvino_genai.py_generate_pipeline import LLMPipeline"
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+      - run: set "PYTHONPATH=./src/python;" && call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -c "from openvino_genai import LLMPipeline"  # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install .      
+      - run: python -c "from openvino_genai import LLMPipeline"

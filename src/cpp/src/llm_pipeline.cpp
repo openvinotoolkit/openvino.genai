@@ -14,7 +14,6 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
 #include "generation_config_helper.hpp"
-#include "group_beam_searcher.hpp"
 #include "text_callback_streamer.hpp"
 
 
@@ -28,6 +27,8 @@ ov::EncodedResults greedy_decoding(
     std::shared_ptr<StreamerBase> streamer, 
     bool is_chat_conversation = false
 );
+
+EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig config);
 
 
 class LLMPipeline::LLMPipelineImpl {
@@ -44,10 +45,11 @@ public:
         const std::string model_path,
         const ov::Tokenizer& tokenizer,
         const std::string device,
-        const ov::AnyMap& plugin_config
+        const ov::AnyMap& plugin_config,
+        const std::string& ov_tokenizers_path=""
     );
 
-    LLMPipelineImpl(std::string& path, std::string device, const ov::AnyMap& config);
+    LLMPipelineImpl(std::string& path, std::string device, const ov::AnyMap& config, const std::string& ov_tokenizers_path="");
     
     GenerationConfig generation_config() const;
 
@@ -68,16 +70,18 @@ ov::LLMPipeline::LLMPipeline(
     const std::string model_path,
     const ov::Tokenizer& tokenizer,
     const std::string device,
-    const ov::AnyMap& plugin_config
+    const ov::AnyMap& plugin_config,
+    const std::string& ov_tokenizers_path
 ) {
-    m_pimpl = make_unique<LLMPipelineImpl>(model_path, tokenizer, device, plugin_config);
+    m_pimpl = make_unique<LLMPipelineImpl>(model_path, tokenizer, device, plugin_config, ov_tokenizers_path);
 }
 
 ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
     const std::string model_path,
     const ov::Tokenizer& tokenizer,
     std::string device,
-    const ov::AnyMap& plugin_config
+    const ov::AnyMap& plugin_config,
+    const std::string& ov_tokenizers_path
 ): m_tokenizer(tokenizer), m_device(device), m_plugin_config(plugin_config) {
     ov::Core core;
     
@@ -91,30 +95,42 @@ ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
     }
 }
 
-ov::LLMPipeline::LLMPipeline(std::string& path, std::string device, const ov::AnyMap& config) {
-    m_pimpl = make_unique<LLMPipelineImpl>(path, device, config);
+ov::LLMPipeline::LLMPipeline(std::string& path, std::string device, const ov::AnyMap& config, const std::string& ov_tokenizers_path) {
+    m_pimpl = make_unique<LLMPipelineImpl>(path, device, config, ov_tokenizers_path);
 }
 
-ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(std::string& path, std::string device, const ov::AnyMap& config) {
-    std::string tokenizer_config_fname = "tokenizer_config.json";
-    std::string generation_config_fname = "generation_config.json";
+ov::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(std::string& path, std::string device, 
+                                                  const ov::AnyMap& config, const std::string& ov_tokenizers_path) {
+    std::string config_path = path + "/" + "config.json";
+    std::string tokenizer_config_path = path + "/" +"tokenizer_config.json";
+    std::string generation_config_path = path + "/" +"generation_config.json";
 
-    if (std::filesystem::exists(path + "/" + generation_config_fname)) {
-        m_generation_config = GenerationConfig(path + "/" + generation_config_fname);
-    }
-    if (std::filesystem::exists(path + "/" + tokenizer_config_fname)) {
-        std::ifstream f(path + "/" + tokenizer_config_fname);
+    if (std::filesystem::exists(generation_config_path)) {
+        m_generation_config = GenerationConfig(generation_config_path);
+    } else if (std::filesystem::exists(config_path)) {
+        // some models (e.g. google/gemma-*) do not have generation_config.json, but have config.json
+        // and special tokens are stored there.
+
+        std::ifstream f(config_path);
+        OPENVINO_ASSERT(f.is_open(), "Failed to open '" + config_path + "' with config.json");
+
         nlohmann::json data = nlohmann::json::parse(f);
-        m_chat_template = data.value("chat_template", "");
+        using ov::generate_utils::read_json_param;
+        read_json_param(data, "pad_token_id", m_generation_config.pad_token_id);
+        read_json_param(data, "bos_token_id", m_generation_config.bos_token_id);
+        read_json_param(data, "eos_token_id", m_generation_config.eos_token_id);
     }
 
-    
-    
+    if (std::filesystem::exists(tokenizer_config_path)) {
+        std::ifstream f(tokenizer_config_path);
+        ov::generate_utils::read_json_param(nlohmann::json::parse(f), "chat_template", m_chat_template);
+    }
+
     m_device = device;
 
     ov::Core core;
     m_model_runner = core.compile_model(path + "/openvino_model.xml", device, config).create_infer_request();
-    m_tokenizer = Tokenizer(path);
+    m_tokenizer = Tokenizer(path, device, ov_tokenizers_path);
 }
 
 ov::GenerationConfig ov::LLMPipeline::LLMPipelineImpl::generation_config() const {

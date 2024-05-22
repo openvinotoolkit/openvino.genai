@@ -46,13 +46,7 @@ set_target_properties(prompt_lookup_decoding_lm PROPERTIES CXX_STANDARD_REQUIRED
 find_package(TBB REQUIRED COMPONENTS tbb)
 target_link_libraries(prompt_lookup_decoding_lm PRIVATE TBB::tbb)
 
-add_executable(generate_sample generate_pipeline/generate_sample.cpp)
-target_link_libraries(generate_sample PRIVATE openvino::genai)
-target_include_directories(generate_sample PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-set_target_properties(generate_sample PROPERTIES CXX_STANDARD 17)
-set_target_properties(generate_sample PROPERTIES CXX_STANDARD_REQUIRED ON)
-
-add_executable(chat_sample generate_pipeline/chat_sample.cpp)
+add_executable(chat_sample chat_sample.cpp)
 target_link_libraries(chat_sample PRIVATE openvino::genai)
 target_include_directories(chat_sample PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 set_target_properties(chat_sample PROPERTIES CXX_STANDARD 17)
