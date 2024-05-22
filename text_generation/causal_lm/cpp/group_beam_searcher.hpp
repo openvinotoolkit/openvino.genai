@@ -49,7 +49,7 @@ struct Token {
     int64_t idx;
 };
 
-std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
+std::vector<Token> log_softmax(const ov::Tensor& logits, const size_t batch_idx) {
     if (logits.get_shape().at(0) <= batch_idx) {
         throw std::runtime_error("logits batch size doesn't match the number of beams");
     }
@@ -83,7 +83,8 @@ bool greater(const Beam& left, const Beam& right) {
 enum class StopCriteria { early, heuristic, never };
 
 struct Parameters {
-    std::vector<int64_t> prompt;
+    std::vector<std::vector<int64_t>> prompts;
+    int64_t eos_token;
     size_t n_groups = 3;
     size_t group_size = 5;
     float diversity_penalty = 1.0;
@@ -91,8 +92,7 @@ struct Parameters {
     StopCriteria stop_criteria = StopCriteria::heuristic;
     float length_penalty = 1.0;
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
-    // There's no way to extract special token values from the tokenizer for now
-    int64_t eos_token = 2;
+
     std::function<bool(const Beam&)> early_finish = [](const Beam&) {
         return false;
     };
@@ -146,44 +146,77 @@ struct Group {
     }
 };
 
-struct TokenToBeam {
-    int64_t token_idx;
-    int32_t beam_idx;
-};
-
 // GroupBeamSearcher processes logits prduced by a language model and accumulates beams using group beam search
 // algorithm. select_next_tokens() returns token ids selected by the algorithm and corresponding beam ids. These values
 // are used for next inference. select_next_tokens() returns empty, if all groups are completed
 struct GroupBeamSearcher {
     Parameters parameters;
-    std::vector<Group> groups;
-    GroupBeamSearcher(Parameters parameters) : parameters{std::move(parameters)}, groups{parameters.n_groups} {
+    std::vector<std::vector<Group>> prompts_groups;
+
+    GroupBeamSearcher(Parameters parameters) : parameters{parameters}, prompts_groups{parameters.prompts.size()} {
         if (parameters.no_repeat_ngram_size == 0) {
             throw std::runtime_error("no_repeat_ngram_size must be positive");
         }
-        for (Group& group : groups) {
-            group.ongoing.resize(parameters.group_size);
-            group.ongoing.front().score = 0.0;
+        for (std::vector<Group>& prompts_groups : prompts_groups) {
+            prompts_groups.resize(parameters.n_groups);
+            for (Group& group : prompts_groups) {
+                group.ongoing.resize(parameters.group_size);
+                group.ongoing.front().score = 0.0;
+            }
         }
     }
+
     std::pair<std::vector<int64_t>, std::vector<int32_t>> select_next_tokens(const ov::Tensor& logits) {
         std::vector<int64_t> next_tokens;
         std::vector<int32_t> next_beams;
-        next_tokens.reserve(parameters.n_groups * parameters.group_size);
-        next_beams.reserve(parameters.n_groups * parameters.group_size);
+
+        const size_t promts_size = parameters.prompts.size();
+
+        next_tokens.reserve(promts_size * parameters.n_groups * parameters.group_size);
+        next_beams.reserve(promts_size * parameters.n_groups * parameters.group_size);
+
         size_t beam_count = 0;
-        for (Group& group : groups) {
-            if (!group.done) {
+        size_t prompt_id = 0;
+        for (std::vector<Group>& groups : prompts_groups) {
+            for (Group& group : groups) {
+                if (group.done) {
+                    continue;
+                }
                 for (Beam& beam : group.ongoing) {
-                    beam.global_beam_idx = beam_count;
                     // beam.tokens.empty() holds for the first select_next_tokens() call.
                     // Every beam is constructed from the single batch at first call
-                    if (!beam.tokens.empty()) {
+                    if (beam.tokens.empty()) {
+                        beam.global_beam_idx = prompt_id;
+                    } else {
+                        beam.global_beam_idx = beam_count;
                         ++beam_count;
                     }
                 }
             }
+
+            prompt_id += 1;
         }
+
+        for (int prompt_id = 0; prompt_id < promts_size; prompt_id++) {
+            const std::vector<int64_t> prompt = parameters.prompts[prompt_id];
+            std::vector<Group>& groups = prompts_groups[prompt_id];
+            auto [prompt_next_tokens, prompt_next_beams] = select_prompt_next_tokens(logits, prompt, groups);
+
+            next_tokens.insert(next_tokens.end(), prompt_next_tokens.begin(), prompt_next_tokens.end());
+            next_beams.insert(next_beams.end(), prompt_next_beams.begin(), prompt_next_beams.end());
+        }
+
+        return {next_tokens, next_beams};
+    }
+
+    std::pair<std::vector<int64_t>, std::vector<int32_t>> select_prompt_next_tokens(const ov::Tensor& logits,
+                                                                                    const std::vector<int64_t>& prompt,
+                                                                                    std::vector<Group>& groups) {
+        std::vector<int64_t> next_tokens;
+        std::vector<int32_t> next_beams;
+        next_tokens.reserve(parameters.n_groups * parameters.group_size);
+        next_beams.reserve(parameters.n_groups * parameters.group_size);
+
         for (auto group = groups.begin(); group != groups.end(); ++group) {
             if (group->done) {
                 continue;
@@ -199,7 +232,7 @@ struct GroupBeamSearcher {
                         }
                     }
                 }
-                std::vector<int64_t> full_text{parameters.prompt};
+                std::vector<int64_t> full_text{prompt};
                 full_text.insert(full_text.end(), beam.tokens.begin(), beam.tokens.end());
                 if (full_text.size() > 1 && full_text.size() >= parameters.no_repeat_ngram_size) {
                     auto tail_start = full_text.end() - ptrdiff_t(parameters.no_repeat_ngram_size) + 1;
@@ -260,16 +293,23 @@ struct GroupBeamSearcher {
 };
 
 // Consume group_beam_searcher because beams are consumed
-std::vector<std::vector<Beam>> finalize(GroupBeamSearcher&& group_beam_searcher) {
-    std::vector<std::vector<Beam>> finalized;
-    finalized.reserve(group_beam_searcher.groups.size());
-    for (Group& group : group_beam_searcher.groups) {
-        if (!group.done) {
-            for (Beam& beam : group.ongoing) {
-                group.finish(std::move(beam), group_beam_searcher.parameters);
+std::vector<std::vector<std::vector<Beam>>> finalize(GroupBeamSearcher&& group_beam_searcher) {
+    std::vector<std::vector<std::vector<Beam>>> finalized;
+    finalized.resize(group_beam_searcher.prompts_groups.size());
+
+    for (size_t prompt_id = 0; prompt_id < group_beam_searcher.prompts_groups.size(); prompt_id++) {
+        std::vector<Group>& groups = group_beam_searcher.prompts_groups.at(prompt_id);
+        finalized.at(prompt_id).reserve(groups.size());
+
+        for (Group& group : groups) {
+            if (!group.done) {
+                for (Beam& beam : group.ongoing) {
+                    group.finish(std::move(beam), group_beam_searcher.parameters);
+                }
             }
+            finalized.at(prompt_id).push_back(std::move(group.min_heap));
         }
-        finalized.push_back(std::move(group.min_heap));
     }
+
     return finalized;
 }

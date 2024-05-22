@@ -1,18 +1,17 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <cmath>
 #include <openvino/core/parallel.hpp>
 #include <openvino/openvino.hpp>
-#include <random>
 
+namespace {
+
+// only batch_size = 1 currently supported
 constexpr size_t BATCH_SIZE = 1;
-
 // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
 // threfore usually SEQ_LEN_AXIS = 2
 constexpr size_t SEQ_LEN_AXIS = 2;
 
-namespace {
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
     tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
     tokenizer.infer();
@@ -103,99 +102,59 @@ void update_kv_cache(ov::InferRequest request, uint64_t seq_len_axis, uint64_t n
     });
 }
 
-class AssistedCandidateGenerator {
+class PromptLookupCandidateGenerator {
 private:
-    ov::InferRequest draft_model;
-    size_t max_seq_length;
+    const size_t max_ngram_size = 3;
     size_t num_pred_tokens = 5;
-    const size_t max_pred_tokens = 10;
-    int64_t out_of_kv_cache_token = -1;
-    size_t draft_model_seq_length = 0;
+    const size_t max_pred_tokens = 20;
 
 public:
-    AssistedCandidateGenerator(ov::InferRequest draft_model, const size_t max_seq_length, const size_t num_pred_tokens)
-        : draft_model{draft_model},
-          max_seq_length{max_seq_length},
+    PromptLookupCandidateGenerator(const size_t max_ngram_size, const size_t num_pred_tokens)
+        : max_ngram_size{max_ngram_size},
           num_pred_tokens{num_pred_tokens} {};
 
-    int64_t generate_next_token(const std::vector<int64_t> tokens) {
-        size_t tokens_size = tokens.size();
-        auto input_ids = draft_model.get_tensor("input_ids");
-        input_ids.set_shape({BATCH_SIZE, tokens_size});
-        std::copy_n(tokens.begin(), tokens_size, input_ids.data<int64_t>());
+    std::vector<int64_t> generate_candidates(const std::vector<int64_t>& input_ids) {
+        const size_t input_length = input_ids.size();
 
-        auto attention_mask = draft_model.get_tensor("attention_mask");
-        attention_mask.set_shape({BATCH_SIZE, draft_model_seq_length + tokens_size});
-        std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
+        for (int32_t ngram_size = max_ngram_size; ngram_size > 0; ngram_size--) {
+            // extract last ngram_size tokens as search ngram
+            std::vector<int64_t> ngram = std::vector<int64_t>{input_ids.cend() - ngram_size, input_ids.cend()};
 
-        auto position_ids = draft_model.get_tensor("position_ids");
-        position_ids.set_shape({BATCH_SIZE, tokens_size});
-        std::iota(position_ids.data<int64_t>(),
-                  position_ids.data<int64_t>() + position_ids.get_size(),
-                  draft_model_seq_length);
+            // find ngram match in input_ids
+            size_t ngram_i = 0;
+            for (size_t input_i = 0; input_i < input_length - ngram_size; input_i++) {
+                if (ngram[ngram_i] != input_ids[input_i]) {
+                    ngram_i = 0;
+                    continue;
+                }
 
-        draft_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
-        draft_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
+                ngram_i++;
 
-        draft_model.infer();
+                if (ngram_i < ngram_size) {
+                    continue;
+                }
 
-        auto logits = draft_model.get_tensor("logits");
-        size_t vocab_size = logits.get_shape().back();
-        auto sequence_logits = logits.data<float>() + (tokens_size - 1) * vocab_size;
+                // match found with the end at input_i
+                size_t avaliable_num_pred = std::min(input_length - (input_i + 1), num_pred_tokens);
 
-        draft_model_seq_length += tokens_size;
-
-        return std::max_element(sequence_logits, sequence_logits + vocab_size) - sequence_logits;
-    }
-
-    std::vector<int64_t> generate_candidates(int64_t out_token) {
-        std::vector<int64_t> candidates;
-
-        // limit candidates size by num_pred_tokens or by max_seq_length
-        size_t candidates_to_generate = std::min(num_pred_tokens, max_seq_length - draft_model_seq_length - 1);
-
-        candidates.reserve(candidates_to_generate);
-
-        // generate cadidates
-        for (size_t i = 0; i < candidates_to_generate; i++) {
-            // if out_of_kv_cache_token is present, prepend it to out_token in order to collect kv cache for it
-            if (out_of_kv_cache_token != -1) {
-                out_token = generate_next_token(std::vector{out_of_kv_cache_token, out_token});
-                out_of_kv_cache_token = -1;
-            } else {
-                out_token = generate_next_token(std::vector{out_token});
+                // return candidates with length of avaliable_num_pred
+                return std::vector<int64_t>{input_ids.cbegin() + input_i + 1,
+                                            input_ids.cbegin() + input_i + 1 + avaliable_num_pred};
             }
-
-            candidates.push_back(out_token);
         }
 
-        out_of_kv_cache_token = candidates.back();
-        return candidates;
+        return std::vector<int64_t>{};
     }
 
     void update_candidate_strategy(const size_t num_matches) {
         // dynamically adjust number of generated candidates based on number of matches
-        // we want to balance the benefits of getting candidates tokens correct with the
-        // cost of forecasting incorrect candidates tokens.
+        // we want to balance the benefits of getting assistant tokens correct with the
+        // cost of forecasting incorrect assistant tokens.
         if (num_matches == num_pred_tokens) {
             num_pred_tokens = std::min(num_pred_tokens + 2, max_pred_tokens);
         } else {
-            num_pred_tokens = std::max(int64_t(num_pred_tokens) - 1, int64_t(1));
+            num_pred_tokens = std::max(num_pred_tokens - 1, size_t(1));
         }
-    }
-
-    void update_kv_cache(const size_t seq_length) {
-        // this is the case when main model accepted all candidates from draft model
-        // we need to collect kv cache for out_of_kv_cache_token by infering it
-        // on next candidates generation cycle out_of_kv_cache_token will be prefixed
-        // to main models's latest out token
-        if (draft_model_seq_length < seq_length) {
-            return;
-        }
-
-        out_of_kv_cache_token = -1;
-        ::update_kv_cache(draft_model, SEQ_LEN_AXIS, seq_length);
-        draft_model_seq_length = seq_length;
     }
 };
 
@@ -212,91 +171,74 @@ int64_t get_eos_token(const std::shared_ptr<ov::Model> tokenizer) {
 }  // namespace
 
 int main(int argc, char* argv[]) try {
-    if (argc != 4) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <DRAFT MODEL_DIR> <MAIN MODEL_DIR> '<PROMPT>'");
+    if (argc != 3) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>'");
     }
 
     // tokenizer model
     ov::Core core;
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
-    auto tokenizer_model = core.read_model(std::string{argv[1]} + "/openvino_tokenizer.xml");
+
+    const std::string model_dir = std::string{argv[1]};
+
+    auto tokenizer_model = core.read_model(model_dir + "/openvino_tokenizer.xml");
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(tokenizer_model, "CPU").create_infer_request();
-    auto [input_ids, attention_mask] = tokenize(tokenizer, argv[3]);
+    auto [input_ids, attention_mask] = tokenize(tokenizer, argv[2]);
+
+    std::vector<int64_t> full_input_ids{input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size()};
+
     ov::InferRequest detokenizer =
-        core.compile_model(std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
+        core.compile_model(model_dir + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     TextStreamer text_streamer{std::move(detokenizer)};
 
-    // draft model (which is smaller, less accurate but faster)
-    ov::InferRequest draft_model =
-        core.compile_model(std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
+    ov::InferRequest model = core.compile_model(model_dir + "/openvino_model.xml", "CPU").create_infer_request();
 
-    uint64_t seq_len = input_ids.get_shape()[1];
+    model.set_tensor("input_ids", input_ids);
+    model.set_tensor("attention_mask", attention_mask);
 
-    // main model (which is bigger, more accurate but slower)
-    ov::InferRequest main_model =
-        core.compile_model(std::string{argv[2]} + "/openvino_model.xml", "CPU").create_infer_request();
-
-    size_t max_sequence_length = 100;
-
-    AssistedCandidateGenerator candidateGenerator{draft_model, max_sequence_length, 5};
-
-    main_model.set_tensor("input_ids", input_ids);
-    main_model.set_tensor("attention_mask", attention_mask);
-
-    auto position_ids = main_model.get_tensor("position_ids");
+    ov::Tensor position_ids = model.get_tensor("position_ids");
     position_ids.set_shape(input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
+    uint64_t seq_len = input_ids.get_shape()[1];
 
     // set beam_idx for stateful model: no beam search is used and BATCH_SIZE = 1
-    main_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
-    main_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
+    model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
+    model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
-    // To coollect kv-cache for the <PROMPT> and to get the next token run the very first infer request
-    candidateGenerator.generate_next_token(
-        std::vector<int64_t>(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size()));
-
-    main_model.infer();
-
-    size_t vocab_size = draft_model.get_tensor("logits").get_shape().back();
-    OPENVINO_ASSERT(vocab_size == main_model.get_tensor("logits").get_shape().back(),
-                    "vocab size should be the same for the both models");
+    // To collect kv-cache for the <PROMPT> and to get the next token run the very first infer request
+    model.infer();
 
     // logits shape is [BATCH_SIZE, seq_len, vocab_size]
-    auto logits = main_model.get_tensor("logits");
+    auto logits = model.get_tensor("logits");
+    size_t vocab_size = logits.get_shape().back();
     auto data_logits = logits.data<float>() + (seq_len - 1) * vocab_size;
     int64_t out_token = std::max_element(data_logits, data_logits + vocab_size) - data_logits;
 
+    full_input_ids.push_back(out_token);
+
+    auto first_token = out_token;
     text_streamer.put(out_token);
 
     const int64_t EOS_TOKEN = get_eos_token(tokenizer_model);
 
-    /* Speculative decoding works the following way. The draft model predicts the next K
-       tokens one by one in an autoregressive manner, while the main model validates these
-       predictions and corrects them if necessary. We go through each predicted token, and
-       if a difference is detected between the draft and main model, we stop and keep the
-       last token predicted by the main model. Then the draft model gets the latest main
-       prediction and again tries to predict the next K tokens, repeating the cycle.
-
-       This approach reduces the need for multiple infer requests to the main model,
-       enhancing performance. For instance, in more predictable parts of text generation,
-       the draft model can, in best-case scenarios, generate the next K tokens that exactly
-       match the target. In that case they are validated in a single inference call to
-       the main model instead of running K subsequent requests.
-       */
+    // Prompt lookup decoding is a speculative decoding technic where the draft model replaced
+    // with string matching in the prompt to generate candidate token sequences.
+    int max_sequence_length = 100;
+    PromptLookupCandidateGenerator candidateGenerator{3, 5};
 
     while (out_token != EOS_TOKEN && seq_len < max_sequence_length) {
-        // generate candidates from the draft model
-        std::vector<int64_t> candidates = candidateGenerator.generate_candidates(out_token);
+        auto candidates = candidateGenerator.generate_candidates(full_input_ids);
+
+        // cut redundant candidates on last iteration
+        size_t tokens_to_generate = max_sequence_length - seq_len;
+        candidates.resize(std::min(candidates.size(), tokens_to_generate - 1));
         size_t candidates_size = candidates.size();
 
-        // For the main network, candidates_size + 1 tokens will be fed at once in a single infer request.
+        // candidates_size + 1 tokens will be fed at once in a single infer request.
         input_ids.set_shape({BATCH_SIZE, candidates_size + 1});
-
-        input_ids.data<int64_t>()[0] = out_token;
-        if (candidates_size > 0) {
-            std::copy_n(candidates.begin(), candidates_size, input_ids.data<int64_t>() + 1);
-        }
+        input_ids.data<int64_t>()[0] = first_token;
+        std::copy_n(candidates.begin(), candidates_size, input_ids.data<int64_t>() + 1);
 
         attention_mask.set_shape({BATCH_SIZE, seq_len + candidates_size + 1});
         std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
@@ -304,11 +246,10 @@ int main(int argc, char* argv[]) try {
         position_ids.set_shape({BATCH_SIZE, candidates_size + 1});
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), seq_len);
 
-        main_model.infer();
+        model.infer();
 
-        data_logits = logits.data<float>();  // [BATCH_SIZE, K, vocab_size]
+        data_logits = logits.data<float>();  // [BATCH_SIZE, 1 + candidates_size, vocab_size]
 
-        // match model tokens with candidate tokens
         // 1. accept current out token (if not eos)
         // 2. check if it matches apropriate candidate
         //      2.1 if it's match, continue - accept next token
@@ -325,6 +266,7 @@ int main(int argc, char* argv[]) try {
             }
 
             text_streamer.put(out_token);
+            full_input_ids.push_back(out_token);
             accepted_tokens_number++;
 
             if (i == candidates_size || out_token != candidates[i]) {
@@ -332,28 +274,26 @@ int main(int argc, char* argv[]) try {
             }
         }
 
-        // After the inference request, key/values have shape [BATCH_SIZE, seq_len + K, vocab_size].
-        // Increment the sequence length by the number of matched tokens, and
-        // trim the KV cache to match the new sequence length.
-        seq_len += accepted_tokens_number;
-
         if (accepted_tokens_number > 0) {
             candidateGenerator.update_candidate_strategy(accepted_tokens_number - 1);
         }
 
-        candidateGenerator.update_kv_cache(seq_len);
-        update_kv_cache(main_model, SEQ_LEN_AXIS, seq_len);
+        // After the inference request, key/values have shape [BATCH_SIZE, seq_len + candidates_size, vocab_size].
+        // Increment the sequence length by the number of matched tokens, and
+        // trim the KV cache to match the new sequence length.
+        seq_len += accepted_tokens_number;
+        update_kv_cache(model, SEQ_LEN_AXIS, seq_len);
 
-        candidates.clear();
+        first_token = out_token;
     }
+
     text_streamer.end();
     // Model is stateful which means that context (kv-cache) which belongs to a particular
     // text sequence is accumulated inside the model during the generation loop above.
     // This context should be reset before processing the next text sequence.
     // While it is not required to reset context in this sample as only one sequence is processed,
     // it is called for education purposes:
-    draft_model.reset_state();
-    main_model.reset_state();
+    model.reset_state();
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return EXIT_FAILURE;

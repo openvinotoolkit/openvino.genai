@@ -40,7 +40,7 @@ class OVMPTModel(OVModelForCausalLM):
             else:
                 if '.key' in inputs.get_any_name():
                     shapes[inputs][3] = -1
-                else:
+                elif inputs.get_any_name() != "beam_idx":
                     shapes[inputs][2] = -1
         model.reshape(shapes)
         return model
@@ -138,7 +138,7 @@ class OVMPTModel(OVModelForCausalLM):
 
             inputs["position_ids"] = position_ids
 
-        if hasattr(self, 'next_beam_idx'):
+        if hasattr(self, 'next_beam_idx') and "beam_idx" in self.input_names:
             inputs['beam_idx'] = self.next_beam_idx
 
         # Run inference

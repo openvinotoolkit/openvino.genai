@@ -3,32 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # flake8: noqa
 import torch
-import torch.distributed as dist
 from typing import Union, List, Dict
 from transformers.utils import ModelOutput
 
 TRANS_MIN_VERSION = '4.36.0'
 TRANS_SENCOND_VERSION = '4.39.0'
-
-
-# Copied from https://github.com/huggingface/transformers/blob/v4.39-release/src/transformers/generation/utils.py#L1781
-def _has_unfinished_sequences(this_peer_finished: bool, synced_gpus: bool, device: torch.device) -> bool:
-    """
-    Returns whether there are still unfinished sequences in the device. The existence of unfinished sequences is
-    fed through `this_peer_finished`. ZeRO stage 3-friendly.
-    """
-    if synced_gpus:
-        # Under synced_gpus the `forward` call must continue until all gpus complete their sequence.
-        # The following logic allows an early break if all peers finished generating their sequence
-        this_peer_finished_flag = torch.tensor(0.0 if this_peer_finished else 1.0).to(device)
-        # send 0.0 if we finished, 1.0 otherwise
-        dist.all_reduce(this_peer_finished_flag, op=dist.ReduceOp.SUM)
-        # did all peers finish? the reduced sum will be 0.0 then
-        if this_peer_finished_flag.item() == 0.0:
-            return False
-    elif this_peer_finished:
-        return False
-    return True
 
 
 # Copied from https://github.com/huggingface/transformers/blob/v4.39-release/src/transformers/generation/utils.py#L4783

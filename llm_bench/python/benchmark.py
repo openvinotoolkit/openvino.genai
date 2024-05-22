@@ -129,14 +129,14 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
             utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
-        result_md5_list.append(hashlib.md5(result_text.encode()).hexdigest())
+        result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
     if num == 0:
         warmup_md5[prompt_index] = result_md5_list
-    per_token_time = generation_time * 1000 / num_tokens
+    per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
     iter_data = gen_iterate_data(
         num,
         input_token_size * args['batch_size'],
-        max_output_token_size * args['batch_size'],
+        max_output_token_size,
         num_tokens,
         generation_time,
         per_token_time,
@@ -157,7 +157,8 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
-        tokenization_time=(tok_encode_time, tok_decode_time)
+        tokenization_time=(tok_encode_time, tok_decode_time),
+        batch_size=args['batch_size']
     )
     if num > 0:
         warmup_md5_list = warmup_md5[prompt_index]
@@ -172,7 +173,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
     model, tokenizer, pretrain_time, bench_hook = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
-    model_precision = utils.model_utils.get_model_precision(model_path.parents._parts)
+    model_precision = utils.model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     warmup_md5 = {}
     input_text_list = utils.model_utils.get_prompts(args)
@@ -183,6 +184,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
+    prompt_idx_list = [prompt_idx for prompt_idx, input_text in enumerate(input_text_list)]
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for prompt_idx, input_text in enumerate(input_text_list):
@@ -196,7 +198,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
                     log.info(f'[warm-up] Input text: {input_text}')
                 run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
 
-    utils.metrics_print.print_average(iter_data_list)
+    utils.metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time
 
 
@@ -237,7 +239,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         mem_consumption.clear_max_memory_consumption()
     for bs_idx in range(args['batch_size']):
         rslt_img_fn = utils.output_file.output_gen_image(res[bs_idx], args, image_id, num, bs_idx, proc_id, '.png')
-        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
+        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
     generation_time = end - start
     iter_data = gen_iterate_data(
         iter_idx=num,
@@ -277,6 +279,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
+    prompt_idx_list = [image_id for image_id, image_param in enumerate(input_image_list)]
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for image_id, image_param in enumerate(input_image_list):
@@ -286,7 +289,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
             for num in range(num_iters + 1):
                 run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id)
 
-    utils.metrics_print.print_average(iter_data_list)
+    utils.metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
     return iter_data_list, pretrain_time
 
 
@@ -336,7 +339,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     result_md5_list = []
     if framework == 'ov':
         rslt_img_fn = utils.output_file.output_gen_image(res[0], args, image_id, num, None, proc_id, '.png')
-        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
+        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
 
     generation_time = end - start
     iter_data = gen_iterate_data(
@@ -397,7 +400,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list, proc_id)
             tm_list.clear()
             image_id = image_id + 1
-    utils.metrics_print.print_average(iter_data_list)
+    utils.metrics_print.print_average(iter_data_list, [], 0, False)
 
     return iter_data_list, pretrain_time
 
@@ -521,10 +524,10 @@ def main():
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':
-                ir_conversion_frontend = utils.model_utils.get_ir_conversion_frontend(model_name, model_path.parents._parts)
+                ir_conversion_frontend = utils.model_utils.get_ir_conversion_frontend(model_name, model_path.parts)
                 if ir_conversion_frontend != '':
                     framework = framework + '(' + ir_conversion_frontend + ')'
-                model_precision = utils.model_utils.get_model_precision(model_path.parents._parts)
+                model_precision = utils.model_utils.get_model_precision(model_path.parts)
             if args.report is not None:
                 utils.output_csv.write_result(
                     args.report,
