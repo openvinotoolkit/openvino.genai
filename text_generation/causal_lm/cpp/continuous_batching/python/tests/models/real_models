@@ -2,7 +2,7 @@
 EleutherAI/pythia-160m
 bigscience/bloomz-1b7
 bigscience/bloomz-560m
-# XEON: databricks/dolly-v2-3b
+databricks/dolly-v2-3b
 tiiuae/falcon-rw-7b
 bigcode/starcoder2-3b
 openbmb/MiniCPM-2B-sft-bf16
@@ -25,6 +25,8 @@ facebook/blenderbot-3B
 #
 # Set of models, failed because of CPU limitation
 # CPU: head size must be multiple of 16, current: 100: pankajmathur/orca_mini_3b
+# CPU: head size must be multiple of 16, current: 100: openlm-research/open_llama_3b
+# CPU: head size must be multiple of 16, current: 100: openlm-research/open_llama_3b_v2
 #
 # Set of failed models, because of PA:
 BAAI/AquilaChat2-7B
@@ -57,8 +59,8 @@ Qwen/Qwen1.5-MoE-A2.7B-Chat
 # big model, not tried: xverse/XVERSE-MoE-A4.2B
 #
 # Set of passed models:
-# XEON: microsoft/phi-2
-# XEON: microsoft/phi-1_5
+microsoft/phi-2
+microsoft/phi-1_5
 EleutherAI/gpt-neo-125m
 EleutherAI/gpt-neo-125m
 EleutherAI/gpt-neo-1.3B
@@ -73,14 +75,12 @@ openai-community/gpt2-xl
 gpt2
 gpt2-xl
 nomic-ai/gpt4all-j
-# Xeon: stabilityai/stablelm-3b-4e1t
-# Xeon: stabilityai/stablelm-2-zephyr-1_6b
+stabilityai/stablelm-3b-4e1t
+stabilityai/stablelm-2-zephyr-1_6b
 meta-llama/Llama-2-7b-hf
 meta-llama/Meta-Llama-3-8B-Instruct
 meta-llama/CodeLlama-7b-hf
 lmsys/vicuna-7b-v1.3
-openlm-research/open_llama_3b
-openlm-research/open_llama_3b_v2
 mistralai/Mistral-7B-v0.1
 mistralai/Mistral-7B-Instruct-v0.1
 allenai/OLMo-1B-hf
@@ -93,6 +93,6 @@ togethercomputer/RedPajama-INCITE-Chat-3B-v1
 #
 # Set of invalid models, because of HF:
 # HF: Exception: data did not match any variant of untagged enum PyPreTokenizerTypeWrapper at line 78 column 3: xverse/XVERSE-7B-Chat
-# Xeon: openchat/openchat_3.5
+openchat/openchat_3.5
 lmsys/vicuna-7b-v1.5
 lmsys/longchat-7b-v1.5-32k
