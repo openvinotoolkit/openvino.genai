@@ -431,7 +431,6 @@ def _get_submodels_for_export_stable_diffusion(
     Returns the components of a Stable Diffusion model.
     """
     from diffusers import StableDiffusionXLImg2ImgPipeline
-    from diffusers.models.attention_processor import AttnProcessor
 
     models_for_export = {}
     if isinstance(pipeline, StableDiffusionXLImg2ImgPipeline):
@@ -450,7 +449,6 @@ def _get_submodels_for_export_stable_diffusion(
     # The U-NET time_ids inputs shapes depends on the value of `requires_aesthetics_score`
     # https://github.com/huggingface/diffusers/blob/v0.18.2/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl_img2img.py#L571
     pipeline.unet.config.requires_aesthetics_score = getattr(pipeline.config, "requires_aesthetics_score", False)
-    pipeline.unet.set_attn_processor(AttnProcessor())
     models_for_export["unet"] = pipeline.unet
 
     # VAE Encoder https://github.com/huggingface/diffusers/blob/v0.11.1/src/diffusers/models/vae.py#L565
