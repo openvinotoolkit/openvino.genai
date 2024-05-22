@@ -2,7 +2,6 @@ name: genai_package
 on: pull_request
 jobs:
   ubuntu_genai_package:
-    if: false
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v4
