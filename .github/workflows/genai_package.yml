@@ -16,6 +16,7 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release --target package -j
       - run: source ./ov/setupvars.sh && cmake --install ./build/ --config Release --prefix ov
+      - run: sudo apt-get install libtbb-dev
       - run: ov/samples/cpp/build_samples.sh -b "${{ github.workspace }}/s pace"
       - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
