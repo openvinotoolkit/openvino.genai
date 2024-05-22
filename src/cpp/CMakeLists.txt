@@ -66,7 +66,12 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/../python/openvino_genai/$<TARGET_FILE_NAME:${TARGET_NAME}>"
     COMMENT "Copy ${TARGET_NAME} to src/python/openvino_genai")
 
-install(TARGETS ${TARGET_NAME} LIBRARY DESTINATION . COMPONENT core_genai RUNTIME DESTINATION . COMPONENT core_genai)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+install(TARGETS ${TARGET_NAME}
+    LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR}
+    RUNTIME DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+
+install(TARGETS ${TARGET_NAME} LIBRARY DESTINATION . COMPONENT pygenai RUNTIME DESTINATION . COMPONENT pygenai)
 
 # - Windows: `<openvino_dir>\runtime\bin\intel64\Release\`
 # - MacOS_x86: `<openvino_dir>/runtime/lib/intel64/Release`
@@ -90,9 +95,10 @@ if(MSVC OR APPLE)
     set(ARCH_DIR ${ARCH_DIR}/${CMAKE_BUILD_TYPE})
 endif()
 install(TARGETS ${TARGET_NAME} EXPORT openvino_genaiTargets
-    LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai_dev
+    LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai
+    RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai)
+install(TARGETS ${TARGET_NAME} EXPORT openvino_genaiTargets
     ARCHIVE DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai_dev
-    RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai_dev
     INCLUDES DESTINATION runtime/include)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION runtime/include COMPONENT core_genai_dev)
 install(EXPORT openvino_genaiTargets FILE openvino_genaiTargets.cmake NAMESPACE openvino:: DESTINATION runtime/cmake)
@@ -102,4 +108,3 @@ install(FILES "${CMAKE_BINARY_DIR}/openvino_genaiConfig.cmake" "${CMAKE_BINARY_D
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file("${CMAKE_BINARY_DIR}/openvino_genaiConfigVersion.cmake" VERSION ${CMAKE_PROJECT_VERSION} COMPATIBILITY AnyNewerVersion)
 export(EXPORT openvino_genaiTargets FILE "${CMAKE_BINARY_DIR}/openvino_genaiTargets.cmake" NAMESPACE openvino::)
-# export(TARGETS ${TARGET_NAME} NAMESPACE openvino:: FILE "${CMAKE_BINARY_DIR}/openvino_genaiConfig.cmake")  TODO
