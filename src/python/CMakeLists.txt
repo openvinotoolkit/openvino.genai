@@ -18,7 +18,6 @@ endif()
 pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
 target_link_libraries(py_generate_pipeline PRIVATE genai)
 
-
 # setting RPATH / LC_RPATH depending on platform
 if(LINUX)
     # to find libgenai.so in the same folder
