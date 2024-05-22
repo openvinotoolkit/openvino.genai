@@ -38,9 +38,10 @@ struct GenerationConfig {
 
     // Multinomial
     float temperature = 0.0f; // by default we use greedy sampling
-    int top_k = -1; // maybe to assign vocab_size ?
+    int top_k = 0; // HF transformers uses a value of 0 or `None` to disable top-K logit warping
     float top_p = 1.0f; // by default convsider all tokens
-    bool do_sample;
+    bool do_sample = false;
+    size_t rng_seed = 0;
 
     // special tokens IDs
     int64_t bos_token_id = -1;
@@ -56,11 +57,15 @@ struct GenerationConfig {
 
     static GenerationConfig multinomial();
 
-    bool is_gready_sampling() const {
+    bool is_greedy_sampling() const {
         return temperature == 0.0f && !is_beam_search();
     }
 
     bool is_beam_search() const {
         return num_groups * group_size > 1;
+    }
+
+    bool is_multinomial() const {
+        return do_sample;
     }
 };

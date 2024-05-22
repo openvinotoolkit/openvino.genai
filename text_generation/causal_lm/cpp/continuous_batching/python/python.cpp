@@ -81,7 +81,8 @@ PYBIND11_MODULE(py_continuous_batching, m) {
         .def_readwrite("top_k", &GenerationConfig::top_k)
         .def_readwrite("top_p", &GenerationConfig::top_p)
         .def_readwrite("do_sample", &GenerationConfig::do_sample)
-        .def_property_readonly("is_gready_sampling", &GenerationConfig::is_gready_sampling)
+        .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
+        .def_property_readonly("is_greedy_sampling", &GenerationConfig::is_greedy_sampling)
         .def_property_readonly("is_beam_search", &GenerationConfig::is_beam_search);
 
     py::class_<SchedulerConfig>(m, "SchedulerConfig")
