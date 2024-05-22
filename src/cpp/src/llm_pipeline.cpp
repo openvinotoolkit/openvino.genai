@@ -14,7 +14,6 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
 #include "generation_config_helper.hpp"
-#include "group_beam_searcher.hpp"
 #include "text_callback_streamer.hpp"
 
 
@@ -28,6 +27,8 @@ ov::EncodedResults greedy_decoding(
     std::shared_ptr<StreamerBase> streamer, 
     bool is_chat_conversation = false
 );
+
+EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig config);
 
 
 class LLMPipeline::LLMPipelineImpl {

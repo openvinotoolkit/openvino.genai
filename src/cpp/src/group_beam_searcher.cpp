@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/runtime/tensor.hpp>
-#include "group_beam_searcher.hpp"
 #include "generation_config_helper.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
 
 namespace {

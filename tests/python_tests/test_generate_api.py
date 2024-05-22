@@ -28,10 +28,10 @@ def run_hf_ov_genai_comparison(model_fixture, generation_config, prompt):
     hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:])
 
     device = 'CPU'
-    ov_tokenziers_path = '../../build/openvino_tokenizers/src/'
+    ov_tokenizers_path = '../../build/openvino_tokenizers/src/'
     import openvino_genai as ov_genai
     
-    pipe = ov_genai.LLMPipeline(path, device, {}, ov_tokenziers_path)
+    pipe = ov_genai.LLMPipeline(path, device, {}, ov_tokenizers_path)
     ov_output = pipe.generate(prompt, **generation_config)
 
     if hf_output != ov_output:

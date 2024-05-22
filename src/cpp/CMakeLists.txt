@@ -49,8 +49,6 @@ add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 add_library(openvino::${TARGET_NAME} ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME}
-    # TODO: remove it, because beam_search algo should not be exposed to end users
-    PRIVATE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../text_generation/causal_lm/cpp/>"
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
@@ -65,6 +63,13 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
         "$<TARGET_FILE:${TARGET_NAME}>"
         "${CMAKE_CURRENT_SOURCE_DIR}/../python/openvino_genai/$<TARGET_FILE_NAME:${TARGET_NAME}>"
     COMMENT "Copy ${TARGET_NAME} to src/python/openvino_genai")
+
+# Copy libcore_tokenizers.so to build_dir/openvino_tokenizers/src/
+add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy
+        "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/lib/libcore_tokenizers.so"
+        "${CMAKE_BINARY_DIR}/openvino_tokenizers/src/"
+    COMMENT "Copy libcore_tokenizers.so to build_dir/openvino_tokenizers/src/")
 
 install(TARGETS ${TARGET_NAME} LIBRARY DESTINATION . COMPONENT core_genai RUNTIME DESTINATION . COMPONENT core_genai)
 
