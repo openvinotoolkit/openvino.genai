@@ -237,9 +237,13 @@ def generate_and_compare_with_reference_text(model_path: Path, prompts: List[str
         for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):
             assert ref_text == ov_text
 
-def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = None):
+def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = None, generation_config = None):
     prompts, generation_configs = get_test_dataset()
     scheduler_config = get_scheduler_config(scheduler_params)
+
+    if generation_config is not None:
+        generation_config.rng_seed = 0
+        generation_configs = [generation_config] * len(prompts)
 
     _generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
 

@@ -55,6 +55,8 @@ public:
             }
         }
 
+        _clear_waiting_sequences(sequence_groups);
+
         return scheduler_output;
     }
 
@@ -104,9 +106,10 @@ private:
                 m_block_manager.free_sequence(seq_id);
             }
             sequence_group->reset();
+            sequence_group->set_waiting();
             return m_block_manager.num_free_blocks() > prev_blocks_count;
         }
-
+        
         // currently partial preemtion is enabled only for single running sequence case
         // TODO: implement partial preemption for case with muliple sequences in group
         for (size_t s = 0; s < num_running_sequences; ++s) {
@@ -150,6 +153,7 @@ private:
             m_block_manager.free_sequence(seq_id);
         }
         sequence_group->preempt_tokens(preempted_tokens);
+        sequence_group->set_waiting();
         return total_num_released_blocks > 0;
     }
 
@@ -197,7 +201,7 @@ private:
 
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
-            if (!sequence_group->can_generate_tokens()) {
+            if (!sequence_group->can_generate_tokens() && !sequence_group->is_waiting()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
@@ -249,7 +253,7 @@ private:
             // Question: do we need to schedule preeempted first as it's done in vLLM?
             // Answer: preempted sequences have low priority, so they should be after "running" ones. So, here we
             //         keep latencies for sequence groups of high priority
-            if (sequence_group->can_generate_tokens()) {
+            if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting()) {
                 OPENVINO_ASSERT(!sequence_group->has_finished());
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 size_t num_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
@@ -322,7 +326,7 @@ private:
 
         for (size_t sequence_group_id = 0, num_scheduled_tokens = 0, max_sequence_len = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
-            if (!sequence_group->can_generate_tokens()) {
+            if (!sequence_group->can_generate_tokens() && !sequence_group->is_waiting()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
@@ -379,6 +383,12 @@ private:
                 num_scheduled_tokens += sequence_len;
                 num_running_sequence_groups += 1;
             }
+        }
+    }
+
+    void _clear_waiting_sequences(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+        for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) { 
+            sequence_groups[sequence_group_id]->clear_waiting_sequences();
         }
     }
 };

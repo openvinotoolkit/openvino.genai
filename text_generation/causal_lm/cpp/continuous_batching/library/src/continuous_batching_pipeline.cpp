@@ -147,6 +147,14 @@ public:
             timer.end();
         }
 
+        // if no tokens were scheduled, we are out of memory
+        if (scheduler_output.m_total_num_scheduled_tokens == 0) {
+            for (size_t sequence_group_id = 0; sequence_group_id < m_requests.size(); ++sequence_group_id) {
+                m_requests[sequence_group_id]->set_out_of_memory();
+            }
+            return {};
+        }
+
         ov::Tensor logits;
         {
             static ManualTimer timer("forward");
@@ -194,7 +202,6 @@ public:
         }
 
         // perform post-processing of current step
-
         std::vector<GenerationResult> currently_finished_requests;
         {
             static ManualTimer timer("create finished results");
@@ -221,6 +228,14 @@ public:
         return !m_requests.empty();
     }
 
+    bool out_of_memory() const {
+        for (size_t sequence_group_id = 0; sequence_group_id < m_requests.size(); ++sequence_group_id) {
+            if (m_requests[sequence_group_id]->out_of_memory())
+                return true;
+        }
+        return false;
+    }
+
     std::vector<GenerationResult> generate(const std::vector<std::string> prompts, std::vector<GenerationConfig> sampling_params) {
         OPENVINO_ASSERT(!has_running_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
         OPENVINO_ASSERT(prompts.size() == sampling_params.size());
@@ -232,10 +247,13 @@ public:
         std::vector<GenerationResult> results;
         results.reserve(m_requests.size());
 
-        while (has_running_requests()) {
+        while (has_running_requests() && !out_of_memory()) {
             std::vector<GenerationResult> partial_results = step();
-            results.insert(results.end(), partial_results.begin(), partial_results.end());
+            if (partial_results.size() > 0)
+                results.insert(results.end(), partial_results.begin(), partial_results.end());
         }
+
+        OPENVINO_ASSERT(!out_of_memory(), "Not enough memory for processing the requests.");
 
         // sort results according to request_id to return results in order of initial prompts
         std::sort(results.begin(), results.end(), [] (const GenerationResult& r1, const GenerationResult& r2) -> bool {
