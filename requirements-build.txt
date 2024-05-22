@@ -1,2 +1,2 @@
-cmake
-build
+cmake~=3.23
+build~=1.2.1
