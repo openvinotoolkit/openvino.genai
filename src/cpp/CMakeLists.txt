@@ -94,7 +94,7 @@ endif()
 if(MSVC OR APPLE)
     set(ARCH_DIR ${ARCH_DIR}/${CMAKE_BUILD_TYPE})
 endif()
-install(TARGETS ${TARGET_NAME} EXPORT openvino_genaiTargets
+install(TARGETS ${TARGET_NAME}
     LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai
     RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai)
 install(TARGETS ${TARGET_NAME} EXPORT openvino_genaiTargets
