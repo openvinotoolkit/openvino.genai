@@ -4,8 +4,14 @@
 
 cmake_minimum_required(VERSION 3.15)
 
-set(CMAKE_BUILD_TYPE "Release" CACHE STRING "CMake build type")
-set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Release" "Debug" "RelWithDebInfo" "MinSizeRel")
+# Multi config generators such as Visual Studio ignore CMAKE_BUILD_TYPE. Multi config generators are configured with
+# CMAKE_CONFIGURATION_TYPES, but limiting options in it completely removes such build options
+get_property(GENERATOR_IS_MULTI_CONFIG_VAR GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(NOT GENERATOR_IS_MULTI_CONFIG_VAR AND NOT DEFINED CMAKE_BUILD_TYPE)
+    message(STATUS "CMAKE_BUILD_TYPE is not defined, 'Release' will be used")
+    # Setting CMAKE_BUILD_TYPE as CACHE must go before project(). Otherwise project() sets its value and set() doesn't take an effect
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel ...")
+endif()
 
 project(openvino_genai VERSION 2024.2.0.0)
 

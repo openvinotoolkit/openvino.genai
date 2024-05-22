@@ -65,7 +65,7 @@ public:
 class OPENVINO_GENAI_EXPORTS LLMPipeline {
 public:
     /**
-    * @brief Constructs a LLMPipeline when convert model xml/bin files, tokenizers and configuration and in the same dir.
+    * @brief Constructs an LLMPipeline from xml/bin files, tokenizers and configuration in the same dir.
     *
     * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
     * @param device optional device
@@ -105,8 +105,8 @@ public:
     
     template <typename... Properties>
     util::EnableIfAllStringAny<std::string, Properties...> generate(
-        std::string text,
-        Properties&&... properties) {
+            std::string text,
+            Properties&&... properties) {
         return generate(text, AnyMap{std::forward<Properties>(properties)...});
     }
     std::string generate(std::string text, const ov::AnyMap& config);

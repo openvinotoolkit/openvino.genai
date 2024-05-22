@@ -8,5 +8,5 @@
 #include "openvino/genai/llm_pipeline.hpp"
 
 namespace ov {
-    EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig sampling_params);
+    EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig config);
 }

@@ -37,7 +37,6 @@ GenerationConfig::GenerationConfig(std::string json_path) {
     read_json_param(data, "length_penalty", length_penalty);
     read_json_param(data, "num_return_sequences", num_return_sequences);
     read_json_param(data, "no_repeat_ngram_size", no_repeat_ngram_size);
-    // stop_criteria will be processed below
     read_json_param(data, "temperature", temperature);
     read_json_param(data, "top_p", top_p);
     read_json_param(data, "top_k", top_k);
