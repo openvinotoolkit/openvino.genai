@@ -73,7 +73,7 @@ public:
     */
     LLMPipeline(std::string& path, std::string device="CPU", 
                 const ov::AnyMap& plugin_config={}, 
-                const std::string& ov_tokenizer_path="");
+                const std::string& ov_tokenizers_path="");
     
     /**
     * @brief Constructs a LLMPipeline when ov::Tokenizer is initialized manually using file from the different dirs.
@@ -88,7 +88,7 @@ public:
         const ov::Tokenizer& tokenizer,
         const std::string device="CPU",
         const ov::AnyMap& plugin_config = {},
-        const std::string& ov_tokenizer_path=""
+        const std::string& ov_tokenizers_path=""
     );
     
     ~LLMPipeline();

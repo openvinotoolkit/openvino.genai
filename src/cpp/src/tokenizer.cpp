@@ -53,17 +53,17 @@ public:
     int64_t m_eos_token_id = 2;
 
     TokenizerImpl() = default;
-    TokenizerImpl(std::string tokenizers_path, const std::string device, const std::string& ov_tokenizer_path) {
+    TokenizerImpl(std::string tokenizers_path, const std::string device, const std::string& ov_tokenizers_path) {
         ov::Core core;
         
         if (ov::generate_utils::is_xml(tokenizers_path))
             OPENVINO_THROW("tokenizers_path should be a path to a dir not a xml file");
     
-        if (ov_tokenizer_path.empty()) {
+        if (ov_tokenizers_path.empty()) {
             // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
             core.add_extension(OPENVINO_TOKENIZERS_PATH);
         } else {
-            core.add_extension(ov_tokenizer_path + "/libopenvino_tokenizers.so");
+            core.add_extension(ov_tokenizers_path + "/libopenvino_tokenizers.so");
         }
         std::shared_ptr<ov::Model> tokenizer_model, detokenizer_model;
         try {
@@ -144,8 +144,8 @@ public:
     }
 };
 
-Tokenizer::Tokenizer(const std::string& tokenizers_path, const std::string& device, const std::string& ov_tokenizer_path) {
-    m_pimpl = std::make_shared<TokenizerImpl>(tokenizers_path, device, ov_tokenizer_path);
+Tokenizer::Tokenizer(const std::string& tokenizers_path, const std::string& device, const std::string& ov_tokenizers_path) {
+    m_pimpl = std::make_shared<TokenizerImpl>(tokenizers_path, device, ov_tokenizers_path);
 }
 
 std::pair<ov::Tensor, ov::Tensor> Tokenizer::encode(const std::string prompt) {
