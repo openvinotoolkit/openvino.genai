@@ -191,7 +191,7 @@ def save_ov_model_from_optimum(model, hf_tokenizer, model_path: Path):
     # convert tokenizers as well
     from openvino_tokenizers import convert_tokenizer
     from openvino import serialize
-    tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True, add_special_tokens=False)
+    tokenizer, detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True, skip_special_tokens=True)
     serialize(tokenizer, model_path / "openvino_tokenizer.xml")
     serialize(detokenizer, model_path / "openvino_detokenizer.xml")
 
