@@ -202,6 +202,7 @@ public:
         }
 
         // perform post-processing of current step
+
         std::vector<GenerationResult> currently_finished_requests;
         {
             static ManualTimer timer("create finished results");

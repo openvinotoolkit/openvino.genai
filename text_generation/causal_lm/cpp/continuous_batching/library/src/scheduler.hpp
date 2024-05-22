@@ -109,7 +109,7 @@ private:
             sequence_group->set_waiting();
             return m_block_manager.num_free_blocks() > prev_blocks_count;
         }
-        
+
         // currently partial preemtion is enabled only for single running sequence case
         // TODO: implement partial preemption for case with muliple sequences in group
         for (size_t s = 0; s < num_running_sequences; ++s) {
