@@ -39,7 +39,8 @@ jobs:
       - name: Install OpenVINO and other conda dependencies
         run: |
           conda activate openvino_sd_cpp
-          conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler git make cmake
+          conda install -c conda-forge c-compiler cxx-compiler git make cmake  # TODO: openvino=2024.1.0
+          pip install --pre openvino --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
       - name: Install python dependencies
@@ -83,7 +84,8 @@ jobs:
         - name: Install OpenVINO and other conda dependencies
           run: |
             conda activate openvino_sd_cpp
-            conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler git make cmake
+            conda install -c conda-forge c-compiler cxx-compiler git make cmake  # TODO: openvino=2024.1.0
+            pip install --pre openvino --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
   
         - name: Install python dependencies
           working-directory: ${{ env.working_directory }}
