@@ -78,9 +78,9 @@ install(TARGETS ${TARGET_NAME}
 if(NOT MSVC)
     add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E copy
-            "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/lib/libcore_tokenizers.so"
+            "$<TARGET_FILE:core_tokenizers>"
             "${CMAKE_BINARY_DIR}/openvino_tokenizers/src/"
-        COMMENT "Copy libcore_tokenizers.so to build_dir/openvino_tokenizers/src/")
+        COMMENT "Copy core_tokenizers to build_dir/openvino_tokenizers/src/")
 endif()
 
 # - Windows: `<openvino_dir>\runtime\bin\intel64\Release\`
