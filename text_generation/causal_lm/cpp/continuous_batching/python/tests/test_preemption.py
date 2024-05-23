@@ -13,8 +13,8 @@ from test_sampling import RandomSamplingTestStruct
 
 scheduler_params_list = [({"num_kv_blocks": 2, "block_size": 32, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_greedy()),
                          ({"num_kv_blocks": 2, "block_size": 32, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_greedy()),
-                         ({"num_kv_blocks": 34, "block_size": 32, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()), # output text does not match due to <\s> symbols problem
-                         ({"num_kv_blocks": 34, "block_size": 32, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search())] # output text does not match due to <\s> symbols problem
+                         ({"num_kv_blocks": 34, "block_size": 32, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search()),
+                         ({"num_kv_blocks": 34, "block_size": 32, "dynamic_split_fuse": False, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_beam_search())]
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
 def test_preemption(tmp_path, params):
@@ -36,7 +36,7 @@ multinomial_params = RandomSamplingTestStruct(generation_config=[get_multinomial
                                                                 ],
                                                        ref_texts=[ ["\n\nOpenVINO is a live platform that allows users to create and manage a new library for open source applications.\n\nOpenVINO is"],
                                                                    ["  You're getting much better results from doing this, than you are by not doing this.  I have a BH and I was so far"],
-                                                                   ["\nI'm from Canada, and I'm from the US, so I'm not sure.\nI think you mean the Canadian version.</s>"]])
+                                                                   ["\nI'm from Canada, and I'm from the US, so I'm not sure.\nI think you mean the Canadian version."]])
 
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
