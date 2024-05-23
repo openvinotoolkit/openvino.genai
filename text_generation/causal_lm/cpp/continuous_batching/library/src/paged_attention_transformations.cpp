@@ -12,14 +12,13 @@ void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, Dev
     const ov::op::util::VariableVector& variables = model->get_variables();
     OPENVINO_ASSERT(!variables.empty(), "Model is supposed to be stateful");
 
-    // number of variables is 2 (K and V) multiplied by number of decoder layers
-    size_t num_layers = variables.size() >> 1;
-
-    ov::pass::Manager manager;
-    manager.register_pass<ov::pass::SDPAToPagedAttention>();
-    manager.run_passes(model);
+    ov::pass::SDPAToPagedAttention().run_on_model(model);
 
     const ov::ParameterVector& parameters = model->get_parameters();
+
+    size_t num_layers = std::count_if(parameters.begin(), parameters.end(), [](std::shared_ptr<ov::op::v0::Parameter> parameter) {
+        return parameter->get_friendly_name().find("key_cache.") == 0;
+    });
 
     // extract num_kv_heads and head_size
     size_t kv_caches_inputs_offset = 2;
