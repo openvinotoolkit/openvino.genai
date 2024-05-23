@@ -22,7 +22,7 @@ dependencies = [
 [tool.scikit-build]
 cmake.source-dir = "./"
 cmake.build-type = "Release"
-cmake.targets = ["py_generate_pipeline", "openvino::genai"]
+cmake.targets = ["py_generate_pipeline", "genai"]
 install.components = ["wheel_genai"]
 sdist.cmake = true
 wheel.packages = ["src/python/openvino_genai"]
