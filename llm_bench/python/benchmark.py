@@ -133,6 +133,11 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     if num == 0:
         warmup_md5[prompt_index] = result_md5_list
     per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+    tm_list = []
+    tm_infer_list = []
+    if bench_hook is not None:
+        tm_list = bench_hook.get_time_list()
+        tm_infer_list = bench_hook.get_time_infer_list()
     iter_data = gen_iterate_data(
         num,
         input_token_size * args['batch_size'],
@@ -147,8 +152,6 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         tokenization_time=(tok_encode_time, tok_decode_time)
     )
     iter_data_list.append(iter_data)
-    tm_list = bench_hook.get_time_list()
-    tm_infer_list = bench_hook.get_time_infer_list()
     utils.metrics_print.print_metrics(
         num,
         iter_data,
@@ -167,8 +170,9 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
     else:
         utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
-    bench_hook.clear_time_list()
-    bench_hook.clear_time_infer_list()
+    if bench_hook is not None:
+        bench_hook.clear_time_list()
+        bench_hook.clear_time_infer_list()
 
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
