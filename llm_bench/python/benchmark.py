@@ -34,7 +34,7 @@ DEFAULT_IMAGE_HEIGHT = 512
 DEFAULT_SUPER_RESOLUTION_STEPS = 50
 DEFAULT_SUPER_RESOLUTION_WIDTH = 128
 DEFAULT_SUPER_RESOLUTION_HEIGHT = 128
-MAX_OUTPUT_TOKEN_SIZE = 64 * 1024
+MAX_OUTPUT_TOKEN_SIZE = 512
 
 mem_consumption = MemConsumption()
 stable_diffusion_hook = StableDiffusionHook()
@@ -128,7 +128,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             generated_text_len = len(result[bs_idx])
         num_tokens += generated_text_len
         if generated_text_len > max_gen_tokens:
-            log.error('Output token size is over max output token size!')
+            log.error(f'Output token size {generated_text_len} is over max output token size {max_gen_tokens}!')
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
             utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
@@ -140,6 +140,8 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
     tm_infer_list = bench_hook.get_time_infer_list()
+    log.debug('latency of all infers:')
+    [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
     iter_data = gen_iterate_data(
         num,
         input_token_size * args['batch_size'],
