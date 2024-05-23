@@ -10,7 +10,7 @@ else()
     set(OPENVINO_TOKENIZERS_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../bin/openvino_tokenizers.dll)  # TODO: I'll go away after the generate() gets a way to find openvino_tokenizers
 endif()
 
-find_package(openvino_genai REQUIRED PATHS
+find_package(OpenVINOGenAI REQUIRED PATHS
     "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
     ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
 )

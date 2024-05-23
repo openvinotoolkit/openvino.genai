@@ -5,8 +5,8 @@
 include(FetchContent)
 FetchContent_Declare(
     pybind11
-    GIT_REPOSITORY https://github.com/pybind/pybind11
-    GIT_TAG        v2.12.0
+    URL https://github.com/pybind/pybind11/archive/3e9dfa2866941655c56877882565e7577de6fc7b.tar.gz
+    URL_HASH SHA256=9a7d245f405f470798b9d2a48912cc97230658024775299eac203f7c9c9ae37c
 )
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 FetchContent_GetProperties(pybind11)
@@ -16,7 +16,7 @@ if(NOT pybind11_POPULATED)
 endif()
 
 pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
-target_link_libraries(py_generate_pipeline PRIVATE genai)
+target_link_libraries(py_generate_pipeline PRIVATE openvino::genai)
 
 # setting RPATH / LC_RPATH depending on platform
 if(LINUX)

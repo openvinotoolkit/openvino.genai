@@ -104,17 +104,17 @@ endif()
 if(MSVC OR APPLE)
     set(ARCH_DIR ${ARCH_DIR}/${CMAKE_BUILD_TYPE})
 endif()
-install(TARGETS ${TARGET_NAME} EXPORT openvino_genaiTargets
+install(TARGETS ${TARGET_NAME} EXPORT OpenVINOGenAITargets
     LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai
         NAMELINK_COMPONENT core_genai_dev
     ARCHIVE DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai_dev
     RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai
     INCLUDES DESTINATION runtime/include)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION runtime/include COMPONENT core_genai_dev)
-install(EXPORT openvino_genaiTargets FILE openvino_genaiTargets.cmake NAMESPACE openvino:: DESTINATION runtime/cmake)
+install(EXPORT OpenVINOGenAITargets FILE OpenVINOGenAITargets.cmake NAMESPACE openvino:: DESTINATION runtime/cmake)
 include(CMakePackageConfigHelpers)
-configure_package_config_file(openvino_genaiConfig.cmake.in "${CMAKE_BINARY_DIR}/openvino_genaiConfig.cmake" INSTALL_DESTINATION runtime/cmake)
-install(FILES "${CMAKE_BINARY_DIR}/openvino_genaiConfig.cmake" "${CMAKE_BINARY_DIR}/openvino_genaiConfigVersion.cmake" DESTINATION runtime/cmake COMPONENT core_genai_dev)
+configure_package_config_file(OpenVINOGenAIConfig.cmake.in "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfig.cmake" INSTALL_DESTINATION runtime/cmake)
+install(FILES "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfig.cmake" "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfig.cmake" DESTINATION runtime/cmake COMPONENT core_genai_dev)
 include(CMakePackageConfigHelpers)
-write_basic_package_version_file("${CMAKE_BINARY_DIR}/openvino_genaiConfigVersion.cmake" VERSION ${CMAKE_PROJECT_VERSION} COMPATIBILITY AnyNewerVersion)
-export(EXPORT openvino_genaiTargets FILE "${CMAKE_BINARY_DIR}/openvino_genaiTargets.cmake" NAMESPACE openvino::)
+write_basic_package_version_file("${CMAKE_BINARY_DIR}/OpenVINOGenAIConfigVersion.cmake" VERSION ${CMAKE_PROJECT_VERSION} COMPATIBILITY AnyNewerVersion)
+export(EXPORT OpenVINOGenAITargets FILE "${CMAKE_BINARY_DIR}/OpenVINOGenAITargets.cmake" NAMESPACE openvino::)
