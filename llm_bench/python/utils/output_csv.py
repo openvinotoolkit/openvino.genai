@@ -78,7 +78,7 @@ def output_avg_min_median(iter_data_list):
                 values = []
                 for prompt in same_prompt_datas:
                     if prompt[key] != '':
-                        values.append(prompt[key])                
+                        values.append(prompt[key])
                 if len(values) > 0:
                     result[prompt_idx][0][key] = np.mean(values)
                     result[prompt_idx][1][key] = np.min(values)
