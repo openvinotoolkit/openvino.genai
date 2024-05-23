@@ -32,6 +32,9 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }}
 
   windows_genai_package:
+    strategy:
+      matrix:
+        build-type: [Release, Debug]
     runs-on: windows-latest
     defaults:
       run:
