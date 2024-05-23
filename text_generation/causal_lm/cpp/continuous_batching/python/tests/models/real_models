@@ -26,16 +26,16 @@ microsoft/Phi-3-mini-4k-instruct
 nomic-ai/gpt4all-mpt
 mosaicml/mpt-7b
 mosaicml/mpt-7b-chat
+bigcode/starcoderbase-3b
+bigcode/gpt_bigcode-santacoder
+allenai/OLMo-1B-hf
+allenai/OLMo-7B-hf
 # Set of models, failed because of C++ Cont. Batching
 # RuntimeError: Check 'rt_info.find("eos_token_id") != rt_info.end(): facebook/incoder-1B
 #
 # Set of models, which require support in optimum-intel / transformers / models repositories:
-# https://huggingface.co/Salesforce/xgen-7b-8k-base/discussions/32: Salesforce/xgen-7b-8k-base
-# Trying to export a jais model, that is a custom or unsupported architecture: core42/jais-13b-chat
 # IndexError: tuple index out of range: facebook/blenderbot-3B
 # `pip install flash_attn`: OrionStarAI/Orion-14B-Base
-# Xeon only: reports IP_ADDRESS on Optimum inference: allenai/OLMo-1B-hf
-# Xeon only: reports IP_ADDRESS on Optimum inference: allenai/OLMo-7B-hf
 #
 # Set of models, failed because of CPU limitation
 # head size must be multiple of 16, current: 100: pankajmathur/orca_mini_3b
@@ -46,8 +46,8 @@ mosaicml/mpt-7b-chat
 # 'start' input is not a scalar: google/pegasus-big_patent
 # 'start' input is not a scalar: google/pegasus-large
 # 'stop' input is not a scalar: Salesforce/codegen2-1b
-# Model references undeclared parameters: opset1::Parameter attention_mask () -> (i64[?,?]): bigcode/starcoderbase-3b
-# Model references undeclared parameters: opset1::Parameter attention_mask () -> (i64[?,?]): bigcode/gpt_bigcode-santacoder
+# 'stop' input is not a scalar: core42/jais-13b
+# 'stop' input is not a scalar: core42/jais-13b-chat
 # Model references undeclared parameters: opset1::Parameter attention_mask () -> (i64[?,?]): facebook/opt-350m
 #
 # Set of models, failed because of OpenVINO Tokenizers:
@@ -55,8 +55,6 @@ mosaicml/mpt-7b-chat
 #
 # Set of 13B, 30B abd 70B models:
 EleutherAI/gpt-neox-20b
-# big model, not tried: core42/jais-13b
-# see optimum: core42/jais-13b-chat
 # big model, not tried: young-geng/koala
 mistralai/Mixtral-8x7B-v0.1
 mistralai/Mixtral-8x7B-Instruct-v0.1
@@ -72,7 +70,6 @@ xverse/XVERSE-MoE-A4.2B
 # Set of passed models:
 microsoft/phi-2
 microsoft/phi-1_5
-EleutherAI/gpt-neo-125m
 EleutherAI/gpt-neo-125m
 EleutherAI/gpt-neo-1.3B
 EleutherAI/gpt-j-6b
@@ -102,3 +99,4 @@ togethercomputer/RedPajama-INCITE-Chat-3B-v1
 #
 # Set of invalid models, because of HF:
 # HF: Exception: data did not match any variant of untagged enum PyPreTokenizerTypeWrapper at line 78 column 3: xverse/XVERSE-7B-Chat
+# https://huggingface.co/Salesforce/xgen-7b-8k-base/discussions/32: Salesforce/xgen-7b-8k-base
