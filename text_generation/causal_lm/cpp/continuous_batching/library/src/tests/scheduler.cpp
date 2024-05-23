@@ -25,7 +25,6 @@ TEST(TestScheduler, general_test) {
         .block_size = 4,
         .dynamic_split_fuse = false,
         .max_num_seqs = 5,
-        .max_paddings = 8,
     },
         SchedulerConfig {
         .max_num_batched_tokens = 32,
@@ -33,7 +32,6 @@ TEST(TestScheduler, general_test) {
         .block_size = 4,
         .dynamic_split_fuse = true,
         .max_num_seqs = 5,
-        .max_paddings = 8,
     }
     };
     for (auto scheduler_config: configs) {
@@ -123,7 +121,6 @@ TEST(TestScheduler, test_append_slots_considers_all_sequences) {
         .block_size = 4,
         .dynamic_split_fuse = false,
         .max_num_seqs = 5,
-        .max_paddings = 8,
     },
         SchedulerConfig {
         .max_num_batched_tokens = 32,
@@ -131,7 +128,6 @@ TEST(TestScheduler, test_append_slots_considers_all_sequences) {
         .block_size = 4,
         .dynamic_split_fuse = true,
         .max_num_seqs = 5,
-        .max_paddings = 8,
     }
     };
     for (auto scheduler_config: configs) {
@@ -195,7 +191,6 @@ TEST(TestScheduler, test_partial_preemption) {
             .block_size = 4,
             .dynamic_split_fuse = false,
             .max_num_seqs = 5,
-            .max_paddings = 8,
         },
         SchedulerConfig {
             .max_num_batched_tokens = 32,
@@ -203,7 +198,6 @@ TEST(TestScheduler, test_partial_preemption) {
             .block_size = 4,
             .dynamic_split_fuse = true,
             .max_num_seqs = 5,
-            .max_paddings = 8,
         }
     };
     for (auto scheduler_config: configs) {
@@ -294,7 +288,6 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
             .block_size = 4,
             .dynamic_split_fuse = false,
             .max_num_seqs = 5,
-            .max_paddings = 8,
         },
         SchedulerConfig {
             .max_num_batched_tokens = 32,
@@ -302,7 +295,6 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
             .block_size = 4,
             .dynamic_split_fuse = true,
             .max_num_seqs = 5,
-            .max_paddings = 8,
         }
     };
     for (auto scheduler_config: configs) {

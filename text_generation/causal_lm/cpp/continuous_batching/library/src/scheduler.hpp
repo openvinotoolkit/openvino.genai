@@ -313,7 +313,6 @@ private:
         // Current scheduling method schedules prompts only in a manner similar to vLLM:
         // - Limits max batch size by:
         //   - max_num_seqs (256 in vLLM's defaults)
-        //   - max_paddings (256 in vLLM's defaults)
         //   - max_num_batched_tokens (max_model_length (and at least 2048) in vLLM's defaults)
 
         OPENVINO_ASSERT(!m_config.dynamic_split_fuse, "Internal error: we are in vLLM scheduling");
@@ -347,11 +346,6 @@ private:
 
                 // apply max num batched tokens limitation
                 if (num_available_tokens_in_megabatch < max_sequence_len)
-                    break;
-
-                // apply max padding tokens limitations
-                size_t total_num_paddings = max_sequence_len * (scheduler_output.m_scheduled_sequence_groups_ids.size() + 1) - (num_scheduled_tokens + sequence_len);
-                if (total_num_paddings > m_config.max_paddings)
                     break;
 
                 // apply KV cache limitations
