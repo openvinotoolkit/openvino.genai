@@ -5,20 +5,24 @@
 import time
 import torch
 import warnings
-import transformers
 import logging as log
-import utils.hook_common as hook_common
 from torch import nn
-from packaging import version
 from typing import Optional, Tuple, Union, List
 from transformers.generation.stopping_criteria import (
+    EosTokenCriteria,
     StoppingCriteriaList,
     validate_stopping_criteria,
 )
 from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.beam_search import BeamScorer
+from transformers.generation.utils import (
+    _split_model_inputs,
+    stack_model_outputs,
+)
 from transformers.utils import ModelOutput
-import utils.hook_beam_search_old as hook_old_beam
+
+
+logger = log.getLogger(__name__)
 
 
 class GenerateBeamDecoderOnlyOutput(ModelOutput):
@@ -52,8 +56,8 @@ tm_list = []
 tm_infer_list = []
 
 
-# Transformers version: Release/v4.39.2 97c00cdfe132164dbd793447a088432fa359fd36
-# Copied from https://github.com/huggingface/transformers/blob/v4.39-release/src/transformers/generation/utils.py#L2823
+# Transformers version: v4.40-release 4fdf58afb72b0754da30037fc800b6044e7d9c99
+# Copied from https://github.com/huggingface/transformers/blob/4fdf58afb72b0754da30037fc800b6044e7d9c99/src/transformers/generation/utils.py#L2911
 # Add the function of collecting latency
 def new_beam_search(
         self,
@@ -200,7 +204,25 @@ def new_beam_search(
         if len(stopping_criteria) == 0:
             warnings.warn("You don't have defined any stopping_criteria, this will likely loop forever", UserWarning)
         pad_token_id = pad_token_id if pad_token_id is not None else self.generation_config.pad_token_id
-        eos_token_id = eos_token_id if eos_token_id is not None else self.generation_config.eos_token_id
+        if eos_token_id is not None:
+            logger.warning_once(
+                "`eos_token_id` is deprecated in this function and will be removed in v4.41, use"
+                " `stopping_criteria=StoppingCriteriaList([EosTokenCriteria(eos_token_id=eos_token_id)])` instead."
+                " Otherwise make sure to set `model.generation_config.eos_token_id`",
+                FutureWarning,
+            )
+            stopping_criteria.append(EosTokenCriteria(eos_token_id=eos_token_id))
+        else:
+            # TODO remove when the method is totally private and beam scorer refactored
+            # need to get `eos_token_id` and add stopping criteria, so that generation does not go forever
+            eos_token_id = [
+                criteria.eos_token_id.tolist() for criteria in stopping_criteria if hasattr(criteria, "eos_token_id")
+            ]
+            eos_token_id = eos_token_id[0] if eos_token_id else None
+            if eos_token_id is None and self.generation_config.eos_token_id is not None:
+                eos_token_id = self.generation_config.eos_token_id
+                stopping_criteria.append(EosTokenCriteria(eos_token_id=eos_token_id))
+
         if isinstance(eos_token_id, int):
             eos_token_id = [eos_token_id]
         output_scores = output_scores if output_scores is not None else self.generation_config.output_scores
@@ -275,6 +297,7 @@ def new_beam_search(
                         "transo_xl",
                         "xlnet",
                         "cpm",
+                        "jamba",
                     ]
                 ):
                     raise RuntimeError(
@@ -282,7 +305,7 @@ def new_beam_search(
                         f"for `low_memory beam_search`. Please open an issue on GitHub if you need this feature."
                     )
 
-                inputs_per_sub_batches = hook_common._split_model_inputs(
+                inputs_per_sub_batches = _split_model_inputs(
                     model_inputs, split_size=batch_size, full_batch_size=batch_beam_size
                 )
                 outputs_per_sub_batch = [
@@ -295,7 +318,7 @@ def new_beam_search(
                     for inputs_per_sub_batch in inputs_per_sub_batches
                 ]
 
-                outputs = hook_common.stack_model_outputs(outputs_per_sub_batch)
+                outputs = stack_model_outputs(outputs_per_sub_batch)
 
             else:  # Unchanged original behavior
                 outputs = self(
@@ -305,7 +328,6 @@ def new_beam_search(
                     output_hidden_states=output_hidden_states,
                 )
             tm_infer_list.append(time.perf_counter() - tic_infer)
-
             if synced_gpus and this_peer_finished:
                 cur_len = cur_len + 1
                 continue  # don't waste resources running the code we don't need
@@ -461,15 +483,6 @@ class BeamSearchHook:
         global tm_infer_list
         return tm_infer_list
 
-    def new_forward(self, model, model_type=None):
+    def new_forward(self, model):
         """Define a new beam search function."""
-        min_version = version.parse(hook_common.TRANS_MIN_VERSION)
-        trans_version = version.parse(transformers.__version__)
-        if trans_version < min_version:
-            log.warning(f'The function of getting latency of beam search will not be available with current transformers version:{trans_version}')
-        else:
-            min_second_version = version.parse(hook_common.TRANS_SENCOND_VERSION)
-            if trans_version >= min_second_version:
-                model._beam_search = new_beam_search.__get__(model, model.__class__)
-            else:
-                model.beam_search = hook_old_beam.old_beam_search.__get__(model, model.__class__)
+        model._beam_search = new_beam_search.__get__(model, model.__class__)
