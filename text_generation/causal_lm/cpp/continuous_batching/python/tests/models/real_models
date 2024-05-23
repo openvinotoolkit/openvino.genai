@@ -22,9 +22,10 @@ BAAI/AquilaChat-7B
 baichuan-inc/Baichuan-7B
 tiiuae/falcon-7b
 microsoft/Phi-3-mini-128k-instruct
-microsoft/Phi-3-mini-4k-instruct#
+microsoft/Phi-3-mini-4k-instruct
 nomic-ai/gpt4all-mpt
 mosaicml/mpt-7b
+mosaicml/mpt-7b-chat
 # Set of models, failed because of C++ Cont. Batching
 # RuntimeError: Check 'rt_info.find("eos_token_id") != rt_info.end(): facebook/incoder-1B
 #
@@ -58,11 +59,13 @@ EleutherAI/gpt-neox-20b
 # see optimum: core42/jais-13b-chat
 # big model, not tried: young-geng/koala
 mistralai/Mixtral-8x7B-v0.1
-# big model, not tried: mistralai/Mixtral-8x7B-Instruct-v0.1
-# big model, not tried: mosaicml/mpt-30b
+mistralai/Mixtral-8x7B-Instruct-v0.1
+mosaicml/mpt-30b
 # see optimum: OrionStarAI/Orion-14B-Base
 # big model, not tried: OrionStarAI/Orion-14B-Chat
-# big model, not tried: Qwen/Qwen1.5-MoE-A2.7B
+CohereForAI/c4ai-command-r-v01
+openlm-research/open_llama_13b
+Qwen/Qwen1.5-MoE-A2.7B
 Qwen/Qwen1.5-MoE-A2.7B-Chat
 xverse/XVERSE-MoE-A4.2B
 #
