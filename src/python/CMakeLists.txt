@@ -5,8 +5,8 @@
 include(FetchContent)
 FetchContent_Declare(
     pybind11
-    GIT_REPOSITORY https://github.com/pybind/pybind11
-    GIT_TAG        v2.12.0
+    URL https://github.com/pybind/pybind11/archive/3e9dfa2866941655c56877882565e7577de6fc7b.tar.gz
+    URL_HASH SHA256=9a7d245f405f470798b9d2a48912cc97230658024775299eac203f7c9c9ae37c
 )
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 FetchContent_GetProperties(pybind11)
@@ -16,9 +16,7 @@ if(NOT pybind11_POPULATED)
 endif()
 
 pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
-target_link_libraries(py_generate_pipeline PRIVATE genai)
-
-install(TARGETS py_generate_pipeline LIBRARY DESTINATION . COMPONENT pygenai)
+target_link_libraries(py_generate_pipeline PRIVATE openvino::genai)
 
 # setting RPATH / LC_RPATH depending on platform
 if(LINUX)
@@ -46,3 +44,8 @@ add_custom_command(TARGET py_generate_pipeline POST_BUILD
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/ DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+install(TARGETS py_generate_pipeline LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+
+# wheel_genai component is used for wheel generation in pyproject.toml.
+# Exclude wheel_genai from normal packaging process.
+install(TARGETS genai py_generate_pipeline LIBRARY DESTINATION . COMPONENT wheel_genai RUNTIME DESTINATION . COMPONENT wheel_genai EXCLUDE_FROM_ALL)

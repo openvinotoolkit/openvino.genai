@@ -2,7 +2,7 @@ name: genai_python_lib
 on: pull_request
 jobs:
   ubuntu_genai_python_lib:
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -16,9 +16,11 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
       - run: python -m pip install --pre openvino --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly  # Can't load CentOS libraries from the archive
-      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+      # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
+      # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt
       - run: PYTHONPATH=./src/python/ python -c "from openvino_genai import LLMPipeline"
-      - run: source ./ov/setupvars.sh && python -m pip install --pre . --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+      - run: source ./ov/setupvars.sh && CMAKE_BUILD_PARALLEL_LEVEL="" python -m pip install --pre . --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
       - run: python -c "from openvino_genai import LLMPipeline"
       - name: GenAI Python API tests
         run: |
@@ -48,7 +50,9 @@ jobs:
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && cmake --build ./build/ --config Release -j
       - run: python -m pip install "numpy<1.27"
-      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+      # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
+      # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt
       - run: set "PYTHONPATH=./src/python;" && call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -c "from openvino_genai import LLMPipeline"  # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
-      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install .      
+      - run: set CMAKE_BUILD_PARALLEL_LEVEL=&& call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install .
       - run: python -c "from openvino_genai import LLMPipeline"

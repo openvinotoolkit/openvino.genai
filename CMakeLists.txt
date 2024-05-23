@@ -13,13 +13,14 @@ if(NOT GENERATOR_IS_MULTI_CONFIG_VAR AND NOT DEFINED CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel ...")
 endif()
 
-project(openvino_genai VERSION 2024.2.0.0)
+project(OpenVINOGenAI VERSION 2024.2.0.0)
 
 add_subdirectory(./thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
 add_subdirectory(src)
 add_subdirectory(text_generation/causal_lm/cpp)
 
 install(DIRECTORY text_generation/causal_lm/cpp/ DESTINATION samples/cpp/causal_lm COMPONENT cpp_samples_genai)
-install(FILES LICENSE third-party-programs.txt DESTINATION licensing_genai COMPONENT licensing_genai)  # TODO: how to merge with OPenvino
+install(FILES LICENSE DESTINATION licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
+install(FILES third-party-programs.txt DESTINATION licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
 set(CPACK_GENERATOR "ZIP")
 include(CPack)
