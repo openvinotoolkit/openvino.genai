@@ -22,7 +22,7 @@ def test_sampling_precommit(tmp_path, model_id):
 def test_sampling_nightly(tmp_path, model_id):
     run_test_pipeline(tmp_path, model_id)
 
-
+@pytest.mark.real_models
 @pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "real_models")))
 def test_real_models(tmp_path, model_id):
     run_test_pipeline(tmp_path, model_id)
