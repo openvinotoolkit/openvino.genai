@@ -18,9 +18,7 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release --target package -j
       - run: source ./ov/setupvars.sh && cmake --install ./build/ --config Release --prefix ov
       - run: ov/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
-      # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
-      # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
-      - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt -r ./requirements-build.txt
+      - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
       - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - run: source ./ov/setupvars.sh && timeout 50s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
@@ -43,9 +41,7 @@ jobs:
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && cmake --build ./build/ --config Release --target package -j
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && cmake --install ./build/ --config Release --prefix w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\samples\cpp\build_samples_msvc.bat -i "${{ github.workspace }}/samples_install"
-      # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
-      # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
-      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt -r ./requirements-build.txt
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm" .\TinyLlama-1.1B-Chat-v1.0\ ""
