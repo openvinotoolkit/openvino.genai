@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: 3.8
       - run: mkdir ./ov/
-      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.2.0-15454-0d95325972f/l_openvino_toolkit_centos7_2024.2.0.dev20240522_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/linux/l_openvino_toolkit_ubuntu20_2024.1.0.15008.f4afc983258_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
       - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - run: sudo apt-get install libtbb-dev
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
