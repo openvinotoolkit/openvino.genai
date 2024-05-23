@@ -1,6 +1,10 @@
 version: 2
 updates:
   - package-ecosystem: "pip"
+    directory: "./"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
     directory: "image_generation/stable_diffusion_1_5/cpp/scripts/"
     schedule:
       interval: "weekly"
