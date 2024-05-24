@@ -30,12 +30,32 @@ bigcode/starcoderbase-3b
 bigcode/gpt_bigcode-santacoder
 allenai/OLMo-1B-hf
 allenai/OLMo-7B-hf
+PygmalionAI/pygmalion-6b
+stabilityai/stable-code-3b
+berkeley-nest/Starling-LM-7B-alpha
+EleutherAI/gpt-neo-2.7B
+databricks/dolly-v1-6b
+openai-community/gpt2-large
+openai-community/gpt2-medium
+bigscience/bloom-7b1
+facebook/opt-1.3b
+facebook/opt-2.7b
+GAIR/Abel-7B-002
+google/gemma-1.1-7b-it
+google/gemma-2b-it
+microsoft/DialoGPT-large
+microsoft/DialoGPT-medium
+Qwen/Qwen1.5-1.8B
+microsoft/Orca-2-7b
 # Set of models, failed because of C++ Cont. Batching
 # RuntimeError: Check 'rt_info.find("eos_token_id") != rt_info.end(): facebook/incoder-1B
 #
 # Set of models, which require support in optimum-intel / transformers / models repositories:
 # IndexError: tuple index out of range: facebook/blenderbot-3B
 # `pip install flash_attn`: OrionStarAI/Orion-14B-Base
+# ValueError: Trying to export a fuyu model, that is a custom or unsupported architecture: adept/fuyu-8b
+# ValueError: Trying to export a mamba model, that is a custom or unsupported architecture: state-spaces/mamba-130m-hf
+# ValueError: Trying to export a xlnet model, that is a custom or unsupported architecture: xlnet/xlnet-base-cased
 #
 # Set of models, failed because of CPU limitation
 # head size must be multiple of 16, current: 100: pankajmathur/orca_mini_3b
@@ -52,6 +72,9 @@ allenai/OLMo-7B-hf
 #
 # Set of models, failed because of OpenVINO Tokenizers:
 # https://jira.devtools.intel.com/browse/CVS-142063: rinna/bilingual-gpt-neox-4b
+# Cannot convert tokenizer of this type without `.model` file: deepseek-ai/deepseek-coder-33b-instruct
+# Cannot convert tokenizer of this type without `.model` file: deepseek-ai/deepseek-coder-6.7b-instruct
+# Tokenizer type is not supported: <class 'transformers.models.biogpt.tokenization_biogpt.BioGptTokenizer'>: microsoft/biogpt
 #
 # Set of 13B, 30B abd 70B models:
 EleutherAI/gpt-neox-20b
@@ -66,6 +89,9 @@ openlm-research/open_llama_13b
 Qwen/Qwen1.5-MoE-A2.7B
 Qwen/Qwen1.5-MoE-A2.7B-Chat
 xverse/XVERSE-MoE-A4.2B
+cerebras/Cerebras-GPT-13B
+WizardLMTeam/WizardCoder-15B-V1.0
+TheBloke/Wizard-Vicuna-30B-Uncensored-GPTQ
 #
 # Set of passed models:
 microsoft/phi-2
