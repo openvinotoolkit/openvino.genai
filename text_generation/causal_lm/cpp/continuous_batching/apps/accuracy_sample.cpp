@@ -6,6 +6,12 @@
 
 #include "continuous_batching_pipeline.hpp"
 
+void print_sequence(const GenerationResult& generation_result) {
+    for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
+        std::cout << "Answer " << output_id << " (" << generation_result.m_scores[output_id] << ") : " << generation_result.m_generation_ids[output_id] << std::endl;
+    }
+}
+
 int main(int argc, char* argv[]) try {
     // Command line options
 
@@ -80,8 +86,27 @@ int main(int argc, char* argv[]) try {
         const GenerationResult & generation_result = generation_results[request_id];
 
         std::cout << "Question: " << prompts[request_id] << std::endl;
-        for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
-            std::cout << "Answer " << output_id << " (" << generation_result.m_scores[output_id] << ") : " << generation_result.m_generation_ids[output_id] << std::endl;
+        switch (generation_result.m_status)
+        {
+        case GenerationResultStatus::FINISHED:
+            print_sequence(generation_result);
+            break;
+        case GenerationResultStatus::IGNORED:
+            std::cout << "Sequence was ignored." <<std::endl;
+            if (generation_result.m_generation_ids.size() > 0) {
+                std::cout << "Partial result:" << std::endl;
+                print_sequence(generation_result);
+            }
+            break;
+        case GenerationResultStatus::ABORTED:
+            std::cout << "Sequence was aborted." <<std::endl;
+            if (generation_result.m_generation_ids.size() > 0) {
+                std::cout << "Partial result:" << std::endl;
+                print_sequence(generation_result);
+            }
+            break;   
+        default:
+            break;
         }
         std::cout << std::endl;
     }
