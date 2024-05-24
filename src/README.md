@@ -8,7 +8,7 @@ optimum-cli export openvino --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --weigh
 pip install openvino-genai
 ```
 
-LLMPipeline is the main object used for decoding. You can initiliza it straigh away from the folder with the converted model. It will automanically load the main model, tokenizer, detokenizer and default generation configuration.
+`LLMPipeline` is the main object used for decoding. You can initialize it straight away from the folder with the converted model. It will automatically load the main model, tokenizer, detokenizer and default generation configuration.
 
 ### Python
 
@@ -129,7 +129,7 @@ int main(int argc, char* argv[]) {
     for (size_t i = 0; i < questions.size(); i++) {
         
         std::cout << "question:\n";
-        cout << prompt << endl;
+        std::cout << prompt << std::endl;
 
         auto answer = pipe(prompt, config, streamer);
         // no need to print answer, streamer will do that
@@ -138,7 +138,7 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-Streaming exapmle with lambda function
+Streaming example with lambda function
 
 ``` cpp
 
@@ -156,11 +156,11 @@ int main(int argc, char* argv[]) {
 
 Streaming with custom class
 ``` cpp
-#include <streamer_base.hpp>
+#include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
 
-class CustomStreamer: publict StreamerBase {
+class CustomStreamer: public ov::StreamerBase {
 public:
     void put(int64_t token) {
         /* custom decoding/tokens processing code
@@ -180,6 +180,6 @@ int main(int argc, char* argv[]) {
 
     std::string model_path = argv[1];
     ov::LLMPipeline pipe(model_path, "CPU");
-    cout << pipe.generate("The Sun is yellow bacause", custom_streamer);
+    std::cout << pipe.generate("The Sun is yellow bacause", custom_streamer);
 }
 ```

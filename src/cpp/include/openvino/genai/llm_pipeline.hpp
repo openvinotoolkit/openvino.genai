@@ -6,7 +6,7 @@
 #include <optional>
 #include <variant>
 
-#include <openvino/core/any.hpp>
+#include "openvino/core/any.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/streamer_base.hpp"
@@ -174,10 +174,10 @@ private:
 };
 
 /*
- * utils that allow to use generate and operarator() in the folllowing way:
+ * utils that allow to use generate and operator() in the following way:
  * pipe.generate(input_ids, ov::max_new_tokens(200), ov::temperature(1.0f),...)
  * pipe(text, ov::max_new_tokens(200), ov::temperature(1.0f),...)
- * All names match to names in cofnig except streamer.
+ * All names match to names in config except streamer.
 */
 static constexpr ov::Property<size_t> max_new_tokens{"max_new_tokens"};
 static constexpr ov::Property<size_t> max_length{"max_length"};

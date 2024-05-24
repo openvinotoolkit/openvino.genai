@@ -15,7 +15,7 @@ namespace ov {
 class StreamerBase {
 public:
     Tokenizer m_tokenizer;
-    StreamerBase(Tokenizer tokenizer): m_tokenizer(tokenizer) {};
+    explicit StreamerBase(Tokenizer tokenizer): m_tokenizer(tokenizer) {}
     StreamerBase() = default;
     
     /// @brief put is called every time new token is decoded
