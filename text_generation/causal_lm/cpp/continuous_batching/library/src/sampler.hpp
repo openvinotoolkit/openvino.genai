@@ -295,7 +295,7 @@ class Sampler {
         return out_token;
     }
 
-    std::vector<int64_t> _multinomial_sample(ov::Tensor logits, float temperature, float top_p, size_t top_k, size_t n) {
+    std::vector<int64_t> _multinomial_sample(ov::Tensor logits, float temperature, float top_p, size_t top_k) {
         std::vector<int64_t> out_tokens;
         ov::Shape logits_shape = logits.get_shape();
         size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
@@ -325,9 +325,6 @@ class Sampler {
             filtered = normalize_transform.apply(filtered);
             std::vector<float> multinomial_weights(filtered.size());
             for (size_t i = 0; i < filtered.size(); i++) multinomial_weights[i] = filtered[i].first;
-            // if (n > filtered.size()) {
-            //     n = filtered.size();
-            // }
 
             auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
             size_t element_to_pick = dist(rng_engine);
@@ -386,7 +383,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 } else {
                     // is_multinomial()
                     OPENVINO_ASSERT(running_sequences.size() <= sampling_params.num_return_sequences);
-                    sampled_token_ids = _multinomial_sample(sequence_group_logits, sampling_params.temperature, sampling_params.top_p, sampling_params.top_k, num_running_sequences);
+                    sampled_token_ids = _multinomial_sample(sequence_group_logits, sampling_params.temperature, sampling_params.top_p, sampling_params.top_k);
                 }
                 for (size_t i = 0; i < num_running_sequences; ++i) {
                     // in case of greedy search we always have a single parent sequence to sample from

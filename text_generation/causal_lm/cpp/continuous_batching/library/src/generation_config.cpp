@@ -42,7 +42,6 @@ GenerationConfig GenerationConfig::greedy() {
     return greedy_params;
 }
 
-// todo:iefode: support num_return_sequences
 GenerationConfig GenerationConfig::beam_search() {
     GenerationConfig beam_search;
     beam_search.num_groups = 2;
