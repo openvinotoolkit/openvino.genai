@@ -24,6 +24,7 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
         Sequence::CPtr sequence = finished_sequences[sequence_id];
 
         result.m_scores.push_back(sequence->get_beam_search_score(sequence_group->get_sampling_parameters()));
+
         {
             static ManualTimer timer("detokenize");
             timer.start();
