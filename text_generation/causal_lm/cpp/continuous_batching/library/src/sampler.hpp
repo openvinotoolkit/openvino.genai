@@ -295,10 +295,10 @@ class Sampler {
         return out_token;
     }
 
-    int64_t _multinomial_sample(ov::Tensor logits, float temperature, float top_p, size_t top_k) {
+    std::vector<int64_t> _multinomial_sample(ov::Tensor logits, float temperature, float top_p, size_t top_k, size_t n) {
         ov::Shape logits_shape = logits.get_shape();
         size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
-        OPENVINO_ASSERT(batch_size == 1);
+        // OPENVINO_ASSERT(batch_size == 1);
 
         const float * logits_data = logits.data<const float>() + (seq_len - 1) * vocab_size;
         std::vector<LogitWithIdx> logit_vector(vocab_size);
@@ -325,12 +325,21 @@ class Sampler {
         filtered = normalize_transform.apply(filtered);
         std::vector<float> multinomial_weights(filtered.size());
         for (size_t i = 0; i < filtered.size(); i++) multinomial_weights[i] = filtered[i].first;
+        // if (n > filtered.size()) {
+        //     n = filtered.size();
+        // }
 
         auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
-        size_t element_to_pick = dist(rng_engine);
-        int64_t out_token = filtered[element_to_pick].second;
+        std::vector<int64_t> out_tokens;
+        do {
+            size_t element_to_pick = dist(rng_engine);
+            int64_t out_token = filtered[element_to_pick].second;
+            // if (std::find(out_tokens.begin(), out_tokens.end(), out_token) == out_tokens.end()) {
+                out_tokens.push_back(out_token);
+            // }
+        } while (out_tokens.size() < n);
 
-        return out_token;
+        return out_tokens;
     }
 
     // request ID => beam search tracking information
@@ -357,35 +366,44 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         if (!sequence_group->is_scheduled())
             continue;
 
+        const GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
+        if (sequence_group->requires_sampling() && sampling_params.is_multinomial() && sequence_group->get_num_processed_tokens() == 0) {
+            for (size_t i = 1; i < sampling_params.num_return_sequences; ++i) {
+                sequence_group->add_sequence(Sequence::create());
+            }
+        }
+
         size_t num_running_sequences = sequence_group->num_running_seqs();
         size_t actual_seq_len = sequence_group->get_num_scheduled_tokens(); // points to a token which needs to be sampled
         size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
-        const GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
 
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
 
         if (sequence_group->requires_sampling()) {
             if (sampling_params.is_greedy_sampling() || sampling_params.is_multinomial()) {
+                std::vector<int64_t> sampled_token_ids;
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
-                OPENVINO_ASSERT(running_sequences.size() == 1);
-
-                int64_t sampled_token_id;
                 if (sampling_params.is_greedy_sampling()) {
-                    sampled_token_id = _greedy_sample(sequence_group_logits);
+                    OPENVINO_ASSERT(running_sequences.size() == 1);
+                    sampled_token_ids.push_back(_greedy_sample(sequence_group_logits));
+                } else {
+                    // is_multinomial()
+                    OPENVINO_ASSERT(running_sequences.size() <= sampling_params.num_return_sequences);
+                    sampled_token_ids = _multinomial_sample(sequence_group_logits, sampling_params.temperature, sampling_params.top_p, sampling_params.top_k, num_running_sequences);
                 }
-                else {  // .is_multinomial()
-                    sampled_token_id = _multinomial_sample(sequence_group_logits, sampling_params.temperature, sampling_params.top_p, sampling_params.top_k);
-                }
-                // in case of greedy search we always have a single parent sequence to sample from
-                running_sequences[0]->append_token(sampled_token_id, sequence_group_logits.data<const float>()[sampled_token_id]);
+                for (size_t i = 0; i < num_running_sequences; ++i) {
+                    // in case of greedy search we always have a single parent sequence to sample from
+                    auto sampled_token_id = sampled_token_ids[i];
+                    running_sequences[i]->append_token(sampled_token_id, sequence_group_logits.data<const float>()[sampled_token_id]);
 
-                if (sampling_params.max_new_tokens == running_sequences[0]->get_generated_len() ||
-                    sampled_token_id == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
-                    // stop sequence by max_new_tokens or EOS token
-                    running_sequences[0]->set_status(SequenceStatus::FINISHED);
-                    // drop sequence from scheduler
-                    sampler_output.m_dropped_sequences.push_back(running_sequences[0]->get_id());
+                    if (sampling_params.max_new_tokens == running_sequences[i]->get_generated_len() ||
+                        sampled_token_id == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
+                        // stop sequence by max_new_tokens or EOS token
+                        running_sequences[i]->set_status(SequenceStatus::FINISHED);
+                        // drop sequence from scheduler
+                        sampler_output.m_dropped_sequences.push_back(running_sequences[i]->get_id());
+                    }
                 }
             } else if (sampling_params.is_beam_search()) {
                 uint64_t request_id = sequence_group->get_request_id();
