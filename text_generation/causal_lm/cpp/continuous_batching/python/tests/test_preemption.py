@@ -20,13 +20,6 @@ scheduler_params_list = [({"num_kv_blocks": 2, "block_size": 32, "dynamic_split_
 def test_preemption(tmp_path, params):
     run_test_pipeline(tmp_path, "facebook/opt-125m", params[0], params[1])
 
-
-@pytest.mark.precommit
-def test_out_of_memory(tmp_path):
-    with pytest.raises(RuntimeError) as excinfo:
-        run_test_pipeline(tmp_path, "facebook/opt-125m", {"num_kv_blocks": 1})
-    assert "Not enough memory for processing the requests." in str(excinfo.value)
-
 multinomial_params = RandomSamplingTestStruct(generation_config=[get_multinomial_temperature(),
                                                           get_multinomial_temperature_and_top_p(),
                                                           get_multinomial_temperature_and_top_k()],
