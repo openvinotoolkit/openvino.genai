@@ -7,7 +7,8 @@
 #include <nlohmann/json.hpp>
 
 namespace ov {
-namespace generate_utils {
+namespace genai {
+namespace utils {
 
 Tensor init_attention_mask(Tensor& position_ids);
 
@@ -58,6 +59,7 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
     }
 }
 
-}  // namespace generate_utils
+}  // namespace utils
+}  // namespace genai
 }  // namespace ov
 

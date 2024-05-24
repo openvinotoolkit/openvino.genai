@@ -12,6 +12,7 @@
 #include "openvino/genai/streamer_base.hpp"
 
 namespace ov {
+namespace genai {
 
 using StreamerVariant = std::variant<std::function<void (std::string)>, std::shared_ptr<StreamerBase>>;
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
@@ -85,7 +86,7 @@ public:
     */
     LLMPipeline(
         const std::string& model_path,
-        const ov::Tokenizer& tokenizer,
+        const ov::genai::Tokenizer& tokenizer,
         const std::string& device="CPU",
         const ov::AnyMap& plugin_config = {},
         const std::string& ov_tokenizers_path=""
@@ -164,7 +165,7 @@ public:
         return generate(text, generation_config, streamer);
     }
     
-    ov::Tokenizer get_tokenizer();
+    ov::genai::Tokenizer get_tokenizer();
     GenerationConfig get_generation_config() const;
     void set_generation_config(const GenerationConfig& generation_config);
 
@@ -210,6 +211,7 @@ static constexpr ov::Property<std::string> eos_token{"eos_token"};
 
 // only lambda streamer can be set via ov::streamer(),... syntaxic sugar,
 // because std::variant<StremaerBase, std::function<>> can not be stored in AnyMap
-static constexpr ov::Property<std::function<void (std::string)>> streamer_lambda{"streamer"};
+static constexpr ov::Property<std::function<void (std::string)>> streamer{"streamer"};
 
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

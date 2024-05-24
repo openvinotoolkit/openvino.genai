@@ -63,7 +63,7 @@ Minimalistc example
 
 int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
-    ov::LLMPipeline pipe(model_path, "CPU");
+    ov::genai::LLMPipeline pipe(model_path, "CPU");
     std::cout << pipe.generate("The Sun is yellow bacause");
 }
 ```
@@ -75,9 +75,9 @@ Using Group Beam Search Decoding
 
 int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
-    ov::LLMPipeline pipe(model_path, "CPU");
+    ov::genai::LLMPipeline pipe(model_path, "CPU");
 
-    ov::GenerationConfig config = pipe.get_generation_config();
+    ov::genai::GenerationConfig config = pipe.get_generation_config();
     config.max_new_tokens = 256;
     config.num_groups = 3;
     config.group_size = 5;
@@ -87,59 +87,36 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-A simplest chat in C++
-``` cpp
-#include "openvino/genai/llm_pipeline.hpp"
-#include <iostream>
-
-int main(int argc, char* argv[]) {
-    std::string prompt;
-
-    std::string model_path = argv[1];
-    ov::LLMPipeline pipe(model_path, "CPU");
-
-    pipe.start_chat();
-    for (size_t i = 0; i < questions.size(); i++) {
-        std::cout << "question:\n";
-        std::getline(std::cin, prompt);
-
-        std::cout << pipe(prompt) << std::endl>>;
-    }
-    pipe.finish_chat();
-}
-```
-
-Specifying generation_config to use grouped beam search
+A simple chat in C++ using grouped beam search decoding
 ``` cpp
 int main(int argc, char* argv[]) {
     std::string prompt;
 
     std::string model_path = argv[1];
-    ov::LLMPipeline pipe(model_path, "CPU");
+    ov::genai::LLMPipeline pipe(model_path, "CPU");
     
-    ov::GenerationConfig config = pipe.get_generation_config();
+    ov::genai::GenerationConfig config = pipe.get_generation_config();
     config.max_new_tokens = 256;
     config.num_groups = 3;
     config.group_size = 5;
     config.diversity_penalty = 1.0f;
     
-    auto streamer = [](std::string word) { std::cout << word << std::flush; };
-
     pipe.start_chat();
-    for (size_t i = 0; i < questions.size(); i++) {
-        
+    for (;;;) {
         std::cout << "question:\n";
-        std::cout << prompt << std::endl;
+        std::getline(std::cin, prompt);
+        if (prompts == "Stop!")
+            break;
 
-        auto answer = pipe(prompt, config, streamer);
-        // no need to print answer, streamer will do that
+        std::cout << "answer:\n";
+        auto answer = pipe(prompt, config);
+        std::cout << answer << std::endl;
     }
     pipe.finish_chat();
 }
 ```
 
 Streaming example with lambda function
-
 ``` cpp
 
 #include "openvino/genai/llm_pipeline.hpp"
@@ -147,20 +124,20 @@ Streaming example with lambda function
 
 int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
-    ov::LLMPipeline pipe(model_path, "CPU");
+    ov::genai::LLMPipeline pipe(model_path, "CPU");
         
     auto streamer = [](std::string word) { std::cout << word << std::flush; };
     std::cout << pipe.generate("The Sun is yellow bacause", streamer);
 }
 ```
 
-Streaming with custom class
+Streaming with a custom class
 ``` cpp
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
 
-class CustomStreamer: public ov::StreamerBase {
+class CustomStreamer: public ov::genai::StreamerBase {
 public:
     void put(int64_t token) {
         /* custom decoding/tokens processing code
@@ -179,7 +156,7 @@ int main(int argc, char* argv[]) {
     CustomStreamer custom_streamer;
 
     std::string model_path = argv[1];
-    ov::LLMPipeline pipe(model_path, "CPU");
+    ov::genai::LLMPipeline pipe(model_path, "CPU");
     std::cout << pipe.generate("The Sun is yellow bacause", custom_streamer);
 }
 ```

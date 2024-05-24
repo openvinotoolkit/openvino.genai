@@ -42,6 +42,7 @@ std::pair<ov::Tensor, ov::Tensor> pad_left(ov::Tensor&& input_ids, ov::Tensor&& 
 }
 
 namespace ov {
+namespace genai {
 
 class Tokenizer::TokenizerImpl {
 public:
@@ -55,7 +56,7 @@ public:
     TokenizerImpl(std::string tokenizers_path, const std::string device, const std::string& ov_tokenizers_path) {
         ov::Core core;
         
-        if (ov::generate_utils::is_xml(tokenizers_path))
+        if (ov::genai::utils::is_xml(tokenizers_path))
             OPENVINO_THROW("tokenizers_path should be a path to a dir not a xml file");
     
         if (ov_tokenizers_path.empty()) {
@@ -201,4 +202,5 @@ void Tokenizer::set_eos_token_id(int64_t eos_token_id) {
 
 Tokenizer::~Tokenizer() = default;
 
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

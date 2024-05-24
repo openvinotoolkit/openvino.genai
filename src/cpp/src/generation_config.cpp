@@ -10,16 +10,11 @@
 #include "utils.hpp"
 
 
-namespace {   
-
-
-} // namespace
-
-
 namespace ov {
+namespace genai {
 
 GenerationConfig::GenerationConfig(std::string json_path) {
-    using ov::generate_utils::read_json_param;
+    using ov::genai::utils::read_json_param;
 
     std::ifstream f(json_path);
     OPENVINO_ASSERT(f.is_open(), "Failed to open '" + json_path + "' with generation config");
@@ -61,7 +56,7 @@ GenerationConfig::GenerationConfig(std::string json_path) {
 }
 
 GenerationConfig GenerationConfig::anymap_to_generation_config(const ov::AnyMap& config_map) {
-    using ov::generate_utils::read_anymap_param;
+    using ov::genai::utils::read_anymap_param;
     
     GenerationConfig config;
     read_anymap_param(config_map, "max_new_tokens", config.max_new_tokens);
@@ -109,4 +104,5 @@ bool GenerationConfig::is_multimomial() const {
     return do_sample;
 }
 
+}  // namespace genai
 }  // namespace ov

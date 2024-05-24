@@ -6,6 +6,7 @@
 #include "openvino/genai/tokenizer.hpp"
 
 namespace ov {
+namespace genai {
 
 /** 
  * @brief base class for streamers. In order to use inherit from from this class and inplement put, and methods
@@ -25,4 +26,5 @@ public:
     virtual void end() = 0;
 };
 
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

@@ -12,6 +12,7 @@
 #include "openvino/genai/tokenizer.hpp"
 
 namespace ov {
+namespace genai {
 
 /**
  * @brief controls the stopping condition for grouped beam search. The following values are possible:
@@ -102,4 +103,5 @@ public:
     static GenerationConfig anymap_to_generation_config(const ov::AnyMap& config_map = {});
 };
 
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

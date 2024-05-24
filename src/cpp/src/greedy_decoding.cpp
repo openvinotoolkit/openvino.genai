@@ -5,12 +5,13 @@
 #include "utils.hpp"
 
 namespace ov {
+namespace genai {
 
-ov::EncodedResults greedy_decoding(
+EncodedResults greedy_decoding(
     ov::InferRequest& m_model_runner, 
     ov::Tensor input_ids, 
     ov::Tensor attention_mask, 
-    const ov::GenerationConfig generation_config, 
+    const ov::genai::GenerationConfig generation_config, 
     const std::shared_ptr<StreamerBase> streamer, 
     const bool is_chat_conversation
 ) {
@@ -23,9 +24,9 @@ ov::EncodedResults greedy_decoding(
 
     // todo: make this work even if position_ids are not specified
     auto position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
-    generate_utils::initialize_position_ids(position_ids, attention_mask, kv_cache_len);
+    utils::initialize_position_ids(position_ids, attention_mask, kv_cache_len);
 
-    ov::EncodedResults results;
+    EncodedResults results;
     results.scores.resize(batch_size);
     results.tokens.resize(batch_size);
     std::fill(results.scores.begin(), results.scores.end(), 0);
@@ -72,7 +73,7 @@ ov::EncodedResults greedy_decoding(
     std::vector<int64_t> token_iter_results(batch_size);  // results of a single infer request
     std::vector<int> eos_met(batch_size, 0);  // use int because can not use std::all_of with vector<bool>
     for (size_t batch = 0; batch < batch_size; ++batch) {
-        auto res = generate_utils::softmax(logits, batch);
+        auto res = utils::softmax(logits, batch);
         auto out_token = res.first;
         results.tokens[batch].emplace_back(res.first);
         results.scores[batch] += res.second;
@@ -89,8 +90,8 @@ ov::EncodedResults greedy_decoding(
         return results;
     
     for (size_t i = 0; i < max_tokens - 1; ++i) {
-        generate_utils::update_position_ids(m_model_runner.get_tensor("position_ids"), m_model_runner.get_tensor("attention_mask"));
-        m_model_runner.set_tensor("attention_mask", generate_utils::extend_attention(m_model_runner.get_tensor("attention_mask")));
+        utils::update_position_ids(m_model_runner.get_tensor("position_ids"), m_model_runner.get_tensor("attention_mask"));
+        m_model_runner.set_tensor("attention_mask", utils::extend_attention(m_model_runner.get_tensor("attention_mask")));
 
         // todo: consider replacing with start_async and run callback right after that
         m_model_runner.infer();
@@ -102,7 +103,7 @@ ov::EncodedResults greedy_decoding(
         std::vector<int> eos_met(batch_size, 0);  // use int because can not use std::all_of with vector<bool>
         for (size_t batch = 0; batch < batch_size; ++batch) {
 
-            auto res = ov::generate_utils::softmax(logits, batch);
+            auto res = ov::genai::utils::softmax(logits, batch);
             auto out_token = res.first;
             results.tokens[batch].emplace_back(res.first);
             results.scores[batch] += res.second;
@@ -125,4 +126,5 @@ ov::EncodedResults greedy_decoding(
     return results;
 }
 
-}
+}  //namespace genai
+}  //namespace ov

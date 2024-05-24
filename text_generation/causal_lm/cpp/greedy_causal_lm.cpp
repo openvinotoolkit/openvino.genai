@@ -14,8 +14,8 @@ int main(int argc, char* argv[]) try {
     std::string device = "CPU";  
     if (argc > 3) device = argv[3];
 
-    ov::LLMPipeline pipe(model_path, device);
-    ov::GenerationConfig config = pipe.get_generation_config();
+    ov::genai::LLMPipeline pipe(model_path, device);
+    ov::genai::GenerationConfig config = pipe.get_generation_config();
     config.max_new_tokens = 100;
     config.do_sample = false;
     auto streamer = [](std::string subword){std::cout << subword << std::flush;};

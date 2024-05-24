@@ -91,7 +91,7 @@ struct Parameters {
     size_t group_size = 5;
     float diversity_penalty = 1.0;
     size_t max_new_tokens = 20;
-    ov::StopCriteria stop_criteria = ov::StopCriteria::heuristic;
+    ov::genai::StopCriteria stop_criteria = ov::genai::StopCriteria::heuristic;
     float length_penalty = 1.0;
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
 
@@ -128,15 +128,15 @@ struct Group {
         float best_sum_logprobs = ongoing.front().score;
         float worst_score = min_heap.front().score;
         switch (parameters.stop_criteria) {
-        case ov::StopCriteria::early:
+        case ov::genai::StopCriteria::early:
             done = true;
             return;
-        case ov::StopCriteria::heuristic: {
+        case ov::genai::StopCriteria::heuristic: {
             float highest_attainable_score = best_sum_logprobs / std::pow(float(cur_len), parameters.length_penalty);
             done = worst_score >= highest_attainable_score;
             return;
         }
-        case ov::StopCriteria::never: {
+        case ov::genai::StopCriteria::never: {
             size_t length = parameters.length_penalty > 0.0 ? parameters.max_new_tokens : cur_len;
             float highest_attainable_score = best_sum_logprobs / std::pow(float(length), parameters.length_penalty);
             done = worst_score >= highest_attainable_score;
@@ -324,7 +324,7 @@ void initialize_inputs(const ov::Tensor& input_ids, const ov::Tensor& attention_
 
     ov::Tensor position_ids = request.get_tensor("position_ids");
     position_ids.set_shape(input_shape);
-    ov::generate_utils::initialize_position_ids(position_ids, attention_mask);
+    ov::genai::utils::initialize_position_ids(position_ids, attention_mask);
 
     ov::Tensor beam_idx = request.get_tensor("beam_idx");
     beam_idx.set_shape({input_shape.at(0)});
@@ -367,6 +367,7 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
 
 
 namespace ov {
+namespace genai {
 
 EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig config) {
     OPENVINO_ASSERT(config.num_beams % config.num_beam_groups == 0, "number of beams should be divisible by number of groups");
@@ -427,7 +428,7 @@ EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor input_ids, ov::Tenso
     auto compare_scores = [](Beam left, Beam right) { return (left.score > right.score); };
     std::sort(beams.begin(), beams.end(), compare_scores);
     
-    ov::EncodedResults results;
+    ov::genai::EncodedResults results;
     for (auto beam = beams.begin(); beam != beams.begin() + config.num_return_sequences; ++beam) {
         results.scores.emplace_back(beam->score);
         results.tokens.emplace_back(beam->tokens);
@@ -435,4 +436,5 @@ EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor input_ids, ov::Tenso
     return results;
 }
 
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

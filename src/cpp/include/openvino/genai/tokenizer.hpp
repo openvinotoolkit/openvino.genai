@@ -10,6 +10,7 @@
 #include "openvino/genai/visibility.hpp"
 
 namespace ov {
+namespace genai {
 
 /**
 * @brief class is used to encode prompts and decode resulting tokens
@@ -78,4 +79,5 @@ private:
     std::shared_ptr<TokenizerImpl> m_pimpl;
 };
 
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

@@ -20,9 +20,9 @@ int main(int argc, char* argv[]) try {
     std::string accumulated_str = "";
 
     std::string model_path = argv[1];
-    ov::LLMPipeline pipe(model_path, "CPU");
+    ov::genai::LLMPipeline pipe(model_path, "CPU");
     
-    ov::GenerationConfig config = pipe.get_generation_config();
+    ov::genai::GenerationConfig config = pipe.get_generation_config();
     config.max_new_tokens = 10000;
     auto streamer = [](std::string word) { std::cout << word << std::flush; };
 
@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) try {
         cout << prompt << endl;
 
         // auto answer_str = pipe(prompt, config, streamer);
-        auto answer_str = pipe.generate(prompt, ov::max_new_tokens(10000), ov::streamer_lambda(streamer));
+        auto answer_str = pipe.generate(prompt, ov::genai::max_new_tokens(10000), ov::genai::streamer(streamer));
         accumulated_str += answer_str;
         
         cout << "\n----------\n";
