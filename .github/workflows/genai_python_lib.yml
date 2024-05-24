@@ -2,7 +2,7 @@ name: genai_python_lib
 on: pull_request
 jobs:
   ubuntu_genai_python_lib:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -11,7 +11,7 @@ jobs:
         with:
           python-version: 3.8
       - run: mkdir ./ov/
-      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.1.0-14758-22bd6ff0494/l_openvino_toolkit_centos7_2024.1.0.dev20240315_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz  # Install CentOS7 instead of Ubuntu to match PyPI distribution ABI
+      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.2.0-15484-4b8641ee3f4/l_openvino_toolkit_centos7_2024.2.0.dev20240523_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz  # Install CentOS7 instead of Ubuntu to match PyPI distribution ABI
       - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
