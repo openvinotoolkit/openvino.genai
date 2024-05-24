@@ -40,14 +40,13 @@ jobs:
         run: |
           conda activate openvino_sd_cpp
           conda install -c conda-forge c-compiler cxx-compiler git make cmake  # TODO: openvino=2024.1.0
-          pip install --pre openvino --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
       - name: Install python dependencies
         working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_sd_cpp
-          python -m pip install -r requirements.txt
+          python -m pip install -r requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
 
       - name: Download and convert model and tokenizer
@@ -84,14 +83,13 @@ jobs:
         - name: Install OpenVINO and other conda dependencies
           run: |
             conda activate openvino_sd_cpp
-            conda install -c conda-forge c-compiler cxx-compiler git make cmake  # TODO: openvino=2024.1.0
-            pip install --pre openvino --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+            conda install -c conda-forge c-compiler cxx-compiler git make cmake  # TODO: openvino=2024.2.0
   
         - name: Install python dependencies
           working-directory: ${{ env.working_directory }}
           run: |
             conda activate openvino_sd_cpp
-            python -m pip install -r requirements.txt
+            python -m pip install -r requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
             python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
   
         - name: Download and convert model and tokenizer
