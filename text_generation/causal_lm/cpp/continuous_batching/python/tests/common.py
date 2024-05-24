@@ -18,6 +18,12 @@ def get_greedy() -> GenerationConfig:
     generation_config.num_return_sequences = 1
     return generation_config
 
+def get_greedy_with_repetition_penalty() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.num_return_sequences = 1
+    generation_config.repetition_penalty = 2.0
+    return generation_config
+
 
 def get_beam_search() -> GenerationConfig:
     generation_config = GenerationConfig()

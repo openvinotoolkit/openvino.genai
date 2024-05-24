@@ -3,7 +3,7 @@
 import os
 import pytest
 
-from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, generate_and_compare_with_reference_text, get_greedy, get_beam_search, get_multinomial_temperature, get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, get_multinomial_temperature_top_p_and_top_k, DEFAULT_SCHEDULER_CONFIG
+from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, generate_and_compare_with_reference_text, get_greedy, get_beam_search, get_multinomial_temperature, get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, get_multinomial_temperature_top_p_and_top_k, DEFAULT_SCHEDULER_CONFIG, get_greedy_with_repetition_penalty
 from dataclasses import dataclass
 from py_continuous_batching import GenerationConfig, GenerationResult
 from pathlib import Path
@@ -84,8 +84,8 @@ def test_eos_greedy(tmp_path):
         print(f"Prompt = {prompt}\nHF result = {hf_result}\nOV result = {ov_result}")
         compare_results(hf_result, ov_result, generation_config)
 
-@pytest.mark.parametrize("generation_config", [get_greedy(), get_beam_search()],
-        ids=["greedy", "beam"])
+@pytest.mark.parametrize("generation_config", [get_greedy(), get_beam_search(), get_greedy_with_repetition_penalty()],
+        ids=["greedy", "beam", "greedy_with_repetition_penalty"])
 def test_individual_generation_configs_deterministic(tmp_path, generation_config):
     prompts = [
             "What is OpenVINO?",
