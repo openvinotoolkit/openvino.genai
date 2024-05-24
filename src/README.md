@@ -8,7 +8,7 @@ optimum-cli export openvino --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --weigh
 pip install openvino-genai
 ```
 
-`LLMPipeline` is the main object used for decoding. You can initialize it straight away from the folder with the converted model. It will automatically load the main model, tokenizer, detokenizer and default generation configuration.
+`LLMPipeline` is the main object used for decoding. You can construct it straight away from the folder with the converted model. It will automatically load the main model, tokenizer, detokenizer and default generation configuration.
 
 ### Python
 

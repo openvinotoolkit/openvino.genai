@@ -1,17 +1,20 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "generation_config_helper.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
 
 namespace ov {
 
-ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner, 
-                                       ov::Tensor input_ids, ov::Tensor attention_mask, ov::GenerationConfig generation_config, 
-                                       std::shared_ptr<StreamerBase> streamer, bool is_chat_conversation) {
+ov::EncodedResults greedy_decoding(
+    ov::InferRequest& m_model_runner, 
+    ov::Tensor input_ids, 
+    ov::Tensor attention_mask, 
+    const ov::GenerationConfig generation_config, 
+    const std::shared_ptr<StreamerBase> streamer, 
+    const bool is_chat_conversation
+) {
     
-    ov::GenerationConfigHelper config_helper = generation_config;
     ov::Shape prompts_shape = input_ids.get_shape();
     size_t batch_size = prompts_shape[0];
     size_t prompt_len = prompts_shape[1];
@@ -58,7 +61,7 @@ ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner,
     auto beam_data = m_model_runner.get_tensor("beam_idx").data<int32_t>();
     std::iota(beam_data, beam_data + batch_size, 0);
 
-    size_t max_tokens = config_helper.get_max_new_tokens(prompt_len);
+    size_t max_tokens = generation_config.get_max_new_tokens(prompt_len);
     
     m_model_runner.infer();
     auto logits = m_model_runner.get_tensor("logits");

@@ -194,6 +194,7 @@ jobs:
         shell: cmd
         run: |
           call w_openvino_toolkit_windows_2024.1.0.15008.f4afc983258_x86_64\setupvars.bat
+          set PATH=.\build\src\cpp\Release;%PATH%
           .\build\text_generation\causal_lm\cpp\Release\beam_search_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ "69" > .\pred.txt
           
           echo import transformers > ref.py

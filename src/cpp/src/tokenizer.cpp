@@ -47,7 +47,6 @@ class Tokenizer::TokenizerImpl {
 public:
     ov::InferRequest m_tokenize_request;
     ov::InferRequest m_detokenizer_request;
-    std::string m_device;
     int64_t m_pad_token_id = 0;
     int64_t m_bos_token_id = 1;
     int64_t m_eos_token_id = 2;

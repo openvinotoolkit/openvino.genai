@@ -71,7 +71,7 @@ public:
     * @param device optional device
     * @param plugin_config optional plugin_config
     */
-    LLMPipeline(std::string& path, std::string device="CPU", 
+    LLMPipeline(const std::string& path, const std::string& device="CPU", 
                 const ov::AnyMap& plugin_config={}, 
                 const std::string& ov_tokenizers_path="");
     
@@ -84,9 +84,9 @@ public:
     * @param plugin_config optional plugin_config
     */
     LLMPipeline(
-        const std::string model_path,
+        const std::string& model_path,
         const ov::Tokenizer& tokenizer,
-        const std::string device="CPU",
+        const std::string& device="CPU",
         const ov::AnyMap& plugin_config = {},
         const std::string& ov_tokenizers_path=""
     );
@@ -127,8 +127,7 @@ public:
     * @param generation_config optional GenerationConfig
     * @return DecodedResults a structure with resulting texts & scores
     */
-    DecodedResults generate(std::vector<std::string> texts, OptionalGenerationConfig generation_config);
-    DecodedResults generate(std::initializer_list<std::string> text, OptionalGenerationConfig generation_config);
+    DecodedResults generate(const std::vector<std::string>& texts, OptionalGenerationConfig generation_config);
 
     /**
     * @brief Low level generate to be called with already encoded input_ids tokens.
@@ -153,12 +152,17 @@ public:
         return generate(text, AnyMap{std::forward<Properties>(properties)...});
     }
     
-    DecodedResults operator()(std::vector<std::string> text, OptionalGenerationConfig generation_config=std::nullopt);
-    DecodedResults operator()(std::initializer_list<std::string> text, OptionalGenerationConfig generation_config=std::nullopt);
+    DecodedResults operator()(const std::vector<std::string>& text, OptionalGenerationConfig generation_config=std::nullopt) {
+        return generate(text, generation_config);
+    }
 
-    // generate with streamers
-    std::string operator()(std::string text, OptionalGenerationConfig generation_config=std::nullopt, OptionalStreamerVariant streamer=std::nullopt);
-    std::string operator()(std::string text, OptionalStreamerVariant streamer);
+    std::string operator()(
+        std::string text, 
+        OptionalGenerationConfig generation_config=std::nullopt, 
+        OptionalStreamerVariant streamer=std::nullopt
+    ) {
+        return generate(text, generation_config, streamer);
+    }
     
     ov::Tokenizer get_tokenizer();
     GenerationConfig get_generation_config() const;
@@ -177,7 +181,6 @@ private:
  * utils that allow to use generate and operator() in the following way:
  * pipe.generate(input_ids, ov::max_new_tokens(200), ov::temperature(1.0f),...)
  * pipe(text, ov::max_new_tokens(200), ov::temperature(1.0f),...)
- * All names match to names in config except streamer.
 */
 static constexpr ov::Property<size_t> max_new_tokens{"max_new_tokens"};
 static constexpr ov::Property<size_t> max_length{"max_length"};

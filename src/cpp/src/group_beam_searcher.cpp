@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/runtime/tensor.hpp>
-#include "generation_config_helper.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
 
@@ -87,7 +86,7 @@ bool greater(const Beam& left, const Beam& right) {
 
 struct Parameters {
     std::vector<std::vector<int64_t>> prompts;
-    int64_t eos_token;
+    int64_t eos_token_id;
     size_t n_groups = 3;
     size_t group_size = 5;
     float diversity_penalty = 1.0;
@@ -110,7 +109,7 @@ struct Group {
         beam.score /= std::pow(float(beam.tokens.size()), parameters.length_penalty);
 
         // HF implementation counts eos_token for length penalty calculation
-        if (beam.tokens.back() == parameters.eos_token) {
+        if (beam.tokens.back() == parameters.eos_token_id) {
             beam.tokens.pop_back();
         }
 
@@ -270,7 +269,7 @@ struct GroupBeamSearcher {
             std::partial_sort(candidates.begin(), to_sort, candidates.end(), greater);
             group->ongoing.clear();
             for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
-                if (parameters.eos_token == candidates.at(cand_idx).tokens.back()) {
+                if (parameters.eos_token_id == candidates.at(cand_idx).tokens.back()) {
                     // If beam_token does not belong to top num_beams tokens, it should not be added
                     if (cand_idx >= parameters.group_size) {
                         continue;
@@ -370,7 +369,6 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
 namespace ov {
 
 EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig config) {
-    GenerationConfigHelper config_helper = config;
     OPENVINO_ASSERT(config.num_beams % config.num_beam_groups == 0, "number of beams should be divisible by number of groups");
     
     // Initialize beam search
@@ -388,7 +386,7 @@ EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor input_ids, ov::Tenso
 
     Parameters parameters{std::move(prompts)};
     parameters.max_new_tokens = config.max_new_tokens;
-    parameters.eos_token = config.eos_token_id;
+    parameters.eos_token_id = config.eos_token_id;
     parameters.n_groups = config.num_beam_groups;
     parameters.group_size = config.num_beams / config.num_beam_groups;
     parameters.diversity_penalty = config.diversity_penalty;
