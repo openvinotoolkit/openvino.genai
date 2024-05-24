@@ -120,15 +120,15 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     result_md5_list = []
     for bs_idx in range(args['batch_size']):
         if 'sum' not in args['model_name'] and result[bs_idx][:input_token_size].equal(input_tokens[bs_idx]):
-            generated_text_len = len(result[bs_idx]) - input_tokens[bs_idx].numel()
+            generated_token_size = len(result[bs_idx]) - input_tokens[bs_idx].numel()
         else:
-            generated_text_len = len(result[bs_idx])
+            generated_token_size = len(result[bs_idx])
         # Encoder-decoder models expect the `decoder_input_ids` to start with a special token
         # When counting the output length, subtract 1. The last token does not participate in inference.
         if model.config.is_encoder_decoder and result[bs_idx][0] == model.config.decoder_start_token_id:
-            generated_text_len = generated_text_len -1
-        num_tokens += generated_text_len
-        if generated_text_len > max_output_token_size:
+            generated_token_size = generated_token_size - 1
+        num_tokens += generated_token_size
+        if generated_token_size > max_output_token_size:
             log.error('Output token size is over max output token size!')
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
