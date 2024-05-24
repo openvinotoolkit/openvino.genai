@@ -29,8 +29,9 @@ TEST_P(TemperatureTransformTest, TransformResultEqualToReference) {
 
 
 const std::vector<TemperatureTransformTestStruct> TEMPERATURE_TRANSFORM_TEST_CASES = {
-    {1.0f, { {1.0f, 0}, {2.0f, 1}, {3.0f, 2} }, { {0.090031, 0}, {0.244728, 1}, {0.665241, 2} } },
-    {2.0f, { {1.0f, 2}, {2.0f, 1}, {3.0f, 0} }, { {0.186323, 2}, {0.307195, 1}, {0.506480, 0} } }
+    {1.0f, { {1.0f, 0}, {2.0f, 1}, {3.0f, 2} }, { {0.665241, 2}, {0.244728, 1}, {0.090031, 0} } },
+    {2.0f, { {1.0f, 2}, {2.0f, 1}, {3.0f, 0} }, { {0.506480, 0}, {0.307195, 1}, {0.186323, 2} } },
+    {1.0f, { {3.0f, 0}, {1.0f, 1}, {2.0f, 2} }, { {0.665241, 0}, {0.244728, 2}, {0.090031, 1} } },
 };
 
 INSTANTIATE_TEST_SUITE_P(VariousInputs,

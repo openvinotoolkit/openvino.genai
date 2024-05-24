@@ -226,7 +226,8 @@ public:
             nucleus_size += 1;
             if (probability_sum > m_top_p) break;
         }
-        return std::vector<ProbabilityWithIdx>(tmp.begin(), tmp.begin() + nucleus_size);
+        tmp.resize(nucleus_size);
+        return tmp;
     }
 
 private:
@@ -241,7 +242,8 @@ public:
         std::vector<ProbabilityWithIdx> tmp(input_probs);
         std::sort(tmp.begin(), tmp.end(), [](const ProbabilityWithIdx& lhs, const ProbabilityWithIdx& rhs) {return lhs.first > rhs.first; });
         size_t top_k = input_probs.size() >= m_top_k ? m_top_k : input_probs.size();
-        return std::vector<ProbabilityWithIdx>(tmp.begin(), tmp.begin() + top_k);
+        tmp.resize(top_k);
+        return tmp;
     }
 
 private:
@@ -256,6 +258,7 @@ public:
 
     std::vector<ProbabilityWithIdx> apply(const std::vector<LogitWithIdx>& input_logits) {
         std::vector<ProbabilityWithIdx> output(input_logits.begin(), input_logits.end());
+        std::sort(output.begin(), output.end(), [](const ProbabilityWithIdx& lhs, const ProbabilityWithIdx& rhs) {return lhs.first > rhs.first; });
         float max_logit = output[0].first;
         std::for_each(output.begin(), output.end(), [max_logit, this](ProbabilityWithIdx& val) {val.first = expf((val.first - max_logit) / this->m_temperature);});
 
