@@ -22,9 +22,9 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
       - run: ov/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
         if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
-      - run: python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
+      - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
         if: ${{ 'Release' == matrix.build-type }}
-      - run: python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/
         if: ${{ 'Release' == matrix.build-type }}
       - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
         if: ${{ 'Release' == matrix.build-type }}
@@ -53,9 +53,9 @@ jobs:
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\samples\cpp\build_samples_msvc.bat -i "${{ github.workspace }}/samples_install"
         if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
-      - run: python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
         if: ${{ 'Release' == matrix.build-type }}
-      - run: python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/
         if: ${{ 'Release' == matrix.build-type }}
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
         if: ${{ 'Release' == matrix.build-type }}
