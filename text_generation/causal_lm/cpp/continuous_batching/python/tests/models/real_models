@@ -78,7 +78,6 @@ microsoft/Orca-2-7b
 #
 # Set of 13B, 30B abd 70B models:
 EleutherAI/gpt-neox-20b
-# big model, not tried: young-geng/koala
 mistralai/Mixtral-8x7B-v0.1
 mistralai/Mixtral-8x7B-Instruct-v0.1
 mosaicml/mpt-30b
