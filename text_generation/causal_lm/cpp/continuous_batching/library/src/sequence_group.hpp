@@ -199,7 +199,7 @@ public:
     std::vector<Sequence::CPtr> get_finished_sequences() const {
         std::vector<Sequence::CPtr> finished_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->has_finished()) {
+            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory()) {
                 finished_seqs.push_back(m_sequences[seq_id]);
             }
         }
@@ -356,7 +356,7 @@ public:
         }
     }
 
-    bool out_of_memory() {
+    bool out_of_memory() const {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->out_of_memory()) {
                 return true;
@@ -365,7 +365,7 @@ public:
         return false;
     }
 
-    bool is_waiting() {
+    bool is_waiting() const {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_waiting()) {
                 return true;
