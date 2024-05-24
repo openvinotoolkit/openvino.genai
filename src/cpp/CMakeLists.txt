@@ -13,8 +13,8 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 function(ov_genai_build_jinja2cpp)
     FetchContent_Declare(jinja2cpp
-        URL https://github.com/ilya-lavrenov/Jinja2Cpp/archive/5433af6b225cd35df700023cf60df4acdd6cbcf3.tar.gz
-        URL_HASH SHA256=b90f6c44908beaacae8eeb2690d11a6ebb183b4560434698ac00017e7bc07d11)
+        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/9ae7e1fc45d707e1686dd425a154d30963801944.tar.gz
+        URL_HASH SHA256=aa41ae425225623ba91be5de3ef1e0d942e682d519311e6235b04b4e7d880e01)
 
     FetchContent_GetProperties(jinja2cpp)
     if(NOT jinja2cpp_POPULATED)
