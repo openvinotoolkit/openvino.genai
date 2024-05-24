@@ -78,9 +78,9 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
     m.doc() = "Pybind11 binding for LLM Pipeline";
 
     py::class_<LLMPipeline>(m, "LLMPipeline")
-        .def(py::init<const std::string, const Tokenizer&, const std::string, const ov::AnyMap&, const std::string&>(), 
+        .def(py::init<const std::string, const Tokenizer&, const std::string, const ov::AnyMap&>(), 
              py::arg("model_path"), py::arg("tokenizer"), py::arg("device") = "CPU", 
-             py::arg("plugin_config") = ov::AnyMap{}, py::arg("ov_tokenizers_path") = ov_tokenizers_module_path())
+             py::arg("plugin_config") = ov::AnyMap{})
         .def(py::init<std::string&, std::string, const ov::AnyMap&, const std::string>(),
              py::arg("path"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap{}, py::arg("ov_tokenizers_path") = ov_tokenizers_module_path())
         .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))

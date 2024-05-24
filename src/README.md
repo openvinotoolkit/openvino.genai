@@ -24,8 +24,8 @@ Calling generate with custom generation config parameters, e.g. config for group
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path, "CPU")
 
-res = pipe.generate("The Sun is yellow bacause", max_new_tokens=30, num_groups=3, group_size=5)
-print(res)
+result = pipe.generate("The Sun is yellow bacause", max_new_tokens=30, num_groups=3, group_size=5, diversity_penalty=1.5)
+print(result)
 ```
 
 output:
@@ -38,7 +38,7 @@ A simples chat in python:
 import openvino_genai as ov_genai
 pipe = ov_ov_genai.LLMPipeline(model_path)
 
-config = {'num_groups': 3, 'group_size': 5, 'diversity_penalty': 1.1}
+config = {'num_groups': 3, 'group_size': 5, 'diversity_penalty': 1.5}
 pipe.set_generation_cofnig(config)
 
 pipe.start_chat()
@@ -49,7 +49,6 @@ while True:
         break
     print(pipe(prompt))
 pipe.finish_chat()
-
 ```
 
 Test to compare with Huggingface outputs
@@ -89,6 +88,9 @@ int main(int argc, char* argv[]) {
 
 A simple chat in C++ using grouped beam search decoding
 ``` cpp
+#include "openvino/genai/llm_pipeline.hpp"
+#include <iostream>
+
 int main(int argc, char* argv[]) {
     std::string prompt;
 
@@ -105,7 +107,7 @@ int main(int argc, char* argv[]) {
     for (;;;) {
         std::cout << "question:\n";
         std::getline(std::cin, prompt);
-        if (prompts == "Stop!")
+        if (prompt == "Stop!")
             break;
 
         std::cout << "answer:\n";
@@ -118,7 +120,6 @@ int main(int argc, char* argv[]) {
 
 Streaming example with lambda function
 ``` cpp
-
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
 

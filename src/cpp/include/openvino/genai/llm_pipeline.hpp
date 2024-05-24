@@ -88,8 +88,7 @@ public:
         const std::string& model_path,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device="CPU",
-        const ov::AnyMap& plugin_config = {},
-        const std::string& ov_tokenizers_path=""
+        const ov::AnyMap& plugin_config = {}
     );
     
     ~LLMPipeline();

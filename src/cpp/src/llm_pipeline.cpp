@@ -85,8 +85,7 @@ public:
         const std::string& model_path,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
-        const ov::AnyMap& plugin_config,
-        const std::string& ov_tokenizers_path=""
+        const ov::AnyMap& plugin_config
     );
 
     LLMPipelineImpl(
@@ -115,18 +114,16 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& model_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& plugin_config,
-    const std::string& ov_tokenizers_path
+    const ov::AnyMap& plugin_config
 ) {
-    m_pimpl = make_unique<LLMPipelineImpl>(model_path, tokenizer, device, plugin_config, ov_tokenizers_path);
+    m_pimpl = make_unique<LLMPipelineImpl>(model_path, tokenizer, device, plugin_config);
 }
 
 ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
     const std::string& model_path,
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap& plugin_config,
-    const std::string& ov_tokenizers_path
+    const ov::AnyMap& plugin_config
 ): m_tokenizer(tokenizer) {
     ov::Core core;
     

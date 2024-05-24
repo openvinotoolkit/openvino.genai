@@ -42,7 +42,7 @@ enum class StopCriteria { early, heuristic, never };
  * @param num_beams number of beams for beam search. 1 disables beam search.
  * @param num_beam_groups number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
  * @param diversity_penalty this value is subtracted from a beam's score if it generates the same token as any beam from other group at a
- *        particular time.
+ *        particular time. See https://arxiv.org/pdf/1909.05858.
  * @param length_penalty exponential penalty to the length that is used with beam-based generation. It is applied as an exponent to
  *        the sequence length, which in turn is used to divide the score of the sequence. Since the score is the log
  *        likelihood of the sequence (i.e. negative), `length_penalty` > 0.0 promotes longer sequences, while
