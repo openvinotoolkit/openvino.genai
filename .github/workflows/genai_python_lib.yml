@@ -20,7 +20,7 @@ jobs:
       # Use Unix Makefiles because the defaut Ninja fails for CentOS7.
       - run: source ./ov/setupvars.sh && CMAKE_GENERATOR="Unix Makefiles" python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
       - run: PYTHONPATH=./src/python/ python -c "from openvino_genai import LLMPipeline"
-      - run: source ./ov/setupvars.sh && CMAKE_BUILD_PARALLEL_LEVEL="" python -m pip install .
+      - run: source ./ov/setupvars.sh && CMAKE_BUILD_PARALLEL_LEVEL="" CMAKE_GENERATOR="Unix Makefiles" python -m pip install .
       - run: python -c "from openvino_genai import LLMPipeline"
       - name: GenAI Python API tests
         run: |
