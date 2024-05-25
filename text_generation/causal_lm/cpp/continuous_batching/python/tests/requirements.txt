@@ -37,3 +37,5 @@ tiktoken
 sacremoses
 # - TheBloke/Wizard-Vicuna-30B-Uncensored-GPTQ
 auto-gptq
+# - allenai/OLMo-7B
+hf_olmo
