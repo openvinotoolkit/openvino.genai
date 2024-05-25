@@ -61,6 +61,13 @@ def get_multinomial_temperature_top_p_and_top_k() -> GenerationConfig:
     generation_config.top_k = 2
     return generation_config
 
+def get_multinomial_temperature_and_repetition_penalty() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.do_sample = True
+    generation_config.temperature = 0.8
+    generation_config.repetition_penalty = 2.0
+    return generation_config
+
 def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
     prompts = [
         "What is OpenVINO?",
