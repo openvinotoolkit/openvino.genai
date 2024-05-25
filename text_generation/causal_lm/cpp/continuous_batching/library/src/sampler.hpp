@@ -397,15 +397,15 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
 
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
-        auto logit_vector = _get_logit_vector(sequence_group_logits);  // TODO (vshampor): do we really even need a tensor on the line above?
-
-        if (sampling_params.repetition_penalty != 1.0f) {
-            auto repetition_penalty_transform = RepetitionPenaltyTransform(sampling_params.repetition_penalty);
-            logit_vector = repetition_penalty_transform.apply(logit_vector, sequence_group->get_unique_prompt_ids());
-        }
 
         if (sequence_group->requires_sampling()) {
             if (sampling_params.is_greedy_sampling() || sampling_params.is_multinomial()) {
+                auto logit_vector = _get_logit_vector(sequence_group_logits);  // TODO (vshampor): should be also applicable to beam search, but need to remove the batch size == 1 limitation
+
+                if (sampling_params.repetition_penalty != 1.0f) {
+                    auto repetition_penalty_transform = RepetitionPenaltyTransform(sampling_params.repetition_penalty);
+                    logit_vector = repetition_penalty_transform.apply(logit_vector, sequence_group->get_unique_generated_ids());
+                }
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
                 OPENVINO_ASSERT(running_sequences.size() == 1);
 
@@ -416,6 +416,9 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 else {  // .is_multinomial()
                     sampled_token_id = _multinomial_sample(logit_vector, sampling_params.temperature, sampling_params.top_p, sampling_params.top_k);
                 }
+
+                sequence_group->register_generated_token_id(sampled_token_id);
+
                 // in case of greedy search we always have a single parent sequence to sample from
                 running_sequences[0]->append_token(sampled_token_id, sequence_group_logits.data<const float>()[sampled_token_id]);
 
