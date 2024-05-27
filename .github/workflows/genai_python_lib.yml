@@ -2,7 +2,7 @@ name: genai_python_lib
 on: pull_request
 jobs:
   ubuntu_genai_python_lib:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     env:
       # A tokenizer's dependency fails to compile with Ninja in CenOS7 env
       CMAKE_GENERATOR: Unix Makefiles

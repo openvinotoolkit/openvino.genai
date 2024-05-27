@@ -67,44 +67,44 @@ jobs:
         run: ./build/stable_diffusion -m ./models/stable_diffusion_v1_5_ov -t FP16
 
   stable_diffusion_1_5_cpp-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
+      runs-on: windows-latest
+      steps:
+        - uses: actions/checkout@v4
+          with:
+            submodules: recursive
 
-      - name: Setup conda
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          miniconda-version: "latest"
-          activate-environment: openvino_sd_cpp
-          python-version: "3.10"
+        - name: Setup conda
+          uses: conda-incubator/setup-miniconda@v3
+          with:
+            miniconda-version: "latest"
+            activate-environment: openvino_sd_cpp
+            python-version: "3.10"
 
-      - name: Install OpenVINO and other conda dependencies
-        run: |
-          conda activate openvino_sd_cpp
-          conda install -c conda-forge -c conda-forge/label/openvino_dev openvino==2024.2.0.dev20240513 c-compiler cxx-compiler git make cmake
+        - name: Install OpenVINO and other conda dependencies
+          run: |
+            conda activate openvino_sd_cpp
+            conda install -c conda-forge -c conda-forge/label/openvino_dev openvino==2024.2.0.dev20240513 c-compiler cxx-compiler git make cmake
 
-      - name: Install python dependencies
-        working-directory: ${{ env.working_directory }}
-        run: |
-          conda activate openvino_sd_cpp
-          python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
-          python -m pip install -r requirements.txt
+        - name: Install python dependencies
+          working-directory: ${{ env.working_directory }}
+          run: |
+            conda activate openvino_sd_cpp
+            python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
+            python -m pip install -r requirements.txt
 
-      - name: Download and convert model and tokenizer
-        working-directory: ${{ env.working_directory }}
-        run: |
-          conda activate openvino_sd_cpp
-          optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --weight-format fp16 models/stable_diffusion_v1_5_ov/FP16
+        - name: Download and convert model and tokenizer
+          working-directory: ${{ env.working_directory }}
+          run: |
+            conda activate openvino_sd_cpp
+            optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --weight-format fp16 models/stable_diffusion_v1_5_ov/FP16
 
-      - name: Build app
-        working-directory: ${{ env.working_directory }}
-        run: |
-          conda activate openvino_sd_cpp
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --parallel
+        - name: Build app
+          working-directory: ${{ env.working_directory }}
+          run: |
+            conda activate openvino_sd_cpp
+            cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+            cmake --build ./build/ --config Release --parallel
 
-      - name: Run app
-        working-directory: ${{ env.working_directory }}
-        run: '& "./build/Release/stable_diffusion.exe" -m ./models/stable_diffusion_v1_5_ov -t FP16 --dynamic'
+        - name: Run app
+          working-directory: ${{ env.working_directory }}
+          run: '& "./build/Release/stable_diffusion.exe" -m ./models/stable_diffusion_v1_5_ov -t FP16 --dynamic'
