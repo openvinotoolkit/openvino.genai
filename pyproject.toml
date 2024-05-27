@@ -37,5 +37,5 @@ __version__ = "${version}"
 '''
 
 [build-system]
-requires = ["scikit-build-core~=0.8.0"]  # See https://github.com/openvinotoolkit/openvino_tokenizers/pull/123
+requires = ["scikit-build-core~=0.8.0", "cmake~=3.23"]  # See https://github.com/openvinotoolkit/openvino_tokenizers/pull/123
 build-backend = "scikit_build_core.build"
