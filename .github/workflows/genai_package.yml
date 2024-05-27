@@ -24,7 +24,7 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
       - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
         if: ${{ 'Release' == matrix.build-type }}
-      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
         if: ${{ 'Release' == matrix.build-type }}
       - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
         if: ${{ 'Release' == matrix.build-type }}
@@ -55,7 +55,7 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
         if: ${{ 'Release' == matrix.build-type }}
-      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
         if: ${{ 'Release' == matrix.build-type }}
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
         if: ${{ 'Release' == matrix.build-type }}

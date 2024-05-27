@@ -20,13 +20,12 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
       # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
       # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
-      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
       - run: PYTHONPATH=./src/python/ python -c "from openvino_genai import LLMPipeline"
       - run: source ./ov/setupvars.sh && CMAKE_BUILD_PARALLEL_LEVEL="" python -m pip install .
       - run: python -c "from openvino_genai import LLMPipeline"
       - name: GenAI Python API tests
         run: |
-          source ./ov/setupvars.sh
           cd ./tests/python_tests/
           python -m pip install -r requirements.txt
           models=$(python list_test_models.py)
@@ -53,7 +52,7 @@ jobs:
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && cmake --build ./build/ --config Release -j
       # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
       # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
-      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
       - run: set "PYTHONPATH=./src/python;" && call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -c "from openvino_genai import LLMPipeline"  # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
       - run: set CMAKE_BUILD_PARALLEL_LEVEL=&& call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install .
       - run: python -c "from openvino_genai import LLMPipeline"
