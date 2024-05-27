@@ -71,5 +71,4 @@ ConnectionError: Couldn't reach 'wikitext' on the Hub (SSLError)
 ```
 root cause: The wikitext data set was not downloaded correctly, or the Hugging Face Hub network could not be connected normally. <br />
 Solution: <br />
-Your data can be stored in various places; they can be on your local machine’s disk, in a Github repository, and in in-memory data structures like Python dictionaries and Pandas DataFrames. Wherever a dataset is stored. Datasets can help you load it from local,
-and how to load the dataset from local, please refer to https://huggingface.co/docs/datasets/loading#arrow <br />
+please Refer to https://huggingface.co/docs/datasets/loading#arrow , copy wikitest data cache set to ~/.cache/huggingface/datasets/ folder, Set the environment variable HF_DATASETS_OFFLINE to 1 to enable full offline mode.
