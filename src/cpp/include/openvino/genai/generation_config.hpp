@@ -81,9 +81,9 @@ public:
     StopCriteria stop_criteria = StopCriteria::heuristic;
     
     // Multinomial
-    float temperature = 0.0f;
+    float temperature = 1.0f;
     float top_p = 1.0f;
-    int top_k = -1;
+    size_t top_k = 50;
     bool do_sample = false;
     float repetition_penalty = 1.0f;
 
@@ -99,7 +99,7 @@ public:
     size_t get_max_new_tokens(size_t prompt_length = 0) const;
     bool is_greedy_decoding() const;
     bool is_beam_search() const;
-    bool is_multimomial() const;
+    bool is_multinomial() const;
     static GenerationConfig anymap_to_generation_config(const ov::AnyMap& config_map = {});
 };
 

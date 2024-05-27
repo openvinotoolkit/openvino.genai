@@ -109,6 +109,11 @@ void set_attention_mask(ov::Tensor&& attention_mask, std::vector<int32_t> next_b
     }
 }
 
+/**
+ * Set position ids tensor data for next token inference based on provided attention mask
+ * Supports multi batch
+ * Supports sparse attention_mask
+ */
 void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask) {
     const size_t batch_size = attention_mask.get_shape().at(0);
     const size_t atten_length = attention_mask.get_shape().at(1);
@@ -121,6 +126,11 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
     }
 }
 
+/**
+ * Get attention mask tensor for next token inference
+ * Supports multi batch
+ * Supports sparse attention_mask
+ */
 ov::Tensor extend_attention(ov::Tensor attention_mask) {
     auto shape = attention_mask.get_shape();
     auto batch_size = shape[0];

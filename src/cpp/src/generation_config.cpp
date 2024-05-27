@@ -100,7 +100,7 @@ bool GenerationConfig::is_beam_search() const {
     return num_beams > 1;
 }
 
-bool GenerationConfig::is_multimomial() const {
+bool GenerationConfig::is_multinomial() const {
     return do_sample;
 }
 
