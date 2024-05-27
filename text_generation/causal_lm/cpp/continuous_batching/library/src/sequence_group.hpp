@@ -10,7 +10,9 @@
 
 enum class SequenceStatus {
     RUNNING = 0,
-    FINISHED = 1
+    FINISHED = 1,
+    OUT_OF_MEMORY = 2,
+    WAITING = 3
 };
 
 using TokenIds = std::vector<int64_t>;
@@ -63,6 +65,14 @@ public:
 
     bool is_running() const {
         return m_status == SequenceStatus::RUNNING;
+    }
+
+    bool out_of_memory() const {
+        return m_status == SequenceStatus::OUT_OF_MEMORY;
+    }
+
+    bool is_waiting() const {
+        return m_status == SequenceStatus::WAITING;
     }
 
     void set_status(SequenceStatus status) {
@@ -189,7 +199,7 @@ public:
     std::vector<Sequence::CPtr> get_finished_sequences() const {
         std::vector<Sequence::CPtr> finished_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->has_finished()) {
+            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory()) {
                 finished_seqs.push_back(m_sequences[seq_id]);
             }
         }
@@ -279,6 +289,14 @@ public:
         clear_scheduled_tokens();
     }
 
+    void clear_waiting_sequences() {
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_waiting()) {
+                m_sequences[seq_id]->set_status(SequenceStatus::RUNNING);
+            }
+        }
+    }
+
     const TokenIds& get_prompt_ids() const {
         return m_prompt_ids;
     }
@@ -320,5 +338,39 @@ public:
         if (m_sequences[0]->get_generated_len() > 0 || m_sequences[0]->get_cumulative_log_probs() != 0.0f)
             return false;
         return true; 
+    }
+
+    void set_out_of_memory() {
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_running()) {
+                m_sequences[seq_id]->set_status(SequenceStatus::OUT_OF_MEMORY);
+            }
+        }
+    }
+
+    void set_waiting() {
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_running()) {
+                m_sequences[seq_id]->set_status(SequenceStatus::WAITING);
+            }
+        }
+    }
+
+    bool out_of_memory() const {
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->out_of_memory()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool is_waiting() const {
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_waiting()) {
+                return true;
+            }
+        }
+        return false;
     }
 };

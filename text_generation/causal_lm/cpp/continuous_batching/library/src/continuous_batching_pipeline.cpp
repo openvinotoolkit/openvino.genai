@@ -19,7 +19,7 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
 
     std::vector<Sequence::CPtr> finished_sequences = sequence_group->get_finished_sequences();
 
-    OPENVINO_ASSERT(finished_sequences.size() == sequence_group->num_total_seqs() && sequence_group->has_finished());
+    OPENVINO_ASSERT(finished_sequences.size() == sequence_group->num_total_seqs());
     for (size_t sequence_id = 0; sequence_id < finished_sequences.size(); ++sequence_id) {
         Sequence::CPtr sequence = finished_sequences[sequence_id];
 
@@ -34,6 +34,15 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
         }
     }
 
+    if (sequence_group->has_finished()) {
+        result.m_status = GenerationResultStatus::FINISHED;
+    }
+    else if (sequence_group->out_of_memory()) {
+        result.m_status = GenerationResultStatus::IGNORED;
+    }
+    else {
+        result.m_status = GenerationResultStatus::ABORTED;
+    }
     return result;
 }
 
@@ -67,9 +76,9 @@ class ContinuousBatchingPipeline::Impl {
     // current requests to process
     std::vector<SequenceGroup::Ptr> m_requests;
 
-    void _free_finished_requests() {
+    void _free_non_running_requests() {
         auto new_end = std::remove_if(m_requests.begin(), m_requests.end(), [] (SequenceGroup::CPtr seq_group) -> bool {
-            return seq_group->has_finished();
+            return seq_group->has_finished() || seq_group->out_of_memory();
         });
         m_requests.erase(new_end, m_requests.end());
     }
@@ -147,6 +156,21 @@ public:
             timer.end();
         }
 
+        // if no tokens were scheduled, we are out of memory
+        if (scheduler_output.m_total_num_scheduled_tokens == 0) {
+
+            // return partial results
+            std::vector<GenerationResult> pertial_results;
+
+            for (size_t i = 0; i < m_requests.size(); ++i) {
+                SequenceGroup::CPtr sequence_group = m_requests[i];
+                pertial_results.push_back(from_sequence_group(m_tokenizer, sequence_group));
+            }
+
+            _free_non_running_requests();
+            return pertial_results;
+        }
+
         ov::Tensor logits;
         {
             static ManualTimer timer("forward");
@@ -208,7 +232,7 @@ public:
                 }
             }
 
-            _free_finished_requests();
+            _free_non_running_requests();
 
             timer.end();
         }
