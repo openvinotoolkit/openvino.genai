@@ -16,8 +16,8 @@ int main(int argc, char* argv[]) try {
     std::string model_path = argv[1];
     std::string device = "CPU";  // GPU can be used as well
 
-    ov::LLMPipeline pipe(model_path, device);
-    ov::GenerationConfig config = pipe.get_generation_config();
+    ov::genai::LLMPipeline pipe(model_path, device);
+    ov::genai::GenerationConfig config = pipe.get_generation_config();
     config.max_new_tokens = 20;
     config.num_beam_groups = 3;
     config.num_beams = 15;

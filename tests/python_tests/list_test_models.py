@@ -14,7 +14,10 @@ def models_list():
         # ("microsoft/phi-1_5", "phi-1_5/"),
         # ("Qwen/Qwen1.5-7B-Chat", "Qwen1.5-7B-Chat"),
     ]
-    return model_ids
+    import os
+    prefix = os.getenv('GENAI_MODELS_PATH_PREFIX', '')
+    return [(model_id, os.path.join(prefix, model_path)) for model_id, model_path in model_ids]
+
 
 if __name__ == "__main__":
     for model_id, model_path in models_list():

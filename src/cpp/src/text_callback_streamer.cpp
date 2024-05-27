@@ -1,6 +1,7 @@
 #include "text_callback_streamer.hpp"
 
 namespace ov {
+namespace genai {
 
 TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, std::function<void (std::string)> callback, bool print_eos_token) {
     m_tokenizer = tokenizer;
@@ -70,4 +71,5 @@ void TextCallbackStreamer::on_finalized_text(const std::string& subword) {
     }
 }
 
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

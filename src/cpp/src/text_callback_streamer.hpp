@@ -6,6 +6,7 @@
 #include "openvino/genai/tokenizer.hpp"
 
 namespace ov {
+namespace genai {
 
 class TextCallbackStreamer: public StreamerBase {
 public:
@@ -32,4 +33,5 @@ private:
     void on_finalized_text(const std::string& subword);
 };
 
-} // namespace ov
+}  // namespace genai
+}  // namespace ov

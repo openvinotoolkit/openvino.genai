@@ -14,6 +14,7 @@ def model_fixture(request):
     return model_id, path, tokenizer, model
 
 def run_hf_ov_genai_comparison(model_fixture, generation_config, prompt):
+    import openvino_genai as ov_genai
     model_id, path, tokenizer, model = model_fixture
 
     generation_config_hf = generation_config.copy()
@@ -28,10 +29,13 @@ def run_hf_ov_genai_comparison(model_fixture, generation_config, prompt):
     hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:])
 
     device = 'CPU'
-    ov_tokenizers_path = '../../build/openvino_tokenizers/src/'
-    import openvino_genai as ov_genai
+    # pipe = ov_genai.LLMPipeline(path, device)
     
+    import os
+    build_dir = os.getenv('GENAI_BUILD_DIR', 'build')
+    ov_tokenizers_path = f'{build_dir}/openvino_tokenizers/src/'
     pipe = ov_genai.LLMPipeline(path, device, {}, ov_tokenizers_path)
+    
     ov_output = pipe.generate(prompt, **generation_config)
 
     if hf_output != ov_output:
@@ -46,7 +50,7 @@ def stop_criteria_map():
 
 test_cases = [
     (dict(max_new_tokens=20, do_sample=False), 'table is made of'),  # generation_config, prompt
-    # (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
+    (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
     # (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0), 'Alan Turing was a'),
     # (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
     # (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),

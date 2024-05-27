@@ -18,7 +18,7 @@ jobs:
       - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - run: sudo apt-get install libtbb-dev
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
-      - run: source ./ov/setupvars.sh && cmake --build ./build/ --config ${{ matrix.build-type }} --target package
+      - run: source ./ov/setupvars.sh && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
       - run: source ./ov/setupvars.sh && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
       - run: ov/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
         if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
@@ -49,7 +49,7 @@ jobs:
       - run: curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.2.0-15349-765302e0de1/w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64.zip
       - run: unzip ov.zip
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
-      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && cmake --build ./build/ --config ${{ matrix.build-type }} --target package
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\samples\cpp\build_samples_msvc.bat -i "${{ github.workspace }}/samples_install"
         if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build

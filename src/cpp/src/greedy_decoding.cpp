@@ -1,17 +1,21 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "generation_config_helper.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
 
 namespace ov {
+namespace genai {
 
-ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner, 
-                                       ov::Tensor input_ids, ov::Tensor attention_mask, ov::GenerationConfig generation_config, 
-                                       std::shared_ptr<StreamerBase> streamer, bool is_chat_conversation) {
+EncodedResults greedy_decoding(
+    ov::InferRequest& m_model_runner, 
+    ov::Tensor input_ids, 
+    ov::Tensor attention_mask, 
+    const ov::genai::GenerationConfig generation_config, 
+    const std::shared_ptr<StreamerBase> streamer, 
+    const bool is_chat_conversation
+) {
     
-    ov::GenerationConfigHelper config_helper = generation_config;
     ov::Shape prompts_shape = input_ids.get_shape();
     size_t batch_size = prompts_shape[0];
     size_t prompt_len = prompts_shape[1];
@@ -20,9 +24,9 @@ ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner,
 
     // todo: make this work even if position_ids are not specified
     auto position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
-    generate_utils::initialize_position_ids(position_ids, attention_mask, kv_cache_len);
+    utils::initialize_position_ids(position_ids, attention_mask, kv_cache_len);
 
-    ov::EncodedResults results;
+    EncodedResults results;
     results.scores.resize(batch_size);
     results.tokens.resize(batch_size);
     std::fill(results.scores.begin(), results.scores.end(), 0);
@@ -58,7 +62,7 @@ ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner,
     auto beam_data = m_model_runner.get_tensor("beam_idx").data<int32_t>();
     std::iota(beam_data, beam_data + batch_size, 0);
 
-    size_t max_tokens = config_helper.get_max_new_tokens(prompt_len);
+    size_t max_tokens = generation_config.get_max_new_tokens(prompt_len);
     
     m_model_runner.infer();
     auto logits = m_model_runner.get_tensor("logits");
@@ -69,7 +73,7 @@ ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner,
     std::vector<int64_t> token_iter_results(batch_size);  // results of a single infer request
     std::vector<int> eos_met(batch_size, 0);  // use int because can not use std::all_of with vector<bool>
     for (size_t batch = 0; batch < batch_size; ++batch) {
-        auto res = generate_utils::softmax(logits, batch);
+        auto res = utils::softmax(logits, batch);
         auto out_token = res.first;
         results.tokens[batch].emplace_back(res.first);
         results.scores[batch] += res.second;
@@ -86,8 +90,8 @@ ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner,
         return results;
     
     for (size_t i = 0; i < max_tokens - 1; ++i) {
-        generate_utils::update_position_ids(m_model_runner.get_tensor("position_ids"), m_model_runner.get_tensor("attention_mask"));
-        m_model_runner.set_tensor("attention_mask", generate_utils::extend_attention(m_model_runner.get_tensor("attention_mask")));
+        utils::update_position_ids(m_model_runner.get_tensor("position_ids"), m_model_runner.get_tensor("attention_mask"));
+        m_model_runner.set_tensor("attention_mask", utils::extend_attention(m_model_runner.get_tensor("attention_mask")));
 
         // todo: consider replacing with start_async and run callback right after that
         m_model_runner.infer();
@@ -99,7 +103,7 @@ ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner,
         std::vector<int> eos_met(batch_size, 0);  // use int because can not use std::all_of with vector<bool>
         for (size_t batch = 0; batch < batch_size; ++batch) {
 
-            auto res = ov::generate_utils::softmax(logits, batch);
+            auto res = ov::genai::utils::softmax(logits, batch);
             auto out_token = res.first;
             results.tokens[batch].emplace_back(res.first);
             results.scores[batch] += res.second;
@@ -122,4 +126,5 @@ ov::EncodedResults greedy_decoding(ov::InferRequest& m_model_runner,
     return results;
 }
 
-}
+}  //namespace genai
+}  //namespace ov

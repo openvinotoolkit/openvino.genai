@@ -4,7 +4,8 @@
 #include "utils.hpp"
 
 namespace ov {
-namespace generate_utils {
+namespace genai {
+namespace utils {
 
 Tensor init_attention_mask(Tensor& position_ids) {
     auto shape = position_ids.get_shape();
@@ -135,5 +136,6 @@ ov::Tensor extend_attention(ov::Tensor attention_mask) {
     return new_atten_mask;
 }
 
-}  // namespace generate_utils
+}  // namespace utils
+}  // namespace genai
 }  // namespace ov

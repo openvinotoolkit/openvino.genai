@@ -6,22 +6,15 @@
 
 #include <nlohmann/json.hpp>
 #include <openvino/runtime/core.hpp>
-
 #include "openvino/genai/generation_config.hpp"
-
-#include "generation_config_helper.hpp"
 #include "utils.hpp"
-
-namespace {   
-
-
-} // namespace
 
 
 namespace ov {
+namespace genai {
 
 GenerationConfig::GenerationConfig(std::string json_path) {
-    using ov::generate_utils::read_json_param;
+    using ov::genai::utils::read_json_param;
 
     std::ifstream f(json_path);
     OPENVINO_ASSERT(f.is_open(), "Failed to open '" + json_path + "' with generation config");
@@ -62,10 +55,10 @@ GenerationConfig::GenerationConfig(std::string json_path) {
 
 }
 
-GenerationConfig GenerationConfigHelper::anymap_to_generation_config(const ov::AnyMap& config_map) {
-    using ov::generate_utils::read_anymap_param;
+GenerationConfig GenerationConfig::anymap_to_generation_config(const ov::AnyMap& config_map) {
+    using ov::genai::utils::read_anymap_param;
     
-    GenerationConfig config = m_config;
+    GenerationConfig config;
     read_anymap_param(config_map, "max_new_tokens", config.max_new_tokens);
     read_anymap_param(config_map, "max_length", config.max_length);
     read_anymap_param(config_map, "ignore_eos", config.ignore_eos);
@@ -90,25 +83,26 @@ GenerationConfig GenerationConfigHelper::anymap_to_generation_config(const ov::A
     return config;
 }
 
-size_t GenerationConfigHelper::get_max_new_tokens(size_t prompt_length) {
+size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
     // max_new_tokens has priority over max_length, only if max_new_tokens was not specified use max_length
-    if (m_config.max_new_tokens != SIZE_MAX) {
-        return m_config.max_new_tokens;
+    if (max_new_tokens != SIZE_MAX) {
+        return max_new_tokens;
     } else {
-        return m_config.max_length - prompt_length;
+        return max_length - prompt_length;
     }
 }
 
-bool GenerationConfigHelper::is_greedy_decoding() const {
-    return !m_config.do_sample && !is_beam_search();
+bool GenerationConfig::is_greedy_decoding() const {
+    return !do_sample && !is_beam_search();
 }
 
-bool GenerationConfigHelper::is_beam_search() const {
-    return m_config.num_beams > 1;
+bool GenerationConfig::is_beam_search() const {
+    return num_beams > 1;
 }
 
-bool GenerationConfigHelper::is_multimomial() const {
-    return m_config.do_sample;
+bool GenerationConfig::is_multimomial() const {
+    return do_sample;
 }
 
+}  // namespace genai
 }  // namespace ov

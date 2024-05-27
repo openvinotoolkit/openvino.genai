@@ -7,9 +7,15 @@
 #include "openvino/genai/llm_pipeline.hpp"
 
 namespace py = pybind11;
-using namespace ov;
+using ov::genai::LLMPipeline;
+using ov::genai::Tokenizer;
+using ov::genai::GenerationConfig;
+using ov::genai::EncodedResults;
+using ov::genai::DecodedResults;
+using ov::genai::StopCriteria;
+using ov::genai::StreamerBase;
 
-void str_to_stop_criteria(ov::GenerationConfig& config, const std::string& stop_criteria_str){
+void str_to_stop_criteria(GenerationConfig& config, const std::string& stop_criteria_str){
     if (stop_criteria_str == "early") config.stop_criteria = StopCriteria::early;
     else if (stop_criteria_str == "never") config.stop_criteria =  StopCriteria::never;
     else if (stop_criteria_str == "heuristic") config.stop_criteria =  StopCriteria::heuristic;
@@ -17,16 +23,16 @@ void str_to_stop_criteria(ov::GenerationConfig& config, const std::string& stop_
                        "Allowed values are: \"early\", \"never\", \"heuristic\". ");
 }
 
-std::string stop_criteria_to_str(const ov::GenerationConfig& config) {
+std::string stop_criteria_to_str(const GenerationConfig& config) {
     switch (config.stop_criteria) {
-        case ov::StopCriteria::early: return "early";
-        case ov::StopCriteria::heuristic: return "heuristic";
-        case ov::StopCriteria::never: return "never";
+        case StopCriteria::early: return "early";
+        case StopCriteria::heuristic: return "heuristic";
+        case StopCriteria::never: return "never";
         default: throw std::runtime_error("Incorrect stop_criteria");
     }
 }
 
-void update_config_from_kwargs(ov::GenerationConfig& config, const py::kwargs& kwargs) {
+void update_config_from_kwargs(GenerationConfig& config, const py::kwargs& kwargs) {
     if (kwargs.contains("max_new_tokens")) config.max_new_tokens = kwargs["max_new_tokens"].cast<size_t>();
     if (kwargs.contains("max_length")) config.max_length = kwargs["max_length"].cast<size_t>();
     if (kwargs.contains("ignore_eos")) config.ignore_eos = kwargs["ignore_eos"].cast<bool>();
@@ -50,14 +56,14 @@ void update_config_from_kwargs(ov::GenerationConfig& config, const py::kwargs& k
 }
 
 // operator() and generate methods are identical, operator() is just an alias for generate
-std::string call_with_kwargs(ov::LLMPipeline& pipeline, const std::string& text, const py::kwargs& kwargs) {
+std::string call_with_kwargs(LLMPipeline& pipeline, const std::string& text, const py::kwargs& kwargs) {
     // Create a new GenerationConfig instance and initialize from kwargs
-    ov::GenerationConfig config = pipeline.get_generation_config();
+    GenerationConfig config = pipeline.get_generation_config();
     update_config_from_kwargs(config, kwargs);
     return pipeline(text, config);
 }
 
-std::string call_with_config(ov::LLMPipeline& pipe, const std::string& text, const ov::GenerationConfig& config) {
+std::string call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config) {
     std::shared_ptr<StreamerBase> streamer;
     return pipe(text, config);
 }
@@ -72,15 +78,15 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
     m.doc() = "Pybind11 binding for LLM Pipeline";
 
     py::class_<LLMPipeline>(m, "LLMPipeline")
-        .def(py::init<const std::string, const ov::Tokenizer&, const std::string, const ov::AnyMap&, const std::string&>(), 
+        .def(py::init<const std::string, const Tokenizer&, const std::string, const ov::AnyMap&>(), 
              py::arg("model_path"), py::arg("tokenizer"), py::arg("device") = "CPU", 
-             py::arg("plugin_config") = ov::AnyMap{}, py::arg("ov_tokenizers_path") = ov_tokenizers_module_path())
+             py::arg("plugin_config") = ov::AnyMap{})
         .def(py::init<std::string&, std::string, const ov::AnyMap&, const std::string>(),
              py::arg("path"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap{}, py::arg("ov_tokenizers_path") = ov_tokenizers_module_path())
-        .def("__call__", py::overload_cast<ov::LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
-        .def("__call__", py::overload_cast<ov::LLMPipeline&, const std::string&, const ov::GenerationConfig&>(&call_with_config))
-        .def("generate", py::overload_cast<ov::LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
-        .def("generate", py::overload_cast<ov::LLMPipeline&, const std::string&, const ov::GenerationConfig&>(&call_with_config))
+        .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
+        .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&>(&call_with_config))
+        .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
+        .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&>(&call_with_config))
         
         // todo: if input_ids is a ov::Tensor/numpy tensor
         // todo: implement calling generate/operator() with StreamerBase or lambda streamer
@@ -92,15 +98,15 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         
 
         .def("get_tokenizer", &LLMPipeline::get_tokenizer)
-        .def("start_chat", &ov::LLMPipeline::start_chat)
-        .def("finish_chat", &ov::LLMPipeline::finish_chat)
-        .def("reset_state", &ov::LLMPipeline::reset_state)
-        .def("get_generation_config", &ov::LLMPipeline::get_generation_config, py::return_value_policy::copy)
-        .def("set_generation_config", &ov::LLMPipeline::set_generation_config)
+        .def("start_chat", &LLMPipeline::start_chat)
+        .def("finish_chat", &LLMPipeline::finish_chat)
+        .def("reset_state", &LLMPipeline::reset_state)
+        .def("get_generation_config", &LLMPipeline::get_generation_config, py::return_value_policy::copy)
+        .def("set_generation_config", &LLMPipeline::set_generation_config)
         .def("apply_chat_template", &LLMPipeline::apply_chat_template);
 
      // Binding for Tokenizer
-    py::class_<ov::Tokenizer>(m, "Tokenizer")
+    py::class_<Tokenizer>(m, "Tokenizer")
         .def(py::init<>())
         .def(py::init<std::string&, const std::string&, const std::string&>(), 
              py::arg("tokenizers_path"), 
@@ -108,46 +114,46 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
              py::arg("ov_tokenizers_path") = py::str(ov_tokenizers_module_path()))
 
         // todo: implement encode/decode when for numpy inputs and outputs
-        .def("encode", py::overload_cast<const std::string>(&ov::Tokenizer::encode), "Encode a single prompt")
+        .def("encode", py::overload_cast<const std::string>(&Tokenizer::encode), "Encode a single prompt")
         // TODO: common.h(1106...) template argument deduction/substitution failed:
-        // .def("encode", py::overload_cast<std::vector<std::string>&>(&ov::Tokenizer::encode), "Encode multiple prompts")
-        .def("decode", py::overload_cast<std::vector<int64_t>>(&ov::Tokenizer::decode), "Decode a list of tokens")
-        .def("decode", py::overload_cast<ov::Tensor>(&ov::Tokenizer::decode), "Decode a tensor of tokens")
-        .def("decode", py::overload_cast<std::vector<std::vector<int64_t>>>(&ov::Tokenizer::decode), "Decode multiple lines of tokens");
+        // .def("encode", py::overload_cast<std::vector<std::string>&>(&Tokenizer::encode), "Encode multiple prompts")
+        .def("decode", py::overload_cast<std::vector<int64_t>>(&Tokenizer::decode), "Decode a list of tokens")
+        .def("decode", py::overload_cast<ov::Tensor>(&Tokenizer::decode), "Decode a tensor of tokens")
+        .def("decode", py::overload_cast<std::vector<std::vector<int64_t>>>(&Tokenizer::decode), "Decode multiple lines of tokens");
 
      // Binding for GenerationConfig
-    py::class_<ov::GenerationConfig>(m, "GenerationConfig")
+    py::class_<GenerationConfig>(m, "GenerationConfig")
         .def(py::init<>())
         .def(py::init<std::string>())
-        .def_readwrite("max_new_tokens", &ov::GenerationConfig::max_new_tokens)
-        .def_readwrite("max_length", &ov::GenerationConfig::max_length)
-        .def_readwrite("ignore_eos", &ov::GenerationConfig::ignore_eos)
-        .def_readwrite("num_beam_groups", &ov::GenerationConfig::num_beam_groups)
-        .def_readwrite("num_beams", &ov::GenerationConfig::num_beams)
-        .def_readwrite("diversity_penalty", &ov::GenerationConfig::diversity_penalty)
-        .def_readwrite("length_penalty", &ov::GenerationConfig::length_penalty)
-        .def_readwrite("num_return_sequences", &ov::GenerationConfig::num_return_sequences)
-        .def_readwrite("no_repeat_ngram_size", &ov::GenerationConfig::no_repeat_ngram_size)
+        .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
+        .def_readwrite("max_length", &GenerationConfig::max_length)
+        .def_readwrite("ignore_eos", &GenerationConfig::ignore_eos)
+        .def_readwrite("num_beam_groups", &GenerationConfig::num_beam_groups)
+        .def_readwrite("num_beams", &GenerationConfig::num_beams)
+        .def_readwrite("diversity_penalty", &GenerationConfig::diversity_penalty)
+        .def_readwrite("length_penalty", &GenerationConfig::length_penalty)
+        .def_readwrite("num_return_sequences", &GenerationConfig::num_return_sequences)
+        .def_readwrite("no_repeat_ngram_size", &GenerationConfig::no_repeat_ngram_size)
         .def_property("stop_criteria", &stop_criteria_to_str, &str_to_stop_criteria)
-        .def_readwrite("temperature", &ov::GenerationConfig::temperature)
-        .def_readwrite("top_p", &ov::GenerationConfig::top_p)
-        .def_readwrite("top_k", &ov::GenerationConfig::top_k)
-        .def_readwrite("do_sample", &ov::GenerationConfig::do_sample)
-        .def_readwrite("repetition_penalty", &ov::GenerationConfig::repetition_penalty)
-        .def_readwrite("pad_token_id", &ov::GenerationConfig::pad_token_id)
-        .def_readwrite("bos_token_id", &ov::GenerationConfig::bos_token_id)
-        .def_readwrite("eos_token_id", &ov::GenerationConfig::eos_token_id)
-        .def_readwrite("eos_token", &ov::GenerationConfig::eos_token)
-        .def_readwrite("bos_token", &ov::GenerationConfig::bos_token);
+        .def_readwrite("temperature", &GenerationConfig::temperature)
+        .def_readwrite("top_p", &GenerationConfig::top_p)
+        .def_readwrite("top_k", &GenerationConfig::top_k)
+        .def_readwrite("do_sample", &GenerationConfig::do_sample)
+        .def_readwrite("repetition_penalty", &GenerationConfig::repetition_penalty)
+        .def_readwrite("pad_token_id", &GenerationConfig::pad_token_id)
+        .def_readwrite("bos_token_id", &GenerationConfig::bos_token_id)
+        .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id)
+        .def_readwrite("eos_token", &GenerationConfig::eos_token)
+        .def_readwrite("bos_token", &GenerationConfig::bos_token);
 
-    py::class_<ov::DecodedResults>(m, "DecodedResults")
+    py::class_<DecodedResults>(m, "DecodedResults")
         .def(py::init<>())
-        .def_readwrite("texts", &ov::DecodedResults::texts)
-        .def_readwrite("scores", &ov::DecodedResults::scores);
+        .def_readwrite("texts", &DecodedResults::texts)
+        .def_readwrite("scores", &DecodedResults::scores);
 
-    py::class_<ov::EncodedResults>(m, "EncodedResults")
+    py::class_<EncodedResults>(m, "EncodedResults")
         .def(py::init<>())
-        .def_readwrite("tokens", &ov::EncodedResults::tokens)
-        .def_readwrite("scores", &ov::EncodedResults::scores);
+        .def_readwrite("tokens", &EncodedResults::tokens)
+        .def_readwrite("scores", &EncodedResults::scores);
 
 }
