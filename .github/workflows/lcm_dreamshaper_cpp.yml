@@ -47,8 +47,8 @@ jobs:
         working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_lcm_cpp
-          python -m pip install -r requirements.txt
           python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
+          python -m pip install -r requirements.txt
           
       - name: Download and convert model and tokenizer
         working-directory: ${{ env.working_directory }}
@@ -92,8 +92,8 @@ jobs:
         working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_lcm_cpp
-          python -m pip install -r requirements.txt
           python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
+          python -m pip install -r requirements.txt
 
       - name: Download and convert model and tokenizer
         working-directory: ${{ env.working_directory }}

@@ -51,16 +51,9 @@ jobs:
       - run: unzip ov.zip
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && cmake --build ./build/ --config Release -j
-<<<<<<< HEAD
       # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
       # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-=======
-      - run: python -m pip install "numpy<1.27"
-      # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
-      # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
-      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt
->>>>>>> generate_pipeline
       - run: set "PYTHONPATH=./src/python;" && call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -c "from openvino_genai import LLMPipeline"  # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
       - run: set CMAKE_BUILD_PARALLEL_LEVEL=&& call w_openvino_toolkit_windows_2024.2.0.dev20240515_x86_64\setupvars.bat && python -m pip install .
       - run: python -c "from openvino_genai import LLMPipeline"
