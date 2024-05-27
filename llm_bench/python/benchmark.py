@@ -142,6 +142,8 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     if bench_hook is not None:
         tm_list = bench_hook.get_time_list()
         tm_infer_list = bench_hook.get_time_infer_list()
+        if args['num_beams'] == 1 and generated_token_size != len(tm_infer_list):
+            log.warning(f'Output token size({generated_token_size}) is not equal to infer count({len(tm_infer_list)})')
     iter_data = gen_iterate_data(
         num,
         input_token_size * args['batch_size'],
