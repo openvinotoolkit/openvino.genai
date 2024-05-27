@@ -2,5 +2,5 @@
 torch==2.2.2+cpu
 diffusers==0.27.2
 transformers==4.39.3
-optimum-intel[openvino] @ git+https://github.com/Wovchena/optimum-intel.git@6d2ab0fb74ec7f2a8c81c7a26a9614ad1f04fe62
+optimum-intel[openvino] @ git+https://github.com/Wovchena/optimum-intel.git@try-converting-a-tokenizer-even-if-the-versions-dont-match
 huggingface_hub[cli]==0.22.2
