@@ -30,11 +30,6 @@ function(ov_genai_build_jinja2cpp)
         set(JINJA2CPP_PIC ON CACHE BOOL "")
 
         add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
-        # openvino::runtime exports _GLIBCXX_USE_CXX11_ABI=0 on CentOS7.
-        # It needs to be propagated to every library GenAI links with.
-        # It's enough to propagate to fmt, because fmt propagates to
-        # jinja2cpp.
-        target_compile_definitions(fmt PUBLIC $<TARGET_PROPERTY:openvino::runtime,INTERFACE_COMPILE_DEFINITIONS>)
     endif()
 endfunction()
 
@@ -57,9 +52,11 @@ target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<T
 
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
 
+# Extract take two last digits from CMAKE_PROJECT_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
+string(REGEX MATCH [=[[0-9][0-9]$]=] MAJOR_SUFFIX ${CMAKE_PROJECT_VERSION_MAJOR})
 set_target_properties(${TARGET_NAME} PROPERTIES
     VERSION ${CMAKE_PROJECT_VERSION}
-    SOVERSION ${CMAKE_PROJECT_VERSION_MAJOR}
+    SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH}
 )
 
 # Copy the library to python to allow skipping wheel installation

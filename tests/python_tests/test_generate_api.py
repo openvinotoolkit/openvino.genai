@@ -32,7 +32,7 @@ def run_hf_ov_genai_comparison(model_fixture, generation_config, prompt):
     device = 'CPU'
     # pipe = ov_genai.LLMPipeline(path, device)
     
-    pipe = ov_genai.LLMPipeline(path, device, {}, str(openvino_tokenizers._ext_path))
+    pipe = ov_genai.LLMPipeline(path, device, {}, str(openvino_tokenizers._ext_path.parent))
     
     ov_output = pipe.generate(prompt, **generation_config)
 
