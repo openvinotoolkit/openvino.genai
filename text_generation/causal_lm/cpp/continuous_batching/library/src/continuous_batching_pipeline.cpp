@@ -26,7 +26,7 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
         result.m_scores.push_back(sequence->get_beam_search_score(sequence_group->get_sampling_parameters()));
 
         {
-            static ManualTimer timer("detokenize"); 
+            static ManualTimer timer("detokenize");
             timer.start();
             std::string output_text = tokenizer->decode(sequence->get_generated_ids());
             timer.end();
