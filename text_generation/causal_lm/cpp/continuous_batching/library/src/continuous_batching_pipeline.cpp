@@ -26,7 +26,7 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
         result.m_scores.push_back(sequence->get_beam_search_score(sequence_group->get_sampling_parameters()));
 
         {
-            static ManualTimer timer("detokenize");
+            static ManualTimer timer("detokenize"); 
             timer.start();
             std::string output_text = tokenizer->decode(sequence->get_generated_ids());
             timer.end();
@@ -76,15 +76,11 @@ class ContinuousBatchingPipeline::Impl {
     // current requests to process
     std::vector<SequenceGroup::Ptr> m_requests;
 
-    void _free_finished_requests() {
+    void _free_non_running_requests() {
         auto new_end = std::remove_if(m_requests.begin(), m_requests.end(), [] (SequenceGroup::CPtr seq_group) -> bool {
-            return seq_group->has_finished();
+            return seq_group->has_finished() || seq_group->out_of_memory();
         });
         m_requests.erase(new_end, m_requests.end());
-    }
-
-    void _free_all_requests() {
-        m_requests.erase(m_requests.begin(), m_requests.end());
     }
 
 public:
@@ -162,9 +158,6 @@ public:
 
         // if no tokens were scheduled, we are out of memory
         if (scheduler_output.m_total_num_scheduled_tokens == 0) {
-            for (size_t sequence_group_id = 0; sequence_group_id < m_requests.size(); ++sequence_group_id) {
-                m_requests[sequence_group_id]->set_out_of_memory();
-            }
 
             // return partial results
             std::vector<GenerationResult> pertial_results;
@@ -174,7 +167,7 @@ public:
                 pertial_results.push_back(from_sequence_group(m_tokenizer, sequence_group));
             }
 
-            _free_all_requests();
+            _free_non_running_requests();
             return pertial_results;
         }
 
@@ -239,7 +232,7 @@ public:
                 }
             }
 
-            _free_finished_requests();
+            _free_non_running_requests();
 
             timer.end();
         }
