@@ -1,7 +1,6 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import openvino_tokenizers
 import pytest
 from list_test_models import models_list
 
@@ -32,7 +31,10 @@ def run_hf_ov_genai_comparison(model_fixture, generation_config, prompt):
     device = 'CPU'
     # pipe = ov_genai.LLMPipeline(path, device)
     
-    pipe = ov_genai.LLMPipeline(path, device, {}, str(openvino_tokenizers._ext_path.parent))
+    import os
+    build_dir = os.getenv('GENAI_BUILD_DIR', 'build')
+    ov_tokenizers_path = f'{build_dir}/openvino_tokenizers/src/'
+    pipe = ov_genai.LLMPipeline(path, device, {}, ov_tokenizers_path)
     
     ov_output = pipe.generate(prompt, **generation_config)
 
