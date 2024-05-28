@@ -88,9 +88,9 @@ std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path
 #ifdef _WIN32
     constexpr char tokenizers[] = "openvino_tokenizers.dll";
 #elif __linux__
-    constexpr char tokenizers[] = "openvino_tokenizers.so";
+    constexpr char tokenizers[] = "libopenvino_tokenizers.so";
 #elif __APPLE__
-    constexpr char tokenizers[] = "openvino_tokenizers.dylib";
+    constexpr char tokenizers[] = "libopenvino_tokenizers.dylib";
 #endif
     return path.parent_path() / tokenizers;
 }
