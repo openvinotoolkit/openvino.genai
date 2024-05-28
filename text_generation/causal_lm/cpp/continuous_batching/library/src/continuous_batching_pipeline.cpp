@@ -13,13 +13,29 @@
 
 namespace {
 
-GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, SequenceGroup::CPtr sequence_group) {
+GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, SequenceGroup::Ptr sequence_group) {
     GenerationResult result;
     result.m_request_id = sequence_group->get_request_id();
 
     std::vector<Sequence::CPtr> finished_sequences = sequence_group->get_finished_sequences();
 
     OPENVINO_ASSERT(finished_sequences.size() == sequence_group->num_total_seqs() && sequence_group->has_finished());
+    const auto& finished_sequences = sequence_group->get_finished_sequences();
+    const auto num_return_sequences = sequence_group->get_sampling_parameters().num_return_sequences;
+    if (finished_sequences.size() > num_return_sequences) {
+        // save only `sampling_params.num_return_sequences` sequences in result
+        std::map<float, size_t> probs;
+        for (const auto& finished_sequence : finished_sequences) {
+            probs.insert({finished_sequence->get_cumulative_log_probs(), finished_sequence->get_id()});
+        }
+        auto it = probs.begin();
+        std::advance(it, num_return_sequences);
+        while (it != probs.end()) {
+            sequence_group->remove_sequence(it->second);
+            ++it;
+        }
+    }
+
     for (size_t sequence_id = 0; sequence_id < finished_sequences.size(); ++sequence_id) {
         Sequence::CPtr sequence = finished_sequences[sequence_id];
 

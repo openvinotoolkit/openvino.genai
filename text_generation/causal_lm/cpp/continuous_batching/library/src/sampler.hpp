@@ -295,7 +295,8 @@ class Sampler {
         return out_token;
     }
 
-    std::vector<int64_t> _multinomial_sample(ov::Tensor logits, float temperature, float top_p, size_t top_k, size_t n) {
+    std::vector<int64_t> _multinomial_sample(ov::Tensor logits, float temperature, float top_p,
+                                             size_t top_k, size_t num_tokens_per_sequence) {
         std::vector<int64_t> out_tokens;
         ov::Shape logits_shape = logits.get_shape();
         size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
@@ -331,14 +332,14 @@ class Sampler {
             for (size_t i = 0; i < filtered.size(); i++) multinomial_weights[i] = filtered[i].first;
 
             auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
-            for (size_t i = 0; i < n; ++i) {
+            for (size_t i = 0; i < num_tokens_per_sequence; ++i) {
                 size_t element_to_pick = dist(rng_engine);
                 int64_t out_token = filtered[element_to_pick].second;
                 out_tokens.push_back(out_token);
             }
         }
 
-        OPENVINO_ASSERT(out_tokens.size() == n || out_tokens.size() == batch_size);
+        OPENVINO_ASSERT(out_tokens.size() == num_tokens_per_sequence * batch_size);
         return out_tokens;
     }
 
@@ -383,13 +384,14 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                     sampled_token_ids.push_back(_greedy_sample(sequence_group_logits));
                 } else {
                     // is_multinomial()
-                    auto n = sequence_group->get_num_processed_tokens() > 0 ? 1 : sampling_params.num_return_sequences;
-                    sampled_token_ids = _multinomial_sample(sequence_group_logits, sampling_params.temperature, sampling_params.top_p, sampling_params.top_k, n);
+                    auto num_tokens_per_sequence = num_running_sequences == 1 ? sampling_params.num_return_sequences : 1;
+                    sampled_token_ids = _multinomial_sample(sequence_group_logits, sampling_params.temperature, sampling_params.top_p,
+                                                            sampling_params.top_k, num_tokens_per_sequence);
                     
-                    if (n > 1) {
+                    if (num_tokens_per_sequence > 1) {
                         const auto sequence_to_fork = running_sequences[0];
                         std::list<uint64_t> forked_seq_ids;
-                        for (; num_running_sequences < n; ++num_running_sequences) {
+                        for (; num_running_sequences < num_tokens_per_sequence; ++num_running_sequences) {
                             const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
                             forked_seq_ids.push_back(forked_sequence->get_id());
                             running_sequences.push_back(forked_sequence);
@@ -398,7 +400,6 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                     }
                 }
                 for (size_t i = 0; i < num_running_sequences; ++i) {
-                    // in case of greedy search we always have a single parent sequence to sample from
                     auto sampled_token_id = sampled_token_ids[i];
                     running_sequences[i]->append_token(sampled_token_id, sequence_group_logits.data<const float>()[sampled_token_id]);
 
@@ -435,20 +436,6 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 if (!sequence_group->has_finished() && running_sequences[0]->get_generated_len() == sampling_params.max_new_tokens) {
                     // stop sequence by max_new_tokens
                     m_beam_search_info.at(request_id).finalize(sampler_output);
-                }
-                const auto& finished_sequences = sequence_group->get_finished_sequences();
-                if (finished_sequences.size() > sampling_params.num_return_sequences) {
-                    // save only `sampling_params.num_return_sequences` sequences in result
-                    std::map<float, size_t> probs;
-                    for (const auto& finished_sequence : finished_sequences) {
-                        probs.insert({finished_sequence->get_cumulative_log_probs(), finished_sequence->get_id()});
-                    }
-                    auto it = probs.begin();
-                    std::advance(it, sampling_params.num_return_sequences);
-                    while (it != probs.end()) {
-                        sequence_group->remove_sequence(it->second);
-                        ++it;
-                    }
                 }
             }
         } else {
