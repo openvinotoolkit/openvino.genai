@@ -36,7 +36,7 @@ else()
     elseif(LINUX)
         set(extra_libs "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/lib/libcore_tokenizers.so")
     elseif(APPLE)
-        set(extra_libs "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-srclib/libcore_tokenizers.dylib")
+        set(extra_libs "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/lib/libcore_tokenizers.dylib")
     endif()
     add_custom_command(OUTPUT "${extra_libs}"
         COMMAND "${CMAKE_COMMAND}" -E copy "${extra_libs}" "${CMAKE_BINARY_DIR}/openvino_genai/"
