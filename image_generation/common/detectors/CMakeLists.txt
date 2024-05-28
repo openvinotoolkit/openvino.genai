@@ -19,7 +19,9 @@ endif()
 # dependencies
 
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
-target_link_libraries(detectors PUBLIC openvino::runtime)
+add_subdirectory(../../common/imwrite _deps/imwrite)
+
+target_link_libraries(detectors PUBLIC openvino::runtime imwrite::imwrite)
 
 include(FetchContent)
 

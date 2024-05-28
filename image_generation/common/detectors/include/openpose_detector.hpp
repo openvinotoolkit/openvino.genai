@@ -3,15 +3,20 @@
 
 #pragma once
 
-#include <string>
-
-#include "openvino/runtime/core.hpp"
-#include "openvino/runtime/tensor.hpp"
+#include "base_detector.hpp"
+#include "openvino/runtime/compiled_model.hpp"
 
 class OpenposeDetector {
 public:
     OpenposeDetector() = default;
-    void Load(const std::string& model_path);
+
+    void load(const std::string&);
+    void preprocess();
+    void inference(const std::string&);
+    void postprocess();
+
+    void load_bgr(const std::string&, unsigned long w, unsigned long h, unsigned long c);
+
     int foo();
 
 private:
