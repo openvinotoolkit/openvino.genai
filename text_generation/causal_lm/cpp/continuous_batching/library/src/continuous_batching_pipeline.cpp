@@ -17,25 +17,24 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
     GenerationResult result;
     result.m_request_id = sequence_group->get_request_id();
 
-    std::vector<Sequence::CPtr> finished_sequences = sequence_group->get_finished_sequences();
-
-    OPENVINO_ASSERT(finished_sequences.size() == sequence_group->num_total_seqs() && sequence_group->has_finished());
-    const auto& finished_sequences = sequence_group->get_finished_sequences();
+    auto finished_sequences_size = sequence_group->get_finished_sequences().size();
+    OPENVINO_ASSERT(finished_sequences_size == sequence_group->num_total_seqs() && sequence_group->has_finished());
     const auto num_return_sequences = sequence_group->get_sampling_parameters().num_return_sequences;
-    if (finished_sequences.size() > num_return_sequences) {
+    if (finished_sequences_size > num_return_sequences) {
         // save only `sampling_params.num_return_sequences` sequences in result
         std::map<float, size_t> probs;
-        for (const auto& finished_sequence : finished_sequences) {
+        for (const auto& finished_sequence : sequence_group->get_finished_sequences()) {
             probs.insert({finished_sequence->get_cumulative_log_probs(), finished_sequence->get_id()});
         }
-        auto it = probs.begin();
-        std::advance(it, num_return_sequences);
-        while (it != probs.end()) {
-            sequence_group->remove_sequence(it->second);
-            ++it;
+        size_t prob_idx = 0;
+        for (const auto& prob : probs) {
+            if (prob_idx++ >= num_return_sequences) {
+                sequence_group->remove_sequence(prob.second);
+            }
         }
     }
-
+    
+    std::vector<Sequence::CPtr> finished_sequences = sequence_group->get_finished_sequences();
     for (size_t sequence_id = 0; sequence_id < finished_sequences.size(); ++sequence_id) {
         Sequence::CPtr sequence = finished_sequences[sequence_id];
 
@@ -185,7 +184,7 @@ public:
             std::vector<GenerationResult> pertial_results;
 
             for (size_t i = 0; i < m_requests.size(); ++i) {
-                SequenceGroup::CPtr sequence_group = m_requests[i];
+                SequenceGroup::Ptr sequence_group = m_requests[i];
                 pertial_results.push_back(from_sequence_group(m_tokenizer, sequence_group));
             }
 
@@ -248,7 +247,7 @@ public:
 
             for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
                 uint64_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-                SequenceGroup::CPtr sequence_group = m_requests[seq_group_id];
+                SequenceGroup::Ptr sequence_group = m_requests[seq_group_id];
                 if (sequence_group->has_finished()) {
                    currently_finished_requests.push_back(from_sequence_group(m_tokenizer, sequence_group));
                 }
