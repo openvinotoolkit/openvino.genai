@@ -107,7 +107,7 @@ std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path&
     } else {
         suffix = filename.substr(dot);
     }
-    size_t next_dot = suffix.find('.');
+    size_t next_dot = suffix.find('.', 1);
     std::string ext;
     if (dot == std::string::npos) {
         ext = suffix;
@@ -145,8 +145,7 @@ std::string ov_tokenizers_module_path() {
         return from_library.string();
     }
     py::module_ m = py::module_::import("openvino_tokenizers");
-    py::list path_list = m.attr("__path__");
-    return std::string(py::str(path_list[0])) + "/lib";
+    return py::str(m.attr("_ext_path"));
 }
 }
 
