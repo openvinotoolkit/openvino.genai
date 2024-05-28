@@ -20,18 +20,19 @@ add_subdirectory(./thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/
 set_target_properties(openvino_tokenizers PROPERTIES
     VERSION ${CMAKE_PROJECT_VERSION}
     SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH}
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/openvino_genai/"
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/openvino_genai/"
+    # Generator expressions to disable appending a per-configuration subdirectory (Release, Debug).
+    LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
+    RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
 if(TARGET core_tokenizers)
     set_target_properties(openvino_tokenizers PROPERTIES
         VERSION ${CMAKE_PROJECT_VERSION}
         SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH}
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/openvino_genai/"
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/openvino_genai/"
+        LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
+        RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     )
 else()
-    # Copy prebuilt dependencies
+    # Prebuilt dependencies
     if(WIN32)
         set(extra_libs "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/lib/core_tokenizers.dll"
                        "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/third_party/lib/icudt70.dll"
@@ -41,8 +42,7 @@ else()
     elseif(APPLE)
         set(extra_libs "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-srclib/libcore_tokenizers.dylib")
     endif()
-    add_custom_command(
-        OUTPUT "${extra_libs}"
+    add_custom_command(OUTPUT "${extra_libs}"
         COMMAND "${CMAKE_COMMAND}" -E copy "${extra_libs}" "${CMAKE_BINARY_DIR}/openvino_genai/"
         DEPENDS openvino_tokenizers)
 endif()

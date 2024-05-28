@@ -18,7 +18,7 @@ endif()
 pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
 target_link_libraries(py_generate_pipeline PRIVATE openvino::genai)
 set_target_properties(py_generate_pipeline PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/openvino_genai/"
+    LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py" DESTINATION "${CMAKE_BINARY_DIR}/openvino_genai/")
 write_file("${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" "__version__ = \"${CMAKE_PROJECT_VERSION}\"")
