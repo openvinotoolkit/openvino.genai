@@ -43,10 +43,18 @@ void OpenposeDetector::load_bgr(const std::string& im_txt, unsigned long w, unsi
     ov::Shape img_shape = {1, h, w, c};  // NHWC
     ov::Tensor img_tensor(ov::element::u8, img_shape);
 
+    // validate the read function
     std::uint8_t* tensor_data = img_tensor.data<std::uint8_t>();
     std::copy(im_array.begin(), im_array.end(), tensor_data);
     std::cerr << "Tensor shape: " << img_tensor.get_shape() << std::endl;
     imwrite(std::string("im.bmp"), img_tensor, false);
+
+    // validate the resize function
+    ov::Tensor small_img_tensor = smart_resize_k(img_tensor, 0.5, 0.5);
+    imwrite(std::string("im.half.bmp"), small_img_tensor, false);
+
+    ov::Tensor big_img_tensor = smart_resize_k(img_tensor, 2, 2);
+    imwrite(std::string("im.double.bmp"), big_img_tensor, false);
 }
 
 void OpenposeDetector::postprocess() {

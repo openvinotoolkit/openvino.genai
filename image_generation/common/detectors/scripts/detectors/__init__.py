@@ -16,6 +16,7 @@ def smart_resize(x, s):
         k = float(Ht + Wt) / float(Ho + Wo)
         return cv2.resize(x, (int(Wt), int(Ht)), interpolation=cv2.INTER_AREA if k < 1 else cv2.INTER_LANCZOS4)
     else:
+        print(f"smart_resize Co {Co}")
         return np.stack([smart_resize(x[:, :, i], s) for i in range(Co)], axis=2)
 
 
@@ -30,6 +31,7 @@ def smart_resize_k(x, fx, fy):
         k = float(Ht + Wt) / float(Ho + Wo)
         return cv2.resize(x, (int(Wt), int(Ht)), interpolation=cv2.INTER_AREA if k < 1 else cv2.INTER_LANCZOS4)
     else:
+        print(f"smart_resize_k Co {Co}")
         return np.stack([smart_resize_k(x[:, :, i], fx, fy) for i in range(Co)], axis=2)
 
 def transfer(model, model_weights):
