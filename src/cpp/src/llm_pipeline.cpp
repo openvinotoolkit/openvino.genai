@@ -18,6 +18,7 @@
 #ifdef _WIN32
 #    include <windows.h>
 #else
+#    include <openvino/util/file_util.hpp>
 #    include <dlfcn.h>
 #endif
 
@@ -67,8 +68,8 @@ std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path&
 }
 
 std::string get_ov_genai_library_path() {
-    #ifdef _WIN32
-    CHAR ov_library_path[MAX_PATH];
+#ifdef _WIN32
+    CHAR genai_library_path[MAX_PATH];
     HMODULE hm = NULL;
     if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                             reinterpret_cast<LPSTR>(get_ov_genai_library_path),
@@ -77,8 +78,8 @@ std::string get_ov_genai_library_path() {
         ss << "GetModuleHandle returned " << GetLastError();
         throw std::runtime_error(ss.str());
     }
-    GetModuleFileNameA(hm, (LPSTR)ov_library_path, sizeof(ov_library_path));
-    return std::string(ov_library_path);
+    GetModuleFileNameA(hm, (LPSTR)genai_library_path, sizeof(genai_library_path));
+    return std::string(genai_library_path);
 #elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
     Dl_info info;
     dladdr(reinterpret_cast<void*>(get_ov_genai_library_path), &info);

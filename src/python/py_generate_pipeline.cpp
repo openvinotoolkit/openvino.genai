@@ -1,10 +1,18 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <filesystem>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
 #include "openvino/genai/llm_pipeline.hpp"
+
+#ifdef _WIN32
+#    include <windows.h>
+#else
+#    include <openvino/util/file_util.hpp>
+#    include <dlfcn.h>
+#endif
 
 namespace py = pybind11;
 using ov::genai::LLMPipeline;
@@ -15,6 +23,7 @@ using ov::genai::DecodedResults;
 using ov::genai::StopCriteria;
 using ov::genai::StreamerBase;
 
+namespace {
 void str_to_stop_criteria(GenerationConfig& config, const std::string& stop_criteria_str){
     if (stop_criteria_str == "early") config.stop_criteria = StopCriteria::early;
     else if (stop_criteria_str == "never") config.stop_criteria =  StopCriteria::never;
@@ -68,6 +77,43 @@ std::string call_with_config(LLMPipeline& pipe, const std::string& text, const G
     return pipe(text, config);
 }
 
+std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path& path) {
+    return path.parent_path() / ("openvino_tokenizers" + path.extension().string());
+}
+
+std::string get_ov_genai_bindings_path() {
+#ifdef _WIN32
+    CHAR genai_library_path[MAX_PATH];
+    HMODULE hm = NULL;
+    if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPSTR>(get_ov_genai_bindings_path),
+                            &hm)) {
+        std::stringstream ss;
+        ss << "GetModuleHandle returned " << GetLastError();
+        throw std::runtime_error(ss.str());
+    }
+    GetModuleFileNameA(hm, (LPSTR)genai_library_path, sizeof(genai_library_path));
+    return std::string(genai_library_path);
+#elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
+    Dl_info info;
+    dladdr(reinterpret_cast<void*>(get_ov_genai_bindings_path), &info);
+    return ov::util::get_absolute_file_path(info.dli_fname).c_str();
+#else
+#    error "Unsupported OS"
+#endif  // _WIN32
+}
+
+std::string ov_tokenizers_module_path() {
+    std::filesystem::path from_library = with_openvino_tokenizers_stem(get_ov_genai_bindings_path());
+    if (std::filesystem::exists(from_library)) {
+        return from_library.string();
+    }
+    py::module_ m = py::module_::import("openvino_tokenizers");
+    py::list path_list = m.attr("__path__");
+    return std::string(py::str(path_list[0])) + "/lib";
+}
+}
+
 PYBIND11_MODULE(py_generate_pipeline, m) {
     m.doc() = "Pybind11 binding for LLM Pipeline";
 
@@ -76,7 +122,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
              py::arg("model_path"), py::arg("tokenizer"), py::arg("device") = "CPU", 
              py::arg("plugin_config") = ov::AnyMap{})
         .def(py::init<std::string&, std::string, const ov::AnyMap&, const std::string>(),
-             py::arg("path"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap{}, py::arg("ov_tokenizers_path") = "")
+             py::arg("path"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap{}, py::arg("ov_tokenizers_path") = ov_tokenizers_module_path())
         .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
         .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&>(&call_with_config))
         .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
@@ -105,7 +151,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init<std::string&, const std::string&, const std::string&>(), 
              py::arg("tokenizers_path"), 
              py::arg("device") = "CPU",
-             py::arg("ov_tokenizers_path") = "")
+             py::arg("ov_tokenizers_path") = py::str(ov_tokenizers_module_path()))
 
         // todo: implement encode/decode when for numpy inputs and outputs
         .def("encode", py::overload_cast<const std::string>(&Tokenizer::encode), "Encode a single prompt")
