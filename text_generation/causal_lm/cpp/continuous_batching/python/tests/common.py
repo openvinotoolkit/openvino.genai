@@ -18,6 +18,12 @@ def get_greedy() -> GenerationConfig:
     generation_config.num_return_sequences = 1
     return generation_config
 
+def get_greedy_with_repetition_penalty() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.num_return_sequences = 1
+    generation_config.repetition_penalty = 2.0
+    return generation_config
+
 
 def get_beam_search() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -53,6 +59,13 @@ def get_multinomial_temperature_top_p_and_top_k() -> GenerationConfig:
     generation_config.temperature = 0.8
     generation_config.top_p = 0.9
     generation_config.top_k = 2
+    return generation_config
+
+def get_multinomial_temperature_and_repetition_penalty() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.do_sample = True
+    generation_config.temperature = 0.8
+    generation_config.repetition_penalty = 2.0
     return generation_config
 
 def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
@@ -99,13 +112,13 @@ def convert_to_hf(
     # copy default parameters
     kwargs['eos_token_id'] = default_generation_config.eos_token_id
     kwargs['pad_token_id'] = default_generation_config.pad_token_id
+    kwargs['repetition_penalty'] = generation_config.repetition_penalty
 
     if generation_config.num_groups * generation_config.group_size > 1:
         # beam search case
         kwargs['num_beam_groups'] = generation_config.num_groups
         kwargs['num_beams'] = generation_config.num_groups * generation_config.group_size
         kwargs['diversity_penalty'] = generation_config.diversity_penalty
-        kwargs['repetition_penalty'] = generation_config.repetition_penalty
         kwargs['length_penalty'] = generation_config.length_penalty
         kwargs['no_repeat_ngram_size'] = generation_config.no_repeat_ngram_size
         kwargs['num_return_sequences'] = generation_config.num_return_sequences
@@ -201,7 +214,7 @@ def get_model_and_tokenizer(model_id: str, use_optimum = True):
             AutoModelForCausalLM.from_pretrained(model_id)
     return model, hf_tokenizer
 
-def _generate_and_compare_with_hf(model_id: str, prompts: List[str], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig, tmp_path: Path):
+def generate_and_compare_with_hf(model_id: str, prompts: List[str], generation_configs: List[GenerationConfig], scheduler_config: SchedulerConfig, tmp_path: Path):
     use_optimum = True
     model_path : Path = tmp_path / model_id
     model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum)

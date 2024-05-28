@@ -3,7 +3,7 @@
 import os
 import pytest
 
-from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, generate_and_compare_with_reference_text, get_greedy, get_beam_search, get_multinomial_temperature, get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, get_multinomial_temperature_top_p_and_top_k, DEFAULT_SCHEDULER_CONFIG
+from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, generate_and_compare_with_reference_text, get_greedy, get_beam_search, get_multinomial_temperature, get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, get_multinomial_temperature_top_p_and_top_k, DEFAULT_SCHEDULER_CONFIG, get_greedy_with_repetition_penalty, generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty
 from dataclasses import dataclass
 from py_continuous_batching import GenerationConfig, GenerationResult
 from pathlib import Path
@@ -84,15 +84,16 @@ def test_eos_greedy(tmp_path):
         print(f"Prompt = {prompt}\nHF result = {hf_result}\nOV result = {ov_result}")
         compare_results(hf_result, ov_result, generation_config)
 
-@pytest.mark.parametrize("generation_config", [get_greedy(), get_beam_search()],
-        ids=["greedy", "beam"])
+@pytest.mark.precommit
+@pytest.mark.parametrize("generation_config", [get_greedy(), get_beam_search(), get_greedy_with_repetition_penalty()],
+        ids=["greedy", "beam", "greedy_with_repetition_penalty"])
 def test_individual_generation_configs_deterministic(tmp_path, generation_config):
     prompts = [
             "What is OpenVINO?",
             ]
     generation_configs = [generation_config]
     model_id : str = "facebook/opt-125m"
-    _generate_and_compare_with_hf(model_id, prompts, generation_configs, DEFAULT_SCHEDULER_CONFIG, tmp_path)
+    generate_and_compare_with_hf(model_id, prompts, generation_configs, DEFAULT_SCHEDULER_CONFIG, tmp_path)
 
 
 @dataclass
@@ -101,24 +102,28 @@ class RandomSamplingTestStruct:
     prompts: List[str]
     ref_texts: List[List[str]]
 
-RANDOM_SAMPLING_TEST_CASES = [RandomSamplingTestStruct(generation_config=get_multinomial_temperature(),
-                                                       prompts=["What is OpenVINO?"],
-                                                       ref_texts=[ ["\n\nOpenVINO is a software development platform developed by OpenVINO, a set of technology companies and startups that enables developers to use the most"] ]),
-                              RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_top_p(),
-                                                       prompts=["What is OpenVINO?"],
-                                                       ref_texts=[ ["\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"] ]),
-                              RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_top_k(),
-                                                       prompts=["What is OpenVINO?"],
-                                                       ref_texts=[ ["\n\nOpenVINO is a software that allows users to create a virtual machine with the ability to create a virtual machine in a virtual environment. Open"] ]),
-                              RandomSamplingTestStruct(generation_config=get_multinomial_temperature_top_p_and_top_k(),
-                                                       prompts=["What is OpenVINO?"],
-                                                       ref_texts=[ ["\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"] ]),
-                              ]
+RANDOM_SAMPLING_TEST_CASES = [
+    RandomSamplingTestStruct(generation_config=get_multinomial_temperature(),
+                             prompts=["What is OpenVINO?"],
+                             ref_texts=[ ["\n\nOpenVINO is a software development platform developed by OpenVINO, a set of technology companies and startups that enables developers to use the most"] ]),
+    RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_top_p(),
+                             prompts=["What is OpenVINO?"],
+                             ref_texts=[ ["\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"] ]),
+    RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_top_k(),
+                             prompts=["What is OpenVINO?"],
+                             ref_texts=[ ["\n\nOpenVINO is a software that allows users to create a virtual machine with the ability to create a virtual machine in a virtual environment. Open"] ]),
+    RandomSamplingTestStruct(generation_config=get_multinomial_temperature_top_p_and_top_k(),
+                             prompts=["What is OpenVINO?"],
+                             ref_texts=[ ["\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"] ]),
+    RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_repetition_penalty(),
+                             prompts=["What is OpenVINO?"],
+                             ref_texts=[ ["\nOpen Vino's are a new and improved way to find cheap, fast-investment frozen vegetables that have no waste or calories. They're"] ]),
+]
 
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("test_struct", RANDOM_SAMPLING_TEST_CASES,
-        ids=["multinomial_temperature", "multinomial_temperature_and_top_p", "multinomial_temperature_and_top_k", "multinomial_temperature_top_p_and_top_k"])
+        ids=["multinomial_temperature", "multinomial_temperature_and_top_p", "multinomial_temperature_and_top_k", "multinomial_temperature_top_p_and_top_k", "multinomial_temperature_and_repetition_penalty"])
 def test_individual_generation_configs_random(tmp_path, test_struct: RandomSamplingTestStruct):
     generation_config = test_struct.generation_config
 
