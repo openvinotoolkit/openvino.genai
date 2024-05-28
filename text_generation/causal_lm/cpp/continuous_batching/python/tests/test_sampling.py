@@ -11,7 +11,7 @@ from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, 
     generate_and_compare_with_reference_text, get_greedy, get_beam_search, get_multinomial_temperature, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \
     get_multinomial_temperature_top_p_and_top_k, DEFAULT_SCHEDULER_CONFIG, get_greedy_with_repetition_penalty, \
-    generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty
+    generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty, get_scheduler_config
 
 
 @pytest.mark.precommit

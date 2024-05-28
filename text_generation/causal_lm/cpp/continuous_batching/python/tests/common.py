@@ -91,7 +91,7 @@ def get_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
         # vLLM specific
         scheduler_config.max_num_batched_tokens = 256
         scheduler_config.max_num_seqs = 256
-        scheduler_config.num_kv_blocks = 500
+        scheduler_config.cache_size = 2
     else:
         for param, value in scheduler_params.items():
             setattr(scheduler_config, param, value)
