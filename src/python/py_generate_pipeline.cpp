@@ -112,7 +112,7 @@ std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path&
     if (dot == std::string::npos) {
         ext = suffix;
     } else {
-        ext = suffix.substr(0, next_dot - 1);
+        ext = suffix.substr(0, next_dot);
     }
     return path.parent_path() / ("openvino_tokenizers" + ext);
 }
