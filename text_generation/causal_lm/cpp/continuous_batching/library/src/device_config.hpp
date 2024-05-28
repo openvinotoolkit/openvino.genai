@@ -34,7 +34,7 @@ public:
             OPENVINO_THROW(m_device, " is not supported by OpenVINO Continuous Batching");
         }
 
-        OPENVINO_ASSERT(scheduling_config.num_kv_blocks > 0 || scheduling_config.cache_size > 0, "num_kv_blocks or cache_size should be specified.");
+        OPENVINO_ASSERT(scheduling_config.num_kv_blocks > 0 || scheduling_config.cache_size > 0, "num_kv_blocks or cache_size should be more than zero.");
         if (scheduling_config.num_kv_blocks > 0) {
             m_num_kv_blocks = scheduling_config.num_kv_blocks;
         }
@@ -50,7 +50,7 @@ public:
         m_num_decoder_layers = num_decoder_layers;
 
         if (m_num_kv_blocks == 0) {
-            OPENVINO_ASSERT(m_cache_size > 0, "num_kv_blocks or cache_size should be specified.");
+            OPENVINO_ASSERT(m_cache_size > 0, "num_kv_blocks or cache_size should be more than zero.");
             size_t size_in_bytes = m_cache_size * 1024 * 1024 * 1024;
             m_num_kv_blocks = size_in_bytes / (m_num_decoder_layers * 2 * m_num_kv_heads * m_block_size * m_head_size * m_kv_cache_type.size());
         }
