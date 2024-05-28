@@ -67,7 +67,7 @@ FetchContent_MakeAvailable(googletest)
 
 
 set(TEST_TARGET_NAME "tests_continuous_batching")
-add_executable(${TEST_TARGET_NAME} "src/tests/scheduler.cpp" "src/tests/block_manager.cpp" "src/tests/logit_filtering.cpp")
+add_executable(${TEST_TARGET_NAME} "src/tests/scheduler.cpp" "src/tests/block_manager.cpp" "src/tests/logit_filtering.cpp" "src/tests/cache_manager.cpp")
 target_link_libraries(${TEST_TARGET_NAME} PUBLIC ${TARGET_NAME} openvino::runtime gtest_main)
 target_include_directories(${TEST_TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/"
                                           PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
