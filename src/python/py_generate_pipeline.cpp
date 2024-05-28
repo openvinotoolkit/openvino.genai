@@ -98,7 +98,6 @@ std::string call_with_config(LLMPipeline& pipe, const std::string& text, const G
 }
 
 std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
-    // There can be more than one . but std::filesystem::path::extension() would return the last one.
 #ifdef _WIN32
     constexpr char tokenizers[] = "openvino_tokenizers.dll";
 #elif __linux__

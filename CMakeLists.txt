@@ -23,7 +23,7 @@ set_target_properties(openvino_tokenizers PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
 if(TARGET core_tokenizers)
-    set_target_properties(openvino_tokenizers PROPERTIES
+    set_target_properties(core_tokenizers PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
         RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     )

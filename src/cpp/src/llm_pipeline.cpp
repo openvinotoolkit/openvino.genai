@@ -84,7 +84,6 @@ std::string from_tokenizer_json_if_exists(const std::string& path) {
 }
 
 std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
-    // There can be more than one . but std::filesystem::path::extension() would return the last one.
 #ifdef _WIN32
     constexpr char tokenizers[] = "openvino_tokenizers.dll";
 #elif __linux__

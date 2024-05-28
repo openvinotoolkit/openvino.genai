@@ -45,5 +45,5 @@ install(FILES "${CMAKE_BINARY_DIR}/openvino_genai/__init__.py" "${CMAKE_BINARY_D
 install(TARGETS genai py_generate_pipeline LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
 
 # wheel_genai component is used for wheel generation in pyproject.toml.
-# Exclude wheel_genai from normal packaging process.
+# Exclude wheel_genai from normal packaging process because there's pygenai_X_Y component for that.
 install(TARGETS genai py_generate_pipeline LIBRARY DESTINATION . COMPONENT wheel_genai RUNTIME DESTINATION . COMPONENT wheel_genai EXCLUDE_FROM_ALL)
