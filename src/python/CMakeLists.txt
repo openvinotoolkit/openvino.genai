@@ -5,8 +5,8 @@
 include(FetchContent)
 FetchContent_Declare(
     pybind11
-    URL https://github.com/pybind/pybind11/archive/3e9dfa2866941655c56877882565e7577de6fc7b.tar.gz
-    URL_HASH SHA256=9a7d245f405f470798b9d2a48912cc97230658024775299eac203f7c9c9ae37c
+    URL https://github.com/pybind/pybind11/archive/refs/tags/v2.12.0.tar.gz
+    URL_HASH SHA256=bf8f242abd1abcd375d516a7067490fb71abd79519a282d22b6e4d19282185a7
 )
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 FetchContent_GetProperties(pybind11)

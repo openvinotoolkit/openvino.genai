@@ -18,7 +18,7 @@ Prepare a python environment and install dependencies:
 ```shell
 conda create -n openvino_sd_cpp python==3.10
 conda activate openvino_sd_cpp
-conda install -c conda-forge openvino=2024.1.0 c-compiler cxx-compiler git make cmake
+conda install -c conda-forge openvino=2024.2.0 c-compiler cxx-compiler git make cmake
 # Ensure that Conda standard libraries are used
 conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 ```
