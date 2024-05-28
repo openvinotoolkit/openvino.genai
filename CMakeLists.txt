@@ -18,16 +18,12 @@ project(OpenVINOGenAI VERSION 2024.2.0.0)
 add_subdirectory(./thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
 # Put binaries to a single dir to mimic package structure.
 set_target_properties(openvino_tokenizers PROPERTIES
-    VERSION ${CMAKE_PROJECT_VERSION}
-    SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH}
     # Generator expressions to disable appending a per-configuration subdirectory (Release, Debug).
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
 if(TARGET core_tokenizers)
     set_target_properties(openvino_tokenizers PROPERTIES
-        VERSION ${CMAKE_PROJECT_VERSION}
-        SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH}
         LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
         RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     )
