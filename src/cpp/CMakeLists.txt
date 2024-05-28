@@ -48,8 +48,6 @@ target_include_directories(${TARGET_NAME}
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
 
-target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
-
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
 
 # Extract two last digits from CMAKE_PROJECT_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
@@ -65,6 +63,39 @@ add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
         "$<TARGET_FILE:${TARGET_NAME}>"
         "${CMAKE_CURRENT_SOURCE_DIR}/../python/openvino_genai/$<TARGET_FILE_NAME:${TARGET_NAME}>"
     COMMENT "Copy ${TARGET_NAME} to src/python/openvino_genai")
+
+# Copy openvino_tokenizers libraries near to both genai libraries so any of the paths that could be loaded as an extension
+add_custom_command(TARGET ${TARGET_NAME} POST_BUILD COMMAND "${CMAKE_COMMAND}" -E copy
+    "$<TARGET_FILE:openvino_tokenizers>"
+    "$<TARGET_FILE_DIR:${TARGET_NAME}>")
+add_custom_command(TARGET ${TARGET_NAME} POST_BUILD COMMAND "${CMAKE_COMMAND}" -E copy
+    "$<TARGET_FILE:openvino_tokenizers>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../python/openvino_genai/")
+if(TARGET core_tokenizers)
+    add_custom_command(TARGET ${TARGET_NAME} POST_BUILD COMMAND "${CMAKE_COMMAND}" -E copy
+        "$<TARGET_FILE:core_tokenizers>"
+        "$<TARGET_FILE_DIR:${TARGET_NAME}>")
+    add_custom_command(TARGET ${TARGET_NAME} POST_BUILD COMMAND "${CMAKE_COMMAND}" -E copy
+        "$<TARGET_FILE:core_tokenizers>"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../python/openvino_genai/")
+else()
+    # Copy prebuilt dependencies
+    if(WIN32)
+        set(extra_libs "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/lib/core_tokenizers.dll"
+                       "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/third_party/lib/icudt70.dll"
+                       "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/third_party/lib/icuuc70.dll")
+    elseif(LINUX)
+        set(extra_libs "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-src/lib/libcore_tokenizers.so")
+    elseif(APPLE)
+        set(extra_libs "${CMAKE_BINARY_DIR}/_deps/fast_tokenizer-srclib/libcore_tokenizers.dylib")
+    endif()
+    add_custom_command(TARGET ${TARGET_NAME} POST_BUILD COMMAND "${CMAKE_COMMAND}" -E copy
+        ${extra_libs}
+        "$<TARGET_FILE_DIR:${TARGET_NAME}>")
+    add_custom_command(TARGET ${TARGET_NAME} POST_BUILD COMMAND "${CMAKE_COMMAND}" -E copy
+        ${extra_libs}
+        "${CMAKE_CURRENT_SOURCE_DIR}/../python/openvino_genai/")
+endif()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 install(TARGETS ${TARGET_NAME}

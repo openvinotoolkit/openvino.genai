@@ -31,10 +31,7 @@ def run_hf_ov_genai_comparison(model_fixture, generation_config, prompt):
     device = 'CPU'
     # pipe = ov_genai.LLMPipeline(path, device)
     
-    import os
-    build_dir = os.getenv('GENAI_BUILD_DIR', 'build')
-    ov_tokenizers_path = f'{build_dir}/openvino_tokenizers/src/'
-    pipe = ov_genai.LLMPipeline(path, device, {}, ov_tokenizers_path)
+    pipe = ov_genai.LLMPipeline(path, device, {})
     
     ov_output = pipe.generate(prompt, **generation_config)
 

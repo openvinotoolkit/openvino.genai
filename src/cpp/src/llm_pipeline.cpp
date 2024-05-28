@@ -15,6 +15,12 @@
 #include "utils.hpp"
 #include "text_callback_streamer.hpp"
 
+#ifdef _WIN32
+#    include <windows.h>
+#else
+#    include <dlfcn.h>
+#endif
+
 namespace {
 
 ov::genai::GenerationConfig from_config_json_if_exists(const std::string& path) {
@@ -54,6 +60,32 @@ std::string from_tokenizer_json_if_exists(const std::string& path) {
     
     ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
     return res;
+}
+
+std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path& path) {
+    return path.parent_path() / ("openvino_tokenizers" + path.extension().string());
+}
+
+std::string get_ov_genai_library_path() {
+    #ifdef _WIN32
+    CHAR ov_library_path[MAX_PATH];
+    HMODULE hm = NULL;
+    if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPSTR>(get_ov_genai_library_path),
+                            &hm)) {
+        std::stringstream ss;
+        ss << "GetModuleHandle returned " << GetLastError();
+        throw std::runtime_error(ss.str());
+    }
+    GetModuleFileNameA(hm, (LPSTR)ov_library_path, sizeof(ov_library_path));
+    return std::string(ov_library_path);
+#elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
+    Dl_info info;
+    dladdr(reinterpret_cast<void*>(get_ov_genai_library_path), &info);
+    return ov::util::get_absolute_file_path(info.dli_fname).c_str();
+#else
+#    error "Unsupported OS"
+#endif  // _WIN32
 }
 
 }
@@ -153,7 +185,11 @@ ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
     const std::string& ov_tokenizers_path
 ): 
     m_model_runner{ov::Core{}.compile_model(path + "/openvino_model.xml", device, config).create_infer_request()}, 
-    m_tokenizer{Tokenizer(path, device, ov_tokenizers_path)},
+    m_tokenizer{
+        ov_tokenizers_path.empty()
+        ? Tokenizer(path, device, with_openvino_tokenizers_stem(get_ov_genai_library_path()).string())
+        : Tokenizer(path, device, ov_tokenizers_path)
+    },
     m_generation_config{from_config_json_if_exists(path)},
     m_chat_template{from_tokenizer_json_if_exists(path)}
  {}
