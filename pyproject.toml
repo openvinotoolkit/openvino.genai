@@ -20,8 +20,9 @@ dependencies = [
 ]
 
 [tool.scikit-build]
+build.tool-args = ["--config", "Release" "--parallel"]
 cmake.source-dir = "./"
-cmake.build-type = "Release"
+#cmake.build-type = "Release"  It used to produce a debug build. Comment out because the default is Release anyway.
 cmake.targets = ["py_generate_pipeline", "genai"]
 install.components = ["wheel_genai"]
 sdist.cmake = true

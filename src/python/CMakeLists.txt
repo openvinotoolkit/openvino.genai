@@ -25,10 +25,10 @@ write_file("${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" "__version__ = \"
 
 # setting RPATH / LC_RPATH depending on platform
 if(LINUX)
-    # to find libgenai.so in the same folder
+    # to find libopenvino_genai.so in the same folder
     set(rpaths "$ORIGIN")
 elseif(APPLE)
-    # to find libgenai.dylib in the same folder
+    # to find libopenvino_genai.dylib in the same folder
     set(rpaths "@loader_path")
     if(DEFINED SKBUILD)
         # in case we build pip package, we need to refer to libopenvino.dylib from 'openvino' package
@@ -42,8 +42,11 @@ endif()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 install(FILES "${CMAKE_BINARY_DIR}/openvino_genai/__init__.py" "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
-install(TARGETS genai py_generate_pipeline LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+install(TARGETS openvino_genai py_generate_pipeline LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
 
 # wheel_genai component is used for wheel generation in pyproject.toml.
 # Exclude wheel_genai from normal packaging because there's pygenai_X_Y component for that.
-install(TARGETS genai py_generate_pipeline  ARCHIVE DESTINATION . COMPONENT wheel_genai LIBRARY DESTINATION . COMPONENT wheel_genai RUNTIME DESTINATION . COMPONENT wheel_genai EXCLUDE_FROM_ALL)
+install(TARGETS openvino_genai py_generate_pipeline
+    LIBRARY DESTINATION . COMPONENT wheel_genai
+    RUNTIME DESTINATION . COMPONENT wheel_genai
+    EXCLUDE_FROM_ALL)
