@@ -100,13 +100,13 @@ std::string call_with_config(LLMPipeline& pipe, const std::string& text, const G
 std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
     // There can be more than one . but std::filesystem::path::extension() would return the last one.
 #ifdef _WIN32
-    constexpr tokenizers = "openvino_tokenizers.dll";
+    constexpr char tokenizers[] = "openvino_tokenizers.dll";
 #elif __linux__
-    constexpr tokenizers = "openvino_tokenizers.so";
+    constexpr char tokenizers[] = "openvino_tokenizers.so";
 #elif __APPLE__
-    constexpr tokenizers = "openvino_tokenizers.dylib";
+    constexpr char tokenizers[] = "openvino_tokenizers.dylib";
 #endif
-    return path.parent_path() / ("openvino_tokenizers" + ext);
+    return path.parent_path() / tokenizers;
 }
 
 std::string get_ov_genai_bindings_path() {
