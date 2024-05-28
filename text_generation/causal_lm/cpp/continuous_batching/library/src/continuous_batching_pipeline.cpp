@@ -104,9 +104,15 @@ public:
             infer_request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager->get_value_cache(decoder_layer_id));
         }
 
-        m_scheduler = std::make_shared<Scheduler>(scheduler_config);
+        SchedulerConfig updated_config = scheduler_config;
+        // update KV number in scheduler config
+        if (scheduler_config.num_kv_blocks != device_config.get_num_kv_blocks()) {
+            updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
+        }
+
+        m_scheduler = std::make_shared<Scheduler>(updated_config);
         // and finally create model runner
-        m_model_runner = std::make_shared<ModelRunner>(infer_request, scheduler_config);
+        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
         m_sampler = std::make_shared<Sampler>();
         m_sampler->set_seed(m_generation_config.rng_seed);
 
