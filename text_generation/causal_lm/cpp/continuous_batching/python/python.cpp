@@ -89,6 +89,7 @@ PYBIND11_MODULE(py_continuous_batching, m) {
         .def(py::init<>())
         .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
         .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
+        .def_readwrite("cache_size", &SchedulerConfig::cache_size)
         .def_readwrite("block_size", &SchedulerConfig::block_size)
         .def_readwrite("cache_size", &SchedulerConfig::cache_size)
         .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
