@@ -17,6 +17,11 @@ endif()
 
 pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
 target_link_libraries(py_generate_pipeline PRIVATE openvino::genai)
+set_target_properties(py_generate_pipeline PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/openvino_genai/"
+)
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py" DESTINATION "${CMAKE_BINARY_DIR}/openvino_genai/")
+write_file("${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" "__version__ = \"${CMAKE_PROJECT_VERSION}\"")
 
 # setting RPATH / LC_RPATH depending on platform
 if(LINUX)
@@ -35,16 +40,9 @@ if(rpaths)
     set_target_properties(py_generate_pipeline PROPERTIES INSTALL_RPATH "${rpaths}")
 endif()
 
-# Copy the library to python to allow skipping wheel installation
-add_custom_command(TARGET py_generate_pipeline POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy
-        "$<TARGET_FILE:py_generate_pipeline>"
-        "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/$<TARGET_FILE_NAME:py_generate_pipeline>"
-    COMMENT "Copy py_generate_pipeline to src/python/openvino_genai/")
-
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/ DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
-install(TARGETS py_generate_pipeline LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+install(FILES "${CMAKE_BINARY_DIR}/openvino_genai/__init__.py" "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+install(TARGETS genai py_generate_pipeline LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
 
 # wheel_genai component is used for wheel generation in pyproject.toml.
 # Exclude wheel_genai from normal packaging process.

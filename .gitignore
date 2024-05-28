@@ -1,11 +1,3 @@
-# They are copied to python folder during the build to allow skipping wheel installation
-src/python/openvino_genai/icudt70.dll
-src/python/openvino_genai/icuuc70.dll
-src/python/openvino_genai/*genai*
-src/python/openvino_genai/py_generate_pipeline*
-src/python/openvino_genai/*core_tokenizers*
-src/python/openvino_genai/*openvino_tokenizers*
-
 # build/artifact dirs
 _*
 [Bb]uild*/
