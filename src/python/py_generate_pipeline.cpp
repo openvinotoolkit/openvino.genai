@@ -97,28 +97,14 @@ std::string call_with_config(LLMPipeline& pipe, const std::string& text, const G
     return pipe(text, config);
 }
 
-std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path& path) {
-    std::string filename = path.filename().string();
-    // There can be more than one . but std::filesystem::path::extension returns the last one.
+std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
+    // There can be more than one . but std::filesystem::path::extension() would return the last one.
 #ifdef _WIN32
-    size_t dot = filename.find(".pyd");
-    if (dot == std::string::npos) {
-        throw std::runtime_error{"Failed to find '.pyd' in " + filename};
-    }
-    std::string ext = ".dll";
+    constexpr tokenizers = "openvino_tokenizers.dll";
 #elif __linux__
-    size_t dot = filename.find(".so");
-    ;
-    if (dot == std::string::npos) {
-        throw std::runtime_error{"Failed to find '.so' in " + filename};
-    }
-    std::string ext = filename.substr(dot);
+    constexpr tokenizers = "openvino_tokenizers.so";
 #elif __APPLE__
-    size_t dot = filename.find(".dylib");
-    if (dot == std::string::npos) {
-        throw std::runtime_error{"Failed to find '.dylib' in " + filename};
-    }
-    std::string ext = filename.substr(dot);
+    constexpr tokenizers = "openvino_tokenizers.dylib";
 #endif
     return path.parent_path() / ("openvino_tokenizers" + ext);
 }
@@ -147,7 +133,7 @@ std::string get_ov_genai_bindings_path() {
 
 std::string ov_tokenizers_module_path() {
     // Try a path relative to build artifacts folder first.
-    std::filesystem::path from_library = with_openvino_tokenizers_stem(get_ov_genai_bindings_path());
+    std::filesystem::path from_library = with_openvino_tokenizers(get_ov_genai_bindings_path());
     if (std::filesystem::exists(from_library)) {
         return from_library.string();
     }

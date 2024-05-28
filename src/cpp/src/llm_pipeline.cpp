@@ -83,28 +83,14 @@ std::string from_tokenizer_json_if_exists(const std::string& path) {
     return res;
 }
 
-std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path& path) {
-    std::string filename = path.filename().string();
-    // There can be more than one . but std::filesystem::path::extension returns the last one.
+std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
+    // There can be more than one . but std::filesystem::path::extension() would return the last one.
 #ifdef _WIN32
-    size_t dot = filename.find(".dll");
-    if (dot == std::string::npos) {
-        throw std::runtime_error{"Failed to find '.dll' in " + filename};
-    }
-    std::string ext = ".dll";
+    constexpr tokenizers = "openvino_tokenizers.dll";
 #elif __linux__
-    size_t dot = filename.find(".so");
-    ;
-    if (dot == std::string::npos) {
-        throw std::runtime_error{"Failed to find '.so' in " + filename};
-    }
-    std::string ext = filename.substr(dot);
+    constexpr tokenizers = "openvino_tokenizers.so";
 #elif __APPLE__
-    size_t dot = filename.find(".dylib");
-    if (dot == std::string::npos) {
-        throw std::runtime_error{"Failed to find '.dylib' in " + filename};
-    }
-    std::string ext = filename.substr(dot);
+    constexpr tokenizers = "openvino_tokenizers.dylib";
 #endif
     return path.parent_path() / ("openvino_tokenizers" + ext);
 }
@@ -230,7 +216,7 @@ ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
     m_model_runner{ov::Core{}.compile_model(path + "/openvino_model.xml", device, config).create_infer_request()}, 
     m_tokenizer{
         ov_tokenizers_path.empty()
-        ? Tokenizer(path, device, with_openvino_tokenizers_stem(get_ov_genai_library_path()).string())
+        ? Tokenizer(path, device, with_openvino_tokenizers(get_ov_genai_library_path()).string())
         : Tokenizer(path, device, ov_tokenizers_path)
     },
     m_generation_config{from_config_json_if_exists(path)},
