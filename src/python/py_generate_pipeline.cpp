@@ -98,7 +98,16 @@ std::string call_with_config(LLMPipeline& pipe, const std::string& text, const G
 }
 
 std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path& path) {
-    return path.parent_path() / ("openvino_tokenizers" + path.extension().string());
+    std::string filename = path.filename().string();
+    // There can be more than one . but std::filesystem::path::extension returns the last.
+    size_t dot = filename.find('.');
+    std::string ext;
+    if (dot != std::string::npos) {
+        ext = filename.substr(dot);
+    } else {
+        throw std::runtime_error{"Failed to find '.' in " + filename};
+    }
+    return path.parent_path() / ("openvino_tokenizers" + ext);
 }
 
 std::string get_ov_genai_bindings_path() {
