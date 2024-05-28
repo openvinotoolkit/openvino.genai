@@ -23,7 +23,6 @@ dependencies = [
 cmake.args = ["-DCMAKE_BUILD_TYPE=Release"]  # One of our dependencies builds Debug otherwise for MSVC multi config generator.
 cmake.source-dir = "./"
 cmake.build-type = "Release"
-cmake.targets = ["py_generate_pipeline", "genai"]
 install.components = ["wheel_genai"]
 sdist.cmake = true
 wheel.packages = ["src/python/openvino_genai"]
@@ -38,6 +37,6 @@ __version__ = "${version}"
 '''
 
 [build-system]
-# TODO: add build.tool-args = ["--parallel"] after scikit-build-core is updated.
+# TODO: add build.tool-args = ["--parallel"] after scikit-build-core is updated to 0.9.4+.
 requires = ["scikit-build-core~=0.8.0", "cmake~=3.23"]  # See https://github.com/openvinotoolkit/openvino_tokenizers/pull/123
 build-backend = "scikit_build_core.build"
