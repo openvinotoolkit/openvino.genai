@@ -21,6 +21,7 @@
 #    define get_absolute_path(result, path) _fullpath(result, path.c_str(), MAX_ABS_PATH)
 #else
 #    include <dlfcn.h>
+#    include <limits.h>
 #    define MAX_ABS_PATH PATH_MAX
 #    define get_absolute_path(result, path) realpath(path.c_str(), result)
 namespace {
