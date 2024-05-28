@@ -87,27 +87,24 @@ std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path&
     std::string filename = path.filename().string();
     // There can be more than one . but std::filesystem::path::extension returns the last one.
 #ifdef _WIN32
-    size_t dot = filename.find(".pyd");
+    size_t dot = filename.find(".dll");
     if (dot == std::string::npos) {
-        throw std::runtime_error{"Failed to find '.' in " + filename};
+        throw std::runtime_error{"Failed to find '.dll' in " + filename};
     }
     std::string ext = ".dll";
 #elif __linux__
     size_t dot = filename.find(".so");
-    std::string ext;
+    ;
     if (dot == std::string::npos) {
-        throw std::runtime_error{"Failed to find '.' in " + filename};
-    } else {
-        ext = filename.substr(dot);
+        throw std::runtime_error{"Failed to find '.so' in " + filename};
     }
+    std::string ext = filename.substr(dot);
 #elif __APPLE__
     size_t dot = filename.find(".dylib");
-    std::string ext;
     if (dot == std::string::npos) {
-        throw std::runtime_error{"Failed to find '.' in " + filename};
-    } else {
-        ext = filename.substr(dot);
+        throw std::runtime_error{"Failed to find '.dylib' in " + filename};
     }
+    std::string ext = filename.substr(dot);
 #endif
     return path.parent_path() / ("openvino_tokenizers" + ext);
 }

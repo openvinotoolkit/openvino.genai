@@ -5,7 +5,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
-#include <openvino/openvino.hpp>
 #include "openvino/genai/llm_pipeline.hpp"
 
 #ifdef _WIN32
@@ -104,25 +103,22 @@ std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path&
 #ifdef _WIN32
     size_t dot = filename.find(".pyd");
     if (dot == std::string::npos) {
-        throw std::runtime_error{"Failed to find '.' in " + filename};
+        throw std::runtime_error{"Failed to find '.pyd' in " + filename};
     }
     std::string ext = ".dll";
 #elif __linux__
     size_t dot = filename.find(".so");
-    std::string ext;
+    ;
     if (dot == std::string::npos) {
-        throw std::runtime_error{"Failed to find '.' in " + filename};
-    } else {
-        ext = filename.substr(dot);
+        throw std::runtime_error{"Failed to find '.so' in " + filename};
     }
+    std::string ext = filename.substr(dot);
 #elif __APPLE__
     size_t dot = filename.find(".dylib");
-    std::string ext;
     if (dot == std::string::npos) {
-        throw std::runtime_error{"Failed to find '.' in " + filename};
-    } else {
-        ext = filename.substr(dot);
+        throw std::runtime_error{"Failed to find '.dylib' in " + filename};
     }
+    std::string ext = filename.substr(dot);
 #endif
     return path.parent_path() / ("openvino_tokenizers" + ext);
 }
@@ -150,15 +146,12 @@ std::string get_ov_genai_bindings_path() {
 }
 
 std::string ov_tokenizers_module_path() {
-    std::string ext = with_openvino_tokenizers_stem(get_ov_genai_bindings_path()).string();
-    ov::Core core;
-    try {
-        // Try a path relative to build artifact folder first.
-        core.add_extension(ext);
-    } catch(const ov::Exception&) {
-        return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
+    // Try a path relative to build artifacts folder first.
+    std::filesystem::path from_library = with_openvino_tokenizers_stem(get_ov_genai_bindings_path());
+    if (std::filesystem::exists(from_library)) {
+        return from_library.string();
     }
-    return ext;
+    return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
 }
 }
 
