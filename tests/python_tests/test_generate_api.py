@@ -31,7 +31,7 @@ def run_hf_ov_genai_comparison(model_fixture, generation_config, prompt):
     device = 'CPU'
     # pipe = ov_genai.LLMPipeline(path, device)
     
-    pipe = ov_genai.LLMPipeline(path, device, {})
+    pipe = ov_genai.LLMPipeline(path, device)
     
     ov_output = pipe.generate(prompt, **generation_config)
 

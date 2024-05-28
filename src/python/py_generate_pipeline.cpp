@@ -9,9 +9,28 @@
 
 #ifdef _WIN32
 #    include <windows.h>
+#    define MAX_ABS_PATH _MAX_PATH
+#    define get_absolute_path(result, path) _fullpath(result, path.c_str(), MAX_ABS_PATH)
 #else
-#    include <openvino/util/file_util.hpp>
 #    include <dlfcn.h>
+#    define MAX_ABS_PATH PATH_MAX
+#    define get_absolute_path(result, path) realpath(path.c_str(), result)
+namespace {
+std::string get_absolute_file_path(const std::string& path) {
+    std::string absolutePath;
+    absolutePath.resize(MAX_ABS_PATH);
+    std::ignore = get_absolute_path(&absolutePath[0], path);
+    if (!absolutePath.empty()) {
+        // on Linux if file does not exist or no access, function will return NULL, but
+        // `absolutePath` will contain resolved path
+        absolutePath.resize(absolutePath.find('\0'));
+        return std::string(absolutePath);
+    }
+    std::stringstream ss;
+    ss << "Can't get absolute file path for [" << path << "], err = " << strerror(errno);
+    throw std::runtime_error(ss.str());
+}
+}
 #endif
 
 namespace py = pybind11;
