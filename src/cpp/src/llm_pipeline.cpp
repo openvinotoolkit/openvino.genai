@@ -88,10 +88,10 @@ std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path&
     // There can be more than one . but std::filesystem::path::extension returns the last.
     size_t dot = filename.find('.');
     std::string ext;
-    if (dot != std::string::npos) {
-        ext = filename.substr(dot);
-    } else {
+    if (dot == std::string::npos) {
         throw std::runtime_error{"Failed to find '.' in " + filename};
+    } else {
+        ext = filename.substr(dot);
     }
     return path.parent_path() / ("openvino_tokenizers" + ext);
 }

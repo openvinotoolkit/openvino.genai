@@ -101,11 +101,18 @@ std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path&
     std::string filename = path.filename().string();
     // There can be more than one . but std::filesystem::path::extension returns the last.
     size_t dot = filename.find('.');
-    std::string ext;
-    if (dot != std::string::npos) {
-        ext = filename.substr(dot);
-    } else {
+    std::string suffix;
+    if (dot == std::string::npos) {
         throw std::runtime_error{"Failed to find '.' in " + filename};
+    } else {
+        suffix = filename.substr(dot);
+    }
+    size_t next_dot = suffix.find('.');
+    std::string ext;
+    if (dot == std::string::npos) {
+        ext = suffix;
+    } else {
+        ext = suffix.substr(0, next_dot);
     }
     return path.parent_path() / ("openvino_tokenizers" + ext);
 }
