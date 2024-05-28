@@ -13,24 +13,21 @@ class CacheManager {
     DeviceConfig m_device_config;
     std::vector<ov::Tensor> m_key_cache;
     std::vector<ov::Tensor> m_value_cache;
-    size_t m_allocated_bytes;
 
 public:
     explicit CacheManager(const DeviceConfig& device_config) :
         m_device_config(device_config) {
         m_key_cache.reserve(m_device_config.get_num_layers());
         m_value_cache.reserve(m_device_config.get_num_layers());
-        m_allocated_bytes = 0;
 
         // Allocate KV caches
         for (size_t decoder_layer_id = 0; decoder_layer_id < m_device_config.get_num_layers(); ++decoder_layer_id) {
             ov::Tensor key_cache(device_config.get_cache_precision(), device_config.get_key_cache_shape());
             ov::Tensor value_cache(device_config.get_cache_precision(), device_config.get_value_cache_shape());
-            
+
             // force allocation
             std::memset(key_cache.data(), 0, key_cache.get_byte_size());
             std::memset(value_cache.data(), 0, value_cache.get_byte_size());
-            m_allocated_bytes += key_cache.get_byte_size() + value_cache.get_byte_size();
 
             m_key_cache.emplace_back(key_cache);
             m_value_cache.emplace_back(value_cache);
@@ -83,9 +80,5 @@ public:
                 }
             }
         }
-    }
-
-    size_t get_total_allocated_bytes() const {
-        return m_allocated_bytes;
     }
 };
