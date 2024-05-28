@@ -34,7 +34,7 @@ DEFAULT_IMAGE_HEIGHT = 512
 DEFAULT_SUPER_RESOLUTION_STEPS = 50
 DEFAULT_SUPER_RESOLUTION_WIDTH = 128
 DEFAULT_SUPER_RESOLUTION_HEIGHT = 128
-MAX_OUTPUT_TOKEN_SIZE = 512
+DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
 mem_consumption = MemConsumption()
 stable_diffusion_hook = StableDiffusionHook()
@@ -99,7 +99,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
-    max_gen_tokens = MAX_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
+    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     start = time.perf_counter()
     if args['infer_count'] is not None:
         model.generation_config.eos_token_id = None
@@ -123,12 +123,16 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     result_md5_list = []
     for bs_idx in range(args['batch_size']):
         if 'sum' not in args['model_name'] and result[bs_idx][:input_token_size].equal(input_tokens[bs_idx]):
-            generated_text_len = len(result[bs_idx]) - input_tokens[bs_idx].numel()
+            generated_token_size = len(result[bs_idx]) - input_tokens[bs_idx].numel()
         else:
-            generated_text_len = len(result[bs_idx])
-        num_tokens += generated_text_len
-        if generated_text_len > max_gen_tokens:
-            log.error(f'Output token size {generated_text_len} is over max output token size {max_gen_tokens}!')
+            generated_token_size = len(result[bs_idx])
+        # Encoder-decoder models expect the `decoder_input_ids` to start with a special token
+        # When counting the output length, subtract 1. The last token does not participate in inference.
+        if model.config.is_encoder_decoder and result[bs_idx][0] == model.config.decoder_start_token_id:
+            generated_token_size = generated_token_size - 1
+        num_tokens += generated_token_size
+        if generated_token_size > max_gen_tokens:
+            log.error('Output token size is over max output token size!')
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
             utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
@@ -145,6 +149,8 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         tm_infer_list = bench_hook.get_time_infer_list()
         log.debug('latency of all infers:')
         [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
+        if args['num_beams'] == 1 and generated_token_size != len(tm_infer_list):
+            log.warning(f'Output token size({generated_token_size}) is not equal to infer count({len(tm_infer_list)})')
     iter_data = gen_iterate_data(
         num,
         input_token_size * args['batch_size'],
@@ -428,8 +434,6 @@ def num_infer_count_type(x):
     x = int(x)
     if x < 1:
         raise argparse.ArgumentTypeError('Minimum input value is 1')
-    elif x > MAX_OUTPUT_TOKEN_SIZE:
-        raise argparse.ArgumentTypeError(f'Max input value is {MAX_OUTPUT_TOKEN_SIZE}')
     return x
 
 
