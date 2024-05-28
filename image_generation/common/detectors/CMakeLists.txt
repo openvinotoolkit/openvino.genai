@@ -21,7 +21,12 @@ endif()
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 add_subdirectory(../../common/imwrite _deps/imwrite)
 
-target_link_libraries(detectors PUBLIC openvino::runtime imwrite::imwrite)
+# opencv is only for resize now
+find_package(OpenCV 4.9.0 REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS})
+
+
+target_link_libraries(detectors PUBLIC openvino::runtime imwrite::imwrite ${OpenCV_LIBS})
 
 include(FetchContent)
 

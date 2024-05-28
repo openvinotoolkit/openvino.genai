@@ -84,6 +84,7 @@ class Body(object):
         heatmap_avg = np.zeros((oriImg.shape[0], oriImg.shape[1], 19))
         paf_avg = np.zeros((oriImg.shape[0], oriImg.shape[1], 38))
 
+        # multiplier: [0.23958333333333334]
         for m in range(len(multiplier)):
             scale = multiplier[m]
             imageToTest = smart_resize_k(oriImg, fx=scale, fy=scale)

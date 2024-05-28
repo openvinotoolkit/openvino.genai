@@ -5,15 +5,7 @@
 
 #include <fstream>
 #include <iostream>
-#include <iterator>
 #include <vector>
-
-std::vector<float> read_vector_from_txt(const std::string& file_name) {
-    std::ifstream input_data(file_name, std::ifstream::in);
-    std::istream_iterator<float> start(input_data), end;
-    std::vector<float> res(start, end);
-    return res;
-}
 
 std::vector<uint8_t> read_bgr_from_txt(const std::string& file_name) {
     std::ifstream input_data(file_name, std::ifstream::in);
