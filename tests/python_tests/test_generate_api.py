@@ -54,14 +54,6 @@ test_cases = [
     # (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'The Sun is yellow because'),
     # (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.5), 'The Sun is yellow because'),
 ]
-
-
-def test_short():
-    import openvino_genai
-    openvino_genai.LLMPipeline(r'C:\Users\vzlobin\r\g\TinyLlama-1.1B-Chat-v1.0', 'CPU', {})
-    openvino_genai.LLMPipeline(r'C:\Users\vzlobin\r\g\TinyLlama-1.1B-Chat-v1.0', 'CPU', {}, '')
-
-
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
 def test_greedy_decoding(model_fixture, generation_config, prompt):
     run_hf_ov_genai_comparison(model_fixture, generation_config, prompt)
