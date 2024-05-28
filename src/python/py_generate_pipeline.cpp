@@ -5,6 +5,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
+#include <openvino/openvino.hpp>
 #include "openvino/genai/llm_pipeline.hpp"
 
 #ifdef _WIN32
@@ -99,21 +100,30 @@ std::string call_with_config(LLMPipeline& pipe, const std::string& text, const G
 
 std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path& path) {
     std::string filename = path.filename().string();
-    // There can be more than one . but std::filesystem::path::extension returns the last.
-    size_t dot = filename.find('.');
-    std::string suffix;
+    // There can be more than one . but std::filesystem::path::extension returns the last one.
+#ifdef _WIN32
+    size_t dot = filename.find(".pyd");
+    if (dot == std::string::npos) {
+        throw std::runtime_error{"Failed to find '.' in " + filename};
+    }
+    std::string ext = ".dll";
+#elif __linux__
+    size_t dot = filename.find(".so");
+    std::string ext;
     if (dot == std::string::npos) {
         throw std::runtime_error{"Failed to find '.' in " + filename};
     } else {
-        suffix = filename.substr(dot);
+        ext = filename.substr(dot);
     }
-    size_t next_dot = suffix.find('.', 1);
+#elif __APPLE__
+    size_t dot = filename.find(".dylib");
     std::string ext;
     if (dot == std::string::npos) {
-        ext = suffix;
+        throw std::runtime_error{"Failed to find '.' in " + filename};
     } else {
-        ext = suffix.substr(0, next_dot + 1);
+        ext = filename.substr(dot);
     }
+#endif
     return path.parent_path() / ("openvino_tokenizers" + ext);
 }
 
@@ -140,12 +150,15 @@ std::string get_ov_genai_bindings_path() {
 }
 
 std::string ov_tokenizers_module_path() {
-    std::filesystem::path from_library = with_openvino_tokenizers_stem(get_ov_genai_bindings_path());
-    if (std::filesystem::exists(from_library)) {
-        return from_library.string();
+    std::string ext = with_openvino_tokenizers_stem(get_ov_genai_bindings_path()).string();
+    ov::Core core;
+    try {
+        // Try a path relative to build artifact folder first.
+        core.add_extension(ext);
+    } catch(const ov::Exception&) {
+        return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
     }
-    py::module_ m = py::module_::import("openvino_tokenizers");
-    return py::str(m.attr("_ext_path"));
+    return ext;
 }
 }
 

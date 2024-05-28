@@ -85,21 +85,30 @@ std::string from_tokenizer_json_if_exists(const std::string& path) {
 
 std::filesystem::path with_openvino_tokenizers_stem(const std::filesystem::path& path) {
     std::string filename = path.filename().string();
-    // There can be more than one . but std::filesystem::path::extension returns the last.
-    size_t dot = filename.find('.');
-    std::string suffix;
+    // There can be more than one . but std::filesystem::path::extension returns the last one.
+#ifdef _WIN32
+    size_t dot = filename.find(".pyd");
+    if (dot == std::string::npos) {
+        throw std::runtime_error{"Failed to find '.' in " + filename};
+    }
+    std::string ext = ".dll";
+#elif __linux__
+    size_t dot = filename.find(".so");
+    std::string ext;
     if (dot == std::string::npos) {
         throw std::runtime_error{"Failed to find '.' in " + filename};
     } else {
-        suffix = filename.substr(dot);
+        ext = filename.substr(dot);
     }
-    size_t next_dot = suffix.find('.', 1);
+#elif __APPLE__
+    size_t dot = filename.find(".dylib");
     std::string ext;
     if (dot == std::string::npos) {
-        ext = suffix;
+        throw std::runtime_error{"Failed to find '.' in " + filename};
     } else {
-        ext = suffix.substr(0, next_dot + 1);
+        ext = filename.substr(dot);
     }
+#endif
     return path.parent_path() / ("openvino_tokenizers" + ext);
 }
 
