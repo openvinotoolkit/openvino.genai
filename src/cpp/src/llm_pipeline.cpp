@@ -102,7 +102,7 @@ std::string get_ov_genai_library_path() {
 #elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
     Dl_info info;
     dladdr(reinterpret_cast<void*>(get_ov_genai_library_path), &info);
-    return ov::util::get_absolute_file_path(info.dli_fname).c_str();
+    return get_absolute_file_path(info.dli_fname).c_str();
 #else
 #    error "Unsupported OS"
 #endif  // _WIN32
