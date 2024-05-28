@@ -9,6 +9,12 @@
 #include "tokenizer.hpp"
 #include "generation_config.hpp"
 
+enum class GenerationResultStatus {
+    FINISHED = 0,
+    IGNORED = 1,
+    ABORTED = 2 // Currently not used, TODO: implement abort functionality
+};
+
 struct GenerationResult {
     // request ID
     uint64_t m_request_id;
@@ -18,6 +24,9 @@ struct GenerationResult {
     std::vector<std::string> m_generation_ids;
     // scores
     std::vector<float> m_scores;
+
+    // Status of generation
+    GenerationResultStatus m_status;
 };
 
 class ContinuousBatchingPipeline {

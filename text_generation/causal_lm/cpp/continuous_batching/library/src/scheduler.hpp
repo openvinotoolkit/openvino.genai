@@ -55,6 +55,15 @@ public:
             }
         }
 
+        _clear_waiting_sequences(sequence_groups);
+
+
+        // if no tokens were scheduled, we are out of memory
+        if (scheduler_output.m_total_num_scheduled_tokens == 0) {
+            for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
+                sequence_groups[sequence_group_id]->set_out_of_memory();
+            }
+        }
         return scheduler_output;
     }
 
@@ -104,6 +113,7 @@ private:
                 m_block_manager.free_sequence(seq_id);
             }
             sequence_group->reset();
+            sequence_group->set_waiting();
             return m_block_manager.num_free_blocks() > prev_blocks_count;
         }
 
@@ -150,6 +160,7 @@ private:
             m_block_manager.free_sequence(seq_id);
         }
         sequence_group->preempt_tokens(preempted_tokens);
+        sequence_group->set_waiting();
         return total_num_released_blocks > 0;
     }
 
@@ -197,7 +208,7 @@ private:
 
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
-            if (!sequence_group->can_generate_tokens()) {
+            if (!sequence_group->can_generate_tokens() && !sequence_group->is_waiting()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
@@ -249,7 +260,7 @@ private:
             // Question: do we need to schedule preeempted first as it's done in vLLM?
             // Answer: preempted sequences have low priority, so they should be after "running" ones. So, here we
             //         keep latencies for sequence groups of high priority
-            if (sequence_group->can_generate_tokens()) {
+            if (sequence_group->can_generate_tokens() && !sequence_group->is_waiting()) {
                 OPENVINO_ASSERT(!sequence_group->has_finished());
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 size_t num_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
@@ -309,7 +320,6 @@ private:
         // Current scheduling method schedules prompts only in a manner similar to vLLM:
         // - Limits max batch size by:
         //   - max_num_seqs (256 in vLLM's defaults)
-        //   - max_paddings (256 in vLLM's defaults)
         //   - max_num_batched_tokens (max_model_length (and at least 2048) in vLLM's defaults)
 
         OPENVINO_ASSERT(!m_config.dynamic_split_fuse, "Internal error: we are in vLLM scheduling");
@@ -322,7 +332,7 @@ private:
 
         for (size_t sequence_group_id = 0, num_scheduled_tokens = 0, max_sequence_len = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
-            if (!sequence_group->can_generate_tokens()) {
+            if (!sequence_group->can_generate_tokens() && !sequence_group->is_waiting()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
@@ -343,11 +353,6 @@ private:
 
                 // apply max num batched tokens limitation
                 if (num_available_tokens_in_megabatch < max_sequence_len)
-                    break;
-
-                // apply max padding tokens limitations
-                size_t total_num_paddings = max_sequence_len * (scheduler_output.m_scheduled_sequence_groups_ids.size() + 1) - (num_scheduled_tokens + sequence_len);
-                if (total_num_paddings > m_config.max_paddings)
                     break;
 
                 // apply KV cache limitations
@@ -379,6 +384,12 @@ private:
                 num_scheduled_tokens += sequence_len;
                 num_running_sequence_groups += 1;
             }
+        }
+    }
+
+    void _clear_waiting_sequences(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+        for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) { 
+            sequence_groups[sequence_group_id]->clear_waiting_sequences();
         }
     }
 };

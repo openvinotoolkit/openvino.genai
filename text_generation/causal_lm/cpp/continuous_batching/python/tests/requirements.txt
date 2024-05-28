@@ -20,6 +20,7 @@ bitsandbytes
 # - Qwen/Qwen-7B
 # - Qwen/Qwen-7B-Chat
 # - mosaicml/mpt-7b
+# - internlm/internlm2-7b
 einops
 # - Qwen/Qwen-7B
 # - Qwen/Qwen-7B-Chat
@@ -28,3 +29,11 @@ transformers_stream_generator
 torchvision
 # - openbmb/MiniCPM-V-2
 timm
+# - Qwen/Qwen-7B
+# - Qwen/Qwen-7B-Chat
+# - Salesforce/xgen-7b-8k-base
+tiktoken
+# - microsoft/biogpt
+sacremoses
+# - TheBloke/Wizard-Vicuna-30B-Uncensored-GPTQ
+auto-gptq

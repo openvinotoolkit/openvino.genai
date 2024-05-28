@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <set>
 
 #include "openvino/runtime/tensor.hpp"
 
@@ -226,7 +227,8 @@ public:
             nucleus_size += 1;
             if (probability_sum > m_top_p) break;
         }
-        return std::vector<ProbabilityWithIdx>(tmp.begin(), tmp.begin() + nucleus_size);
+        tmp.resize(nucleus_size);
+        return tmp;
     }
 
 private:
@@ -241,7 +243,8 @@ public:
         std::vector<ProbabilityWithIdx> tmp(input_probs);
         std::sort(tmp.begin(), tmp.end(), [](const ProbabilityWithIdx& lhs, const ProbabilityWithIdx& rhs) {return lhs.first > rhs.first; });
         size_t top_k = input_probs.size() >= m_top_k ? m_top_k : input_probs.size();
-        return std::vector<ProbabilityWithIdx>(tmp.begin(), tmp.begin() + top_k);
+        tmp.resize(top_k);
+        return tmp;
     }
 
 private:
@@ -256,7 +259,9 @@ public:
 
     std::vector<ProbabilityWithIdx> apply(const std::vector<LogitWithIdx>& input_logits) {
         std::vector<ProbabilityWithIdx> output(input_logits.begin(), input_logits.end());
-        float max_logit = output[0].first;
+        float max_logit = std::max_element(output.begin(), output.end(), [](const ProbabilityWithIdx& lhs, const ProbabilityWithIdx& rhs) {
+            return lhs.first > rhs.first;
+        })->first;
         std::for_each(output.begin(), output.end(), [max_logit, this](ProbabilityWithIdx& val) {val.first = expf((val.first - max_logit) / this->m_temperature);});
 
         float norm_sum = 0.0;
@@ -272,6 +277,37 @@ private:
     double m_temperature;
 };
 
+class RepetitionPenaltyTransform {
+public:
+    RepetitionPenaltyTransform(double penalty) : m_penalty(penalty) {
+        OPENVINO_ASSERT(m_penalty >= 0.0f, "repetition penalty must be a positive value");
+    }
+
+    std::vector<LogitWithIdx> apply(const std::vector<LogitWithIdx>& input_logits, const std::set<int64_t>& unique_input_ids) {
+        std::vector<LogitWithIdx> output(input_logits.begin(), input_logits.end());
+        size_t vocab_size = input_logits.size();
+        for (auto input_id : unique_input_ids) {
+            OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
+            OPENVINO_ASSERT(input_logits[input_id].second == input_id, "input_logits must have original index order");
+            auto logit_value = output[input_id].first;
+            if (logit_value >= 0) {
+                output[input_id].first /= m_penalty;
+            } else {
+                output[input_id].first *= m_penalty;
+            };
+        }
+        return output;
+    }
+
+    std::vector<LogitWithIdx> apply(const std::vector<LogitWithIdx>& input_logits, const TokenIds& input_ids) {
+        std::set<int64_t> unique_input_ids(input_ids.begin(), input_ids.end());
+        return this->apply(input_logits, unique_input_ids);
+    }
+private:
+    double m_penalty;
+};
+
+
 class ProbabilityNormalizeTransform {
 public:
     std::vector<ProbabilityWithIdx> apply(const std::vector<ProbabilityWithIdx>& input_probs) {
@@ -285,61 +321,55 @@ public:
 
 class Sampler {
 
-    int64_t _greedy_sample(ov::Tensor logits) const {
+    std::vector<LogitWithIdx> _get_logit_vector(ov::Tensor logits, size_t batch_idx = 1) {
         ov::Shape logits_shape = logits.get_shape();
         size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
-        OPENVINO_ASSERT(batch_size == 1);
-
-        const float * logits_data = logits.data<const float>() + (seq_len - 1) * vocab_size;
-        int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
-        return out_token;
-    }
-
-    std::vector<int64_t> _multinomial_sample(ov::Tensor logits, float temperature, float top_p,
-                                             size_t top_k, size_t num_tokens_per_sequence) {
-        std::vector<int64_t> out_tokens;
-        ov::Shape logits_shape = logits.get_shape();
-        size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
-        for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+        OPENVINO_ASSERT(batch_idx <= batch_size);
+        // for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
             size_t batch_offset = batch_idx * seq_len * vocab_size;
             size_t sequence_offset = (seq_len - 1) * vocab_size;
             const float* logits_data = logits.data<const float>() + batch_offset + sequence_offset;
 
-            // const float * logits_data = &logits_data_group[i * seq_tensor_size] + seq_tensor_size;
             std::vector<LogitWithIdx> logit_vector(vocab_size);
             for (size_t i = 0; i < logit_vector.size(); i++) {
                 logit_vector[i] = LogitWithIdx(logits_data[i], i);
             }
+            return logit_vector;
+        // }
+    }
 
-            auto temperature_transform = TemperatureLogitTransform(temperature);
-            std::vector<ProbabilityWithIdx> softmax_vector = temperature_transform.apply(logit_vector);
+    LogitWithIdx _greedy_sample(const std::vector<LogitWithIdx>& logit_vector) const {
+        auto out_token = std::max_element(logit_vector.begin(), logit_vector.end(), [](const LogitWithIdx& lhs, const LogitWithIdx& rhs) { return lhs.first < rhs.first; });
+        return *out_token;
+    }
 
-            std::vector<ProbabilityWithIdx> filtered(softmax_vector);
+    std::vector<LogitWithIdx> _multinomial_sample(const std::vector<LogitWithIdx>& logit_vector, float temperature, float top_p, size_t top_k, size_t num_tokens_per_sequence) {
+        auto temperature_transform = TemperatureLogitTransform(temperature);
+        std::vector<ProbabilityWithIdx> softmax_vector = temperature_transform.apply(logit_vector);
 
-            if (top_p != 0.0f) {
-                auto filter = TopPFilter(top_p);
-                filtered = filter.filter(filtered);
-            }
+        std::vector<ProbabilityWithIdx> filtered(softmax_vector);
 
-            if (top_k != 0) {
-                auto filter = TopKFilter(top_k);
-                filtered = filter.filter(filtered);
-            }
-
-            auto normalize_transform = ProbabilityNormalizeTransform();
-            filtered = normalize_transform.apply(filtered);
-            std::vector<float> multinomial_weights(filtered.size());
-            for (size_t i = 0; i < filtered.size(); i++) multinomial_weights[i] = filtered[i].first;
-
-            auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
-            for (size_t i = 0; i < num_tokens_per_sequence; ++i) {
-                size_t element_to_pick = dist(rng_engine);
-                int64_t out_token = filtered[element_to_pick].second;
-                out_tokens.push_back(out_token);
-            }
+        if (top_p != 0.0f) {
+            auto filter = TopPFilter(top_p);
+            filtered = filter.filter(filtered);
         }
 
-        OPENVINO_ASSERT(out_tokens.size() == num_tokens_per_sequence * batch_size);
+        if (top_k != 0) {
+            auto filter = TopKFilter(top_k);
+            filtered = filter.filter(filtered);
+        }
+
+        auto normalize_transform = ProbabilityNormalizeTransform();
+        filtered = normalize_transform.apply(filtered);
+        std::vector<float> multinomial_weights(filtered.size());
+        for (size_t i = 0; i < filtered.size(); i++) multinomial_weights[i] = filtered[i].first;
+
+        auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
+        std::vector<LogitWithIdx> out_tokens;
+        for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
+            size_t element_to_pick = dist(rng_engine);
+            out_tokens.push_back(filtered[element_to_pick]);
+        }
         return out_tokens;
     }
 
@@ -367,48 +397,64 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         if (!sequence_group->is_scheduled())
             continue;
 
-        const GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
         size_t num_running_sequences = sequence_group->num_running_seqs();
         size_t actual_seq_len = sequence_group->get_num_scheduled_tokens(); // points to a token which needs to be sampled
         size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
+        const GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
 
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
 
         if (sequence_group->requires_sampling()) {
             if (sampling_params.is_greedy_sampling() || sampling_params.is_multinomial()) {
-                std::vector<int64_t> sampled_token_ids;
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
                 if (sampling_params.is_greedy_sampling()) {
-                    OPENVINO_ASSERT(running_sequences.size() == 1);
-                    sampled_token_ids.push_back(_greedy_sample(sequence_group_logits));
-                } else {
-                    // is_multinomial()
-                    auto num_tokens_per_sequence = num_running_sequences == 1 ? sampling_params.num_return_sequences : 1;
-                    sampled_token_ids = _multinomial_sample(sequence_group_logits, sampling_params.temperature, sampling_params.top_p,
-                                                            sampling_params.top_k, num_tokens_per_sequence);
-                    
-                    if (num_tokens_per_sequence > 1) {
-                        const auto sequence_to_fork = running_sequences[0];
-                        std::list<uint64_t> forked_seq_ids;
-                        for (; num_running_sequences < num_tokens_per_sequence; ++num_running_sequences) {
-                            const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
-                            forked_seq_ids.push_back(forked_sequence->get_id());
-                            running_sequences.push_back(forked_sequence);
-                        }
-                        sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
-                    }
+                    OPENVINO_ASSERT(num_running_sequences == 1);
                 }
-                for (size_t i = 0; i < num_running_sequences; ++i) {
-                    auto sampled_token_id = sampled_token_ids[i];
-                    running_sequences[i]->append_token(sampled_token_id, sequence_group_logits.data<const float>()[sampled_token_id]);
+                for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
+                    auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id);
 
-                    if (sampling_params.max_new_tokens == running_sequences[i]->get_generated_len() ||
-                        sampled_token_id == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
+                    if (sampling_params.repetition_penalty != 1.0f) {
+                        auto repetition_penalty_transform = RepetitionPenaltyTransform(sampling_params.repetition_penalty);
+                        logit_vector = repetition_penalty_transform.apply(logit_vector, sequence_group->get_unique_generated_ids());
+                    }
+
+                    LogitWithIdx sampled_token_id;
+                    if (sampling_params.is_greedy_sampling()) {
+                        sampled_token_id = _greedy_sample(logit_vector);
+                    } else {
+                        // is_multinomial()
+                        const bool is_generate_n_tokens = num_running_sequences == 1  && sequence_group->get_finished_sequences().empty();
+                        const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
+                        auto sampled_token_ids = _multinomial_sample(logit_vector, sampling_params.temperature, sampling_params.top_p,
+                                                                     sampling_params.top_k, num_tokens_per_sequence);
+                        sampled_token_id = sampled_token_ids[0];
+
+                        if (is_generate_n_tokens) {
+                            const auto sequence_to_fork = running_sequences[0];
+                            std::list<uint64_t> forked_seq_ids;
+                            for (size_t i = num_running_sequences; i < num_tokens_per_sequence; ++i) {
+                                const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
+                                forked_seq_ids.push_back(forked_sequence->get_id());
+                                running_sequences.push_back(forked_sequence);
+
+                                forked_sequence->append_token(sampled_token_ids[i].second, sampled_token_ids[i].first);
+                                sequence_group->register_generated_token_id(sampled_token_ids[i].second);
+                            }
+                            sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
+                        }
+                    }
+                    
+                    auto& running_sequence = running_sequences[running_sequence_id];
+                    sequence_group->register_generated_token_id(sampled_token_id.second);
+                    running_sequence->append_token(sampled_token_id.second, sampled_token_id.first);
+
+                    if (sampling_params.max_new_tokens == running_sequence->get_generated_len() ||
+                        sampled_token_id.second == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
                         // stop sequence by max_new_tokens or EOS token
-                        running_sequences[i]->set_status(SequenceStatus::FINISHED);
+                        running_sequence->set_status(SequenceStatus::FINISHED);
                         // drop sequence from scheduler
-                        sampler_output.m_dropped_sequences.push_back(running_sequences[i]->get_id());
+                        sampler_output.m_dropped_sequences.push_back(running_sequence->get_id());
                     }
                 }
             } else if (sampling_params.is_beam_search()) {

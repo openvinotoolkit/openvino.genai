@@ -50,6 +50,15 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
         }
     }
 
+    if (sequence_group->has_finished()) {
+        result.m_status = GenerationResultStatus::FINISHED;
+    }
+    else if (sequence_group->out_of_memory()) {
+        result.m_status = GenerationResultStatus::IGNORED;
+    }
+    else {
+        result.m_status = GenerationResultStatus::ABORTED;
+    }
     return result;
 }
 
@@ -83,9 +92,9 @@ class ContinuousBatchingPipeline::Impl {
     // current requests to process
     std::vector<SequenceGroup::Ptr> m_requests;
 
-    void _free_finished_requests() {
+    void _free_non_running_requests() {
         auto new_end = std::remove_if(m_requests.begin(), m_requests.end(), [] (SequenceGroup::CPtr seq_group) -> bool {
-            return seq_group->has_finished();
+            return seq_group->has_finished() || seq_group->out_of_memory();
         });
         m_requests.erase(new_end, m_requests.end());
     }
@@ -111,9 +120,15 @@ public:
             infer_request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager->get_value_cache(decoder_layer_id));
         }
 
-        m_scheduler = std::make_shared<Scheduler>(scheduler_config);
+        SchedulerConfig updated_config = scheduler_config;
+        // update KV number in scheduler config
+        if (scheduler_config.num_kv_blocks != device_config.get_num_kv_blocks()) {
+            updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
+        }
+
+        m_scheduler = std::make_shared<Scheduler>(updated_config);
         // and finally create model runner
-        m_model_runner = std::make_shared<ModelRunner>(infer_request, scheduler_config);
+        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
         m_sampler = std::make_shared<Sampler>();
         m_sampler->set_seed(m_generation_config.rng_seed);
 
@@ -161,6 +176,21 @@ public:
             scheduler_output = m_scheduler->schedule(m_requests);
             m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
             timer.end();
+        }
+
+        // if no tokens were scheduled, we are out of memory
+        if (scheduler_output.m_total_num_scheduled_tokens == 0) {
+
+            // return partial results
+            std::vector<GenerationResult> pertial_results;
+
+            for (size_t i = 0; i < m_requests.size(); ++i) {
+                SequenceGroup::CPtr sequence_group = m_requests[i];
+                pertial_results.push_back(from_sequence_group(m_tokenizer, sequence_group));
+            }
+
+            _free_non_running_requests();
+            return pertial_results;
         }
 
         ov::Tensor logits;
@@ -224,7 +254,7 @@ public:
                 }
             }
 
-            _free_finished_requests();
+            _free_non_running_requests();
 
             timer.end();
         }

@@ -4,13 +4,16 @@
 #pragma once
 
 #include <vector>
+#include <set>
 #include <cstdlib>
 
 #include "generation_config.hpp"
 
 enum class SequenceStatus {
     RUNNING = 0,
-    FINISHED = 1
+    FINISHED = 1,
+    OUT_OF_MEMORY = 2,
+    WAITING = 3
 };
 
 using TokenIds = std::vector<int64_t>;
@@ -65,6 +68,14 @@ public:
         return m_status == SequenceStatus::RUNNING;
     }
 
+    bool out_of_memory() const {
+        return m_status == SequenceStatus::OUT_OF_MEMORY;
+    }
+
+    bool is_waiting() const {
+        return m_status == SequenceStatus::WAITING;
+    }
+
     void set_status(SequenceStatus status) {
         m_status = status;
     }
@@ -104,6 +115,7 @@ class SequenceGroup {
     GenerationConfig m_sampling_params;
     std::size_t m_block_size;
     TokenIds m_prompt_ids;
+    std::set<int64_t> m_unique_generated_ids;
  
     // amount of processed tokens, e.g. prompt can be processed using multiple consequence inferences
     // so, we need to track which part of the prompt we have already processed
@@ -131,6 +143,7 @@ public:
 
         m_prompt_ids.resize(input_ids.get_size());
         std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), m_prompt_ids.begin());
+        for (auto id: m_prompt_ids) { m_unique_generated_ids.insert(id); }
     }
 
     void add_sequence(const Sequence::Ptr & sequence) {
@@ -189,7 +202,7 @@ public:
     std::vector<Sequence::CPtr> get_finished_sequences() const {
         std::vector<Sequence::CPtr> finished_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->has_finished()) {
+            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory()) {
                 finished_seqs.push_back(m_sequences[seq_id]);
             }
         }
@@ -279,8 +292,24 @@ public:
         clear_scheduled_tokens();
     }
 
+    void clear_waiting_sequences() {
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_waiting()) {
+                m_sequences[seq_id]->set_status(SequenceStatus::RUNNING);
+            }
+        }
+    }
+
     const TokenIds& get_prompt_ids() const {
         return m_prompt_ids;
+    }
+
+    const std::set<int64_t>& get_unique_generated_ids() const {
+        return m_unique_generated_ids;
+    }
+
+    void register_generated_token_id(int64_t token_id) {
+        m_unique_generated_ids.insert(token_id);
     }
 
     size_t get_num_logical_blocks() const {
@@ -320,5 +349,39 @@ public:
         if (m_sequences[0]->get_generated_len() > 0 || m_sequences[0]->get_cumulative_log_probs() != 0.0f)
             return false;
         return true; 
+    }
+
+    void set_out_of_memory() {
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_running()) {
+                m_sequences[seq_id]->set_status(SequenceStatus::OUT_OF_MEMORY);
+            }
+        }
+    }
+
+    void set_waiting() {
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_running()) {
+                m_sequences[seq_id]->set_status(SequenceStatus::WAITING);
+            }
+        }
+    }
+
+    bool out_of_memory() const {
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->out_of_memory()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool is_waiting() const {
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (m_sequences[seq_id]->is_waiting()) {
+                return true;
+            }
+        }
+        return false;
     }
 };
