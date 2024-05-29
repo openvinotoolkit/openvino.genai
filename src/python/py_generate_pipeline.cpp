@@ -42,7 +42,7 @@ using ov::genai::GenerationConfig;
 using ov::genai::EncodedResults;
 using ov::genai::DecodedResults;
 using ov::genai::StopCriteria;
-using ov::genai::StreamerBase;
+using ov::genai::StreamerVariant;
 
 namespace {
 void str_to_stop_criteria(GenerationConfig& config, const std::string& stop_criteria_str){
@@ -85,29 +85,29 @@ void update_config_from_kwargs(GenerationConfig& config, const py::kwargs& kwarg
     if (kwargs.contains("bos_token")) config.bos_token = kwargs["bos_token"].cast<std::string>();
 }
 
-py::object call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config) {
+py::object call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config, const StreamerVariant& streamer) {
     if (config.num_return_sequences > 1) {
-        return py::cast(pipe.generate({text}, config).texts);
+        return py::cast(pipe.generate({text}, config, streamer).texts);
     } else {
-        return py::cast(std::string(pipe.generate(text, config)));
+        return py::cast(std::string(pipe.generate(text, config, streamer)));
     }
 }
 
-std::vector<std::string> call_with_config(LLMPipeline& pipe, const std::vector<std::string>& text, const GenerationConfig& config) {
-    return pipe.generate(text, config);
+std::vector<std::string> call_with_config(LLMPipeline& pipe, const std::vector<std::string>& text, const GenerationConfig& config, const StreamerVariant& streamer) {
+    return pipe.generate(text, config, streamer);
 }
 
 std::vector<std::string> call_with_kwargs(LLMPipeline& pipeline, const std::vector<std::string>& texts, const py::kwargs& kwargs) {
     GenerationConfig config = pipeline.get_generation_config();
     update_config_from_kwargs(config, kwargs);
-    return call_with_config(pipeline, texts, config);
+    return call_with_config(pipeline, texts, config, kwargs.contains("streamer") ? kwargs["streamer"].cast<StreamerVariant>() : std::monostate());
 }
 
 py::object call_with_kwargs(LLMPipeline& pipeline, const std::string& text, const py::kwargs& kwargs) {
     // Create a new GenerationConfig instance and initialize from kwargs
     GenerationConfig config = pipeline.get_generation_config();
     update_config_from_kwargs(config, kwargs);
-    return call_with_config(pipeline, text, config);
+    return call_with_config(pipeline, text, config, kwargs.contains("streamer") ? kwargs["streamer"].cast<StreamerVariant>() : std::monostate());
 }
 
 std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
@@ -174,12 +174,12 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         "    plugin_config (ov::AnyMap): Plugin configuration settings. Default is an empty.")
         
         .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
-        .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&>(&call_with_config))
+        .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&, const StreamerVariant&>(&call_with_config))
         
         .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, const py::kwargs&>(&call_with_kwargs))
-        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, const GenerationConfig&>(&call_with_config))
+        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, const GenerationConfig&, const StreamerVariant&>(&call_with_config))
         .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
-        .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&>(&call_with_config))
+        .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&, const StreamerVariant&>(&call_with_config))
         
         // todo: if input_ids is a ov::Tensor/numpy tensor
         // todo: implement calling generate/operator() with StreamerBase or lambda streamer

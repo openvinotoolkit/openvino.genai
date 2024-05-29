@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import openvino_genai
 import pytest
 from list_test_models import models_list
 
@@ -111,3 +112,33 @@ def test_beam_search_long_sentences(model_fixture, num_beam_groups, group_size,
         max_new_tokens=max_new_tokens, 
     )
     run_hf_ov_genai_comparison(model_fixture, generation_config, prompt)
+
+
+def user_defined_callback(subword):
+    print(subword)
+
+
+@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+def test_callback_one_string(model_fixture, callback):
+    pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
+    pipe.generate('', openvino_genai.GenerationConfig(), callback)
+
+
+@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+def test_callback_batch_fail(model_fixture, callback):
+    pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
+    with pytest.raises(RuntimeError):
+        pipe.generate(['1', '2'], openvino_genai.GenerationConfig(), callback)
+
+
+@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+def test_callback_kwargs_one_string(model_fixture, callback):
+    pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
+    pipe.generate('', max_new_tokens=10, streamer=callback)
+
+
+@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+def test_callback_kwargs_batch_fail(model_fixture, callback):
+    pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
+    with pytest.raises(RuntimeError):
+        pipe.generate(['1', '2'], max_new_tokens=10, streamer=callback)
