@@ -147,9 +147,9 @@ GenAIEnvManager::GenAIEnvManager(const std::string& path) {
     #ifdef _WIN32
     char* value = nullptr;
     size_t len = 0;
-    _dupenv_s(&value, &len, ov::genai::utils::get_tokenizers_env_name().c_str());
+    _dupenv_s(&value, &len, ov::genai::utils::get_tokenizers_env_name());
     if (value == nullptr)
-        _putenv_s(ov::genai::utils::get_tokenizers_env_name().c_str(), path.c_str());
+        _putenv_s(ov::genai::utils::get_tokenizers_env_name(), path.c_str());
     #else
     if (!getenv(ov::genai::utils::get_tokenizers_env_name()))
         setenv(ov::genai::utils::get_tokenizers_env_name(), path.c_str(), 1);
