@@ -24,7 +24,7 @@ jobs:
       # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --verbose --verbose --verbose
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/ python -c "from openvino_genai import LLMPipeline"
-      - run: source ./ov/setupvars.sh && python -m pip install . --verbose --verbose --verbose
+      - run: source ./ov/setupvars.sh && python -m pip install . --config-settings=build-dir="build" --verbose --verbose --verbose
       - run: python -c "from openvino_genai import LLMPipeline"
       - name: GenAI Python API tests
         run: |
