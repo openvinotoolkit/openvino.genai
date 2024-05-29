@@ -39,7 +39,7 @@ def run_hf_ov_genai_comparison(model_fixture, generation_config, prompt):
     hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:])
 
     device = 'CPU'
-    pipe = ov_genai.LLMPipeline(path, device)
+    pipe = ov_genai.LLMPipeline(str(path), device)
     
     ov_output = pipe.generate(prompt, **generation_config)
     if generation_config.get('num_return_sequences', 1) > 1:
