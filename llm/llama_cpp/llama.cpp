@@ -559,8 +559,10 @@ int main(int argc, char* argv[]) try {
         }
     }
     std::cout << "input id, input token len, out token len, first token time, average time" << std::endl;
+    size_t index = 0;
     for (auto i : perf_records) {
-        std::cout << i << ", " << std::get<0>(i) << ", " << std::get<1>(i) << ", " << std::get<2>(i) << ", " << std::get<3>(i) << std::endl;
+        std::cout << index << ", " << std::get<0>(i) << ", " << std::get<1>(i) << ", " << std::get<2>(i) << ", " << std::get<3>(i) << std::endl;
+	index++;
     }
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
