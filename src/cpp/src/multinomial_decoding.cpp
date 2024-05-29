@@ -9,7 +9,6 @@
 #include <regex>
 #include <vector>
 
-#include "generation_config_helper.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
 

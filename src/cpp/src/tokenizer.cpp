@@ -4,11 +4,12 @@
 #include <openvino/openvino.hpp>
 #include "openvino/genai/tokenizer.hpp"
 #include "utils.hpp"
+#include <cstdlib>
 
 namespace {
 
 // todo: remove when openvino-tokenizers will support left padding
-std::pair<ov::Tensor, ov::Tensor> pad_left(ov::Tensor&& input_ids, ov::Tensor&& attention_mask, int64_t pad_token) {
+ov::genai::TokenizedInputs pad_left(ov::Tensor&& input_ids, ov::Tensor&& attention_mask, int64_t pad_token) {
     const size_t batch_size = input_ids.get_shape()[0];
     const size_t sequence_length = input_ids.get_shape()[1];
     int64_t* inputs_data = input_ids.data<int64_t>();
@@ -39,6 +40,17 @@ std::pair<ov::Tensor, ov::Tensor> pad_left(ov::Tensor&& input_ids, ov::Tensor&& 
     return {input_ids, attention_mask};
 }
 
+std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
+#ifdef _WIN32
+    constexpr char tokenizers[] = "openvino_tokenizers.dll";
+#elif __linux__
+    constexpr char tokenizers[] = "libopenvino_tokenizers.so";
+#elif __APPLE__
+    constexpr char tokenizers[] = "libopenvino_tokenizers.dylib";
+#endif
+    return path.parent_path() / tokenizers;
+}
+
 }
 
 namespace ov {
@@ -53,13 +65,19 @@ public:
     int64_t m_eos_token_id = 2;
 
     TokenizerImpl() = default;
-    TokenizerImpl(std::string tokenizers_path, const std::string device, const std::string& ov_tokenizers_path) {
+    TokenizerImpl(std::string tokenizers_path, const std::string device) {
         ov::Core core;
         
         if (ov::genai::utils::is_xml(tokenizers_path))
             OPENVINO_THROW("tokenizers_path should be a path to a dir not a xml file");
-    
-        core.add_extension(ov_tokenizers_path);
+
+        const char* ov_tokenizers_path = getenv(ov::genai::utils::get_tokenizers_env_name());
+        if (ov_tokenizers_path) {
+            core.add_extension(with_openvino_tokenizers(ov_tokenizers_path));
+        } else {
+            OPENVINO_THROW("openvino_tokenizers path is not set");
+        }
+
         std::shared_ptr<ov::Model> tokenizer_model, detokenizer_model;
         try {
             tokenizer_model = core.read_model(tokenizers_path + "/openvino_tokenizer.xml");
@@ -80,14 +98,14 @@ public:
             m_pad_token_id = rt_info["pad_token_id"].as<int64_t>();
         }
 
-    std::pair<ov::Tensor, ov::Tensor> encode(std::string prompt) {
+    TokenizedInputs encode(std::string prompt) {
         size_t batch_size = 1;
         m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
         m_tokenize_request.infer();
         return {m_tokenize_request.get_tensor("input_ids"), m_tokenize_request.get_tensor("attention_mask")};
     }
 
-    std::pair<ov::Tensor, ov::Tensor> encode(std::vector<std::string>& prompts) {
+    TokenizedInputs encode(std::vector<std::string>& prompts) {
         m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
         auto size_ = m_tokenize_request.get_input_tensor().get_shape();
         m_tokenize_request.infer();
@@ -139,23 +157,23 @@ public:
     }
 };
 
-Tokenizer::Tokenizer(const std::string& tokenizers_path, const std::string& device, const std::string& ov_tokenizers_path) {
-    m_pimpl = std::make_shared<TokenizerImpl>(tokenizers_path, device, ov_tokenizers_path);
+Tokenizer::Tokenizer(const std::string& tokenizers_path, const std::string& device) {
+    m_pimpl = std::make_shared<TokenizerImpl>(tokenizers_path, device);
 }
 
-std::pair<ov::Tensor, ov::Tensor> Tokenizer::encode(const std::string prompt) {
+TokenizedInputs Tokenizer::encode(const std::string prompt) {
     return m_pimpl->encode(std::move(prompt));
 }
 
-std::pair<ov::Tensor, ov::Tensor> Tokenizer::encode(std::vector<std::string>& prompts) {
+TokenizedInputs Tokenizer::encode(std::vector<std::string>& prompts) {
     return m_pimpl->encode(prompts);
 }
 
-std::pair<ov::Tensor, ov::Tensor> Tokenizer::encode(std::vector<std::string>&& prompts) {
+TokenizedInputs Tokenizer::encode(std::vector<std::string>&& prompts) {
     return m_pimpl->encode(prompts);
 }
 
-std::pair<ov::Tensor, ov::Tensor> Tokenizer::encode(std::initializer_list<std::string>& text) {
+TokenizedInputs Tokenizer::encode(std::initializer_list<std::string>& text) {
     return encode(std::vector<std::string>(text.begin(), text.end()));
 }
 

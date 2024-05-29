@@ -55,32 +55,29 @@ GenerationConfig::GenerationConfig(std::string json_path) {
 
 }
 
-GenerationConfig GenerationConfig::anymap_to_generation_config(const ov::AnyMap& config_map) {
+void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     using ov::genai::utils::read_anymap_param;
     
-    GenerationConfig config;
-    read_anymap_param(config_map, "max_new_tokens", config.max_new_tokens);
-    read_anymap_param(config_map, "max_length", config.max_length);
-    read_anymap_param(config_map, "ignore_eos", config.ignore_eos);
-    read_anymap_param(config_map, "num_beam_groups", config.num_beam_groups);
-    read_anymap_param(config_map, "num_beams", config.num_beams);
-    read_anymap_param(config_map, "diversity_penalty", config.diversity_penalty);
-    read_anymap_param(config_map, "length_penalty", config.length_penalty);
-    read_anymap_param(config_map, "num_return_sequences", config.num_return_sequences);
-    read_anymap_param(config_map, "no_repeat_ngram_size", config.no_repeat_ngram_size);
-    read_anymap_param(config_map, "stop_criteria", config.stop_criteria);
-    read_anymap_param(config_map, "temperature", config.temperature);
-    read_anymap_param(config_map, "top_p", config.top_p);
-    read_anymap_param(config_map, "top_k", config.top_k);
-    read_anymap_param(config_map, "do_sample", config.do_sample);
-    read_anymap_param(config_map, "repetition_penalty", config.repetition_penalty);
-    read_anymap_param(config_map, "pad_token_id", config.pad_token_id);
-    read_anymap_param(config_map, "bos_token_id", config.bos_token_id);
-    read_anymap_param(config_map, "eos_token_id", config.eos_token_id);
-    read_anymap_param(config_map, "bos_token", config.bos_token);
-    read_anymap_param(config_map, "eos_token", config.eos_token);
-  
-    return config;
+    read_anymap_param(config_map, "max_new_tokens", max_new_tokens);
+    read_anymap_param(config_map, "max_length", max_length);
+    read_anymap_param(config_map, "ignore_eos", ignore_eos);
+    read_anymap_param(config_map, "num_beam_groups", num_beam_groups);
+    read_anymap_param(config_map, "num_beams", num_beams);
+    read_anymap_param(config_map, "diversity_penalty", diversity_penalty);
+    read_anymap_param(config_map, "length_penalty", length_penalty);
+    read_anymap_param(config_map, "num_return_sequences", num_return_sequences);
+    read_anymap_param(config_map, "no_repeat_ngram_size", no_repeat_ngram_size);
+    read_anymap_param(config_map, "stop_criteria", stop_criteria);
+    read_anymap_param(config_map, "temperature", temperature);
+    read_anymap_param(config_map, "top_p", top_p);
+    read_anymap_param(config_map, "top_k", top_k);
+    read_anymap_param(config_map, "do_sample", do_sample);
+    read_anymap_param(config_map, "repetition_penalty", repetition_penalty);
+    read_anymap_param(config_map, "pad_token_id", pad_token_id);
+    read_anymap_param(config_map, "bos_token_id", bos_token_id);
+    read_anymap_param(config_map, "eos_token_id", eos_token_id);
+    read_anymap_param(config_map, "bos_token", bos_token);
+    read_anymap_param(config_map, "eos_token", eos_token);
 }
 
 size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {

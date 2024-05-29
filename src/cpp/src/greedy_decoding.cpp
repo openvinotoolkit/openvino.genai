@@ -92,7 +92,7 @@ EncodedResults greedy_decoding(
     for (size_t i = 0; i < max_tokens - 1; ++i) {
         utils::update_position_ids(m_model_runner.get_tensor("position_ids"), m_model_runner.get_tensor("attention_mask"));
         m_model_runner.set_tensor("attention_mask", utils::extend_attention(m_model_runner.get_tensor("attention_mask")));
-
+    
         // todo: consider replacing with start_async and run callback right after that
         m_model_runner.infer();
         auto logits = m_model_runner.get_tensor("logits");

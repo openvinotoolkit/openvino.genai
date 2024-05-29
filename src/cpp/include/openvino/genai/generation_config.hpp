@@ -100,8 +100,39 @@ public:
     bool is_greedy_decoding() const;
     bool is_beam_search() const;
     bool is_multinomial() const;
-    static GenerationConfig anymap_to_generation_config(const ov::AnyMap& config_map = {});
+    void update_generation_config(const ov::AnyMap& config_map = {});
 };
+
+/*
+ * utils that allow to use generate and operator() in the following way:
+ * pipe.generate(input_ids, ov::max_new_tokens(200), ov::temperature(1.0f),...)
+ * pipe(text, ov::max_new_tokens(200), ov::temperature(1.0f),...)
+*/
+static constexpr ov::Property<size_t> max_new_tokens{"max_new_tokens"};
+static constexpr ov::Property<size_t> max_length{"max_length"};
+static constexpr ov::Property<bool> ignore_eos{"ignore_eos"};
+
+static constexpr ov::Property<size_t> num_beam_groups{"num_beam_groups"};
+static constexpr ov::Property<size_t> num_beams{"num_beams"};
+static constexpr ov::Property<float> diversity_penalty{"diversity_penalty"};
+static constexpr ov::Property<float> length_penalty{"length_penalty"};
+static constexpr ov::Property<size_t> num_return_sequences{"num_return_sequences"};
+static constexpr ov::Property<size_t> no_repeat_ngram_size{"no_repeat_ngram_size"};
+static constexpr ov::Property<StopCriteria> stop_criteria{"stop_criteria"};
+
+static constexpr ov::Property<float> temperature{"temperature"};
+static constexpr ov::Property<float> top_p{"top_p"};
+static constexpr ov::Property<int> top_k{"top_k"};
+static constexpr ov::Property<bool> do_sample{"do_sample"};
+static constexpr ov::Property<float> repetition_penalty{"repetition_penalty"};
+
+
+static constexpr ov::Property<int64_t> pad_token_id{"pad_token_id"};
+static constexpr ov::Property<int64_t> bos_token_id{"bos_token_id"};
+static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};
+    
+static constexpr ov::Property<std::string> bos_token{"bos_token"};
+static constexpr ov::Property<std::string> eos_token{"eos_token"};
 
 }  // namespace genai
 }  // namespace ov

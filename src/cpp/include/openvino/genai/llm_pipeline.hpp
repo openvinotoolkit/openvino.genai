@@ -14,9 +14,10 @@
 namespace ov {
 namespace genai {
 
-using StreamerVariant = std::variant<std::function<void (std::string)>, std::shared_ptr<StreamerBase>>;
+using StreamerVariant = std::variant<std::function<void(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
-using OptionalStreamerVariant = std::optional<StreamerVariant>;
+using EncodedInputs = std::variant<ov::Tensor, std::pair<ov::Tensor, ov::Tensor>, TokenizedInputs>;
+using StringInputs = std::variant<std::string, std::vector<std::string>>;
 
 /**
 * @brief Structure to store resulting batched tokens and scores for each batch sequence
@@ -43,6 +44,13 @@ public:
 
      // @brief Convert DecodedResults to a vector of strings.
      // @return A std::vector<std::string> containing the texts from the DecodedResults object.
+    operator std::string() const { 
+        OPENVINO_ASSERT(texts.size() == 1, "DecodedResults can be converted to string only if contains a single prompt");
+        return texts.at(0); 
+    }
+
+    // @brief Convert DecodedResults to a single string.
+    // @return std::string containing the texts from the DecodedResults object.
     operator std::vector<std::string>() const { 
         return texts; 
     }
@@ -95,76 +103,84 @@ public:
     ~LLMPipeline();
 
     /**
-    * @brief High level generate for the input with a single prompt which encodes inputs and returns decoded output
+    * @brief High level generate that receives prompts as a string or a vector of strings and returns decoded output.
     *
-    * @param text input prompt
+    * @param inputs input prompt or a vector of prompts
     * @param generation_config optional GenerationConfig
     * @param streamer optional streamer
-    * @return std::string decoded resulting text
+    * @return DecodedResults decoded resulting text
     */
-    std::string generate(std::string text, OptionalGenerationConfig generation_config=std::nullopt, OptionalStreamerVariant streamer=std::nullopt);
-    
-    template <typename... Properties>
-    util::EnableIfAllStringAny<std::string, Properties...> generate(
-            std::string text,
-            Properties&&... properties) {
-        return generate(text, AnyMap{std::forward<Properties>(properties)...});
-    }
-    std::string generate(std::string text, const ov::AnyMap& config);
-
-    template <typename... Properties>
-    util::EnableIfAllStringAny<EncodedResults, Properties...> generate(
-        ov::Tensor input_ids,
-        Properties&&... properties) {
-        return generate(input_ids, AnyMap{std::forward<Properties>(properties)...});
-    }
-    EncodedResults generate(ov::Tensor input_ids, const ov::AnyMap& config);
+    DecodedResults generate(
+        StringInputs inputs, 
+        OptionalGenerationConfig generation_config=std::nullopt, 
+        StreamerVariant streamer=std::monostate()
+    );
 
     /**
-    * @brief High level generate for batched prompts which encodes inputs and returns decoded outputs. 
-    * Streamer cannot be used for multibatch inputs.
-    *
-    * @param text input prompt
-    * @param generation_config optional GenerationConfig
-    * @return DecodedResults a structure with resulting texts & scores
+    * @brief High level generate that receives prompts as a string or a vector of strings and returns decoded output.
+    * properties can be in any order pipe.generate(..., ov::genai::max_new_tokens(100), ov::genai::streamer(lambda_func)).
+    * 
+    * @param inputs input prompt or a vector of prompts
+    * @param properties properties 
+    * @return DecodedResults decoded resulting text
     */
-    DecodedResults generate(const std::vector<std::string>& texts, OptionalGenerationConfig generation_config);
+    template <typename... Properties>
+    util::EnableIfAllStringAny<DecodedResults, Properties...> generate(
+            StringInputs inputs,
+            Properties&&... properties) {
+        return generate(inputs, AnyMap{std::forward<Properties>(properties)...});
+    }
+    DecodedResults generate(StringInputs inputs, const ov::AnyMap& config_map);
+
+
+    DecodedResults operator()(
+        StringInputs inputs, 
+        OptionalGenerationConfig generation_config=std::nullopt, 
+        StreamerVariant streamer=std::monostate()
+    ) {
+        return generate(inputs, generation_config, streamer);
+    }
+
+    template <typename... Properties>
+    util::EnableIfAllStringAny<DecodedResults, Properties...> operator()(
+            StringInputs inputs,
+            Properties&&... properties) {
+        return generate(inputs, AnyMap{std::forward<Properties>(properties)...});
+    }
 
     /**
     * @brief Low level generate to be called with already encoded input_ids tokens.
     * Streamer cannot be used for multibatch inputs.
     *
-    * @param input_ids encoded input prompt tokens
-    * @param attention_mask optional attention_mask
+    * @param input_ids or pair of (input_ids, attentino_mask) encoded input prompt tokens
     * @param generation_config optional GenerationConfig
     * @param streamer optional streamer
     * @return EncodedResults a structure with resulting tokens and scores
     * @throws Exception if the stremaer is set for inputs_ids with multiple batches
     */
-    EncodedResults generate(ov::Tensor input_ids, 
-                            std::optional<ov::Tensor> attention_mask, 
-                            OptionalGenerationConfig generation_config=std::nullopt,
-                            OptionalStreamerVariant streamer=std::nullopt);
-    
-    template <typename InputsType, typename... Properties>
-    util::EnableIfAllStringAny<std::string, Properties...> operator()(
-        InputsType text,
-        Properties&&... properties) {
-        return generate(text, AnyMap{std::forward<Properties>(properties)...});
-    }
-    
-    DecodedResults operator()(const std::vector<std::string>& text, OptionalGenerationConfig generation_config=std::nullopt) {
-        return generate(text, generation_config);
-    }
+    EncodedResults generate(
+        const EncodedInputs& inputs, 
+        OptionalGenerationConfig generation_config=std::nullopt,
+        StreamerVariant streamer=std::monostate()
+    );
 
-    std::string operator()(
-        std::string text, 
-        OptionalGenerationConfig generation_config=std::nullopt, 
-        OptionalStreamerVariant streamer=std::nullopt
-    ) {
-        return generate(text, generation_config, streamer);
+    /**
+    * @brief Low level generate to be called with already encoded input_ids tokens.
+    * Streamer cannot be used for multibatch inputs.
+    *
+    * @param input_ids or pair of (input_ids, attentino_mask) encoded input prompt tokens
+    * @param generation config params
+    * @return EncodedResults a structure with resulting tokens and scores
+    * @throws Exception if the stremaer is set for inputs_ids with multiple batches
+    */
+    template <typename... Properties>
+    util::EnableIfAllStringAny<EncodedResults, Properties...> generate(
+            const EncodedInputs& inputs,
+            Properties&&... properties) {
+        return generate(inputs, AnyMap{std::forward<Properties>(properties)...});
     }
-    
+    EncodedResults generate(const EncodedInputs& inputs, const ov::AnyMap& config_map);
+  
     ov::genai::Tokenizer get_tokenizer();
     GenerationConfig get_generation_config() const;
     void set_generation_config(const GenerationConfig& generation_config);
@@ -178,40 +194,8 @@ private:
     std::unique_ptr<LLMPipelineImpl> m_pimpl;
 };
 
-/*
- * utils that allow to use generate and operator() in the following way:
- * pipe.generate(input_ids, ov::max_new_tokens(200), ov::temperature(1.0f),...)
- * pipe(text, ov::max_new_tokens(200), ov::temperature(1.0f),...)
-*/
-static constexpr ov::Property<size_t> max_new_tokens{"max_new_tokens"};
-static constexpr ov::Property<size_t> max_length{"max_length"};
-static constexpr ov::Property<bool> ignore_eos{"ignore_eos"};
-
-static constexpr ov::Property<size_t> num_beam_groups{"num_beam_groups"};
-static constexpr ov::Property<size_t> num_beams{"num_beams"};
-static constexpr ov::Property<float> diversity_penalty{"diversity_penalty"};
-static constexpr ov::Property<float> length_penalty{"length_penalty"};
-static constexpr ov::Property<size_t> num_return_sequences{"num_return_sequences"};
-static constexpr ov::Property<size_t> no_repeat_ngram_size{"no_repeat_ngram_size"};
-static constexpr ov::Property<StopCriteria> stop_criteria{"stop_criteria"};
-
-static constexpr ov::Property<float> temperature{"temperature"};
-static constexpr ov::Property<float> top_p{"top_p"};
-static constexpr ov::Property<int> top_k{"top_k"};
-static constexpr ov::Property<bool> do_sample{"do_sample"};
-static constexpr ov::Property<float> repetition_penalty{"repetition_penalty"};
-
-
-static constexpr ov::Property<int64_t> pad_token_id{"pad_token_id"};
-static constexpr ov::Property<int64_t> bos_token_id{"bos_token_id"};
-static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};
-    
-static constexpr ov::Property<std::string> bos_token{"bos_token"};
-static constexpr ov::Property<std::string> eos_token{"eos_token"};
-
-// only lambda streamer can be set via ov::streamer(),... syntaxic sugar,
-// because std::variant<StremaerBase, std::function<>> can not be stored in AnyMap
-static constexpr ov::Property<std::function<void (std::string)>> streamer{"streamer"};
+std::pair<std::string, Any> streamer(StreamerVariant func);
+std::pair<std::string, Any> generation_config(const GenerationConfig& config);
 
 }  // namespace genai
 }  // namespace ov

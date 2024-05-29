@@ -15,8 +15,8 @@ namespace genai {
 */
 class StreamerBase {
 public:
+    explicit StreamerBase(Tokenizer tokenizer) : m_tokenizer(tokenizer) {}
     Tokenizer m_tokenizer;
-    explicit StreamerBase(Tokenizer tokenizer): m_tokenizer(tokenizer) {}
     StreamerBase() = default;
     
     /// @brief put is called every time new token is decoded
@@ -25,6 +25,7 @@ public:
     /// @brief end is called at the end of generation. It can be used to flush cache if your own streamer has one
     virtual void end() = 0;
 };
+
 
 }  // namespace genai
 }  // namespace ov

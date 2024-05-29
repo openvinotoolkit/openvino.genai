@@ -16,7 +16,7 @@ if(NOT pybind11_POPULATED)
 endif()
 
 pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
-target_link_libraries(py_generate_pipeline PRIVATE openvino::genai)
+target_link_libraries(py_generate_pipeline PRIVATE openvino::genai nlohmann_json::nlohmann_json)
 set_target_properties(py_generate_pipeline PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
@@ -50,3 +50,6 @@ install(TARGETS genai py_generate_pipeline
     LIBRARY DESTINATION . COMPONENT wheel_genai
     RUNTIME DESTINATION . COMPONENT wheel_genai
     EXCLUDE_FROM_ALL)
+
+# to be able to use utils.hpp in pybind
+include_directories(${CMAKE_SOURCE_DIR}/src/cpp/src/)

@@ -6,6 +6,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
 #include "openvino/genai/llm_pipeline.hpp"
+#include "utils.hpp"
 
 #ifdef _WIN32
 #    include <windows.h>
@@ -84,17 +85,29 @@ void update_config_from_kwargs(GenerationConfig& config, const py::kwargs& kwarg
     if (kwargs.contains("bos_token")) config.bos_token = kwargs["bos_token"].cast<std::string>();
 }
 
-// operator() and generate methods are identical, operator() is just an alias for generate
-std::string call_with_kwargs(LLMPipeline& pipeline, const std::string& text, const py::kwargs& kwargs) {
+py::object call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config) {
+    if (config.num_return_sequences > 1) {
+        return py::cast(pipe.generate({text}, config).texts);
+    } else {
+        return py::cast(std::string(pipe.generate(text, config)));
+    }
+}
+
+std::vector<std::string> call_with_config(LLMPipeline& pipe, const std::vector<std::string>& text, const GenerationConfig& config) {
+    return pipe.generate(text, config);
+}
+
+std::vector<std::string> call_with_kwargs(LLMPipeline& pipeline, const std::vector<std::string>& texts, const py::kwargs& kwargs) {
+    GenerationConfig config = pipeline.get_generation_config();
+    update_config_from_kwargs(config, kwargs);
+    return call_with_config(pipeline, texts, config);
+}
+
+py::object call_with_kwargs(LLMPipeline& pipeline, const std::string& text, const py::kwargs& kwargs) {
     // Create a new GenerationConfig instance and initialize from kwargs
     GenerationConfig config = pipeline.get_generation_config();
     update_config_from_kwargs(config, kwargs);
-    return pipeline(text, config);
-}
-
-std::string call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config) {
-    std::shared_ptr<StreamerBase> streamer;
-    return pipe(text, config);
+    return call_with_config(pipeline, text, config);
 }
 
 std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
@@ -147,10 +160,24 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init<const std::string, const Tokenizer&, const std::string, const ov::AnyMap&>(), 
              py::arg("model_path"), py::arg("tokenizer"), py::arg("device") = "CPU", 
              py::arg("plugin_config") = ov::AnyMap{})
-        .def(py::init<std::string&, std::string, const ov::AnyMap&, const std::string>(),
-             py::arg("path"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap{}, py::arg("ov_tokenizers_path") = ov_tokenizers_module_path())
+        .def(py::init([](const std::string& model_path, 
+                         const std::string& device,
+                         const ov::AnyMap& plugin_config) {
+            ov::genai::utils::GenAIEnvManager env_manager(ov_tokenizers_module_path());
+            return std::make_unique<LLMPipeline>(model_path, device, plugin_config);}), 
+        py::arg("model_path"), "path to the model path", 
+        py::arg("device") = "CPU", "device on which inference will be done",
+        py::arg("plugin_config") = ov::AnyMap(), 
+        "LLMPipeline class constructor.\n"
+        "    model_path (str): Path to the model file.\n"
+        "    device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.\n"
+        "    plugin_config (ov::AnyMap): Plugin configuration settings. Default is an empty.")
+        
         .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
         .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&>(&call_with_config))
+        
+        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, const py::kwargs&>(&call_with_kwargs))
+        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, const GenerationConfig&>(&call_with_config))
         .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
         .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&>(&call_with_config))
         
@@ -174,10 +201,9 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
      // Binding for Tokenizer
     py::class_<Tokenizer>(m, "Tokenizer")
         .def(py::init<>())
-        .def(py::init<std::string&, const std::string&, const std::string&>(), 
+        .def(py::init<std::string&, const std::string&>(), 
              py::arg("tokenizers_path"), 
-             py::arg("device") = "CPU",
-             py::arg("ov_tokenizers_path") = py::str(ov_tokenizers_module_path()))
+             py::arg("device") = "CPU")
 
         // todo: implement encode/decode when for numpy inputs and outputs
         .def("encode", py::overload_cast<const std::string>(&Tokenizer::encode), "Encode a single prompt")
