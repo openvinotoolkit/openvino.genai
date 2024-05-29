@@ -15,10 +15,6 @@ namespace genai {
 */
 class StreamerBase {
 public:
-    explicit StreamerBase(Tokenizer tokenizer) : m_tokenizer(tokenizer) {}
-    Tokenizer m_tokenizer;
-    StreamerBase() = default;
-    
     /// @brief put is called every time new token is decoded
     virtual void put(int64_t token) = 0;
     
