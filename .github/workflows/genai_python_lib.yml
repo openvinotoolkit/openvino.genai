@@ -34,7 +34,7 @@ jobs:
           echo "$models" | while read -r model_name model_path; do
               optimum-cli export openvino --trust-remote-code --weight-format fp16 --model "$model_name" "$model_path"
           done
-          python -m pytest test_generate_api.py
+          GENAI_BUILD_DIR=../../build python -m pytest test_generate_api.py
 
   windows_genai_python_lib:
     runs-on: windows-latest

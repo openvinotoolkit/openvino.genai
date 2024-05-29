@@ -130,6 +130,14 @@ ov::genai::EncodedResults greedy_decoding(
     const bool is_chat_conversation = false
 );
 
+ov::genai::EncodedResults multinominal_decoding(
+    ov::InferRequest& model_runner,
+    ov::Tensor prompts,
+    ov::Tensor attentin_mask,
+    GenerationConfig sampling_params,
+    std::shared_ptr<StreamerBase> streamer
+);
+
 EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor prompts, ov::Tensor attentin_mask, GenerationConfig config);
 
 
@@ -316,8 +324,8 @@ ov::genai::EncodedResults ov::genai::LLMPipeline::LLMPipelineImpl::generate(
         streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
     }
     auto batch_size = input_ids.get_shape().at(0);
-    if ((batch_size != 1 || !config.is_greedy_decoding()) && streamer_ptr) {
-        OPENVINO_THROW("Currently streaming is possible only with batch size=1 and greedy decoding");
+    if ((batch_size != 1 || !(config.is_greedy_decoding() || config.is_multinomial())) && streamer_ptr) {
+        OPENVINO_THROW("Currently streaming is possible only with batch size=1 and greedy or multinomial decoding");
     }
 
     auto attention_mask_data = attention_mask.has_value() ? *attention_mask : ov::genai::utils::init_attention_mask(input_ids);
@@ -326,10 +334,11 @@ ov::genai::EncodedResults ov::genai::LLMPipeline::LLMPipelineImpl::generate(
         result = ov::genai::greedy_decoding(m_model_runner, input_ids, attention_mask_data, config, streamer_ptr, is_chat_conversation);
     } else if (config.is_beam_search()) {
         result = beam_search(m_model_runner, input_ids, attention_mask_data, config);
+    } else if (config.is_multinomial()) {
+        result = multinominal_decoding(m_model_runner, input_ids, attention_mask_data, config, streamer_ptr);
     } else {
-        // todo: implement multinomial sampling
-        // result = multinomial_sampling(input_ids, config);
-    } 
+        OPENVINO_THROW("No decoding algorithm found for provided configuration parameters.");
+    }
 
     if (!is_chat_conversation)
         m_model_runner.reset_state();
