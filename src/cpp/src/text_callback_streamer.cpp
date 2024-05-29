@@ -1,3 +1,6 @@
+// Copyright (C) 2023-2024 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include "text_callback_streamer.hpp"
 
 namespace ov {
@@ -8,11 +11,6 @@ TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, std::func
     m_print_eos_token = print_eos_token;
     on_decoded_text_callback = callback;
     m_enabled = true;
-}
-
-TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, bool print_eos_token) {
-    m_tokenizer = tokenizer;
-    m_print_eos_token = print_eos_token;
 }
 
 void TextCallbackStreamer::put(int64_t token) {
@@ -51,19 +49,19 @@ void TextCallbackStreamer::end() {
     on_finalized_text(res.str());
 }
 
-void TextCallbackStreamer::set_tokenizer(Tokenizer tokenizer) {
-    this->m_tokenizer = tokenizer;
-}
+// void TextCallbackStreamer::set_tokenizer(Tokenizer tokenizer) {
+//     this->m_tokenizer = tokenizer;
+// }
 
-void TextCallbackStreamer::set_callback(std::function<void (std::string)> callback) {
-    on_decoded_text_callback = callback;
-    m_enabled = true;
-}
+// void TextCallbackStreamer::set_callback(std::function<void (std::string)> callback) {
+//     on_decoded_text_callback = callback;
+//     m_enabled = true;
+// }
 
-void TextCallbackStreamer::set_callback() {
-    on_decoded_text_callback = [](std::string words){};
-    m_enabled = false;
-}
+// void TextCallbackStreamer::set_callback() {
+//     on_decoded_text_callback = [](std::string words){};
+//     m_enabled = false;
+// }
 
 void TextCallbackStreamer::on_finalized_text(const std::string& subword) {
     if (m_enabled) {

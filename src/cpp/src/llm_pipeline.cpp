@@ -44,6 +44,9 @@ std::string get_absolute_file_path(const std::string& path) {
 
 namespace {
 
+const std::string STREAMER_ARG_NAME = "streamer";
+const std::string CONFIG_ARG_NAME = "generation_config";
+
 ov::genai::GenerationConfig from_config_json_if_exists(const std::string& path) {
     constexpr char generation_config_fname[] = "generation_config.json";
     constexpr char config_fname[] = "config.json";
@@ -83,16 +86,7 @@ std::string from_tokenizer_json_if_exists(const std::string& path) {
     return res;
 }
 
-std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
-#ifdef _WIN32
-    constexpr char tokenizers[] = "openvino_tokenizers.dll";
-#elif __linux__
-    constexpr char tokenizers[] = "libopenvino_tokenizers.so";
-#elif __APPLE__
-    constexpr char tokenizers[] = "libopenvino_tokenizers.dylib";
-#endif
-    return path.parent_path() / tokenizers;
-}
+
 
 std::string get_ov_genai_library_path() {
 #ifdef _WIN32
@@ -114,6 +108,27 @@ std::string get_ov_genai_library_path() {
 #else
 #    error "Unsupported OS"
 #endif  // _WIN32
+}
+
+ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
+    ov::genai::StreamerVariant streamer = std::monostate();
+
+    if (config_map.count(STREAMER_ARG_NAME)) {
+        auto any_val = config_map.at(STREAMER_ARG_NAME);
+        if (any_val.is<std::shared_ptr<ov::genai::StreamerBase>>()) {
+            streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
+        } else if (any_val.is<std::function<void(std::string)>>()) {
+            streamer = any_val.as<std::function<void(std::string)>>();
+        }
+    }
+    return streamer;
+}
+
+ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {
+    if (config_map.count(CONFIG_ARG_NAME))
+        return config_map.at(CONFIG_ARG_NAME).as<ov::genai::GenerationConfig>();
+    else
+        return std::nullopt;
 }
 
 }
@@ -150,6 +165,15 @@ public:
     bool is_chat_conversation = false;
 
     LLMPipelineImpl(
+        const ov::InferRequest& request, 
+        const ov::genai::Tokenizer& tokenizer, 
+        OptionalGenerationConfig generation_config=std::nullopt
+    ): m_model_runner(request), m_tokenizer(tokenizer) {
+        GenerationConfig default_config;
+        m_generation_config = (generation_config.has_value()) ? *generation_config : default_config;
+    }
+
+    LLMPipelineImpl(
         const std::string& model_path,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
@@ -159,23 +183,211 @@ public:
     LLMPipelineImpl(
         const std::string& path, 
         const std::string& device, 
-        const ov::AnyMap& config, 
-        const std::string& ov_tokenizers_path=""
+        const ov::AnyMap& config
     );
     
-    GenerationConfig generation_config() const;
+    DecodedResults generate(
+        StringInputs inputs, 
+        OptionalGenerationConfig generation_config, 
+        StreamerVariant streamer
+    ) {
+        GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+        
 
-    std::string generate(std::string text, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer);
-    DecodedResults generate(std::vector<std::string> texts, OptionalGenerationConfig generation_config);
-    EncodedResults generate(ov::Tensor input_ids, std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer);
+        EncodedInputs encoded_input;
+        if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
+            encoded_input = m_tokenizer.encode(*input_vector);
+        } else if (auto input_str = std::get_if<std::string>(&inputs)) {
+            
+            std::string text = *input_str;
+            // todo: make for batched inputs as well
+            if (is_chat_conversation)
+                text = apply_chat_template(text);
 
-    std::string apply_chat_template(std::string prompt, std::string role = "user") const;
+            
+            // previous prompt generation in chat dialog stops with the end of sentence token, 
+            // need to append this token to the current prompt
+            auto kv_cache_len = m_model_runner.query_state()[0].get_state().get_shape()[2];
+            if (is_chat_conversation && kv_cache_len > 0)
+                text = config.eos_token + text;
+            
+            auto res = m_tokenizer.encode(text);
+            auto input_ids = res.input_ids;
+            auto attention_mask = res.attention_mask;
+
+
+            // todo: W/A If sentence begins with a specfial tokens (<bos>, <s>, etc.) openvino_tokenizer inserts 2 special extra tokens <bos> and "▁",
+            // but HF does not do that. Moreover openvino_tokenizer always inserts <bos> but in chat scenario HF does not do that because skip_special_tokens=True.
+            // Need to remove both of that tokens manually to get exact token by token alignment with HF
+            auto size = input_ids.get_shape();
+            int64_t* inputs_data = input_ids.data<int64_t>();
+            std::vector<int64_t> tmp_ids(inputs_data, inputs_data + input_ids.get_size()); // todo: works only for batch 1
+            // tmp_ids.erase(tmp_ids.begin());
+
+            auto attention_mask_data = attention_mask.data<int64_t>();
+            std::vector<float> tmp_attn_mask(attention_mask_data, attention_mask_data + attention_mask.get_size());
+            // tmp_attn_mask.erase(tmp_attn_mask.begin());
+
+            std::vector<std::string> prefixes_to_exclude = {config.eos_token, config.bos_token};
+            auto prefix_match = [&text](std::string prefix) { return text.substr(0, prefix.length()) == prefix; };
+            if (std::any_of(prefixes_to_exclude.begin(), prefixes_to_exclude.end(), prefix_match)) {
+                tmp_ids.erase(tmp_ids.begin());
+                tmp_attn_mask.erase(tmp_attn_mask.begin());
+            }
+
+            input_ids = ov::Tensor(input_ids.get_element_type(), {1, tmp_ids.size()});
+            for (size_t i = 0; i < tmp_ids.size(); i++)
+                input_ids.data<int64_t>()[i] = tmp_ids.data()[i];
+            attention_mask = ov::Tensor(attention_mask.get_element_type(), {1, tmp_attn_mask.size()});
+            for (size_t i = 0; i < tmp_attn_mask.size(); i++)
+                attention_mask.data<int64_t>()[i] = tmp_attn_mask.data()[i];
+            
+            encoded_input = TokenizedInputs{input_ids, attention_mask};
+        }
+        auto encoded_results  = generate(encoded_input, config, streamer);
+        return {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    }
+
+    EncodedResults generate(
+        const EncodedInputs& inputs,
+        OptionalGenerationConfig generation_config, 
+        StreamerVariant streamer
+    ) {
+        ov::Tensor input_ids;
+        ov::Tensor attention_mask;
+
+        // input_ids
+        // attention_mask
+        if (auto data = std::get_if<ov::Tensor>(&inputs)) {
+            input_ids = *data;
+        } else if (auto data = std::get_if<std::pair<ov::Tensor, ov::Tensor>>(&inputs)) {
+            input_ids = data->first;
+            attention_mask = data->second;
+        } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
+            input_ids = data->input_ids;
+            attention_mask = data->attention_mask;
+        }
+        
+        ov::genai::EncodedResults result;
+        GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+        
+        std::shared_ptr<StreamerBase> streamer_ptr;
+
+        if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
+            streamer_ptr = nullptr;
+        } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
+            streamer_ptr = *streamer_obj;
+        } else if (auto callback = std::get_if<std::function<void(std::string)>>(&streamer)) {
+            streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
+        }
+
+        auto batch_size = input_ids.get_shape().at(0);
+        if ((batch_size != 1 || !(config.is_greedy_decoding() || config.is_multinomial())) && streamer_ptr) {
+            OPENVINO_THROW("Currently streaming is possible only with batch size=1 and greedy or multinomial decoding");
+        }
+
+        // auto attention_mask_data = attention_mask.has_value() ? *attention_mask : ov::genai::utils::init_attention_mask(input_ids);
+
+        if (config.is_greedy_decoding()) {
+            result = ov::genai::greedy_decoding(m_model_runner, input_ids, attention_mask, config, streamer_ptr, is_chat_conversation);
+        } else if (config.is_beam_search()) {
+            result = beam_search(m_model_runner, input_ids, attention_mask, config);
+        } else if (config.is_multinomial()) {
+            result = multinominal_decoding(m_model_runner, input_ids, attention_mask, config, streamer_ptr);
+        } else {
+            OPENVINO_THROW("No decoding algorithm found for provided configuration parameters.");
+        }
+
+        if (!is_chat_conversation)
+            m_model_runner.reset_state();
+
+        return result;        
+    }
+
+    std::string apply_chat_template(std::string prompt, std::string role = "user") const {
+        jinja2::TemplateEnv env;
+        env.GetSettings().lstripBlocks = true;
+        env.GetSettings().trimBlocks = true;
+        jinja2::Template tpl(&env);
+        tpl.Load(m_chat_template);
+        
+        jinja2::ValuesMap message {{"role", role}, {"content", prompt}};
+        jinja2::ValuesMap params = {
+            {"messages", jinja2::ValuesList({message})},
+            {"bos_token",  m_generation_config.bos_token},
+            {"eos_token", m_generation_config.eos_token},
+            {"add_generation_prompt", true},
+        };
+    
+        return tpl.RenderAsString(params).value();
+    }
+
+    std::vector<std::string> apply_chat_template(std::vector<std::string>& prompts, std::string role = "user") const {
+        std::vector<std::string> res;
+        for (const auto& prompt: prompts) {
+            res.emplace_back(apply_chat_template(prompt));
+        }
+        return res;
+    }
 };
+
+DecodedResults LLMPipeline::generate(
+        StringInputs inputs, 
+        OptionalGenerationConfig generation_config, 
+        StreamerVariant streamer
+) {
+    return m_pimpl->generate(inputs, generation_config, streamer);
+}
+
+DecodedResults LLMPipeline::generate(StringInputs text, const ov::AnyMap& config_map) {
+    auto config_arg = get_config_from_map(config_map);
+    GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
+    config.update_generation_config(config_map);
+
+    return m_pimpl->generate(text, config, get_streamer_from_map(config_map));
+}
+
+EncodedResults LLMPipeline::generate(
+    const EncodedInputs& inputs, 
+    OptionalGenerationConfig generation_config,
+    StreamerVariant streamer
+) {
+    return m_pimpl->generate(inputs, generation_config, streamer);
+}
+
+EncodedResults LLMPipeline::generate(const EncodedInputs& inputs, const ov::AnyMap& config_map) {
+    auto config_arg = get_config_from_map(config_map);
+    GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
+    config.update_generation_config(config_map);
+
+    return m_pimpl->generate(inputs, config, get_streamer_from_map(config_map));
+}
+
+std::pair<std::string, Any> streamer(StreamerVariant func) {
+    if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&func)) {
+        return {STREAMER_ARG_NAME, Any::make<std::shared_ptr<StreamerBase>>(*streamer_obj)};
+    } else  {
+        auto callback = std::get<std::function<void(std::string)>>(func);
+        return {STREAMER_ARG_NAME, Any::make<std::function<void(std::string)>>(callback)};
+    } 
+}
+
+std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
+    return {CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
+}
 
 }  // namespace genai
 }  // namespace ov
 
 using namespace std;
+
+ov::genai::LLMPipeline::LLMPipeline(
+    const ov::InferRequest& request, 
+    const ov::genai::Tokenizer& tokenizer, 
+    OptionalGenerationConfig generation_config
+) {
+    m_pimpl = std::make_unique<LLMPipelineImpl>(request, tokenizer, generation_config);
+}
 
 
 ov::genai::LLMPipeline::LLMPipeline(
@@ -208,167 +420,27 @@ ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
 ov::genai::LLMPipeline::LLMPipeline(
     const std::string& path, 
     const std::string& device, 
-    const ov::AnyMap& config, 
-    const std::string& ov_tokenizers_path
+    const ov::AnyMap& config
 ) {
-    m_pimpl = make_unique<LLMPipelineImpl>(path, device, config, ov_tokenizers_path);
+    m_pimpl = make_unique<LLMPipelineImpl>(path, device, config);
 }
 
 ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
     const std::string& path, 
     const std::string& device, 
-    const ov::AnyMap& config, 
-    const std::string& ov_tokenizers_path
+    const ov::AnyMap& config
 ): 
     m_model_runner{ov::Core{}.compile_model(path + "/openvino_model.xml", device, config).create_infer_request()}, 
-    m_tokenizer{
-        ov_tokenizers_path.empty()
-        ? Tokenizer(path, device, with_openvino_tokenizers(get_ov_genai_library_path()).string())
-        : Tokenizer(path, device, ov_tokenizers_path)
-    },
     m_generation_config{from_config_json_if_exists(path)},
     m_chat_template{from_tokenizer_json_if_exists(path)}
- {}
+ {
+    ov::genai::utils::GenAIEnvManager env_manager(get_ov_genai_library_path());
+    m_tokenizer = Tokenizer(path, device);
+ }
 
-ov::genai::GenerationConfig ov::genai::LLMPipeline::LLMPipelineImpl::generation_config() const {
-    return m_generation_config;
-}
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
-    return m_pimpl->generation_config();
-}
-
-std::string ov::genai::LLMPipeline::LLMPipelineImpl::generate(
-    std::string text, 
-    OptionalGenerationConfig generation_config,
-    OptionalStreamerVariant streamer
-) {
-    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-
-    if (is_chat_conversation) {
-        text = apply_chat_template(text);
-    }
-    auto kv_cache_len = m_model_runner.query_state()[0].get_state().get_shape()[2];
-    
-    // previous prompt generation in chat dialog stops with the end of sentence token, 
-    // need to append this token to the current prompt
-    if (is_chat_conversation && kv_cache_len > 0) {
-        text = config.eos_token + text;
-    }
-
-    auto [input_ids, attention_mask] = m_tokenizer.encode(text);
-
-    // todo: W/A If sentence begins with a specfial tokens (<bos>, <s>, etc.) openvino_tokenizer inserts 2 special extra tokens <bos> and "▁",
-    // but HF does not do that. Moreover openvino_tokenizer always inserts <bos> but in chat scenario HF does not do that because skip_special_tokens=True.
-    // Need to remove both of that tokens manually to get exact token by token alignment with HF
-    auto size = input_ids.get_shape();
-    int64_t* inputs_data = input_ids.data<int64_t>();
-    std::vector<int64_t> tmp_ids(inputs_data, inputs_data + input_ids.get_size()); // todo: works only for batch 1
-    // tmp_ids.erase(tmp_ids.begin());
-
-    auto attention_mask_data = attention_mask.data<int64_t>();
-    std::vector<float> tmp_attn_mask(attention_mask_data, attention_mask_data + attention_mask.get_size());
-    // tmp_attn_mask.erase(tmp_attn_mask.begin());
-
-    std::vector<std::string> prefixes_to_exclude = {config.eos_token, config.bos_token};
-    auto prefix_match = [&text](std::string prefix) { return text.substr(0, prefix.length()) == prefix; };
-    if (std::any_of(prefixes_to_exclude.begin(), prefixes_to_exclude.end(), prefix_match)) {
-        tmp_ids.erase(tmp_ids.begin());
-        tmp_attn_mask.erase(tmp_attn_mask.begin());
-    }
-
-    input_ids = ov::Tensor(input_ids.get_element_type(), {1, tmp_ids.size()});
-    for (size_t i = 0; i < tmp_ids.size(); i++)
-        input_ids.data<int64_t>()[i] = tmp_ids.data()[i];
-    attention_mask = ov::Tensor(attention_mask.get_element_type(), {1, tmp_attn_mask.size()});
-    for (size_t i = 0; i < tmp_attn_mask.size(); i++)
-        attention_mask.data<int64_t>()[i] = tmp_attn_mask.data()[i];
-
-    auto generate_results = generate(input_ids, attention_mask, config, streamer);
-    return m_tokenizer.decode(generate_results.tokens)[0];
-}
-
-ov::genai::DecodedResults ov::genai::LLMPipeline::generate(const std::vector<std::string>& texts, OptionalGenerationConfig generation_config) {
-    return m_pimpl->generate(texts, generation_config);
-}
-
-ov::genai::DecodedResults ov::genai::LLMPipeline::LLMPipelineImpl::generate(std::vector<std::string> texts, OptionalGenerationConfig generation_config) {
-    auto [input_ids, attention_mask] = m_tokenizer.encode(texts);
-
-    auto generate_results = generate(input_ids, attention_mask, generation_config, {});
-
-    return {m_tokenizer.decode(generate_results.tokens), generate_results.scores};
-}
-
-ov::genai::EncodedResults ov::genai::LLMPipeline::LLMPipeline::generate(ov::Tensor input_ids, 
-                                                          std::optional<ov::Tensor> attention_mask, 
-                                                          OptionalGenerationConfig generation_config,
-                                                          OptionalStreamerVariant streamer) {
-    return m_pimpl->generate(input_ids, attention_mask, generation_config, streamer);
-}
-
-ov::genai::EncodedResults ov::genai::LLMPipeline::LLMPipelineImpl::generate(
-    ov::Tensor input_ids, 
-    std::optional<ov::Tensor> attention_mask, OptionalGenerationConfig generation_config, 
-    OptionalStreamerVariant streamer
-) {
-    ov::genai::EncodedResults result;
-    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-    
-    std::shared_ptr<StreamerBase> streamer_ptr;
-    if (!streamer.has_value()){
-        streamer_ptr = nullptr;
-    } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&*streamer)) {
-        streamer_ptr = *streamer_obj;
-    } else if (auto callback = std::get_if<std::function<void(std::string)>>(&*streamer)) {
-        streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
-    }
-    auto batch_size = input_ids.get_shape().at(0);
-    if ((batch_size != 1 || !(config.is_greedy_decoding() || config.is_multinomial())) && streamer_ptr) {
-        OPENVINO_THROW("Currently streaming is possible only with batch size=1 and greedy or multinomial decoding");
-    }
-
-    auto attention_mask_data = attention_mask.has_value() ? *attention_mask : ov::genai::utils::init_attention_mask(input_ids);
-
-    if (config.is_greedy_decoding()) {
-        result = ov::genai::greedy_decoding(m_model_runner, input_ids, attention_mask_data, config, streamer_ptr, is_chat_conversation);
-    } else if (config.is_beam_search()) {
-        result = beam_search(m_model_runner, input_ids, attention_mask_data, config);
-    } else if (config.is_multinomial()) {
-        result = multinominal_decoding(m_model_runner, input_ids, attention_mask_data, config, streamer_ptr);
-    } else {
-        OPENVINO_THROW("No decoding algorithm found for provided configuration parameters.");
-    }
-
-    if (!is_chat_conversation)
-        m_model_runner.reset_state();
-
-    return result;
-}
-
-std::string ov::genai::LLMPipeline::generate(std::string text, OptionalGenerationConfig generation_config, OptionalStreamerVariant streamer) {
-    return m_pimpl->generate(text, generation_config, streamer);
-}
-
-std::string ov::genai::LLMPipeline::generate(std::string text, const ov::AnyMap& config_map) {
-    OptionalStreamerVariant streamer;
-    auto config = GenerationConfig::anymap_to_generation_config(config_map);
-    if (config_map.count("streamer")) {
-        streamer = config_map.at("streamer").as<std::function<void (std::string)>>();
-    }
-
-    return m_pimpl->generate(text, config, streamer);
-}
-
-ov::genai::EncodedResults ov::genai::LLMPipeline::generate(ov::Tensor input_ids, const ov::AnyMap& config_map) {
-    OptionalStreamerVariant streamer;
-    auto config = GenerationConfig::anymap_to_generation_config(config_map);
-    if (config_map.count("streamer")) {
-        streamer = config_map.at("streamer").as<std::function<void (std::string)>>();
-    }
-    
-    std::optional<ov::Tensor> attention_mask;
-    return m_pimpl->generate(input_ids, attention_mask, config, streamer);
+    return m_pimpl->m_generation_config;
 }
 
 ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {
@@ -379,23 +451,6 @@ std::string ov::genai::LLMPipeline::apply_chat_template(std::string prompt, std:
     return m_pimpl->apply_chat_template(prompt, role);
 }
 
-std::string ov::genai::LLMPipeline::LLMPipelineImpl::apply_chat_template(std::string prompt, std::string role) const {
-    jinja2::TemplateEnv env;
-    env.GetSettings().lstripBlocks = true;
-    env.GetSettings().trimBlocks = true;
-    jinja2::Template tpl(&env);
-    tpl.Load(m_chat_template);
-    
-    jinja2::ValuesMap message {{"role", role}, {"content", prompt}};
-    jinja2::ValuesMap params = {
-        {"messages", jinja2::ValuesList({message})},
-        {"bos_token",  m_generation_config.bos_token},
-        {"eos_token", m_generation_config.eos_token},
-        {"add_generation_prompt", true},
-    };
- 
-    return tpl.RenderAsString(params).value();
-}
 
 void ov::genai::LLMPipeline::start_chat() {
     m_pimpl->is_chat_conversation = true;

@@ -12,6 +12,11 @@
 namespace ov {
 namespace genai {
 
+struct TokenizedInputs {
+    ov::Tensor input_ids;
+    ov::Tensor attention_mask;
+};
+
 /**
 * @brief class is used to encode prompts and decode resulting tokens
 */
@@ -22,22 +27,22 @@ public:
     * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
     * @param device device. Currently only 'CPU' is supported
     */
-    Tokenizer(const std::string& tokenizers_path, const std::string& device="CPU", const std::string& ov_tokenizers_path="");
+    Tokenizer(const std::string& tokenizers_path, const std::string& device="CPU");
 
     /**
     * @brief encode a single prompt
     * @return pair of [input_ids, attention_mask]
     */
-    std::pair<ov::Tensor, ov::Tensor> encode(const std::string prompt);
+    TokenizedInputs encode(const std::string prompt);
     
     /**
     * @brief encode batch of prompts. Left padding will be applied by default
     * @param prompts vector storing batch of prompts
     * @return pair of [input_ids, attention_mask]
     */
-    std::pair<ov::Tensor, ov::Tensor> encode(std::vector<std::string>& prompts);
-    std::pair<ov::Tensor, ov::Tensor> encode(std::vector<std::string>&& prompts);
-    std::pair<ov::Tensor, ov::Tensor> encode(std::initializer_list<std::string>& prompts);
+    TokenizedInputs encode(std::vector<std::string>& prompts);
+    TokenizedInputs encode(std::vector<std::string>&& prompts);
+    TokenizedInputs encode(std::initializer_list<std::string>& prompts);
     
     /**
     * @brief decode sequence of tokens

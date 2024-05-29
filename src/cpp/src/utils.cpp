@@ -146,6 +146,36 @@ ov::Tensor extend_attention(ov::Tensor attention_mask) {
     return new_atten_mask;
 }
 
+GenAIEnvManager::GenAIEnvManager(const std::string& path) {
+    #ifdef _WIN32
+    char* value = nullptr;
+    size_t len = 0;
+    _dupenv_s(&value, &len, ov::genai::utils::get_tokenizers_env_name().c_str());
+    if (value == nullptr)
+        _putenv_s(ov::genai::utils::get_tokenizers_env_name().c_str(), path.c_str());
+    #else
+    if (!getenv(ov::genai::utils::get_tokenizers_env_name()))
+        setenv(ov::genai::utils::get_tokenizers_env_name(), path.c_str(), 1);
+    #endif
+    else
+        was_already_set = true;
+}
+
+GenAIEnvManager::~GenAIEnvManager() {
+    if (!was_already_set){
+    #ifdef _WIN32
+        _putenv_s(ov::genai::utils::get_tokenizers_env_name());
+    #else
+        unsetenv(ov::genai::utils::get_tokenizers_env_name());
+    #endif
+    }
+}
+
+const char* get_tokenizers_env_name() {
+    return "OPENVINO_TOKENIZERS_PATH_GENAI";
+}
+
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

@@ -59,6 +59,18 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
     }
 }
 
+const char* get_tokenizers_env_name();
+
+// const char* OV_TOKENIZERS_ENV_NAME = "OPENVINO_TOKENIZERS_PATH_GENAI";
+
+class GenAIEnvManager {
+public:
+    GenAIEnvManager(const std::string& path);
+    ~GenAIEnvManager();
+private:
+    bool was_already_set;
+};
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
