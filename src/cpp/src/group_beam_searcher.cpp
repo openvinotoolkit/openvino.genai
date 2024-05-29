@@ -426,6 +426,8 @@ EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor input_ids, ov::Tenso
     
     // return sorted scores
     auto compare_scores = [](Beam left, Beam right) { return (left.score > right.score); };
+
+
     std::sort(beams.begin(), beams.end(), compare_scores);
     
     ov::genai::EncodedResults results;

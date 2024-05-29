@@ -17,7 +17,8 @@ EncodedResults greedy_decoding(
 ) {
     
     ov::Shape prompts_shape = input_ids.get_shape();
-    size_t batch_size = prompts_shape[0];
+    const size_t batch_size = prompts_shape[0];
+    size_t running_batch_size = batch_size;
     size_t prompt_len = prompts_shape[1];
     
     auto kv_cache_len = m_model_runner.query_state()[0].get_state().get_shape()[2];
@@ -27,8 +28,8 @@ EncodedResults greedy_decoding(
     utils::initialize_position_ids(position_ids, attention_mask, kv_cache_len);
 
     EncodedResults results;
-    results.scores.resize(batch_size);
-    results.tokens.resize(batch_size);
+    results.scores.resize(running_batch_size);
+    results.tokens.resize(running_batch_size);
     std::fill(results.scores.begin(), results.scores.end(), 0);
     
     if (is_chat_conversation && kv_cache_len > 0) {
@@ -58,25 +59,23 @@ EncodedResults greedy_decoding(
     m_model_runner.set_tensor("input_ids", input_ids);
     m_model_runner.set_tensor("position_ids", position_ids);
 
-    m_model_runner.get_tensor("beam_idx").set_shape({batch_size});
+    m_model_runner.get_tensor("beam_idx").set_shape({running_batch_size});
     auto beam_data = m_model_runner.get_tensor("beam_idx").data<int32_t>();
-    std::iota(beam_data, beam_data + batch_size, 0);
+    std::iota(beam_data, beam_data + running_batch_size, 0);
 
     size_t max_tokens = generation_config.get_max_new_tokens(prompt_len);
-    
+
     m_model_runner.infer();
     auto logits = m_model_runner.get_tensor("logits");
     ov::Shape logits_shape = logits.get_shape();
     size_t seq_len = logits_shape[1], vocab_size = logits_shape[2];
-    m_model_runner.get_tensor("input_ids").set_shape({batch_size, 1});
+    m_model_runner.get_tensor("input_ids").set_shape({running_batch_size, 1});
 
-    std::vector<int64_t> token_iter_results(batch_size);  // results of a single infer request
-    std::vector<int> eos_met(batch_size, 0);  // use int because can not use std::all_of with vector<bool>
-    for (size_t batch = 0; batch < batch_size; ++batch) {
-        auto res = utils::softmax(logits, batch);
-        auto out_token = res.first;
-        results.tokens[batch].emplace_back(res.first);
-        results.scores[batch] += res.second;
+    std::vector<int64_t> token_iter_results(running_batch_size);  // results of a single infer request
+    std::vector<int> eos_met(running_batch_size, 0);  // use int because can not use std::all_of with vector<bool>
+    for (size_t batch = 0; batch < running_batch_size; ++batch) {
+        auto out_token = utils::argmax(logits, batch);
+        results.tokens[batch].emplace_back(out_token);
 
         token_iter_results[batch] = out_token;
         eos_met[batch] = (out_token == generation_config.eos_token_id);
@@ -92,29 +91,36 @@ EncodedResults greedy_decoding(
     for (size_t i = 0; i < max_tokens - 1; ++i) {
         utils::update_position_ids(m_model_runner.get_tensor("position_ids"), m_model_runner.get_tensor("attention_mask"));
         m_model_runner.set_tensor("attention_mask", utils::extend_attention(m_model_runner.get_tensor("attention_mask")));
-    
-        // todo: consider replacing with start_async and run callback right after that
+
         m_model_runner.infer();
         auto logits = m_model_runner.get_tensor("logits");
         ov::Shape logits_shape = logits.get_shape();
         size_t seq_len = logits_shape[1], vocab_size = logits_shape[2];
         
-        std::vector<int64_t> token_iter_results(batch_size);  // results of a single infer request
-        std::vector<int> eos_met(batch_size, 0);  // use int because can not use std::all_of with vector<bool>
-        for (size_t batch = 0; batch < batch_size; ++batch) {
-
-            auto res = ov::genai::utils::softmax(logits, batch);
-            auto out_token = res.first;
-            results.tokens[batch].emplace_back(res.first);
-            results.scores[batch] += res.second;
+        std::vector<int64_t> token_iter_results(running_batch_size);  // results of a single infer request
+        std::vector<int> eos_met(running_batch_size, 0);  // use int because can not use std::all_of with vector<bool>
+        for (size_t batch = 0; batch < running_batch_size; ++batch) {
+            auto out_token = ov::genai::utils::argmax(logits, batch);
+            results.tokens[batch].emplace_back(out_token);
 
             token_iter_results[batch] = out_token;
             eos_met[batch] = (out_token == generation_config.eos_token_id);
-
+            
             m_model_runner.get_tensor("input_ids").data<int64_t>()[batch] = out_token;
         }
         if (streamer)
             streamer->put(token_iter_results[0]);
+
+        // Filter out the eos met batches
+        std::vector<int32_t> beam_idx(running_batch_size);
+        std::iota(beam_idx.begin(), beam_idx.end(), 0);
+        auto end_it = std::remove_if(beam_idx.begin(), beam_idx.end(), [&eos_met](int idx) { return eos_met[idx]; });
+        beam_idx.erase(end_it, beam_idx.end());  // Remove the eos met indices
+
+        m_model_runner.get_tensor("beam_idx").set_shape({beam_idx.size()});
+        auto beam_data = m_model_runner.get_tensor("beam_idx").data<int32_t>();
+        std::copy(beam_idx.begin(), beam_idx.end(), beam_data);
+        running_batch_size = beam_idx.size();
 
         // stop generation when EOS is met in all batches
         bool all_are_eos = std::all_of(eos_met.begin(), eos_met.end(), [](int elem) { return elem == 1; });

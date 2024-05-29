@@ -4,7 +4,7 @@
 import openvino_genai
 import pytest
 from list_test_models import models_list
-
+from typing import Union, List, Dict
 
 @pytest.fixture(scope="module", params=models_list())
 def model_fixture(request):
@@ -12,13 +12,75 @@ def model_fixture(request):
     from transformers import AutoTokenizer, AutoModelForCausalLM
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = AutoModelForCausalLM.from_pretrained(model_id)
-    return model_id, path, tokenizer, model
+    yield model_id, path, tokenizer, model
+    
+    import gc
+    del tokenizer
+    del model
+    gc.collect()
 
-def run_hf_ov_genai_comparison(model_fixture, generation_config, prompt):
+def run_hf_ov_genai_comparison_batched(model_fixture, generation_config: Dict, prompts: Union[str, List[str]]):
+    model_id, path, tokenizer, model = model_fixture
+    device = 'CPU'
+
+    config = generation_config.copy()  # to avoid side effects
+    num_beams = config['num_beams'] if 'num_beams' in config else 1
+
+    if not isinstance(prompts, list):
+        prompts = [prompts]
+
+    if 'do_sample' not in config:
+        # for some reason this key inside HF sometimes is implicitly set to True
+        # and it conflicts with beam search args `diversity_penalty` and/or `num_beam_groups` specified here
+        # need to state exlicitly to False if not specified
+        config['do_sample'] = False
+
+    generation_config_hf = config.copy()
+    if generation_config_hf.get('stop_criteria'):
+        generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
+
+    # Encode the batch of prompts
+    tokenizer.padding_side = "left"
+    encoded_prompts = tokenizer(prompts, return_tensors='pt', padding=True, truncation=True)
+    prompt_ids, attention_mask = encoded_prompts['input_ids'], encoded_prompts['attention_mask']
+    
+    generation_config_hf['num_return_sequences'] = num_beams
+    hf_encoded_outputs = model.generate(prompt_ids, attention_mask=attention_mask, 
+                                        **generation_config_hf)
+
+    hf_outputs = []
+    for idx, hf_encoded_out in enumerate(hf_encoded_outputs):
+        prompt_count = idx // num_beams
+        hf_outputs.append(tokenizer.decode(hf_encoded_out[prompt_ids[prompt_count].shape[0]:], skip_special_tokens=True))
+
     import openvino_genai as ov_genai
+    pipe = ov_genai.LLMPipeline(path, device)
+    
+    config['num_return_sequences'] = num_beams * len(prompts)
+    ov_outputs = pipe.generate(prompts, **config)
+    
+    hf_outputs.sort()
+    ov_outputs.sort()
+    for i, (hf_output, ov_output) in enumerate(zip(hf_outputs, ov_outputs)):
+        if hf_output != ov_output:
+            print(f'Prompt {i}:')
+            print(f'hf_output: {hf_output}')
+            print(f'ov_output: {ov_output}')
+        assert hf_output == ov_output
+
+def run_hf_ov_genai_comparison(model_fixture, generation_config: Dict, prompt):
+    device = 'CPU'
     model_id, path, tokenizer, model = model_fixture
 
-    generation_config_hf = generation_config.copy()
+    config = generation_config.copy()  # to avoid side effects
+
+    if 'do_sample' not in config:
+        # for some reason this key inside HF sometimes is implicitly set to True
+        # and it conflicts with beam search args `diversity_penalty` and/or `num_beam_groups` specified here
+        # need to state exlicitly to False if not specified
+        config['do_sample'] = False
+    
+    generation_config_hf = config.copy()
     # in OpenVINO GenAI this parameter is called stop_criteria,
     # while in HF it's called early_stopping. 
     # HF values True, False and "never" correspond to OV GenAI values "early", "heuristic" and "never"
@@ -29,14 +91,15 @@ def run_hf_ov_genai_comparison(model_fixture, generation_config, prompt):
     hf_encoded_output = model.generate(encoded_prompt, **generation_config_hf)
     hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:])
 
-    device = 'CPU'
+    import openvino_genai as ov_genai
     pipe = ov_genai.LLMPipeline(path, device)
     
-    ov_output = pipe.generate(prompt, **generation_config)
-    if generation_config.get('num_return_sequences', 1) > 1:
+    ov_output = pipe.generate(prompt, **config)
+    if config.get('num_return_sequences', 1) > 1:
         ov_output = ov_output[0]
 
     if hf_output != ov_output:
+        print(f'Prompt {i}:')
         print(f'hf_output: {hf_output}')
         print(f'ov_output: {ov_output}')
 
@@ -55,8 +118,19 @@ test_cases = [
     (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.5), 'The Sun is yellow because'),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
-def test_greedy_decoding(model_fixture, generation_config, prompt):
+def test_decoding(model_fixture, generation_config, prompt):
     run_hf_ov_genai_comparison(model_fixture, generation_config, prompt)
+
+test_configs = [
+    dict(max_new_tokens=20, do_sample=False),
+    dict(num_beam_groups=3, num_beams=15, max_new_tokens=20, diversity_penalty=1.0)
+]
+batched_prompts = [['table is made of', 'They sky is blue because', 'Difference between Jupiter and Marks is that']
+                   ,['hello', 'Here is the longest nowel ever: ']]
+@pytest.mark.parametrize("generation_config", test_configs)
+@pytest.mark.parametrize("prompts", batched_prompts)
+def test_multibatch(model_fixture, generation_config, prompts):
+    run_hf_ov_genai_comparison_batched(model_fixture, generation_config, prompts)
 
 
 prompts = ['The Sun is yellow because', 'Alan Turing was a', 'table is made of']
@@ -99,11 +173,10 @@ def test_stop_criteria(model_fixture, stop_criteria, prompt, max_new_tokens):
 @pytest.mark.parametrize("num_beam_groups", [2])
 @pytest.mark.parametrize("group_size", [5])
 @pytest.mark.parametrize("max_new_tokens", [800, 2000])
-@pytest.mark.parametrize("diversity_penalty", [1.0])
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.skip  # will be enabled in nightly since are computationally expensive
 def test_beam_search_long_sentences(model_fixture, num_beam_groups, group_size, 
-                              max_new_tokens, diversity_penalty, prompt):
+                                    max_new_tokens, prompt):
     generation_config = dict(
         num_beam_groups=num_beam_groups, 
         num_beams=num_beam_groups * group_size, 

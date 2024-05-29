@@ -34,7 +34,7 @@ void print_tensor(const ov::Tensor& tensor) {
 
 bool is_xml(const std::string& path) { return path.compare(path.length() - 4, 4, ".xml") == 0;}
 
-std::pair<int64_t, float> softmax(const ov::Tensor& logits, const size_t batch_idx) {
+int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
     if (logits.get_shape()[0] <= batch_idx) {
         OPENVINO_THROW("logits batch size doesn't match the number of beams");
     }
@@ -47,11 +47,7 @@ std::pair<int64_t, float> softmax(const ov::Tensor& logits, const size_t batch_i
     int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
     float max_logit = logits_data[out_token];
 
-    float log_sum = std::log(
-        std::accumulate(logits_data, logits_data + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
-            return accumulated + std::exp(to_add - max_logit);
-        }));
-    return {out_token, log_sum};
+    return out_token;
 }
 
 void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos) {
@@ -66,6 +62,7 @@ void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attenti
         for (size_t i = 0; i < seq_length; i++) {
             const size_t element_offset = batch * seq_length + i;
             position_ids_data[element_offset] = sum;
+            // sum += 1;
             if (attention_mask_data[element_offset] == 1) {
                 sum += 1;
             }
@@ -164,7 +161,7 @@ GenAIEnvManager::GenAIEnvManager(const std::string& path) {
 GenAIEnvManager::~GenAIEnvManager() {
     if (!was_already_set){
     #ifdef _WIN32
-        _putenv_s(ov::genai::utils::get_tokenizers_env_name());
+        _putenv_s(ov::genai::utils::get_tokenizers_env_name(), "");
     #else
         unsetenv(ov::genai::utils::get_tokenizers_env_name());
     #endif
