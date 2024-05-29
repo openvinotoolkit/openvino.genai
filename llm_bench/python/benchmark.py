@@ -35,7 +35,6 @@ DEFAULT_SUPER_RESOLUTION_STEPS = 50
 DEFAULT_SUPER_RESOLUTION_WIDTH = 128
 DEFAULT_SUPER_RESOLUTION_HEIGHT = 128
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
-MAX_OUTPUT_TOKEN_SIZE = 64 * 1024
 
 mem_consumption = MemConsumption()
 stable_diffusion_hook = StableDiffusionHook()
@@ -88,22 +87,26 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     # Remove `token_type_ids` from inputs
     input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
     input_token_size = input_tokens[0].numel()
-
-    max_output_token_size = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
-    max_output_token_size = MAX_OUTPUT_TOKEN_SIZE if max_output_token_size > MAX_OUTPUT_TOKEN_SIZE else max_output_token_size
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
         out_str += " Batch_size={}, ".format(args['batch_size'])
         out_str += 'all input token size after padding: {} * {}, '.format(input_token_size, args['batch_size'])
-        out_str += 'all max_output_token_size: {} * {}'.format(max_output_token_size, args['batch_size'])
+        if args['infer_count'] is not None:
+            out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
 
     max_rss_mem_consumption = ''
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
+    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     start = time.perf_counter()
-    result = model.generate(**input_data, max_new_tokens=int(max_output_token_size), num_beams=args['num_beams'], use_cache=True)
+    if args['infer_count'] is not None:
+        model.generation_config.eos_token_id = None
+        model.config.eos_token_id = None
+        result = model.generate(**input_data, max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True, eos_token_id=None)
+    else:
+        result = model.generate(**input_data, max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True)
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
@@ -120,11 +123,15 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     result_md5_list = []
     for bs_idx in range(args['batch_size']):
         if 'sum' not in args['model_name'] and result[bs_idx][:input_token_size].equal(input_tokens[bs_idx]):
-            generated_text_len = len(result[bs_idx]) - input_tokens[bs_idx].numel()
+            generated_token_size = len(result[bs_idx]) - input_tokens[bs_idx].numel()
         else:
-            generated_text_len = len(result[bs_idx])
-        num_tokens += generated_text_len
-        if generated_text_len > max_output_token_size:
+            generated_token_size = len(result[bs_idx])
+        # Encoder-decoder models expect the `decoder_input_ids` to start with a special token
+        # When counting the output length, subtract 1. The last token does not participate in inference.
+        if model.config.is_encoder_decoder and result[bs_idx][0] == model.config.decoder_start_token_id:
+            generated_token_size = generated_token_size - 1
+        num_tokens += generated_token_size
+        if generated_token_size > max_gen_tokens:
             log.error('Output token size is over max output token size!')
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
@@ -137,11 +144,17 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     tm_infer_list = []
     if bench_hook is not None:
         tm_list = bench_hook.get_time_list()
+        log.debug('latency of all tokens:')
+        [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
         tm_infer_list = bench_hook.get_time_infer_list()
+        log.debug('latency of all infers:')
+        [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
+        if args['num_beams'] == 1 and generated_token_size != len(tm_infer_list):
+            log.warning(f'Output token size({generated_token_size}) is not equal to infer count({len(tm_infer_list)})')
     iter_data = gen_iterate_data(
         num,
         input_token_size * args['batch_size'],
-        max_output_token_size,
+        len(tm_infer_list),
         num_tokens,
         generation_time,
         per_token_time,
@@ -417,6 +430,13 @@ def num_iters_type(x):
     return x
 
 
+def num_infer_count_type(x):
+    x = int(x)
+    if x < 1:
+        raise argparse.ArgumentTypeError('Minimum input value is 1')
+    return x
+
+
 def get_argprser():
     parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-m', '--model', help='model folder including IR files or Pytorch files', required=TabError)
@@ -430,9 +450,8 @@ def get_argprser():
         '-ic',
         '--infer_count',
         default=None,
-        type=int,
-        help='limit the output token size '
-        f'(default {DEFAULT_OUTPUT_TOKEN_SIZE}) of text_gen and code_gen models.',
+        type=num_infer_count_type,
+        help='set the output token size, the value must be greater than 0.'
     )
     parser.add_argument(
         '-n',
@@ -506,7 +525,7 @@ CASE_TO_BENCH = {
 
 
 def main():
-    log.basicConfig(format='[ %(levelname)s ] %(message)s', level=log.INFO, stream=sys.stdout)
+    log.basicConfig(format='[ %(levelname)s ] %(message)s', level=os.environ.get("LOGLEVEL", log.INFO), stream=sys.stdout)
     args = get_argprser()
     model_path, framework, model_args, model_name = utils.model_utils.analyze_args(args)
 
