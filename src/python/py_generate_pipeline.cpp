@@ -1,10 +1,38 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <filesystem>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
 #include "openvino/genai/llm_pipeline.hpp"
+
+#ifdef _WIN32
+#    include <windows.h>
+#    define MAX_ABS_PATH _MAX_PATH
+#    define get_absolute_path(result, path) _fullpath(result, path.c_str(), MAX_ABS_PATH)
+#else
+#    include <dlfcn.h>
+#    include <limits.h>
+#    define MAX_ABS_PATH PATH_MAX
+#    define get_absolute_path(result, path) realpath(path.c_str(), result)
+namespace {
+std::string get_absolute_file_path(const std::string& path) {
+    std::string absolutePath;
+    absolutePath.resize(MAX_ABS_PATH);
+    std::ignore = get_absolute_path(&absolutePath[0], path);
+    if (!absolutePath.empty()) {
+        // on Linux if file does not exist or no access, function will return NULL, but
+        // `absolutePath` will contain resolved path
+        absolutePath.resize(absolutePath.find('\0'));
+        return std::string(absolutePath);
+    }
+    std::stringstream ss;
+    ss << "Can't get absolute file path for [" << path << "], err = " << strerror(errno);
+    throw std::runtime_error(ss.str());
+}
+}
+#endif
 
 namespace py = pybind11;
 using ov::genai::LLMPipeline;
@@ -15,6 +43,7 @@ using ov::genai::DecodedResults;
 using ov::genai::StopCriteria;
 using ov::genai::StreamerBase;
 
+namespace {
 void str_to_stop_criteria(GenerationConfig& config, const std::string& stop_criteria_str){
     if (stop_criteria_str == "early") config.stop_criteria = StopCriteria::early;
     else if (stop_criteria_str == "never") config.stop_criteria =  StopCriteria::never;
@@ -68,10 +97,47 @@ std::string call_with_config(LLMPipeline& pipe, const std::string& text, const G
     return pipe(text, config);
 }
 
+std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
+#ifdef _WIN32
+    constexpr char tokenizers[] = "openvino_tokenizers.dll";
+#elif __linux__
+    constexpr char tokenizers[] = "libopenvino_tokenizers.so";
+#elif __APPLE__
+    constexpr char tokenizers[] = "libopenvino_tokenizers.dylib";
+#endif
+    return path.parent_path() / tokenizers;
+}
+
+std::string get_ov_genai_bindings_path() {
+#ifdef _WIN32
+    CHAR genai_library_path[MAX_PATH];
+    HMODULE hm = NULL;
+    if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPSTR>(get_ov_genai_bindings_path),
+                            &hm)) {
+        std::stringstream ss;
+        ss << "GetModuleHandle returned " << GetLastError();
+        throw std::runtime_error(ss.str());
+    }
+    GetModuleFileNameA(hm, (LPSTR)genai_library_path, sizeof(genai_library_path));
+    return std::string(genai_library_path);
+#elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
+    Dl_info info;
+    dladdr(reinterpret_cast<void*>(get_ov_genai_bindings_path), &info);
+    return get_absolute_file_path(info.dli_fname).c_str();
+#else
+#    error "Unsupported OS"
+#endif  // _WIN32
+}
+
 std::string ov_tokenizers_module_path() {
-    py::module_ m = py::module_::import("openvino_tokenizers");
-    py::list path_list = m.attr("__path__");
-    return std::string(py::str(path_list[0])) + "/lib";
+    // Try a path relative to build artifacts folder first.
+    std::filesystem::path from_library = with_openvino_tokenizers(get_ov_genai_bindings_path());
+    if (std::filesystem::exists(from_library)) {
+        return from_library.string();
+    }
+    return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
+}
 }
 
 PYBIND11_MODULE(py_generate_pipeline, m) {

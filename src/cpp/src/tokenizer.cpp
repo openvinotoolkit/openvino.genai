@@ -59,12 +59,7 @@ public:
         if (ov::genai::utils::is_xml(tokenizers_path))
             OPENVINO_THROW("tokenizers_path should be a path to a dir not a xml file");
     
-        if (ov_tokenizers_path.empty()) {
-            // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
-            core.add_extension(OPENVINO_TOKENIZERS_PATH);
-        } else {
-            core.add_extension(ov_tokenizers_path + "/libopenvino_tokenizers.so");
-        }
+        core.add_extension(ov_tokenizers_path);
         std::shared_ptr<ov::Model> tokenizer_model, detokenizer_model;
         try {
             tokenizer_model = core.read_model(tokenizers_path + "/openvino_tokenizer.xml");

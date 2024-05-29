@@ -71,6 +71,7 @@ public:
     * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
     * @param device optional device
     * @param plugin_config optional plugin_config
+    * @param ov_tokenizers_path optional path to an extension to add. Empty adds openvino_tokenizers from openvini_genai library folder.
     */
     LLMPipeline(const std::string& path, const std::string& device="CPU", 
                 const ov::AnyMap& plugin_config={}, 

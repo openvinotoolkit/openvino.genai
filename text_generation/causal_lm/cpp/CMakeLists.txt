@@ -16,7 +16,6 @@ find_package(OpenVINOGenAI REQUIRED PATHS
 )
 
 add_executable(greedy_causal_lm greedy_causal_lm.cpp)
-target_compile_definitions(greedy_causal_lm PRIVATE OPENVINO_TOKENIZERS_PATH="${OPENVINO_TOKENIZERS_PATH}")
 target_link_libraries(greedy_causal_lm PRIVATE openvino::genai)
 set_target_properties(greedy_causal_lm PROPERTIES CXX_STANDARD 17)
 set_target_properties(greedy_causal_lm PROPERTIES CXX_STANDARD_REQUIRED ON)

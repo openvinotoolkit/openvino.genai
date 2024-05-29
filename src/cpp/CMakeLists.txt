@@ -41,30 +41,25 @@ file(GLOB SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
 set(TARGET_NAME genai)
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
-add_library(openvino::${TARGET_NAME} ALIAS ${TARGET_NAME})
+add_library(openvino::genai ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME}
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
 
-target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
-
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
 
 # Extract two last digits from CMAKE_PROJECT_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
 string(REGEX MATCH [=[[0-9][0-9]$]=] MAJOR_SUFFIX ${CMAKE_PROJECT_VERSION_MAJOR})
 set_target_properties(${TARGET_NAME} PROPERTIES
+    OUTPUT_NAME openvino_genai
     VERSION ${CMAKE_PROJECT_VERSION}
     SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH}
+    ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
+    LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
+    RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
-
-# Copy the library to python to allow skipping wheel installation
-add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E copy
-        "$<TARGET_FILE:${TARGET_NAME}>"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../python/openvino_genai/$<TARGET_FILE_NAME:${TARGET_NAME}>"
-    COMMENT "Copy ${TARGET_NAME} to src/python/openvino_genai")
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 install(TARGETS ${TARGET_NAME}
