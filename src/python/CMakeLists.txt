@@ -8,7 +8,6 @@ FetchContent_Declare(
     URL https://github.com/pybind/pybind11/archive/refs/tags/v2.12.0.tar.gz
     URL_HASH SHA256=bf8f242abd1abcd375d516a7067490fb71abd79519a282d22b6e4d19282185a7
 )
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 FetchContent_GetProperties(pybind11)
 if(NOT pybind11_POPULATED)
     FetchContent_Populate(pybind11)

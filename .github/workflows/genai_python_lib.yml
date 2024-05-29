@@ -54,9 +54,9 @@ jobs:
       - run: unzip ov.zip
       # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
       # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
-      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --verbose --verbose --verbose
-      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install . --verbose --verbose --verbose  # --verbose is additive, and can be used up to 3 times.
-      - run: python -c "from openvino_genai import LLMPipeline"
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && cmake --build ./build/ --config Release -j
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --verbose --verbose --verbose
       - run: set "PYTHONPATH=./build/" && call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -c "from openvino_genai import LLMPipeline"  # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install . --config-settings=build-dir="build" --verbose --verbose --verbose  # --verbose is additive, and can be used up to 3 times.
+      - run: python -c "from openvino_genai import LLMPipeline"
