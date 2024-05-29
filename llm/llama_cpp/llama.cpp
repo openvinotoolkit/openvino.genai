@@ -426,6 +426,17 @@ int main(int argc, char* argv[]) try {
         return 0;
     }
 
+    //compile model from buffer
+    /*
+    std::string modifiled_file = std::regex_replace(args.ov_model_path, std::regex("xml"), "bin");
+    std::ifstream model_file(args.ov_model_path, std::ios::in | std::ios::binary), weights_file(modifiled_file, std::ios::in | std::ios::binary);
+    std::vector<unsigned char> model_vector((std::istreambuf_iterator<char>(model_file)), std::istreambuf_iterator<char>());
+    std::vector<unsigned char> weight_vector((std::istreambuf_iterator<char>(weights_file)), std::istreambuf_iterator<char>());
+    std::string model_p(model_vector.begin(), model_vector.end());
+    ov::Tensor weights_p(ov::element::f16, { weight_vector.size() }, weight_vector.data());
+    ov::CompiledModel compilemodel = core.compile_model(std::string(model_vector.begin(), model_vector.end()), weights_p, device, device_config);
+    */
+
     //Compile model
     startTime = Time::now();
     ov::CompiledModel compilemodel = core.compile_model(args.ov_model_path, device, device_config);
@@ -460,6 +471,9 @@ int main(int argc, char* argv[]) try {
     auto model_inputs = compilemodel.inputs();
     auto inputs = compilemodel.inputs();
     TextStreamer text_streamer{ std::move(detokenizer) };
+	
+    // input length, output length, first time, other time
+    std::vector<std::tuple<size_t, size_t, double, double>> perf_records;
 
     for (std::string input_text : sentences) {
         total_time = 0;
@@ -469,6 +483,7 @@ int main(int argc, char* argv[]) try {
         tokenize(tokenizer, prompt_text.c_str());
         input_ids = tokenizer.get_tensor("input_ids");
         attention_mask = tokenizer.get_tensor("attention_mask");
+	auto input_len = input_ids.get_size();
         std::cout << "input lenghth " << input_ids.get_size() << std::endl;
 	    
         std::vector<int> output_ids;
@@ -538,8 +553,14 @@ int main(int argc, char* argv[]) try {
         text_streamer.end();
 
         if (count > 0) {
+	    double avg_time = total_time / count;
             std::cout << "Other Avg inference took total " << total_time << " ms token num " << count << " first " << first_time << " ms " << " avg " << total_time / (count) << " ms" << std::endl;
+	    perf_records.push_back({input_len, count, first_time, avg_time});
         }
+    }
+    std::cout << "input id, input token len, out token len, first token time, average time" << std::endl;
+    for (auto i : perf_records) {
+        std::cout << i << ", " << std::get<0>(i) << ", " << std::get<1>(i) << ", " << std::get<2>(i) << ", " << std::get<3>(i) << std::endl;
     }
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
