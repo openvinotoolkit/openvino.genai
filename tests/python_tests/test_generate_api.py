@@ -1,16 +1,23 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import openvino
+import openvino_tokenizers
+import optimum.intel
 import pytest
+import transformers
 from list_test_models import models_list
 
 
 @pytest.fixture(scope="module", params=models_list())
 def model_fixture(request):
     model_id, path = request.param
-    from transformers import AutoTokenizer, AutoModelForCausalLM
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForCausalLM.from_pretrained(model_id)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
+    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
+    openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
+    openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
+    model = optimum.intel.openvino.OVModelForCausalLM.from_pretrained(model_id, load_in_8bit=False, export=True)
+    model.save_pretrained(path)
     return model_id, path, tokenizer, model
 
 def run_hf_ov_genai_comparison(model_fixture, generation_config, prompt):
@@ -31,7 +38,7 @@ def run_hf_ov_genai_comparison(model_fixture, generation_config, prompt):
     device = 'CPU'
     # pipe = ov_genai.LLMPipeline(path, device)
     
-    pipe = ov_genai.LLMPipeline(path, device)
+    pipe = ov_genai.LLMPipeline(str(path), device)
     
     ov_output = pipe.generate(prompt, **generation_config)
 

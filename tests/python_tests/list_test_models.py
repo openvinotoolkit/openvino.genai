@@ -1,3 +1,5 @@
+import pathlib
+
 def models_list():
     model_ids = [
         ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", "TinyLlama-1.1B-Chat-v1.0"),
@@ -15,8 +17,8 @@ def models_list():
         # ("Qwen/Qwen1.5-7B-Chat", "Qwen1.5-7B-Chat"),
     ]
     import os
-    prefix = os.getenv('GENAI_MODELS_PATH_PREFIX', '')
-    return [(model_id, os.path.join(prefix, model_path)) for model_id, model_path in model_ids]
+    prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
+    return [(model_id, prefix / model_path) for model_id, model_path in model_ids]
 
 
 if __name__ == "__main__":
