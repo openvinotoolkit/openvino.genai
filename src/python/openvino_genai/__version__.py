@@ -1,2 +1,2 @@
-# this property will be overwritten by value from pyproject.toml
+# Will be overwritten by pyproject.toml or cmake.
 __version__ = "0.0.0.0"
