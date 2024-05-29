@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import functools
 import openvino
 import openvino_tokenizers
 import optimum.intel
@@ -10,13 +11,14 @@ from list_test_models import models_list
 
 
 @pytest.fixture(scope="module", params=models_list())
+@functools.lru_cache(1)
 def model_fixture(request):
     model_id, path = request.param
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
-    model = optimum.intel.openvino.OVModelForCausalLM.from_pretrained(model_id, load_in_8bit=False, export=True)
+    model = optimum.intel.openvino.OVModelForCausalLM.from_pretrained(model_id, export=True, device='CPU', load_in_8bit=False)
     model.save_pretrained(path)
     return model_id, path, tokenizer, model
 
