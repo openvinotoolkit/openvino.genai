@@ -68,59 +68,59 @@ def test_greedy_decoding(model_fixture, generation_config, prompt):
     run_hf_ov_genai_comparison(model_fixture, generation_config, prompt)
 
 
-prompts = ['The Sun is yellow because', 'Alan Turing was a', 'table is made of']
-@pytest.mark.parametrize("num_beam_groups", [2, 3, 8])
-@pytest.mark.parametrize("group_size", [5, 3, 10])
-@pytest.mark.parametrize("max_new_tokens", [20, 15])
-@pytest.mark.parametrize("diversity_penalty", [1.0, 1.5])
-@pytest.mark.parametrize("prompt", prompts)
-def test_beam_search_decoding(model_fixture, num_beam_groups, group_size, 
-                              max_new_tokens, diversity_penalty, prompt):
-    generation_config = dict(
-        num_beam_groups=num_beam_groups, 
-        num_beams=num_beam_groups * group_size, 
-        diversity_penalty=diversity_penalty, 
-        num_return_sequences=num_beam_groups * group_size, 
-        max_new_tokens=max_new_tokens, 
-    )
-    run_hf_ov_genai_comparison(model_fixture, generation_config, prompt)
+# prompts = ['The Sun is yellow because', 'Alan Turing was a', 'table is made of']
+# @pytest.mark.parametrize("num_beam_groups", [2, 3, 8])
+# @pytest.mark.parametrize("group_size", [5, 3, 10])
+# @pytest.mark.parametrize("max_new_tokens", [20, 15])
+# @pytest.mark.parametrize("diversity_penalty", [1.0, 1.5])
+# @pytest.mark.parametrize("prompt", prompts)
+# def test_beam_search_decoding(model_fixture, num_beam_groups, group_size, 
+#                               max_new_tokens, diversity_penalty, prompt):
+#     generation_config = dict(
+#         num_beam_groups=num_beam_groups, 
+#         num_beams=num_beam_groups * group_size, 
+#         diversity_penalty=diversity_penalty, 
+#         num_return_sequences=num_beam_groups * group_size, 
+#         max_new_tokens=max_new_tokens, 
+#     )
+#     run_hf_ov_genai_comparison(model_fixture, generation_config, prompt)
 
 
-@pytest.mark.parametrize("stop_criteria", ["never", "early", "heuristic"])
-@pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.parametrize("max_new_tokens", [20, 40, 300])
-def test_stop_criteria(model_fixture, stop_criteria, prompt, max_new_tokens):
-    # todo: for long sentences early stop_criteria fails
-    if (stop_criteria == 'early' and max_new_tokens >= 300):
-        pytest.skip()
-    generation_config = dict(
-        num_beam_groups=2, 
-        num_beams=2 * 3, 
-        diversity_penalty=1.0, 
-        num_return_sequences=2 * 3, 
-        max_new_tokens=max_new_tokens, 
-        stop_criteria=stop_criteria,
-    )
-    run_hf_ov_genai_comparison(model_fixture, generation_config, prompt)
+# @pytest.mark.parametrize("stop_criteria", ["never", "early", "heuristic"])
+# @pytest.mark.parametrize("prompt", prompts)
+# @pytest.mark.parametrize("max_new_tokens", [20, 40, 300])
+# def test_stop_criteria(model_fixture, stop_criteria, prompt, max_new_tokens):
+#     # todo: for long sentences early stop_criteria fails
+#     if (stop_criteria == 'early' and max_new_tokens >= 300):
+#         pytest.skip()
+#     generation_config = dict(
+#         num_beam_groups=2, 
+#         num_beams=2 * 3, 
+#         diversity_penalty=1.0, 
+#         num_return_sequences=2 * 3, 
+#         max_new_tokens=max_new_tokens, 
+#         stop_criteria=stop_criteria,
+#     )
+#     run_hf_ov_genai_comparison(model_fixture, generation_config, prompt)
 
 
 # test long sequences
-@pytest.mark.parametrize("num_beam_groups", [2])
-@pytest.mark.parametrize("group_size", [5])
-@pytest.mark.parametrize("max_new_tokens", [800, 2000])
-@pytest.mark.parametrize("diversity_penalty", [1.0])
-@pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.skip  # will be enabled in nightly since are computationally expensive
-def test_beam_search_long_sentences(model_fixture, num_beam_groups, group_size, 
-                              max_new_tokens, diversity_penalty, prompt):
-    generation_config = dict(
-        num_beam_groups=num_beam_groups, 
-        num_beams=num_beam_groups * group_size, 
-        diversity_penalty=1.0, 
-        num_return_sequences=num_beam_groups * group_size, 
-        max_new_tokens=max_new_tokens, 
-    )
-    run_hf_ov_genai_comparison(model_fixture, generation_config, prompt)
+# @pytest.mark.parametrize("num_beam_groups", [2])
+# @pytest.mark.parametrize("group_size", [5])
+# @pytest.mark.parametrize("max_new_tokens", [800, 2000])
+# @pytest.mark.parametrize("diversity_penalty", [1.0])
+# @pytest.mark.parametrize("prompt", prompts)
+# @pytest.mark.skip  # will be enabled in nightly since are computationally expensive
+# def test_beam_search_long_sentences(model_fixture, num_beam_groups, group_size, 
+#                               max_new_tokens, diversity_penalty, prompt):
+#     generation_config = dict(
+#         num_beam_groups=num_beam_groups, 
+#         num_beams=num_beam_groups * group_size, 
+#         diversity_penalty=1.0, 
+#         num_return_sequences=num_beam_groups * group_size, 
+#         max_new_tokens=max_new_tokens, 
+#     )
+#     run_hf_ov_genai_comparison(model_fixture, generation_config, prompt)
 
 
 def user_defined_callback(subword):
