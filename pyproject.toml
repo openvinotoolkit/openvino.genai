@@ -21,7 +21,7 @@ dependencies = [
 
 [tool.scikit-build]
 cmake.build-type = "Release"
-cmake.targets = ["py_generate_pipeline"]  # Adding genai would trigger a Release build and Debug build after it. Luckily, py_generate_pipeline depends on genai and will be built anyway. It's not been investigated why both build types are triggered.
+cmake.targets = ["py_generate_pipeline"]  # Adding genai would trigger a Release build and Debug build after it. py_generate_pipeline depends on genai and will be built anyway. It's not been investigated why both build types are triggered.
 cmake.source-dir = "./"
 install.components = ["wheel_genai"]
 sdist.cmake = true
