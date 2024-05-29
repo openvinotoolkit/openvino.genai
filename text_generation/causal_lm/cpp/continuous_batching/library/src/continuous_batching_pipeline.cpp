@@ -44,12 +44,12 @@ class ContinuousBatchingPipeline::Impl {
     // requests added to the pipeline that will be added to m_requests in the next iteration
     std::vector<SequenceGroup::Ptr> m_awaiting_requests;
     // Mutex protecting access to m_awaiting_requests, so add_request and step methods can be called from different threads
-    std::mutex m_mutex;
+    std::mutex m_awaiting_requests_mutex;
 
 
     void _free_non_running_requests() {
-        auto new_end = std::remove_if(m_requests.begin(), m_requests.end(), [] (SequenceGroup::CPtr seq_group) -> bool {
-            return seq_group->has_finished() || seq_group->out_of_memory();
+        auto new_end = std::remove_if(m_requests.begin(), m_requests.end(), [] (SequenceGroup::Ptr seq_group) -> bool {
+            return seq_group->has_finished() || seq_group->out_of_memory() || seq_group->handle_dropped();
         });
         m_requests.erase(new_end, m_requests.end());
     }
@@ -118,29 +118,22 @@ public:
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
                                                                             sampling_params, m_scheduler->get_config().block_size);
         {
-            std::lock_guard<std::mutex> lock{m_mutex};
+            std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
             m_awaiting_requests.push_back(sequence_group);
         }
         return std::make_unique<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
-    }
-
-    void update_requests_buffer() {
-        // Remove sequence group if it's handle has been dropped
-        m_requests.erase(std::remove_if(m_requests.begin(), m_requests.end(),
-            [](const SequenceGroup::Ptr & request) { return request->handle_dropped(); }),
-            m_requests.end());
-        
-        // Pull awaiting requests
-        std::lock_guard<std::mutex> lock{m_mutex};
-        m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
-        m_awaiting_requests.clear();
     }
 
     void step() {
         static ManualTimer step_timer("step()");
         step_timer.start();
 
-        update_requests_buffer();
+        // Pull awaiting requests
+        {
+            std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+            m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
+            m_awaiting_requests.clear();
+        }
 
         Scheduler::Output scheduler_output;
         {
@@ -155,11 +148,12 @@ public:
         if (scheduler_output.m_total_num_scheduled_tokens == 0) {
             for (size_t i = 0; i < m_requests.size(); ++i) {
                 SequenceGroup::Ptr sequence_group = m_requests[i];
+                sequence_group->set_out_of_memory();
                 sequence_group->notify_handle();
-                sequence_group->finish_generation_stream(GenerationResultStatus::IGNORED);
             }
 
             _free_non_running_requests();
+            return;
         }
 
         ov::Tensor logits;
@@ -218,9 +212,6 @@ public:
                 uint64_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
                 SequenceGroup::Ptr sequence_group = m_requests[seq_group_id];
                 sequence_group->notify_handle();
-                if (sequence_group->has_finished()) {
-                   sequence_group->finish_generation_stream(GenerationResultStatus::FINISHED);
-                }
             }
 
             _free_non_running_requests();
@@ -231,17 +222,13 @@ public:
         step_timer.end();
     }
 
-    bool has_running_requests() const {
-        return !m_requests.empty();
-    }
-
-    bool has_awaiting_requests() {
-        std::lock_guard<std::mutex> lock{m_mutex};
-        return !m_awaiting_requests.empty();
+    bool has_non_finished_requests() {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        return !m_awaiting_requests.empty() || !m_requests.empty();
     }
 
     std::vector<GenerationResult> generate(const std::vector<std::string> prompts, std::vector<GenerationConfig> sampling_params) {
-        OPENVINO_ASSERT(!has_running_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
+        OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
         OPENVINO_ASSERT(prompts.size() == sampling_params.size());
 
         std::vector<GenerationHandle> generations;
@@ -252,7 +239,7 @@ public:
         std::vector<GenerationResult> results;
         results.reserve(m_awaiting_requests.size());
 
-        while (has_running_requests() || has_awaiting_requests()) {
+        while (has_non_finished_requests()) {
             step();
         }
 
@@ -270,7 +257,7 @@ public:
                 result.m_generation_ids.push_back(output_text);
                 result.m_scores.push_back(generation_output.score);
             }
-            result.m_status = generation->get_finish_status();
+            result.m_status = generation->get_status();
             results.push_back(result);
         }
 
@@ -300,13 +287,10 @@ void ContinuousBatchingPipeline::step() {
     m_impl->step();
 }
 
-bool ContinuousBatchingPipeline::has_running_requests() const {
-    return m_impl->has_running_requests();
+bool ContinuousBatchingPipeline::has_non_finished_requests() {
+    return m_impl->has_non_finished_requests();
 }
 
-bool ContinuousBatchingPipeline::has_awaiting_requests() const {
-    return m_impl->has_awaiting_requests();
-}
 
 std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, std::vector<GenerationConfig> sampling_params) {
     return m_impl->generate(prompts, sampling_params);

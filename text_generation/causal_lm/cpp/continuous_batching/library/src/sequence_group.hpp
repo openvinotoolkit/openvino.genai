@@ -19,7 +19,6 @@ enum class SequenceStatus {
 };
 
 using TokenIds = std::vector<int64_t>;
-using IterationOutput = std::pair<int64_t, int64_t>;
 
 class Sequence {
     // This can be a problem if we launch two pipelines in the same application.
@@ -99,7 +98,8 @@ public:
     GenerationOutput get_last_generation_output(const GenerationConfig& sampling_params) {
         GenerationOutput output;
         output.score = get_beam_search_score(sampling_params);
-        output.generated_token_ids = std::vector<int64_t> {m_generated_ids[m_generated_ids.size()-1]};
+        OPENVINO_ASSERT(m_generated_ids.size());
+        output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};
         return output;
     }
 
@@ -415,12 +415,12 @@ public:
         return m_generation_stream;
     }
 
-    void finish_generation_stream(GenerationResultStatus status) {
-        m_generation_stream->finish_generation_stream(status);
+    void set_generation_status(GenerationStatus status) {
+        m_generation_stream->set_generation_status(status);
     }
 
     bool handle_dropped() {
-        return m_generation_stream->handle_dropped();
+        return m_generation_stream->get_status() == GenerationStatus::DROPPED_BY_HANDLE;
     }
 
     void notify_handle() {
@@ -463,5 +463,11 @@ public:
                 }
             }
         }
-    }
+
+        if (out_of_memory()) {
+            set_generation_status(GenerationStatus::IGNORED);
+        } else if (has_finished()) {
+            set_generation_status(GenerationStatus::FINISHED);
+        }
+    } 
 };

@@ -38,7 +38,10 @@ public:
         std::unique_lock<std::mutex> lock(m_tokenizer_mutex);
         m_tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {TOKENIZER_BATCH_SIZE}, &prompt});
         m_tokenizer.infer();
-        return m_tokenizer.get_tensor("input_ids");
+        ov::Tensor tmp_tensor = m_tokenizer.get_tensor("input_ids");
+        ov::Tensor output_tensor(tmp_tensor.get_element_type(), tmp_tensor.get_shape());
+        tmp_tensor.copy_to(output_tensor);
+        return output_tensor;
     }
 
     std::string decode(std::vector<int64_t> tokens) {

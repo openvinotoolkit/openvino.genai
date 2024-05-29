@@ -9,10 +9,12 @@
 #include "generation_config.hpp"
 
 
-enum class GenerationResultStatus {
-    FINISHED = 0,
-    IGNORED = 1,
-    ABORTED = 2 // Currently not used, TODO: implement abort functionality
+enum class GenerationStatus {
+    RUNNING = 0, // Default status for ongoing generation
+    FINISHED = 1, // Status set when generation has been finished
+    IGNORED = 2, // Status set when generation run into out-of-memory condition and could not be continued
+    DROPPED_BY_PIPELINE = 3, // Currently not used, TODO: implement abort functionality
+    DROPPED_BY_HANDLE = 4 // Status set when generation handle is dropped
 };
 
 struct GenerationResult {
@@ -26,7 +28,7 @@ struct GenerationResult {
     std::vector<float> m_scores;
 
     // Status of generation
-    GenerationResultStatus m_status;
+    GenerationStatus m_status = GenerationStatus::RUNNING;
 };
 
 struct GenerationOutput {
@@ -53,9 +55,7 @@ public:
     GenerationHandleImpl(const GenerationHandleImpl&) = delete;
     GenerationHandleImpl& operator=(const GenerationHandleImpl&) = delete;
 
-    bool generation_finished();
-
-    GenerationResultStatus get_finish_status();
+    GenerationStatus get_status();
 
     bool can_read();
 

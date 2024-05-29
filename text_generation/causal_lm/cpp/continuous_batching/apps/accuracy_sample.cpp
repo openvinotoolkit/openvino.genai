@@ -53,8 +53,8 @@ int main(int argc, char* argv[]) try {
     };
 
     std::vector<GenerationConfig> sampling_params_examples {
-         GenerationConfig::beam_search(),
-         GenerationConfig::greedy(),
+        GenerationConfig::beam_search(),
+        GenerationConfig::greedy(),
         // GenerationConfig::multinomial(),
     };
 
@@ -88,17 +88,17 @@ int main(int argc, char* argv[]) try {
         std::cout << "Question: " << prompts[request_id] << std::endl;
         switch (generation_result.m_status)
         {
-        case GenerationResultStatus::FINISHED:
+        case GenerationStatus::FINISHED:
             print_generation_result(generation_result);
             break;
-        case GenerationResultStatus::IGNORED:
+        case GenerationStatus::IGNORED:
             std::cout << "Request was ignored due to lack of memory." <<std::endl;
             if (generation_result.m_generation_ids.size() > 0) {
                 std::cout << "Partial result:" << std::endl;
                 print_generation_result(generation_result);
             }
             break;
-        case GenerationResultStatus::ABORTED:
+        case GenerationStatus::DROPPED_BY_PIPELINE:
             std::cout << "Request was aborted." <<std::endl;
             if (generation_result.m_generation_ids.size() > 0) {
                 std::cout << "Partial result:" << std::endl;

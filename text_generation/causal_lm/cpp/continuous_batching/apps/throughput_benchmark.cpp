@@ -211,7 +211,7 @@ public:
     }
 
     bool is_finished() {
-        return generation_handle->generation_finished();
+        return generation_handle->get_status() == GenerationStatus::FINISHED;
     }
 
     void set_inactive() {
@@ -337,7 +337,7 @@ void llmEngineLoop(ContinuousBatchingPipeline* pipe, Dataset* dataset, std::atom
     size_t num_finished = 0;
 
     while (!(*finishThread)) {
-        while (pipe->has_running_requests() || pipe->has_awaiting_requests()) {
+        while (pipe->has_non_finished_requests()) {
             pipe->step();
         }
     }
@@ -373,6 +373,7 @@ int main(int argc, char* argv[]) try {
     ("max_input_len", "Max input length take from dataset", cxxopts::value<size_t>()->default_value("1024"))
     ("max_output_len", "Max output length", cxxopts::value<size_t>()->default_value("2048"))
     ("request_rate", "Number of requests per second. If this is inf, then all the requests are sent at time 0. Otherwise, we use Poisson process to synthesize the request arrival times.", cxxopts::value<std::string>()->default_value("inf"))
+    ("cache_size", "Size of memory used for KV cache in GB. Default: 16", cxxopts::value<size_t>()->default_value("16"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -397,6 +398,7 @@ int main(int argc, char* argv[]) try {
     const size_t max_input_len = result["max_input_len"].as<size_t>();
     const size_t max_output_len = result["max_output_len"].as<size_t>();
     const std::string request_rate = result["request_rate"].as<std::string>();
+    const size_t cache_size = result["cache_size"].as<size_t>();
 
     // Create requests for generation
     Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
@@ -404,7 +406,7 @@ int main(int argc, char* argv[]) try {
     // Perform the first inference
     SchedulerConfig scheduler_config {
         .max_num_batched_tokens = max_batch_size,
-        .cache_size = 100,
+        .cache_size = cache_size,
         .block_size = 32,
         .dynamic_split_fuse = dynamic_split_fuse,
         .max_num_seqs = 256, // not used if dynamic_split_fuse=True
@@ -430,11 +432,17 @@ int main(int argc, char* argv[]) try {
     GenerationInfoCollector generation_info_collector;
 
     std::atomic<bool> finishGenerationThread = false;
+    if (request_rate == "inf") {
+        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector);
+        trafficSimulatorThread.join();
+    }
+    
     std::thread lmmEngineThread(llmEngineLoop, &pipe, &dataset, &finishGenerationThread);
     std::thread statisticsReporterThread(statisticsReporter, &generation_info_collector, num_prompts);
-    std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector);
-
-    trafficSimulatorThread.join();
+    if (request_rate != "inf") {
+        std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector);
+        trafficSimulatorThread.join();
+    }
     statisticsReporterThread.join();
     finishGenerationThread = true;
     lmmEngineThread.join();
