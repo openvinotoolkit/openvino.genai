@@ -79,11 +79,27 @@ public:
     * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
     * @param device optional device
     * @param plugin_config optional plugin_config
-    * @param ov_tokenizers_path optional path to an extension to add. Empty adds openvino_tokenizers from openvini_genai library folder.
     */
-    LLMPipeline(const std::string& path, const std::string& device="CPU", 
-                const ov::AnyMap& plugin_config={}, 
-                const std::string& ov_tokenizers_path="");
+    LLMPipeline(
+        const std::string& path, 
+        const std::string& device="CPU", 
+        const ov::AnyMap& plugin_config={}
+    );
+
+    /**
+    * @brief Constructs an LLMPipeline from already existing infer InferRequest and Tokenizer
+    *
+    * @param request infer request of the model
+    * @param tokenizer initialized Tokenizer 
+    * @param generation_config optional generation_config, be default will be initialized for greedy decoding
+    * @param device optional device
+    * @param plugin_config optional plugin_config
+    */
+    LLMPipeline(
+        const ov::InferRequest& request, 
+        const ov::genai::Tokenizer& tokenizer, 
+        OptionalGenerationConfig generation_config=std::nullopt
+    );
     
     /**
     * @brief Constructs a LLMPipeline when ov::Tokenizer is initialized manually using file from the different dirs.

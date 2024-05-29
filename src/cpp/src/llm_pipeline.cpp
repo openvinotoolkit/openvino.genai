@@ -165,6 +165,15 @@ public:
     bool is_chat_conversation = false;
 
     LLMPipelineImpl(
+        const ov::InferRequest& request, 
+        const ov::genai::Tokenizer& tokenizer, 
+        OptionalGenerationConfig generation_config=std::nullopt
+    ): m_model_runner(request), m_tokenizer(tokenizer) {
+        GenerationConfig default_config;
+        m_generation_config = (generation_config.has_value()) ? *generation_config : default_config;
+    }
+
+    LLMPipelineImpl(
         const std::string& model_path,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
@@ -174,8 +183,7 @@ public:
     LLMPipelineImpl(
         const std::string& path, 
         const std::string& device, 
-        const ov::AnyMap& config, 
-        const std::string& ov_tokenizers_path=""
+        const ov::AnyMap& config
     );
     
     DecodedResults generate(
@@ -373,6 +381,14 @@ std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
 
 using namespace std;
 
+ov::genai::LLMPipeline::LLMPipeline(
+    const ov::InferRequest& request, 
+    const ov::genai::Tokenizer& tokenizer, 
+    OptionalGenerationConfig generation_config
+) {
+    m_pimpl = std::make_unique<LLMPipelineImpl>(request, tokenizer, generation_config);
+}
+
 
 ov::genai::LLMPipeline::LLMPipeline(
     const std::string& model_path,
@@ -404,17 +420,15 @@ ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
 ov::genai::LLMPipeline::LLMPipeline(
     const std::string& path, 
     const std::string& device, 
-    const ov::AnyMap& config, 
-    const std::string& ov_tokenizers_path
+    const ov::AnyMap& config
 ) {
-    m_pimpl = make_unique<LLMPipelineImpl>(path, device, config, ov_tokenizers_path);
+    m_pimpl = make_unique<LLMPipelineImpl>(path, device, config);
 }
 
 ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
     const std::string& path, 
     const std::string& device, 
-    const ov::AnyMap& config, 
-    const std::string& ov_tokenizers_path
+    const ov::AnyMap& config
 ): 
     m_model_runner{ov::Core{}.compile_model(path + "/openvino_model.xml", device, config).create_infer_request()}, 
     m_generation_config{from_config_json_if_exists(path)},
