@@ -21,7 +21,7 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
       - run: ov/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
         if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
-      - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ov/samples/cpp/ -B ./samples\ build/ && cmake --build ./samples\ build/ --config ${{ matrix.build-type }} --target package -j && cmake --install ./samples\ build/ --config ${{ matrix.build-type }} --component samples_bin --prefix s\ pace
+      - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ov/samples/cpp/ -B ./samples\ build/ && cmake --build ./samples\ build/ --config ${{ matrix.build-type }} -j && cmake --install ./samples\ build/ --config ${{ matrix.build-type }} --component samples_bin --prefix s\ pace
         if: ${{ 'Release' != matrix.build-type }}
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
       - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
@@ -50,7 +50,7 @@ jobs:
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\samples\cpp\build_samples_msvc.bat -i "${{ github.workspace }}/samples_install"
         if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
-      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S .\w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\samples\cpp\ -B "./samples build/" && cmake --build "./samples build/" --config ${{ matrix.build-type }} --target package -j && cmake --install "./samples build/" --config ${{ matrix.build-type }} --component samples_bin --prefix samples_install
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S .\w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\samples\cpp\ -B "./samples build/" && cmake --build "./samples build/" --config ${{ matrix.build-type }} -j && cmake --install "./samples build/" --config ${{ matrix.build-type }} --component samples_bin --prefix samples_install
         if: ${{ 'Release' != matrix.build-type }}
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
