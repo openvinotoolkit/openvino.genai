@@ -12,7 +12,7 @@
 namespace ov {
 namespace genai {
 
-struct TokenizedInputs {
+struct OPENVINO_GENAI_EXPORTS TokenizedInputs {
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
 };

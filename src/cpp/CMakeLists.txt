@@ -39,7 +39,7 @@ ov_genai_build_jinja2cpp()
 
 file(GLOB SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
-set(TARGET_NAME genai)
+set(TARGET_NAME openvino_genai)
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 add_library(openvino::genai ALIAS ${TARGET_NAME})
 
@@ -53,7 +53,7 @@ target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
 # Extract two last digits from CMAKE_PROJECT_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
 string(REGEX MATCH [=[[0-9][0-9]$]=] MAJOR_SUFFIX ${CMAKE_PROJECT_VERSION_MAJOR})
 set_target_properties(${TARGET_NAME} PROPERTIES
-    OUTPUT_NAME openvino_genai
+    EXPORT_NAME genai
     VERSION ${CMAKE_PROJECT_VERSION}
     SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH}
     ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
