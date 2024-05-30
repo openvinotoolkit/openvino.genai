@@ -199,7 +199,6 @@ def test_beam_search_long_sentences(model_fixture, num_beam_groups, group_size,
         max_new_tokens=max_new_tokens, 
     )
     run_hf_ov_genai_comparison(model_fixture, generation_config, prompt)
->>>>>>> generate_pipeline
 
 
 def user_defined_callback(subword):
