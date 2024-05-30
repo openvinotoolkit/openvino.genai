@@ -242,52 +242,45 @@ class Printer(openvino_genai.StreamerBase):
         print('end')
 
 
-# def test_streamer_one_string(model_fixture):
-#     pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
-#     printer = Printer(pipe.get_tokenizer())
-#     pipe.generate('', openvino_genai.GenerationConfig(), printer)
+def test_streamer_one_string(model_fixture):
+    pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
+    printer = Printer(pipe.get_tokenizer())
+    pipe.generate('', openvino_genai.GenerationConfig(), printer)
 
 
-# def test_streamer_batch_fail(model_fixture):
-#     pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
-#     printer = Printer(pipe.get_tokenizer())
-#     with pytest.raises(RuntimeError):
-#         pipe.generate(['1', '2'], openvino_genai.GenerationConfig(), printer)
+def test_streamer_batch_fail(model_fixture):
+    pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
+    printer = Printer(pipe.get_tokenizer())
+    with pytest.raises(RuntimeError):
+        pipe.generate(['1', '2'], openvino_genai.GenerationConfig(), printer)
 
 
-# def test_streamer_kwargs_one_string(model_fixture):
-#     pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
-#     printer = Printer(pipe.get_tokenizer())
-#     pipe.generate('', do_sample=True, streamer=printer)
+def test_streamer_kwargs_one_string(model_fixture):
+    pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
+    printer = Printer(pipe.get_tokenizer())
+    pipe.generate('', do_sample=True, streamer=printer)
 
 
-# def test_streamer_kwargs_batch_fail(model_fixture):
-#     pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
-#     printer = Printer(pipe.get_tokenizer())
-#     with pytest.raises(RuntimeError):
-#         pipe.generate('', num_beams=2, streamer=printer)
+def test_streamer_kwargs_batch_fail(model_fixture):
+    pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
+    printer = Printer(pipe.get_tokenizer())
+    with pytest.raises(RuntimeError):
+        pipe.generate('', num_beams=2, streamer=printer)
 
 
-# @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
-# def test_operator_wit_callback_one_string(model_fixture, callback):
-#     pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
-#     pipe('', openvino_genai.GenerationConfig(), callback)
+@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+def test_operator_wit_callback_one_string(model_fixture, callback):
+    pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
+    pipe('', openvino_genai.GenerationConfig(), callback)
 
 
-# @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
-# def test_operator_wit_callback_batch_fail(model_fixture, callback):
-#     pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
-#     with pytest.raises(RuntimeError):
-#         pipe(['1', '2'], openvino_genai.GenerationConfig(), callback)
+def test_operator_wit_streamer_kwargs_one_string(model_fixture):
+    pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
+    printer = Printer(pipe.get_tokenizer())
+    pipe('', do_sample=True, streamer=printer)
 
 
-# def test_perator_wit_streamer_kwargs_one_string(model_fixture):
-#     pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
-#     printer = Printer(pipe.get_tokenizer())
-#     pipe('', do_sample=True, streamer=printer)
-
-
-def test_erator_wit_streamer_kwargs_batch_fail(model_fixture):
+def test_operator_wit_streamer_kwargs_batch_fail(model_fixture):
     pipe = openvino_genai.LLMPipeline(str(model_fixture[1]))
     printer = Printer(pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
