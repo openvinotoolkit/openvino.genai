@@ -152,11 +152,11 @@ prompts = ['The Sun is yellow because', 'Alan Turing was a', 'table is made of']
 def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
                               max_new_tokens, diversity_penalty, prompt):
     generation_config = dict(
-        num_beam_groups=num_beam_groups,
-        num_beams=num_beam_groups * group_size,
-        diversity_penalty=diversity_penalty,
-        num_return_sequences=num_beam_groups * group_size,
-        max_new_tokens=max_new_tokens,
+        num_beam_groups=num_beam_groups, 
+        num_beams=num_beam_groups * group_size, 
+        diversity_penalty=diversity_penalty, 
+        num_return_sequences=num_beam_groups * group_size, 
+        max_new_tokens=max_new_tokens, 
     )
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
