@@ -50,12 +50,13 @@ def output_comments(result, use_case, writer):
     )
 
     for comments in comment_list:
-        result['iteration'] = comments
+        result['tid'] = comments
         writer.writerow(result)
 
 
 def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision):
     header = [
+        'tid',
         'iteration',
         'model',
         'framework',
@@ -120,6 +121,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
                 shared_mem = iter_data['max_shared_mem_consumption']
                 token_time = iter_data['tokenization_time']
                 detoken_time = iter_data['detokenization_time']
+                result['tid'] = iter_data['thread_id']
                 result['iteration'] = str(iter_data['iteration'])
                 if i > 0:
                     result['pretrain_time(s)'] = ''
@@ -167,35 +169,5 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
                 if iter_data['max_shared_mem_consumption'] != '':
                     if iter_data['max_shared_mem_consumption'] > total_max_shared_mem_consumption:
                         total_max_shared_mem_consumption = iter_data['max_shared_mem_consumption']
-            total_iters -= skip_iter_nums
-            if total_iters > 0:
-                result['iteration'] = str('-1')
-                result['pretrain_time(s)'] = ''
-                if total_input_size > 0:
-                    result['input_size'] = round(total_input_size / total_iters, 5)
-                if total_infer_count > 0:
-                    result['infer_count'] = round(total_infer_count / total_iters, 5)
-                if total_generation_time > 0:
-                    result['generation_time(s)'] = round(total_generation_time / total_iters, 5)
-                if total_num_tokens > 0:
-                    avg_per_token_time = total_generation_time * 1000 / total_num_tokens
-                    result['output_size'] = round(total_num_tokens / total_iters, 5)
-                    result['latency(ms)'] = round(avg_per_token_time, 5)
-                else:
-                    result['output_size'] = ''
-                    result['latency(ms)'] = ''
-                if total_first_token_latency > 0:
-                    result['1st_latency(ms)'] = round(total_first_token_latency / total_iters, 5)
-                if total_other_tokens_avg_latency > 0:
-                    result['2nd_avg_latency(ms)'] = round(total_other_tokens_avg_latency / total_iters, 5)
-                if total_first_token_infer_latency > 0:
-                    result['1st_infer_latency(ms)'] = round(total_first_token_infer_latency / total_iters, 5)
-                if total_other_tokens_infer_avg_latency > 0:
-                    result['2nd_infer_avg_latency(ms)'] = round(total_other_tokens_infer_avg_latency / total_iters, 5)
-                if total_max_rss_mem_consumption > 0:
-                    result['max_rss_mem(MB)'] = total_max_rss_mem_consumption
-                if total_max_shared_mem_consumption > 0:
-                    result['max_shared_mem(MB)'] = total_max_shared_mem_consumption
-                writer.writerow(result)
 
             output_comments(result, model_args['use_case'], writer)

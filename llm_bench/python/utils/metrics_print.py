@@ -6,7 +6,7 @@ import logging as log
 
 def print_metrics(
         iter_num, iter_data, tms=None, tms_infer=None, warm_up=False, max_rss_mem=-1, max_shared_mem=-1,
-        stable_diffusion=None, tokenization_time=None, batch_size=1
+        stable_diffusion=None, tokenization_time=None, batch_size=1, thread_id=''
 ):
     if tms is None:
         tms = []
@@ -34,20 +34,23 @@ def print_metrics(
     if iter_data['latency'] != '':
         output_str += 'Latency: {:.2f} ms/{}'.format(iter_data['latency'], latency_unit)
     if output_str != '':
-        output_str = ' '.join(['[{}]'.format(iter_str), output_str])
+        if thread_id == '':
+            output_str = ' '.join(['[{}]'.format(iter_str), output_str])
+        else:
+            output_str = ' '.join(['[t{}][{}]'.format(thread_id, iter_str), output_str])
         log.info(output_str)
     if len(tms) > 0:
         iter_data['first_token_latency'] = tms[0] * 1000 if len(tms) > 0 else -1
         iter_data['other_tokens_avg_latency'] = sum(tms[1:]) / (len(tms) - 1) * 1000 if len(tms) > 1 else -1
         log.info(
-            f"[{iter_str}] First token latency: {iter_data['first_token_latency']:.2f} ms/{latency_unit}, "
+            f"[t{thread_id}][{iter_str}] First token latency: {iter_data['first_token_latency']:.2f} ms/{latency_unit}, "
             f"other tokens latency: {iter_data['other_tokens_avg_latency']:.2f} ms/{latency_unit}, len of tokens: {len(tms)} * {batch_size}",
         )
     if len(tms_infer) > 0:
         iter_data['first_token_infer_latency'] = tms_infer[0] * 1000 if len(tms_infer) > 0 else -1
         iter_data['other_tokens_infer_avg_latency'] = sum(tms_infer[1:]) / (len(tms_infer) - 1) * 1000 if len(tms_infer) > 1 else -1
         log.info(
-            f"[{iter_str}] First infer latency: {iter_data['first_token_infer_latency']:.2f} ms/infer, "
+            f"[t{thread_id}][{iter_str}] First infer latency: {iter_data['first_token_infer_latency']:.2f} ms/infer, "
             f"other infers latency: {iter_data['other_tokens_infer_avg_latency']:.2f} ms/infer, inference count: {len(tms_infer)}",
         )
     if stable_diffusion is not None:
@@ -58,10 +61,10 @@ def print_metrics(
     if max_shared_mem != '' and max_shared_mem > -1:
         output_str += 'max shared memory cost: {:.2f}MBytes'.format(max_shared_mem)
     if output_str != '':
-        output_str = ' '.join(['[{}]'.format(iter_str), output_str])
+        output_str = ' '.join(['[t{}][{}]'.format(thread_id, iter_str), output_str])
         log.info(output_str)
     if iter_data['result_md5'] != '':
-        log.info(f"[{iter_str}] Result MD5:{iter_data['result_md5']}")
+        log.info(f"[t{thread_id}][{iter_str}] Result MD5:{iter_data['result_md5']}")
 
 
 def print_generated(iter_num, warm_up=False, generated=None):

@@ -24,6 +24,9 @@ from utils.memory_profile import MemConsumption
 from utils.hook_forward import StableDiffusionHook
 import utils.output_json
 import utils.output_file
+import utils.global_var
+import threading
+import utils.return_value_thread as retThread
 
 FW_UTILS = {'pt': utils.pt_utils, 'ov': utils.ov_utils}
 
@@ -42,6 +45,7 @@ stable_diffusion_hook = StableDiffusionHook()
 
 
 def gen_iterate_data(
+    thread_id = '',
     iter_idx='',
     in_size='',
     infer_count='',
@@ -55,6 +59,7 @@ def gen_iterate_data(
     tokenization_time=[],
 ):
     iter_data = {}
+    iter_data['thread_id'] = thread_id
     iter_data['iteration'] = iter_idx
     iter_data['input_size'] = in_size
     iter_data['infer_count'] = infer_count
@@ -74,7 +79,25 @@ def gen_iterate_data(
     return iter_data
 
 
-def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_index, bench_hook, model_precision, proc_id):
+def model_infer(model, input_data, max_output_token_size, args):
+    thread_result = {}
+    thread_id = threading.get_native_id()
+    log.info(f"thread id:{thread_id} start")
+    utils.global_var.set_value(thread_id, {'tm_list': [], 'tm_infer_list': []})
+    #utils.global_var.get_value('g_lock').acquire()
+    start = time.perf_counter()
+    result = model.generate(**input_data, max_new_tokens=int(max_output_token_size), num_beams=args['num_beams'], use_cache=True)
+    end = time.perf_counter()
+    #utils.global_var.get_value('g_lock').release()
+    generation_time = end - start
+    thread_result['tid'] = thread_id
+    thread_result['result'] = result
+    thread_result['gen_time'] = generation_time
+    log.info(f"thread id:{thread_id} finished")
+    return thread_result
+
+
+def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_index, model_precision, proc_id):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
@@ -102,73 +125,87 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
-    start = time.perf_counter()
-    result = model.generate(**input_data, max_new_tokens=int(max_output_token_size), num_beams=args['num_beams'], use_cache=True)
-    end = time.perf_counter()
+
+    threads = []
+    thread_result = []
+    for i in range(2):
+        t = retThread.ReturnValueThread(target=model_infer, args=[model, input_data, max_output_token_size, args])
+        threads.append(t)
+        t.start()
+    for t in threads:
+        tResult = t.join()
+        if tResult is not None:
+            thread_result.append(tResult)
+
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
 
-    generation_time = end - start
-    tok_decode_start = time.perf_counter()
-    generated_text = tokenizer.batch_decode(result)
-    tok_decode_end = time.perf_counter()
-    tok_decode_time = (tok_decode_end - tok_decode_start) * 1000
-    # Only text_gen need to minus length of input_data, because generated_text may include input_text
-    num_tokens = 0
-    result_md5_list = []
-    for bs_idx in range(args['batch_size']):
-        if 'sum' not in args['model_name'] and result[bs_idx][:input_token_size].equal(input_tokens[bs_idx]):
-            generated_text_len = len(result[bs_idx]) - input_tokens[bs_idx].numel()
+    for tResult in thread_result:
+        generation_time = tResult['gen_time'] if 'gen_time' in tResult.keys() else ''
+        result = tResult['result']  if 'result' in tResult.keys() else ''
+        thread_id = tResult['tid']  if 'tid' in tResult.keys() else ''
+        tok_decode_start = time.perf_counter()
+        generated_text = tokenizer.batch_decode(result)
+        tok_decode_end = time.perf_counter()
+        tok_decode_time = (tok_decode_end - tok_decode_start) * 1000
+        # Only text_gen need to minus length of input_data, because generated_text may include input_text
+        num_tokens = 0
+        result_md5_list = []
+        for bs_idx in range(args['batch_size']):
+            if 'sum' not in args['model_name'] and result[bs_idx][:input_token_size].equal(input_tokens[bs_idx]):
+                generated_text_len = len(result[bs_idx]) - input_tokens[bs_idx].numel()
+            else:
+                generated_text_len = len(result[bs_idx])
+            num_tokens += generated_text_len
+            if generated_text_len > max_output_token_size:
+                log.error('Output token size is over max output token size!')
+            result_text = generated_text[bs_idx]
+            if args["output_dir"] is not None:
+                utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
+            result_md5_list.append(hashlib.md5(result_text.encode()).hexdigest())
+        if num == 0:
+            warmup_md5[prompt_index] = result_md5_list
+        per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+        iter_data = gen_iterate_data(
+            thread_id,
+            num,
+            input_token_size * args['batch_size'],
+            max_output_token_size,
+            num_tokens,
+            generation_time,
+            per_token_time,
+            result_md5_list,
+            max_rss_mem=max_rss_mem_consumption,
+            max_shared_mem=max_shared_mem_consumption,
+            prompt_idx=prompt_index,
+            tokenization_time=(tok_encode_time, tok_decode_time)
+        )
+        iter_data_list.append(iter_data)
+        tm_list = utils.global_var.get_value(thread_id)['tm_list']
+        tm_infer_list = utils.global_var.get_value(thread_id)['tm_infer_list']
+        utils.metrics_print.print_metrics(
+            num,
+            iter_data,
+            tm_list,
+            tm_infer_list,
+            warm_up=(num == 0),
+            max_rss_mem=max_rss_mem_consumption,
+            max_shared_mem=max_shared_mem_consumption,
+            tokenization_time=(tok_encode_time, tok_decode_time),
+            batch_size=args['batch_size'],
+            thread_id=thread_id
+        )
+        if num > 0:
+            warmup_md5_list = warmup_md5[prompt_index]
+            if result_md5_list != warmup_md5_list:
+                log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} is different from warm-up's md5 {warmup_md5_list}")
+                utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
         else:
-            generated_text_len = len(result[bs_idx])
-        num_tokens += generated_text_len
-        if generated_text_len > max_output_token_size:
-            log.error('Output token size is over max output token size!')
-        result_text = generated_text[bs_idx]
-        if args["output_dir"] is not None:
-            utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
-        result_md5_list.append(hashlib.md5(result_text.encode()).hexdigest())
-    if num == 0:
-        warmup_md5[prompt_index] = result_md5_list
-    per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
-    iter_data = gen_iterate_data(
-        num,
-        input_token_size * args['batch_size'],
-        max_output_token_size,
-        num_tokens,
-        generation_time,
-        per_token_time,
-        result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_shared_mem=max_shared_mem_consumption,
-        prompt_idx=prompt_index,
-        tokenization_time=(tok_encode_time, tok_decode_time)
-    )
-    iter_data_list.append(iter_data)
-    tm_list = bench_hook.get_time_list()
-    tm_infer_list = bench_hook.get_time_infer_list()
-    utils.metrics_print.print_metrics(
-        num,
-        iter_data,
-        tm_list,
-        tm_infer_list,
-        warm_up=(num == 0),
-        max_rss_mem=max_rss_mem_consumption,
-        max_shared_mem=max_shared_mem_consumption,
-        tokenization_time=(tok_encode_time, tok_decode_time),
-        batch_size=args['batch_size']
-    )
-    if num > 0:
-        warmup_md5_list = warmup_md5[prompt_index]
-        if result_md5_list != warmup_md5_list:
-            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} is different from warm-up's md5 {warmup_md5_list}")
             utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
-    else:
-        utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
-    bench_hook.clear_time_list()
-    bench_hook.clear_time_infer_list()
+        utils.global_var.get_value(thread_id)['tm_list'].clear()
+        utils.global_var.get_value(thread_id)['tm_infer_list'].clear()
 
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
@@ -190,13 +227,13 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
             for prompt_idx, input_text in enumerate(input_text_list):
                 if num == 0:
                     log.info(f'[warm-up] Input text: {input_text}')
-                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
+                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, model_precision, proc_id)
     else:
         for prompt_idx, input_text in enumerate(input_text_list):
             for num in range(num_iters + 1):
                 if num == 0:
                     log.info(f'[warm-up] Input text: {input_text}')
-                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
+                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, model_precision, proc_id)
 
     utils.metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time
@@ -502,6 +539,7 @@ CASE_TO_BENCH = {
 
 def main():
     log.basicConfig(format='[ %(levelname)s ] %(message)s', level=log.INFO, stream=sys.stdout)
+    utils.global_var._init()
     args = get_argprser()
     model_path, framework, model_args, model_name = utils.model_utils.analyze_args(args)
 
@@ -519,6 +557,10 @@ def main():
     log.info(out_str)
     if args.memory_consumption:
         mem_consumption.start_collect_mem_consumption_thread()
+    lock = threading.Lock()
+    utils.global_var.set_value('thread_lock', lock)
+    g_lock = threading.Lock()
+    utils.global_var.set_value('g_lock', g_lock)
     try:
         iter_data_list, pretrain_time = CASE_TO_BENCH[model_args['use_case']](model_path, framework, args.device, model_args, args.num_iters)
         if args.report is not None or args.report_json is not None:
