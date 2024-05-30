@@ -74,9 +74,9 @@ def run_hf_ov_genai_comparison_batched(model_fixture, generation_config: Dict, p
             print(f'ov_output: {ov_output}')
         assert hf_output == ov_output
 
-def run_hf_ov_genai_comparison(model_fixture, generation_config: Dict, prompt):
+def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
     device = 'CPU'
-    model_id, path, tokenizer, model = model_fixture
+    model_id, path, tokenizer, model = model_descr
 
     config = generation_config.copy()  # to avoid side effects
 
@@ -124,9 +124,9 @@ test_cases = [
     (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.5), 'The Sun is yellow because'),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
-@pytest.mark.parametrize("model_id", models_list())
-def test_decoding(model_id, generation_config, prompt):
-    run_hf_ov_genai_comparison(read_model(model_id), generation_config, prompt)
+@pytest.mark.parametrize("model_descr", models_list())
+def test_decoding(model_descr, generation_config, prompt):
+    run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
 test_configs = [
     dict(max_new_tokens=20, do_sample=False),
@@ -136,8 +136,9 @@ batched_prompts = [['table is made of', 'They sky is blue because', 'Difference 
                    ,['hello', 'Here is the longest nowel ever: ']]
 @pytest.mark.parametrize("generation_config", test_configs)
 @pytest.mark.parametrize("prompts", batched_prompts)
-def test_multibatch(model_fixture, generation_config, prompts):
-    run_hf_ov_genai_comparison_batched(model_fixture, generation_config, prompts)
+@pytest.mark.parametrize("model_descr", models_list())
+def test_multibatch(model_descr, generation_config, prompts):
+    run_hf_ov_genai_comparison_batched(model_descr, generation_config, prompts)
 
 
 prompts = ['The Sun is yellow because', 'Alan Turing was a', 'table is made of']
@@ -146,8 +147,8 @@ prompts = ['The Sun is yellow because', 'Alan Turing was a', 'table is made of']
 @pytest.mark.parametrize("max_new_tokens", [20, 15])
 @pytest.mark.parametrize("diversity_penalty", [1.0, 1.5])
 @pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.parametrize("model_id", models_list())
-def test_beam_search_decoding(model_id, num_beam_groups, group_size,
+@pytest.mark.parametrize("model_descr", models_list())
+def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
                               max_new_tokens, diversity_penalty, prompt):
     generation_config = dict(
         num_beam_groups=num_beam_groups,
@@ -156,14 +157,14 @@ def test_beam_search_decoding(model_id, num_beam_groups, group_size,
         num_return_sequences=num_beam_groups * group_size,
         max_new_tokens=max_new_tokens,
     )
-    run_hf_ov_genai_comparison(read_model(model_id), generation_config, prompt)
+    run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
 
 @pytest.mark.parametrize("stop_criteria", ["never", "early", "heuristic"])
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize("max_new_tokens", [20, 40, 300])
-@pytest.mark.parametrize("model_id", models_list())
-def test_stop_criteria(model_id, stop_criteria, prompt, max_new_tokens):
+@pytest.mark.parametrize("model_descr", models_list())
+def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
     # todo: for long sentences early stop_criteria fails
     if (stop_criteria == 'early' and max_new_tokens >= 300):
         pytest.skip()
@@ -175,7 +176,7 @@ def test_stop_criteria(model_id, stop_criteria, prompt, max_new_tokens):
         max_new_tokens=max_new_tokens,
         stop_criteria=stop_criteria,
     )
-    run_hf_ov_genai_comparison(read_model(model_id), generation_config, prompt)
+    run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
 
 # test long sequences
@@ -183,9 +184,9 @@ def test_stop_criteria(model_id, stop_criteria, prompt, max_new_tokens):
 @pytest.mark.parametrize("group_size", [5])
 @pytest.mark.parametrize("max_new_tokens", [800, 2000])
 @pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.parametrize("model_id", models_list())
+@pytest.mark.parametrize("model_descr", models_list())
 @pytest.mark.skip  # will be enabled in nightly since are computationally expensive
-def test_beam_search_long_sentences(model_id, num_beam_groups, group_size,
+def test_beam_search_long_sentences(model_descr, num_beam_groups, group_size,
                                     max_new_tokens, prompt):
     generation_config = dict(
         num_beam_groups=num_beam_groups, 
@@ -194,7 +195,7 @@ def test_beam_search_long_sentences(model_id, num_beam_groups, group_size,
         num_return_sequences=num_beam_groups * group_size, 
         max_new_tokens=max_new_tokens, 
     )
-    run_hf_ov_genai_comparison(read_model(model_id), generation_config, prompt)
+    run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
 
 def user_defined_callback(subword):
