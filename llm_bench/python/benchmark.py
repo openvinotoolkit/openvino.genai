@@ -38,7 +38,6 @@ DEFAULT_SUPER_RESOLUTION_STEPS = 50
 DEFAULT_SUPER_RESOLUTION_WIDTH = 128
 DEFAULT_SUPER_RESOLUTION_HEIGHT = 128
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
-MAX_OUTPUT_TOKEN_SIZE = 64 * 1024
 
 mem_consumption = MemConsumption()
 stable_diffusion_hook = StableDiffusionHook()
@@ -79,14 +78,19 @@ def gen_iterate_data(
     return iter_data
 
 
-def model_infer(model, input_data, max_output_token_size, args):
+def model_infer(model, input_data, max_gen_tokens, args):
     thread_result = {}
     thread_id = threading.get_native_id()
     log.info(f"thread id:{thread_id} start")
     utils.global_var.set_value(thread_id, {'tm_list': [], 'tm_infer_list': []})
     #utils.global_var.get_value('g_lock').acquire()
     start = time.perf_counter()
-    result = model.generate(**input_data, max_new_tokens=int(max_output_token_size), num_beams=args['num_beams'], use_cache=True)
+    if args['infer_count'] is not None:
+        model.generation_config.eos_token_id = None
+        model.config.eos_token_id = None
+        result = model.generate(**input_data, max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True, eos_token_id=None)
+    else:
+        result = model.generate(**input_data, max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True)
     end = time.perf_counter()
     #utils.global_var.get_value('g_lock').release()
     generation_time = end - start
@@ -111,32 +115,29 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     # Remove `token_type_ids` from inputs
     input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
     input_token_size = input_tokens[0].numel()
-
-    max_output_token_size = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
-    max_output_token_size = MAX_OUTPUT_TOKEN_SIZE if max_output_token_size > MAX_OUTPUT_TOKEN_SIZE else max_output_token_size
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
         out_str += " Batch_size={}, ".format(args['batch_size'])
         out_str += 'all input token size after padding: {} * {}, '.format(input_token_size, args['batch_size'])
-        out_str += 'all max_output_token_size: {} * {}'.format(max_output_token_size, args['batch_size'])
+        if args['infer_count'] is not None:
+            out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
 
     max_rss_mem_consumption = ''
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
-
     threads = []
     thread_result = []
+    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     for i in range(2):
-        t = retThread.ReturnValueThread(target=model_infer, args=[model, input_data, max_output_token_size, args])
+        t = retThread.ReturnValueThread(target=model_infer, args=[model, input_data, max_gen_tokens, args])
         threads.append(t)
         t.start()
     for t in threads:
         tResult = t.join()
         if tResult is not None:
             thread_result.append(tResult)
-
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
@@ -155,11 +156,11 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         result_md5_list = []
         for bs_idx in range(args['batch_size']):
             if 'sum' not in args['model_name'] and result[bs_idx][:input_token_size].equal(input_tokens[bs_idx]):
-                generated_text_len = len(result[bs_idx]) - input_tokens[bs_idx].numel()
+                generated_token_size = len(result[bs_idx]) - input_tokens[bs_idx].numel()
             else:
-                generated_text_len = len(result[bs_idx])
-            num_tokens += generated_text_len
-            if generated_text_len > max_output_token_size:
+                generated_token_size = len(result[bs_idx])
+            num_tokens += generated_token_size
+            if generated_token_size > max_gen_tokens:
                 log.error('Output token size is over max output token size!')
             result_text = generated_text[bs_idx]
             if args["output_dir"] is not None:
@@ -168,11 +169,22 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         if num == 0:
             warmup_md5[prompt_index] = result_md5_list
         per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+
+        tm_list = utils.global_var.get_value(thread_id)['tm_list']
+        tm_infer_list = utils.global_var.get_value(thread_id)['tm_infer_list']
+        if len(tm_list) > 0:
+            log.debug('latency of all tokens:')
+            [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
+        if len(tm_infer_list) > 0:
+            log.debug('latency of all infers:')
+            [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
+        if args['num_beams'] == 1 and generated_token_size != len(tm_infer_list):
+            log.warning(f'Output token size({generated_token_size}) is not equal to infer count({len(tm_infer_list)})')
         iter_data = gen_iterate_data(
             thread_id,
             num,
             input_token_size * args['batch_size'],
-            max_output_token_size,
+            len(tm_infer_list),
             num_tokens,
             generation_time,
             per_token_time,
@@ -183,8 +195,6 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             tokenization_time=(tok_encode_time, tok_decode_time)
         )
         iter_data_list.append(iter_data)
-        tm_list = utils.global_var.get_value(thread_id)['tm_list']
-        tm_infer_list = utils.global_var.get_value(thread_id)['tm_infer_list']
         utils.metrics_print.print_metrics(
             num,
             iter_data,
@@ -210,7 +220,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
     model, tokenizer, pretrain_time, bench_hook = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
-    model_precision = utils.model_utils.get_model_precision(model_path.parents._parts)
+    model_precision = utils.model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     warmup_md5 = {}
     input_text_list = utils.model_utils.get_prompts(args)
@@ -276,7 +286,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         mem_consumption.clear_max_memory_consumption()
     for bs_idx in range(args['batch_size']):
         rslt_img_fn = utils.output_file.output_gen_image(res[bs_idx], args, image_id, num, bs_idx, proc_id, '.png')
-        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
+        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
     generation_time = end - start
     iter_data = gen_iterate_data(
         iter_idx=num,
@@ -376,7 +386,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     result_md5_list = []
     if framework == 'ov':
         rslt_img_fn = utils.output_file.output_gen_image(res[0], args, image_id, num, None, proc_id, '.png')
-        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes()).hexdigest())
+        result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
 
     generation_time = end - start
     iter_data = gen_iterate_data(
@@ -427,6 +437,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
+    prompt_idx_list = [image_id for image_id, image_param in enumerate(images)]
     for num in range(num_iters + 1):
         image_id = 0
         for img in images:
@@ -437,7 +448,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, image_id, tm_list, proc_id)
             tm_list.clear()
             image_id = image_id + 1
-    utils.metrics_print.print_average(iter_data_list, [], 0, False)
+    utils.metrics_print.print_average(iter_data_list, prompt_idx_list, 1, False)
 
     return iter_data_list, pretrain_time
 
@@ -446,6 +457,13 @@ def num_iters_type(x):
     x = int(x)
     if x < 0:
         raise argparse.ArgumentTypeError('Minimum input value is 0')
+    return x
+
+
+def num_infer_count_type(x):
+    x = int(x)
+    if x < 1:
+        raise argparse.ArgumentTypeError('Minimum input value is 1')
     return x
 
 
@@ -462,9 +480,8 @@ def get_argprser():
         '-ic',
         '--infer_count',
         default=None,
-        type=int,
-        help='limit the output token size '
-        f'(default {DEFAULT_OUTPUT_TOKEN_SIZE}) of text_gen and code_gen models.',
+        type=num_infer_count_type,
+        help='set the output token size, the value must be greater than 0.'
     )
     parser.add_argument(
         '-n',
@@ -538,8 +555,8 @@ CASE_TO_BENCH = {
 
 
 def main():
-    log.basicConfig(format='[ %(levelname)s ] %(message)s', level=log.INFO, stream=sys.stdout)
     utils.global_var._init()
+    log.basicConfig(format='[ %(levelname)s ] %(message)s', level=os.environ.get("LOGLEVEL", log.INFO), stream=sys.stdout)
     args = get_argprser()
     model_path, framework, model_args, model_name = utils.model_utils.analyze_args(args)
 
@@ -566,10 +583,10 @@ def main():
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':
-                ir_conversion_frontend = utils.model_utils.get_ir_conversion_frontend(model_name, model_path.parents._parts)
+                ir_conversion_frontend = utils.model_utils.get_ir_conversion_frontend(model_name, model_path.parts)
                 if ir_conversion_frontend != '':
                     framework = framework + '(' + ir_conversion_frontend + ')'
-                model_precision = utils.model_utils.get_model_precision(model_path.parents._parts)
+                model_precision = utils.model_utils.get_model_precision(model_path.parts)
             if args.report is not None:
                 utils.output_csv.write_result(
                     args.report,

@@ -138,7 +138,7 @@ class OVMPTModel(OVModelForCausalLM):
 
             inputs["position_ids"] = position_ids
 
-        if hasattr(self, 'next_beam_idx'):
+        if hasattr(self, 'next_beam_idx') and "beam_idx" in self.input_names:
             inputs['beam_idx'] = self.next_beam_idx
 
         # Run inference
