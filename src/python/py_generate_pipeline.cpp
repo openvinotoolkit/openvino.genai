@@ -179,7 +179,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
                          const std::string& device,
                          const ov::AnyMap& plugin_config) {
             ov::genai::utils::GenAIEnvManager env_manager(ov_tokenizers_module_path());
-            return std::make_unique<LLMPipeline>(model_path, device, plugin_config);}), 
+            return std::make_unique<LLMPipeline>(model_path, device, plugin_config);}),
         py::arg("model_path"), "path to the model path", 
         py::arg("device") = "CPU", "device on which inference will be done",
         py::arg("plugin_config") = ov::AnyMap(), 
@@ -201,7 +201,6 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("get_tokenizer", &LLMPipeline::get_tokenizer)
         .def("start_chat", &LLMPipeline::start_chat)
         .def("finish_chat", &LLMPipeline::finish_chat)
-        .def("reset_state", &LLMPipeline::reset_state)
         .def("get_generation_config", &LLMPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &LLMPipeline::set_generation_config)
         .def("apply_chat_template", &LLMPipeline::apply_chat_template);

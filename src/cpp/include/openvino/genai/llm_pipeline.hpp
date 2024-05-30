@@ -203,7 +203,6 @@ public:
 
     void start_chat();
     void finish_chat();
-    void reset_state();
     std::string apply_chat_template(std::string prompt, std::string role = "user") const;
 private:
     class LLMPipelineImpl;

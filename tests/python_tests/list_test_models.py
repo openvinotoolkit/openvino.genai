@@ -3,7 +3,7 @@ import pathlib
 def models_list():
     model_ids = [
         ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", "TinyLlama-1.1B-Chat-v1.0"),
-        # ("databricks/dolly-v2-3b", "dolly-v2-3b"), # not free disk space on CI machine
+        # ("databricks/dolly-v2-3b", "dolly-v2-3b"), # no free disk space lefton CI machine
         # ("microsoft/phi-1_5", "phi-1_5/"),
         # ("google/gemma-2b-it", "gemma-2b-it"),
         # ("google/gemma-7b-it", "gemma-7b-it"),
@@ -11,10 +11,8 @@ def models_list():
         # ("meta-llama/Llama-2-13b-chat-hf", "Llama-2-13b-chat-hf"),
         # ("openlm-research/open_llama_3b", "open_llama_3b"),
         # ("openlm-research/open_llama_7b", "open_llama_7b"),
+        # ("databricks/dolly-v2-3b", "dolly-v2-3b"),   #  Please check that openvino_tokenizer.xml and openvino_detokenizer.xml exist
         # ("databricks/dolly-v2-12b", "dolly-v2-12b"),
-        # ("mistralai/Mistral-7B-v0.1", "Mistral-7B-v0.1"),
-        # ("ikala/redpajama-3b-chat", "redpajama-3b-chat"),
-        # ("Qwen/Qwen1.5-7B-Chat", "Qwen1.5-7B-Chat"),
     ]
     import os
     prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))

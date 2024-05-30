@@ -163,6 +163,7 @@ public:
     GenerationConfig m_generation_config;
     std::string m_chat_template = "";
     bool is_chat_conversation = false;
+    bool m_is_cache_empty = true;
 
     LLMPipelineImpl(
         const ov::InferRequest& request, 
@@ -204,11 +205,9 @@ public:
             if (is_chat_conversation)
                 text = apply_chat_template(text);
 
-            
             // previous prompt generation in chat dialog stops with the end of sentence token, 
             // need to append this token to the current prompt
-            auto kv_cache_len = m_model_runner.query_state()[0].get_state().get_shape()[2];
-            if (is_chat_conversation && kv_cache_len > 0)
+            if (is_chat_conversation && !m_is_cache_empty)
                 text = config.eos_token + text;
             
             auto res = m_tokenizer.encode(text);
@@ -300,7 +299,8 @@ public:
 
         if (!is_chat_conversation)
             m_model_runner.reset_state();
-
+        
+        m_is_cache_empty = false;
         return result;        
     }
 
@@ -454,15 +454,18 @@ std::string ov::genai::LLMPipeline::apply_chat_template(std::string prompt, std:
 
 void ov::genai::LLMPipeline::start_chat() {
     m_pimpl->is_chat_conversation = true;
+    if (!m_pimpl->m_is_cache_empty) {
+        m_pimpl->m_model_runner.reset_state();
+        m_pimpl->m_is_cache_empty = true;
+    }
 }
 
 void ov::genai::LLMPipeline::finish_chat() {
     m_pimpl->is_chat_conversation = false;
-    reset_state();
-}
-
-void ov::genai::LLMPipeline::reset_state() {
-    m_pimpl->m_model_runner.reset_state();
+    if (!m_pimpl->m_is_cache_empty) {
+        m_pimpl->m_model_runner.reset_state();
+        m_pimpl->m_is_cache_empty = true;
+    }
 }
 
 void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& generation_config) {
