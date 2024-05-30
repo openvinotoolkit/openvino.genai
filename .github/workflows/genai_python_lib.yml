@@ -3,7 +3,7 @@ on: pull_request
 jobs:
   ubuntu_genai_python_lib:
     # A tokenizers' dependency fails to compile on ubuntu-20 n CenOS7 env
-    runs-on: ubuntu-22.04-16-cores
+    runs-on: ubuntu-22.04
     env:
       # A tokenizers' dependency fails to compile with Ninja in CenOS7 env
       CMAKE_GENERATOR: Unix Makefiles
