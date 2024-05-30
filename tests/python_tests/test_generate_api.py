@@ -12,6 +12,7 @@ import transformers
 from list_test_models import models_list
 from typing import Union, List, Dict
 
+
 @functools.lru_cache(1)
 def read_model(params):
     model_id, path = params
@@ -96,7 +97,6 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
     import openvino_genai as ov_genai
     pipe = ov_genai.LLMPipeline(str(path), device)
 
-
     ov_output = pipe.generate(prompt, **config)
     if config.get('num_return_sequences', 1) > 1:
         ov_output = ov_output[0]
@@ -143,7 +143,7 @@ batched_prompts = [['table is made of', 'They sky is blue because', 'Difference 
 @pytest.mark.parametrize("prompts", batched_prompts)
 @pytest.mark.parametrize("model_descr", models_list())
 def test_multibatch(model_descr, generation_config, prompts):
-     generation_config['pad_token_id'] = 2
+    generation_config['pad_token_id'] = 2
     run_hf_ov_genai_comparison_batched(read_model(model_descr), generation_config, prompts)
 
 
@@ -275,6 +275,13 @@ def test_streamer_kwargs_batch_fail():
 def test_operator_wit_callback_one_string(callback):
     pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
     pipe('', openvino_genai.GenerationConfig(), callback)
+
+
+@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+def test_operator_wit_callback_batch_fail(callback):
+    pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
+    with pytest.raises(Exception):
+        pipe(['1', '2'], openvino_genai.GenerationConfig(), callback)
 
 
 def test_operator_wit_streamer_kwargs_one_string():
