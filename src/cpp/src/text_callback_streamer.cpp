@@ -49,20 +49,6 @@ void TextCallbackStreamer::end() {
     on_finalized_text(res.str());
 }
 
-// void TextCallbackStreamer::set_tokenizer(Tokenizer tokenizer) {
-//     this->m_tokenizer = tokenizer;
-// }
-
-// void TextCallbackStreamer::set_callback(std::function<void (std::string)> callback) {
-//     on_decoded_text_callback = callback;
-//     m_enabled = true;
-// }
-
-// void TextCallbackStreamer::set_callback() {
-//     on_decoded_text_callback = [](std::string words){};
-//     m_enabled = false;
-// }
-
 void TextCallbackStreamer::on_finalized_text(const std::string& subword) {
     if (m_enabled) {
         on_decoded_text_callback(subword);

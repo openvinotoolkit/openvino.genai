@@ -15,12 +15,7 @@ public:
     void end() override;
 
     TextCallbackStreamer(const Tokenizer& tokenizer, std::function<void(std::string)> callback, bool print_eos_token = false);
-    // ~TextCallbackStreamer() = default;
-
-    // void set_tokenizer(Tokenizer tokenizer);
-    // void set_callback(std::function<void (std::string)> callback);
-    // void set_callback();
-    
+   
     std::function<void (std::string)> on_decoded_text_callback = [](std::string words){};
     bool m_enabled = false;
     int64_t m_eos_token;
