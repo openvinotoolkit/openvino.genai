@@ -16,17 +16,17 @@ from typing import Union, List, Dict
 def read_model(params):
     model_id, path = params
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
     model = optimum.intel.openvino.OVModelForCausalLM.from_pretrained(model_id, export=True, device='CPU', load_in_8bit=False)
     if not (path / 'openvino_model.xml').is_file():
-        model.save_pretrained(path)
+        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
         openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
         openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
+        model.save_pretrained(path)
     return model_id, path, tokenizer, model
 
 
-def run_hf_ov_genai_comparison_batched(model_fixture, generation_config: Dict, prompts: Union[str, List[str]]):
-    model_id, path, tokenizer, model = model_fixture
+def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, prompts: Union[str, List[str]]):
+    model_id, path, tokenizer, model = model_descr
     device = 'CPU'
 
     config = generation_config.copy()  # to avoid side effects
@@ -138,7 +138,7 @@ batched_prompts = [['table is made of', 'They sky is blue because', 'Difference 
 @pytest.mark.parametrize("prompts", batched_prompts)
 @pytest.mark.parametrize("model_descr", models_list())
 def test_multibatch(model_descr, generation_config, prompts):
-    run_hf_ov_genai_comparison_batched(model_descr, generation_config, prompts)
+    run_hf_ov_genai_comparison_batched(read_model(model_descr), generation_config, prompts)
 
 
 prompts = ['The Sun is yellow because', 'Alan Turing was a', 'table is made of']
