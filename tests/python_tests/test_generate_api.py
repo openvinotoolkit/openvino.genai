@@ -170,11 +170,11 @@ def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
     if (stop_criteria == 'early' and max_new_tokens >= 300):
         pytest.skip()
     generation_config = dict(
-        num_beam_groups=2,
-        num_beams=2 * 3,
-        diversity_penalty=1.0,
-        num_return_sequences=2 * 3,
-        max_new_tokens=max_new_tokens,
+        num_beam_groups=2, 
+        num_beams=2 * 3, 
+        diversity_penalty=1.0, 
+        num_return_sequences=2 * 3, 
+        max_new_tokens=max_new_tokens, 
         stop_criteria=stop_criteria,
     )
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
