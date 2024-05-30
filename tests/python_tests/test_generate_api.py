@@ -21,7 +21,7 @@ def read_model(params):
         openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
         openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
         optimum.intel.openvino.OVModelForCausalLM.from_pretrained(model_id, export=True, device='CPU', load_in_8bit=False).save_pretrained(path)
-    # Return AutoModelForCausalLM instead of OVModelForCausalLM to fit GitHub Runner memory
+    # Return AutoModelForCausalLM instead of OVModelForCausalLM to fit GitHub Runner memory.
     return model_id, path, tokenizer, transformers.AutoModelForCausalLM.from_pretrained(model_id)
 
 
