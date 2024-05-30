@@ -62,7 +62,6 @@ void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attenti
         for (size_t i = 0; i < seq_length; i++) {
             const size_t element_offset = batch * seq_length + i;
             position_ids_data[element_offset] = sum;
-            // sum += 1;
             if (attention_mask_data[element_offset] == 1) {
                 sum += 1;
             }

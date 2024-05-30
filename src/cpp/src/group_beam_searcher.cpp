@@ -91,7 +91,7 @@ struct Parameters {
     size_t group_size = 5;
     float diversity_penalty = 1.0;
     size_t max_new_tokens = 20;
-    ov::genai::StopCriteria stop_criteria = ov::genai::StopCriteria::heuristic;
+    ov::genai::StopCriteria stop_criteria = ov::genai::StopCriteria::HEURISTIC;
     float length_penalty = 1.0;
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
 
@@ -128,15 +128,15 @@ struct Group {
         float best_sum_logprobs = ongoing.front().score;
         float worst_score = min_heap.front().score;
         switch (parameters.stop_criteria) {
-        case ov::genai::StopCriteria::early:
+        case ov::genai::StopCriteria::EARLY:
             done = true;
             return;
-        case ov::genai::StopCriteria::heuristic: {
+        case ov::genai::StopCriteria::HEURISTIC: {
             float highest_attainable_score = best_sum_logprobs / std::pow(float(cur_len), parameters.length_penalty);
             done = worst_score >= highest_attainable_score;
             return;
         }
-        case ov::genai::StopCriteria::never: {
+        case ov::genai::StopCriteria::NEVER: {
             size_t length = parameters.length_penalty > 0.0 ? parameters.max_new_tokens : cur_len;
             float highest_attainable_score = best_sum_logprobs / std::pow(float(length), parameters.length_penalty);
             done = worst_score >= highest_attainable_score;

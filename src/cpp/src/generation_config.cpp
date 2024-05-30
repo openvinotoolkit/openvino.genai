@@ -44,11 +44,11 @@ GenerationConfig::GenerationConfig(std::string json_path) {
     if (data.contains("early_stopping")) {
         auto field_type = data["early_stopping"].type();
         if (field_type == nlohmann::json::value_t::string && data["early_stopping"] == "never") {
-            stop_criteria = StopCriteria::never;
+            stop_criteria = StopCriteria::NEVER;
         } else if (field_type == nlohmann::json::value_t::boolean && data["early_stopping"] == true) {
-            stop_criteria = StopCriteria::early;
+            stop_criteria = StopCriteria::EARLY;
         } else if (field_type == nlohmann::json::value_t::boolean && data["early_stopping"] == false) {
-            stop_criteria = StopCriteria::heuristic;
+            stop_criteria = StopCriteria::HEURISTIC;
         }
     }
 

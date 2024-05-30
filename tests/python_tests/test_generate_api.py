@@ -6,11 +6,11 @@ import openvino
 import openvino_genai
 import openvino_tokenizers
 import optimum.intel
+from openvino_genai import StopCriteria
 import pytest
 import transformers
 from list_test_models import models_list
 from typing import Union, List, Dict
-
 
 @functools.lru_cache(1)
 def read_model(params):
@@ -69,7 +69,6 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
     ov_outputs.sort()
     for i, (hf_output, ov_output) in enumerate(zip(hf_outputs, ov_outputs)):
         if hf_output != ov_output:
-            print(f'Prompt {i}:')
             print(f'hf_output: {hf_output}')
             print(f'ov_output: {ov_output}')
         assert hf_output == ov_output
@@ -87,9 +86,6 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
         config['do_sample'] = False
     
     generation_config_hf = config.copy()
-    # in OpenVINO GenAI this parameter is called stop_criteria,
-    # while in HF it's called early_stopping. 
-    # HF values True, False and "never" correspond to OV GenAI values "early", "heuristic" and "never"
     if generation_config_hf.get('stop_criteria'):
         generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
 
@@ -106,7 +102,6 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
         ov_output = ov_output[0]
 
     if hf_output != ov_output:
-        print(f'{prompt=}')
         print(f'hf_output: {hf_output}')
         print(f'ov_output: {ov_output}')
 
@@ -114,10 +109,18 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
 
 
 def stop_criteria_map():
-    return {"never": "never", "early": True, "heuristic": False}
+    # in OpenVINO GenAI this parameter is called stop_criteria,
+    # while in HF it's called early_stopping. 
+    # HF values True, False and "never" correspond to OV GenAI values "EARLY", "HEURISTIC" and "NEVER"
+    return {
+        StopCriteria.NEVER: "never", 
+        StopCriteria.EARLY: True, 
+        StopCriteria.HEURISTIC: False
+    }
+
 
 test_cases = [
-    (dict(max_new_tokens=20, do_sample=False), 'table is made of'),  # generation_config, prompt
+    (dict(max_new_tokens=20), 'table is made of'),  # generation_config, prompt
     (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0), 'Alan Turing was a'),
     (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
     (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
@@ -129,25 +132,26 @@ test_cases = [
 def test_decoding(model_descr, generation_config, prompt):
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
+
 test_configs = [
-    dict(max_new_tokens=20, do_sample=False),
-    dict(num_beam_groups=3, num_beams=15, max_new_tokens=20, diversity_penalty=1.0)
+    dict(max_new_tokens=20),
+    dict( max_new_tokens=20, num_beam_groups=3, num_beams=15,diversity_penalty=1.0)
 ]
-batched_prompts = [['table is made of', 'They sky is blue because', 'Difference between Jupiter and Marks is that']
-                   ,['hello', 'Here is the longest nowel ever: ']]
+batched_prompts = [['table is made of', 'They sky is blue because', 'Difference between Jupiter and Marks is that'],
+                   ['hello', 'Here is the longest nowel ever: ']]
 @pytest.mark.parametrize("generation_config", test_configs)
 @pytest.mark.parametrize("prompts", batched_prompts)
 @pytest.mark.parametrize("model_descr", models_list())
-@pytest.mark.skip(reason="hf_output == ov_output fails")
 def test_multibatch(model_descr, generation_config, prompts):
+     generation_config['pad_token_id'] = 2
     run_hf_ov_genai_comparison_batched(read_model(model_descr), generation_config, prompts)
 
 
-prompts = ['The Sun is yellow because', 'Alan Turing was a', 'table is made of']
+prompts = ['The Sun is yellow because', 'Difference between Jupiter and Marks is that', 'table is made of']
 @pytest.mark.parametrize("num_beam_groups", [2, 3, 8])
 @pytest.mark.parametrize("group_size", [5, 3, 10])
 @pytest.mark.parametrize("max_new_tokens", [20, 15])
-@pytest.mark.parametrize("diversity_penalty", [1.0, 1.5])
+@pytest.mark.parametrize("diversity_penalty", [1.0 , 1.5])
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize("model_descr", models_list())
 def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
@@ -162,13 +166,13 @@ def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
 
-@pytest.mark.parametrize("stop_criteria", ["never", "early"])  # "heuristic" fails for 300 max_new_tokens
+@pytest.mark.parametrize("stop_criteria", [StopCriteria.NEVER, StopCriteria.EARLY])  # StopCriteria.HEURISTIC fails for 300 max_new_tokens
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize("max_new_tokens", [20, 40, 300])
 @pytest.mark.parametrize("model_descr", models_list())
 def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
     # todo: for long sentences early stop_criteria fails
-    if (stop_criteria == 'early' and max_new_tokens >= 300):
+    if (stop_criteria == StopCriteria.EARLY and max_new_tokens >= 300):
         pytest.skip()
     generation_config = dict(
         num_beam_groups=2, 
@@ -235,7 +239,8 @@ class Printer(openvino_genai.StreamerBase):
         super().__init__()
         self.tokenizer = tokenizer
     def put(self, token_id):
-        print(self.tokenizer.decode([token_id]))  # Incorrect way to print, but easy to implement
+        # print(self.tokenizer.decode([token_id]))  # Incorrect way to print, but easy to implement
+        print(token_id)  # print only token because self.tokenizer.decode([token_id]) are not implemented yet
     def end(self):
         print('end')
 

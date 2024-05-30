@@ -14,9 +14,7 @@ if(NOT pybind11_POPULATED)
     add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
 endif()
 
-# to be able to use utils.hpp in pybind
-include_directories(${CMAKE_SOURCE_DIR}/src/cpp/src/)
-pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp ${CMAKE_SOURCE_DIR}/src/cpp/src/utils.cpp)
+pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
 target_link_libraries(py_generate_pipeline PRIVATE openvino::genai nlohmann_json::nlohmann_json)
 set_target_properties(py_generate_pipeline PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
