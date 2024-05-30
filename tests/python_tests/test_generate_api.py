@@ -96,7 +96,7 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
 
     import openvino_genai as ov_genai
     pipe = ov_genai.LLMPipeline(str(path), device)
-
+    
     ov_output = pipe.generate(prompt, **config)
     if config.get('num_return_sequences', 1) > 1:
         ov_output = ov_output[0]
@@ -280,7 +280,7 @@ def test_operator_wit_callback_one_string(callback):
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 def test_operator_wit_callback_batch_fail(callback):
     pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
-    with pytest.raises(Exception):
+    with pytest.raises(TypeError):
         pipe(['1', '2'], openvino_genai.GenerationConfig(), callback)
 
 
