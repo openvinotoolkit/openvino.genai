@@ -17,10 +17,11 @@ def read_model(params):
     model_id, path = params
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
-    openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
-    openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
     model = optimum.intel.openvino.OVModelForCausalLM.from_pretrained(model_id, export=True, device='CPU', load_in_8bit=False)
-    model.save_pretrained(path)
+    if not (path / 'openvino_model.xml').is_file():
+        model.save_pretrained(path)
+        openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
+        openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
     return model_id, path, tokenizer, model
 
 
