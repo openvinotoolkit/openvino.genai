@@ -25,7 +25,7 @@ using StringInputs = std::variant<std::string, std::vector<std::string>>;
 * @param tokens sequence of resulting tokens
 * @param scores scores for each sequence
 */
-class OPENVINO_GENAI_EXPORTS EncodedResults {
+class EncodedResults {
 public:
     std::vector<std::vector<int64_t>> tokens;
     std::vector<float> scores;
@@ -37,7 +37,7 @@ public:
 * @param texts vector of resulting sequences
 * @param scores scores for each sequence
 */
-class OPENVINO_GENAI_EXPORTS DecodedResults {
+class DecodedResults {
 public:
     std::vector<std::string> texts;
     std::vector<float> scores;
