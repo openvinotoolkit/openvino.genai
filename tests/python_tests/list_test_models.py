@@ -3,7 +3,7 @@ import pathlib
 def models_list():
     model_ids = [
         ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", "TinyLlama-1.1B-Chat-v1.0"),
-        ("microsoft/phi-1_5", "phi-1_5/"),
+        # ("microsoft/phi-1_5", "phi-1_5/"),
 
         # ("google/gemma-2b-it", "gemma-2b-it"),
         # ("google/gemma-7b-it", "gemma-7b-it"),
