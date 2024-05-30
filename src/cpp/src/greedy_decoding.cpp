@@ -63,8 +63,6 @@ EncodedResults greedy_decoding(
     auto beam_data = m_model_runner.get_tensor("beam_idx").data<int32_t>();
     std::iota(beam_data, beam_data + running_batch_size, 0);
 
-    size_t max_tokens = generation_config.get_max_new_tokens(prompt_len);
-
     m_model_runner.infer();
     auto logits = m_model_runner.get_tensor("logits");
     ov::Shape logits_shape = logits.get_shape();
@@ -88,6 +86,7 @@ EncodedResults greedy_decoding(
     if (!generation_config.ignore_eos && all_are_eos)
         return results;
     
+    size_t max_tokens = generation_config.get_max_new_tokens(prompt_len);
     for (size_t i = 0; i < max_tokens - 1; ++i) {
         utils::update_position_ids(m_model_runner.get_tensor("position_ids"), m_model_runner.get_tensor("attention_mask"));
         m_model_runner.set_tensor("attention_mask", utils::extend_attention(m_model_runner.get_tensor("attention_mask")));

@@ -6,7 +6,6 @@
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
 #include "openvino/genai/llm_pipeline.hpp"
-#include "utils.hpp"
 
 #ifdef _WIN32
 #    include <windows.h>
@@ -35,6 +34,47 @@ std::string get_absolute_file_path(const std::string& path) {
 }
 #endif
 
+namespace {
+
+// dublicates GenAIEnvManager from ov::genai::utils, since 
+// it was problematic getting access to that on Win
+
+const char* get_tokenizers_env_name() { return "OPENVINO_TOKENIZERS_PATH_GENAI"; }
+
+class GenAIEnvManager {
+public:
+    GenAIEnvManager(const std::string& path) {
+        #ifdef _WIN32
+        char* value = nullptr;
+        size_t len = 0;
+        _dupenv_s(&value, &len, ::get_tokenizers_env_name());
+        if (value == nullptr)
+            _putenv_s(::get_tokenizers_env_name(), path.c_str());
+        #else
+        if (!getenv(::get_tokenizers_env_name()))
+            setenv(::get_tokenizers_env_name(), path.c_str(), 1);
+        #endif
+        else
+            was_already_set = true;
+    }
+
+    ~GenAIEnvManager() {
+        if (!was_already_set){
+        #ifdef _WIN32
+            _putenv_s(::get_tokenizers_env_name(), "");
+        #else
+            unsetenv(::get_tokenizers_env_name());
+        #endif
+        }
+    }
+
+private:
+    bool was_already_set;
+};
+
+}
+
+
 namespace py = pybind11;
 using ov::genai::LLMPipeline;
 using ov::genai::Tokenizer;
@@ -44,24 +84,9 @@ using ov::genai::DecodedResults;
 using ov::genai::StopCriteria;
 using ov::genai::StreamerBase;
 using ov::genai::StreamerVariant;
+using ov::genai::OptionalGenerationConfig;
 
 namespace {
-void str_to_stop_criteria(GenerationConfig& config, const std::string& stop_criteria_str){
-    if (stop_criteria_str == "early") config.stop_criteria = StopCriteria::early;
-    else if (stop_criteria_str == "never") config.stop_criteria =  StopCriteria::never;
-    else if (stop_criteria_str == "heuristic") config.stop_criteria =  StopCriteria::heuristic;
-    else OPENVINO_THROW(stop_criteria_str + " is incorrect value of stop_criteria. "
-                       "Allowed values are: \"early\", \"never\", \"heuristic\". ");
-}
-
-std::string stop_criteria_to_str(const GenerationConfig& config) {
-    switch (config.stop_criteria) {
-        case StopCriteria::early: return "early";
-        case StopCriteria::heuristic: return "heuristic";
-        case StopCriteria::never: return "never";
-        default: throw std::runtime_error("Incorrect stop_criteria");
-    }
-}
 
 void update_config_from_kwargs(GenerationConfig& config, const py::kwargs& kwargs) {
     if (kwargs.contains("max_new_tokens")) config.max_new_tokens = kwargs["max_new_tokens"].cast<size_t>();
@@ -73,7 +98,7 @@ void update_config_from_kwargs(GenerationConfig& config, const py::kwargs& kwarg
     if (kwargs.contains("length_penalty")) config.length_penalty = kwargs["length_penalty"].cast<float>();
     if (kwargs.contains("num_return_sequences")) config.num_return_sequences = kwargs["num_return_sequences"].cast<size_t>();
     if (kwargs.contains("no_repeat_ngram_size")) config.no_repeat_ngram_size = kwargs["no_repeat_ngram_size"].cast<size_t>();
-    if (kwargs.contains("stop_criteria")) str_to_stop_criteria(config, kwargs["stop_criteria"].cast<std::string>());
+    if (kwargs.contains("stop_criteria")) config.stop_criteria = kwargs["stop_criteria"].cast<StopCriteria>();
     if (kwargs.contains("temperature")) config.temperature = kwargs["temperature"].cast<float>();
     if (kwargs.contains("top_p")) config.top_p = kwargs["top_p"].cast<float>();
     if (kwargs.contains("top_k")) config.top_k = kwargs["top_k"].cast<size_t>();
@@ -152,6 +177,7 @@ std::string ov_tokenizers_module_path() {
     }
     return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
 }
+
 class EmptyStreamer: public StreamerBase {
     // It's impossible to create an instance of pure virtual class. Define EmptyStreamer instead.
     void put(int64_t token) override {
@@ -166,35 +192,101 @@ class EmptyStreamer: public StreamerBase {
         PYBIND11_OVERRIDE_PURE(void, StreamerBase, end);
     }
 };
+
+ov::InferRequest& get_request_from_pyobj(py::object obj) {
+    py::str obj_type = py::str(obj.get_type());
+    // todo: InferRequest is not accessible from the outside.
+    // obj_type is openvino._pyopenvino.InferRequest,
+    // which is a pybind binding to InferRequestWrapper (InferRequest is in a m_request field of the latest)
+    // and the definition of InferRequestWrapper is not accessible from the outside.
+
+    if (py::isinstance<ov::InferRequest>(obj)) {
+        // Directly return the casted object without copying
+        return obj.cast<ov::InferRequest&>();
+    } else {
+        throw std::invalid_argument("Provided object is not castable to ov::InferRequest");
+    }
 }
+
+} // namespace
+
 
 PYBIND11_MODULE(py_generate_pipeline, m) {
     m.doc() = "Pybind11 binding for LLM Pipeline";
 
     py::class_<LLMPipeline>(m, "LLMPipeline")
-        .def(py::init<const std::string, const Tokenizer&, const std::string, const ov::AnyMap&>(), 
-             py::arg("model_path"), py::arg("tokenizer"), py::arg("device") = "CPU", 
-             py::arg("plugin_config") = ov::AnyMap{})
         .def(py::init([](const std::string& model_path, 
-                         const std::string& device,
-                         const ov::AnyMap& plugin_config) {
-            ov::genai::utils::GenAIEnvManager env_manager(ov_tokenizers_module_path());
-            return std::make_unique<LLMPipeline>(model_path, device, plugin_config);}),
+                            const std::string& device) {
+            ::GenAIEnvManager env_manager(ov_tokenizers_module_path());
+            return std::make_unique<LLMPipeline>(model_path, device);}),
         py::arg("model_path"), "path to the model path", 
         py::arg("device") = "CPU", "device on which inference will be done",
-        py::arg("plugin_config") = ov::AnyMap(), 
-        "LLMPipeline class constructor.\n"
-        "    model_path (str): Path to the model file.\n"
-        "    device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.\n"
-        "    plugin_config (ov::AnyMap): Plugin configuration settings. Default is an empty.")
-        
-        .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
-        .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&, const StreamerVariant&>(&call_with_config))
-        
+        R"(
+            LLMPipeline class constructor.
+            model_path (str): Path to the model file.
+            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+        )")
+
+        .def(py::init<const std::string, const Tokenizer&, const std::string>(), 
+        py::arg("model_path"),
+        py::arg("tokenizer"),
+        py::arg("device") = "CPU",
+        R"(
+            LLMPipeline class constructor for manualy created openvino_genai.Tokenizer.
+            model_path (str): Path to the model file.
+            tokenizer (openvino_genai.Tokenizer): tokenizer object.
+            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+        )")
+
+        .def(py::init([](py::object infer_request, 
+                            const Tokenizer& tokenizer,
+                            OptionalGenerationConfig config) {
+            ::GenAIEnvManager env_manager(ov_tokenizers_module_path());
+            return std::make_unique<LLMPipeline>(get_request_from_pyobj(infer_request), tokenizer, config);
+        }),
+        py::arg("infer_request"), "infer_request", 
+        py::arg("tokenizer"), "openvino_genai.Tokenizer object",
+        py::arg("config"), "device on which inference will be done")
+        .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs),
+        R"(
+            max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
+                        `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
+            max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
+            ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
+            pad_token_id:  token_id of <pad> (padding)
+            bos_token_id:  token_id of <bos> (beggining of sentence)
+            eos_token_id:  token_id of <eos> (end of sentence)
+            bos_token:     <bos> token string representation
+            eos_token:     <eos> token string representation
+            
+            Beam search specific parameters:
+            num_beams:         number of beams for beam search. 1 disables beam search.
+            num_beam_groups:   number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
+            diversity_penalty: value is subtracted from a beam's score if it generates the same token as any beam from other group at a particular time.
+            length_penalty:    exponential penalty to the length that is used with beam-based generation. It is applied as an exponent to
+                the sequence length, which in turn is used to divide the score of the sequence. Since the score is the log
+                likelihood of the sequence (i.e. negative), `length_penalty` > 0.0 promotes longer sequences, while
+                `length_penalty` < 0.0 encourages shorter sequences.
+            num_return_sequences: the number of sequences to return for grouped beam search decoding.
+            no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
+            stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values: 
+                "EARLY", where the generation stops as soon as there are `num_beams` complete candidates; "HEURISTIC", where an 
+                "HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
+                "NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
+            
+            Random sampling parameters:
+            temperature:        the value used to modulate token probabilities for random sampling.
+            top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
+            top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
+            do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
+            repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
+        )")
         .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, const py::kwargs&>(&call_with_kwargs))
         .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, const GenerationConfig&, const StreamerVariant&>(&call_with_config))
-        .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
         .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&, const StreamerVariant&>(&call_with_config))
+
+        .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
+        .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&, const StreamerVariant&>(&call_with_config))
         
         // todo: if input_ids is a ov::Tensor/numpy tensor
 
@@ -206,19 +298,24 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("apply_chat_template", &LLMPipeline::apply_chat_template);
 
      // Binding for Tokenizer
-    py::class_<Tokenizer>(m, "Tokenizer")
+    py::class_<Tokenizer>(m, "Tokenizer",
+        R"(openvino_genai.Tokenizer object is used to to initialize tokenizer if it's located in different path 
+        that the main model.)")
         .def(py::init<>())
         .def(py::init<std::string&, const std::string&>(), 
-             py::arg("tokenizers_path"), 
-             py::arg("device") = "CPU")
+                py::arg("tokenizers_path"), 
+                py::arg("device") = "CPU");
 
-        // todo: implement encode/decode when for numpy inputs and outputs
-        .def("encode", py::overload_cast<const std::string>(&Tokenizer::encode), "Encode a single prompt")
-        // TODO: common.h(1106...) template argument deduction/substitution failed:
-        // .def("encode", py::overload_cast<std::vector<std::string>&>(&Tokenizer::encode), "Encode multiple prompts")
-        .def("decode", py::overload_cast<std::vector<int64_t>>(&Tokenizer::decode), "Decode a list of tokens")
-        .def("decode", py::overload_cast<ov::Tensor>(&Tokenizer::decode), "Decode a tensor of tokens")
-        .def("decode", py::overload_cast<std::vector<std::vector<int64_t>>>(&Tokenizer::decode), "Decode multiple lines of tokens");
+    // Binding for StopCriteria
+    py::enum_<StopCriteria>(m, "StopCriteria",
+        R"(StopCriteria controls the stopping condition for grouped beam search. The following values are possible:
+            "EARLY" stops as soon as there are `num_beams` complete candidates.
+            "HEURISTIC" stops when is it unlikely to find better candidates.
+            "NEVER" stops when there cannot be better candidates.)")
+        .value("EARLY", StopCriteria::EARLY)
+        .value("HEURISTIC", StopCriteria::HEURISTIC)
+        .value("NEVER", StopCriteria::NEVER)
+        .export_values();
 
      // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig")
@@ -233,7 +330,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("length_penalty", &GenerationConfig::length_penalty)
         .def_readwrite("num_return_sequences", &GenerationConfig::num_return_sequences)
         .def_readwrite("no_repeat_ngram_size", &GenerationConfig::no_repeat_ngram_size)
-        .def_property("stop_criteria", &stop_criteria_to_str, &str_to_stop_criteria)
+        .def_readwrite("stop_criteria", &GenerationConfig::stop_criteria)
         .def_readwrite("temperature", &GenerationConfig::temperature)
         .def_readwrite("top_p", &GenerationConfig::top_p)
         .def_readwrite("top_k", &GenerationConfig::top_k)

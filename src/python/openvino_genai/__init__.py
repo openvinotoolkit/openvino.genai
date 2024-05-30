@@ -9,6 +9,14 @@ from .__version__ import __version__
 if hasattr(os, "add_dll_directory"):
     os.add_dll_directory(os.path.dirname(__file__))
 
-from .py_generate_pipeline import LLMPipeline, Tokenizer, GenerationConfig, DecodedResults, EncodedResults, StreamerBase
+from .py_generate_pipeline import LLMPipeline, Tokenizer, GenerationConfig, DecodedResults, EncodedResults, StreamerBase, StopCriteria
 
-__all__ = ['LLMPipeline', 'Tokenizer', 'GenerationConfig', 'DecodedResults', 'EncodedResults', 'StreamerBase']
+__all__ = [
+    'LLMPipeline', 
+    'Tokenizer', 
+    'GenerationConfig', 
+    'DecodedResults', 
+    'EncodedResults',
+    'StreamerBase', 
+    'StopCriteria'
+]

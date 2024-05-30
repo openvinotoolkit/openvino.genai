@@ -16,11 +16,11 @@ namespace genai {
 
 /**
  * @brief controls the stopping condition for grouped beam search. The following values are possible:
- *        "early" stops as soon as there are `num_beams` complete candidates.
-          "heuristic" stops when is it unlikely to find better candidates.
-          "never" stops when there cannot be better candidates.
+ *        "EARLY" stops as soon as there are `num_beams` complete candidates.
+          "HEURISTIC" stops when is it unlikely to find better candidates.
+          "NEVER" stops when there cannot be better candidates.
  */
-enum class StopCriteria { early, heuristic, never };
+enum class StopCriteria { EARLY, HEURISTIC, NEVER };
 
 /**
  * @brief Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
@@ -50,9 +50,9 @@ enum class StopCriteria { early, heuristic, never };
  * @param num_return_sequences the number of sequences to return for grouped beam search decoding.
  * @param no_repeat_ngram_size if set to int > 0, all ngrams of that size can only occur once.
  * @param stop_criteria controls the stopping condition for grouped beam search. It accepts the following values: 
- *        "early", where the generation stops as soon as there are `num_beams` complete candidates; "heuristic", where an 
- *        heuristic is applied and the generation stops when is it very unlikely to find better candidates;
- *        "never", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
+ *        "EARLY", where the generation stops as soon as there are `num_beams` complete candidates; "HEURISTIC", where an 
+ *        "HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
+ *        "NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
  * 
  * Random sampling parameters:
  * @param temperature the value used to modulate token probabilities for random sampling.
@@ -78,7 +78,7 @@ public:
     float length_penalty = 1.0f;
     size_t num_return_sequences = 1;
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
-    StopCriteria stop_criteria = StopCriteria::heuristic;
+    StopCriteria stop_criteria = StopCriteria::HEURISTIC;
     
     // Multinomial
     float temperature = 1.0f;

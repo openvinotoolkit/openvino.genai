@@ -15,33 +15,6 @@
 #include "utils.hpp"
 #include "text_callback_streamer.hpp"
 
-#ifdef _WIN32
-#    include <windows.h>
-#    define MAX_ABS_PATH _MAX_PATH
-#    define get_absolute_path(result, path) _fullpath(result, path.c_str(), MAX_ABS_PATH)
-#else
-#    include <dlfcn.h>
-#    include <limits.h>
-#    define MAX_ABS_PATH PATH_MAX
-#    define get_absolute_path(result, path) realpath(path.c_str(), result)
-namespace {
-std::string get_absolute_file_path(const std::string& path) {
-    std::string absolutePath;
-    absolutePath.resize(MAX_ABS_PATH);
-    std::ignore = get_absolute_path(&absolutePath[0], path);
-    if (!absolutePath.empty()) {
-        // on Linux if file does not exist or no access, function will return NULL, but
-        // `absolutePath` will contain resolved path
-        absolutePath.resize(absolutePath.find('\0'));
-        return std::string(absolutePath);
-    }
-    std::stringstream ss;
-    ss << "Can't get absolute file path for [" << path << "], err = " << strerror(errno);
-    throw std::runtime_error(ss.str());
-}
-}
-#endif
-
 namespace {
 
 const std::string STREAMER_ARG_NAME = "streamer";
@@ -84,30 +57,6 @@ std::string from_tokenizer_json_if_exists(const std::string& path) {
     
     ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
     return res;
-}
-
-
-
-std::string get_ov_genai_library_path() {
-#ifdef _WIN32
-    CHAR genai_library_path[MAX_PATH];
-    HMODULE hm = NULL;
-    if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                            reinterpret_cast<LPSTR>(get_ov_genai_library_path),
-                            &hm)) {
-        std::stringstream ss;
-        ss << "GetModuleHandle returned " << GetLastError();
-        throw std::runtime_error(ss.str());
-    }
-    GetModuleFileNameA(hm, (LPSTR)genai_library_path, sizeof(genai_library_path));
-    return std::string(genai_library_path);
-#elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
-    Dl_info info;
-    dladdr(reinterpret_cast<void*>(get_ov_genai_library_path), &info);
-    return get_absolute_file_path(info.dli_fname).c_str();
-#else
-#    error "Unsupported OS"
-#endif  // _WIN32
 }
 
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
@@ -194,6 +143,8 @@ public:
     ) {
         GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
         
+        auto old_pad_token_id = m_tokenizer.get_pad_token_id();
+        m_tokenizer.set_pad_token_id(config.pad_token_id);
 
         EncodedInputs encoded_input;
         if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
@@ -213,7 +164,6 @@ public:
             auto res = m_tokenizer.encode(text);
             auto input_ids = res.input_ids;
             auto attention_mask = res.attention_mask;
-
 
             // todo: W/A If sentence begins with a specfial tokens (<bos>, <s>, etc.) openvino_tokenizer inserts 2 special extra tokens <bos> and "▁",
             // but HF does not do that. Moreover openvino_tokenizer always inserts <bos> but in chat scenario HF does not do that because skip_special_tokens=True.
@@ -243,6 +193,7 @@ public:
             
             encoded_input = TokenizedInputs{input_ids, attention_mask};
         }
+        m_tokenizer.set_pad_token_id(old_pad_token_id);
         auto encoded_results  = generate(encoded_input, config, streamer);
         return {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
     }
@@ -284,8 +235,6 @@ public:
         if ((batch_size != 1 || !(config.is_greedy_decoding() || config.is_multinomial())) && streamer_ptr) {
             OPENVINO_THROW("Currently streaming is possible only with batch size=1 and greedy or multinomial decoding");
         }
-
-        // auto attention_mask_data = attention_mask.has_value() ? *attention_mask : ov::genai::utils::init_attention_mask(input_ids);
 
         if (config.is_greedy_decoding()) {
             result = ov::genai::greedy_decoding(m_model_runner, input_ids, attention_mask, config, streamer_ptr, is_chat_conversation);
@@ -431,13 +380,11 @@ ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
     const ov::AnyMap& config
 ): 
     m_model_runner{ov::Core{}.compile_model(path + "/openvino_model.xml", device, config).create_infer_request()}, 
+    m_tokenizer(path, device),
     m_generation_config{from_config_json_if_exists(path)},
     m_chat_template{from_tokenizer_json_if_exists(path)}
  {
-    ov::genai::utils::GenAIEnvManager env_manager(get_ov_genai_library_path());
-    m_tokenizer = Tokenizer(path, device);
  }
-
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
     return m_pimpl->m_generation_config;
