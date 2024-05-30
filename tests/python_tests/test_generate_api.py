@@ -12,7 +12,7 @@ from list_test_models import models_list
 from typing import Union, List, Dict
 
 @pytest.fixture(scope="module", params=models_list())
-@functools.lru_cache(1)
+# @functools.lru_cache(1)
 def model_fixture(request):
     model_id, path = request.param
     # tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
