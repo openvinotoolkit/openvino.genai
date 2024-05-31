@@ -171,7 +171,7 @@ def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
 
-@pytest.mark.parametrize("stop_criteria", [StopCriteria.NEVER, StopCriteria.EARLY])  # StopCriteria.HEURISTIC fails for 300 max_new_tokens
+@pytest.mark.parametrize("stop_criteria", [StopCriteria.NEVER, StopCriteria.HEURISTIC])  # StopCriteria.EARLY fails
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize("max_new_tokens", [10, 80])
 @pytest.mark.parametrize("model_descr", models_list())
