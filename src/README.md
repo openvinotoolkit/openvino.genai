@@ -150,7 +150,7 @@ public:
         return stop_flag;
     };
 
-    bool end() {
+    void end() {
         /* custom finalization */
     };
 };

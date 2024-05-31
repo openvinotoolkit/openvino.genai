@@ -123,8 +123,8 @@ test_cases = [
     (dict(max_new_tokens=20), 'table is made of'),  # generation_config, prompt
     (dict(max_new_tokens=20), '你好！ 你好嗎？'),  # generation_config, prompt
     (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0), 'Alan Turing was a'),
-    # (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
-    # (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
+    (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
+    (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
     (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'The Sun is yellow because'),
     (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.5), 'The Sun is yellow because'),
 ]
@@ -171,7 +171,7 @@ def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
 
-@pytest.mark.parametrize("stop_criteria", [StopCriteria.NEVER, StopCriteria.HEURISTIC])  # StopCriteria.EARLY fails
+@pytest.mark.parametrize("stop_criteria", [StopCriteria.NEVER, StopCriteria.EARLY, StopCriteria.HEURISTIC])
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize("max_new_tokens", [10, 80])
 @pytest.mark.parametrize("model_descr", models_list())
@@ -179,7 +179,7 @@ def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
 def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
     # todo: with EARLY stop_criteria looks like HF return unvalid out with sentence<eos><unk><unk>
     # while genai ends sentence with <eos>
-    if (stop_criteria == StopCriteria.EARLY and max_new_tokens >= 300):
+    if (stop_criteria == StopCriteria.EARLY):
         pytest.skip()
     generation_config = dict(
         num_beam_groups=2, 
