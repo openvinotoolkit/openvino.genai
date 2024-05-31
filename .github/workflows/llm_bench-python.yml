@@ -5,6 +5,7 @@ name: llm_bench Python Test
 
 env:
   LLM_BENCH_PYPATH: llm_bench/python
+  PYTHONPATH: ${{ github.workspace }}
 
 on:
   push:
