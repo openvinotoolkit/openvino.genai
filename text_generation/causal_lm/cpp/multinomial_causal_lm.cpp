@@ -24,6 +24,7 @@ int main(int argc, char* argv[]) try {
     config.top_k = 30;
     auto streamer = [](std::string subword) {
         std::cout << subword << std::flush;
+        return false;
     };
 
     // since streamer is set results will be printed each time a new token is generated

@@ -18,7 +18,7 @@ int main(int argc, char* argv[]) try {
     ov::genai::GenerationConfig config = pipe.get_generation_config();
     config.max_new_tokens = 100;
     config.do_sample = false;
-    auto streamer = [](std::string subword){std::cout << subword << std::flush;};
+    auto streamer = [](std::string subword){ std::cout << subword << std::flush; return false; };
     
     // since streamer is set results will be printed each time a new token is generated
     pipe.generate(prompt, config, streamer);
