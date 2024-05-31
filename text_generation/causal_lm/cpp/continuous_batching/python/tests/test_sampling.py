@@ -2,13 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import pytest
-
-from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, generate_and_compare_with_reference_text, get_greedy, get_beam_search, get_multinomial_temperature, get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, get_multinomial_temperature_top_p_and_top_k, DEFAULT_SCHEDULER_CONFIG, get_greedy_with_repetition_penalty, generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty
 from dataclasses import dataclass
-from py_continuous_batching import GenerationConfig, GenerationResult
 from pathlib import Path
+from py_continuous_batching import GenerationConfig, GenerationResult
 from typing import List
 
+from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, \
+    generate_and_compare_with_reference_text, get_greedy, get_beam_search, get_multinomial_temperature, \
+    get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \
+    get_multinomial_temperature_top_p_and_top_k, DEFAULT_SCHEDULER_CONFIG, get_greedy_with_repetition_penalty, \
+    generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty, get_scheduler_config
 
 
 @pytest.mark.precommit
@@ -42,19 +45,7 @@ def test_eos_beam_search(tmp_path):
     prompts = ["Tell me something about Canada"]
     generation_configs = [get_beam_search()]
     scheduler_config = get_scheduler_config()
-
-    (hf_results, model_path) = run_hugging_face(model_id=model_id, prompts=prompts,
-                                                generation_configs=generation_configs, tmp_path=tmp_path,
-                                                use_optimum=True)
-    ov_results: List[GenerationResult] = run_continuous_batching(model_path=model_path, scheduler_config=scheduler_config,
-                                                                 prompts=prompts, generation_configs=generation_configs)
-
-    assert len(prompts) == len(hf_results)
-    assert len(prompts) == len(ov_results)
-
-    for prompt, hf_result, ov_result, generation_config in zip(prompts, hf_results, ov_results, generation_configs):
-        print(f"Prompt = {prompt}\nHF result = {hf_result}\nOV result = {ov_result}")
-        compare_results(hf_result, ov_result, generation_config)
+    generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
 
 
 @pytest.mark.precommit
@@ -70,19 +61,7 @@ def test_eos_greedy(tmp_path):
     prompts = ["What is OpenVINO?"]
     generation_configs = [get_greedy()]
     scheduler_config = get_scheduler_config()
-
-    (hf_results, model_path) = run_hugging_face(model_id=model_id, prompts=prompts,
-                                                generation_configs=generation_configs, tmp_path=tmp_path,
-                                                use_optimum=True)
-    ov_results: List[GenerationResult] = run_continuous_batching(model_path=model_path, scheduler_config=scheduler_config,
-                                                                 prompts=prompts, generation_configs=generation_configs)
-
-    assert len(prompts) == len(hf_results)
-    assert len(prompts) == len(ov_results)
-
-    for prompt, hf_result, ov_result, generation_config in zip(prompts, hf_results, ov_results, generation_configs):
-        print(f"Prompt = {prompt}\nHF result = {hf_result}\nOV result = {ov_result}")
-        compare_results(hf_result, ov_result, generation_config)
+    generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("generation_config", [get_greedy(), get_beam_search(), get_greedy_with_repetition_penalty()],

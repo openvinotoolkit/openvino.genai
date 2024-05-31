@@ -91,6 +91,14 @@ def get_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
         # vLLM specific
         scheduler_config.max_num_batched_tokens = 256
         scheduler_config.max_num_seqs = 256
+
+        # Expedited number of blocks = text_blocks_n * G * n_prompts, where
+        # text_blocks_n - number of blocks required for storing prompt and generated text,
+        # currently it is 1 block for prompt (31 token with block_size 32) + 1 block for generated text (max length of generated text - 30 tokens);
+        # G - number of sequences in a sequence group, for beam search it is 2(group_size) * 3 (num_groups);
+        # n_prompts - number of prompts.
+        # For current parameters in tests expedited number of blocks is approximately 48.
+        scheduler_config.num_kv_blocks = 60
     else:
         for param, value in scheduler_params.items():
             setattr(scheduler_config, param, value)
@@ -258,7 +266,7 @@ def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = Non
         generation_config.rng_seed = 0
         generation_configs = [generation_config] * len(prompts)
 
-    _generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
+    generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
 
 
 DEFAULT_SCHEDULER_CONFIG = get_scheduler_config({"num_kv_blocks": 300, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256})
