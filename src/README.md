@@ -140,7 +140,7 @@ Streaming with a custom class
 
 class CustomStreamer: public ov::genai::StreamerBase {
 public:
-    void put(int64_t token) {
+    bool put(int64_t token) {
         /* custom decoding/tokens processing code
         tokens_cache.push_back(token);
         std::string text = m_tokenizer.decode(tokens_cache);
