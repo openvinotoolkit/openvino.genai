@@ -12,7 +12,7 @@ int main(int argc, char* argv[]) try {
     
     ov::genai::GenerationConfig config = pipe.get_generation_config();
     config.max_new_tokens = 10000;
-    std::function<void(std::string)> streamer = [](std::string word) { std::cout << word << std::flush; };
+    std::function<bool(std::string)> streamer = [](std::string word) { std::cout << word << std::flush; return true; };
 
     pipe.start_chat();
     for (;;) {
