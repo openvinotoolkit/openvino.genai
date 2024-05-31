@@ -14,7 +14,7 @@
 namespace ov {
 namespace genai {
 
-using StreamerVariant = std::variant<std::function<void(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
+using StreamerVariant = std::variant<std::function<bool(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using EncodedInputs = std::variant<ov::Tensor, std::pair<ov::Tensor, ov::Tensor>, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
