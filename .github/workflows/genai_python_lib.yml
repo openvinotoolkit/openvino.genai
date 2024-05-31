@@ -1,5 +1,8 @@
 name: genai_python_lib
 on: pull_request
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 jobs:
   ubuntu_genai_python_lib:
     # A tokenizers' dependency fails to compile on ubuntu-20 n CenOS7 env
@@ -22,9 +25,9 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
       # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
       # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
-      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --verbose --verbose --verbose
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --verbose
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/ python -c "from openvino_genai import LLMPipeline"
-      - run: source ./ov/setupvars.sh && python -m pip install . --config-settings=build-dir="build" --verbose --verbose --verbose
+      - run: source ./ov/setupvars.sh && python -m pip install . --config-settings=build-dir="build" --verbose
       - run: python -c "from openvino_genai import LLMPipeline"
       - name: GenAI Python API tests
         run: |
@@ -35,6 +38,38 @@ jobs:
               optimum-cli export openvino --trust-remote-code --weight-format fp16 --model "$model_name" "$model_path"
           done
           GENAI_BUILD_DIR=../../build python -m pytest test_generate_api.py -v -m precommit
+
+  macos_genai_python_lib:
+    runs-on: macos-12
+    env:
+      CMAKE_GENERATOR: Unix Makefiles
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - run: mkdir ./ov/
+      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/macos/m_openvino_toolkit_macos_12_6_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+      - run: brew install coreutils ninja scons
+      - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+      - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
+      # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
+      # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --verbose
+      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/ python -c "from openvino_genai import LLMPipeline"
+      - run: source ./ov/setupvars.sh && python -m pip install . --config-settings=build-dir="build" --verbose
+      - run: python -c "from openvino_genai import LLMPipeline"
+      - name: GenAI Python API tests
+        run: |
+          cd ./tests/python_tests/
+          python -m pip install -r requirements.txt
+          models=$(python list_test_models.py)
+          echo "$models" | while read -r model_name model_path; do
+              optimum-cli export openvino --trust-remote-code --weight-format fp16 --model "$model_name" "$model_path"
+          done
+          GENAI_BUILD_DIR=../../build python -m pytest test_generate_api.py
 
   windows_genai_python_lib:
     runs-on: windows-latest
@@ -54,8 +89,8 @@ jobs:
       - run: unzip ov.zip
       # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
       # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
-      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --verbose --verbose --verbose
-      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install . --verbose --verbose --verbose  # --verbose is additive, and can be used up to 3 times.
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --verbose
+      - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && python -m pip install . --verbose
       - run: python -c "from openvino_genai import LLMPipeline"
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat && cmake --build ./build/ --config Release -j
