@@ -6,7 +6,7 @@ import os
 import json
 import logging as log
 from pathlib import Path
-from llm_bench.python.utils.config_class import DEFAULT_MODEL_CLASSES, USE_CASES, OV_MODEL_CLASSES_MAPPING, PT_MODEL_CLASSES_MAPPING
+from llm_bench_utils.config_class import DEFAULT_MODEL_CLASSES, USE_CASES, OV_MODEL_CLASSES_MAPPING, PT_MODEL_CLASSES_MAPPING
 
 
 def get_prompts(args):

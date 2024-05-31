@@ -11,7 +11,7 @@ from optimum.intel.openvino import (
     OVLatentConsistencyModelPipeline,
     OVStableDiffusionXLPipeline
 )
-from llm_bench.python.utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
+from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 
 TOKENIZE_CLASSES_MAPPING = {
     'decoder': AutoTokenizer,

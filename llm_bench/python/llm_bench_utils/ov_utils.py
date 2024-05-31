@@ -9,8 +9,8 @@ import logging as log
 import torch
 import time
 import types
-from llm_bench.python.utils.hook_common import get_bench_hook
-from llm_bench.python.utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
+from llm_bench_utils.hook_common import get_bench_hook
+from llm_bench_utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
 import openvino.runtime.opset13 as opset
 
 
