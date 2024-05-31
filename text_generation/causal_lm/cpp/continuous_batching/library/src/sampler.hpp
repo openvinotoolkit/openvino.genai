@@ -411,6 +411,18 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 if (sampling_params.is_greedy_sampling()) {
                     OPENVINO_ASSERT(num_running_sequences == 1);
                 }
+                auto register_new_token = [&](const LogitWithIdx& sampled_token_id, Sequence::Ptr running_sequence) {
+                    sequence_group->register_generated_token_id(sampled_token_id.second);
+                    running_sequence->append_token(sampled_token_id.second, sampled_token_id.first);
+
+                    if (sampling_params.max_new_tokens == running_sequence->get_generated_len() ||
+                        sampled_token_id.second == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
+                        // stop sequence by max_new_tokens or EOS token
+                        running_sequence->set_status(SequenceStatus::FINISHED);
+                        // drop sequence from scheduler
+                        sampler_output.m_dropped_sequences.push_back(running_sequence->get_id());
+                    }
+                };
                 for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
                     auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id);
 
@@ -431,31 +443,19 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         sampled_token_id = sampled_token_ids[0];
 
                         if (is_generate_n_tokens) {
-                            const auto sequence_to_fork = running_sequences[0];
+                            auto sequence_to_fork = running_sequences[0];
                             std::list<uint64_t> forked_seq_ids;
                             for (size_t i = num_running_sequences; i < num_tokens_per_sequence; ++i) {
                                 const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
                                 forked_seq_ids.push_back(forked_sequence->get_id());
                                 running_sequences.push_back(forked_sequence);
-
-                                forked_sequence->append_token(sampled_token_ids[i].second, sampled_token_ids[i].first);
-                                sequence_group->register_generated_token_id(sampled_token_ids[i].second);
+                                register_new_token(sampled_token_ids[i], forked_sequence);
                             }
                             sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
                         }
                     }
                     
-                    auto& running_sequence = running_sequences[running_sequence_id];
-                    sequence_group->register_generated_token_id(sampled_token_id.second);
-                    running_sequence->append_token(sampled_token_id.second, sampled_token_id.first);
-
-                    if (sampling_params.max_new_tokens == running_sequence->get_generated_len() ||
-                        sampled_token_id.second == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
-                        // stop sequence by max_new_tokens or EOS token
-                        running_sequence->set_status(SequenceStatus::FINISHED);
-                        // drop sequence from scheduler
-                        sampler_output.m_dropped_sequences.push_back(running_sequence->get_id());
-                    }
+                    register_new_token(sampled_token_id, running_sequences[running_sequence_id]);
                 }
             } else if (sampling_params.is_beam_search()) {
                 uint64_t request_id = sequence_group->get_request_id();

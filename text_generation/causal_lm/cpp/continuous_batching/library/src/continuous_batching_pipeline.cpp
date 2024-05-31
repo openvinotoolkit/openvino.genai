@@ -17,8 +17,7 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
     GenerationResult result;
     result.m_request_id = sequence_group->get_request_id();
 
-    auto finished_sequences_size = sequence_group->get_finished_sequences().size();
-    OPENVINO_ASSERT(finished_sequences_size == sequence_group->num_total_seqs() && sequence_group->has_finished());
+    OPENVINO_ASSERT(sequence_group->has_finished());
     const auto num_return_sequences = sequence_group->get_sampling_parameters().num_return_sequences;
     if (finished_sequences_size > num_return_sequences) {
         // save only `sampling_params.num_return_sequences` sequences in result
