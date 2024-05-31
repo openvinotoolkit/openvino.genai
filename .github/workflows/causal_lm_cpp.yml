@@ -30,7 +30,6 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          sudo apt-get install libtbb-dev
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -58,7 +57,6 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          sudo apt-get install libtbb-dev
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -228,7 +226,6 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          sudo apt-get install libtbb-dev
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -256,7 +253,6 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          sudo apt-get install libtbb-dev
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen1.5-7B-Chat Qwen1.5-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -284,7 +280,6 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          sudo apt-get install libtbb-dev
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-2 phi-2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j 15
@@ -312,7 +307,6 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          sudo apt-get install libtbb-dev
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model argilla/notus-7b-v1 notus-7b-v1
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -340,7 +334,6 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          sudo apt-get install libtbb-dev
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-3b dolly-v2-3b
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-7b dolly-v2-7b
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -379,7 +372,6 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          sudo apt-get install libtbb-dev
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -424,7 +416,6 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          sudo apt-get install libtbb-dev
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-1_5 phi-1_5
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j 15
@@ -469,7 +460,6 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager -r ./text_generation/causal_lm/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          sudo apt-get install libtbb-dev
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model ikala/redpajama-3b-chat redpajama-3b-chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
