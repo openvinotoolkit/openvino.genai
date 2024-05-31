@@ -66,8 +66,8 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
         auto any_val = config_map.at(STREAMER_ARG_NAME);
         if (any_val.is<std::shared_ptr<ov::genai::StreamerBase>>()) {
             streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
-        } else if (any_val.is<std::function<void(std::string)>>()) {
-            streamer = any_val.as<std::function<void(std::string)>>();
+        } else if (any_val.is<std::function<bool(std::string)>>()) {
+            streamer = any_val.as<std::function<bool(std::string)>>();
         }
     }
     return streamer;
@@ -227,7 +227,7 @@ public:
             streamer_ptr = nullptr;
         } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
             streamer_ptr = *streamer_obj;
-        } else if (auto callback = std::get_if<std::function<void(std::string)>>(&streamer)) {
+        } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
             streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
         }
 
@@ -316,8 +316,8 @@ std::pair<std::string, Any> streamer(StreamerVariant func) {
     if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&func)) {
         return {STREAMER_ARG_NAME, Any::make<std::shared_ptr<StreamerBase>>(*streamer_obj)};
     } else  {
-        auto callback = std::get<std::function<void(std::string)>>(func);
-        return {STREAMER_ARG_NAME, Any::make<std::function<void(std::string)>>(callback)};
+        auto callback = std::get<std::function<bool(std::string)>>(func);
+        return {STREAMER_ARG_NAME, Any::make<std::function<bool(std::string)>>(callback)};
     } 
 }
 

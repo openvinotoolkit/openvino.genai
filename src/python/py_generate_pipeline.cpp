@@ -180,9 +180,9 @@ std::string ov_tokenizers_module_path() {
 
 class EmptyStreamer: public StreamerBase {
     // It's impossible to create an instance of pure virtual class. Define EmptyStreamer instead.
-    void put(int64_t token) override {
+    bool put(int64_t token) override {
         PYBIND11_OVERRIDE_PURE(
-            void,  // Return type
+            bool,  // Return type
             StreamerBase,  // Parent class
             put,  // Name of function in C++ (must match Python name)
             token  // Argument(s)

@@ -79,8 +79,9 @@ EncodedResults greedy_decoding(
         eos_met[batch] = (out_token == generation_config.eos_token_id);
         m_model_runner.get_tensor("input_ids").data<int64_t>()[batch] = out_token;
     }
-    if (streamer)
-        streamer->put(token_iter_results[0]);
+    if (streamer && streamer->put(token_iter_results[0])) {
+        return results;
+    }
 
     bool all_are_eos = std::all_of(eos_met.begin(), eos_met.end(), [](int elem) { return elem == 1; });
     if (!generation_config.ignore_eos && all_are_eos)
@@ -107,8 +108,9 @@ EncodedResults greedy_decoding(
             
             m_model_runner.get_tensor("input_ids").data<int64_t>()[batch] = out_token;
         }
-        if (streamer)
-            streamer->put(token_iter_results[0]);
+        if (streamer && streamer->put(token_iter_results[0])) {
+            return results;
+        }
 
         // Filter out the eos met batches
         std::vector<int32_t> beam_idx(running_batch_size);
@@ -126,8 +128,9 @@ EncodedResults greedy_decoding(
         if (!generation_config.ignore_eos && all_are_eos)
             break;
     }
-    if (streamer)
+    if (streamer) {
         streamer->end();
+    }
     return results;
 }
 
