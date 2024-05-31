@@ -119,6 +119,7 @@ def stop_criteria_map():
 
 test_cases = [
     (dict(max_new_tokens=20), 'table is made of'),  # generation_config, prompt
+    (dict(max_new_tokens=20), '你好！ 你好嗎？'),  # generation_config, prompt
     (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0), 'Alan Turing was a'),
     (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
     (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
@@ -126,6 +127,7 @@ test_cases = [
     (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.5), 'The Sun is yellow because'),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
+@pytest.mark.precommit
 def test_decoding(model_fixture, generation_config, prompt):
     run_hf_ov_genai_comparison(model_fixture, generation_config, prompt)
 
@@ -134,21 +136,24 @@ test_configs = [
     dict(max_new_tokens=20),
     dict( max_new_tokens=20, num_beam_groups=3, num_beams=15,diversity_penalty=1.0)
 ]
-batched_prompts = [['table is made of', 'They sky is blue because', 'Difference between Jupiter and Marks is that'],
-                   ['hello', 'Here is the longest nowel ever: ']]
+batched_prompts = [['table is made of', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
+                   ['hello', 'Here is the longest nowel ever: '],
+                   ['Alan Turing was a', 'return 0', '你好！ 你好嗎？']]
 @pytest.mark.parametrize("generation_config", test_configs)
 @pytest.mark.parametrize("prompts", batched_prompts)
+@pytest.mark.precommit
 def test_multibatch(model_fixture, generation_config, prompts):
     generation_config['pad_token_id'] = 2
     run_hf_ov_genai_comparison_batched(model_fixture, generation_config, prompts)
 
 
-prompts = ['The Sun is yellow because', 'Difference between Jupiter and Marks is that', 'table is made of']
+prompts = ['The Sun is yellow because', 'Difference between Jupiter and Mars is that', 'table is made of']
 @pytest.mark.parametrize("num_beam_groups", [2, 3, 8])
 @pytest.mark.parametrize("group_size", [5, 3, 10])
 @pytest.mark.parametrize("max_new_tokens", [20, 15])
 @pytest.mark.parametrize("diversity_penalty", [1.0 , 1.5])
 @pytest.mark.parametrize("prompt", prompts)
+@pytest.mark.precommit
 def test_beam_search_decoding(model_fixture, num_beam_groups, group_size, 
                               max_new_tokens, diversity_penalty, prompt):
     generation_config = dict(
@@ -164,6 +169,7 @@ def test_beam_search_decoding(model_fixture, num_beam_groups, group_size,
 @pytest.mark.parametrize("stop_criteria", [StopCriteria.NEVER, StopCriteria.EARLY, StopCriteria.HEURISTIC])
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize("max_new_tokens", [10, 80])
+@pytest.mark.precommit
 def test_stop_criteria(model_fixture, stop_criteria, prompt, max_new_tokens):
     # todo: with EARLY stop_criteria looks like HF return unvalid out with sentence<eos><unk><unk>
     # while genai ends sentence with <eos>
@@ -185,7 +191,7 @@ def test_stop_criteria(model_fixture, stop_criteria, prompt, max_new_tokens):
 @pytest.mark.parametrize("group_size", [5])
 @pytest.mark.parametrize("max_new_tokens", [800, 2000])
 @pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.skip  # will be enabled in nightly since are computationally expensive
+@pytest.mark.nightly
 def test_beam_search_long_sentences(model_fixture, num_beam_groups, group_size, 
                                     max_new_tokens, prompt):
     generation_config = dict(
@@ -203,12 +209,14 @@ def user_defined_callback(subword):
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+@pytest.mark.precommit
 def test_callback_one_string(model_fixture, callback):
     pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
     pipe.generate('', openvino_genai.GenerationConfig(), callback)
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+@pytest.mark.precommit
 def test_callback_batch_fail(model_fixture, callback):
     pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
     with pytest.raises(RuntimeError):
@@ -216,12 +224,14 @@ def test_callback_batch_fail(model_fixture, callback):
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+@pytest.mark.precommit
 def test_callback_kwargs_one_string(model_fixture, callback):
     pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
     pipe.generate('', max_new_tokens=10, streamer=callback)
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+@pytest.mark.precommit
 def test_callback_kwargs_batch_fail(model_fixture, callback):
     pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
     with pytest.raises(RuntimeError):
@@ -239,12 +249,14 @@ class Printer(openvino_genai.StreamerBase):
         print('end')
 
 
+@pytest.mark.precommit
 def test_streamer_one_string(model_fixture):
     pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
     printer = Printer(pipe.get_tokenizer())
     pipe.generate('', openvino_genai.GenerationConfig(), printer)
 
 
+@pytest.mark.precommit
 def test_streamer_batch_fail(model_fixture):
     pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
     printer = Printer(pipe.get_tokenizer())
@@ -252,12 +264,14 @@ def test_streamer_batch_fail(model_fixture):
         pipe.generate(['1', '2'], openvino_genai.GenerationConfig(), printer)
 
 
+@pytest.mark.precommit
 def test_streamer_kwargs_one_string(model_fixture):
     pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
     printer = Printer(pipe.get_tokenizer())
     pipe.generate('', do_sample=True, streamer=printer)
 
 
+@pytest.mark.precommit
 def test_streamer_kwargs_batch_fail(model_fixture):
     pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
     printer = Printer(pipe.get_tokenizer())
@@ -265,26 +279,30 @@ def test_streamer_kwargs_batch_fail(model_fixture):
         pipe.generate('', num_beams=2, streamer=printer)
 
 
+@pytest.mark.precommit
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
-def test_operator_wit_callback_one_string(model_fixture, callback):
+def test_operator_with_callback_one_string(model_fixture, callback):
     pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
     pipe('', openvino_genai.GenerationConfig(), callback)
 
 
+@pytest.mark.precommit
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
-def test_operator_wit_callback_batch_fail(model_fixture, callback):
+def test_operator_with_callback_batch_fail(model_fixture, callback):
     pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
     with pytest.raises(Exception):
         pipe(['1', '2'], openvino_genai.GenerationConfig(), callback)
 
 
-def test_operator_wit_streamer_kwargs_one_string(model_fixture):
+@pytest.mark.precommit
+def test_operator_with_streamer_kwargs_one_string(model_fixture):
     pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
     printer = Printer(pipe.get_tokenizer())
     pipe('', do_sample=True, streamer=printer)
 
 
-def test_operator_wit_streamer_kwargs_batch_fail(model_fixture):
+@pytest.mark.precommit
+def test_operator_with_streamer_kwargs_batch_fail(model_fixture):
     pipe = openvino_genai.LLMPipeline(model_fixture[1], 'CPU')
     printer = Printer(pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
