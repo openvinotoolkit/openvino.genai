@@ -19,6 +19,7 @@ GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, Seque
 
     OPENVINO_ASSERT(sequence_group->has_finished());
     const auto num_return_sequences = sequence_group->get_sampling_parameters().num_return_sequences;
+    const auto finished_sequences_size = sequence_group->num_finished_seqs();
     if (finished_sequences_size > num_return_sequences) {
         // save only `sampling_params.num_return_sequences` sequences in result
         std::map<float, size_t> probs;

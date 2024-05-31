@@ -325,17 +325,15 @@ class Sampler {
         ov::Shape logits_shape = logits.get_shape();
         size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
         OPENVINO_ASSERT(batch_idx <= batch_size);
-        // for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-            size_t batch_offset = batch_idx * seq_len * vocab_size;
-            size_t sequence_offset = (seq_len - 1) * vocab_size;
-            const float* logits_data = logits.data<const float>() + batch_offset + sequence_offset;
+        size_t batch_offset = batch_idx * seq_len * vocab_size;
+        size_t sequence_offset = (seq_len - 1) * vocab_size;
+        const float* logits_data = logits.data<const float>() + batch_offset + sequence_offset;
 
-            std::vector<LogitWithIdx> logit_vector(vocab_size);
-            for (size_t i = 0; i < logit_vector.size(); i++) {
-                logit_vector[i] = LogitWithIdx(logits_data[i], i);
-            }
-            return logit_vector;
-        // }
+        std::vector<LogitWithIdx> logit_vector(vocab_size);
+        for (size_t i = 0; i < logit_vector.size(); i++) {
+            logit_vector[i] = LogitWithIdx(logits_data[i], i);
+        }
+        return logit_vector;
     }
 
     LogitWithIdx _greedy_sample(const std::vector<LogitWithIdx>& logit_vector) const {
