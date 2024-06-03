@@ -6,6 +6,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/tokenizer.hpp"
 
 #ifdef _WIN32
 #    include <windows.h>
@@ -33,47 +34,6 @@ std::string get_absolute_file_path(const std::string& path) {
 }
 }
 #endif
-
-namespace {
-
-// dublicates GenAIEnvManager from ov::genai::utils, since 
-// it was problematic getting access to that on Win
-
-const char* get_tokenizers_env_name() { return "OPENVINO_TOKENIZERS_PATH_GENAI"; }
-
-class GenAIEnvManager {
-public:
-    GenAIEnvManager(const std::string& path) {
-        #ifdef _WIN32
-        char* value = nullptr;
-        size_t len = 0;
-        _dupenv_s(&value, &len, ::get_tokenizers_env_name());
-        if (value == nullptr)
-            _putenv_s(::get_tokenizers_env_name(), path.c_str());
-        #else
-        if (!getenv(::get_tokenizers_env_name()))
-            setenv(::get_tokenizers_env_name(), path.c_str(), 1);
-        #endif
-        else
-            was_already_set = true;
-    }
-
-    ~GenAIEnvManager() {
-        if (!was_already_set){
-        #ifdef _WIN32
-            _putenv_s(::get_tokenizers_env_name(), "");
-        #else
-            unsetenv(::get_tokenizers_env_name());
-        #endif
-        }
-    }
-
-private:
-    bool was_already_set;
-};
-
-}
-
 
 namespace py = pybind11;
 using ov::genai::LLMPipeline;
@@ -171,9 +131,9 @@ std::string get_ov_genai_bindings_path() {
 
 std::string ov_tokenizers_module_path() {
     // Try a path relative to build artifacts folder first.
-    std::filesystem::path from_library = with_openvino_tokenizers(get_ov_genai_bindings_path());
-    if (std::filesystem::exists(from_library)) {
-        return from_library.string();
+    std::filesystem::path from_relative = ov::genai::tokenizers_relative_to_genai();
+    if (std::filesystem::exists(from_relative)) {
+        return from_relative.string();
     }
     return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
 }
@@ -217,7 +177,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
     py::class_<LLMPipeline>(m, "LLMPipeline")
         .def(py::init([](const std::string& model_path, 
                             const std::string& device) {
-            ::GenAIEnvManager env_manager(ov_tokenizers_module_path());
+            ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
             return std::make_unique<LLMPipeline>(model_path, device);}),
         py::arg("model_path"), "path to the model path", 
         py::arg("device") = "CPU", "device on which inference will be done",
@@ -241,7 +201,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init([](py::object infer_request, 
                             const Tokenizer& tokenizer,
                             OptionalGenerationConfig config) {
-            ::GenAIEnvManager env_manager(ov_tokenizers_module_path());
+            ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
             return std::make_unique<LLMPipeline>(get_request_from_pyobj(infer_request), tokenizer, config);
         }),
         py::arg("infer_request"), "infer_request", 

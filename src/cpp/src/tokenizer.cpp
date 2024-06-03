@@ -97,7 +97,6 @@ std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path
     #endif
         return path.parent_path() / tokenizers;
 }
-
 }  // namespace
 
 namespace ov {
@@ -118,7 +117,7 @@ public:
         if (ov::genai::utils::is_xml(tokenizers_path))
             OPENVINO_THROW("tokenizers_path should be a path to a dir not a xml file");
 
-        const char* ov_tokenizers_path = getenv(ov::genai::utils::get_tokenizers_env_name());
+        const char* ov_tokenizers_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
         if (ov_tokenizers_path) {
             core.add_extension(ov_tokenizers_path);
         } else {
@@ -205,7 +204,7 @@ public:
 };
 
 Tokenizer::Tokenizer(const std::string& tokenizers_path, const std::string& device) {
-    ov::genai::utils::GenAIEnvManager env_manager(with_openvino_tokenizers(get_ov_genai_library_path()).string());
+    ov::genai::ScopedVar env_manager(tokenizers_relative_to_genai().string());
     m_pimpl = std::make_shared<TokenizerImpl>(tokenizers_path, device);
 }
 
@@ -263,5 +262,33 @@ void Tokenizer::set_eos_token_id(int64_t eos_token_id) {
 
 Tokenizer::~Tokenizer() = default;
 
+std::filesystem::path tokenizers_relative_to_genai() {
+    return with_openvino_tokenizers(get_ov_genai_library_path());
+}
+
+ScopedVar::ScopedVar(const std::string& environment_variable_value) {
+#ifdef _WIN32
+    char* value = nullptr;
+    size_t len = 0;
+    _dupenv_s(&value, &len, ENVIRONMENT_VARIABLE_NAME);
+    if (value == nullptr)
+        _putenv_s(ENVIRONMENT_VARIABLE_NAME, environment_variable_value.c_str());
+#else
+    if (!getenv(ENVIRONMENT_VARIABLE_NAME))
+        setenv(ENVIRONMENT_VARIABLE_NAME, environment_variable_value.c_str(), 1);
+#endif
+    else
+        was_already_set = true;
+}
+
+ScopedVar::~ScopedVar() {
+    if (!was_already_set) {
+#ifdef _WIN32
+        _putenv_s(ENVIRONMENT_VARIABLE_NAME, "");
+#else
+        unsetenv(ENVIRONMENT_VARIABLE_NAME);
+#endif
+    }
+}
 }  // namespace genai
 }  // namespace ov

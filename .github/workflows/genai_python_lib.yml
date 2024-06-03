@@ -36,6 +36,10 @@ jobs:
 
   macos_genai_python_lib:
     runs-on: macos-12
+    env:
+      # A tokenizers' dependency fails to compile with Ninja.
+      CMAKE_GENERATOR: Unix Makefiles
+      CMAKE_BUILD_PARALLEL_LEVEL: null
     steps:
       - uses: actions/checkout@v4
         with:
@@ -72,6 +76,7 @@ jobs:
           python-version: 3.8
       - run: curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/windows/w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64.zip
       - run: unzip ov.zip
+      # Shorten the next setupvars calls.
       - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64
       - run: call ./ov/setupvars.bat && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: call ./ov/setupvars.bat && cmake --build ./build/ --config Release -j

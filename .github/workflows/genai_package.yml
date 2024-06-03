@@ -47,15 +47,15 @@ jobs:
           python-version: 3.8
       - run: mkdir ./ov/
       - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/macos/m_openvino_toolkit_macos_12_6_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
-      - run: brew install coreutils ninja scons
+      - run: brew install coreutils scons
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
       - run: source ./ov/setupvars.sh && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
       - run: ov/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
         if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
-      - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
-        if: ${{ 'Release' == matrix.build-type }}
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+        if: ${{ 'Release' == matrix.build-type }}
+      - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r text_generation/causal_lm/cpp/requirements.txt
         if: ${{ 'Release' == matrix.build-type }}
       - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
         if: ${{ 'Release' == matrix.build-type }}
