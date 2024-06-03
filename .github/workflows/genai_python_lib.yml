@@ -36,8 +36,6 @@ jobs:
 
   macos_genai_python_lib:
     runs-on: macos-12
-    env:
-      CMAKE_GENERATOR: Unix Makefiles
     steps:
       - uses: actions/checkout@v4
         with:
@@ -74,11 +72,11 @@ jobs:
           python-version: 3.8
       - run: curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/windows/w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64.zip
       - run: unzip ov.zip
-      - run: mklink v.bat w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat
-      - run: call v.bat && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-      - run: call v.bat && cmake --build ./build/ --config Release -j
-      - run: call v.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+      - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64
+      - run: call ./ov/setupvars.bat && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+      - run: call ./ov/setupvars.bat && cmake --build ./build/ --config Release -j
+      - run: call ./ov/setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
       # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
-      - run: set "PYTHONPATH=./build/" && call v.bat && python -m pytest ./tests/python_tests/test_generate_api.py --exitfirst -m precommit
-      - run: call v.bat && python -m pip install . --config-settings=build-dir="build" --verbose
+      - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/test_generate_api.py --exitfirst -m precommit
+      - run: call ./ov/setupvars.bat && python -m pip install . --config-settings=build-dir="build" --verbose
       - run: python -m pytest ./tests/python_tests/test_generate_api.py --exitfirst -m precommit
