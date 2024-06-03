@@ -32,7 +32,7 @@ pip3 install -r python/tests/requirements.txt
 ```
 5. Install `openvino_tokenizers` to your virtual environment:
 ```
-cd /path/to/openvino.genai/thirdparty/openvino_tokenizers/python/openvino_tokenizers
+cd /path/to/openvino.genai/thirdparty/openvino_tokenizers
 export OpenVINO_DIR=/path/to/openvino/build
 pip install --no-deps .
 ```
