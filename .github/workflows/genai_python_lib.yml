@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: 3.8
       - run: mkdir ./ov/
-      # Install CentOS7 instead of Ubuntu to match PyPI distribution ABI
+      # Install CentOS7 instead of Ubuntu to match PyPI distribution ABI.
       - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/linux/l_openvino_toolkit_centos7_2024.2.0.dev20240524_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
       - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/

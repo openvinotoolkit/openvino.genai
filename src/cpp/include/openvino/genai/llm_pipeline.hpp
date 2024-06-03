@@ -209,8 +209,8 @@ private:
     std::unique_ptr<LLMPipelineImpl> m_pimpl;
 };
 
-OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(StreamerVariant func);
-OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const GenerationConfig& config);
+std::pair<std::string, Any> streamer(StreamerVariant func);
+std::pair<std::string, Any> generation_config(const GenerationConfig& config);
 
 }  // namespace genai
 }  // namespace ov
