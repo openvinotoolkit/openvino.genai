@@ -321,10 +321,12 @@ void initialize_inputs(const ov::Tensor& input_ids, const ov::Tensor& attention_
     request.set_tensor("attention_mask", attention_mask);
 
     ov::Shape input_shape = input_ids.get_shape();
-
-    ov::Tensor position_ids = request.get_tensor("position_ids");
-    position_ids.set_shape(input_shape);
-    ov::genai::utils::initialize_position_ids(position_ids, attention_mask);
+    auto num_inputs = request.get_compiled_model().inputs().size();
+    if (num_inputs == 4){
+        ov::Tensor position_ids = request.get_tensor("position_ids");
+        position_ids.set_shape(input_shape);
+        ov::genai::utils::initialize_position_ids(position_ids, attention_mask);
+    }
 
     ov::Tensor beam_idx = request.get_tensor("beam_idx");
     beam_idx.set_shape({input_shape.at(0)});
@@ -372,6 +374,7 @@ namespace genai {
 EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig config) {
     OPENVINO_ASSERT(config.num_beams % config.num_beam_groups == 0, "number of beams should be divisible by number of groups");
     
+    
     // Initialize beam search
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     std::vector<std::vector<int64_t>> prompts;
@@ -398,7 +401,8 @@ EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor input_ids, ov::Tenso
 
     std::vector<int64_t> next_tokens;
     std::vector<int32_t> next_beams;
-
+    auto num_inputs = lm.get_compiled_model().inputs().size();
+    
     for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
         lm.infer();
 
@@ -412,7 +416,8 @@ EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor input_ids, ov::Tenso
         lm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
         // Set auxiliary inputs
         update_attention_mask_with_beams(lm.get_tensor("attention_mask"), next_beams);
-        update_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
+        if (num_inputs == 4)
+            update_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
     }
 
     std::vector<Beam> beams;

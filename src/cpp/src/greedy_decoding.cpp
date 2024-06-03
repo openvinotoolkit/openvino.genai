@@ -55,9 +55,11 @@ EncodedResults greedy_decoding(
     auto atten_shape = attention_mask.get_shape();
     auto pos_shape = position_ids.get_shape();
     auto input_ids_shape = input_ids.get_shape();
-
+    
     m_model_runner.set_tensor("input_ids", input_ids);
-    m_model_runner.set_tensor("position_ids", position_ids);
+    auto num_inputs = m_model_runner.get_compiled_model().inputs().size();
+    if (num_inputs == 4)
+        m_model_runner.set_tensor("position_ids", position_ids);
 
     m_model_runner.get_tensor("beam_idx").set_shape({running_batch_size});
     auto beam_data = m_model_runner.get_tensor("beam_idx").data<int32_t>();
@@ -89,7 +91,8 @@ EncodedResults greedy_decoding(
     
     size_t max_tokens = generation_config.get_max_new_tokens(prompt_len);
     for (size_t i = 0; i < max_tokens - 1; ++i) {
-        utils::update_position_ids(m_model_runner.get_tensor("position_ids"), m_model_runner.get_tensor("attention_mask"));
+        if (num_inputs == 4)
+            utils::update_position_ids(m_model_runner.get_tensor("position_ids"), m_model_runner.get_tensor("attention_mask"));
         m_model_runner.set_tensor("attention_mask", utils::extend_attention(m_model_runner.get_tensor("attention_mask")));
 
         m_model_runner.infer();

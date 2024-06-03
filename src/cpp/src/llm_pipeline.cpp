@@ -206,8 +206,6 @@ public:
         ov::Tensor input_ids;
         ov::Tensor attention_mask;
 
-        // input_ids
-        // attention_mask
         if (auto data = std::get_if<ov::Tensor>(&inputs)) {
             input_ids = *data;
         } else if (auto data = std::get_if<std::pair<ov::Tensor, ov::Tensor>>(&inputs)) {
@@ -233,8 +231,15 @@ public:
 
         auto batch_size = input_ids.get_shape().at(0);
         if ((batch_size != 1 || !(config.is_greedy_decoding() || config.is_multinomial())) && streamer_ptr) {
-            OPENVINO_THROW("Currently streaming is possible only with batch size=1 and greedy or multinomial decoding");
+            OPENVINO_THROW("Currently streaming is possible only with batch size=1 and "
+                            "only for greedy or multinomial decoding");
         }
+
+        auto num_inputs = m_model_runner.get_compiled_model().inputs().size();
+        OPENVINO_ASSERT(num_inputs == 4 || num_inputs == 3, "Model should have 3 or 4 inputs: "
+                        "either (input_ids, attention_mask, beam_idx) or "
+                        "(input_ids, attention_mask, position_ids, beam_idx) "
+                        "but you have '" + std::to_string(num_inputs) + "' inputs");
 
         if (config.is_greedy_decoding()) {
             result = ov::genai::greedy_decoding(m_model_runner, input_ids, attention_mask, config, streamer_ptr, is_chat_conversation);
@@ -251,6 +256,28 @@ public:
         
         m_is_cache_empty = false;
         return result;        
+    }
+
+    std::string apply_chat_template(const std::vector<std::pair<std::string, std::string>>& prompts) const {
+        jinja2::TemplateEnv env;
+        env.GetSettings().lstripBlocks = true;
+        env.GetSettings().trimBlocks = true;
+        jinja2::Template tpl(&env);
+        tpl.Load(m_chat_template);
+
+        jinja2::ValuesList messages;
+        for (const auto& [prompt, role] : prompts) {
+            messages.push_back(jinja2::ValuesMap{{"role", role}, {"content", prompt}});
+        }
+
+        jinja2::ValuesMap params = {
+            {"messages", messages},
+            {"bos_token", m_generation_config.bos_token},
+            {"eos_token", m_generation_config.eos_token},
+            {"add_generation_prompt", true},
+        };
+
+        return tpl.RenderAsString(params).value();
     }
 
     std::string apply_chat_template(std::string prompt, std::string role = "user") const {

@@ -182,10 +182,13 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
     m_model_runner.set_tensor("input_ids", input_ids);
     m_model_runner.set_tensor("attention_mask", attention_mask);
 
-    ov::Tensor position_ids = m_model_runner.get_tensor("position_ids");
-    position_ids.set_shape(input_ids.get_shape());
-    std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
-
+    auto num_inputs = m_model_runner.get_compiled_model().inputs().size();
+    if (num_inputs == 4) {
+        ov::Tensor position_ids = m_model_runner.get_tensor("position_ids");
+        position_ids.set_shape(input_ids.get_shape());
+        std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
+    }
+    
     // Input values are persistent between inference calls.
     // That allows to set values, which aren't going to change, only once
     m_model_runner.get_tensor("beam_idx").set_shape({batch_size});
@@ -221,13 +224,16 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
     }
 
     m_model_runner.get_tensor("input_ids").set_shape({batch_size, 1});
-    m_model_runner.get_tensor("position_ids").set_shape({batch_size, 1});
+    if (num_inputs == 4)
+        m_model_runner.get_tensor("position_ids").set_shape({batch_size, 1});
 
     size_t max_new_tokens = config.get_max_new_tokens(prompt_len);
 
     for (size_t i = 0; i < max_new_tokens - 1; i++) {
-        ov::genai::utils::update_position_ids(m_model_runner.get_tensor("position_ids"),
-                                              m_model_runner.get_tensor("attention_mask"));
+        if (num_inputs == 4) {
+            ov::genai::utils::update_position_ids(m_model_runner.get_tensor("position_ids"),
+                                                  m_model_runner.get_tensor("attention_mask"));
+        }
         m_model_runner.set_tensor("attention_mask",
                                   ov::genai::utils::extend_attention(m_model_runner.get_tensor("attention_mask")));
 
