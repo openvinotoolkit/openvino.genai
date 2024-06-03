@@ -6,18 +6,13 @@
 namespace ov {
 namespace genai {
 
-TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, std::function<bool(std::string)> callback, bool print_eos_token) {
+TextCallbackStreamer::TextCallbackStreamer(const Tokenizer& tokenizer, std::function<bool(std::string)> callback) {
     m_tokenizer = tokenizer;
-    m_print_eos_token = print_eos_token;
     on_finalized_subword_callback = callback;
 }
 
 bool TextCallbackStreamer::put(int64_t token) {
     std::stringstream res;
-    // do nothing if <eos> token is met and if print_eos_token=false
-    if (!m_print_eos_token && token == m_tokenizer.get_eos_token_id())
-        return false;
-
     m_tokens_cache.push_back(token);
     std::string text = m_tokenizer.decode(m_tokens_cache);
     if (!text.empty() && '\n' == text.back()) {
