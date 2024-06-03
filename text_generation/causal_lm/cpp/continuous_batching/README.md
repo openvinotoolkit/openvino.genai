@@ -16,23 +16,23 @@ export OpenVINO_DIR=/path/to/openvino/{ov_build_type}
 ```
 3. Build OpenVINO tokenizers:
 ```
-cd /path/to/openvino.genai/thirdparty/openvino_tokenizers/python/openvino_tokenizers
+cd /path/to/openvino.genai/thirdparty/openvino_tokenizers
 mkdir build
 cd build
 cmake -DENABLE_PYTHON=ON -DCMAKE_BUILD_TYPE={ov_build_type} ..
 make -j24
 ```
 4. Create virtual environment to generate models and run python tests:
+> NOTE: Comment installation of `openvino` and `openvino_tokenizers` to your env in `/path/to/openvino.genai/text_generation/causal_lm/cpp/continuous_batching/python/tests/requirements.txt
 ```
 cd /path/to/openvino.genai/text_generation/causal_lm/cpp/continuous_batching
 python3 -m venv .env
 source .env/bin/activate
 pip3 install -r python/tests/requirements.txt
 ```
-> NOTE: Comment installation of `openvino` and `openvino_tokenizers` to your env in `/path/to/openvino.genai/text_generation/causal_lm/cpp/continuous_batching/python/tests/requirements.txt
 5. Install `openvino_tokenizers` to your virtual environment:
 ```
-cd /path/to/openvino.genai/thirdparty/openvino_tokenizers/python/openvino_tokenizers
+cd /path/to/openvino.genai/thirdparty/openvino_tokenizers
 export OpenVINO_DIR=/path/to/openvino/build
 pip install --no-deps .
 ```
