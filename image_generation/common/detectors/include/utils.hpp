@@ -16,7 +16,7 @@ std::vector<uint8_t> read_bgr_from_txt(const std::string& file_name) {
     std::string line;
     while (std::getline(input_data, line)) {
         try {
-            int value = std::stoi(line);  // 将每行的字符串转换为整数
+            int value = std::stoi(line);
             if (value < 0 || value > 255) {
                 std::cerr << "invalid uint8: " << value << std::endl;
                 continue;
@@ -88,4 +88,50 @@ ov::Tensor smart_resize_k(const ov::Tensor& input_tensor, float fx, float fy) {
     int Ht = Ho * fy;
     int Wt = Wo * fx;
     return smart_resize(input_tensor, Ht, Wt);
+}
+
+// Function to pad the tensor
+std::pair<ov::Tensor, std::vector<int>> pad_right_down_corner(const ov::Tensor& img, int stride, uint8_t pad_val) {
+    // Get input tensor dimensions (NHWC)
+    auto input_shape = img.get_shape();
+    auto N = input_shape[0];
+    auto H = input_shape[1];
+    auto W = input_shape[2];
+    auto C = input_shape[3];
+
+    // Calculate padding sizes
+    std::vector<int> pad(4);
+    pad[0] = 0;                                              // up
+    pad[1] = 0;                                              // left
+    pad[2] = (H % stride == 0) ? 0 : stride - (H % stride);  // down
+    pad[3] = (W % stride == 0) ? 0 : stride - (W % stride);  // right
+
+    // Calculate new dimensions
+    int H_new = H + pad[0] + pad[2];
+    int W_new = W + pad[1] + pad[3];
+
+    // Create a new tensor with the new dimensions
+    ov::Shape output_shape = {N, static_cast<unsigned long>(H_new), static_cast<unsigned long>(W_new), C};
+    ov::Tensor img_padded(ov::element::u8, output_shape);
+
+    // Initialize img_padded with padValue
+    uint8_t* padded_data = img_padded.data<uint8_t>();
+    std::fill(padded_data, padded_data + N * H_new * W_new * C, pad_val);
+
+    // Copy the original image into the new padded image
+    const uint8_t* img_data = img.data<uint8_t>();
+
+    for (int n = 0; n < N; ++n) {
+        for (int h = 0; h < H; ++h) {
+            for (int w = 0; w < W; ++w) {
+                for (int c = 0; c < C; ++c) {
+                    int src_idx = ((n * H + h) * W + w) * C + c;
+                    int dst_idx = ((n * H_new + (h + pad[0])) * W_new + (w + pad[1])) * C + c;
+                    padded_data[dst_idx] = img_data[src_idx];
+                }
+            }
+        }
+    }
+
+    return {img_padded, pad};
 }

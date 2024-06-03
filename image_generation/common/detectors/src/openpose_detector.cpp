@@ -55,6 +55,12 @@ void OpenposeDetector::load_bgr(const std::string& im_txt, unsigned long w, unsi
 
     ov::Tensor big_img_tensor = smart_resize_k(img_tensor, 2, 2);
     imwrite(std::string("im.double.bmp"), big_img_tensor, false);
+
+    int stride = 8;
+    uint8_t pad_val = 128;
+    ov::Tensor need_pad_img_tensor = smart_resize(img_tensor, 761, 505);
+    auto [img_padded, pad] = pad_right_down_corner(need_pad_img_tensor, stride, pad_val);
+    imwrite(std::string("im.paded.bmp"), img_padded, false);
 }
 
 void OpenposeDetector::postprocess() {
