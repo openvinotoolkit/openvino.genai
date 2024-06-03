@@ -176,8 +176,6 @@ public:
 
     std::vector<std::string> decode(ov::Tensor tokens) {
         m_detokenizer_request.set_input_tensor(tokens);
-        auto shape = tokens.get_shape();
-        auto data = tokens.data<int64_t>();
         m_detokenizer_request.infer();
         auto res = m_detokenizer_request.get_output_tensor();
         

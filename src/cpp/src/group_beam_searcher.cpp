@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/runtime/tensor.hpp>
+
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
 
@@ -107,11 +108,6 @@ struct Group {
 
     void finish(Beam&& beam, const Parameters& parameters) {
         beam.score /= std::pow(float(beam.tokens.size()), parameters.length_penalty);
-
-        // HF implementation counts eos_token for length penalty calculation
-        if (beam.tokens.back() == parameters.eos_token_id) {
-            beam.tokens.pop_back();
-        }
 
         min_heap.push_back(std::move(beam));
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
@@ -333,7 +329,6 @@ void initialize_inputs(const ov::Tensor& input_ids, const ov::Tensor& attention_
     std::fill_n(beam_idx.data<int32_t>(), input_shape.at(0), 0);
 }
 
-
 void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<int32_t> next_beams) {
     ov::Tensor original_mask{ov::element::i64, attention_mask.get_shape()};
     ov::Shape original_shape = original_mask.get_shape();
@@ -365,16 +360,18 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
     }
 }
 
-} // namespace
-
+}  // namespace
 
 namespace ov {
 namespace genai {
 
-EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor input_ids, ov::Tensor attention_mask, GenerationConfig config) {
-    OPENVINO_ASSERT(config.num_beams % config.num_beam_groups == 0, "number of beams should be divisible by number of groups");
-    
-    
+EncodedResults beam_search(ov::InferRequest& lm,
+                           ov::Tensor input_ids,
+                           ov::Tensor attention_mask,
+                           GenerationConfig config) {
+    OPENVINO_ASSERT(config.num_beams % config.num_beam_groups == 0,
+                    "number of beams should be divisible by number of groups");
+
     // Initialize beam search
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     std::vector<std::vector<int64_t>> prompts;
@@ -385,7 +382,7 @@ EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor input_ids, ov::Tenso
         const int64_t* prompt_start = prompt_data + batch_offset;
         prompts.push_back(std::vector<int64_t>{prompt_start, prompt_start + sequence_length});
     }
-    
+
     initialize_inputs(input_ids, attention_mask, lm);
 
     Parameters parameters{std::move(prompts)};
@@ -420,21 +417,25 @@ EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor input_ids, ov::Tenso
             update_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
     }
 
+    auto scores_comparator = [](Beam& left, Beam& right) {
+        return (left.score > right.score);
+    };
+
     std::vector<Beam> beams;
-    for (const std::vector<std::vector<Beam>>& prompt_group : finalize(std::move(group_beam_searcher))) {
+    auto result = finalize(std::move(group_beam_searcher));
+    // align output with HF
+    for (size_t prompt_id = 0; prompt_id < result.size(); prompt_id++) {
+        auto prompt_group = result.at(prompt_id);
+
         for (const std::vector<Beam> group : prompt_group) {
-            for (const Beam& beam : group) {
-                beams.emplace_back(beam);
-            }
+            beams.insert(beams.end(), group.begin(), group.end());
         }
+
+        // sort beams per prompt
+        auto start = beams.begin() + prompt_id * parameters.group_size * parameters.n_groups;
+        std::sort(start, beams.end(), scores_comparator);
     }
-    
-    // return sorted scores
-    auto compare_scores = [](Beam left, Beam right) { return (left.score > right.score); };
 
-
-    std::sort(beams.begin(), beams.end(), compare_scores);
-    
     ov::genai::EncodedResults results;
     for (auto beam = beams.begin(); beam != beams.begin() + config.num_return_sequences; ++beam) {
         results.scores.emplace_back(beam->score);
