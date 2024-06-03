@@ -259,8 +259,9 @@ public:
 
     std::vector<ProbabilityWithIdx> apply(const std::vector<LogitWithIdx>& input_logits) {
         std::vector<ProbabilityWithIdx> output(input_logits.begin(), input_logits.end());
-        std::sort(output.begin(), output.end(), [](const ProbabilityWithIdx& lhs, const ProbabilityWithIdx& rhs) {return lhs.first > rhs.first; });
-        float max_logit = output[0].first;
+        float max_logit = std::max_element(output.begin(), output.end(), [](const ProbabilityWithIdx& lhs, const ProbabilityWithIdx& rhs) {
+            return lhs.first > rhs.first;
+        })->first;
         std::for_each(output.begin(), output.end(), [max_logit, this](ProbabilityWithIdx& val) {val.first = expf((val.first - max_logit) / this->m_temperature);});
 
         float norm_sum = 0.0;
