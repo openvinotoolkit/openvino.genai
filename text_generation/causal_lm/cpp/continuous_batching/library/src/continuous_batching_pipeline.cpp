@@ -202,20 +202,12 @@ public:
             timer.end();
         }
 
-        // perform post-processing of current step
+        // free non running requests for current step
 
         {
-            static ManualTimer timer("create finished results");
+            static ManualTimer timer("free non running requests");
             timer.start();
-
-            for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
-                uint64_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-                SequenceGroup::Ptr sequence_group = m_requests[seq_group_id];
-                sequence_group->notify_handle();
-            }
-
             _free_non_running_requests();
-
             timer.end();
         }
 

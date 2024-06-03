@@ -447,20 +447,10 @@ public:
         } else if (m_sampling_params.is_greedy_sampling() || m_sampling_params.is_multinomial()) {
             // TO DO: Now we always stream for greedy search for the sake of benchmarking
             if (true /* m_sampling_params.stream */) {
-                // If sequence group has been preempted we skip retriving the results as seqeunce tokens have not been cleared and
-                // there's no new token. We reset preemption flag, so when it's scheduled again we process it normally.
-                if (m_preempted) {
-                    m_preempted = false;
-                    return;
-                }
                 for (auto& sequence : m_sequences) {
-                    if (sequence->get_generated_len() > 0) {
                         outputs.emplace(sequence->get_grouped_id(), sequence->get_last_generation_output(m_sampling_params));
-                    }
                 }
-                if (outputs.size()) {
-                    m_generation_stream->push(outputs);
-                }
+                m_generation_stream->push(outputs);
             }
         }
 
