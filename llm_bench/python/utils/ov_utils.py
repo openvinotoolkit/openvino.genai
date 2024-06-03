@@ -9,9 +9,7 @@ import logging as log
 import torch
 import time
 import types
-import utils.hook_greedy_search
-import utils.hook_beam_search
-
+import utils.hook_common as hook_common
 from utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
 import openvino.runtime.opset13 as opset
 
@@ -169,11 +167,7 @@ def create_text_gen_model(model_path, device, **kwargs):
         if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
             patch_inter_processing_and_compile(ov_model, **kwargs)
         end = time.perf_counter()
-    if kwargs['num_beams'] > 1:
-        bench_hook = utils.hook_beam_search.BeamSearchHook()
-    else:
-        bench_hook = utils.hook_greedy_search.GreedySearchHook()
-    bench_hook.new_forward(ov_model, model_type)
+    bench_hook = hook_common.get_bench_hook(kwargs['num_beams'], ov_model)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     # load token
