@@ -128,7 +128,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
             utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
-        result_md5_list.append(hashlib.md5(result_text.encode(), usedforsecurity=False).hexdigest())
+        result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
     if num == 0:
         warmup_md5[prompt_index] = result_md5_list
     per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
@@ -172,8 +172,108 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     bench_hook.clear_time_infer_list()
 
 
+def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_index, streamer, model_precision, proc_id):
+    set_seed(args['seed'])
+    input_text_list = [input_text] * args['batch_size']
+    if args["output_dir"] is not None and num == 0:
+        for bs_index, in_text in enumerate(input_text_list):
+            utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
+    tok_encode_start = time.perf_counter()
+    input_data = tokenizer(input_text_list, return_tensors='pt')
+    tok_encode_end = time.perf_counter()
+    tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
+    # Remove `token_type_ids` from inputs
+    input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
+    input_token_size = input_tokens[0].numel()
+    if args['batch_size'] > 1:
+        out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
+        out_str += " Batch_size={}, ".format(args['batch_size'])
+        out_str += 'all input token size after padding: {} * {}, '.format(input_token_size, args['batch_size'])
+        if args['infer_count'] is not None:
+            out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
+        log.info(out_str)
+
+    max_rss_mem_consumption = ''
+    max_shared_mem_consumption = ''
+    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
+        mem_consumption.start_collect_memory_consumption()
+    min_gen_tokens = 0 if args['infer_count'] is None else args['infer_count']
+    max_gen_tokens = MAX_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
+    streamer.reset()
+    start = time.perf_counter()
+    generated_text = model.generate(input_text_list, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], streamer=streamer)
+    log.info(generated_text)
+    end = time.perf_counter()
+    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
+        mem_consumption.end_collect_momory_consumption()
+        max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
+        mem_consumption.clear_max_memory_consumption()
+
+    generation_time = end - start
+
+    result = [streamer.get_tokens()]
+    tok_decode_start = time.perf_counter()
+    _ = tokenizer.batch_decode(result)
+    tok_decode_end = time.perf_counter()
+    tok_decode_time = (tok_decode_end - tok_decode_start) * 1000
+    # Only text_gen need to minus length of input_data, because generated_text may include input_text
+    num_tokens = 0
+    result_md5_list = []
+    for bs_idx in range(args['batch_size']):
+        generated_text_len = len(result[bs_idx])
+        num_tokens += generated_text_len
+        if generated_text_len > max_gen_tokens:
+            log.error('Output token size is over max output token size!')
+        result_text = generated_text[bs_idx]
+        if args["output_dir"] is not None:
+            utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
+        result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
+    if num == 0:
+        warmup_md5[prompt_index] = result_md5_list
+    per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+    tm_list = streamer.get_time_list()
+    log.debug('latency of all tokens:')
+    [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
+    iter_data = gen_iterate_data(
+        num,
+        input_token_size * args['batch_size'],
+        len(tm_list),
+        num_tokens,
+        generation_time,
+        per_token_time,
+        result_md5_list,
+        max_rss_mem=max_rss_mem_consumption,
+        max_shared_mem=max_shared_mem_consumption,
+        prompt_idx=prompt_index,
+        tokenization_time=(tok_encode_time, tok_decode_time)
+    )
+    iter_data_list.append(iter_data)
+    utils.metrics_print.print_metrics(
+        num,
+        iter_data,
+        tm_list,
+        [],
+        warm_up=(num == 0),
+        max_rss_mem=max_rss_mem_consumption,
+        max_shared_mem=max_shared_mem_consumption,
+        tokenization_time=(tok_encode_time, tok_decode_time),
+        batch_size=args['batch_size']
+    )
+    if num > 0:
+        warmup_md5_list = warmup_md5[prompt_index]
+        if result_md5_list != warmup_md5_list:
+            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} is different from warm-up's md5 {warmup_md5_list}")
+            utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+    else:
+        utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+    streamer.reset()
+
+
+
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
-    model, tokenizer, pretrain_time, bench_hook = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
+    model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
+    text_gen_fn = run_text_generation if not use_genai else run_text_generation_genai
+    
     model_precision = utils.model_utils.get_model_precision(model_path.parents._parts)
     iter_data_list = []
     warmup_md5 = {}
@@ -191,19 +291,21 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
             for prompt_idx, input_text in enumerate(input_text_list):
                 if num == 0:
                     log.info(f'[warm-up] Input text: {input_text}')
-                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
+                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
     else:
         for prompt_idx, input_text in enumerate(input_text_list):
             for num in range(num_iters + 1):
                 if num == 0:
                     log.info(f'[warm-up] Input text: {input_text}')
-                run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
+                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
 
     utils.metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time
 
 
 def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id):
+    if args.genai:
+        log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
     set_seed(args['seed'])
     input_text = image_param['prompt']
     image_width = image_param.get('width', DEFAULT_IMAGE_WIDTH)
@@ -295,6 +397,8 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 
 
 def run_image_classification(model_path, framework, device, args, num_iters=10):
+    if args.genai:
+        log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
     model, input_size = FW_UTILS[framework].create_image_classification_model(model_path, device, **args)
 
     data = torch.rand(input_size)
@@ -365,6 +469,8 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
 
 
 def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_iters):
+    if args.genai:
+        log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
     pipe, pretrain_time = FW_UTILS[framework].create_ldm_super_resolution_model(model_path, device, **args)
     iter_data_list = []
     tm_list = []
@@ -496,6 +602,7 @@ def get_argprser():
     )
     parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
     utils.model_utils.add_stateful_model_arguments(parser)
+    parser.add_argument("--genai", action="store_true")
 
     return parser.parse_args()
 
