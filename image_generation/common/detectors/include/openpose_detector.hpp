@@ -11,13 +11,12 @@ public:
     OpenposeDetector() = default;
 
     void load(const std::string&);
-    void preprocess();
-    void inference(const std::string&);
+    ov::Tensor preprocess(ov::Tensor);
+    std::pair<ov::Tensor, ov::Tensor> inference(ov::Tensor);
     void postprocess();
 
-    void load_bgr(const std::string&, unsigned long w, unsigned long h, unsigned long c);
-
-    int foo();
+    // will be deleted
+    void forward(const std::string&, unsigned long w, unsigned long h, unsigned long c);
 
 private:
     ov::CompiledModel body_model;

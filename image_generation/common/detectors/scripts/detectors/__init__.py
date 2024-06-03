@@ -91,7 +91,9 @@ class Body(object):
             scale = multiplier[m]
             imageToTest = smart_resize_k(oriImg, fx=scale, fy=scale)
             imageToTest_padded, pad = padRightDownCorner(imageToTest, stride, padValue)
+            print(f"imageToTest_padded.shape: {imageToTest_padded.shape}") # HWC
             im = np.transpose(np.float32(imageToTest_padded[:, :, :, np.newaxis]), (3, 2, 0, 1)) / 256 - 0.5
+            print(f"im.shape: {im.shape}") # NCHW
             im = np.ascontiguousarray(im)
 
             data = torch.from_numpy(im).float()
@@ -102,12 +104,19 @@ class Body(object):
             Mconv7_stage6_L1 = Mconv7_stage6_L1.cpu().numpy()
             Mconv7_stage6_L2 = Mconv7_stage6_L2.cpu().numpy()
 
+            print(f"Mconv7_stage6_L1.shape: {Mconv7_stage6_L1.shape}")
+            print(f"Mconv7_stage6_L2.shape: {Mconv7_stage6_L2.shape}")
+
             # extract outputs, resize, and remove padding
             # heatmap = np.transpose(np.squeeze(net.blobs[output_blobs.keys()[1]].data), (1, 2, 0))  # output 1 is heatmaps
             heatmap = np.transpose(np.squeeze(Mconv7_stage6_L2), (1, 2, 0))  # output 1 is heatmaps
+            print(f"heatmap.shape: {heatmap.shape}")
             heatmap = smart_resize_k(heatmap, fx=stride, fy=stride)
+            print(f"heatmap.shape: {heatmap.shape}")
             heatmap = heatmap[:imageToTest_padded.shape[0] - pad[2], :imageToTest_padded.shape[1] - pad[3], :]
+            print(f"heatmap.shape: {heatmap.shape}")
             heatmap = smart_resize(heatmap, (oriImg.shape[0], oriImg.shape[1]))
+            print(f"heatmap.shape: {heatmap.shape}")
 
             # paf = np.transpose(np.squeeze(net.blobs[output_blobs.keys()[0]].data), (1, 2, 0))  # output 0 is PAFs
             paf = np.transpose(np.squeeze(Mconv7_stage6_L1), (1, 2, 0))  # output 0 is PAFs
