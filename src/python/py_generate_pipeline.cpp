@@ -64,11 +64,7 @@ void update_config_from_kwargs(GenerationConfig& config, const py::kwargs& kwarg
     if (kwargs.contains("top_k")) config.top_k = kwargs["top_k"].cast<size_t>();
     if (kwargs.contains("do_sample")) config.do_sample = kwargs["do_sample"].cast<bool>();
     if (kwargs.contains("repetition_penalty")) config.repetition_penalty = kwargs["repetition_penalty"].cast<float>();
-    if (kwargs.contains("pad_token_id")) config.pad_token_id = kwargs["pad_token_id"].cast<int64_t>();
-    if (kwargs.contains("bos_token_id")) config.bos_token_id = kwargs["bos_token_id"].cast<int64_t>();
     if (kwargs.contains("eos_token_id")) config.eos_token_id = kwargs["eos_token_id"].cast<int64_t>();
-    if (kwargs.contains("eos_token")) config.eos_token = kwargs["eos_token"].cast<std::string>();
-    if (kwargs.contains("bos_token")) config.bos_token = kwargs["bos_token"].cast<std::string>();
 }
 
 py::object call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config, const StreamerVariant& streamer) {
@@ -180,11 +176,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
                         `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
             max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
             ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
-            pad_token_id:  token_id of <pad> (padding)
-            bos_token_id:  token_id of <bos> (beggining of sentence)
             eos_token_id:  token_id of <eos> (end of sentence)
-            bos_token:     <bos> token string representation
-            eos_token:     <eos> token string representation
             
             Beam search specific parameters:
             num_beams:         number of beams for beam search. 1 disables beam search.
@@ -229,9 +221,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         R"(openvino_genai.Tokenizer object is used to to initialize tokenizer if it's located in different path 
         that the main model.)")
         .def(py::init<>())
-        .def(py::init<std::string&, const std::string&>(), 
-                py::arg("tokenizers_path"), 
-                py::arg("device") = "CPU");
+        .def(py::init<std::string&>(), py::arg("tokenizers_path"));
 
     // Binding for StopCriteria
     py::enum_<StopCriteria>(m, "StopCriteria",
@@ -263,11 +253,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("top_k", &GenerationConfig::top_k)
         .def_readwrite("do_sample", &GenerationConfig::do_sample)
         .def_readwrite("repetition_penalty", &GenerationConfig::repetition_penalty)
-        .def_readwrite("pad_token_id", &GenerationConfig::pad_token_id)
-        .def_readwrite("bos_token_id", &GenerationConfig::bos_token_id)
-        .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id)
-        .def_readwrite("eos_token", &GenerationConfig::eos_token)
-        .def_readwrite("bos_token", &GenerationConfig::bos_token);
+        .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id);
 
     py::class_<DecodedResults>(m, "DecodedResults")
         .def(py::init<>())

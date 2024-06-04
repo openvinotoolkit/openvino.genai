@@ -3,10 +3,6 @@
 
 #include <openvino/genai/llm_pipeline.hpp>
 
-namespace {
-    enum SPECIAL_TOKEN { PAD_TOKEN_ID = 2 };
-}
-
 int main(int argc, char* argv[]) try {
     if (argc < 3) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT 1>' ['<PROMPT 2>' ...]");
@@ -22,12 +18,7 @@ int main(int argc, char* argv[]) try {
     config.num_beam_groups = 3;
     config.num_beams = 15;
     config.num_return_sequences = config.num_beams * prompts.size();
-    
-    // for TinyLLama despite in generation_config.json pad_token_id is set to 0, 
-    // the correct pad_token_id = 2 
-    if (model_path.find("TinyLlama") != std::string::npos)
-        config.pad_token_id = PAD_TOKEN_ID;
-   
+       
     auto beams = pipe.generate(prompts, config);
     for (int i = 0; i < beams.scores.size(); i++)
         std::cout << beams.scores[i] << ": " << beams.texts[i] << '\n';

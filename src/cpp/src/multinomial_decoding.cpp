@@ -102,19 +102,7 @@ struct RandomSampling {
           top_p{generation_config.top_p},
           inv_temperature{1.f / generation_config.temperature},
           repetition_penalty{generation_config.repetition_penalty} {
-        // parameters validation
-        OPENVINO_ASSERT(generation_config.top_k > 0,
-                        "top_k must be a strictly positive, but got ",
-                        generation_config.top_p);
-        OPENVINO_ASSERT(generation_config.top_p > 0 || generation_config.top_p < 1.0f,
-                        "top_p must be a positive float > 0 and < 1, but got ",
-                        generation_config.top_p);
-        OPENVINO_ASSERT(generation_config.temperature > 0,
-                        "Temperature must be a strictly positive float, but got ",
-                        generation_config.temperature);
-        OPENVINO_ASSERT(generation_config.repetition_penalty > 0,
-                        "Repetition penalty must be a strictly positive float, but got ",
-                        generation_config.repetition_penalty);
+        generation_config.validate();
     }
 
     TokenIdScore get_out_token(float* logits, size_t vocab_size, const std::vector<int64_t>& tokens) {
@@ -183,7 +171,8 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
     m_model_runner.set_tensor("attention_mask", attention_mask);
 
     auto num_inputs = m_model_runner.get_compiled_model().inputs().size();
-    if (num_inputs == 4) {
+    bool position_ids_available = num_inputs == 4;
+    if (position_ids_available) {
         ov::Tensor position_ids = m_model_runner.get_tensor("position_ids");
         position_ids.set_shape(input_ids.get_shape());
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
@@ -224,13 +213,13 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
     }
 
     m_model_runner.get_tensor("input_ids").set_shape({batch_size, 1});
-    if (num_inputs == 4)
+    if (position_ids_available)
         m_model_runner.get_tensor("position_ids").set_shape({batch_size, 1});
 
     size_t max_new_tokens = config.get_max_new_tokens(prompt_len);
 
     for (size_t i = 0; i < max_new_tokens - 1; i++) {
-        if (num_inputs == 4) {
+        if (position_ids_available) {
             ov::genai::utils::update_position_ids(m_model_runner.get_tensor("position_ids"),
                                                   m_model_runner.get_tensor("attention_mask"));
         }

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "utils.hpp"
+#include <fstream>
 
 namespace ov {
 namespace genai {
@@ -32,8 +33,6 @@ void print_tensor(const ov::Tensor& tensor) {
     std::cout << "]" << std::endl;
 }
 
-bool is_xml(const std::string& path) { return path.compare(path.length() - 4, 4, ".xml") == 0;}
-
 int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
     if (logits.get_shape()[0] <= batch_idx) {
         OPENVINO_THROW("logits batch size doesn't match the number of beams");
@@ -50,7 +49,21 @@ int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
     return out_token;
 }
 
-void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos) {
+/**
+ * Initializes position ids based on attention mask and starting position
+ */
+void initialize_position_ids(ov::Tensor& position_ids, 
+                            const ov::Tensor& attention_mask, 
+                            int64_t start_pos) {
+    OPENVINO_ASSERT(position_ids.get_element_type() == ov::element::i64, 
+                    "position_ids tensor element type should be an i64");
+    OPENVINO_ASSERT(position_ids.get_shape().size() == 2, 
+                    "position_ids tensor should of rank 2 with shape [batch_size, seq_len]");
+    OPENVINO_ASSERT(attention_mask.get_element_type() == ov::element::i64, 
+                    "attention_mask tensor element type should be an i64");
+    OPENVINO_ASSERT(attention_mask.get_shape().size() == 2, 
+                    "attention_mask tensor should of rank 2 with shape [batch_size, seq_len]");
+
     const size_t batch_size = attention_mask.get_shape()[0];
     const size_t seq_length = attention_mask.get_shape()[1];
 
@@ -141,6 +154,31 @@ ov::Tensor extend_attention(ov::Tensor attention_mask) {
     }
     return new_atten_mask;
 }
+
+
+
+std::tuple<int64_t, int64_t, int64_t> get_special_tokens_from_config_json(const std::filesystem::path& config_path) {
+    int64_t pad_token_id = -1;
+    int64_t bos_token_id = -1;
+    int64_t eos_token_id = -1;
+    auto res = std::tie(pad_token_id, bos_token_id, eos_token_id);
+
+    if (!std::filesystem::exists(config_path))
+        return res;
+
+    std::ifstream file(config_path);
+        if (!file.is_open())
+            return res;
+
+    nlohmann::json data = nlohmann::json::parse(file);
+    using ov::genai::utils::read_json_param;
+
+    read_json_param(data, "pad_token_id", pad_token_id);
+    read_json_param(data, "bos_token_id", bos_token_id);
+    read_json_param(data, "eos_token_id", eos_token_id);
+    return res;
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

@@ -17,7 +17,6 @@ public:
     TextCallbackStreamer(const Tokenizer& tokenizer, std::function<bool(std::string)> callback);
    
     std::function<bool(std::string)> on_finalized_subword_callback = [](std::string words)->bool { return false; };
-    int64_t m_eos_token;
 private:
     Tokenizer m_tokenizer;
     std::vector<int64_t> m_tokens_cache;

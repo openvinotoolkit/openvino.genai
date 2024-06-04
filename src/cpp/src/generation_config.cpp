@@ -13,7 +13,7 @@
 namespace ov {
 namespace genai {
 
-GenerationConfig::GenerationConfig(std::string json_path) {
+GenerationConfig::GenerationConfig(const std::string& json_path) {
     using ov::genai::utils::read_json_param;
 
     std::ifstream f(json_path);
@@ -35,11 +35,7 @@ GenerationConfig::GenerationConfig(std::string json_path) {
     read_json_param(data, "top_k", top_k);
     read_json_param(data, "do_sample", do_sample);
     read_json_param(data, "repetition_penalty", repetition_penalty);
-    read_json_param(data, "pad_token_id", pad_token_id);
-    read_json_param(data, "bos_token_id", bos_token_id);
     read_json_param(data, "eos_token_id", eos_token_id);
-    read_json_param(data, "bos_token", bos_token);
-    read_json_param(data, "eos_token", eos_token);
 
     if (data.contains("early_stopping")) {
         auto field_type = data["early_stopping"].type();
@@ -51,8 +47,6 @@ GenerationConfig::GenerationConfig(std::string json_path) {
             stop_criteria = StopCriteria::HEURISTIC;
         }
     }
-
-
 }
 
 void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
@@ -73,11 +67,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     read_anymap_param(config_map, "top_k", top_k);
     read_anymap_param(config_map, "do_sample", do_sample);
     read_anymap_param(config_map, "repetition_penalty", repetition_penalty);
-    read_anymap_param(config_map, "pad_token_id", pad_token_id);
-    read_anymap_param(config_map, "bos_token_id", bos_token_id);
     read_anymap_param(config_map, "eos_token_id", eos_token_id);
-    read_anymap_param(config_map, "bos_token", bos_token);
-    read_anymap_param(config_map, "eos_token", eos_token);
 }
 
 size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
@@ -99,6 +89,33 @@ bool GenerationConfig::is_beam_search() const {
 
 bool GenerationConfig::is_multinomial() const {
     return do_sample;
+}
+
+void GenerationConfig::validate() const {
+    OPENVINO_ASSERT(!do_sample || num_beams == 1, 
+                    "Beam search with sampling is not supported yet. "
+                    "Please either set do_sample=false to use beam search "
+                    "or set num_beams=1 if you with to use multinomial sampling.");
+    
+    OPENVINO_ASSERT(max_new_tokens > 0, "'max_new_tokens' must be greater than 0");
+    
+    // max_new_tokens has priority over max_length
+    // if max_new_tokens is defined no need to check max_length
+    OPENVINO_ASSERT(max_new_tokens != SIZE_MAX ||  max_length > 0, 
+                    "'max_length' must be greater than 0 or 'max_new_tokens' should be defined");
+
+    OPENVINO_ASSERT(top_k > 0, 
+                    "top_k must be a strictly positive, but got ",
+                    top_p);
+    OPENVINO_ASSERT(top_p > 0 || top_p < 1.0f,
+                    "top_p must be a positive float > 0 and < 1, but got ",
+                    top_p);
+    OPENVINO_ASSERT(temperature > 0,
+                    "Temperature must be a strictly positive float, but got ",
+                    temperature);
+    OPENVINO_ASSERT(repetition_penalty > 0,
+                    "Repetition penalty must be a strictly positive float, but got ",
+                    repetition_penalty);
 }
 
 }  // namespace genai

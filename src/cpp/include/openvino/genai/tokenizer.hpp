@@ -26,9 +26,8 @@ public:
     /**
     * @brief ov::Tokenizer constructor.
     * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
-    * @param device device. Currently only 'CPU' is supported
     */
-    Tokenizer(const std::string& tokenizers_path, const std::string& device="CPU");
+    Tokenizer(const std::string& tokenizers_path);
 
     /**
     * @brief encode a single prompt
@@ -71,12 +70,10 @@ public:
     int64_t get_bos_token_id() const;
     int64_t get_eos_token_id() const;
     int64_t get_pad_token_id() const;
-    
-    // Also need write access to set these tokens when they are not successfully read from xml rt_info.
-    // In the latter case values can be read from config.json in LLMPipeline
-    void set_bos_token_id(int64_t);
-    void set_eos_token_id(int64_t);
-    void set_pad_token_id(int64_t);
+
+    std::string get_bos_token() const;
+    std::string get_eos_token() const;
+    std::string get_pad_token() const;
 
     Tokenizer() = default;
     ~Tokenizer();

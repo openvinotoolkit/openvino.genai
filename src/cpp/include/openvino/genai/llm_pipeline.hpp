@@ -16,7 +16,7 @@ namespace genai {
 
 using StreamerVariant = std::variant<std::function<bool(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
-using EncodedInputs = std::variant<ov::Tensor, std::pair<ov::Tensor, ov::Tensor>, TokenizedInputs>;
+using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
 
 /**
@@ -92,8 +92,6 @@ public:
     * @param request infer request of the model
     * @param tokenizer initialized Tokenizer 
     * @param generation_config optional generation_config, be default will be initialized for greedy decoding
-    * @param device optional device
-    * @param plugin_config optional plugin_config
     */
     LLMPipeline(
         const ov::InferRequest& request, 

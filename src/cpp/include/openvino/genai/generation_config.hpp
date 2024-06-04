@@ -32,11 +32,7 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  *        `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
  * @param max_new_tokens the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
  * @param ignore_eos if set to true, then generation will not stop even if <eos> token is met.
- * @param pad_token_id token_id of <pad> (padding)
- * @param bos_token_id token_id of <bos> (beggining of sentence)
  * @param eos_token_id token_id of <eos> (end of sentence)
- * @param bos_token <bos> token string representation
- * @param eos_token <eos> token string representation
  * 
  * Beam search specific parameters:
  * @param num_beams number of beams for beam search. 1 disables beam search.
@@ -64,7 +60,7 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
 public:
     GenerationConfig() = default;
-    explicit GenerationConfig(std::string json_path);
+    explicit GenerationConfig(const std::string& json_path);
 
     // Generic
     size_t max_new_tokens = SIZE_MAX;
@@ -87,20 +83,18 @@ public:
     bool do_sample = false;
     float repetition_penalty = 1.0f;
 
-    // special tokens
-    int64_t pad_token_id = 0;
-    int64_t bos_token_id = 1;
-    int64_t eos_token_id = 2;
-    
-    // used for chat scenario
-    std::string bos_token = "<s>";
-    std::string eos_token = "</s>";
+    // EOS special token
+    int64_t eos_token_id = -1;
 
     size_t get_max_new_tokens(size_t prompt_length = 0) const;
     bool is_greedy_decoding() const;
     bool is_beam_search() const;
     bool is_multinomial() const;
     void update_generation_config(const ov::AnyMap& config_map = {});
+    
+    /// @brief checks that are no conflicting parameters, e.g. do_sample=true and num_beams > 1.
+    /// @throws Exception if config is invalid.
+    void validate() const;
 };
 
 /*
@@ -125,14 +119,7 @@ static constexpr ov::Property<float> top_p{"top_p"};
 static constexpr ov::Property<int> top_k{"top_k"};
 static constexpr ov::Property<bool> do_sample{"do_sample"};
 static constexpr ov::Property<float> repetition_penalty{"repetition_penalty"};
-
-
-static constexpr ov::Property<int64_t> pad_token_id{"pad_token_id"};
-static constexpr ov::Property<int64_t> bos_token_id{"bos_token_id"};
 static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};
-    
-static constexpr ov::Property<std::string> bos_token{"bos_token"};
-static constexpr ov::Property<std::string> eos_token{"eos_token"};
 
 }  // namespace genai
 }  // namespace ov

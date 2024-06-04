@@ -22,8 +22,6 @@ ov::Tensor extend_attention(ov::Tensor attention_mask);
 
 void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask);
 
-bool is_xml(const std::string& path);
-
 template <typename>
 struct json_type_traits {};
 
@@ -64,6 +62,9 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
         param = config_map.at(name).as<T>();
     }
 }
+
+std::tuple<int64_t, int64_t, int64_t> get_special_tokens_from_config_json(const std::filesystem::path& config_path);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

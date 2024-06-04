@@ -318,7 +318,8 @@ void initialize_inputs(const ov::Tensor& input_ids, const ov::Tensor& attention_
 
     ov::Shape input_shape = input_ids.get_shape();
     auto num_inputs = request.get_compiled_model().inputs().size();
-    if (num_inputs == 4){
+    bool position_ids_available = num_inputs == 4;
+    if (position_ids_available){
         ov::Tensor position_ids = request.get_tensor("position_ids");
         position_ids.set_shape(input_shape);
         ov::genai::utils::initialize_position_ids(position_ids, attention_mask);
@@ -399,6 +400,7 @@ EncodedResults beam_search(ov::InferRequest& lm,
     std::vector<int64_t> next_tokens;
     std::vector<int32_t> next_beams;
     auto num_inputs = lm.get_compiled_model().inputs().size();
+    bool position_ids_available = num_inputs == 4;
     
     for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
         lm.infer();
@@ -413,7 +415,7 @@ EncodedResults beam_search(ov::InferRequest& lm,
         lm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
         // Set auxiliary inputs
         update_attention_mask_with_beams(lm.get_tensor("attention_mask"), next_beams);
-        if (num_inputs == 4)
+        if (position_ids_available)
             update_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
     }
 

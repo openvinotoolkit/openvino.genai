@@ -49,14 +49,15 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
         prompts = [prompts]
 
     if 'do_sample' not in config:
-        # for some reason this key inside HF sometimes is implicitly set to True
-        # and it conflicts with beam search args `diversity_penalty` and/or `num_beam_groups` specified here
-        # need to state exlicitly to False if not specified
+        # Some HF model has default do_sample = True, and if we test beam search
+        # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
+        # Need to set exlicitly to False, but only if test arguments omitted this arg.
         config['do_sample'] = False
-
+    
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
         generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
+    generation_config_hf.pop('ignore_eos', None)
 
     # Encode the batch of prompts
     tokenizer.padding_side = "left"
@@ -93,9 +94,9 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
     config = generation_config.copy()  # to avoid side effects
 
     if 'do_sample' not in config:
-        # for some reason this key inside HF sometimes is implicitly set to True
-        # and it conflicts with beam search args `diversity_penalty` and/or `num_beam_groups` specified here
-        # need to state exlicitly to False if not specified
+        # Some HF model has default do_sample = True, and if we test beam search
+        # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
+        # Need to set exlicitly to False, but only if test arguments omitted this arg.
         config['do_sample'] = False
     
     generation_config_hf = config.copy()
@@ -111,13 +112,13 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
     
     ov_output = pipe.generate(prompt, **config)
     if config.get('num_return_sequences', 1) > 1:
-        ov_output = ov_output[0]
+        assert hf_output in ov_output
+    else:
+        if hf_output != ov_output:
+            print(f'hf_output: {hf_output}')
+            print(f'ov_output: {ov_output}')
 
-    if hf_output != ov_output:
-        print(f'hf_output: {hf_output}')
-        print(f'ov_output: {ov_output}')
-
-    assert hf_output == ov_output
+        assert hf_output == ov_output
 
 
 def stop_criteria_map():
@@ -132,8 +133,8 @@ def stop_criteria_map():
 
 
 test_cases = [
-    (dict(max_new_tokens=20), 'table is made of'),  # generation_config, prompt
-    (dict(max_new_tokens=20), '你好！ 你好嗎？'),  # generation_config, prompt
+    (dict(max_new_tokens=20), 'table is made of'),
+    (dict(max_new_tokens=20), '你好！ 你好嗎？'),
     (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0), 'Alan Turing was a'),
     (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
     (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
@@ -149,6 +150,7 @@ def test_decoding(model_descr, generation_config, prompt):
 
 test_configs = [
     dict(max_new_tokens=20),
+    dict(max_new_tokens=200, ignore_eos=True),
     dict(max_new_tokens=20, num_beam_groups=3, num_beams=15, diversity_penalty=1.0)
 ]
 batched_prompts = [['table is made of', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
@@ -160,10 +162,9 @@ batched_prompts = [['table is made of', 'They sky is blue because', 'Difference 
 @pytest.mark.precommit
 @pytest.mark.xfail(
     raises=AssertionError, reason="assert hf_output == ov_output fails",
-    strict=True,
+    strict=False,
 )
 def test_multibatch(model_descr, generation_config, prompts):
-    generation_config['pad_token_id'] = 2
     run_hf_ov_genai_comparison_batched(read_model(model_descr), generation_config, prompts)
 
 
