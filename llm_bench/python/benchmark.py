@@ -44,7 +44,7 @@ stable_diffusion_hook = StableDiffusionHook()
 
 
 def gen_iterate_data(
-    thread_id = '',
+    thread_id='',
     iter_idx='',
     in_size='',
     infer_count='',
@@ -83,7 +83,7 @@ def model_infer(model, input_data, max_gen_tokens, args):
     thread_id = threading.get_native_id()
     log.info(f"thread id:{thread_id} start")
     utils.global_var.set_value(thread_id, {'tm_list': [], 'tm_infer_list': []})
-    #utils.global_var.get_value('g_lock').acquire()
+    # utils.global_var.get_value('g_lock').acquire()
     start = time.perf_counter()
     if args['infer_count'] is not None:
         model.generation_config.eos_token_id = None
@@ -92,7 +92,7 @@ def model_infer(model, input_data, max_gen_tokens, args):
     else:
         result = model.generate(**input_data, max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True)
     end = time.perf_counter()
-    #utils.global_var.get_value('g_lock').release()
+    # utils.global_var.get_value('g_lock').release()
     generation_time = end - start
     thread_result['tid'] = thread_id
     thread_result['result'] = result
@@ -145,8 +145,8 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
 
     for tResult in thread_result:
         generation_time = tResult['gen_time'] if 'gen_time' in tResult.keys() else ''
-        result = tResult['result']  if 'result' in tResult.keys() else ''
-        thread_id = tResult['tid']  if 'tid' in tResult.keys() else ''
+        result = tResult['result'] if 'result' in tResult.keys() else ''
+        thread_id = tResult['tid'] if 'tid' in tResult.keys() else ''
         tok_decode_start = time.perf_counter()
         generated_text = tokenizer.batch_decode(result)
         tok_decode_end = time.perf_counter()
