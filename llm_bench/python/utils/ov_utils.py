@@ -217,7 +217,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     ov_tok = core.read_model(model_path / "openvino_tokenizer.xml")
     ov_detok = core.read_model(model_path / "openvino_detokenizer.xml")
     hf_tokenizer = build_ov_tokenizer_wrapper(hf_tokenizer, ov_tok, ov_detok)
-    
+
     start = time.perf_counter()
 
     # TO DO: add plugin config
