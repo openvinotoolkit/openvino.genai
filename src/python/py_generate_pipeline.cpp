@@ -96,39 +96,6 @@ py::object call_with_kwargs(LLMPipeline& pipeline, const std::string& text, cons
     return call_with_config(pipeline, text, config, kwargs.contains("streamer") ? kwargs["streamer"].cast<StreamerVariant>() : std::monostate());
 }
 
-std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
-#ifdef _WIN32
-    constexpr char tokenizers[] = "openvino_tokenizers.dll";
-#elif __linux__
-    constexpr char tokenizers[] = "libopenvino_tokenizers.so";
-#elif __APPLE__
-    constexpr char tokenizers[] = "libopenvino_tokenizers.dylib";
-#endif
-    return path.parent_path() / tokenizers;
-}
-
-std::string get_ov_genai_bindings_path() {
-#ifdef _WIN32
-    CHAR genai_library_path[MAX_PATH];
-    HMODULE hm = NULL;
-    if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                            reinterpret_cast<LPSTR>(get_ov_genai_bindings_path),
-                            &hm)) {
-        std::stringstream ss;
-        ss << "GetModuleHandle returned " << GetLastError();
-        throw std::runtime_error(ss.str());
-    }
-    GetModuleFileNameA(hm, (LPSTR)genai_library_path, sizeof(genai_library_path));
-    return std::string(genai_library_path);
-#elif defined(__APPLE__) || defined(__linux__) || defined(__EMSCRIPTEN__)
-    Dl_info info;
-    dladdr(reinterpret_cast<void*>(get_ov_genai_bindings_path), &info);
-    return get_absolute_file_path(info.dli_fname).c_str();
-#else
-#    error "Unsupported OS"
-#endif  // _WIN32
-}
-
 std::string ov_tokenizers_module_path() {
     // Try a path relative to build artifacts folder first.
     std::filesystem::path from_relative = ov::genai::tokenizers_relative_to_genai();

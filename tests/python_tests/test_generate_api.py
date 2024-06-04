@@ -25,14 +25,21 @@ def read_model(params):
             model_id, export=True, trust_remote_code=True,
             compile=False, device='CPU', load_in_8bit=False
         ).save_pretrained(path)
-    # Return AutoModelForCausalLM instead of OVModelForCausalLM to fit GitHub Runner memory.
-    return model_id, path, tokenizer, transformers.AutoModelForCausalLM.from_pretrained(
-        model_id, trust_remote_code=True
+    # Return AutoModelForCausalLM instead of OVModelForCausalLM because
+    # there's no way to disable mmap for now. That prohibits the same
+    # model from being opened twice at the same time.
+    return (
+        model_id,
+        path,
+        tokenizer,
+        transformers.AutoModelForCausalLM.from_pretrained(
+            model_id, trust_remote_code=True),
+        openvino_genai.LLMPipeline(str(path)),
     )
 
 
 def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, prompts: Union[str, List[str]]):
-    model_id, path, tokenizer, model = model_descr
+    model_id, path, tokenizer, model, pipe = model_descr
     device = 'CPU'
 
     config = generation_config.copy()  # to avoid side effects
@@ -81,7 +88,7 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
 
 def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
     device = 'CPU'
-    model_id, path, tokenizer, model = model_descr
+    model_id, path, tokenizer, model, pipe = model_descr
 
     config = generation_config.copy()  # to avoid side effects
 
@@ -142,7 +149,7 @@ def test_decoding(model_descr, generation_config, prompt):
 
 test_configs = [
     dict(max_new_tokens=20),
-    dict( max_new_tokens=20, num_beam_groups=3, num_beams=15,diversity_penalty=1.0)
+    dict(max_new_tokens=20, num_beam_groups=3, num_beams=15, diversity_penalty=1.0)
 ]
 batched_prompts = [['table is made of', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
                    ['hello', 'Here is the longest nowel ever: '],
@@ -151,7 +158,10 @@ batched_prompts = [['table is made of', 'They sky is blue because', 'Difference 
 @pytest.mark.parametrize("prompts", batched_prompts)
 @pytest.mark.parametrize("model_descr", models_list())
 @pytest.mark.precommit
-@pytest.mark.skip("Fails")
+@pytest.mark.xfail(
+    raises=AssertionError, reason="assert hf_output == ov_output fails",
+    strict=True,
+)
 def test_multibatch(model_descr, generation_config, prompts):
     generation_config['pad_token_id'] = 2
     run_hf_ov_genai_comparison_batched(read_model(model_descr), generation_config, prompts)
@@ -204,7 +214,7 @@ def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
 @pytest.mark.parametrize("max_new_tokens", [800, 2000])
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize("model_descr", models_list())
-@pytest.mark.skip(reason="Will be enabled in nightly since are computationally expensive")
+@pytest.mark.skip(reason="Will be enabled in nightly since the test are computationally expensive")
 @pytest.mark.nightly
 def test_beam_search_long_sentences(model_descr, num_beam_groups, group_size,
                                     max_new_tokens, prompt):
@@ -225,14 +235,16 @@ def user_defined_callback(subword):
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
 def test_callback_one_string(callback):
-    pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
-    # pipe.generate('', openvino_genai.GenerationConfig(), callback)
+    pipe = read_model(models_list()[0])[4]
+    generation_config = pipe.get_generation_config()
+    generation_config.max_new_tokens = 10
+    pipe.generate('', generation_config, callback)
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
 def test_callback_batch_fail(callback):
-    pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
+    pipe = read_model(models_list()[0])[4]
     with pytest.raises(RuntimeError):
         pipe.generate(['1', '2'], openvino_genai.GenerationConfig(), callback)
 
@@ -240,14 +252,14 @@ def test_callback_batch_fail(callback):
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
 def test_callback_kwargs_one_string(callback):
-    pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
+    pipe = read_model(models_list()[0])[4]
     pipe.generate('', max_new_tokens=10, streamer=callback)
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
 def test_callback_kwargs_batch_fail(callback):
-    pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
+    pipe = read_model(models_list()[0])[4]
     with pytest.raises(RuntimeError):
         pipe.generate(['1', '2'], max_new_tokens=10, streamer=callback)
 
@@ -265,14 +277,16 @@ class Printer(openvino_genai.StreamerBase):
 
 @pytest.mark.precommit
 def test_streamer_one_string():
-    pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
+    pipe = read_model(models_list()[0])[4]
+    generation_config = pipe.get_generation_config()
+    generation_config.max_new_tokens = 10
     printer = Printer(pipe.get_tokenizer())
-    pipe.generate('', openvino_genai.GenerationConfig(), printer)
+    pipe.generate('', generation_config, printer)
 
 
 @pytest.mark.precommit
 def test_streamer_batch_fail():
-    pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
+    pipe = read_model(models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         pipe.generate(['1', '2'], openvino_genai.GenerationConfig(), printer)
@@ -280,14 +294,14 @@ def test_streamer_batch_fail():
 
 @pytest.mark.precommit
 def test_streamer_kwargs_one_string():
-    pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
+    pipe = read_model(models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
-    pipe.generate('', do_sample=True, streamer=printer)
+    pipe.generate('', max_new_tokens=10, do_sample=True, streamer=printer)
 
 
 @pytest.mark.precommit
 def test_streamer_kwargs_batch_fail():
-    pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
+    pipe = read_model(models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         pipe.generate('', num_beams=2, streamer=printer)
@@ -296,28 +310,30 @@ def test_streamer_kwargs_batch_fail():
 @pytest.mark.precommit
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 def test_operator_with_callback_one_string(callback):
-    pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
-    pipe('', openvino_genai.GenerationConfig(), callback)
+    pipe = read_model(models_list()[0])[4]
+    ten_tokens = pipe.get_generation_config()
+    ten_tokens.max_new_tokens = 10
+    pipe('', ten_tokens, callback)
 
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 def test_operator_with_callback_batch_fail(callback):
-    pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
+    pipe = read_model(models_list()[0])[4]
     with pytest.raises(TypeError):
         pipe(['1', '2'], openvino_genai.GenerationConfig(), callback)
 
 
 @pytest.mark.precommit
 def test_operator_with_streamer_kwargs_one_string():
-    pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
+    pipe = read_model(models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
-    pipe('', do_sample=True, streamer=printer)
+    pipe('', max_new_tokens=10, do_sample=True, streamer=printer)
 
 
 @pytest.mark.precommit
 def test_operator_with_streamer_kwargs_batch_fail():
-    pipe = openvino_genai.LLMPipeline(str(read_model(models_list()[0])[1]))
+    pipe = read_model(models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         pipe('', num_beams=2, streamer=printer)
