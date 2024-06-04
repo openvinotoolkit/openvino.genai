@@ -13,6 +13,10 @@ updates:
     schedule:
       interval: "weekly"
   - package-ecosystem: "pip"
+    directory: "./tests/python_tests/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
     directory: "text_generation/causal_lm/cpp/"
     schedule:
       interval: "weekly"
