@@ -157,14 +157,14 @@ def create_text_gen_model(model_path, device, **kwargs):
         if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
             patch_inter_processing_and_compile(ov_model, **kwargs)
         end = time.perf_counter()
-    bench_hook = hook_common.get_bench_hook(kwargs['num_beams'], ov_model)
+    hook_common.get_bench_hook(kwargs['num_beams'], ov_model)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     # load token
     tokenizer = token_class.from_pretrained(model_path, trust_remote_code=True)
     if kwargs.get("convert_tokenizer", False):
         tokenizer = build_ov_tokenizer(tokenizer)
-    return ov_model, tokenizer, from_pretrained_time, bench_hook
+    return ov_model, tokenizer, from_pretrained_time
 
 
 def create_image_gen_model(model_path, device, **kwargs):

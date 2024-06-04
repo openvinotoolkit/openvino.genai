@@ -219,7 +219,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
 
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
-    model, tokenizer, pretrain_time, bench_hook = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
+    model, tokenizer, pretrain_time = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
     model_precision = utils.model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     warmup_md5 = {}
