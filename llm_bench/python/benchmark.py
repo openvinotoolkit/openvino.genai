@@ -305,7 +305,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
 
 
 def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id):
-    if args.genai:
+    if args['genai']:
         log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
     set_seed(args['seed'])
     input_text = image_param['prompt']
@@ -398,7 +398,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 
 
 def run_image_classification(model_path, framework, device, args, num_iters=10):
-    if args.genai:
+    if args['genai']:
         log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
     model, input_size = FW_UTILS[framework].create_image_classification_model(model_path, device, **args)
 
@@ -470,7 +470,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
 
 
 def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_iters):
-    if args.genai:
+    if args['genai']:
         log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
     pipe, pretrain_time = FW_UTILS[framework].create_ldm_super_resolution_model(model_path, device, **args)
     iter_data_list = []
