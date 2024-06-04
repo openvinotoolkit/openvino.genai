@@ -283,6 +283,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
     streamer.reset()
 
+
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
     model_precision = utils.model_utils.get_model_precision(model_path.parts)
@@ -377,6 +378,8 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
 
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters):
+    if args['genai']:
+        log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
     pipe, pretrain_time = FW_UTILS[framework].create_image_gen_model(model_path, device, **args)
     iter_data_list = []
     input_image_list = utils.model_utils.get_image_param_from_prompt_file(args)
@@ -407,6 +410,8 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 
 
 def run_image_classification(model_path, framework, device, args, num_iters=10):
+    if args['genai']:
+        log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
     model, input_size = FW_UTILS[framework].create_image_classification_model(model_path, device, **args)
 
     data = torch.rand(input_size)
@@ -477,6 +482,8 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
 
 
 def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_iters):
+    if args["genai"]:
+        log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")
     pipe, pretrain_time = FW_UTILS[framework].create_ldm_super_resolution_model(model_path, device, **args)
     iter_data_list = []
     tm_list = []
@@ -607,6 +614,7 @@ def get_argprser():
     )
     parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
     utils.model_utils.add_stateful_model_arguments(parser)
+    parser.add_argument("--genai", action="store_true")
 
     return parser.parse_args()
 

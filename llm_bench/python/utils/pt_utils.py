@@ -97,7 +97,7 @@ def create_text_gen_model(model_path, device, **kwargs):
         backend = kwargs['torch_compile_backend']
         compiled_model = run_torch_compile(model, backend)
         model = compiled_model
-    return model, tokenizer, from_pretrain_time, bench_hook
+    return model, tokenizer, from_pretrain_time, bench_hook, False
 
 
 def create_image_gen_model(model_path, device, **kwargs):

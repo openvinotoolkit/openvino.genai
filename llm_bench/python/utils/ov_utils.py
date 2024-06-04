@@ -143,7 +143,7 @@ def create_text_gen_model(model_path, device, **kwargs):
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if kwargs.get("genai", False) and is_genai_available(log=True):
+        if kwargs.get("genai", False) and is_genai_available(log_msg=True):
             if kwargs["batch_size"] > 1 or kwargs["num_beams"] > 1:
                 log.warning("OpenVINO GenAI based benchmarking implmented only for batch_size == 1 and num_beams == 1")
             elif model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type], OV_MODEL_CLASSES_MAPPING["mpt"]]:
@@ -179,6 +179,7 @@ def create_text_gen_model(model_path, device, **kwargs):
 
 
 def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
+    import openvino_tokenizers  # noqa: F401
     import openvino_genai
     from transformers import AutoTokenizer
 
@@ -194,6 +195,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
             self.token_generation_time.append(time.perf_counter() - self.start_time)
             self.generated_tokens.append(token_id)
             self.start_time = time.perf_counter()
+            return False
 
         def reset(self):
             self.token_generation_time = []
@@ -271,12 +273,12 @@ def create_ldm_super_resolution_model(model_path, device, **kwargs):
     return ov_model, from_pretrained_time
 
 
-def is_genai_available(log=False):
+def is_genai_available(log_msg=False):
     import importlib
     try:
         importlib.import_module('openvino_genai')
     except ImportError as ex:
-        if log:
+        if log_msg:
             log.warning("Attempt to load OpenVINO GenaAI package failed. Please install openvino_genai package. Full error message available in debug mode")
             log.debug(ex)
             return False
