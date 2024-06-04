@@ -1,6 +1,12 @@
+# Copyright (C) 2024 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+import pathlib
+
 def models_list():
     model_ids = [
-        ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", "TinyLlama-1.1B-Chat-v1.0"),
+        ("katuni4ka/tiny-random-phi3", "tiny-random-phi3"),
+        # ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", "TinyLlama-1.1B-Chat-v1.0"),
         # ("microsoft/phi-1_5", "phi-1_5/"),
 
         # ("google/gemma-2b-it", "gemma-2b-it"),
@@ -13,8 +19,8 @@ def models_list():
         # ("databricks/dolly-v2-12b", "dolly-v2-12b"),
     ]
     import os
-    prefix = os.getenv('GENAI_MODELS_PATH_PREFIX', '')
-    return [(model_id, os.path.join(prefix, model_path)) for model_id, model_path in model_ids]
+    prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
+    return [(model_id, prefix / model_path) for model_id, model_path in model_ids]
 
 
 if __name__ == "__main__":

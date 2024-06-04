@@ -3,7 +3,7 @@ name = "openvino_genai"
 version = "2024.2.0.0"
 description = "Python bindings for https://github.com/openvinotoolkit/openvino.genai"
 requires-python = ">=3.8"
-readme = {file = "text_generation/causal_lm/cpp/README.md", content-type="text/markdown"}
+readme = {file = "src/README.md", content-type="text/markdown"}
 license = {text = "OSI Approved :: Apache Software License"}
 authors = [
     { name = "OpenVINO Developers", email = "openvino@intel.com" },
@@ -20,8 +20,9 @@ dependencies = [
 ]
 
 [tool.scikit-build]
-cmake.source-dir = "./"
 cmake.build-type = "Release"
+cmake.source-dir = "./"
+cmake.targets = ["py_generate_pipeline"]  # Adding genai would trigger a Release build and Debug build after it. py_generate_pipeline depends on genai and genai will be built anyway. It's not been investigated why both build types are triggered.
 install.components = ["wheel_genai"]
 sdist.cmake = true
 wheel.packages = ["src/python/openvino_genai"]
@@ -37,5 +38,11 @@ __version__ = "${version}"
 
 [build-system]
 # TODO: add build.tool-args = ["--parallel"] after scikit-build-core is updated to 0.9.4+.
-requires = ["scikit-build-core~=0.8.0", "cmake~=3.23"]  # See https://github.com/openvinotoolkit/openvino_tokenizers/pull/123
+requires = ["scikit-build-core~=0.8.0"]  # See https://github.com/openvinotoolkit/openvino_tokenizers/pull/123
 build-backend = "scikit_build_core.build"
+
+[tool.pytest.ini_options]
+markers = [
+    "nightly",
+    "precommit: (deselect with '-m \"precommit\"')",
+]

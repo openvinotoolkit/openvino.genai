@@ -1,10 +1,12 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#pragma once
+
 #include "openvino/core/visibility.hpp"
 
-#ifdef genai_EXPORTS
+#ifdef openvino_genai_EXPORTS
 #    define OPENVINO_GENAI_EXPORTS OPENVINO_CORE_EXPORTS
 #else
 #    define OPENVINO_GENAI_EXPORTS OPENVINO_CORE_IMPORTS
-#endif  // genai_EXPORTS
+#endif  // openvino_genai_EXPORTS
