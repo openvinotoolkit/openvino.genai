@@ -44,5 +44,5 @@ build-backend = "scikit_build_core.build"
 [tool.pytest.ini_options]
 markers = [
     "nightly",
-    "precommit: (deselect with '-m \"not slow\"')",
+    "precommit: (deselect with '-m \"precommit\"')",
 ]
