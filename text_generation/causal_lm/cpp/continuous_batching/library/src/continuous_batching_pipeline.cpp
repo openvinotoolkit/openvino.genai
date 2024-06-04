@@ -1,6 +1,9 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <mutex>
+#include <memory>
+
 #include "continuous_batching_pipeline.hpp"
 #include "cache_manager.hpp"
 #include "sampler.hpp"
@@ -10,46 +13,6 @@
 #include "tokenizer.hpp"
 
 #include "debug_utils.hpp"
-
-namespace {
-
-GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, SequenceGroup::CPtr sequence_group) {
-    GenerationResult result;
-    result.m_request_id = sequence_group->get_request_id();
-
-    OPENVINO_ASSERT(sequence_group->has_finished());
-    const auto num_return_sequences = sequence_group->get_sampling_parameters().num_return_sequences;
-    const auto finished_sequences_size = sequence_group->num_finished_seqs();
-    const auto num_results = std::min(finished_sequences_size, num_return_sequences);
-    
-    std::vector<Sequence::CPtr> finished_sequences = sequence_group->get_finished_sequences();
-    for (size_t sequence_id = 0; sequence_id < num_results; ++sequence_id) {
-        Sequence::CPtr sequence = finished_sequences[sequence_id];
-
-        result.m_scores.push_back(sequence->get_beam_search_score(sequence_group->get_sampling_parameters()));
-
-        {
-            static ManualTimer timer("detokenize");
-            timer.start();
-            std::string output_text = tokenizer->decode(sequence->get_generated_ids());
-            timer.end();
-            result.m_generation_ids.push_back(output_text);
-        }
-    }
-
-    if (sequence_group->has_finished()) {
-        result.m_status = GenerationResultStatus::FINISHED;
-    }
-    else if (sequence_group->out_of_memory()) {
-        result.m_status = GenerationResultStatus::IGNORED;
-    }
-    else {
-        result.m_status = GenerationResultStatus::ABORTED;
-    }
-    return result;
-}
-
-} // namespace
 
 void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
 
@@ -78,10 +41,15 @@ class ContinuousBatchingPipeline::Impl {
 
     // current requests to process
     std::vector<SequenceGroup::Ptr> m_requests;
+    // requests added to the pipeline that will be added to m_requests in the next iteration
+    std::vector<SequenceGroup::Ptr> m_awaiting_requests;
+    // Mutex protecting access to m_awaiting_requests, so add_request and step methods can be called from different threads
+    std::mutex m_awaiting_requests_mutex;
+
 
     void _free_non_running_requests() {
-        auto new_end = std::remove_if(m_requests.begin(), m_requests.end(), [] (SequenceGroup::CPtr seq_group) -> bool {
-            return seq_group->has_finished() || seq_group->out_of_memory();
+        auto new_end = std::remove_if(m_requests.begin(), m_requests.end(), [] (SequenceGroup::Ptr seq_group) -> bool {
+            return seq_group->has_finished() || seq_group->out_of_memory() || seq_group->handle_dropped();
         });
         m_requests.erase(new_end, m_requests.end());
     }
@@ -130,7 +98,7 @@ public:
         return m_tokenizer;
     }
 
-    void add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
+    GenerationHandle add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
         if (sampling_params.eos_token_id < 0) {
             sampling_params.eos_token_id = m_tokenizer->get_eos_token_id();
         } else {
@@ -149,12 +117,23 @@ public:
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
                                                                             sampling_params, m_scheduler->get_config().block_size);
-        m_requests.push_back(sequence_group);
+        {
+            std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+            m_awaiting_requests.push_back(sequence_group);
+        }
+        return std::make_unique<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
     }
 
-    std::vector<GenerationResult> step() {
+    void step() {
         static ManualTimer step_timer("step()");
         step_timer.start();
+
+        // Pull awaiting requests
+        {
+            std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+            m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
+            m_awaiting_requests.clear();
+        }
 
         Scheduler::Output scheduler_output;
         {
@@ -167,17 +146,14 @@ public:
 
         // if no tokens were scheduled, we are out of memory
         if (scheduler_output.m_total_num_scheduled_tokens == 0) {
-
-            // return partial results
-            std::vector<GenerationResult> pertial_results;
-
             for (size_t i = 0; i < m_requests.size(); ++i) {
                 SequenceGroup::Ptr sequence_group = m_requests[i];
-                pertial_results.push_back(from_sequence_group(m_tokenizer, sequence_group));
+                sequence_group->set_out_of_memory();
+                sequence_group->notify_handle();
             }
 
             _free_non_running_requests();
-            return pertial_results;
+            return;
         }
 
         ov::Tensor logits;
@@ -226,54 +202,59 @@ public:
             timer.end();
         }
 
-        // perform post-processing of current step
+        // free non running requests for current step
 
-        std::vector<GenerationResult> currently_finished_requests;
         {
-            static ManualTimer timer("create finished results");
+            static ManualTimer timer("free non running requests");
             timer.start();
-
-            for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
-                uint64_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-                SequenceGroup::Ptr sequence_group = m_requests[seq_group_id];
-                if (sequence_group->has_finished()) {
-                   currently_finished_requests.push_back(from_sequence_group(m_tokenizer, sequence_group));
-                }
-            }
-
             _free_non_running_requests();
-
             timer.end();
         }
 
         step_timer.end();
-        return currently_finished_requests;
     }
 
-    bool has_running_requests() const {
-        return !m_requests.empty();
+    bool has_non_finished_requests() {
+        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+        return !m_awaiting_requests.empty() || !m_requests.empty();
     }
 
     std::vector<GenerationResult> generate(const std::vector<std::string> prompts, std::vector<GenerationConfig> sampling_params) {
-        OPENVINO_ASSERT(!has_running_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
+        OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
         OPENVINO_ASSERT(prompts.size() == sampling_params.size());
 
+        std::vector<GenerationHandle> generations;
         for (size_t request_id = 0; request_id < prompts.size(); ++request_id) {
-            add_request(request_id, prompts[request_id], sampling_params[request_id]);
+            generations.push_back(add_request(request_id, prompts[request_id], sampling_params[request_id]));
         }
 
         std::vector<GenerationResult> results;
-        results.reserve(m_requests.size());
+        results.reserve(m_awaiting_requests.size());
 
-        while (has_running_requests()) {
-            std::vector<GenerationResult> partial_results = step();
-            results.insert(results.end(), partial_results.begin(), partial_results.end());
+        while (has_non_finished_requests()) {
+            step();
         }
 
-        // sort results according to request_id to return results in order of initial prompts
-        std::sort(results.begin(), results.end(), [] (const GenerationResult& r1, const GenerationResult& r2) -> bool {
-            return r1.m_request_id < r2.m_request_id;
-        });
+        for (size_t generation_idx = 0; generation_idx < generations.size(); ++generation_idx) {
+            const auto& generation = generations[generation_idx];
+            OPENVINO_ASSERT(generation->get_status() == GenerationStatus::FINISHED);
+            GenerationResult result;
+            result.m_request_id = 1;
+            std::vector<GenerationOutput> generation_outputs = generation->read_all();
+            std::sort(generation_outputs.begin(), generation_outputs.end(), [=] (GenerationOutput& r1, GenerationOutput& r2) {
+                return r1.score > r2.score;
+            });
+
+            auto num_outputs = std::min(sampling_params[generation_idx].num_return_sequences, generation_outputs.size());
+            for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
+                const auto& generation_output = generation_outputs[generation_output_idx];
+                std::string output_text = m_tokenizer->decode(generation_output.generated_token_ids);
+                result.m_generation_ids.push_back(output_text);
+                result.m_scores.push_back(generation_output.score);
+            }
+            result.m_status = generation->get_status();
+            results.push_back(result);
+        }
 
         OPENVINO_ASSERT(results.size() == prompts.size());
         return results;
@@ -293,17 +274,18 @@ GenerationConfig ContinuousBatchingPipeline::get_config() const{
     return m_impl->get_config();
 }
 
-void ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
     return m_impl->add_request(request_id, prompt, sampling_params);
 }
 
-std::vector<GenerationResult> ContinuousBatchingPipeline::step() {
-     return m_impl->step();
+void ContinuousBatchingPipeline::step() {
+    m_impl->step();
 }
 
-bool ContinuousBatchingPipeline::has_running_requests() const {
-    return m_impl->has_running_requests();
+bool ContinuousBatchingPipeline::has_non_finished_requests() {
+    return m_impl->has_non_finished_requests();
 }
+
 
 std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, std::vector<GenerationConfig> sampling_params) {
     return m_impl->generate(prompts, sampling_params);

@@ -32,23 +32,23 @@ multinomial_params = RandomSamplingTestStruct(generation_config=[
                                                            "What is OpenVINO?",
                                                             "How are you?",
                                                             "Tell me something about Canada?",
-                                                            "What is the time",
+                                                            "What is the time of",
                                                             "Location is",
                                                        ],
                                                        ref_texts=[ 
-                                                            ["\n\nOpenVINO is a high-level, middle-level, and customizable virtualization gateway. OpenVINO is a multi-stage virtual"],
-                                                            ["   Are you not a freak and a liar?   I find it hard to believe that you're not, like, a very smart guy"],
-                                                            ["\nI'm Canadian and I'm not sure what you mean by that.\nI'm not Canadian and I'm not sure what you mean by that"],
+                                                            ["\n\nOpenVINO, a VINOS server is a Linux-based virtual bootstation, helping restore virtual machines from boot failure and restore system"],
+                                                            ["    I have been aod' for a year now and haven't heard anything about you.    Is it really that easy"],
+                                                            ["\nI'm Canadian and I'm not a fan of the Canadian flag.\nI'm Canadian and I'm not a Canadian.\nI'm Canadian"],
                                                             [
-                                                                " in 30 minutes?\n78\nWhat is the second smallest value in -1/14, 2, 1.3, 0.3?\n",
-                                                                " between 3:30AM and 4:40AM?\n8:30am—Sending orders\n9:30am—Sending orders\n",
-                                                                " frame you are planning to take on?\nIm guessing. Im moving to Richmond next month so definitely not ready for winter yet",
+                                                                " year it was colder than that for the n4?\nThe time of the year is the same as the time of the year the original OG N",
+                                                                " day you play?\nWhen I'm home.  For the most part I'm playing for about 5 hours.  I might change it later tonight",
+                                                                " day the bugs are present? Do those bug me? Do they fly away?\nThey're not! Well, they're usually left alone in the"
                                                             ],
                                                             [
-                                                                " important.\nI'm using both of those methods for now but if anything changes they'll be fine once we get more info about how their systems work",
-                                                                " not in my opinion an issue at all since I am living with roommates that are close to where this game will land based off what they've heard",
-                                                                " a bitch, especially when you have multiple devices running on each network...  That said: do some research before buying because its really hard (if very",
-                                                                " the same as your first one and it's only 5 minutes away from me! Just go there :) or maybe just stay out until after midnight? lol",
+                                                                " a problem with your network of friends and family who may have been affected by this incident? If so please contact our Customer Service team within 24 hours immediately",
+                                                                " important, but it can also be more difficult to get an accurate reading on what’s going through their minds at night compared from day-to",
+                                                                " the same as everything else in life except for being closer than you think (in most ways). The only difference between here or there isn't how close",
+                                                                " not required.\nIt\'s just that I\'m really looking forward doing my part towards supporting those people without having any kinda \"support\". It would"
                                                             ]
                                                        ])
 

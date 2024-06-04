@@ -89,6 +89,7 @@ PYBIND11_MODULE(py_continuous_batching, m) {
         .def(py::init<>())
         .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
         .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
+        .def_readwrite("cache_size", &SchedulerConfig::cache_size)
         .def_readwrite("block_size", &SchedulerConfig::block_size)
         .def_readwrite("cache_size", &SchedulerConfig::cache_size)
         .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
@@ -100,7 +101,7 @@ PYBIND11_MODULE(py_continuous_batching, m) {
         .def("get_config", &ContinuousBatchingPipeline::get_config)
         .def("add_request", &ContinuousBatchingPipeline::add_request)
         .def("step", &ContinuousBatchingPipeline::step)
-        .def("has_running_requests", &ContinuousBatchingPipeline::has_running_requests)
+        .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
         .def("generate", &ContinuousBatchingPipeline::generate);
 
     py::class_<Tokenizer, std::shared_ptr<Tokenizer>>(m, "Tokenizer")

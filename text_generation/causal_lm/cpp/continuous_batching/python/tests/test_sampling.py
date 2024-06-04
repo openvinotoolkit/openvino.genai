@@ -4,7 +4,7 @@ import os
 import pytest
 from dataclasses import dataclass
 from pathlib import Path
-from py_continuous_batching import GenerationConfig, GenerationResult
+from py_continuous_batching import GenerationConfig
 from typing import List
 
 from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, \
@@ -102,19 +102,19 @@ RANDOM_SAMPLING_TEST_CASES = [
                              prompts=["What is location of"],
                              ref_texts=[
                                 [
-                                    " the pentagon?\nNo idea, just look at the map.",
-                                    " this, and is this the inside of the building?\nI don’t know where this corner is.",
-                                    " this photo?\nThe 30ft line in the middle of my private area.\nI assumed you were on the beach\nAll right, it was",
+                                    " the pentagon in the map?\nThe tower",
+                                    " this video?\nI think it was a bird.\nIt said 'Ferry' in the title ;)",
+                                    "Hmm, that's why I assumed"
                                 ]
                              ]),
     RandomSamplingTestStruct(generation_config=get_multinomial_all_parameters(),
                              prompts=["Tell me something about UAE"],
                              ref_texts=[
                                 [
-                                    "\nI don't know how much money they spend but there isn’t really anything wrong besides being stupid expensive :P And yes you can play",
-                                    ", what is it like? I have been to a lot here as well... Is this similar with Qatar or Oman/Dubai?  Thanks!",
-                                    "\nThe government of the Emirates and its allies are working very hard on their new \"New Vision\" for Afghanistan -- an ambitious vision which aims at creating",
-                                    "\nIt's pretty beautiful in that part. It was also mentioned by several tourists during my trip recently (the one i'm planning). So we will",
+                                    ", what do you guys think? I want to visit Dubai soon as well (but haven't gotten around yet) so if anyone knows anything or can",
+                                    "\nYou're the type of guy who would go on a date with someone from your own country... What is this world coming full circle?!??!!",
+                                    "\nThe US and UK are really close. The two countries where both these wars have been going since before Trump came into office were Saudi Arabia & Iran",
+                                    "\nI know it's very cold out in there but that sounds like an amazing place for ice cream!  It has some nice restaurants too which isn"
                                 ]
                              ]),
 ]
