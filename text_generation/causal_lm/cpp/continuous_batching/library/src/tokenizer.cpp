@@ -2,17 +2,23 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <mutex>
 #include "openvino/runtime/core.hpp"
 
 #include "tokenizer.hpp"
 
 class Tokenizer::Impl {
     const size_t TOKENIZER_BATCH_SIZE = 1;
-    ov::InferRequest m_tokenizer, m_detokenizer;
+    ov::InferRequest m_tokenizer;
+    ov::InferRequest m_detokenizer;
     std::size_t m_eos_token_id;
+    //Using multiple infer requests hangs. For now we synchronize entire execution on a single infer request.
+    std::mutex m_tokenizer_mutex;
+    std::mutex m_detokenizer_mutex;
 
 public:
-    explicit Impl(const std::string& models_path) {
+    explicit Impl(const std::string& models_path)
+    {
         ov::Core core;
         core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
 
@@ -29,12 +35,17 @@ public:
     }
 
     ov::Tensor encode(std::string prompt) {
+        std::unique_lock<std::mutex> lock(m_tokenizer_mutex);
         m_tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {TOKENIZER_BATCH_SIZE}, &prompt});
         m_tokenizer.infer();
-        return m_tokenizer.get_tensor("input_ids");
+        ov::Tensor tmp_tensor = m_tokenizer.get_tensor("input_ids");
+        ov::Tensor output_tensor(tmp_tensor.get_element_type(), tmp_tensor.get_shape());
+        tmp_tensor.copy_to(output_tensor);
+        return output_tensor;
     }
 
     std::string decode(std::vector<int64_t> tokens) {
+        std::unique_lock<std::mutex> lock(m_detokenizer_mutex);
         m_detokenizer.set_input_tensor(ov::Tensor{ov::element::i64, {TOKENIZER_BATCH_SIZE, tokens.size()}, tokens.data()});
         m_detokenizer.infer();
         return m_detokenizer.get_output_tensor().data<std::string>()[0];

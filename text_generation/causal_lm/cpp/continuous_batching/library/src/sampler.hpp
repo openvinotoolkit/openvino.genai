@@ -457,6 +457,9 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                     m_beam_search_info.at(request_id).finalize(sampler_output);
                 }
             }
+            // Notify handle after sampling is done. 
+            // For non-streaming this is effective only when the generation is finished.
+            sequence_group->notify_handle();
         } else {
             // we are in prompt processing phase when prompt is split into chunks and processed step by step
         }

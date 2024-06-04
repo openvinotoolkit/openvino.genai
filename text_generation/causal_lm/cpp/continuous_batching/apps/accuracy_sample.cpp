@@ -5,6 +5,7 @@
 #include <cxxopts.hpp>
 
 #include "continuous_batching_pipeline.hpp"
+#include "tokenizer.hpp"
 
 void print_generation_result(const GenerationResult& generation_result) {
     for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
@@ -46,15 +47,15 @@ int main(int argc, char* argv[]) try {
     std::vector<std::string> prompt_examples = {
         "What is OpenVINO?",
         "How are you?",
-        "What is OpenVINO?",
-        "What is the current time",
+        "What is your name?",
+        "Tell me something about Canada",
         "What is OpenVINO?",
     };
 
     std::vector<GenerationConfig> sampling_params_examples {
         GenerationConfig::beam_search(),
-        // GenerationConfig::greedy(),
-        // GenerationConfig::multinomial(),
+        GenerationConfig::greedy(),
+        GenerationConfig::multinomial(),
     };
 
     std::vector<std::string> prompts(num_prompts);
@@ -66,7 +67,7 @@ int main(int argc, char* argv[]) try {
     }
 
     // Perform the inference
-
+    
     SchedulerConfig scheduler_config {
         // batch size
         .max_num_batched_tokens = 32,
@@ -84,21 +85,20 @@ int main(int argc, char* argv[]) try {
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
         const GenerationResult & generation_result = generation_results[request_id];
-
         std::cout << "Question: " << prompts[request_id] << std::endl;
         switch (generation_result.m_status)
         {
-        case GenerationResultStatus::FINISHED:
+        case GenerationStatus::FINISHED:
             print_generation_result(generation_result);
             break;
-        case GenerationResultStatus::IGNORED:
+        case GenerationStatus::IGNORED:
             std::cout << "Request was ignored due to lack of memory." <<std::endl;
             if (generation_result.m_generation_ids.size() > 0) {
                 std::cout << "Partial result:" << std::endl;
                 print_generation_result(generation_result);
             }
             break;
-        case GenerationResultStatus::ABORTED:
+        case GenerationStatus::DROPPED_BY_PIPELINE:
             std::cout << "Request was aborted." <<std::endl;
             if (generation_result.m_generation_ids.size() > 0) {
                 std::cout << "Partial result:" << std::endl;
@@ -110,7 +110,6 @@ int main(int argc, char* argv[]) try {
         }
         std::cout << std::endl;
     }
-
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return EXIT_FAILURE;

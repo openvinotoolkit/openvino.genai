@@ -56,14 +56,6 @@ public:
         }
 
         _clear_waiting_sequences(sequence_groups);
-
-
-        // if no tokens were scheduled, we are out of memory
-        if (scheduler_output.m_total_num_scheduled_tokens == 0) {
-            for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
-                sequence_groups[sequence_group_id]->set_out_of_memory();
-            }
-        }
         return scheduler_output;
     }
 
