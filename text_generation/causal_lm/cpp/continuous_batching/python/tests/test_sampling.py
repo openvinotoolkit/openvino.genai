@@ -98,27 +98,6 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_repetition_penalty(),
                              prompts=["What is OpenVINO?"],
                              ref_texts=[ ["\nOpen Vino's are a new and improved way to find cheap, fast-investment frozen vegetables that have no waste or calories. They're"] ]),
-]
-
-
-@pytest.mark.precommit
-@pytest.mark.parametrize("test_struct", RANDOM_SAMPLING_TEST_CASES,
-        ids=["multinomial_temperature", "multinomial_temperature_and_top_p", "multinomial_temperature_and_top_k", "multinomial_temperature_top_p_and_top_k", "multinomial_temperature_and_repetition_penalty"])
-def test_individual_generation_configs_random(tmp_path, test_struct: RandomSamplingTestStruct):
-    generation_config = test_struct.generation_config
-
-    prompts = test_struct.prompts
-    generation_config.rng_seed = 0
-    generation_configs = [generation_config]
-    model_id : str = "facebook/opt-125m"
-    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
-
-    model_path : Path = tmp_path / model_id
-    save_ov_model_from_optimum(model, hf_tokenizer, model_path)
-
-    generate_and_compare_with_reference_text(model_path, prompts, test_struct.ref_texts, generation_configs, DEFAULT_SCHEDULER_CONFIG)
-
-RANDOM_SAMPLING_TEST_CASES_N_SEQ = [
     RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_num_return_sequence(),
                              prompts=["What is location of"],
                              ref_texts=[
@@ -138,12 +117,19 @@ RANDOM_SAMPLING_TEST_CASES_N_SEQ = [
                                     "\nIt's pretty beautiful in that part. It was also mentioned by several tourists during my trip recently (the one i'm planning). So we will",
                                 ]
                              ]),
-    ]
+]
+
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("test_struct", RANDOM_SAMPLING_TEST_CASES_N_SEQ,
-        ids=["get_multinomial_temperature_and_num_return_sequence", "get_multinomial_all_parameters", ])
-def test_individual_generation_configs_random_n_seq(tmp_path, test_struct: RandomSamplingTestStruct):
+@pytest.mark.parametrize("test_struct", RANDOM_SAMPLING_TEST_CASES,
+        ids=["multinomial_temperature",
+             "multinomial_temperature_and_top_p",
+             "multinomial_temperature_and_top_k",
+             "multinomial_temperature_top_p_and_top_k",
+             "multinomial_temperature_and_repetition_penalty",
+             "multinomial_temperature_and_num_return_sequence",
+             "multinomial_all_parameters"])
+def test_individual_generation_configs_random(tmp_path, test_struct: RandomSamplingTestStruct):
     generation_config = test_struct.generation_config
 
     prompts = test_struct.prompts

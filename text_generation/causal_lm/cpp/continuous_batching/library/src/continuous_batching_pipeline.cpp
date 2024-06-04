@@ -13,29 +13,17 @@
 
 namespace {
 
-GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, SequenceGroup::Ptr sequence_group) {
+GenerationResult from_sequence_group(std::shared_ptr<Tokenizer> tokenizer, SequenceGroup::CPtr sequence_group) {
     GenerationResult result;
     result.m_request_id = sequence_group->get_request_id();
 
     OPENVINO_ASSERT(sequence_group->has_finished());
     const auto num_return_sequences = sequence_group->get_sampling_parameters().num_return_sequences;
     const auto finished_sequences_size = sequence_group->num_finished_seqs();
-    if (finished_sequences_size > num_return_sequences) {
-        // save only `sampling_params.num_return_sequences` sequences in result
-        std::map<float, size_t> probs;
-        for (const auto& finished_sequence : sequence_group->get_finished_sequences()) {
-            probs.insert({finished_sequence->get_cumulative_log_probs(), finished_sequence->get_id()});
-        }
-        size_t prob_idx = 0;
-        for (const auto& prob : probs) {
-            if (prob_idx++ >= num_return_sequences) {
-                sequence_group->remove_sequence(prob.second);
-            }
-        }
-    }
+    const auto num_results = std::min(finished_sequences_size, num_return_sequences);
     
     std::vector<Sequence::CPtr> finished_sequences = sequence_group->get_finished_sequences();
-    for (size_t sequence_id = 0; sequence_id < finished_sequences.size(); ++sequence_id) {
+    for (size_t sequence_id = 0; sequence_id < num_results; ++sequence_id) {
         Sequence::CPtr sequence = finished_sequences[sequence_id];
 
         result.m_scores.push_back(sequence->get_beam_search_score(sequence_group->get_sampling_parameters()));

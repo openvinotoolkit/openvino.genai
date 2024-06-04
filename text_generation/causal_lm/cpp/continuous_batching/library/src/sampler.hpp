@@ -361,6 +361,7 @@ class Sampler {
         filtered = normalize_transform.apply(filtered);
         std::vector<float> multinomial_weights(filtered.size());
         for (size_t i = 0; i < filtered.size(); i++) multinomial_weights[i] = filtered[i].first;
+        // std::cout << filtered.size() << std::endl;
 
         auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
         std::vector<LogitWithIdx> out_tokens;
@@ -434,7 +435,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         sampled_token_id = _greedy_sample(logit_vector);
                     } else {
                         // is_multinomial()
-                        const bool is_generate_n_tokens = num_running_sequences == 1  && sequence_group->get_finished_sequences().empty();
+                        const bool is_generate_n_tokens = sequence_group->num_total_seqs();
                         const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
                         auto sampled_token_ids = _multinomial_sample(logit_vector, sampling_params.temperature, sampling_params.top_p,
                                                                      sampling_params.top_k, num_tokens_per_sequence);
@@ -446,7 +447,6 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                             for (size_t i = num_running_sequences; i < num_tokens_per_sequence; ++i) {
                                 const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
                                 forked_seq_ids.push_back(forked_sequence->get_id());
-                                running_sequences.push_back(forked_sequence);
                                 register_new_token(sampled_token_ids[i], forked_sequence);
                             }
                             sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
