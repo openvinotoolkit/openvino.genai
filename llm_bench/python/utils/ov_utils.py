@@ -119,6 +119,7 @@ def build_ov_tokenizer_wrapper(hf_tokenizer, tokenizer_model, detokenizer_model)
     hf_tokenizer.decode = types.MethodType(decode_ov_tokenizer, hf_tokenizer)
     return hf_tokenizer
 
+
 def create_text_gen_model(model_path, device, **kwargs):
     """Create text generation model.
 
@@ -146,7 +147,7 @@ def create_text_gen_model(model_path, device, **kwargs):
             if kwargs["batch_size"] > 1 or kwargs["num_beams"] > 1:
                 log.warning("OpenVINO GenAI based benchmarking implmented only for batch_size == 1 and num_beams == 1")
             elif model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type], OV_MODEL_CLASSES_MAPPING["mpt"]]:
-                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking") 
+                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
             else:
                 return create_genai_text_gen_model(model_path, device, ov_config, **kwargs)
         remote_code = False
@@ -179,7 +180,6 @@ def create_text_gen_model(model_path, device, **kwargs):
 
 def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     import openvino_genai
-    import openvino_tokenizers
     from transformers import AutoTokenizer
 
     class TokenStreamer(openvino_genai.StreamerBase):
@@ -208,10 +208,10 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
         def get_time_list(self):
             return self.token_generation_time
-    
+
     if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
         convert_ov_tokenizer(model_path)
-    
+
     core = Core()
     hf_tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     ov_tok = core.read_model(model_path / "openvino_tokenizer.xml")
@@ -227,6 +227,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     streamer = TokenStreamer(llm_pipe.get_tokenizer())
 
     return llm_pipe, hf_tokenizer, end - start, streamer, True
+
 
 def convert_ov_tokenizer(tokenizer_path):
     from optimum.exporters.openvino.convert import export_tokenizer
@@ -271,12 +272,12 @@ def create_ldm_super_resolution_model(model_path, device, **kwargs):
 
 
 def is_genai_available(log=False):
+    import importlib
     try:
-        import openvino_genai
+        importlib.import_module('openvino_genai')
     except ImportError as ex:
         if log:
             log.warning("Attempt to load OpenVINO GenaAI package failed. Please install openvino_genai package. Full error message available in debug mode")
             log.debug(ex)
             return False
     return True
-        

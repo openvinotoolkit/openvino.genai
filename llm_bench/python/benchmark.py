@@ -200,7 +200,6 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
-    min_gen_tokens = 0 if args['infer_count'] is None else args['infer_count']
     max_gen_tokens = MAX_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     streamer.reset()
     start = time.perf_counter()
@@ -272,11 +271,10 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     streamer.reset()
 
 
-
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
     text_gen_fn = run_text_generation if not use_genai else run_text_generation_genai
-    
+
     model_precision = utils.model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     warmup_md5 = {}
