@@ -31,7 +31,7 @@ class Sequence {
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     SequenceStatus m_status = SequenceStatus::RUNNING;
-    float m_cumulative_log_prob = 0.0f;
+    std::vector<float> m_log_probs;
 
 public:
     using Ptr = std::shared_ptr<Sequence>;
@@ -45,7 +45,7 @@ public:
         m_generated_ids(seq.m_generated_ids),
         m_grouped_id(id),
         m_status(seq.m_status),
-        m_cumulative_log_prob(seq.m_cumulative_log_prob) {
+        m_log_probs(seq.m_log_probs) {
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
 
@@ -91,13 +91,13 @@ public:
 
     // appends new tokens to a generated part
     void append_token(int64_t token_id, float log_prob) {
-        m_cumulative_log_prob += log_prob;
+        m_log_probs.push_back(log_prob);
         m_generated_ids.push_back(token_id);     
     }
 
     GenerationOutput get_last_generation_output(const GenerationConfig& sampling_params) {
         GenerationOutput output;
-        output.score = get_beam_search_score(sampling_params);
+        output.score = m_log_probs.back();
         OPENVINO_ASSERT(m_generated_ids.size());
         output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};
         return output;
@@ -112,7 +112,8 @@ public:
     }
 
     float get_cumulative_log_probs() const {
-        return m_cumulative_log_prob;
+        float cumulative_log_prob = std::accumulate(m_log_probs.begin(), m_log_probs.end(), 0.f);
+        return cumulative_log_prob;
     }
 
     float get_beam_search_score(const GenerationConfig& sampling_params) const {
@@ -448,7 +449,9 @@ public:
             // TO DO: Now we always stream for greedy search for the sake of benchmarking
             if (true /* m_sampling_params.stream */) {
                 for (auto& sequence : m_sequences) {
+                    if (sequence->is_running()) {
                         outputs.emplace(sequence->get_grouped_id(), sequence->get_last_generation_output(m_sampling_params));
+                    }
                 }
                 m_generation_stream->push(outputs);
             }
