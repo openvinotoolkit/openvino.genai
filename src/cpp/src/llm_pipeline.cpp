@@ -27,7 +27,7 @@ ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::pa
     ov::genai::GenerationConfig config;
 
     if (std::filesystem::exists(model_path / generation_config_fname)) {
-        config = ov::genai::GenerationConfig(model_path / generation_config_fname);
+        config = ov::genai::GenerationConfig((model_path / generation_config_fname).string());
     }
 
     // if eos_token_ids is undefined try to load it from config.json
@@ -409,7 +409,7 @@ ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
     const ov::AnyMap& config
 ): 
     m_model_runner{ov::Core{}.compile_model(path / "openvino_model.xml", device, config).create_infer_request()}, 
-    m_tokenizer(path),
+    m_tokenizer(path.string()),
     m_generation_config{from_config_json_if_exists(path)},
     m_chat_template{chat_template_from_tokenizer_json_if_exists(path)}
  {
