@@ -196,15 +196,13 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - name: Compare
-        shell: cmd
-        run: |
-          call .\ov\setupvars.bat
+      - run: >
           set PATH=.\build\openvino_genai\;%PATH%
-          .\build/samples/cpp/greedy_causal_lm/Release/greedy_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\pred.txt
-          
+          && call .\ov\setupvars.bat
+          build\samples\cpp\greedy_causal_lm\Release\greedy_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\cpp.txt
+      - run: |
           echo import transformers > ref.py
-          echo predictions = open('pred.txt', 'r').read() >> ref.py
+          echo predictions = open('cpp.txt', 'r').read() >> ref.py
           echo tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0') >> ref.py
           echo tokenized = tokenizer('69', return_tensors='pt') >> ref.py
           echo for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False): >> ref.py
@@ -213,13 +211,13 @@ jobs:
           echo     if -1 == idx: >> ref.py
           echo         raise RuntimeError(f'Missing "{ref=}" from predictions') >> ref.py
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
-          python ref.py
+      - run: python ref.py
       - run: >
           set PATH=".\build\openvino_genai\;%PATH%"
           && set "PYTHONPATH=./build/"
           && call .\ov\setupvars.bat
           && samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
-      - run: fc .\pred.txt .\py.txt
+      - run: fc .\cpp.txt .\py.txt
 
   cpp-beam_search_causal_lm-Qwen-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
@@ -250,9 +248,6 @@ jobs:
           | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./Qwen-7B-Chat/ 69) -
 
   cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
-    strategy:
-      matrix:
-        executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
