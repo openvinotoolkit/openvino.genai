@@ -208,9 +208,14 @@ public:
         GenerationConfig config;
         if (generation_config.has_value()){
             config = *generation_config;
-            // if eos_token_id was not provided take value from the config loaded from json
-            if (config.eos_token_id == -1)
+            // if eos_token_id was not provided take value from default m_generation_config
+            if (config.eos_token_id == -1 && m_generation_config.eos_token_id != -1) {
                 config.eos_token_id = m_generation_config.eos_token_id;
+            // if even that didn't help, take eos_token_id from the tokenizer
+            } else {
+                config.eos_token_id = m_tokenizer.get_eos_token_id();
+            }
+            
         } else {
             config = m_generation_config;
         }

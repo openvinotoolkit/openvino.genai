@@ -36,10 +36,10 @@ output:
 A simples chat in python:
 ```python
 import openvino_genai as ov_genai
-pipe = ov_ov_genai.LLMPipeline(model_path)
+pipe = ov_genai.LLMPipeline(model_path)
 
 config = {'num_groups': 3, 'group_size': 5, 'diversity_penalty': 1.5}
-pipe.set_generation_cofnig(config)
+pipe.set_generation_config(config)
 
 pipe.start_chat()
 while True:
