@@ -36,6 +36,7 @@ jobs:
           cmake --build ./build/ --config Release -j
       - run: >
           . ./ov/setupvars.sh
+          && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
           | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
 
@@ -213,7 +214,11 @@ jobs:
           echo         raise RuntimeError(f'Missing "{ref=}" from predictions') >> ref.py
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
           python ref.py
-      - run: call .\ov\setupvars.bat && samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
+      - run: >
+        set PATH=".\build\openvino_genai\;%PATH%"
+        && set "PYTHONPATH=./build/"
+        && call .\ov\setupvars.bat
+        && samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
       - run: fc .\pred.txt .\py.txt
 
   cpp-beam_search_causal_lm-Qwen-7B-Chat:
@@ -456,7 +461,8 @@ jobs:
           "
           echo Phi-1_5 passed
       - run: >
-          . ./ov/setupvars.sh
+          . ./ov/setupvars.
+          && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./phi-1_5/ "Alan Turing was a"
           | diff ./pred_greedy.txt -
           
@@ -506,5 +512,6 @@ jobs:
           echo "Alan Turing was a" passed
       - run: >
           . ./ov/setupvars.sh
+          && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./redpajama-3b-chat/ "Alan Turing was a"
           | diff ./pred_greedy.txt -
