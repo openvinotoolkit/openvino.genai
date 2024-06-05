@@ -461,7 +461,7 @@ jobs:
           "
           echo Phi-1_5 passed
       - run: >
-          . ./ov/setupvars.
+          . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./phi-1_5/ "Alan Turing was a"
           | diff ./pred_greedy.txt -
