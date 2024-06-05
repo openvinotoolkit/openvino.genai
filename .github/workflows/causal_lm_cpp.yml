@@ -34,7 +34,7 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - run: >-
+      - run: >
           . ./ov/setupvars.sh
             && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
             | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
@@ -185,6 +185,7 @@ jobs:
           curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/windows/w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64.zip
           unzip ov.zip
       - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64
+        shell: cmd
       - name: Download, convert and build
         shell: cmd
         run: |
@@ -212,7 +213,7 @@ jobs:
           echo         raise RuntimeError(f'Missing "{ref=}" from predictions') >> ref.py
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
           python ref.py
-      - run: >-
+      - run: >
           call .\ov\setupvars.bat
             && samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
       - run: fc .\pred.txt .\py.txt
@@ -239,7 +240,7 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - run: >-
+      - run: >
           . ./ov/setupvars.sh
             && export PYTHONPATH=./build/:$PYTHONPATH
             && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69
@@ -270,7 +271,7 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen1.5-7B-Chat Qwen1.5-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - run: >-
+      - run: >
           . ./ov/setupvars.sh
             && export PYTHONPATH=./build/:$PYTHONPATH
             && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./Qwen1.5-7B-Chat/ "你好！"
@@ -298,7 +299,7 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-2 phi-2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j 15
-      - run: >-
+      - run: >
           . ./ov/setupvars.sh
             && export PYTHONPATH=./build/:$PYTHONPATH
             && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./phi-2/ 69
@@ -326,7 +327,7 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model argilla/notus-7b-v1 notus-7b-v1
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - run: >-
+      - run: >
           . ./ov/setupvars.sh
             && export PYTHONPATH=./build/:$PYTHONPATH
             && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./notus-7b-v1/ 69
@@ -456,7 +457,7 @@ jobs:
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo Phi-1_5 passed
-      - run: >-
+      - run: >
           . ./ov/setupvars.sh
             && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./phi-1_5/ "Alan Turing was a"
             | diff ./pred_greedy.txt -
@@ -505,7 +506,7 @@ jobs:
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo "Alan Turing was a" passed
-      - run: >-
+      - run: >
           . ./ov/setupvars.sh
             && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./redpajama-3b-chat/ "Alan Turing was a"
             | diff ./pred_greedy.txt -
