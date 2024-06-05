@@ -29,26 +29,26 @@ multinomial_params = RandomSamplingTestStruct(generation_config=[
                                                           get_multinomial_all_parameters(),
                                                         ],
                                                        prompts=[
-                                                           "What is OpenVINO?",
+                                                            "What do you know about OpenVINO?",
                                                             "How are you?",
                                                             "Tell me something about Canada?",
                                                             "What is the time of",
                                                             "Location is",
                                                        ],
                                                        ref_texts=[ 
-                                                            ["\n\nOpenVINO, a VINOS server is a Linux-based virtual bootstation, helping restore virtual machines from boot failure and restore system"],
-                                                            ["    I have been aod' for a year now and haven't heard anything about you.    Is it really that easy"],
-                                                            ["\nI'm Canadian and I'm not a fan of the Canadian flag.\nI'm Canadian and I'm not a Canadian.\nI'm Canadian"],
+                                                            ["\nIt's a popular tool that scales up to a new and improved version of the GPU drivers before installing the full version and doesn't crash or make"],
+                                                            ["   Are you not a person with PTSD?\nI am a person with PTSD but no I am not a person with PTSD. I have had"],
+                                                            ["\nI'm Canadian and I'm a bit of a fan of the Canadian culture.\nI'm a bit of a fan of the Canadian culture."],
                                                             [
-                                                                " year it was colder than that for the n4?\nThe time of the year is the same as the time of the year the original OG N",
-                                                                " day you play?\nWhen I'm home.  For the most part I'm playing for about 5 hours.  I might change it later tonight",
-                                                                " day the bugs are present? Do those bug me? Do they fly away?\nThey're not! Well, they're usually left alone in the"
+                                                                ' day you plan to download this on?\nOne day in the morning.\nOk. When does it arrive on?\nIt arrived in the mail',
+                                                                ' the week that you are eligible for the lottery?\n\nIf you die on Fridays, Monday and Tuesday (28 June, 27 July and 31 July',
+                                                                ' day when you wake up and struggle to understand what happened?\nWhen I wake up I am silently trying to comprehend what I saw.\nIt can'
                                                             ],
                                                             [
-                                                                " a problem with your network of friends and family who may have been affected by this incident? If so please contact our Customer Service team within 24 hours immediately",
-                                                                " important, but it can also be more difficult to get an accurate reading on what’s going through their minds at night compared from day-to",
-                                                                " the same as everything else in life except for being closer than you think (in most ways). The only difference between here or there isn't how close",
-                                                                " not required.\nIt\'s just that I\'m really looking forward doing my part towards supporting those people without having any kinda \"support\". It would"
+                                                                ' not enough\nI agree!  Just as far as location goes...it really depends what people want their games for (and who owns / modd',
+                                                                " important, but you're looking at a long distance connection between both companies if your company doesn't offer anything close by from here yet :/\nMy",
+                                                                " important. I'm in Australia and my friend lives on another continent so we just have to find where she can stay during that time period instead of worrying",
+                                                                ' wrong - the website states it\'s "in California". Where are they located? It looks like there was an error with them when ordering online through D'
                                                             ]
                                                        ])
 

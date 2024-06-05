@@ -56,8 +56,8 @@ GenerationConfig GenerationConfig::beam_search() {
 GenerationConfig GenerationConfig::multinomial() {
     GenerationConfig multinomial;
     multinomial.do_sample = true;
-    multinomial.temperature = 0.8f;
-    multinomial.top_p = 0.8f;
+    multinomial.temperature = 0.9f;
+    multinomial.top_p = 0.9f;
     multinomial.top_k = 20;
     multinomial.num_return_sequences = 3;
     return multinomial;

@@ -44,7 +44,7 @@ def get_multinomial_temperature() -> GenerationConfig:
 def get_multinomial_temperature_and_num_return_sequence() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.do_sample = True
-    generation_config.temperature = 0.8
+    generation_config.temperature = 0.9
     generation_config.num_return_sequences = 3
     return generation_config
 
@@ -85,7 +85,7 @@ def get_multinomial_all_parameters() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.do_sample = True
     generation_config.num_return_sequences = 4
-    generation_config.temperature = 0.8
+    generation_config.temperature = 0.9
     generation_config.top_p = 0.8
     generation_config.top_k = 20
     generation_config.repetition_penalty = 2.0

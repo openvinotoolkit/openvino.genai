@@ -95,7 +95,7 @@ public:
         m_generated_ids.push_back(token_id);     
     }
 
-    GenerationOutput get_last_generation_output(const GenerationConfig& sampling_params) {
+    GenerationOutput get_last_generation_output() {
         GenerationOutput output;
         OPENVINO_ASSERT(m_generated_ids.size() && m_log_probs.size());
         output.score = m_log_probs.back();
@@ -449,8 +449,14 @@ public:
             // TO DO: Now we always stream for greedy search for the sake of benchmarking
             if (true /* m_sampling_params.stream */) {
                 for (auto& sequence : m_sequences) {
-                    if (sequence->is_running()) {
-                        outputs.emplace(sequence->get_grouped_id(), sequence->get_last_generation_output(m_sampling_params));
+                    if (!sequence->has_finished()) {
+                        const auto last_gen_token = sequence->get_last_generation_output();
+                        outputs.emplace(sequence->get_grouped_id(), last_gen_token);
+                        if (m_sampling_params.max_new_tokens == sequence->get_generated_len() ||
+                            last_gen_token.generated_token_ids.back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
+                            // stop sequence by max_new_tokens or EOS token
+                            sequence->set_status(SequenceStatus::FINISHED);
+                        }
                     }
                 }
                 m_generation_stream->push(outputs);

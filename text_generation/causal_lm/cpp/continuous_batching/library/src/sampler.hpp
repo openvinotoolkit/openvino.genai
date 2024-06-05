@@ -416,8 +416,6 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
 
                     if (sampling_params.max_new_tokens == running_sequence->get_generated_len() ||
                         sampled_token_id.second == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
-                        // stop sequence by max_new_tokens or EOS token
-                        running_sequence->set_status(SequenceStatus::FINISHED);
                         // drop sequence from scheduler
                         sampler_output.m_dropped_sequences.push_back(running_sequence->get_id());
                     }
@@ -435,7 +433,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         sampled_token_id = _greedy_sample(logit_vector);
                     } else {
                         // is_multinomial()
-                        const bool is_generate_n_tokens = sequence_group->num_total_seqs();
+                        const bool is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
                         const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
                         auto sampled_token_ids = _multinomial_sample(logit_vector, sampling_params.temperature, sampling_params.top_p,
                                                                      sampling_params.top_k, num_tokens_per_sequence);

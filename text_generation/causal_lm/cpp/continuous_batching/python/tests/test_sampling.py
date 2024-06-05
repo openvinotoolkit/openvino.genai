@@ -102,19 +102,19 @@ RANDOM_SAMPLING_TEST_CASES = [
                              prompts=["What is location of"],
                              ref_texts=[
                                 [
-                                    " the pentagon in the map?\nThe tower",
-                                    " this video?\nI think it was a bird.\nIt said 'Ferry' in the title ;)",
-                                    "Hmm, that's why I assumed"
+                                    ' your instruments?  Are they in an armpit?  Is it warm?  Are your instruments clear?  Are there any cuts and scratches',
+                                    ' map and where does the game player base base?    I tend to like to do all draws on a specific spot (sometimes wide area,',
+                                    ' them?\nJust the Mario Maker App, the location is they'
                                 ]
                              ]),
     RandomSamplingTestStruct(generation_config=get_multinomial_all_parameters(),
                              prompts=["Tell me something about UAE"],
                              ref_texts=[
                                 [
-                                    ", what do you guys think? I want to visit Dubai soon as well (but haven't gotten around yet) so if anyone knows anything or can",
-                                    "\nYou're the type of guy who would go on a date with someone from your own country... What is this world coming full circle?!??!!",
-                                    "\nThe US and UK are really close. The two countries where both these wars have been going since before Trump came into office were Saudi Arabia & Iran",
-                                    "\nI know it's very cold out in there but that sounds like an amazing place for ice cream!  It has some nice restaurants too which isn"
+                                    "?  You are my country... so what does our military do here?? What am i missing out on?? And why don't u tell us?",
+                                    '? I think that is a bit of an anomaly, but you might want to ask yourself this question: Where can some young people from Dubai or Bahrain',
+                                    " and how it's not like we're all in the same boat right now lol (or even close) 😂😁! Just curious :) If",
+                                    '?\nThe U.S government has been doing quite well with foreign-made aircraft for many years under US administration....and they have very good reasons',
                                 ]
                              ]),
 ]
