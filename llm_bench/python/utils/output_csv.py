@@ -52,7 +52,7 @@ def output_comments(result, use_case, writer):
     )
 
     for comments in comment_list:
-        result['iteration'] = comments
+        result['tid'] = comments
         writer.writerow(result)
 
 
@@ -118,6 +118,7 @@ def gen_data_to_csv(result, iter_data, pretrain_time):
 
 def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision):
     header = [
+        'tid',
         'iteration',
         'model',
         'framework',
@@ -163,7 +164,6 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
                 writer.writerow(result)
 
             res_data = output_avg_min_median(iter_data_list)
-
             for key in res_data.keys():
                 for data in res_data[key]:
                     gen_data_to_csv(result, data, '')

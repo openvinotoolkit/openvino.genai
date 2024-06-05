@@ -15,6 +15,8 @@ from transformers.generation.stopping_criteria import (
 from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
+import utils.global_var
+import threading
 
 
 logger = log.getLogger(__name__)
@@ -43,8 +45,6 @@ class GenerateEncoderDecoderOutput(ModelOutput):
 
 GenerateNonBeamOutput = Union[GenerateDecoderOnlyOutput, GenerateEncoderDecoderOutput]
 
-tm_list = []
-tm_infer_list = []
 
 # Transformers version: v4.40-release 4fdf58afb72b0754da30037fc800b6044e7d9c99
 # Copied from https://github.com/huggingface/transformers/blob/4fdf58afb72b0754da30037fc800b6044e7d9c99/src/transformers/generation/utils.py#L2310
@@ -227,8 +227,10 @@ def new_greedy_search(
         this_peer_finished = False
         unfinished_sequences = torch.ones(batch_size, dtype=torch.long, device=input_ids.device)
         model_kwargs["cache_position"] = torch.arange(cur_len, device=input_ids.device)
-
+        thread_id = threading.get_native_id()
+        kwargs = {'tid': thread_id, 'g_lock': utils.global_var.get_value('g_lock')}
         while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
+            kwargs['g_lock'].acquire()
             tic = time.perf_counter()
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
@@ -240,8 +242,11 @@ def new_greedy_search(
                 return_dict=True,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
+                kwargs = kwargs
             )
-            tm_infer_list.append(time.perf_counter() - tic_infer)
+            utils.global_var.get_value('thread_lock').acquire()
+            utils.global_var.get_value(thread_id)['tm_infer_list'].append(time.perf_counter() - tic_infer)
+            utils.global_var.get_value('thread_lock').release()
 
             if synced_gpus and this_peer_finished:
                 continue  # don't waste resources running the code we don't need
@@ -292,7 +297,10 @@ def new_greedy_search(
 
             unfinished_sequences = unfinished_sequences & ~stopping_criteria(input_ids, scores)
             this_peer_finished = unfinished_sequences.max() == 0
-            tm_list.append(time.perf_counter() - tic)
+            utils.global_var.get_value('thread_lock').acquire()
+            utils.global_var.get_value(thread_id)['tm_list'].append(time.perf_counter() - tic)
+            utils.global_var.get_value('thread_lock').release()
+            kwargs['g_lock'].release()
 
         if streamer is not None:
             streamer.end()
@@ -324,33 +332,6 @@ def new_greedy_search(
 
 
 class GreedySearchHook:
-    def __init__(self):
-        """Clear the time list."""
-        global tm_list
-        tm_list.clear()
-        global tm_infer_list
-        tm_infer_list.clear()
-
-    def clear_time_list(self):
-        """Clear the time list."""
-        global tm_list
-        tm_list.clear()
-
-    def get_time_list(self):
-        """Return the time list."""
-        return tm_list
-
-    def clear_time_infer_list(self):
-        """Clear the infer time list."""
-        global tm_infer_list
-        tm_infer_list.clear()
-
-    def get_time_infer_list(self):
-        """Return the infer time list."""
-        global tm_infer_list
-        return tm_infer_list
-
     def new_forward(self, model):
         """Define a new greedy search function."""
         model._greedy_search = new_greedy_search.__get__(model, model.__class__)
-            
