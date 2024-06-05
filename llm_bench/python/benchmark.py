@@ -283,6 +283,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
     streamer.reset()
 
+
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
     model_precision = utils.model_utils.get_model_precision(model_path.parts)
