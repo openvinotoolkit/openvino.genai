@@ -234,7 +234,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
     py::class_<DecodedResults>(m, "DecodedResults")
         .def(py::init<>())
         .def_readwrite("texts", &DecodedResults::texts)
-        .def_readwrite("scores", &DecodedResults::scores);
+        .def_readwrite("scores", &DecodedResults::scores)
+        .def("__repr__", [](const DecodedResults& dr) {return std::string{dr};});
 
     py::class_<EncodedResults>(m, "EncodedResults")
         .def(py::init<>())

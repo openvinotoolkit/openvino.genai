@@ -5,13 +5,12 @@
 
 int main(int argc, char* argv[]) try {
     std::string prompt;
-    std::string accumulated_str = "";
 
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
     
     ov::genai::GenerationConfig config = pipe.get_generation_config();
-    config.max_new_tokens = 10000;
+    config.max_new_tokens = 20;
     std::function<bool(std::string)> streamer = [](std::string word) { std::cout << word << std::flush; return false; };
 
     pipe.start_chat();

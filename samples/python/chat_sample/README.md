@@ -1,6 +1,6 @@
-# C++ chat_sample that supports most popular models like LLaMA 2
+# Python chat_sample that supports most popular models like LLaMA 2
 
-This example showcases inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The application desn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample fearures `ov::genai::LLMPipeline` and configures it for the chat scenario. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
+This example showcases inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The application desn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample fearures `openvino_genai.LLMPipeline` and configures it for the chat scenario. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
 
 ## Download and convert the model and tokenizers
 
@@ -13,7 +13,7 @@ optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B
 
 ## Run:
 
-`chat_sample TinyLlama-1.1B-Chat-v1.0`
+`chat_sample.py TinyLlama-1.1B-Chat-v1.0`
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
 

@@ -6,10 +6,14 @@ import argparse
 import openvino_genai
 
 
+def streamer(subword):
+    print(subword, end='')
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_dir')
-    parser.add_argument('prompts', nargs='+')
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
@@ -17,12 +21,17 @@ def main():
 
     config = pipe.get_generation_config()
     config.max_new_tokens = 20
-    config.num_beam_groups = 3
-    config.num_beams = 15
-    config.num_return_sequences = config.num_beams * len(args.prompts)
+    config.do_sample = False
 
-    beams = pipe.generate(args.prompts, config)
-    print(beams)
+    pipe.start_chat()
+    while True:
+        prompt = input('question:\n')
+        if 'Stop!' == prompt:
+            break
+        pipe.generate(prompt, config, streamer)
+
+        print('\n----------')
+    pipe.finish_chat()
 
 
 if '__main__' == __name__:

@@ -20,10 +20,7 @@ int main(int argc, char* argv[]) try {
     config.num_return_sequences = config.num_beams * prompts.size();
        
     auto beams = pipe.generate(prompts, config);
-    for (int i = 0; i < beams.scores.size(); i++)
-        std::cout << beams.scores[i] << ": " << beams.texts[i] << '\n';
-
-    return 0;
+    std::cout << beams << '\n';
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return EXIT_FAILURE;

@@ -34,10 +34,10 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - name: greedy_causal_lm
-        run: |
-          source ./ov/setupvars.sh
-          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
+      - run: >
+        . ./ov/setupvars.sh
+          && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
+          | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
 
   cpp-beam_search_causal_lm-ubuntu:
     strategy:
@@ -99,7 +99,7 @@ jobs:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
-          echo "69" passed
+          echo 69 passed
 
           timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ Hi > ./pred.txt
           python -c "
@@ -170,7 +170,7 @@ jobs:
                 predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo "Multi prompt" passed
-  cpp-beam_search_causal_lm-windows:
+  cpp-greedy_causal_lm-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -184,10 +184,11 @@ jobs:
         run: |
           curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/windows/w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64.zip
           unzip ov.zip
+      - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64
       - name: Download, convert and build
         shell: cmd
         run: |
-          call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat
+          call .\ov\setupvars.bat
           python -m pip install --upgrade-strategy eager -r ./samples/cpp/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
@@ -196,9 +197,9 @@ jobs:
       - name: Compare
         shell: cmd
         run: |
-          call w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64\setupvars.bat
+          call .\ov\setupvars.bat
           set PATH=.\build\openvino_genai\;%PATH%
-          .\build/samples/cpp/greedy_causal_lm/Release/greedy_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ "69" > .\pred.txt
+          .\build/samples/cpp/greedy_causal_lm/Release/greedy_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\pred.txt
           
           echo import transformers > ref.py
           echo predictions = open('pred.txt', 'r').read() >> ref.py
@@ -211,11 +212,12 @@ jobs:
           echo         raise RuntimeError(f'Missing "{ref=}" from predictions') >> ref.py
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
           python ref.py
+      - run: >
+        call .\ov\setupvars.bat
+          && samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
+      - run: fc .\pred.txt .\py.txt
 
   cpp-beam_search_causal_lm-Qwen-7B-Chat:
-    strategy:
-      matrix:
-        executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -237,11 +239,11 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - name: Compare
-        run: |
-          source ./ov/setupvars.sh
-          export PYTHONPATH=./build/:$PYTHONPATH  # C++ ignores that
-          timeout 50s ${{ matrix.executable }} ./Qwen-7B-Chat/ 69
+      - run: >
+        . ./ov/setupvars.sh
+          && export PYTHONPATH=./build/:$PYTHONPATH
+          && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69
+          | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./Qwen-7B-Chat/ 69) -
 
   cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
     strategy:
@@ -268,11 +270,11 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen1.5-7B-Chat Qwen1.5-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - name: Run
-        run: |
-          source ./ov/setupvars.sh
-          export PYTHONPATH=./build/:$PYTHONPATH  # C++ ignores that
-          timeout 50s ${{ matrix.executable }} ./Qwen1.5-7B-Chat/ "你好！"
+      - run: >
+        . ./ov/setupvars.sh
+          && export PYTHONPATH=./build/:$PYTHONPATH
+          && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./Qwen1.5-7B-Chat/ "你好！"
+          | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./Qwen1.5-7B-Chat/ "你好！") -
 
   cpp-beam_search_causal_lm-Phi-2:
     strategy:
@@ -299,11 +301,11 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-2 phi-2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j 15
-      - name: Compare
-        run: |
-          source ./ov/setupvars.sh
-          export PYTHONPATH=./build/:$PYTHONPATH  # C++ ignores that
-          timeout 50s ${{ matrix.executable }} ./phi-2/ 69
+      - run: >
+        . ./ov/setupvars.sh
+          && export PYTHONPATH=./build/:$PYTHONPATH
+          && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./phi-2/ 69
+          | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./phi-2/ 69) -
 
   cpp-beam_search_causal_lm-notus-7b-v1:
     strategy:
@@ -330,11 +332,11 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model argilla/notus-7b-v1 notus-7b-v1
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - name: Compare
-        run: |
-          source ./ov/setupvars.sh
-          export PYTHONPATH=./build/:$PYTHONPATH  # C++ ignores that
-          timeout 50s ${{ matrix.executable }} ./notus-7b-v1/ 69
+      - run: >
+        . ./ov/setupvars.sh
+          && export PYTHONPATH=./build/:$PYTHONPATH
+          && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./notus-7b-v1/ 69
+          | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./notus-7b-v1/ 69) -
 
   cpp-speculative_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
@@ -444,7 +446,6 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           timeout 50s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./phi-1_5/ "Alan Turing was a" > ./pred_greedy.txt
-          timeout 50s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./phi-1_5/ "Alan Turing was a" > ./pred_beam.txt
       - name: Compare
         run: |
           python -c "
@@ -461,6 +462,10 @@ jobs:
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo Phi-1_5 passed
+      - run: >
+        . ./ov/setupvars.sh
+          && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./phi-1_5/ "Alan Turing was a"
+          | diff ./pred_greedy.txt -
           
   cpp-greedy_causal_lm-redpajama-3b-chat:
     runs-on: ubuntu-20.04-4-cores
@@ -506,3 +511,7 @@ jobs:
               predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo "Alan Turing was a" passed
+      - run: >
+        . ./ov/setupvars.sh
+          && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./redpajama-3b-chat/ "Alan Turing was a"
+          | diff ./pred_greedy.txt -

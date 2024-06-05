@@ -42,11 +42,11 @@ public:
     std::vector<std::string> texts;
     std::vector<float> scores;
 
-     // @brief Convert DecodedResults to a vector of strings.
-     // @return A std::vector<std::string> containing the texts from the DecodedResults object.
+    // @brief Convert DecodedResults to a string.
     operator std::string() const { 
-        OPENVINO_ASSERT(texts.size() == 1, "DecodedResults can be converted to string only if contains a single prompt");
-        return texts.at(0); 
+        std::stringstream ss;
+        ss << *this;
+        return ss.str();
     }
 
     // @brief Convert DecodedResults to a single string.
@@ -58,13 +58,18 @@ public:
      // @brief Overloads operator<< to enhance output the contents of DecodedResults.
      // @return A reference to the output stream with the concatenated texts.
     friend std::ostream& operator<<(std::ostream& os, const DecodedResults& dr) {
-       for (size_t i = 0; i < dr.texts.size(); ++i) {
-            os << dr.texts[i];
-            if (i != dr.texts.size() - 1) {
-                os << std::endl;
-            }
+        OPENVINO_ASSERT(
+            dr.scores.size() == dr.texts.size(),
+            "The number of scores and texts"
+            " doesn't match in DecodedResults."
+        );
+        if (dr.texts.empty()) {
+            return os;
         }
-        return os;
+        for (size_t i = 0; i < dr.texts.size() - 1; ++i) {
+            os << dr.scores[i] << ": " << dr.texts[i] << '\n';
+        }
+        return os << dr.scores.back() << ": " << dr.texts.back();
     }
 };
 
