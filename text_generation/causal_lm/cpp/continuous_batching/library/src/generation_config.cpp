@@ -57,5 +57,7 @@ GenerationConfig GenerationConfig::multinomial() {
     multinomial.temperature = 0.8f;
     multinomial.top_p = 0.8;
     multinomial.top_k = 20;
+    multinomial.presence_penalty = 0.01f;
+    multinomial.frequence_penalty = 0.1f;
     return multinomial;
 }

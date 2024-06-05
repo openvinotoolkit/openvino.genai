@@ -132,7 +132,8 @@ class SequenceGroup {
     GenerationConfig m_sampling_params;
     std::size_t m_block_size;
     TokenIds m_prompt_ids;
-    std::set<int64_t> m_unique_generated_ids;
+    std::map<int64_t, size_t> m_unique_generated_ids;
+    std::set<int64_t> m_unique_prompt_ids;
     GenerationStream::Ptr m_generation_stream;
 
     uint64_t m_next_sequence_id = 0;
@@ -167,7 +168,9 @@ public:
 
         m_prompt_ids.resize(input_ids.get_size());
         std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), m_prompt_ids.begin());
-        for (auto id: m_prompt_ids) { m_unique_generated_ids.insert(id); }
+        for (auto id: m_prompt_ids) { 
+            m_unique_prompt_ids.insert(id);
+        }
     }
 
     void add_sequence(const Sequence::Ptr & sequence) {
@@ -329,12 +332,20 @@ public:
         return m_prompt_ids;
     }
 
-    const std::set<int64_t>& get_unique_generated_ids() const {
+    const std::map<int64_t, size_t>& get_unique_generated_ids() const {
         return m_unique_generated_ids;
     }
 
+    const std::set<int64_t>& get_unique_prompt_ids() const {
+        return m_unique_prompt_ids;
+    }
+
     void register_generated_token_id(int64_t token_id) {
-        m_unique_generated_ids.insert(token_id);
+        if (m_unique_generated_ids.count(token_id)) {
+            m_unique_generated_ids[token_id]++;
+        } else {
+            m_unique_generated_ids.insert({token_id, 1});
+        }
     }
 
     size_t get_num_logical_blocks() const {

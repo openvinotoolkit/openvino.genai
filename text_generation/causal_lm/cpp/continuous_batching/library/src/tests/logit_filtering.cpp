@@ -195,7 +195,124 @@ TEST(RepetitionPenaltyTransformInitializationTest, ThrowsForInvalidPenalties) {
 
 TEST(RepetitionPenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
     auto transform = RepetitionPenaltyTransform(1.5);
-    EXPECT_THROW(transform.apply({ {43.0f, 0} }, std::set<int64_t>{1337} ), ov::Exception);
-    EXPECT_THROW(transform.apply({ {18.0f, 0} }, std::set<int64_t>{0, -1} ), ov::Exception);
+    EXPECT_THROW(transform.apply({ {43.0f, 0} }, std::map<int64_t, size_t>{{1337, 0}} ), ov::Exception);
+    EXPECT_THROW(transform.apply({ {18.0f, 0} }, std::map<int64_t, size_t>{{0, 1}, {-1, 1}} ), ov::Exception);
 }
 
+// ===================
+struct FrequencyPenaltyTransformTestStruct {
+    float penalty;
+    std::vector<LogitWithIdx> input_logits;
+    TokenIds input_ids;
+    std::vector<LogitWithIdx> expected_output;
+};
+
+using FrequencyPenaltyTransformTest = testing::TestWithParam<FrequencyPenaltyTransformTestStruct>;
+
+TEST_P(FrequencyPenaltyTransformTest, TransformResultEqualToReference) {
+    auto test_struct = GetParam();
+    auto transform = FrequencyPenaltyTransform(test_struct.penalty);
+    auto test_result = transform.apply(test_struct.input_logits, test_struct.input_ids);
+    ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
+    for (size_t i = 0; i < test_result.size(); i++) {
+        EXPECT_NEAR(test_result[i].first, test_struct.expected_output[i].first, 1e-6);
+        EXPECT_EQ(test_result[i].second, test_struct.expected_output[i].second);
+    }
+};
+
+
+const std::vector<FrequencyPenaltyTransformTestStruct> FREQUENCY_PENALTY_TRANSFORM_TEST_CASES = {
+    { // basic case, indices are applied, order is left as-is
+        0.5f,
+        { {-1.0f, 0}, {2.0f, 1}, {3.0f, 2} },
+        { 1, 0 },
+        { {-0.5f, 0}, {1.5f, 1}, {3.0f, 2} }
+    },
+    { // negative scores case
+        -0.6f,
+        { {-1.0f, 0}, {2.0f, 1}, {3.0f, 2} },
+        { 0, 1, 1 },
+        { {-1.6f, 0}, {3.2f, 1}, {3.0f, 2} }
+    },
+    { // repeated tokens in prompt, check that the penalty is only applied once
+        0.2f,
+        { {1.0f, 0}, {2.0f, 1}, {3.0f, 2} },
+        { 2, 0, 2 },
+        { {0.8f, 0}, {2.0f, 1}, {2.6f, 2} }
+    },
+};
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs,
+                         FrequencyPenaltyTransformTest,
+                         testing::ValuesIn(FREQUENCY_PENALTY_TRANSFORM_TEST_CASES));
+
+
+TEST(FrequencyPenaltyTransformInitializationTest, ThrowsForInvalidPenalties) {
+    EXPECT_THROW(FrequencyPenaltyTransform(-3.0), ov::Exception);
+    EXPECT_THROW(FrequencyPenaltyTransform(+13.0), ov::Exception);
+}
+
+TEST(FrequencyPenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
+    auto transform = FrequencyPenaltyTransform(1.5);
+    EXPECT_THROW(transform.apply({ {43.0f, 0} }, std::map<int64_t, size_t>{{1337, 0}} ), ov::Exception);
+    EXPECT_THROW(transform.apply({ {18.0f, 0} }, std::map<int64_t, size_t>{{0, 1}, {-1, 1}} ), ov::Exception);
+}
+
+// ===================
+struct PresencePenaltyTransformTestStruct {
+    float penalty;
+    std::vector<LogitWithIdx> input_logits;
+    TokenIds input_ids;
+    std::vector<LogitWithIdx> expected_output;
+};
+
+using PresencePenaltyTransformTest = testing::TestWithParam<PresencePenaltyTransformTestStruct>;
+
+TEST_P(PresencePenaltyTransformTest, TransformResultEqualToReference) {
+    auto test_struct = GetParam();
+    auto transform = PresencePenaltyTransform(test_struct.penalty);
+    auto test_result = transform.apply(test_struct.input_logits, test_struct.input_ids);
+    ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
+    for (size_t i = 0; i < test_result.size(); i++) {
+        EXPECT_NEAR(test_result[i].first, test_struct.expected_output[i].first, 1e-6);
+        EXPECT_EQ(test_result[i].second, test_struct.expected_output[i].second);
+    }
+};
+
+
+const std::vector<PresencePenaltyTransformTestStruct> PRESENCE_PENALTY_TRANSFORM_TEST_CASES = {
+    { // basic case, indices are applied, order is left as-is
+        0.5f,
+        { {-1.0f, 0}, {2.0f, 1}, {3.0f, 2} },
+        { 1, 0 },
+        { {-0.5f, 0}, {1.5f, 1}, {3.0f, 2} }
+    },
+    { // negative scores case
+        -0.6f,
+        { {-1.0f, 0}, {2.0f, 1}, {3.0f, 2} },
+        { 0, 1, 1 },
+        { {-1.6f, 0}, {2.6f, 1}, {3.0f, 2} }
+    },
+    { // repeated tokens in prompt, check that the penalty is only applied once
+        0.2f,
+        { {1.0f, 0}, {2.0f, 1}, {3.0f, 2} },
+        { 2, 0, 2 },
+        { {0.8f, 0}, {2.0f, 1}, {2.8f, 2} }
+    },
+};
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs,
+                         PresencePenaltyTransformTest,
+                         testing::ValuesIn(PRESENCE_PENALTY_TRANSFORM_TEST_CASES));
+
+
+TEST(PresencePenaltyTransformInitializationTest, ThrowsForInvalidPenalties) {
+    EXPECT_THROW(PresencePenaltyTransform(-3.0), ov::Exception);
+    EXPECT_THROW(PresencePenaltyTransform(+13.0), ov::Exception);
+}
+
+TEST(PresencePenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
+    auto transform = PresencePenaltyTransform(1.5);
+    EXPECT_THROW(transform.apply({ {43.0f, 0} }, std::map<int64_t, size_t>{{1337, 0}} ), ov::Exception);
+    EXPECT_THROW(transform.apply({ {18.0f, 0} }, std::map<int64_t, size_t>{{0, 1}, {-1, 1}} ), ov::Exception);
+}

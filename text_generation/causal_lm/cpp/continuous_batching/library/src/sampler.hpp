@@ -283,10 +283,23 @@ public:
         OPENVINO_ASSERT(m_penalty >= 0.0f, "repetition penalty must be a positive value");
     }
 
-    std::vector<LogitWithIdx> apply(const std::vector<LogitWithIdx>& input_logits, const std::set<int64_t>& unique_input_ids) {
+    std::vector<LogitWithIdx> apply(const std::vector<LogitWithIdx>& input_logits,
+                                    const std::map<int64_t, size_t>& unique_input_ids,
+                                    const std::set<int64_t>& unique_prompt_ids = {}) {
         std::vector<LogitWithIdx> output(input_logits.begin(), input_logits.end());
         size_t vocab_size = input_logits.size();
-        for (auto input_id : unique_input_ids) {
+        for (const auto& prompt_id : unique_prompt_ids) {
+            OPENVINO_ASSERT((prompt_id >= 0) && (prompt_id < vocab_size), "input_ids token out of bounds");
+            OPENVINO_ASSERT(input_logits[prompt_id].second == prompt_id, "input_logits must have original index order");
+            auto logit_value = output[prompt_id].first;
+            if (logit_value >= 0) {
+                output[prompt_id].first /= m_penalty;
+            } else {
+                output[prompt_id].first *= m_penalty;
+            };
+        }
+        for (const auto& input_id_pair : unique_input_ids) {
+            const auto& input_id = input_id_pair.first;
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
             OPENVINO_ASSERT(input_logits[input_id].second == input_id, "input_logits must have original index order");
             auto logit_value = output[input_id].first;
@@ -300,9 +313,97 @@ public:
     }
 
     std::vector<LogitWithIdx> apply(const std::vector<LogitWithIdx>& input_logits, const TokenIds& input_ids) {
-        std::set<int64_t> unique_input_ids(input_ids.begin(), input_ids.end());
+        std::map<int64_t, size_t> unique_input_ids;
+        for (const auto& input_id : input_ids) {
+            if (unique_input_ids.count(input_id)) {
+                unique_input_ids[input_id]++;
+            } else {
+                unique_input_ids.insert({input_id, 1});
+            }
+        }
         return this->apply(input_logits, unique_input_ids);
     }
+
+private:
+    double m_penalty;
+};
+
+class FrequencyPenaltyTransform {
+public:
+    FrequencyPenaltyTransform(double penalty) : m_penalty(penalty) {
+        OPENVINO_ASSERT(m_penalty >= -2.0f && m_penalty <= 2.0f, "repetition penalty must be a positive value");
+    }
+
+    std::vector<LogitWithIdx> apply(const std::vector<LogitWithIdx>& input_logits,
+                                    const std::map<int64_t, size_t>& unique_input_ids) {
+        std::vector<LogitWithIdx> output(input_logits.begin(), input_logits.end());
+        size_t vocab_size = input_logits.size();
+        for (const auto& input_id_pair : unique_input_ids) {
+            const auto& input_id = input_id_pair.first;
+            OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
+            OPENVINO_ASSERT(input_logits[input_id].second == input_id, "input_logits must have original index order");
+            auto logit_value = output[input_id].first;
+            if (logit_value >= 0) {
+                output[input_id].first -= m_penalty * input_id_pair.second;
+            } else {
+                output[input_id].first += m_penalty * input_id_pair.second;
+            };
+        }
+        return output;
+    }
+
+    std::vector<LogitWithIdx> apply(const std::vector<LogitWithIdx>& input_logits, const TokenIds& input_ids) {
+        std::map<int64_t, size_t> unique_input_ids;
+        for (const auto& input_id : input_ids) {
+            if (unique_input_ids.count(input_id)) {
+                unique_input_ids[input_id]++;
+            } else {
+                unique_input_ids.insert({input_id, 1});
+            }
+        }
+        return this->apply(input_logits, unique_input_ids);
+    }
+
+private:
+    double m_penalty;
+};
+
+class PresencePenaltyTransform {
+public:
+    PresencePenaltyTransform(double penalty) : m_penalty(penalty) {
+        OPENVINO_ASSERT(m_penalty >= -2.0f && m_penalty <= 2.0f, "repetition penalty must be a positive value");
+    }
+
+    std::vector<LogitWithIdx> apply(const std::vector<LogitWithIdx>& input_logits,
+                                    const std::map<int64_t, size_t>& unique_input_ids) {
+        std::vector<LogitWithIdx> output(input_logits.begin(), input_logits.end());
+        size_t vocab_size = input_logits.size();
+        for (const auto& input_id_pair : unique_input_ids) {
+            const auto& input_id = input_id_pair.first;
+            OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
+            OPENVINO_ASSERT(input_logits[input_id].second == input_id, "input_logits must have original index order");
+            auto logit_value = output[input_id].first;
+            if (logit_value >= 0) {
+                output[input_id].first -= m_penalty;
+            } else {
+                output[input_id].first += m_penalty;
+            };
+        }
+        return output;
+    }
+
+    std::vector<LogitWithIdx> apply(const std::vector<LogitWithIdx>& input_logits, const TokenIds& input_ids) {
+        std::map<int64_t, size_t> unique_input_ids;
+        for (const auto& input_id : input_ids) {
+            if (unique_input_ids.count(input_id)) {
+                unique_input_ids[input_id]++;
+            } else {
+                unique_input_ids.insert({input_id, 1});
+            }
+        }
+        return this->apply(input_logits, unique_input_ids);
+    }
+
 private:
     double m_penalty;
 };
@@ -405,8 +506,17 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
 
                 if (sampling_params.repetition_penalty != 1.0f) {
                     auto repetition_penalty_transform = RepetitionPenaltyTransform(sampling_params.repetition_penalty);
-                    logit_vector = repetition_penalty_transform.apply(logit_vector, sequence_group->get_unique_generated_ids());
+                    logit_vector = repetition_penalty_transform.apply(logit_vector, sequence_group->get_unique_generated_ids(), sequence_group->get_unique_prompt_ids());
                 }
+                if (sampling_params.presence_penalty != 0.0f) {
+                    auto presence_penalty_transform = PresencePenaltyTransform(sampling_params.presence_penalty);
+                    logit_vector = presence_penalty_transform.apply(logit_vector, sequence_group->get_unique_generated_ids());
+                }
+                if (sampling_params.frequence_penalty != 0.0f) {
+                    auto frequence_penalty_transform = FrequencyPenaltyTransform(sampling_params.frequence_penalty);
+                    logit_vector = frequence_penalty_transform.apply(logit_vector, sequence_group->get_unique_generated_ids());
+                }
+
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
                 OPENVINO_ASSERT(running_sequences.size() == 1);
 
