@@ -213,9 +213,9 @@ jobs:
           python ref.py
 
   cpp-beam_search_causal_lm-Qwen-7B-Chat:
-  strategy:
-    matrix:
-      executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
+    strategy:
+      matrix:
+        executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -244,9 +244,9 @@ jobs:
           timeout 50s ${{ matrix.executable }} ./Qwen-7B-Chat/ 69
 
   cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
-  strategy:
-    matrix:
-      executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
+    strategy:
+      matrix:
+        executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -275,9 +275,9 @@ jobs:
           timeout 50s ${{ matrix.executable }} ./Qwen1.5-7B-Chat/ "你好！"
 
   cpp-beam_search_causal_lm-Phi-2:
-  strategy:
-    matrix:
-      executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
+    strategy:
+      matrix:
+        executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -306,9 +306,9 @@ jobs:
           timeout 50s ${{ matrix.executable }} ./phi-2/ 69
 
   cpp-beam_search_causal_lm-notus-7b-v1:
-  strategy:
-    matrix:
-      executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
+    strategy:
+      matrix:
+        executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
