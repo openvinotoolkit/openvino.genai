@@ -81,7 +81,7 @@ jobs:
           "
           echo "Why is the Sun yellow?" passed
 
-          timeout 25s ../build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ 69 > ./pred.txt
+          timeout 25s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ 69 > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
