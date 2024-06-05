@@ -40,6 +40,9 @@ jobs:
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
 
   cpp-beam_search_causal_lm-ubuntu:
+    strategy:
+      matrix:
+        executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v4
@@ -64,8 +67,9 @@ jobs:
       - name: Compare
         run: |
           source ./ov/setupvars.sh
+          export PYTHONPATH=./build/:$PYTHONPATH  # C++ ignores that
 
-          timeout 25s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?" > ./pred.txt
+          timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -81,7 +85,7 @@ jobs:
           "
           echo "Why is the Sun yellow?" passed
 
-          timeout 25s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ 69 > ./pred.txt
+          timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ 69 > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -97,7 +101,7 @@ jobs:
           "
           echo "69" passed
 
-          timeout 25s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ Hi > ./pred.txt
+          timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ Hi > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -113,7 +117,7 @@ jobs:
           "
           echo "Hi" passed
 
-          timeout 25s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "return 0" > ./pred.txt
+          timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "return 0" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -129,7 +133,7 @@ jobs:
           "
           echo "return 0" passed
 
-          timeout 25s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "你好！ 你好嗎？" > ./pred.txt
+          timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -145,7 +149,7 @@ jobs:
           "
           echo "你好！ 你好嗎？" passed
 
-          timeout 1m ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
+          timeout 1m ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -209,6 +213,9 @@ jobs:
           python ref.py
 
   cpp-beam_search_causal_lm-Qwen-7B-Chat:
+  strategy:
+    matrix:
+      executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -233,9 +240,13 @@ jobs:
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./Qwen-7B-Chat/ 69 > ./pred.txt
+          export PYTHONPATH=./build/:$PYTHONPATH  # C++ ignores that
+          timeout 50s ${{ matrix.executable }} ./Qwen-7B-Chat/ 69
 
   cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
+  strategy:
+    matrix:
+      executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -260,9 +271,13 @@ jobs:
       - name: Run
         run: |
           source ./ov/setupvars.sh
-          timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./Qwen1.5-7B-Chat/ "你好！" > ./pred_qwen15.txt
+          export PYTHONPATH=./build/:$PYTHONPATH  # C++ ignores that
+          timeout 50s ${{ matrix.executable }} ./Qwen1.5-7B-Chat/ "你好！"
 
   cpp-beam_search_causal_lm-Phi-2:
+  strategy:
+    matrix:
+      executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -287,9 +302,13 @@ jobs:
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./phi-2/ 69 > ./pred.txt
+          export PYTHONPATH=./build/:$PYTHONPATH  # C++ ignores that
+          timeout 50s ${{ matrix.executable }} ./phi-2/ 69
 
   cpp-beam_search_causal_lm-notus-7b-v1:
+  strategy:
+    matrix:
+      executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -314,7 +333,8 @@ jobs:
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./notus-7b-v1/ 69 > ./pred.txt
+          export PYTHONPATH=./build/:$PYTHONPATH  # C++ ignores that
+          timeout 50s ${{ matrix.executable }} ./notus-7b-v1/ 69
 
   cpp-speculative_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores

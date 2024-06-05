@@ -39,25 +39,21 @@ void update_config_from_kwargs(GenerationConfig& config, const py::kwargs& kwarg
     if (kwargs.contains("eos_token_id")) config.eos_token_id = kwargs["eos_token_id"].cast<int64_t>();
 }
 
-py::object call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config, const StreamerVariant& streamer) {
-    if (config.num_return_sequences > 1) {
-        return py::cast(pipe.generate({text}, config, streamer).texts);
-    } else {
-        return py::cast(std::string(pipe.generate(text, config, streamer)));
-    }
-}
-
-std::vector<std::string> call_with_config(LLMPipeline& pipe, const std::vector<std::string>& text, const GenerationConfig& config, const StreamerVariant& streamer) {
+DecodedResults call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config, const StreamerVariant& streamer) {
     return pipe.generate(text, config, streamer);
 }
 
-std::vector<std::string> call_with_kwargs(LLMPipeline& pipeline, const std::vector<std::string>& texts, const py::kwargs& kwargs) {
+DecodedResults call_with_config(LLMPipeline& pipe, const std::vector<std::string>& text, const GenerationConfig& config, const StreamerVariant& streamer) {
+    return pipe.generate(text, config, streamer);
+}
+
+DecodedResults call_with_kwargs(LLMPipeline& pipeline, const std::vector<std::string>& texts, const py::kwargs& kwargs) {
     GenerationConfig config = pipeline.get_generation_config();
     update_config_from_kwargs(config, kwargs);
     return call_with_config(pipeline, texts, config, kwargs.contains("streamer") ? kwargs["streamer"].cast<StreamerVariant>() : std::monostate());
 }
 
-py::object call_with_kwargs(LLMPipeline& pipeline, const std::string& text, const py::kwargs& kwargs) {
+DecodedResults call_with_kwargs(LLMPipeline& pipeline, const std::string& text, const py::kwargs& kwargs) {
     // Create a new GenerationConfig instance and initialize from kwargs
     GenerationConfig config = pipeline.get_generation_config();
     update_config_from_kwargs(config, kwargs);
@@ -173,8 +169,16 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
         )")
         .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, const py::kwargs&>(&call_with_kwargs))
-        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, const GenerationConfig&, const StreamerVariant&>(&call_with_config))
-        .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&, const StreamerVariant&>(&call_with_config))
+        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, const GenerationConfig&, const StreamerVariant&>(&call_with_config),
+            py::arg("inputs"), "lsit of prompts",
+            py::arg("config") = std::nullopt, "optional GenerationConfig",
+            py::arg("streamer") = std::monostate(), "optional streamer"
+        )
+        .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&, const StreamerVariant&>(&call_with_config),
+            py::arg("inputs"), "input prompt",
+            py::arg("config") = std::nullopt, "optional GenerationConfig",
+            py::arg("streamer") = std::monostate(), "optional streamer"
+        )
 
         .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
         .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&, const StreamerVariant&>(&call_with_config))
