@@ -7,7 +7,7 @@ import openvino_genai
 
 
 def streamer(subword):
-    print(subword, end='')
+    print(subword, end='', flush=True)
     return False
 
 
