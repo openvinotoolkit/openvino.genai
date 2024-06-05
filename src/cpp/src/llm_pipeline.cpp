@@ -38,8 +38,8 @@ ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::pa
         config.eos_token_id = eos_token_id;
     }
 
-    // do not validate if user loaded incorrect config from json and wishes to 
-    // modify and continue generation with custom valid values
+    // Do not validate, we hope generation_config.json was valid. But even if it's not valid
+    // allow user to modify and continue generation with custom values.
     return config;
 }
 
@@ -378,7 +378,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& plugin_config
 ) {
-    m_pimpl = make_unique<LLMPipelineImpl>(model_path, tokenizer, device, plugin_config);
+    m_pimpl = make_unique<LLMPipelineImpl>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
 }
 
 ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
@@ -400,7 +400,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device, 
     const ov::AnyMap& config
 ) {
-    m_pimpl = make_unique<LLMPipelineImpl>(path, device, config);
+    m_pimpl = make_unique<LLMPipelineImpl>(std::filesystem::path(path), device, config);
 }
 
 ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(

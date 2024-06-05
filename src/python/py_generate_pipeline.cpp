@@ -172,12 +172,17 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
         )")
-        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, const py::kwargs&>(&call_with_kwargs))
-        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, const GenerationConfig&, const StreamerVariant&>(&call_with_config))
-        .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&, const StreamerVariant&>(&call_with_config))
+        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, 
+                                           const py::kwargs&>(&call_with_kwargs))
+        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, 
+                                           const GenerationConfig&, const StreamerVariant&>(&call_with_config))
+        .def("generate", py::overload_cast<LLMPipeline&, const std::string&, 
+                                           const GenerationConfig&, const StreamerVariant&>(&call_with_config))
 
-        .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const py::kwargs&>(&call_with_kwargs))
-        .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&, const StreamerVariant&>(&call_with_config))
+        .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, 
+                                           const py::kwargs&>(&call_with_kwargs))
+        .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, 
+                                           const GenerationConfig&, const StreamerVariant&>(&call_with_config))
         
         // todo: if input_ids is a ov::Tensor/numpy tensor
 
