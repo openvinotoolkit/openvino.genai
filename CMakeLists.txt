@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.23.0)  # The requirement comes from Jinja2Cpp
 
 # Multi config generators such as Visual Studio ignore CMAKE_BUILD_TYPE. Multi config generators are configured with
 # CMAKE_CONFIGURATION_TYPES, but limiting options in it completely removes such build options

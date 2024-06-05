@@ -26,11 +26,10 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
       # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
       # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
-      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-      # --exitfirst to exit instantly on first error because tests are slow and produce lots of logs slowing down GitHub Actions logs view.
-      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_generate_api.py --exitfirst -m precommit
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --upgrade-strategy eager
+      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
       - run: source ./ov/setupvars.sh && python -m pip install . --config-settings=build-dir="build" --verbose
-      - run: python -m pytest ./tests/python_tests/test_generate_api.py --exitfirst -m precommit
+      - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
 
   macos_genai_python_lib:
     runs-on: macos-12
@@ -52,11 +51,11 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
       # GitHub Actions already provides what is listed in ./requirements-build.txt but the internal
       # build system doesn't. Install ./requirements-build.txt to detect possible conflicts.
-      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --verbose
-      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_generate_api.py --exitfirst -m precommit
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --upgrade-strategy eager
+      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
       - run: source ./ov/setupvars.sh && python -m pip install . --config-settings=build-dir="build" --verbose
       - run: python -c "from openvino_genai import LLMPipeline"
-      - run: python -m pytest ./tests/python_tests/test_generate_api.py --exitfirst -m precommit
+      - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
 
   windows_genai_python_lib:
     runs-on: windows-latest
@@ -78,8 +77,8 @@ jobs:
       - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64
       - run: call ./ov/setupvars.bat && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: call ./ov/setupvars.bat && cmake --build ./build/ --config Release -j
-      - run: call ./ov/setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+      - run: call ./ov/setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --upgrade-strategy eager
       # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
-      - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/test_generate_api.py --exitfirst -m precommit
+      - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
       - run: call ./ov/setupvars.bat && python -m pip install . --config-settings=build-dir="build" --verbose
-      - run: python -m pytest ./tests/python_tests/test_generate_api.py --exitfirst -m precommit
+      - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit

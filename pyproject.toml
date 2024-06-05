@@ -23,6 +23,7 @@ dependencies = [
 cmake.build-type = "Release"
 cmake.source-dir = "./"
 cmake.targets = ["py_generate_pipeline"]  # Adding genai would trigger a Release build and Debug build after it. py_generate_pipeline depends on genai and genai will be built anyway. It's not been investigated why both build types are triggered.
+cmake.version = ">=3.23"
 install.components = ["wheel_genai"]
 sdist.cmake = true
 wheel.packages = ["src/python/openvino_genai"]
