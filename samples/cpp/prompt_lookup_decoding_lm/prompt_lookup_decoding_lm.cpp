@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <string_view>
 #include <openvino/core/parallel.hpp>
 #include <openvino/openvino.hpp>
 
