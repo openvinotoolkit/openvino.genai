@@ -41,9 +41,16 @@ void update_config_from_kwargs(GenerationConfig& config, const py::kwargs& kwarg
 
 py::object call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config, const StreamerVariant& streamer) {
     if (config.num_return_sequences > 1) {
-        return py::cast(pipe.generate({text}, config, streamer).texts);
+        py::list res;
+        for (auto s: pipe.generate({text}, config, streamer).texts) {
+            PyObject* py_s = PyUnicode_DecodeUTF8(s.data(), s.length(), "replace");
+            res.append(py_s);
+        }
+        return res;
     } else {
-        return py::cast(std::string(pipe.generate(text, config, streamer)));
+        auto res = std::string(pipe.generate(text, config, streamer));
+        PyObject* py_str = PyUnicode_DecodeUTF8(res.data(), res.length(), "replace");
+        return py::reinterpret_steal<py::object>(py_str);
     }
 }
 

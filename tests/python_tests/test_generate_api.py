@@ -11,23 +11,23 @@ import pytest
 import transformers
 from list_test_models import models_list
 from typing import Union, List, Dict
-
+import sys
 
 @functools.lru_cache(1)
 def read_model(params):
     model_id, path = params
-    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     hf_model = transformers.AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
 
     if not (path / 'openvino_model.xml').is_file():
         ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
         openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
         openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
-        tokenizer.save_pretrained(path)
         
         # to store tokenizer config jsons with special tokens
         tokenizer.save_pretrained(path)
         hf_model.generation_config.save_pretrained(path)
+        hf_model.config.save_pretrained(path)
         
         optimum.intel.openvino.OVModelForCausalLM.from_pretrained(
             model_id, export=True, trust_remote_code=True,
@@ -283,6 +283,12 @@ class Printer(openvino_genai.StreamerBase):
 
 
 @pytest.mark.precommit
+@pytest.mark.xfail(
+    raises=RuntimeError, 
+    reason="resulting token is out of vocabulary range on Mac",
+    strict=False,
+    condition=sys.platform == "darwin"
+)
 def test_streamer_one_string():
     pipe = read_model(models_list()[0])[4]
     generation_config = pipe.get_generation_config()
