@@ -416,6 +416,8 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
 
                     if (sampling_params.max_new_tokens == running_sequence->get_generated_len() ||
                         sampled_token_id.second == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
+                        // stop sequence by max_new_tokens or EOS token
+                        running_sequence->set_status(SequenceStatus::FINISHED);
                         // drop sequence from scheduler
                         sampler_output.m_dropped_sequences.push_back(running_sequence->get_id());
                     }

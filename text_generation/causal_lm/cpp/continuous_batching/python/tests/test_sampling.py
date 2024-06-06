@@ -111,10 +111,10 @@ RANDOM_SAMPLING_TEST_CASES = [
                              prompts=["Tell me something about UAE"],
                              ref_texts=[
                                 [
-                                    "?  You are my country... so what does our military do here?? What am i missing out on?? And why don't u tell us?",
-                                    '? I think that is a bit of an anomaly, but you might want to ask yourself this question: Where can some young people from Dubai or Bahrain',
                                     " and how it's not like we're all in the same boat right now lol (or even close) 😂😁! Just curious :) If",
+                                    "?  You are my country... so what does our military do here?? What am i missing out on?? And why don't u tell us?",
                                     '?\nThe U.S government has been doing quite well with foreign-made aircraft for many years under US administration....and they have very good reasons',
+                                    '? I think that is a bit of an anomaly, but you might want to ask yourself this question: Where can some young people from Dubai or Bahrain'
                                 ]
                              ]),
 ]

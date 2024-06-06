@@ -445,22 +445,33 @@ public:
                 }
             }
         // For greedy or multinomial sampling we decide whever to stream partial results depending on the user parameter
-        } else if (m_sampling_params.is_greedy_sampling() || m_sampling_params.is_multinomial()) {
-            // TO DO: Now we always stream for greedy search for the sake of benchmarking
-            if (true /* m_sampling_params.stream */) {
-                for (auto& sequence : m_sequences) {
-                    if (!sequence->has_finished()) {
-                        const auto last_gen_token = sequence->get_last_generation_output();
-                        outputs.emplace(sequence->get_grouped_id(), last_gen_token);
-                        if (m_sampling_params.max_new_tokens == sequence->get_generated_len() ||
-                            last_gen_token.generated_token_ids.back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
-                            // stop sequence by max_new_tokens or EOS token
-                            sequence->set_status(SequenceStatus::FINISHED);
-                        }
-                    }
+        } else if (m_sampling_params.is_greedy_sampling() || m_sampling_params.is_multinomial()) {   
+            if (has_finished()) {
+                std::vector<Sequence::CPtr> finished_sequences = get_finished_sequences();
+
+                OPENVINO_ASSERT(finished_sequences.size() == num_total_seqs() && has_finished());
+                for (auto& sequence: finished_sequences) {
+                    GenerationOutput output;
+                    output.generated_token_ids = sequence->get_generated_ids();
+                    output.score = sequence->get_cumulative_log_probs();
+                    outputs.emplace(sequence->get_grouped_id(), output);
                 }
-                m_generation_stream->push(outputs);
+
+                if (outputs.size()) {
+                    m_generation_stream->push(outputs);
+                }
             }
+            // TO DO: Now we always stream for greedy search for the sake of benchmarking 
+            // if (m_sampling_params.stream) {
+                // TODO: support streamimg for n seqs
+                // for (auto& sequence : m_sequences) {
+                //     if (!sequence->has_finished()) {
+                //         const auto last_gen_token = sequence->get_last_generation_output();
+                //         outputs.emplace(sequence->get_grouped_id(), last_gen_token);
+                //     }
+                // }
+                // m_generation_stream->push(outputs);
+            // }
         }
 
         if (out_of_memory()) {
