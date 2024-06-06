@@ -43,7 +43,7 @@ public:
     std::vector<float> scores;
 
     // @brief Convert DecodedResults to a string.
-    operator std::string() const { 
+    std::string to_string() const {
         std::stringstream ss;
         ss << *this;
         return ss.str();
@@ -201,7 +201,7 @@ public:
   
     ov::genai::Tokenizer get_tokenizer();
     GenerationConfig get_generation_config() const;
-    void set_generation_config(const GenerationConfig& generation_config);
+    void set_generation_config(const GenerationConfig& config);
 
     void start_chat();
     void finish_chat();

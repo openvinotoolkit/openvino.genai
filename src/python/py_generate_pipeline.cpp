@@ -39,21 +39,56 @@ void update_config_from_kwargs(GenerationConfig& config, const py::kwargs& kwarg
     if (kwargs.contains("eos_token_id")) config.eos_token_id = kwargs["eos_token_id"].cast<int64_t>();
 }
 
-DecodedResults call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config, const StreamerVariant& streamer) {
-    return pipe.generate(text, config, streamer);
+class DecodedResultsPyStr {
+public:
+    std::vector<py::object> texts;
+    std::vector<float> scores;
+    DecodedResultsPyStr() = default;
+    explicit DecodedResultsPyStr(DecodedResults&& cpp) : scores{std::move(cpp.scores)} {
+        texts.reserve(cpp.texts.size());
+        for (const std::string& text : cpp.texts) {
+            texts.push_back(
+                py::reinterpret_steal<py::object>(
+                    PyUnicode_DecodeUTF8(text.data(), text.length(), "replace")
+                )
+            );
+        }
+    }
+    std::string to_string() const {
+        std::stringstream ss;
+        ss << *this;
+        return ss.str();
+    }
+    friend std::ostream& operator<<(std::ostream& os, const DecodedResultsPyStr& dr) {
+        OPENVINO_ASSERT(
+            dr.scores.size() == dr.texts.size(),
+            "The number of scores and texts doesn't match in DecodedResultsPyStr."
+        );
+        if (dr.texts.empty()) {
+            return os;
+        }
+        for (size_t i = 0; i < dr.texts.size() - 1; ++i) {
+            os << dr.scores[i] << ": " << dr.texts[i].cast<std::string>() << '\n';
+        }
+        return os << dr.scores.back() << ": " << dr.texts.back().cast<std::string>();
+    }
+};
+
+DecodedResultsPyStr call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config, const StreamerVariant& streamer) {
+    return DecodedResultsPyStr{pipe.generate(text, config, streamer)};
 }
 
-DecodedResults call_with_config(LLMPipeline& pipe, const std::vector<std::string>& text, const GenerationConfig& config, const StreamerVariant& streamer) {
-    return pipe.generate(text, config, streamer);
+DecodedResultsPyStr call_with_config(LLMPipeline& pipe, const std::vector<std::string>& text, const GenerationConfig& config, const StreamerVariant& streamer) {
+    return DecodedResultsPyStr{pipe.generate(text, config, streamer)};
 }
 
-DecodedResults call_with_kwargs(LLMPipeline& pipeline, const std::vector<std::string>& texts, const py::kwargs& kwargs) {
+DecodedResultsPyStr call_with_kwargs(LLMPipeline& pipeline, const std::vector<std::string>& texts, const py::kwargs& kwargs) {
     GenerationConfig config = pipeline.get_generation_config();
     update_config_from_kwargs(config, kwargs);
     return call_with_config(pipeline, texts, config, kwargs.contains("streamer") ? kwargs["streamer"].cast<StreamerVariant>() : std::monostate());
 }
 
-DecodedResults call_with_kwargs(LLMPipeline& pipeline, const std::string& text, const py::kwargs& kwargs) {
+DecodedResultsPyStr call_with_kwargs(LLMPipeline& pipeline, const std::string& text, const py::kwargs& kwargs) {
     // Create a new GenerationConfig instance and initialize from kwargs
     GenerationConfig config = pipeline.get_generation_config();
     update_config_from_kwargs(config, kwargs);
@@ -235,11 +270,11 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("repetition_penalty", &GenerationConfig::repetition_penalty)
         .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id);
 
-    py::class_<DecodedResults>(m, "DecodedResults")
+    py::class_<DecodedResultsPyStr>(m, "DecodedResults")
         .def(py::init<>())
-        .def_readwrite("texts", &DecodedResults::texts)
-        .def_readwrite("scores", &DecodedResults::scores)
-        .def("__str__", [](const DecodedResults& dr) {return std::string{dr};});
+        .def_readwrite("texts", &DecodedResultsPyStr::texts)
+        .def_readwrite("scores", &DecodedResultsPyStr::scores)
+        .def("__str__", [](const DecodedResultsPyStr& dr) {return dr.to_string();});
 
     py::class_<EncodedResults>(m, "EncodedResults")
         .def(py::init<>())

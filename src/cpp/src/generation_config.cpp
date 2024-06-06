@@ -104,20 +104,25 @@ void GenerationConfig::validate() const {
     OPENVINO_ASSERT(max_new_tokens != SIZE_MAX ||  max_length > 0, 
                     "'max_length' must be greater than 0 or 'max_new_tokens' should be defined");
 
-    if (do_sample) {
-        OPENVINO_ASSERT(top_k > 0,
-                        "top_k must be a strictly positive, but got ",
-                        top_k);
-        OPENVINO_ASSERT(top_p > 0 || top_p < 1.0f,
-                        "top_p must be a positive float > 0 and < 1, but got ",
-                        top_p);
-        OPENVINO_ASSERT(temperature > 0,
-                        "Temperature must be a strictly positive float, but got ",
-                        temperature);
-    }
+    OPENVINO_ASSERT(!do_sample || top_k > 0,
+                    "top_k must be a strictly positive, but got ",
+                    top_k);
+    OPENVINO_ASSERT(!do_sample || (top_p > 0 && top_p <= 1.0f),
+                    "top_p must be a positive float > 0 and < 1, but got ",
+                    top_p);
+    OPENVINO_ASSERT(!do_sample || temperature > 0,
+                    "Temperature must be a strictly positive float, but got ",
+                    temperature);
+
     OPENVINO_ASSERT(repetition_penalty > 0,
                     "Repetition penalty must be a strictly positive float, but got ",
                     repetition_penalty);
+    
+    OPENVINO_ASSERT(!ignore_eos || max_new_tokens != SIZE_MAX || max_length != SIZE_MAX,
+                    "ignore_eos == true, in this case either 'max_new_tokens', or 'max_length' should be defined.");
+
+    OPENVINO_ASSERT(eos_token_id != -1 || max_new_tokens != SIZE_MAX || max_length != SIZE_MAX,
+                    "Either 'eos_token_id', or 'max_new_tokens', or 'max_length' should be defined.");
 }
 
 }  // namespace genai

@@ -155,30 +155,6 @@ ov::Tensor extend_attention(ov::Tensor attention_mask) {
     return new_atten_mask;
 }
 
-
-
-std::tuple<int64_t, int64_t, int64_t> get_special_tokens_from_config_json(const std::filesystem::path& config_path) {
-    int64_t pad_token_id = -1;
-    int64_t bos_token_id = -1;
-    int64_t eos_token_id = -1;
-    auto res = std::tie(pad_token_id, bos_token_id, eos_token_id);
-
-    if (!std::filesystem::exists(config_path))
-        return res;
-
-    std::ifstream file(config_path);
-        if (!file.is_open())
-            return res;
-
-    nlohmann::json data = nlohmann::json::parse(file);
-    using ov::genai::utils::read_json_param;
-
-    read_json_param(data, "pad_token_id", pad_token_id);
-    read_json_param(data, "bos_token_id", bos_token_id);
-    read_json_param(data, "eos_token_id", eos_token_id);
-    return res;
-}
-
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
