@@ -251,7 +251,7 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
       # C++ Qwen-7B-Chat outputs differ from Python outputs
-      - run: . ./ov/setupvars.sh timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69
+      - run: . ./ov/setupvars.sh && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69
       - run: . ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./Qwen-7B-Chat/ 69
 
   cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
