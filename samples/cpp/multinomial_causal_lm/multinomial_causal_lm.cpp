@@ -11,7 +11,7 @@ int main(int argc, char* argv[]) try {
     std::string model_path = argv[1];
     std::string prompt = argv[2];
 
-    std::string device = 'CPU'  // GPU can be used as well
+    std::string device = "CPU";  // GPU can be used as well
     ov::genai::LLMPipeline pipe(model_path, device);
 
     ov::genai::GenerationConfig config = pipe.get_generation_config();

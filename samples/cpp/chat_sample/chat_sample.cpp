@@ -8,8 +8,9 @@ int main(int argc, char* argv[]) try {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR>");
     }
     std::string prompt;
-
     std::string model_path = argv[1];
+
+    std::string device = "CPU";  // GPU can be used as well
     ov::genai::LLMPipeline pipe(model_path, "CPU");
     
     ov::genai::GenerationConfig config = pipe.get_generation_config();
