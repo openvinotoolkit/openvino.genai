@@ -7,6 +7,10 @@ find_package(OpenVINOGenAI REQUIRED PATHS
 )
 add_executable(multinomial_causal_lm multinomial_causal_lm.cpp)
 target_link_libraries(multinomial_causal_lm PRIVATE openvino::genai)
+set_target_properties(multinomial_causal_lm PROPERTIES
+    COMPILE_PDB_NAME multinomial_causal_lm
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
 target_compile_features(greedy_causal_lm PRIVATE cxx_std_17)
 install(TARGETS multinomial_causal_lm
     RUNTIME DESTINATION samples_bin/
