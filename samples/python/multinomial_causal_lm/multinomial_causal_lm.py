@@ -22,7 +22,9 @@ def main():
 
     config = pipe.get_generation_config()
     config.max_new_tokens = 100
-    config.do_sample = False
+    config.do_sample = True
+    config.top_p = 0.9
+    config.top_k = 30
 
     # Since the streamer is set, the results will
     # be printed each time a new token is generated.

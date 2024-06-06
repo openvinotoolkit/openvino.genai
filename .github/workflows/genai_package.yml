@@ -61,7 +61,6 @@ jobs:
         if: ${{ 'Release' != matrix.build-type }}
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
       - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r ./samples/cpp/requirements.txt
-        if: ${{ 'Release' == matrix.build-type }}
       - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - run: source ./ov/setupvars.sh && timeout 50s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
 
