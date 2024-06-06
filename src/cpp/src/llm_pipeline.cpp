@@ -192,23 +192,13 @@ public:
             attention_mask = data->attention_mask;
         }
         
-        ov::genai::EncodedResults result;
-        GenerationConfig config;
-        if (generation_config.has_value()){
-            config = *generation_config;
-            // if eos_token_id was not provided take value from default m_generation_config
-            if (config.eos_token_id == -1 && m_generation_config.eos_token_id != -1) {
-                config.eos_token_id = m_generation_config.eos_token_id;
-            // if even that didn't help, take eos_token_id from the tokenizer
-            } else {
-                config.eos_token_id = m_tokenizer.get_eos_token_id();
-            }
-            
-        } else {
-            config = m_generation_config;
-        }
+        GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+        
+        // If eos_token_id was not provided, take value from default m_generation_config
+        if (config.eos_token_id == -1)
+            config.eos_token_id = m_generation_config.eos_token_id;
         config.validate();
-
+        
         std::shared_ptr<StreamerBase> streamer_ptr;
         if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
             streamer_ptr = nullptr;
@@ -230,6 +220,7 @@ public:
                         "(input_ids, attention_mask, position_ids, beam_idx) "
                         "but you have '" + std::to_string(num_inputs) + "' inputs");
 
+        ov::genai::EncodedResults result;
         if (config.is_greedy_decoding()) {
             result = ov::genai::greedy_decoding(m_model_runner, input_ids, attention_mask, 
                                                 config, streamer_ptr, 
@@ -399,8 +390,11 @@ ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
     m_tokenizer(path.string()),
     m_generation_config{from_config_json_if_exists(path)},
     m_chat_template{chat_template_from_tokenizer_json_if_exists(path)}
- {
- }
+{
+    // If eos_token_id was not provided, take value
+    if (m_generation_config.eos_token_id == -1)
+        m_generation_config.eos_token_id = m_tokenizer.get_eos_token_id();
+}
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
     return m_pimpl->m_generation_config;
@@ -431,9 +425,14 @@ void ov::genai::LLMPipeline::finish_chat() {
     }
 }
 
-void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& generation_config) {
-    generation_config.validate();
-    m_pimpl->m_generation_config = generation_config;
+void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& config) {
+    int64_t default_eos_token_id = m_pimpl->m_generation_config.eos_token_id;;
+    m_pimpl->m_generation_config = config;
+    // if eos_token_id was not provided in config forward from default config
+    if (config.eos_token_id == -1)
+        m_pimpl->m_generation_config.eos_token_id = default_eos_token_id;
+    
+    m_pimpl->m_generation_config.validate();
 }
 
 ov::genai::LLMPipeline::~LLMPipeline() = default;

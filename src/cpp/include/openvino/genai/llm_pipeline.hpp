@@ -197,7 +197,7 @@ public:
   
     ov::genai::Tokenizer get_tokenizer();
     GenerationConfig get_generation_config() const;
-    void set_generation_config(const GenerationConfig& generation_config);
+    void set_generation_config(const GenerationConfig& config);
 
     void start_chat();
     void finish_chat();

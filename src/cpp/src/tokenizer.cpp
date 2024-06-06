@@ -134,7 +134,7 @@ public:
         } else {
             OPENVINO_THROW("openvino_tokenizers path is not set");
         }
-
+        
         read_config(tokenizers_path);
         read_special_tokens_map(tokenizers_path);
 
@@ -194,8 +194,8 @@ public:
     // Also tries to load special token ids from added_tokens_decoder if they exist.
     // Will not override special token strings or ids if they already exist
     void read_tokenizer_config_if_necessary(const std::filesystem::path& tokenizers_path) {
-        if (m_pad_token_id == -1 || m_bos_token_id == -1 || m_eos_token_id == -1 || 
-            m_pad_token.empty() || m_bos_token.empty() || m_eos_token.empty()) {
+        if (m_pad_token_id != -1 && m_bos_token_id != -1 && m_eos_token_id != -1 && 
+            !m_pad_token.empty() && !m_bos_token.empty() && !m_eos_token.empty()) {
             return ;
         }
 
@@ -212,7 +212,7 @@ public:
         // if they are presented directly {"bos_token": "<bos>"}
         using ov::genai::utils::read_json_param;
         auto read_token_str = [&data](std::string key_name, std::string& val) {
-            if (val == "" ) { read_json_param(data, key_name, val); }
+            if (val.empty()) { read_json_param(data, key_name, val); }
         };
         read_token_str(pad_token_key_name, m_pad_token);
         read_token_str(bos_token_key_name, m_bos_token);
@@ -221,7 +221,7 @@ public:
         // if special tokens are not loaded directly, try to read
         // if they are in the format {"bos_token": { "content": "<s>",... }}
         auto read_token_content_str = [&data](std::string key_name, std::string& val) {
-            if (val == "" && data.contains(key_name)) { read_json_param(data[key_name], "content", val); }
+            if (val.empty() && data.contains(key_name)) { read_json_param(data[key_name], "content", val); }
         };
         read_token_content_str(pad_token_key_name, m_pad_token);
         read_token_content_str(bos_token_key_name, m_bos_token);
@@ -242,11 +242,11 @@ public:
             if (!value.contains("content"))
                 continue;
             auto content = value["content"];
-            if (content == m_pad_token && m_pad_token_id != -1)
+            if (m_pad_token_id == -1 && content == m_pad_token)
                 m_pad_token_id = std::stoi(key);
-            if (content == m_bos_token && m_bos_token_id != -1)
+            if (m_bos_token_id == -1 && content == m_bos_token)
                 m_bos_token_id = std::stoi(key);
-            if (content == m_eos_token && m_eos_token_id != -1)
+            if (m_eos_token_id == -1 && content == m_eos_token)
                 m_eos_token_id = std::stoi(key);
         }
     }
@@ -304,8 +304,6 @@ public:
     std::vector<std::string> decode(ov::Tensor tokens) {
         OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64, "tokens tensor element type should be an i64");
         OPENVINO_ASSERT(tokens.get_shape().size() == 2, "tokens tensor should of rank 2 with shape [batch_size, seq_len]");
-
-        ov::genai::utils::print_tensor(tokens);
 
         m_detokenizer_request.set_input_tensor(tokens);
         m_detokenizer_request.infer();

@@ -107,7 +107,7 @@ void GenerationConfig::validate() const {
     OPENVINO_ASSERT(!do_sample || top_k > 0,
                     "top_k must be a strictly positive, but got ",
                     top_k);
-    OPENVINO_ASSERT(!do_sample || (top_p > 0 || top_p < 1.0f),
+    OPENVINO_ASSERT(!do_sample || (top_p > 0 && top_p <= 1.0f),
                     "top_p must be a positive float > 0 and < 1, but got ",
                     top_p);
     OPENVINO_ASSERT(!do_sample || temperature > 0,
