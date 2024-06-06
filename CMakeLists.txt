@@ -33,12 +33,14 @@ install(DIRECTORY
         ./samples/cpp/chat_sample
         ./samples/cpp/greedy_causal_lm
         ./samples/cpp/multinomial_causal_lm
+        # Don't install prompt_lookup_decoding_lm and speculative_decoding_lm because they don't use openvino_genai library and arent verifyed yet.
+    DESTINATION samples/cpp/ COMPONENT cpp_samples_genai)
+install(DIRECTORY
         ./samples/python/beam_search_causal_lm
         ./samples/python/chat_sample
         ./samples/python/greedy_causal_lm
         ./samples/python/multinomial_causal_lm
-        # Don't install prompt_lookup_decoding_lm and speculative_decoding_lm because they don't use openvino_genai library and arent verifyed yet.
-    DESTINATION samples/cpp/ COMPONENT cpp_samples_genai)
+DESTINATION samples/python/ COMPONENT cpp_samples_genai)
 install(FILES ./samples/requirements.txt DESTINATION ./samples/ COMPONENT cpp_samples_genai)
 install(FILES LICENSE DESTINATION licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
 install(FILES third-party-programs.txt DESTINATION licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
