@@ -123,7 +123,7 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
             print(f'hf_output: {hf_output}')
             print(f'ov_output: {ov_output}')
 
-        assert hf_output == ov_output.texts
+        assert hf_output == ov_output.texts[0]
 
 
 def stop_criteria_map():
