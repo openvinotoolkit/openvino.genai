@@ -22,36 +22,24 @@ const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 
 ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path) {
-    constexpr char generation_config_fname[] = "generation_config.json";
-    constexpr char config_fname[] = "config.json";
-    ov::genai::GenerationConfig config;
-
-    if (std::filesystem::exists(model_path / generation_config_fname)) {
-        config = ov::genai::GenerationConfig((model_path / generation_config_fname).string());
+    auto config_file_path = model_path / "generation_config.json";
+    if (std::filesystem::exists(config_file_path)) {
+        return ov::genai::GenerationConfig((config_file_path).string());
+    } else {
+        return ov::genai::GenerationConfig{};
     }
-
-    // if eos_token_ids is undefined try to load it from config.json
-    if (config.eos_token_id == -1) {
-        using ov::genai::utils::get_special_tokens_from_config_json;
-        auto config_path = model_path / config_fname;
-        auto [pad_token_id, bos_token_id, eos_token_id] = get_special_tokens_from_config_json(config_path);
-        config.eos_token_id = eos_token_id;
-    }
-
-    // Do not validate, we hope generation_config.json was valid. But even if it's not valid
-    // allow user to modify and continue generation with custom values.
-    return config;
 }
 
 std::string chat_template_from_tokenizer_json_if_exists(const std::filesystem::path& path) {
-    std::string res = "";
-    if (!std::filesystem::exists(path))
-        return res;
+    auto tokenizer_config_file_path = path / "tokenizer_config.json";
+    if (!std::filesystem::exists(tokenizer_config_file_path))
+        return "";
     
-    std::ifstream file(path / "tokenizer_config.json");
+    std::ifstream file(tokenizer_config_file_path);
     if (!file.is_open())
-        return res;
+        return "";
     
+    std::string res = "";
     ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
     return res;
 }
@@ -219,6 +207,7 @@ public:
         } else {
             config = m_generation_config;
         }
+        config.validate();
 
         std::shared_ptr<StreamerBase> streamer_ptr;
         if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
@@ -228,8 +217,6 @@ public:
         } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
             streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
         }
-
-        config.validate();
 
         auto batch_size = input_ids.get_shape().at(0);
         if ((batch_size != 1 || !(config.is_greedy_decoding() || config.is_multinomial())) && streamer_ptr) {
