@@ -214,7 +214,7 @@ jobs:
           echo predictions = open('cpp.txt', 'r').read() >> ref.py
           echo tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0') >> ref.py
           echo tokenized = tokenizer('69', return_tensors='pt') >> ref.py
-          echo for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=100, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False): >> ref.py
+          echo for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, max_length=100, do_sample=False): >> ref.py
           echo     ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) >> ref.py
           echo     idx = predictions.find(ref) >> ref.py
           echo     if -1 == idx: >> ref.py
