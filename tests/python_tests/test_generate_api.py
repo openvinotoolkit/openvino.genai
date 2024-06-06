@@ -86,11 +86,11 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
     
     hf_outputs.sort()
     ov_outputs.sort()
-    for i, (hf_output, ov_output) in enumerate(zip(hf_outputs, ov_outputs)):
+    for i, (hf_output, ov_output) in enumerate(zip(hf_outputs, ov_outputs.texts)):
         if hf_output != ov_output:
             print(f'hf_output: {hf_output}')
-            print(f'ov_output: {ov_output.texts}')
-        assert hf_output == ov_output.texts
+            print(f'ov_output: {ov_output}')
+        assert hf_output == ov_output
 
 def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
     device = 'CPU'
