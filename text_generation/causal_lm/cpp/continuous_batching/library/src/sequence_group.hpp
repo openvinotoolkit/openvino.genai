@@ -445,8 +445,18 @@ public:
                 }
             }
         // For greedy or multinomial sampling we decide whever to stream partial results depending on the user parameter
-        } else if (m_sampling_params.is_greedy_sampling() || m_sampling_params.is_multinomial()) {   
-            if (has_finished()) {
+        } else if (m_sampling_params.is_greedy_sampling() || m_sampling_params.is_multinomial()) {
+            // TO DO: Now we always stream for greedy search for the sake of benchmarking 
+            if (num_total_seqs() == 1 /* m_sampling_params.stream */) {
+                // TODO: support streamimg for n seqs
+                for (auto& sequence : m_sequences) {
+                    // todo: check seq.is_finished() to generate without several </s>
+                    // or is it ok to use padding?
+                    const auto last_gen_token = sequence->get_last_generation_output();
+                    outputs.emplace(sequence->get_grouped_id(), last_gen_token);
+                }
+                m_generation_stream->push(outputs);
+            } else if (has_finished()) {
                 std::vector<Sequence::CPtr> finished_sequences = get_finished_sequences();
 
                 OPENVINO_ASSERT(finished_sequences.size() == num_total_seqs() && has_finished());
@@ -461,17 +471,6 @@ public:
                     m_generation_stream->push(outputs);
                 }
             }
-            // TO DO: Now we always stream for greedy search for the sake of benchmarking 
-            // if (m_sampling_params.stream) {
-                // TODO: support streamimg for n seqs
-                // for (auto& sequence : m_sequences) {
-                //     if (!sequence->has_finished()) {
-                //         const auto last_gen_token = sequence->get_last_generation_output();
-                //         outputs.emplace(sequence->get_grouped_id(), last_gen_token);
-                //     }
-                // }
-                // m_generation_stream->push(outputs);
-            // }
         }
 
         if (out_of_memory()) {
