@@ -17,22 +17,21 @@ from typing import Union, List, Dict
 def read_model(params):
     model_id, path = params
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
-    hf_model = transformers.AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
 
     if not (path / 'openvino_model.xml').is_file():
         ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
         openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
         openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
-        tokenizer.save_pretrained(path)
         
         # to store tokenizer config jsons with special tokens
         tokenizer.save_pretrained(path)
-        hf_model.generation_config.save_pretrained(path)
         
-        optimum.intel.openvino.OVModelForCausalLM.from_pretrained(
+        model = optimum.intel.openvino.OVModelForCausalLM.from_pretrained(
             model_id, export=True, trust_remote_code=True,
             compile=False, device='CPU', load_in_8bit=False
-        ).save_pretrained(path)
+        )
+        model.generation_config.save_pretrained(path)
+        model.save_pretrained(path)
     # Return AutoModelForCausalLM instead of OVModelForCausalLM because
     # there's no way to disable mmap for now. That prohibits the same
     # model from being opened twice at the same time.
@@ -40,7 +39,7 @@ def read_model(params):
         model_id,
         path,
         tokenizer,
-        hf_model,
+        transformers.AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True),
         openvino_genai.LLMPipeline(str(path)),
     )
 
@@ -90,8 +89,8 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
     for i, (hf_output, ov_output) in enumerate(zip(hf_outputs, ov_outputs)):
         if hf_output != ov_output:
             print(f'hf_output: {hf_output}')
-            print(f'ov_output: {ov_output}')
-        assert hf_output == ov_output
+            print(f'ov_output: {ov_output.texts}')
+        assert hf_output == ov_output.texts
 
 def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
     device = 'CPU'
@@ -118,13 +117,13 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
     
     ov_output = pipe.generate(prompt, **config)
     if config.get('num_return_sequences', 1) > 1:
-        assert hf_output in ov_output
+        assert hf_output in ov_output.texts
     else:
-        if hf_output != ov_output:
+        if hf_output != ov_output.texts:
             print(f'hf_output: {hf_output}')
             print(f'ov_output: {ov_output}')
 
-        assert hf_output == ov_output
+        assert hf_output == ov_output.texts
 
 
 def stop_criteria_map():
@@ -167,7 +166,7 @@ batched_prompts = [['table is made of', 'They sky is blue because', 'Difference 
 @pytest.mark.parametrize("model_descr", models_list())
 @pytest.mark.precommit
 @pytest.mark.xfail(
-    raises=AssertionError, reason="assert hf_output == ov_output fails",
+    raises=AssertionError, reason="assert hf_output == ov_output.texts fails",
     strict=False,
 )
 def test_multibatch(model_descr, generation_config, prompts):
