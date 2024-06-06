@@ -173,6 +173,9 @@ jobs:
           echo "Multi prompt" passed
   cpp-greedy_causal_lm-windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: cmd
     steps:
       - uses: actions/checkout@v4
         with:
@@ -186,9 +189,7 @@ jobs:
           curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/windows/w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64.zip
           unzip ov.zip
       - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64
-        shell: cmd
       - name: Download, convert and build
-        shell: cmd
         run: |
           call .\ov\setupvars.bat
           python -m pip install --upgrade-strategy eager -r ./samples/cpp/requirements.txt

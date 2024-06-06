@@ -60,8 +60,7 @@ public:
     friend std::ostream& operator<<(std::ostream& os, const DecodedResults& dr) {
         OPENVINO_ASSERT(
             dr.scores.size() == dr.texts.size(),
-            "The number of scores and texts"
-            " doesn't match in DecodedResults."
+            "The number of scores and texts doesn't match in DecodedResults."
         );
         if (dr.texts.empty()) {
             return os;
