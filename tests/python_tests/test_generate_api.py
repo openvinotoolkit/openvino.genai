@@ -85,7 +85,7 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
     ov_outputs = pipe.generate(prompts, **config)
     
     hf_outputs.sort()
-    ov_outputs.sort()
+    ov_outputs.texts.sort()
     for i, (hf_output, ov_output) in enumerate(zip(hf_outputs, ov_outputs.texts)):
         if hf_output != ov_output:
             print(f'hf_output: {hf_output}')
