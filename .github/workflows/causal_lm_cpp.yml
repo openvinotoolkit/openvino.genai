@@ -34,8 +34,14 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - run: . ./ov/setupvars.sh && ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
-      - run: . ./ov/setupvars.sh && ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
+      - run: >
+          . ./ov/setupvars.sh
+          && PYTHONPATH=./build/:$PYTHONPATH timeout 25s
+          ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
+      - run: >
+          . ./ov/setupvars.sh
+          && PYTHONPATH=./build/:$PYTHONPATH timeout 25s
+          ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
       - run: >
           . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
