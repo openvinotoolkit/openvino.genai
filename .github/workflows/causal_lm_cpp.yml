@@ -208,7 +208,7 @@ jobs:
       - run: >
           set PATH=.\build\openvino_genai\;%PATH%
           && call .\ov\setupvars.bat
-          .\build\samples\cpp\greedy_causal_lm\Release\greedy_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\cpp.txt
+          && .\build\samples\cpp\greedy_causal_lm\Release\greedy_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\cpp.txt
       - run: |
           echo import transformers > ref.py
           echo predictions = open('cpp.txt', 'r').read() >> ref.py
@@ -220,11 +220,6 @@ jobs:
           echo     if -1 == idx: >> ref.py
           echo         raise RuntimeError(f'Missing "{ref=}" from predictions') >> ref.py
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
-      - run: more cpp.txt
-      - run: >
-          set PATH=.\build\openvino_genai\;%PATH%
-          && call .\ov\setupvars.bat
-          .\build\samples\cpp\greedy_causal_lm\Release\greedy_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ 69
       - run: python ref.py
       - run: >
           set PATH=".\build\openvino_genai\;%PATH%"
