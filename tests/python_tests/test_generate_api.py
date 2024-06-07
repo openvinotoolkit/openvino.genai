@@ -546,7 +546,8 @@ def test_valid_configs(model_tmp_path):
 @pytest.mark.precommit
 @pytest.mark.skipif(
     sys.platform.startswith("win"),
-    reason="Not enough disk space on GitHub runner.")
+    reason="Not enough disk space on GitHub runner."
+)
 def test_unicode_pybind_decoding():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
