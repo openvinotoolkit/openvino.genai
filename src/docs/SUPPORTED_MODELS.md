@@ -1,4 +1,4 @@
-# Supported Models
+# OpenVINO™ GenAI: Supported Models
 
 <table>
   <tbody>
@@ -127,3 +127,17 @@
 1. [notus-7b-v1](https://huggingface.co/argilla/notus-7b-v1)
 2. [zephyr-7b-beta](https://huggingface.co/HuggingFaceH4/zephyr-7b-beta)
 3. [redpajama-3b-chat](https://huggingface.co/ikala/redpajama-3b-chat)
+
+
+The pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature. The model is required to have the following inputs after the conversion:
+1. `input_ids` contains the tokens.
+2. `attention_mask` is filled with `1`.
+3. `beam_idx` selects beams.
+4. `position_ids` (optional) encodes a position of currently generating token in the sequence and a single `logits` output.
+
+Some models may require access request submission on their Hugging Face page to be downloaded.
+
+If https://huggingface.co/ is down, the conversion step won't be able to download the models.
+
+> [!NOTE]
+> Models should belong to the same family and have same tokenizers.
