@@ -368,7 +368,6 @@ def model_tmp_path(tmpdir_factory):
             if src_file.is_file():
                 shutil.copy(src_file, temp_path / src_file.name)    
     yield model_id, Path(temp_path)
-    shutil.rmtree(temp_path)  # cleanup
 
 
 # load Tokenizer where all configs are cleared
