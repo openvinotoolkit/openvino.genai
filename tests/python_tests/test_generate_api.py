@@ -369,12 +369,11 @@ def model_tmp_path(tmpdir_factory):
             if src_file.is_file():
                 shutil.copy(src_file, temp_path / src_file.name)    
     yield model_id, Path(temp_path)
-    shutil.rmtree(temp_path)  # cleanup
 
 
 # load Tokenizer where all configs are cleared
 def load_tok(configs: List[Tuple], temp_path):
-    # remove existing jsons from previous tests shutil
+    # remove existing jsons from previous tests
     for json_file in temp_path.glob("*.json"):
         json_file.unlink()
 
@@ -386,7 +385,7 @@ def load_tok(configs: List[Tuple], temp_path):
 
 # load LLMPipline where all configs are cleared
 def load_pipe(configs: List[Tuple], temp_path):
-    # remove existing jsons from previous tests shutil
+    # remove existing jsons from previous tests
     for json_file in temp_path.glob("*.json"):
         json_file.unlink()
 
@@ -396,7 +395,6 @@ def load_pipe(configs: List[Tuple], temp_path):
     return openvino_genai.LLMPipeline(str(temp_path))
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_load_special_tokens_ids_1(model_tmp_path):
     # test when there is an available config.json
     config_json = { 
@@ -411,7 +409,6 @@ def test_load_special_tokens_ids_1(model_tmp_path):
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_load_special_tokens_str_2(model_tmp_path):
     # test with special_tokens_map
     special_tokens_map_json = { 
@@ -426,7 +423,6 @@ def test_load_special_tokens_str_2(model_tmp_path):
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_load_special_tokens_3_(model_tmp_path):
     # special_tokens_map is not available 
     # but tokenize_config.json exists
@@ -453,7 +449,6 @@ def test_load_special_tokens_3_(model_tmp_path):
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_load_special_tokens_3(model_tmp_path):
     # both config.json is availabel and tokenizer_config.json available
     # check that it does not read int values from tokenizer_config.json if they are in config.json
@@ -493,7 +488,6 @@ def test_load_special_tokens_3(model_tmp_path):
     reason="CVS-143410 ov tokenizer should be aligned with hf",
     strict=False,
 )
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_load_special_tokens_4(model_tmp_path):
     # only string representation is provided, find token integers by inference
     model_id, temp_path = model_tmp_path
@@ -532,7 +526,6 @@ invalid_configs = [
 ]
 @pytest.mark.parametrize("generation_config", invalid_configs)
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_invalid_configs(model_tmp_path, generation_config):
     model_id, temp_path = model_tmp_path
     config_json = {}
@@ -542,7 +535,6 @@ def test_invalid_configs(model_tmp_path, generation_config):
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_valid_configs(model_tmp_path):
     model_id, temp_path = model_tmp_path
     pipe = load_pipe([({"eos_token_id": 37}, "config.json")], temp_path)
