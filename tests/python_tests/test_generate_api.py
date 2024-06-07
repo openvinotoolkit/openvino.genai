@@ -16,7 +16,7 @@ from pathlib import Path
 import shutil
 import json
 
-@functools.lru_cache(2)
+@functools.lru_cache(1)
 def read_model(params):
     model_id, path = params
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
