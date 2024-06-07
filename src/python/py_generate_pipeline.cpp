@@ -52,6 +52,7 @@ public:
                     PyUnicode_DecodeUTF8(text.data(), text.length(), "replace")
                 )
             );
+            std::cout << text << " -> " texts.back() << '\n';
         }
     }
     std::string to_string() const {
