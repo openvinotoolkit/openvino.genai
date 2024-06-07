@@ -122,11 +122,11 @@ public:
 
     TokenizerImpl() = default;
 
-    TokenizerImpl(std::filesystem::path tokenizers_path) {
+    TokenizerImpl(std::filesystem::path tokenizer_path) {
         ov::Core core;
         
-        if (tokenizers_path.extension() == ".xml")
-            OPENVINO_THROW("tokenizers_path should be a path to a dir not a xml file");
+        if (tokenizer_path.extension() == ".xml")
+            OPENVINO_THROW("ov_tokenizers_path should be a path to a dir not a xml file");
 
         const char* ov_tokenizers_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
         if (ov_tokenizers_path) {
@@ -135,16 +135,16 @@ public:
             OPENVINO_THROW("openvino_tokenizers path is not set");
         }
         
-        read_config(tokenizers_path);
-        read_special_tokens_map(tokenizers_path);
+        read_config(tokenizer_path);
+        read_special_tokens_map(tokenizer_path);
 
         // Try to read tokenizer_config if some token ids or token str are not defined.
-        read_tokenizer_config_if_necessary(tokenizers_path); 
+        read_tokenizer_config_if_necessary(tokenizer_path); 
 
         auto device = "CPU"; // currently openvino_tokenizer supports only CPU
-        m_tokenize_request = core.compile_model(tokenizers_path / "openvino_tokenizer.xml", 
+        m_tokenize_request = core.compile_model(tokenizer_path / "openvino_tokenizer.xml", 
                                                 device).create_infer_request();
-        m_detokenizer_request = core.compile_model(tokenizers_path / "openvino_detokenizer.xml", 
+        m_detokenizer_request = core.compile_model(tokenizer_path / "openvino_detokenizer.xml", 
                                                    device).create_infer_request();
 
         // Get special token ids by inference if they are not defined.
@@ -153,8 +153,8 @@ public:
     }
 
     // load special tokens ids from config.json
-    void read_config(const std::filesystem::path& tokenizers_path) {
-        auto config_file_path = tokenizers_path / "config.json";
+    void read_config(const std::filesystem::path& tokenizer_path) {
+        auto config_file_path = tokenizer_path / "config.json";
         if (!std::filesystem::exists(config_file_path))
             return ;
         std::ifstream file(config_file_path);
@@ -170,8 +170,8 @@ public:
     }
 
     // Reads the string representation of special tokens if they exist.
-    void read_special_tokens_map(const std::filesystem::path& tokenizers_path) {
-        auto special_tokens_file_path = tokenizers_path / "special_tokens_map.json";
+    void read_special_tokens_map(const std::filesystem::path& tokenizer_path) {
+        auto special_tokens_file_path = tokenizer_path / "special_tokens_map.json";
         if (!std::filesystem::exists(special_tokens_file_path))
             return ;
         std::ifstream f(special_tokens_file_path);
@@ -193,13 +193,13 @@ public:
     // Read string representation of special tokens if they exists.
     // Also tries to load special token ids from added_tokens_decoder if they exist.
     // Will not override special token strings or ids if they already exist
-    void read_tokenizer_config_if_necessary(const std::filesystem::path& tokenizers_path) {
+    void read_tokenizer_config_if_necessary(const std::filesystem::path& tokenizer_path) {
         if (m_pad_token_id != -1 && m_bos_token_id != -1 && m_eos_token_id != -1 && 
             !m_pad_token.empty() && !m_bos_token.empty() && !m_eos_token.empty()) {
             return ;
         }
 
-        auto tokenizer_config_file_path = tokenizers_path / "tokenizer_config.json";
+        auto tokenizer_config_file_path = tokenizer_path / "tokenizer_config.json";
         if (!std::filesystem::exists(tokenizer_config_file_path))
             return ;
         std::ifstream f(tokenizer_config_file_path);
@@ -337,9 +337,9 @@ public:
     }
 };
 
-Tokenizer::Tokenizer(const std::string& tokenizers_path) {
+Tokenizer::Tokenizer(const std::string& tokenizer_path) {
     ov::genai::ScopedVar env_manager(tokenizers_relative_to_genai().string());
-    m_pimpl = std::make_shared<TokenizerImpl>(tokenizers_path);
+    m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path);
 }
 
 TokenizedInputs Tokenizer::encode(const std::string prompt) {

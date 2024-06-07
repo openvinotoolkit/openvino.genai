@@ -141,10 +141,10 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
     m.doc() = "Pybind11 binding for LLM Pipeline";
 
     py::class_<LLMPipeline>(m, "LLMPipeline")
-        .def(py::init([](const std::string& model_path, 
-                            const std::string& device) {
-            ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<LLMPipeline>(model_path, device);}),
+        .def(py::init([](const std::string& model_path, const std::string& device) {
+                ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
+                return std::make_unique<LLMPipeline>(model_path, device);
+            }),
         py::arg("model_path"), "path to the model path", 
         py::arg("device") = "CPU", "device on which inference will be done",
         R"(
@@ -233,10 +233,18 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
      // Binding for Tokenizer
     py::class_<Tokenizer>(m, "Tokenizer",
-        R"(openvino_genai.Tokenizer object is used to to initialize tokenizer if it's located in different path 
-        that the main model.)")
-        .def(py::init<>())
-        .def(py::init<std::string&>(), py::arg("tokenizers_path"));
+        R"(openvino_genai.Tokenizer object is used to initialize Tokenizer 
+           if it's located in a different path than the main model.)")
+        .def(py::init([](const std::string& tokenizer_path) {
+            ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
+            return std::make_unique<Tokenizer>(tokenizer_path);
+        }), py::arg("tokenizer_path"))
+        .def("get_pad_token_id", &Tokenizer::get_pad_token_id)
+        .def("get_bos_token_id", &Tokenizer::get_bos_token_id)
+        .def("get_eos_token_id", &Tokenizer::get_eos_token_id)
+        .def("get_pad_token", &Tokenizer::get_pad_token)
+        .def("get_bos_token", &Tokenizer::get_bos_token)
+        .def("get_eos_token", &Tokenizer::get_eos_token);
 
     // Binding for StopCriteria
     py::enum_<StopCriteria>(m, "StopCriteria",
