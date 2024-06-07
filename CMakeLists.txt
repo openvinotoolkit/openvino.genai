@@ -45,7 +45,7 @@ install(DIRECTORY
 install(FILES ./samples/requirements.txt DESTINATION ./samples/ COMPONENT cpp_samples_genai)
 install(FILES LICENSE DESTINATION licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
 install(FILES third-party-programs.txt DESTINATION licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
-if(MSVC AND NOT DEFINED CPACK_GENERATOR)
+if(WIN32 AND NOT DEFINED CPACK_GENERATOR)
     set(CPACK_GENERATOR "ZIP")
 endif()
 include(CPack)

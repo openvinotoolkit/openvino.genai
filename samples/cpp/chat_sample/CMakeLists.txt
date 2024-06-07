@@ -11,7 +11,7 @@ set_target_properties(chat_sample PROPERTIES
     COMPILE_PDB_NAME chat_sample
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
-target_compile_features(chat_sample PRIVATE cxx_std_17)
+target_compile_features(chat_sample PRIVATE cxx_std_11)
 install(TARGETS chat_sample
     RUNTIME DESTINATION samples_bin/
     COMPONENT samples_bin
