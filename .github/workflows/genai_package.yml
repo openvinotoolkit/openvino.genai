@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: 3.8
       - run: mkdir ./ov/
-      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240524_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
       - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
@@ -85,7 +85,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/windows/w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64.zip
+      - run: curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/windows/w_openvino_toolkit_windows_2024.2.0.dev20240529_x86_64.zip
       - run: unzip ov.zip
       # Shorten the next setupvars calls.
       - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64
