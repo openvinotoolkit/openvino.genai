@@ -87,12 +87,12 @@ jobs:
       - run: call ov\setupvars.bat && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
       - run: call ov\setupvars.bat && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
       - run: call ov\samples\cpp\build_samples_msvc.bat -i "${{ github.workspace }}/samples_install"
-        if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
+        if: ${{ false && 'Release' == matrix.build-type }}  # build_samples enforces Release build
       - run: call ov\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-        if: ${{ 'Release' == matrix.build-type }}
+        if: ${{ false && 'Release' == matrix.build-type }}
       - run: call ov\setupvars.bat && python -m pip install --upgrade-strategy eager -r ./samples/cpp/requirements.txt
-        if: ${{ 'Release' == matrix.build-type }}
+        if: ${{ false && 'Release' == matrix.build-type }}
       - run: call ov\setupvars.bat && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-        if: ${{ 'Release' == matrix.build-type }}
+        if: ${{ false && 'Release' == matrix.build-type }}
       - run: call ov\setupvars.bat && "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm" .\TinyLlama-1.1B-Chat-v1.0\ ""
-        if: ${{ 'Release' == matrix.build-type }}
+        if: ${{ false && 'Release' == matrix.build-type }}

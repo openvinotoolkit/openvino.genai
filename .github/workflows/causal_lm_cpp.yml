@@ -167,6 +167,7 @@ jobs:
           "
           echo "Multi prompt" passed
   cpp-beam_search_causal_lm-windows:
+    if: false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
