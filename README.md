@@ -1,22 +1,17 @@
 # OpenVINO™ GenAI
 
-OpenVINO GenAI is a new flavor of OpenVINO, aiming to simplify running inference of generative AI models.
+The OpenVINO™ GenAI repository consists of GenAI library and additional GenAI samples.
+
+## OpenVINO™ GenAI Library
+
+OpenVINO™ GenAI is a new flavor of OpenVINO, aiming to simplify running inference of generative AI models.
 It hides the complexity of the generation process and minimizes the amount of code required.
-You can now provide a model and input context directly to OpenVINO, which performs tokenization of the
-input text, executes the generation loop on the selected device, and returns the generated text.
-For a quickstart guide, refer to the [GenAI API Guide]().<!-- TODO Add link to docs -->
 
-## Install OpenVINO™ GenAI
-
-The OpenVINO GenAI flavor is available for installation via Archive and PyPI distributions:
-- [Archive Installation](./src/INSTALL_ARCHIVE.md)
-- [PyPI Installation](./src/INSTALL_PYPI.md)
-
-To build OpenVINO™ GenAI library from source, please refer to the [instruction](./src/BUILD_FROM_SOURCE.md).
+For installation and usage guide, refer to the [GenAI Library README](./src/README.md).
 
 ## OpenVINO™ GenAI Samples
 
-The GenAI repository contains pipelines that implement image and text generation tasks.
+The OpenVINO™ GenAI repository contains pipelines that implement image and text generation tasks.
 The implementation uses OpenVINO capabilities to optimize the pipelines. Each sample covers
 a family of models and suggests certain modifications to adapt the code to specific needs.
 It includes the following pipelines:
@@ -38,6 +33,6 @@ See also: https://docs.openvino.ai/2023.3/gen_ai_guide.html.
 
 ## License
 
-The GenAI repository is licensed under [Apache License Version 2.0](LICENSE).
+The OpenVINO™ GenAI repository is licensed under [Apache License Version 2.0](LICENSE).
 By contributing to the project, you agree to the license and copyright terms therein and release
 your contribution under these terms.
