@@ -124,8 +124,6 @@ public:
 
     TokenizerImpl(std::filesystem::path tokenizer_path) {
         ov::Core core;
-        // Disable mmap to allow constructing multiple Tokenizers from the same file.
-        core.set_property(ov::enable_mmap(false));
         
         if (tokenizer_path.extension() == ".xml")
             OPENVINO_THROW("ov_tokenizers_path should be a path to a dir not a xml file");
