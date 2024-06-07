@@ -102,7 +102,6 @@ struct RandomSampling {
           top_p{generation_config.top_p},
           inv_temperature{1.f / generation_config.temperature},
           repetition_penalty{generation_config.repetition_penalty} {
-        generation_config.validate();
     }
 
     TokenIdScore get_out_token(float* logits, size_t vocab_size, const std::vector<int64_t>& tokens) {

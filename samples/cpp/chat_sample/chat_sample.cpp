@@ -15,9 +15,15 @@ int main(int argc, char* argv[]) try {
     
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 10000;
-    std::function<bool(std::string)> streamer = [](std::string word) { std::cout << word << std::flush; return false; };
+    auto streamer = [](std::string word) -> bool { 
+        std::cout << word << std::flush;
+        // flag correspods whether generation should be stopped.
+        // false means continue generation.
+        return false;
+    };
 
     pipe.start_chat();
+    std::string prompt;
     for (;;) {
         std::cout << "question:\n";
         

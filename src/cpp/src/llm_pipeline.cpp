@@ -88,7 +88,12 @@ ov::genai::EncodedResults multinominal_decoding(
     std::shared_ptr<StreamerBase> streamer
 );
 
-EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor prompts, ov::Tensor attention_mask, GenerationConfig config);
+EncodedResults beam_search(
+    ov::InferRequest& lm, 
+    ov::Tensor prompts, 
+    ov::Tensor attention_mask, 
+    GenerationConfig config
+);
 
 
 class LLMPipeline::LLMPipelineImpl {
@@ -104,7 +109,9 @@ public:
         const ov::InferRequest& request, 
         const ov::genai::Tokenizer& tokenizer, 
         OptionalGenerationConfig generation_config=std::nullopt
-    ): m_model_runner(request), m_tokenizer(tokenizer) {
+    ):  
+        m_model_runner(request), 
+        m_tokenizer(tokenizer) {
         GenerationConfig default_config;
         m_generation_config = (generation_config.has_value()) ? *generation_config : default_config;
     }
@@ -114,13 +121,43 @@ public:
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    );
+    ): 
+         m_model_runner{
+            ov::Core{}.compile_model(
+                model_path / "openvino_model.xml", 
+                device, 
+                plugin_config
+            ).create_infer_request()
+        },
+        m_tokenizer(tokenizer),
+        m_generation_config{from_config_json_if_exists(model_path)},
+        m_chat_template{chat_template_from_tokenizer_json_if_exists(model_path)}
+    {
+        // If eos_token_id was not provided, take value
+        if (m_generation_config.eos_token_id == -1)
+            m_generation_config.eos_token_id = m_tokenizer.get_eos_token_id();
+    }
 
     LLMPipelineImpl(
-        const std::filesystem::path& path, 
+        const std::filesystem::path& model_path, 
         const std::string& device, 
-        const ov::AnyMap& config
-    );
+        const ov::AnyMap& plugin_config
+    ): 
+         m_model_runner{
+            ov::Core{}.compile_model(
+                model_path / "openvino_model.xml", 
+                device, 
+                plugin_config
+            ).create_infer_request()
+        }, 
+        m_tokenizer(model_path.string()),
+        m_generation_config{from_config_json_if_exists(model_path)},
+        m_chat_template{chat_template_from_tokenizer_json_if_exists(model_path)}
+    {
+        // If eos_token_id was not provided, take value
+        if (m_generation_config.eos_token_id == -1)
+            m_generation_config.eos_token_id = m_tokenizer.get_eos_token_id();
+    }
     
     DecodedResults generate(
         StringInputs inputs, 
@@ -349,7 +386,6 @@ ov::genai::LLMPipeline::LLMPipeline(
     m_pimpl = std::make_unique<LLMPipelineImpl>(request, tokenizer, generation_config);
 }
 
-
 ov::genai::LLMPipeline::LLMPipeline(
     const std::string& model_path,
     const ov::genai::Tokenizer& tokenizer,
@@ -359,41 +395,12 @@ ov::genai::LLMPipeline::LLMPipeline(
     m_pimpl = make_unique<LLMPipelineImpl>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
 }
 
-ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
-    const std::filesystem::path& model_path,
-    const ov::genai::Tokenizer& tokenizer,
-    const std::string& device,
-    const ov::AnyMap& plugin_config
-): m_tokenizer(tokenizer) {
-    ov::Core core;
-    
-    std::filesystem::path full_path = model_path;
-    if (full_path.extension() != ".xml")
-        full_path = model_path / "openvino_model.xml";
-    m_model_runner = core.compile_model(full_path, device, plugin_config).create_infer_request();
-}
-
 ov::genai::LLMPipeline::LLMPipeline(
     const std::string& path, 
     const std::string& device, 
     const ov::AnyMap& config
 ) {
     m_pimpl = make_unique<LLMPipelineImpl>(std::filesystem::path(path), device, config);
-}
-
-ov::genai::LLMPipeline::LLMPipelineImpl::LLMPipelineImpl(
-    const std::filesystem::path& path, 
-    const std::string& device, 
-    const ov::AnyMap& config
-): 
-    m_model_runner{ov::Core{}.compile_model(path / "openvino_model.xml", device, config).create_infer_request()}, 
-    m_tokenizer(path.string()),
-    m_generation_config{from_config_json_if_exists(path)},
-    m_chat_template{chat_template_from_tokenizer_json_if_exists(path)}
-{
-    // If eos_token_id was not provided, take value
-    if (m_generation_config.eos_token_id == -1)
-        m_generation_config.eos_token_id = m_tokenizer.get_eos_token_id();
 }
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
