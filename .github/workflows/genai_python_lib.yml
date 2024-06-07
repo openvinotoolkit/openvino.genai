@@ -79,6 +79,6 @@ jobs:
       - run: call ./ov/setupvars.bat && cmake --build ./build/ --config Release -j
       - run: call ./ov/setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./requirements-build.txt -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --upgrade-strategy eager
       # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
-      - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+      - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/test_generate_api.py -m precommit -sx
       - run: call ./ov/setupvars.bat && python -m pip install . --config-settings=build-dir="build" --verbose
       - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
