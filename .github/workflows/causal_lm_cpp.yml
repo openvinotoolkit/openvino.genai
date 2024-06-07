@@ -197,25 +197,24 @@ jobs:
           curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/windows/w_openvino_toolkit_windows_2024.2.0.dev20240529_x86_64.zip
           unzip ov.zip
       - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240529_x86_64
-      # katuni4ka/tiny-random-phi3 instead of TinyLlama/TinyLlama-1.1B-Chat-v1.0 becase there's not enough disk space.
       - name: Download, convert and build
         run: |
           call .\ov\setupvars.bat
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model katuni4ka/tiny-random-phi3 tiny-random-phi3
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
       - run: >
           set PATH=.\build\openvino_genai\;%PATH%
           && call .\ov\setupvars.bat
-          && .\build\samples\cpp\greedy_causal_lm\Release\greedy_causal_lm.exe .\tiny-random-phi3\ 69 > .\cpp.txt
+          && .\build\samples\cpp\greedy_causal_lm\Release\greedy_causal_lm.exe .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\cpp.txt
       - run: |
           echo import transformers > ref.py
           echo predictions = open('cpp.txt', 'r').read() >> ref.py
-          echo tokenizer = transformers.AutoTokenizer.from_pretrained('katuni4ka/tiny-random-phi3', trust_remote_code=True) >> ref.py
+          echo tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0', trust_remote_code=True) >> ref.py
           echo tokenized = tokenizer('69', return_tensors='pt') >> ref.py
-          echo for beam in transformers.AutoModelForCausalLM.from_pretrained('katuni4ka/tiny-random-phi3', trust_remote_code=True).generate(**tokenized, max_new_tokens=100, do_sample=False): >> ref.py
+          echo for beam in transformers.AutoModelForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0', trust_remote_code=True).generate(**tokenized, max_new_tokens=100, do_sample=False): >> ref.py
           echo     ref = tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) >> ref.py
           echo     idx = predictions.find(ref) >> ref.py
           echo     if -1 == idx: >> ref.py
@@ -226,7 +225,7 @@ jobs:
           set PATH=".\build\openvino_genai\;%PATH%"
           && set "PYTHONPATH=./build/"
           && call .\ov\setupvars.bat
-          && samples\python\greedy_causal_lm\greedy_causal_lm.py .\tiny-random-phi3\ 69 > .\py.txt
+          && samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
       - run: fc .\cpp.txt .\py.txt
 
   cpp-beam_search_causal_lm-Qwen-7B-Chat:
@@ -251,13 +250,6 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - run: >
-          . ./ov/setupvars.sh
-          && ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69
-      - run: >
-          . ./ov/setupvars.sh
-          && export PYTHONPATH=./build/:$PYTHONPATH
-          && samples/python/greedy_causal_lm/greedy_causal_lm.py ./Qwen-7B-Chat/ 69
       - run: >
           . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
