@@ -30,7 +30,7 @@ jobs:
         if: ${{ 'Release' != matrix.build-type }}
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
       - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-      - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+      - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - run: source ./ov/setupvars.sh && timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
       - run: source ./ov/setupvars.sh && timeout 25s ./ov/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
         if: ${{ 'Release' == matrix.build-type }}  # Python bindings can be built in Release only
@@ -63,7 +63,7 @@ jobs:
         if: ${{ 'Release' != matrix.build-type }}
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
       - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-      - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+      - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - run: source ./ov/setupvars.sh && timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
       - run: source ./ov/setupvars.sh && timeout 25s ./ov/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
         if: ${{ 'Release' == matrix.build-type }}  # Python bindings can be built in Release only
@@ -102,7 +102,7 @@ jobs:
         if: ${{ 'Release' != matrix.build-type }}
       - run: call ov\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
       - run: call ov\setupvars.bat && python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-      - run: call ov\setupvars.bat && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+      - run: call ov\setupvars.bat && optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - run: call ov\setupvars.bat && "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm" .\TinyLlama-1.1B-Chat-v1.0\ ""
       - run: call ov\setupvars.bat && ./ov/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
         if: ${{ 'Release' == matrix.build-type }}  # Python bindings can be built in Release only
