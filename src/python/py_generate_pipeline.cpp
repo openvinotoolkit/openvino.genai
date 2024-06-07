@@ -205,7 +205,13 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         R"(openvino_genai.Tokenizer object is used to to initialize tokenizer if it's located in different path 
         that the main model.)")
         .def(py::init<>())
-        .def(py::init<std::string&>(), py::arg("tokenizers_path"));
+        .def(py::init<std::string&>(), py::arg("tokenizers_path"))
+        .def("get_pad_token_id", &Tokenizer::get_pad_token_id)
+        .def("get_bos_token_id", &Tokenizer::get_bos_token_id)
+        .def("get_eos_token_id", &Tokenizer::get_eos_token_id)
+        .def("get_pad_token", &Tokenizer::get_pad_token)
+        .def("get_bos_token", &Tokenizer::get_bos_token)
+        .def("get_eos_token", &Tokenizer::get_eos_token);
 
     // Binding for StopCriteria
     py::enum_<StopCriteria>(m, "StopCriteria",
