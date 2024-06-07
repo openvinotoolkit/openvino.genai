@@ -43,7 +43,7 @@ public:
     std::vector<float> scores;
 
     // @brief Convert DecodedResults to a string.
-    std::string to_string() const {
+    operator std::string() const {
         std::stringstream ss;
         ss << *this;
         return ss.str();

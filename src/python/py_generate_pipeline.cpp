@@ -55,7 +55,7 @@ public:
             std::cout << text << " -> " <<  texts.back() << '\n';
         }
     }
-    std::string to_string() const {
+    operator std::string() const {
         std::stringstream ss;
         ss << *this;
         return ss.str();
@@ -283,7 +283,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init<>())
         .def_readwrite("texts", &DecodedResultsPyStr::texts)
         .def_readwrite("scores", &DecodedResultsPyStr::scores)
-        .def("__str__", [](const DecodedResultsPyStr& dr) {return dr.to_string();});
+        .def("__str__", [](const DecodedResultsPyStr& dr) {return std::string{dr};});
 
     py::class_<EncodedResults>(m, "EncodedResults")
         .def(py::init<>())
