@@ -1,7 +1,7 @@
 # OpenVINO™ GenAI: Supported Models
 
 <table>
-  <tbody>
+  <tbody style="vertical-align: top;">
     <tr>
       <th>Architecture</th>
       <th>Models</th>
@@ -18,7 +18,34 @@
       </td>
     </tr>
     <tr>
-      <td><code>LlamaForCausalLM</code></td>
+      <td><code>GemmaForCausalLM</code></td>
+      <td>Gemma</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/google/gemma-2b-it"><code>google/gemma-2b-it</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td rowspan="2"><code>GPTNeoXForCausalLM</code></td>
+      <td>Dolly</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/databricks/dolly-v2-3b"><code>databricks/dolly-v2-3b</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <!-- <td><code>GPTNeoXForCausalLM</code></td> -->
+      <td> RedPajama</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/ikala/redpajama-3b-chat"><code>ikala/redpajama-3b-chat</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td rowspan="3" vertical-align="top"><code>LlamaForCausalLM</code></td>
       <td>Llama 2</td>
       <td>
         <ul>
@@ -33,8 +60,7 @@
       </td>
     </tr>
     <tr>
-      <!-- TODO Consider mergin with llama -->
-      <td><code>OpenLLaMA</code></td>
+      <!-- <td><code>LlamaForCausalLM</code></td> -->
       <td>OpenLLaMA</td>
       <td>
         <ul>
@@ -47,12 +73,48 @@
       </td>
     </tr>
     <tr>
-      <!-- TODO Consider mergin with llama -->
-      <td><code>TinyLlama</code></td>
+      <!-- <td><code>LlamaForCausalLM</code></td> -->
       <td>TinyLlama</td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0"><code>TinyLlama/TinyLlama-1.1B-Chat-v1.0</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td rowspan="3"><code>MistralForCausalLM</code></td>
+      <td>Mistral</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/mistralai/Mistral-7B-v0.1"><code>mistralai/Mistral-7B-v0.1</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <!-- <td><code>MistralForCausalLM</code></td> -->
+      <td>Notus</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/argilla/notus-7b-v1"><code>argilla/notus-7b-v1</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <!-- <td><code>MistralForCausalLM</code></td> -->
+      <td>Zephyr </td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/HuggingFaceH4/zephyr-7b-beta"><code>HuggingFaceH4/zephyr-7b-beta</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td><code>PhiForCausalLM</code></td>
+      <td>Phi</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/microsoft/phi-2"><code>microsoft/phi-2</code></a></li>
+          <li><a href="https://huggingface.co/microsoft/phi-1_5"><code>microsoft/phi-1_5</code></a></li>
         </ul>
       </td>
     </tr>
@@ -68,65 +130,8 @@
         </ul>
       </td>
     </tr>
-    <tr>
-      <td><code>GPTNeoXForCausalLM</code></td>
-      <td>Dolly</td>
-      <td>
-        <ul>
-          <li><a href="https://huggingface.co/databricks/dolly-v2-3b"><code>databricks/dolly-v2-3b</code></a></li>
-        </ul>
-      </td>
-    </tr>
-    </tr>
-    <tr>
-      <td><code>PhiForCausalLM</code></td>
-      <td>Phi</td>
-      <td>
-        <ul>
-          <li><a href="https://huggingface.co/microsoft/phi-2"><code>microsoft/phi-2</code></a></li>
-          <li><a href="https://huggingface.co/microsoft/phi-1_5"><code>microsoft/phi-1_5</code></a></li>
-        </ul>
-      </td>
-    </tr>
-    </tr>
-    <tr>
-      <td><code>MistralForCausalLM</code></td>
-      <td>Mistral</td>
-      <td>
-        <ul>
-          <li><a href="https://huggingface.co/mistralai/Mistral-7B-v0.1"><code>mistralai/Mistral-7B-v0.1</code></a></li>
-        </ul>
-      </td>
-    </tr>
-    </tr>
-    <tr>
-      <td><code>GemmaForCausalLM</code></td>
-      <td>Gemma</td>
-      <td>
-        <ul>
-          <li><a href="https://huggingface.co/google/gemma-2b-it"><code>google/gemma-2b-it</code></a></li>
-        </ul>
-      </td>
-    </tr>
-    </tr>
-    <tr>
-      <td><code></code></td>
-      <td></td>
-      <td>
-        <ul>
-          <li><a href=""><code></code></a></li>
-        </ul>
-      </td>
-    </tr>
   </tbody>
 </table>
-
-
-
-<!-- TODO Find Architectures for the rest models -->
-1. [notus-7b-v1](https://huggingface.co/argilla/notus-7b-v1)
-2. [zephyr-7b-beta](https://huggingface.co/HuggingFaceH4/zephyr-7b-beta)
-3. [redpajama-3b-chat](https://huggingface.co/ikala/redpajama-3b-chat)
 
 
 The pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature. The model is required to have the following inputs after the conversion:
@@ -135,9 +140,9 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
 3. `beam_idx` selects beams.
 4. `position_ids` (optional) encodes a position of currently generating token in the sequence and a single `logits` output.
 
+> [!NOTE]
+> Models should belong to the same family and have same tokenizers.
+
 Some models may require access request submission on their Hugging Face page to be downloaded.
 
 If https://huggingface.co/ is down, the conversion step won't be able to download the models.
-
-> [!NOTE]
-> Models should belong to the same family and have same tokenizers.
