@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) try {
     ov::genai::LLMPipeline pipe(model_path, "CPU");
     
     ov::genai::GenerationConfig config = pipe.get_generation_config();
-    config.max_new_tokens = 20;
+    config.max_new_tokens = 10000;
     std::function<bool(std::string)> streamer = [](std::string word) { std::cout << word << std::flush; return false; };
 
     pipe.start_chat();

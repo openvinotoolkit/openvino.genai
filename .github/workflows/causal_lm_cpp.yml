@@ -252,8 +252,7 @@ jobs:
           cmake --build ./build/ --config Release -j
       - run: >
           . ./ov/setupvars.sh
-          && export PYTHONPATH=./build/:$PYTHONPATH
-          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69
+          && ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69
       - run: >
           . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
