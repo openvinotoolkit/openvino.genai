@@ -196,7 +196,7 @@ jobs:
         run: |
           curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/windows/w_openvino_toolkit_windows_2024.2.0.dev20240529_x86_64.zip
           unzip ov.zip
-      - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64
+      - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240529_x86_64
       - name: Download, convert and build
         run: |
           call .\ov\setupvars.bat
