@@ -220,6 +220,7 @@ jobs:
           echo     if -1 == idx: >> ref.py
           echo         raise RuntimeError(f'Missing "{ref=}" from predictions') >> ref.py
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
+      - run: more cpp.txt
       - run: python ref.py
       - run: >
           set PATH=".\build\openvino_genai\;%PATH%"
