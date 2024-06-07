@@ -23,8 +23,8 @@ def read_model(params):
 
     if not (path / 'openvino_model.xml').is_file():
         ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
-        openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
-        openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
+        openvino.serialize(ov_tokenizer, path / "openvino_tokenizer.xml")
+        openvino.serialize(ov_detokenizer, path / "openvino_detokenizer.xml")
         
         # to store tokenizer config jsons with special tokens
         tokenizer.save_pretrained(path)
