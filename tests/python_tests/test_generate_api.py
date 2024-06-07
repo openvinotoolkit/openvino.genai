@@ -16,7 +16,7 @@ from pathlib import Path
 import shutil
 import json
 
-@functools.lru_cache(1)
+@functools.lru_cache(2)
 def read_model(params):
     model_id, path = params
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
@@ -111,6 +111,7 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
         generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
+    generation_config_hf.pop('ignore_eos', None)
 
     encoded_prompt = tokenizer.encode(prompt, return_tensors='pt', add_special_tokens=True)
     hf_encoded_output = model.generate(encoded_prompt, **generation_config_hf)
@@ -395,6 +396,7 @@ def load_pipe(configs: List[Tuple], temp_path):
     return openvino_genai.LLMPipeline(str(temp_path))
 
 @pytest.mark.precommit
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_load_special_tokens_ids_1(model_tmp_path):
     # test when there is an available config.json
     config_json = { 
@@ -409,6 +411,7 @@ def test_load_special_tokens_ids_1(model_tmp_path):
 
 
 @pytest.mark.precommit
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_load_special_tokens_str_2(model_tmp_path):
     # test with special_tokens_map
     special_tokens_map_json = { 
@@ -423,6 +426,7 @@ def test_load_special_tokens_str_2(model_tmp_path):
 
 
 @pytest.mark.precommit
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_load_special_tokens_3_(model_tmp_path):
     # special_tokens_map is not available 
     # but tokenize_config.json exists
@@ -449,6 +453,7 @@ def test_load_special_tokens_3_(model_tmp_path):
 
 
 @pytest.mark.precommit
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_load_special_tokens_3(model_tmp_path):
     # both config.json is availabel and tokenizer_config.json available
     # check that it does not read int values from tokenizer_config.json if they are in config.json
@@ -488,6 +493,7 @@ def test_load_special_tokens_3(model_tmp_path):
     reason="CVS-143410 ov tokenizer should be aligned with hf",
     strict=False,
 )
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_load_special_tokens_4(model_tmp_path):
     # only string representation is provided, find token integers by inference
     model_id, temp_path = model_tmp_path
@@ -526,6 +532,7 @@ invalid_configs = [
 ]
 @pytest.mark.parametrize("generation_config", invalid_configs)
 @pytest.mark.precommit
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_invalid_configs(model_tmp_path, generation_config):
     model_id, temp_path = model_tmp_path
     config_json = {}
@@ -535,6 +542,7 @@ def test_invalid_configs(model_tmp_path, generation_config):
 
 
 @pytest.mark.precommit
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="simultanous access to tmp files fail on Windows")
 def test_valid_configs(model_tmp_path):
     model_id, temp_path = model_tmp_path
     pipe = load_pipe([({"eos_token_id": 37}, "config.json")], temp_path)
@@ -542,3 +550,11 @@ def test_valid_configs(model_tmp_path):
     config = openvino_genai.GenerationConfig()
     config.do_sample = True  # no eos_token_id but it's loaded from config.json
     pipe.set_generation_config(config)
+
+@pytest.mark.precommit
+def test_unicode_pybind_decoding():
+    # On this model this prompt generates unfinished utf string.
+    # Test that pybind will not fail.
+    model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
+    pipe = read_model((model_id, path))[4]
+    pipe.generate('你好！ 你好嗎？', max_new_tokens=20)
