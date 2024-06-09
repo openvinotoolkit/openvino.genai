@@ -410,7 +410,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     if len(image_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(image_list)}, prompt idx: {prompt_idx_list}')
-    
+
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
     if args['subsequent'] is False:
@@ -541,7 +541,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
-    for num in range(num_iters + 1):        
+    for num in range(num_iters + 1):
         for image_id, img in enumerate(image_list):
             if num == 0:
                 if args["output_dir"] is not None:
@@ -577,7 +577,8 @@ def get_argprser():
     parser.add_argument('-f', '--framework', default='ov', help='framework')
     parser.add_argument('-p', '--prompt', default=None, help='one prompt')
     parser.add_argument('-pf', '--prompt_file', default=None, help='prompt file in jsonl format')
-    parser.add_argument('-pi', '--prompt_index', nargs='+', type=num_iters_type, default=None, help='Run the specified prompt index. You can specify multiple prompt indexes, separated by spaces.')
+    parser.add_argument('-pi', '--prompt_index', nargs='+', type=num_iters_type, default=None, 
+                        help='Run the specified prompt index. You can specify multiple prompt indexes, separated by spaces.')
     parser.add_argument(
         '-ic',
         '--infer_count',
