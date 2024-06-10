@@ -2,9 +2,8 @@
 
 ## Install OpenVINO™ GenAI
 
-The OpenVINO GenAI flavor is available for installation via Archive and PyPI distributions:
-- [Archive Installation](./docs/INSTALL_ARCHIVE.md)
-- [PyPI Installation](./docs/INSTALL_PYPI.md)
+The OpenVINO GenAI flavor is available for installation via Archive and PyPI distributions.
+To install OpenVINO™ GenAI, refer to the [Install Guide](https://docs.openvino.ai/2024/get-started/install-openvino.html).
 
 To build OpenVINO™ GenAI library from source, refer to the [Build Instructions](./docs/BUILD.md).
 
