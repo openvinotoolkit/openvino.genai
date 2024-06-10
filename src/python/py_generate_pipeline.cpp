@@ -43,7 +43,6 @@ class DecodedResultsPyStr {
 public:
     std::vector<py::object> texts;
     std::vector<float> scores;
-    DecodedResultsPyStr() = default;
     explicit DecodedResultsPyStr(DecodedResults&& cpp) : scores{std::move(cpp.scores)} {
         texts.reserve(cpp.texts.size());
         for (const std::string& text : cpp.texts) {
@@ -104,8 +103,7 @@ std::string ov_tokenizers_module_path() {
     return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
 }
 
-class EmptyStreamer: public StreamerBase {
-    // It's impossible to create an instance of pure virtual class. Define EmptyStreamer instead.
+class ConstructableStreamer: public StreamerBase {
     bool put(int64_t token) override {
         PYBIND11_OVERRIDE_PURE(
             bool,  // Return type
@@ -279,17 +277,15 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id);
 
     py::class_<DecodedResultsPyStr>(m, "DecodedResults")
-        .def(py::init<>())
-        .def_readwrite("texts", &DecodedResultsPyStr::texts)
-        .def_readwrite("scores", &DecodedResultsPyStr::scores)
+        .def_readonly("texts", &DecodedResultsPyStr::texts)
+        .def_readonly("scores", &DecodedResultsPyStr::scores)
         .def("__str__", &DecodedResultsPyStr::operator std::string);
 
     py::class_<EncodedResults>(m, "EncodedResults")
-        .def(py::init<>())
-        .def_readwrite("tokens", &EncodedResults::tokens)
-        .def_readwrite("scores", &EncodedResults::scores);
+        .def_readonly("tokens", &EncodedResults::tokens)
+        .def_readonly("scores", &EncodedResults::scores);
 
-    py::class_<StreamerBase, EmptyStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase")  // Change the holder form unique_ptr to shared_ptr
+    py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase")  // Change the holder form unique_ptr to shared_ptr
         .def(py::init<>())
         .def("put", &StreamerBase::put)
         .def("end", &StreamerBase::end);

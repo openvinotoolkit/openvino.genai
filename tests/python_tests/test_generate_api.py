@@ -279,7 +279,10 @@ def test_callback_kwargs_batch_fail(callback):
 
 class Printer(openvino_genai.StreamerBase):
     def __init__(self, tokenizer):
-        super().__init__()
+        # super() may work, but once you begin mixing Python and C++
+        # multiple inheritance, things will fall apart due to
+        # differences between Python’s MRO and C++’s mechanisms.
+        openvino_genai.StreamerBase.__init__(self)
         self.tokenizer = tokenizer
     def put(self, token_id):
         # print(self.tokenizer.decode([token_id]))  # Incorrect way to print, but easy to implement

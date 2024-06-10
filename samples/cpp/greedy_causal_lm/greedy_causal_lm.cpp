@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) try {
     std::string device = "CPU";  // GPU can be used as well
     ov::genai::LLMPipeline pipe(model_path, device);
 
-    ov::genai::GenerationConfig config = pipe.get_generation_config();
+    ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
     config.do_sample = false;
     auto streamer = [](std::string subword){ std::cout << subword << std::flush; return false; };

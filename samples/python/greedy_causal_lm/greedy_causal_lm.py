@@ -20,9 +20,8 @@ def main():
     device = 'CPU'  # GPU can be used as well
     pipe = openvino_genai.LLMPipeline(args.model_dir, device)
 
-    config = pipe.get_generation_config()
+    config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
-    config.do_sample = False
 
     # Since the streamer is set, the results will
     # be printed each time a new token is generated.
