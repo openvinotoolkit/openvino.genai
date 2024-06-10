@@ -7,11 +7,15 @@ find_package(OpenVINOGenAI REQUIRED PATHS
 )
 add_executable(chat_sample chat_sample.cpp)
 target_link_libraries(chat_sample PRIVATE openvino::genai)
+<<<<<<< HEAD
 set_target_properties(chat_sample PROPERTIES
     COMPILE_PDB_NAME chat_sample
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 target_compile_features(chat_sample PRIVATE cxx_std_11)
+=======
+target_compile_features(chat_sample PRIVATE cxx_std_17)
+>>>>>>> releases/2024/2
 install(TARGETS chat_sample
     RUNTIME DESTINATION samples_bin/
     COMPONENT samples_bin

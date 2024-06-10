@@ -16,7 +16,7 @@ from pathlib import Path
 import shutil
 import json
 
-@functools.lru_cache(1)
+@functools.lru_cache(2)
 def read_model(params):
     model_id, path = params
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
@@ -62,11 +62,7 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
         # Need to set exlicitly to False, but only if test arguments omitted this arg.
         config['do_sample'] = False
-    
     generation_config_hf = config.copy()
-    if generation_config_hf.get('stop_criteria'):
-        generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
-    generation_config_hf.pop('ignore_eos', None)
 
     # Encode the batch of prompts
     tokenizer.padding_side = "left"
@@ -215,11 +211,7 @@ def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
         num_beams=2 * 3, 
         diversity_penalty=1.0, 
         num_return_sequences=2 * 3, 
-        max_new_tokens=max_new_tokens, 
         stop_criteria=stop_criteria,
-    )
-    run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
-
 
 # test long sequences
 @pytest.mark.parametrize("num_beam_groups", [2])
