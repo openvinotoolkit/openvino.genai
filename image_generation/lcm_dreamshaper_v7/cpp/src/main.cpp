@@ -21,6 +21,21 @@
 #include "lora.hpp"
 #include "imwrite.hpp"
 
+class Timer {
+    const decltype(std::chrono::steady_clock::now()) m_start;
+
+public:
+    Timer(const std::string& scope) : m_start(std::chrono::steady_clock::now()) {
+        (std::cout << scope << ": ").flush();
+    }
+
+    ~Timer() {
+        auto m_end = std::chrono::steady_clock::now();
+        std::cout << std::chrono::duration<double, std::milli>(m_end - m_start).count() << " ms" << std::endl;
+    }
+};
+
+
 const size_t TOKENIZER_MODEL_MAX_LENGTH = 77;   // 'model_max_length' parameter from 'tokenizer_config.json'
 const size_t VAE_SCALE_FACTOR = 8;
 
@@ -336,6 +351,8 @@ int32_t main(int32_t argc, char* argv[]) try {
                         (sample_shape[2] * VAE_SCALE_FACTOR == height && sample_shape[3] * VAE_SCALE_FACTOR == width),
                     "UNet model has static shapes [1, 4, H/8, W/8] or dynamic shapes [?, 4, ?, ?]");
 
+    Timer t("Running Stable Diffusion pipeline");
+
     // no negative prompt for LCM model: 
     // https://huggingface.co/docs/diffusers/api/pipelines/latent_consistency_models#diffusers.LatentConsistencyModelPipeline
     ov::Tensor text_embeddings = text_encoder(models, positive_prompt);
@@ -370,7 +387,6 @@ int32_t main(int32_t argc, char* argv[]) try {
 
         ov::Tensor decoded_image = vae_decoder(models.vae_decoder, denoised);
         imwrite(std::string("./images/seed_") + std::to_string(seed) + ".bmp", postprocess_image(decoded_image), true);
-        std::cout << "Result image saved to: " << std::string("./images/seed_") + std::to_string(seed) + ".bmp" << std::endl;
     }
 
     return EXIT_SUCCESS;
