@@ -95,10 +95,10 @@ public:
         m_generated_ids.push_back(token_id);     
     }
 
-    GenerationOutput get_last_generation_output(const GenerationConfig& sampling_params) {
+    GenerationOutput get_last_generation_output() {
         GenerationOutput output;
-        output.score = get_beam_search_score(sampling_params);
         OPENVINO_ASSERT(m_generated_ids.size());
+        output.score = get_cumulative_log_probs();
         output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};
         return output;
     }
@@ -445,12 +445,30 @@ public:
             }
         // For greedy or multinomial sampling we decide whever to stream partial results depending on the user parameter
         } else if (m_sampling_params.is_greedy_sampling() || m_sampling_params.is_multinomial()) {
-            // TO DO: Now we always stream for greedy search for the sake of benchmarking
-            if (true /* m_sampling_params.stream */) {
+            // TO DO: Now we always stream for greedy search for the sake of benchmarking 
+            if (num_total_seqs() == 1 /* m_sampling_params.stream */) {
+                // TODO: support streamimg for n seqs
                 for (auto& sequence : m_sequences) {
-                        outputs.emplace(sequence->get_grouped_id(), sequence->get_last_generation_output(m_sampling_params));
+                    // todo: check seq.is_finished() to generate without several </s>
+                    // or is it ok to use padding?
+                    const auto last_gen_token = sequence->get_last_generation_output();
+                    outputs.emplace(sequence->get_grouped_id(), last_gen_token);
                 }
                 m_generation_stream->push(outputs);
+            } else if (has_finished()) {
+                std::vector<Sequence::CPtr> finished_sequences = get_finished_sequences();
+
+                OPENVINO_ASSERT(finished_sequences.size() == num_total_seqs() && has_finished());
+                for (auto& sequence: finished_sequences) {
+                    GenerationOutput output;
+                    output.generated_token_ids = sequence->get_generated_ids();
+                    output.score = sequence->get_cumulative_log_probs();
+                    outputs.emplace(sequence->get_grouped_id(), output);
+                }
+
+                if (outputs.size()) {
+                    m_generation_stream->push(outputs);
+                }
             }
         }
 
