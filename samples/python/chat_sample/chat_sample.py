@@ -21,7 +21,6 @@ def main():
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 10000
-    config.do_sample = False
 
     pipe.start_chat()
     while True:

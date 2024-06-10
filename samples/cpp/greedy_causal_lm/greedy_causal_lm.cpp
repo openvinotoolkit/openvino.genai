@@ -16,7 +16,6 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
-    config.do_sample = false;
     auto streamer = [](std::string subword){ std::cout << subword << std::flush; return false; };
     
     // Since the streamer is set, the results will
