@@ -1,0 +1,98 @@
+name: genai_package
+on: pull_request
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  ubuntu_genai_package:
+    strategy:
+      matrix:
+        build-type: [Release, Debug]
+    runs-on: ubuntu-20.04
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: null
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - run: mkdir ./ov/
+      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240524_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+      - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
+      - run: source ./ov/setupvars.sh && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+      - run: source ./ov/setupvars.sh && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
+      - run: ov/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
+        if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
+      - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ov/samples/cpp/ -B ./samples\ build/ && cmake --build ./samples\ build/ --config ${{ matrix.build-type }} -j && cmake --install ./samples\ build/ --config ${{ matrix.build-type }} --component samples_bin --prefix s\ pace
+        if: ${{ 'Release' != matrix.build-type }}
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+      - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r ./samples/cpp/requirements.txt
+      - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+      - run: source ./ov/setupvars.sh && timeout 50s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
+
+  macos_genai_package:
+    strategy:
+      matrix:
+        build-type: [Release, Debug]
+    runs-on: macos-12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - run: mkdir ./ov/
+      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/macos/m_openvino_toolkit_macos_12_6_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+      - run: brew install coreutils scons
+      - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
+      - run: source ./ov/setupvars.sh && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+      - run: source ./ov/setupvars.sh && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
+      - run: ov/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
+        if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+        if: ${{ 'Release' == matrix.build-type }}
+      - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r ./samples/cpp/requirements.txt
+        if: ${{ 'Release' == matrix.build-type }}
+      - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+        if: ${{ 'Release' == matrix.build-type }}
+      - run: source ./ov/setupvars.sh && timeout 50s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
+        if: ${{ 'Release' == matrix.build-type }}
+
+  windows_genai_package:
+    strategy:
+      matrix:
+        build-type: [Release, Debug]
+    runs-on: windows-latest
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: null
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - run: curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/windows/w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64.zip
+      - run: unzip ov.zip
+      # Shorten the next setupvars calls.
+      - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64
+      - run: call ov\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
+      - run: call ov\setupvars.bat && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+      - run: call ov\setupvars.bat && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
+      - run: call ov\samples\cpp\build_samples_msvc.bat -i "${{ github.workspace }}/samples_install"
+        if: ${{ false && 'Release' == matrix.build-type }}  # build_samples enforces Release build
+      - run: call ov\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+        if: ${{ false && 'Release' == matrix.build-type }}
+      - run: call ov\setupvars.bat && python -m pip install --upgrade-strategy eager -r ./samples/cpp/requirements.txt
+        if: ${{ false && 'Release' == matrix.build-type }}
+      - run: call ov\setupvars.bat && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+        if: ${{ false && 'Release' == matrix.build-type }}
+      - run: call ov\setupvars.bat && "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm" .\TinyLlama-1.1B-Chat-v1.0\ ""
+        if: ${{ false && 'Release' == matrix.build-type }}
