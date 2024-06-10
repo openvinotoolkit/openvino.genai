@@ -4,9 +4,9 @@
 #include <gtest/gtest.h>
 #include <openvino/core/except.hpp>
 
-#include "sampler.hpp"
+#include "logit_processor.hpp"
 
-
+using namespace LogitTransformers;
 
 struct TemperatureTransformTestStruct {
     float temperature;
@@ -21,6 +21,7 @@ TEST_P(TemperatureTransformTest, TransformResultEqualToReference) {
     auto transform = TemperatureLogitTransform(test_struct.temperature);
     auto test_result = transform.apply(test_struct.input);
     ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
+    std::sort(test_result.begin(), test_result.end(), [](const ProbabilityWithIdx& lhs, const ProbabilityWithIdx& rhs) {return lhs.first > rhs.first; });
     for (size_t i = 0; i < test_result.size(); i++) {
         EXPECT_NEAR(test_result[i].first, test_struct.expected_output[i].first, 1e-6);
         EXPECT_EQ(test_result[i].second, test_struct.expected_output[i].second);
@@ -51,7 +52,7 @@ using TopPFilteringTest = testing::TestWithParam<TopPTestStruct>;
 TEST_P(TopPFilteringTest, FilterResultEqualToReference) {
     auto test_struct = GetParam();
     auto transform = TopPFilter(test_struct.top_p);
-    auto test_result = transform.filter(test_struct.input);
+    auto test_result = transform.apply(test_struct.input);
     ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
     for (size_t i = 0; i < test_result.size(); i++) {
         EXPECT_NEAR(test_result[i].first, test_struct.expected_output[i].first, 1e-6);
@@ -83,7 +84,7 @@ using TopKFilteringTest = testing::TestWithParam<TopKTestStruct>;
 TEST_P(TopKFilteringTest, FilterResultEqualToReference) {
     auto test_struct = GetParam();
     auto transform = TopKFilter(test_struct.top_k);
-    auto test_result = transform.filter(test_struct.input);
+    auto test_result = transform.apply(test_struct.input);
     ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
     for (size_t i = 0; i < test_result.size(); i++) {
         EXPECT_NEAR(test_result[i].first, test_struct.expected_output[i].first, 1e-6);
@@ -131,17 +132,6 @@ INSTANTIATE_TEST_SUITE_P(VariousInputs,
                          ProbabilityNormalizeTransformTest,
                          testing::ValuesIn(NORMALIZE_TRANSFORM_TEST_CASES));
 
-TEST(TemperatureTransformInitializationTest, ThrowsForNegativeTemperatures) {
-    EXPECT_THROW(TemperatureLogitTransform(-0.1), ov::Exception);
-}
-
-
-TEST(TopPFilterInitializationTest, ThrowsForInvalidProbabilities) {
-    EXPECT_THROW(TopPFilter(-0.5), ov::Exception);
-    EXPECT_THROW(TopPFilter(1.1), ov::Exception);
-}
-
-
 struct RepetitionPenaltyTransformTestStruct {
     float penalty;
     std::vector<LogitWithIdx> input_logits;
@@ -188,18 +178,12 @@ INSTANTIATE_TEST_SUITE_P(VariousInputs,
                          RepetitionPenaltyTransformTest,
                          testing::ValuesIn(REPETITION_PENALTY_TRANSFORM_TEST_CASES));
 
-
-TEST(RepetitionPenaltyTransformInitializationTest, ThrowsForInvalidPenalties) {
-    EXPECT_THROW(RepetitionPenaltyTransform(-0.5), ov::Exception);
-}
-
 TEST(RepetitionPenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
     auto transform = RepetitionPenaltyTransform(1.5);
-    EXPECT_THROW(transform.apply({ {43.0f, 0} }, std::map<int64_t, size_t>{{1337, 0}} ), ov::Exception);
-    EXPECT_THROW(transform.apply({ {18.0f, 0} }, std::map<int64_t, size_t>{{0, 1}, {-1, 1}} ), ov::Exception);
+    EXPECT_THROW(transform.apply({{43.0f, 0}}, {1337}), ov::Exception);
+    EXPECT_THROW(transform.apply({{18.0f, 0}}, {0, -1}), ov::Exception);
 }
 
-// ===================
 struct FrequencyPenaltyTransformTestStruct {
     float penalty;
     std::vector<LogitWithIdx> input_logits;
@@ -246,19 +230,13 @@ INSTANTIATE_TEST_SUITE_P(VariousInputs,
                          FrequencyPenaltyTransformTest,
                          testing::ValuesIn(FREQUENCY_PENALTY_TRANSFORM_TEST_CASES));
 
-
-TEST(FrequencyPenaltyTransformInitializationTest, ThrowsForInvalidPenalties) {
-    EXPECT_THROW(FrequencyPenaltyTransform(-3.0), ov::Exception);
-    EXPECT_THROW(FrequencyPenaltyTransform(+13.0), ov::Exception);
-}
-
 TEST(FrequencyPenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
     auto transform = FrequencyPenaltyTransform(1.5);
-    EXPECT_THROW(transform.apply({ {43.0f, 0} }, std::map<int64_t, size_t>{{1337, 0}} ), ov::Exception);
-    EXPECT_THROW(transform.apply({ {18.0f, 0} }, std::map<int64_t, size_t>{{0, 1}, {-1, 1}} ), ov::Exception);
+    EXPECT_THROW(transform.apply({{43.0f, 0}}, {1337}), ov::Exception);
+    EXPECT_THROW(transform.apply({{18.0f, 0}}, {0, -1}), ov::Exception);
 }
 
-// ===================
+
 struct PresencePenaltyTransformTestStruct {
     float penalty;
     std::vector<LogitWithIdx> input_logits;
@@ -305,14 +283,8 @@ INSTANTIATE_TEST_SUITE_P(VariousInputs,
                          PresencePenaltyTransformTest,
                          testing::ValuesIn(PRESENCE_PENALTY_TRANSFORM_TEST_CASES));
 
-
-TEST(PresencePenaltyTransformInitializationTest, ThrowsForInvalidPenalties) {
-    EXPECT_THROW(PresencePenaltyTransform(-3.0), ov::Exception);
-    EXPECT_THROW(PresencePenaltyTransform(+13.0), ov::Exception);
-}
-
 TEST(PresencePenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
     auto transform = PresencePenaltyTransform(1.5);
-    EXPECT_THROW(transform.apply({ {43.0f, 0} }, std::map<int64_t, size_t>{{1337, 0}} ), ov::Exception);
-    EXPECT_THROW(transform.apply({ {18.0f, 0} }, std::map<int64_t, size_t>{{0, 1}, {-1, 1}} ), ov::Exception);
+    EXPECT_THROW(transform.apply({{43.0f, 0}}, {1337}), ov::Exception);
+    EXPECT_THROW(transform.apply({{18.0f, 0}}, {0, -1} ), ov::Exception);
 }

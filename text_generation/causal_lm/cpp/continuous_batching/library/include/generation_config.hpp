@@ -70,4 +70,8 @@ struct GenerationConfig {
     bool is_multinomial() const {
         return do_sample;
     }
+
+    void set_eos_token_id(size_t tokenizer_eos_token_id);
+
+    void validate() const;
 };
