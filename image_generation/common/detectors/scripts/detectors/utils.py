@@ -31,3 +31,11 @@ def render_from_candidate_and_subset(candidate, subset, H, W) -> Image:
 
     detected_map = Image.fromarray(detected_map)
     return detected_map
+
+
+def cv_gaussian_blur(image, sigma):
+    import cv2
+    truncate = 4
+    radius = int(truncate * sigma + 0.5)
+    ksize = 2 * radius + 1
+    return cv2.GaussianBlur(image, (ksize, ksize), sigmaX=sigma, sigmaY=sigma)
