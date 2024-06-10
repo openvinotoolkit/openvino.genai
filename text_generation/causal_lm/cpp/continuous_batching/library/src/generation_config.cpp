@@ -68,6 +68,8 @@ GenerationConfig GenerationConfig::greedy() {
     GenerationConfig greedy_params;
     greedy_params.temperature = 0.0f;
     greedy_params.ignore_eos = true;
+    greedy_params.presence_penalty = 0.01f;
+    greedy_params.frequence_penalty = 0.1f;
     return greedy_params;
 }
 
