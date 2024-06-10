@@ -1,6 +1,18 @@
 # OpenVINO™ GenAI: Generate API Usage
 
-First of all you need to convert your model with optimum-cli
+## Prerequisites
+
+If OpenVINO GenAI is installed via archive distribution or built from source, you will need to install additional python dependencies (e.g. `optimum-cli` for simplified model downloading and exporting):
+```sh
+# (Optional) Clone OpenVINO GenAI repository if it does not exist
+git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
+cd openvino.genai
+# Install python dependencies
+python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+python -m pip install --upgrade-strategy eager -r ./samples/cpp/requirements.txt
+```
+
+Download and convert a model with `optimum-cli`:
 ``` sh
 optimum-cli export openvino --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --trust-remote-code "TinyLlama-1.1B-Chat-v1.0"
 pip install openvino-genai
