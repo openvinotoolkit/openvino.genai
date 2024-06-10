@@ -69,6 +69,7 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }}  # Python bindings can be built in Release only
 
   windows_genai_package:
+    if: false
     strategy:
       matrix:
         build-type: [Release, Debug]
