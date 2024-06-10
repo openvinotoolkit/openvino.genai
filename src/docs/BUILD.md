@@ -12,9 +12,8 @@
 
 1. Clone OpenVINO GenAI repository and init submodules:
     ```sh
-    git clone https://github.com/openvinotoolkit/openvino.genai.git
+    git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
     cd openvino.genai
-    git submodule update --init --recursive
     ```
 2. Download OpenVINO archive and install dependencies:
     ```sh
