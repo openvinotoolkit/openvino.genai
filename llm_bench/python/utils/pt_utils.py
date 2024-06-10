@@ -7,11 +7,7 @@ from utils.config_class import PT_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPIN
 import os
 import time
 import logging as log
-import openvino.torch  # noqa: F401
-import utils.hook_greedy_search
-import utils.hook_beam_search
-
-MAX_CONNECT_TIME = 50
+import utils.hook_common as hook_common
 
 
 def set_bf16(model, device, **kwargs):
@@ -95,17 +91,13 @@ def create_text_gen_model(model_path, device, **kwargs):
     else:
         raise RuntimeError('==Failure ==: no device to load')
 
-    if kwargs['num_beams'] > 1:
-        bench_hook = utils.hook_beam_search.BeamSearchHook()
-    else:
-        bench_hook = utils.hook_greedy_search.GreedySearchHook()
-    bench_hook.new_forward(model, model_type)
+    bench_hook = hook_common.get_bench_hook(kwargs['num_beams'], model)
 
     if kwargs['torch_compile_backend']:
         backend = kwargs['torch_compile_backend']
         compiled_model = run_torch_compile(model, backend)
         model = compiled_model
-    return model, tokenizer, from_pretrain_time, bench_hook
+    return model, tokenizer, from_pretrain_time, bench_hook, False
 
 
 def create_image_gen_model(model_path, device, **kwargs):

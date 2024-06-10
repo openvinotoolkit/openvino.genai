@@ -230,16 +230,19 @@ public:
             step();
         }
 
-        for (auto& generation : generations) {
+        for (size_t generation_idx = 0; generation_idx < generations.size(); ++generation_idx) {
+            const auto& generation = generations[generation_idx];
+            OPENVINO_ASSERT(generation->get_status() == GenerationStatus::FINISHED);
             GenerationResult result;
             result.m_request_id = 1;
             std::vector<GenerationOutput> generation_outputs = generation->read_all();
-
             std::sort(generation_outputs.begin(), generation_outputs.end(), [=] (GenerationOutput& r1, GenerationOutput& r2) {
                 return r1.score > r2.score;
             });
 
-            for (auto& generation_output : generation_outputs) {
+            auto num_outputs = std::min(sampling_params[generation_idx].num_return_sequences, generation_outputs.size());
+            for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
+                const auto& generation_output = generation_outputs[generation_output_idx];
                 std::string output_text = m_tokenizer->decode(generation_output.generated_token_ids);
                 result.m_generation_ids.push_back(output_text);
                 result.m_scores.push_back(generation_output.score);

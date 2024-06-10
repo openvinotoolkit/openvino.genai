@@ -48,6 +48,7 @@ class Evaluator:
         metrics=("similarity", "divergency"),
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
         max_new_tokens=128,
+        crop_question=True,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -57,6 +58,7 @@ class Evaluator:
         self.metrics = metrics
         self.max_new_tokens = max_new_tokens
         self.tokenizer = tokenizer
+        self._crop_question = crop_question
 
         if base_model:
             self.gt_data = self._generate_data(base_model)
@@ -139,7 +141,8 @@ class Evaluator:
             inputs = self.tokenizer(q, return_tensors="pt")
             tokens = model.generate(**inputs, max_new_tokens=self.max_new_tokens)
             out = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
-            answers.append(out[len(q) :])
+            answer = out[len(q):] if self._crop_question else out
+            answers.append(answer)
 
         res_data = {"questions": list(questions.values), "answers": answers}
         df = pd.DataFrame(res_data)

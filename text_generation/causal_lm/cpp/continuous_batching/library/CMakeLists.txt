@@ -5,8 +5,6 @@ cmake_minimum_required(VERSION 3.15)
 
 # start of dependencies
 
-add_subdirectory(../../../../../thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
-
 include(FetchContent)
 
 FetchContent_Declare(nlohmann_json
@@ -52,11 +50,14 @@ target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_j
 include(GNUInstallDirs)
 
 install(TARGETS ${TARGET_NAME}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT openvino_continuous_batching
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT openvino_continuous_batching
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT openvino_continuous_batching)
 
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.hpp")
+install(DIRECTORY include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        COMPONENT openvino_continuous_batching
+        FILES_MATCHING PATTERN "*.hpp")
 
 
 # gtest

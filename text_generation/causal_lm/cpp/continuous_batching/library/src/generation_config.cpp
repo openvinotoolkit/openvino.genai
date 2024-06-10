@@ -68,14 +68,14 @@ GenerationConfig GenerationConfig::greedy() {
     GenerationConfig greedy_params;
     greedy_params.temperature = 0.0f;
     greedy_params.ignore_eos = true;
-    greedy_params.presence_penalty = 0.01f;
-    greedy_params.frequence_penalty = 0.1f;
+    greedy_params.num_return_sequences = 1;
     return greedy_params;
 }
 
 GenerationConfig GenerationConfig::beam_search() {
     GenerationConfig beam_search;
     beam_search.num_groups = 2;
+    beam_search.num_return_sequences = 3;
     beam_search.group_size = 2;
     beam_search.max_new_tokens = 100;
     beam_search.diversity_penalty = 2.0f;
@@ -85,9 +85,10 @@ GenerationConfig GenerationConfig::beam_search() {
 GenerationConfig GenerationConfig::multinomial() {
     GenerationConfig multinomial;
     multinomial.do_sample = true;
-    multinomial.temperature = 0.8f;
-    multinomial.top_p = 0.8;
+    multinomial.temperature = 0.9f;
+    multinomial.top_p = 0.9f;
     multinomial.top_k = 20;
+    multinomial.num_return_sequences = 3;
     multinomial.presence_penalty = 0.01f;
     multinomial.frequence_penalty = 0.1f;
     return multinomial;
