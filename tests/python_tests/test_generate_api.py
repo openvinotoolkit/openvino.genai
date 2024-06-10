@@ -315,7 +315,7 @@ def test_streamer_batch_fail():
 def test_streamer_kwargs_one_string():
     pipe = read_model(models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
-    pipe.generate('', max_new_tokens=10, do_sample=True, streamer=printer)
+    pipe.generate('', max_new_tokens=10, do_sample=False, streamer=printer)
 
 
 @pytest.mark.precommit
