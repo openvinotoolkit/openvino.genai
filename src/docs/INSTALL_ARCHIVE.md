@@ -6,17 +6,25 @@ but instead of using the vanilla package file, download the one with OpenVINO Ge
 - Ubuntu 24.04
     <!-- TODO Update link to GenAI archive -->
     ```sh
-    curl -L https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/2024.1/linux/l_openvino_genai_toolkit_ubuntu22_2024.1.0.15008.f4afc983258_x86_64.tgz --output openvino_genai_2024.1.0.tgz
-    tar -xf openvino_genai_2024.1.0.tgz
-    sudo mv l_openvino_genai_toolkit_ubuntu24_2024.1.0.15008.f4afc983258_x86_64 /opt/intel/openvino_genai_2024.1.0
+    curl -L https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/2024.2/linux/l_openvino_genai_toolkit_ubuntu24_2024.2.0.15008.f4afc983258_x86_64.tgz --output openvino_genai_2024.2.0.tgz
+    tar -xf openvino_genai_2024.2.0.tgz
+    sudo mv l_openvino_genai_toolkit_ubuntu24_2024.2.0.15008.f4afc983258_x86_64 /opt/intel/openvino_genai_2024.2.0
     ```
 
 - Ubuntu 22.04
     <!-- TODO Update link to GenAI archive -->
     ```sh
-    curl -L https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/2024.1/linux/l_openvino_genai_toolkit_ubuntu22_2024.1.0.15008.f4afc983258_x86_64.tgz --output openvino_genai_2024.1.0.tgz
-    tar -xf openvino_genai_2024.1.0.tgz
-    sudo mv l_openvino_genai_toolkit_ubuntu22_2024.1.0.15008.f4afc983258_x86_64 /opt/intel/openvino_genai_2024.1.0
+    curl -L https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/2024.2/linux/l_openvino_genai_toolkit_ubuntu22_2024.2.0.15008.f4afc983258_x86_64.tgz --output openvino_genai_2024.2.0.tgz
+    tar -xf openvino_genai_2024.2.0.tgz
+    sudo mv l_openvino_genai_toolkit_ubuntu22_2024.2.0.15008.f4afc983258_x86_64 /opt/intel/openvino_genai_2024.2.0
+    ```
+
+- Ubuntu 20.04
+    <!-- TODO Update link to GenAI archive -->
+    ```sh
+    curl -L https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/2024.2/linux/l_openvino_genai_toolkit_ubuntu20_2024.2.0.15008.f4afc983258_x86_64.tgz --output openvino_genai_2024.2.0.tgz
+    tar -xf openvino_genai_2024.2.0.tgz
+    sudo mv l_openvino_genai_toolkit_ubuntu20_2024.2.0.15008.f4afc983258_x86_64 /opt/intel/openvino_genai_2024.2.0
     ```
 
 For other operating systems, please refer to the guides in documentation:
