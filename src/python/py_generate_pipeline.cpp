@@ -205,7 +205,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         )")
         .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, 
                                            const py::kwargs&>(&call_with_kwargs))
-        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&,
+        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, 
                                            const GenerationConfig&, const StreamerVariant&>(&call_with_config),
             py::arg("inputs"), "lsit of prompts",
             py::arg("config") = std::nullopt, "optional GenerationConfig",
