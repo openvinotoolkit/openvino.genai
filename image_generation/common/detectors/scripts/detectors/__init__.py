@@ -4,6 +4,7 @@ import math
 import numpy as np
 import torch
 from .body_pose_model import bodypose_model
+from .utils import render_from_candidate_and_subset
 
 def smart_resize(x, s):
     Ht, Wt = s
@@ -132,6 +133,8 @@ class Body(object):
 
         for part in range(18):
             map_ori = heatmap_avg[:, :, part]
+            print(f'{part}: map_ori.shape: {map_ori.shape}')
+
             one_heatmap = gaussian_filter(map_ori, sigma=3)
 
             map_left = np.zeros(one_heatmap.shape)

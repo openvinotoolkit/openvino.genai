@@ -22,8 +22,8 @@ def export_ov_model():
         with torch.no_grad():
             ov_model = ov.convert_model(
                 pose_estimator.body_estimation.model,
-                example_input=torch.zeros([1, 3, 184, 136]),
-                input=[[1, 3, 184, 136]],
+                example_input=torch.zeros([1, 3, 184, 128]),
+                input=[[1, 3, 184, 128]],
             )
             ov.save_model(ov_model, OPENPOSE_OV_PATH)
             del ov_model

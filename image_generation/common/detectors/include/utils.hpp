@@ -41,6 +41,7 @@ cv::Mat resize_single_channel(const cv::Mat& channel, int Ht, int Wt, float k) {
 }
 
 // Smart resize function
+template <typename T>
 ov::Tensor smart_resize(const ov::Tensor& input_tensor, int Ht, int Wt) {
     // Get input tensor dimensions (NHWC)
     auto input_shape = input_tensor.get_shape();
@@ -54,17 +55,17 @@ ov::Tensor smart_resize(const ov::Tensor& input_tensor, int Ht, int Wt) {
 
     // Prepare the output tensor
     ov::Shape output_shape = {N, static_cast<unsigned long>(Ht), static_cast<unsigned long>(Wt), Co};
-    ov::Tensor output_tensor(ov::element::u8, output_shape);
-    uint8_t* output_data = output_tensor.data<uint8_t>();
-    const uint8_t* input_data = input_tensor.data<uint8_t>();
+    ov::Tensor output_tensor(ov::element::from<T>(), output_shape);
+    T* output_data = output_tensor.data<T>();
+    const T* input_data = input_tensor.data<T>();
 
     // Process each channel separately
     for (int c = 0; c < Co; ++c) {
         // Extract single channel
-        cv::Mat channel(Ho, Wo, CV_8UC1);
+        cv::Mat channel(Ho, Wo, cv::DataType<T>::type);
         for (int h = 0; h < Ho; ++h) {
             for (int w = 0; w < Wo; ++w) {
-                channel.at<uint8_t>(h, w) = input_data[h * Wo * Co + w * Co + c];
+                channel.at<T>(h, w) = input_data[h * Wo * Co + w * Co + c];
             }
         }
         // Resize the single channel
@@ -73,12 +74,22 @@ ov::Tensor smart_resize(const ov::Tensor& input_tensor, int Ht, int Wt) {
         // Copy resized channel back to the output tensor
         for (int h = 0; h < Ht; ++h) {
             for (int w = 0; w < Wt; ++w) {
-                output_data[h * Wt * Co + w * Co + c] = resized_channel.at<uint8_t>(h, w);
+                output_data[h * Wt * Co + w * Co + c] = resized_channel.at<T>(h, w);
             }
         }
     }
 
     return output_tensor;
+}
+
+ov::Tensor smart_resize(const ov::Tensor& input_tensor, int Ht, int Wt) {
+    if (input_tensor.get_element_type() == ov::element::u8) {
+        return smart_resize<uint8_t>(input_tensor, Ht, Wt);
+    } else if (input_tensor.get_element_type() == ov::element::f32) {
+        return smart_resize<float>(input_tensor, Ht, Wt);
+    } else {
+        throw std::runtime_error("Unsupported tensor type");
+    }
 }
 
 ov::Tensor smart_resize_k(const ov::Tensor& input_tensor, float fx, float fy) {
@@ -137,6 +148,7 @@ std::pair<ov::Tensor, std::vector<int>> pad_right_down_corner(const ov::Tensor& 
 }
 
 // Function to crop the tensor
+template <typename T>
 ov::Tensor crop_right_down_corner(const ov::Tensor& input, std::vector<int> pad) {
     // Get input tensor dimensions (NHWC)
     auto input_shape = input.get_shape();
@@ -154,10 +166,10 @@ ov::Tensor crop_right_down_corner(const ov::Tensor& input, std::vector<int> pad)
 
     // Create a new tensor with the new dimensions
     ov::Shape output_shape = {N, static_cast<unsigned long>(H_new), static_cast<unsigned long>(W_new), C};
-    ov::Tensor output(ov::element::u8, output_shape);
+    ov::Tensor output(ov::element::from<T>(), output_shape);
 
-    uint8_t* cropped_data = output.data<uint8_t>();
-    const uint8_t* input_data = input.data<uint8_t>();
+    T* cropped_data = output.data<T>();
+    const T* input_data = input.data<T>();
 
     for (int n = 0; n < N; ++n) {
         for (int h = 0; h < H_new; ++h) {
@@ -172,6 +184,17 @@ ov::Tensor crop_right_down_corner(const ov::Tensor& input, std::vector<int> pad)
     }
 
     return output;
+}
+
+// Overloaded function to handle specific conversions
+ov::Tensor crop_right_down_corner(const ov::Tensor& input, const std::vector<int>& pad) {
+    if (input.get_element_type() == ov::element::u8) {
+        return crop_right_down_corner<uint8_t>(input, pad);
+    } else if (input.get_element_type() == ov::element::f32) {
+        return crop_right_down_corner<float>(input, pad);
+    } else {
+        throw std::runtime_error("Unsupported tensor type");
+    }
 }
 
 // Function to convert uint8_t rgb tensor to float32 normalized tensor

@@ -41,8 +41,14 @@ ov::Tensor OpenposeDetector::preprocess(ov::Tensor input /* NHWC */) {
 
 std::pair<ov::Tensor, ov::Tensor> OpenposeDetector::inference(ov::Tensor input) {
     std::cout << "Running inference" << std::endl;
-    // TODO:
-    return {input, input};
+    ov::InferRequest req = body_model.create_infer_request();
+    req.set_input_tensor(input);
+    req.infer();
+
+    auto res1 = req.get_output_tensor(0);
+    auto res2 = req.get_output_tensor(1);
+
+    return {res1, res2};
 }
 
 void OpenposeDetector::forward(const std::string& im_txt, unsigned long w, unsigned long h, unsigned long c) {
@@ -127,47 +133,62 @@ void OpenposeDetector::forward(const std::string& im_txt, unsigned long w, unsig
         // Model inference code
         auto [Mconv7_stage6_L1, Mconv7_stage6_L2] = inference(input);
 
-        // heatmap NCWH -> NCHW
+        std::cout << "Mconv7_stage6_L1.shape: " << Mconv7_stage6_L1.get_shape() << std::endl;
+        std::cout << "Mconv7_stage6_L2.shape: " << Mconv7_stage6_L2.get_shape() << std::endl;
+
+        // heatmap NCHW -> NHWC
         ov::Tensor heatmap(
             ov::element::f32,
-            {1, Mconv7_stage6_L2.get_shape()[1], Mconv7_stage6_L2.get_shape()[3], Mconv7_stage6_L2.get_shape()[2]});
-        reshape_tensor<float>(Mconv7_stage6_L2, heatmap, {0, 1, 3, 2});
+            {1, Mconv7_stage6_L2.get_shape()[2], Mconv7_stage6_L2.get_shape()[3], Mconv7_stage6_L2.get_shape()[1]});
+        reshape_tensor<float>(Mconv7_stage6_L2, heatmap, {0, 2, 3, 1});
         std::cout << "heatmap.shape: " << heatmap.get_shape() << std::endl;
+        std::cout << "heatmap.element: " << heatmap.get_element_type() << std::endl;
+
         // Resize
         heatmap = smart_resize_k(heatmap, static_cast<float>(stride), static_cast<float>(stride));
+        std::cout << "heatmap.shape: " << heatmap.get_shape() << std::endl;
+        std::cout << "heatmap.element: " << heatmap.get_element_type() << std::endl;
+
         // Crop padding
         heatmap = crop_right_down_corner(heatmap, pad);
         std::cout << "cropped heatmap.shape: " << heatmap.get_shape() << std::endl;
+        std::cout << "cropped heatmap.element: " << heatmap.get_element_type() << std::endl;
         // Resize
         heatmap = smart_resize(heatmap, ori_img_H, ori_img_W);
         std::cout << "heatmap.shape: " << heatmap.get_shape() << std::endl;
 
-        // // PAF NCWH -> NCHW
-        // ov::Tensor paf(
-        //     ov::element::f32,
-        //     {1, Mconv7_stage6_L1.get_shape()[1], Mconv7_stage6_L1.get_shape()[3], Mconv7_stage6_L1.get_shape()[2]});
-        // reshape_tensor<float>(Mconv7_stage6_L1, heatmap, {0, 1, 3, 2});
-        // std::cout << "paf.shape: " << paf.get_shape() << std::endl;
-        // // Resize
-        // paf = smart_resize_k(paf, static_cast<float>(stride), static_cast<float>(stride));
-        // // Crop padding
-        // paf = crop_right_down_corner(paf, pad);
-        // // Resize
-        // paf = smart_resize(paf, ori_img_H, ori_img_W);
-        // std::cout << "cropped paf.shape: " << heatmap.get_shape() << std::endl;
+        // PAF NCHW -> NHWC
+        ov::Tensor paf(
+            ov::element::f32,
+            {1, Mconv7_stage6_L1.get_shape()[2], Mconv7_stage6_L1.get_shape()[3], Mconv7_stage6_L1.get_shape()[1]});
+        reshape_tensor<float>(Mconv7_stage6_L1, paf, {0, 2, 3, 1});
+        std::cout << "paf.shape: " << paf.get_shape() << std::endl;
+        // Resize
+        paf = smart_resize_k(paf, static_cast<float>(stride), static_cast<float>(stride));
+        std::cout << "paf.shape: " << paf.get_shape() << std::endl;
+        std::cout << "paf.element: " << paf.get_element_type() << std::endl;
 
-        // // Accumulate results
-        // auto heatmap_avg_data = heatmap_avg.data<float>();
-        // auto heatmap_data = heatmap.data<float>();
-        // for (size_t i = 0; i < heatmap_avg.get_size(); ++i) {
-        //     heatmap_avg_data[i] += heatmap_data[i] / multiplier.size();
-        // }
+        // Crop padding
+        paf = crop_right_down_corner(paf, pad);
+        std::cout << "paf.shape: " << paf.get_shape() << std::endl;
+        std::cout << "paf.element: " << paf.get_element_type() << std::endl;
 
-        // auto paf_avg_data = paf_avg.data<float>();
-        // auto paf_data = paf.data<float>();
-        // for (size_t i = 0; i < paf_avg.get_size(); ++i) {
-        //     paf_avg_data[i] += paf_data[i] / multiplier.size();
-        // }
+        // Resize
+        paf = smart_resize(paf, ori_img_H, ori_img_W);
+        std::cout << "cropped paf.shape: " << paf.get_shape() << std::endl;
+
+        // Accumulate results
+        auto heatmap_avg_data = heatmap_avg.data<float>();
+        auto heatmap_data = heatmap.data<float>();
+        for (size_t i = 0; i < heatmap_avg.get_size(); ++i) {
+            heatmap_avg_data[i] += heatmap_data[i] / multiplier.size();
+        }
+
+        auto paf_avg_data = paf_avg.data<float>();
+        auto paf_data = paf.data<float>();
+        for (size_t i = 0; i < paf_avg.get_size(); ++i) {
+            paf_avg_data[i] += paf_data[i] / multiplier.size();
+        }
     }
 
     // postprocess
