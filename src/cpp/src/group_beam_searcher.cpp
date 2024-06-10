@@ -3,6 +3,11 @@
 
 #include <openvino/runtime/tensor.hpp>
 
+#include "openvino/genai/llm_pipeline.hpp"
+#include "utils.hpp"
+
+namespace {
+
 // Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
 std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std::vector<int64_t>& needle) {
     if (needle.empty()) {  // no_repeat_ngram_size == 1, ban every token
@@ -80,16 +85,14 @@ bool greater(const Beam& left, const Beam& right) {
     return left.score > right.score;
 }
 
-enum class StopCriteria { early, heuristic, never };
-
 struct Parameters {
     std::vector<std::vector<int64_t>> prompts;
-    int64_t eos_token;
+    int64_t eos_token_id;
     size_t n_groups = 3;
     size_t group_size = 5;
     float diversity_penalty = 1.0;
     size_t max_new_tokens = 20;
-    StopCriteria stop_criteria = StopCriteria::heuristic;
+    ov::genai::StopCriteria stop_criteria = ov::genai::StopCriteria::HEURISTIC;
     float length_penalty = 1.0;
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
 
@@ -106,11 +109,6 @@ struct Group {
     void finish(Beam&& beam, const Parameters& parameters) {
         beam.score /= std::pow(float(beam.tokens.size()), parameters.length_penalty);
 
-        // HF implementation counts eos_token for length penalty calculation
-        if (beam.tokens.back() == parameters.eos_token) {
-            beam.tokens.pop_back();
-        }
-
         min_heap.push_back(std::move(beam));
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
         if (min_heap.size() > parameters.group_size) {
@@ -126,15 +124,15 @@ struct Group {
         float best_sum_logprobs = ongoing.front().score;
         float worst_score = min_heap.front().score;
         switch (parameters.stop_criteria) {
-        case StopCriteria::early:
+        case ov::genai::StopCriteria::EARLY:
             done = true;
             return;
-        case StopCriteria::heuristic: {
+        case ov::genai::StopCriteria::HEURISTIC: {
             float highest_attainable_score = best_sum_logprobs / std::pow(float(cur_len), parameters.length_penalty);
             done = worst_score >= highest_attainable_score;
             return;
         }
-        case StopCriteria::never: {
+        case ov::genai::StopCriteria::NEVER: {
             size_t length = parameters.length_penalty > 0.0 ? parameters.max_new_tokens : cur_len;
             float highest_attainable_score = best_sum_logprobs / std::pow(float(length), parameters.length_penalty);
             done = worst_score >= highest_attainable_score;
@@ -267,7 +265,7 @@ struct GroupBeamSearcher {
             std::partial_sort(candidates.begin(), to_sort, candidates.end(), greater);
             group->ongoing.clear();
             for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
-                if (parameters.eos_token == candidates.at(cand_idx).tokens.back()) {
+                if (parameters.eos_token_id == candidates.at(cand_idx).tokens.back()) {
                     // If beam_token does not belong to top num_beams tokens, it should not be added
                     if (cand_idx >= parameters.group_size) {
                         continue;
@@ -313,3 +311,140 @@ std::vector<std::vector<std::vector<Beam>>> finalize(GroupBeamSearcher&& group_b
 
     return finalized;
 }
+
+void initialize_inputs(const ov::Tensor& input_ids, const ov::Tensor& attention_mask, ov::InferRequest& request) {
+    request.set_tensor("input_ids", input_ids);
+    request.set_tensor("attention_mask", attention_mask);
+
+    ov::Shape input_shape = input_ids.get_shape();
+    auto num_inputs = request.get_compiled_model().inputs().size();
+    bool position_ids_available = num_inputs == 4;
+    if (position_ids_available){
+        ov::Tensor position_ids = request.get_tensor("position_ids");
+        position_ids.set_shape(input_shape);
+        ov::genai::utils::initialize_position_ids(position_ids, attention_mask);
+    }
+
+    ov::Tensor beam_idx = request.get_tensor("beam_idx");
+    beam_idx.set_shape({input_shape.at(0)});
+    std::fill_n(beam_idx.data<int32_t>(), input_shape.at(0), 0);
+}
+
+void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<int32_t> next_beams) {
+    ov::Tensor original_mask{ov::element::i64, attention_mask.get_shape()};
+    ov::Shape original_shape = original_mask.get_shape();
+    attention_mask.copy_to(original_mask);
+
+    ov::Shape new_shape{next_beams.size(), original_mask.get_shape().at(1) + 1};
+    attention_mask.set_shape(new_shape);
+
+    for (size_t beam_id = 0; beam_id < next_beams.size(); beam_id++) {
+        const size_t original_prompt_offset = next_beams.at(beam_id) * original_shape.at(1);
+        const size_t result_prompt_offset = beam_id * new_shape.at(1);
+
+        int64_t* dest = attention_mask.data<int64_t>() + result_prompt_offset;
+        const int64_t* src = original_mask.data<int64_t>() + original_prompt_offset;
+
+        std::memcpy(dest, src, original_shape.at(1) * sizeof(int64_t));
+        attention_mask.data<int64_t>()[result_prompt_offset + new_shape.at(1) - 1] = 1;
+    }
+}
+
+void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask) {
+    const size_t batch_size = attention_mask.get_shape().at(0);
+    const size_t sequence_length = attention_mask.get_shape().at(1);
+    position_ids.set_shape({batch_size, 1});
+
+    for (size_t batch = 0; batch < batch_size; batch++) {
+        int64_t* mask_start = attention_mask.data<int64_t>() + batch * sequence_length;
+        position_ids.data<int64_t>()[batch] = std::accumulate(mask_start, mask_start + sequence_length - 1, 0);
+    }
+}
+
+}  // namespace
+
+namespace ov {
+namespace genai {
+
+EncodedResults beam_search(ov::InferRequest& lm,
+                           ov::Tensor input_ids,
+                           ov::Tensor attention_mask,
+                           GenerationConfig config) {
+    OPENVINO_ASSERT(config.num_beams % config.num_beam_groups == 0,
+                    "number of beams should be divisible by number of groups");
+
+    // Initialize beam search
+    const int64_t* prompt_data = input_ids.data<const int64_t>();
+    std::vector<std::vector<int64_t>> prompts;
+    prompts.reserve(input_ids.get_shape().at(0));
+    for (size_t batch = 0; batch < input_ids.get_shape().at(0); batch++) {
+        size_t sequence_length = input_ids.get_shape().at(1);
+        size_t batch_offset = batch * sequence_length;
+        const int64_t* prompt_start = prompt_data + batch_offset;
+        prompts.push_back(std::vector<int64_t>{prompt_start, prompt_start + sequence_length});
+    }
+
+    initialize_inputs(input_ids, attention_mask, lm);
+
+    Parameters parameters{std::move(prompts)};
+    parameters.max_new_tokens = config.max_new_tokens;
+    parameters.eos_token_id = config.eos_token_id;
+    parameters.n_groups = config.num_beam_groups;
+    parameters.group_size = config.num_beams / config.num_beam_groups;
+    parameters.diversity_penalty = config.diversity_penalty;
+    parameters.length_penalty = config.length_penalty;
+    parameters.stop_criteria = config.stop_criteria;
+    parameters.no_repeat_ngram_size = config.no_repeat_ngram_size;
+    GroupBeamSearcher group_beam_searcher{parameters};
+
+    std::vector<int64_t> next_tokens;
+    std::vector<int32_t> next_beams;
+    auto num_inputs = lm.get_compiled_model().inputs().size();
+    bool position_ids_available = num_inputs == 4;
+    
+    for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
+        lm.infer();
+
+        std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(lm.get_tensor("logits"));
+        if (next_tokens.empty()) {
+            break;
+        }
+        size_t batch_size = next_tokens.size();
+        // Set pointers
+        lm.set_tensor("input_ids", ov::Tensor{ov::element::i64, {batch_size, 1}, next_tokens.data()});
+        lm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
+        // Set auxiliary inputs
+        update_attention_mask_with_beams(lm.get_tensor("attention_mask"), next_beams);
+        if (position_ids_available)
+            update_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
+    }
+
+    auto scores_comparator = [](Beam& left, Beam& right) {
+        return (left.score > right.score);
+    };
+
+    std::vector<Beam> beams;
+    auto result = finalize(std::move(group_beam_searcher));
+    // align output with HF
+    for (size_t prompt_id = 0; prompt_id < result.size(); prompt_id++) {
+        auto prompt_group = result.at(prompt_id);
+
+        for (const std::vector<Beam> group : prompt_group) {
+            beams.insert(beams.end(), group.begin(), group.end());
+        }
+
+        // sort beams per prompt
+        auto start = beams.begin() + prompt_id * parameters.group_size * parameters.n_groups;
+        std::sort(start, beams.end(), scores_comparator);
+    }
+
+    ov::genai::EncodedResults results;
+    for (auto beam = beams.begin(); beam != beams.begin() + config.num_return_sequences; ++beam) {
+        results.scores.emplace_back(beam->score);
+        results.tokens.emplace_back(beam->tokens);
+    }
+    return results;
+}
+
+}  // namespace genai
+}  // namespace ov
