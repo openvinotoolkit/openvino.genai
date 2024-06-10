@@ -25,7 +25,7 @@ ENV OpenVINO_DIR=/workspace/openvino_build
 RUN wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
 
 # Build continuous batching library
-RUN git clone --branch request_rate https://github.com/mzegla/openvino.genai.git && cd /workspace/openvino.genai/text_generation/causal_lm/cpp/continuous_batching && \
+RUN git clone --branch ct-beam-search https://github.com/ilya-lavrenov/openvino.genai.git && cd /workspace/openvino.genai/text_generation/causal_lm/cpp/continuous_batching && \
         git submodule update --remote --init && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/ && cmake --build ./build/ -j $JOBS
 
 # Install test dependencies

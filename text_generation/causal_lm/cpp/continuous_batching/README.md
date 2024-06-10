@@ -1,3 +1,18 @@
+# Building openvino_llm:latest genai docker image
+```Bash
+git clone --branch ct-beam-search https://github.com/ilya-lavrenov/openvino.genai.git
+git submodule update --remote --init
+cd text_generation/causal_lm/cpp/continuous_batching/
+make
+```
+
+```Bash
+cd ../../../..
+docker run -it -v `pwd`:/workspace/openvino.genai/ openvino_llm:latest
+cd text_generation/causal_lm/cpp/continuous_batching/
+cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/ && cmake --build ./build/ -j
+```
+
 # How to create environment to debug and develop continious batching project with OpenVINO:
 
 1. Build OpenVINO with python bindings:

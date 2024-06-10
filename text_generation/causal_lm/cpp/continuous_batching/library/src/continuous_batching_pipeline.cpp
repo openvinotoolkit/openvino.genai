@@ -4,6 +4,7 @@
 #include <mutex>
 #include <memory>
 
+#include <nlohmann/json.hpp>
 #include "continuous_batching_pipeline.hpp"
 #include "cache_manager.hpp"
 #include "sampler.hpp"
@@ -16,12 +17,16 @@
 
 void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
 
+using plugin_config_t = std::map<std::string, ov::Any>;
+
 class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<Tokenizer> m_tokenizer;
     std::shared_ptr<Scheduler> m_scheduler;
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
+    plugin_config_t plugin_config;
+
 
     GenerationConfig m_generation_config;
 
@@ -63,18 +68,23 @@ class ContinuousBatchingPipeline::Impl {
     }
 
 public:
-    Impl(const std::string& models_path, const SchedulerConfig& scheduler_config) {
+    Impl(const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string device = "CPU", const std::string& plugin_config = "") {
         ov::Core core;
         m_tokenizer = std::make_shared<Tokenizer>(models_path);
 
         // The model can be compiled for GPU as well
         std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
 
-        const std::string device = "CPU";
         DeviceConfig device_config(core, scheduler_config, device);
 
         apply_paged_attention_transformations(model, device_config);
-        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), ov::enable_profiling(true)).create_infer_request();
+
+        OPENVINO_ASSERT(parse_plugin_config(plugin_config),
+                "ERROR: Wrong json parameter in plugin_config.");
+
+        // Add default profiling parameter
+        this->plugin_config.insert({"ENABLE_PROFILING", true});
+        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), this->plugin_config).create_infer_request();
 
         // setup KV caches
         m_cache_manager = std::make_shared<CacheManager>(device_config);
@@ -106,6 +116,10 @@ public:
         return m_tokenizer;
     }
 
+    const plugin_config_t& get_plugin_config() const {
+        return this->plugin_config;
+    }
+
     GenerationHandle add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
         sampling_params.set_eos_token_id(m_tokenizer->get_eos_token_id());
         sampling_params.validate();
@@ -125,6 +139,44 @@ public:
             m_awaiting_requests.push_back(sequence_group);
         }
         return std::make_unique<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
+    }
+
+    bool parse_plugin_config(std::string config_string) {
+        if (config_string.empty()) {
+            return true;
+        }
+
+        nlohmann::json node;
+        node = nlohmann::json::parse(config_string);
+
+        if (node.is_null()) {
+            std::cout << "Error: nlohmann json object is null." << std::endl;
+            return false;
+        }
+
+        return parse_plugin_config(node);
+    }
+
+    bool parse_plugin_config(const nlohmann::json& node) {
+        if (!node.is_object()) {
+            std::cout << "Error: nlohmann json object is not an object." << std::endl;
+            return false;
+        }
+
+        for (auto& element : node.items()) {
+            if (element.value().is_string()) {
+                plugin_config[std::string(element.key())] = element.value();
+            } else if (element.value().is_number()) {
+                plugin_config[std::string(element.key())] = element.value().get<std::string>();
+            } else if (element.value().is_boolean()) {
+                plugin_config[std::string(element.key())] = bool(element.value());
+            } else {
+                std::cout << "Error: nlohmann json type not supported for: " << element.key() << std::endl;
+                return false;
+            }
+        }
+
+        return true;
     }
 
     void step() {
@@ -287,7 +339,14 @@ bool ContinuousBatchingPipeline::has_non_finished_requests() {
     return m_impl->has_non_finished_requests();
 }
 
-
 std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, std::vector<GenerationConfig> sampling_params) {
     return m_impl->generate(prompts, sampling_params);
+}
+
+bool ContinuousBatchingPipeline::parse_plugin_config(std::string config_string) {
+    return m_impl->parse_plugin_config(config_string);
+}
+
+bool ContinuousBatchingPipeline::parse_plugin_config(const nlohmann::json& node) {
+   return m_impl->parse_plugin_config(node);
 }
