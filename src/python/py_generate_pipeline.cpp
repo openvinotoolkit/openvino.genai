@@ -203,7 +203,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
         )")
-        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&,
+        .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, 
                                            const py::kwargs&>(&call_with_kwargs))
         .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&,
                                            const GenerationConfig&, const StreamerVariant&>(&call_with_config),
@@ -211,8 +211,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             py::arg("config") = std::nullopt, "optional GenerationConfig",
             py::arg("streamer") = std::monostate(), "optional streamer"
         )
-        .def("generate", py::overload_cast<LLMPipeline&, const std::string&, const GenerationConfig&,
-                                           const StreamerVariant&>(&call_with_config),
+        .def("generate", py::overload_cast<LLMPipeline&, const std::string&, 
+                                           const GenerationConfig&, const StreamerVariant&>(&call_with_config),
             py::arg("inputs"), "input prompt",
             py::arg("config") = std::nullopt, "optional GenerationConfig",
             py::arg("streamer") = std::monostate(), "optional streamer"
@@ -220,6 +220,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, 
                                            const py::kwargs&>(&call_with_kwargs))
         .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, 
+                                           const GenerationConfig&, const StreamerVariant&>(&call_with_config))
         
         // todo: if input_ids is a ov::Tensor/numpy tensor
 
@@ -234,6 +235,15 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
     py::class_<Tokenizer>(m, "Tokenizer",
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer 
            if it's located in a different path than the main model.)")
+        .def(py::init([](const std::string& tokenizer_path) {
+            ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
+            return std::make_unique<Tokenizer>(tokenizer_path);
+        }), py::arg("tokenizer_path"))
+        .def("get_pad_token_id", &Tokenizer::get_pad_token_id)
+        .def("get_bos_token_id", &Tokenizer::get_bos_token_id)
+        .def("get_eos_token_id", &Tokenizer::get_eos_token_id)
+        .def("get_pad_token", &Tokenizer::get_pad_token)
+        .def("get_bos_token", &Tokenizer::get_bos_token)
         .def("get_eos_token", &Tokenizer::get_eos_token);
 
     // Binding for StopCriteria
