@@ -75,6 +75,8 @@ PYBIND11_MODULE(py_continuous_batching, m) {
         .def_readwrite("stop_criteria", &GenerationConfig::stop_criteria)
         .def_readwrite("num_return_sequences", &GenerationConfig::num_return_sequences)
         .def_readwrite("repetition_penalty", &GenerationConfig::repetition_penalty)
+        .def_readwrite("presence_penalty", &GenerationConfig::presence_penalty)
+        .def_readwrite("frequence_penalty", &GenerationConfig::frequence_penalty)
         .def_readwrite("length_penalty", &GenerationConfig::length_penalty)
         .def_readwrite("no_repeat_ngram_size", &GenerationConfig::no_repeat_ngram_size)
         .def_readwrite("temperature", &GenerationConfig::temperature)

@@ -31,7 +31,9 @@ struct GenerationConfig {
     StopCriteria stop_criteria = StopCriteria::HEURISTIC;
     size_t num_return_sequences = 3;  // is used by beam search, in other case is equal to batch size
 
-    float repetition_penalty = 1.0f;
+    float repetition_penalty = 1.0f; // based on token repetition in prompt and generated tests
+    float presence_penalty = 0.0f;  // based on token repetition and generated tests
+    float frequence_penalty = 0.0f; // based on quantity token repetition and generated tests
     float length_penalty = 1.0f;
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
     std::function<bool(const Sequence&)> early_finish = [] (const Sequence&) { return false; };
@@ -68,4 +70,8 @@ struct GenerationConfig {
     bool is_multinomial() const {
         return do_sample;
     }
+
+    void set_eos_token_id(size_t tokenizer_eos_token_id);
+
+    void validate() const;
 };
