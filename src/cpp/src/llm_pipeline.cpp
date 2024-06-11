@@ -41,6 +41,21 @@ std::string chat_template_from_tokenizer_json_if_exists(const std::filesystem::p
     
     std::string res = "";
     ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
+
+    //update chat template
+    std::map<std::string, std::string> replace_str_map = {
+        {"\n'}", "\n' }"},
+        {".strip()", "\"\""}
+    };
+    if (!res.empty()) {
+        size_t pos = 0;
+        for (auto [from, to] : replace_str_map) {
+            while ((pos = res.find(from, pos)) != std::string::npos) {
+                res.replace(pos, from.size(), to);
+                pos += to.size();
+            }
+        }
+    }
     return res;
 }
 
@@ -104,6 +119,8 @@ public:
     std::string m_chat_template = "";
     bool is_chat_conversation = false;
     bool m_is_cache_empty = true;
+    ChatHistory m_history;
+    std::string m_templated_chat_history = "";
 
     LLMPipelineImpl(
         const ov::InferRequest& request, 
@@ -169,49 +186,32 @@ public:
         
         if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
             encoded_input = m_tokenizer.encode(*input_vector);
-        } else if (auto input_str = std::get_if<std::string>(&inputs)) {
+        } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
+            std::string prompt = *input_prompt;
             
-            std::string text = *input_str;
-            // todo: make for batched inputs as well
-            if (is_chat_conversation)
-                text = apply_chat_template(text);
-
-            // previous prompt generation in chat dialog stops with the end of sentence token, 
-            // need to append this token to the current prompt
-            if (is_chat_conversation && !m_is_cache_empty)
-                text = m_tokenizer.get_eos_token() + text;
-            
-            auto res = m_tokenizer.encode(text);
-            auto input_ids = res.input_ids;
-            auto attention_mask = res.attention_mask;
-
-            // todo: W/A If sentence begins with specfial tokens (<bos>, <s>, etc.) openvino_tokenizer inserts 2 special extra tokens <bos> and "▁",
-            // but HF does not do that. Moreover openvino_tokenizer always inserts <bos> but in chat scenario HF does not do that because skip_special_tokens=True.
-            // Need to remove both of that tokens manually to get exact token by token alignment with HF
-            auto size = input_ids.get_shape();
-            int64_t* inputs_data = input_ids.data<int64_t>();
-            std::vector<int64_t> tmp_ids(inputs_data, inputs_data + input_ids.get_size()); // todo: works only for batch 1
-
-            auto attention_mask_data = attention_mask.data<int64_t>();
-            std::vector<float> tmp_attn_mask(attention_mask_data, attention_mask_data + attention_mask.get_size());
-
-            std::vector<std::string> prefixes_to_exclude = {m_tokenizer.get_eos_token(), m_tokenizer.get_bos_token()};
-            auto prefix_match = [&text](std::string prefix) { return text.substr(0, prefix.length()) == prefix; };
-            if (std::any_of(prefixes_to_exclude.begin(), prefixes_to_exclude.end(), prefix_match)) {
-                tmp_ids.erase(tmp_ids.begin());
-                tmp_attn_mask.erase(tmp_attn_mask.begin());
+            if (is_chat_conversation) {
+                m_history.push_back({{"role", "user"}, {"content", prompt}});
+                auto new_templated_chat_history  = apply_chat_template(m_history, /*add_generation_prompt*/ true);
+                
+                prompt = new_templated_chat_history.substr(m_templated_chat_history.size());
+                m_templated_chat_history = new_templated_chat_history;
             }
             
-            input_ids = ov::Tensor(input_ids.get_element_type(), {1, tmp_ids.size()});
-            attention_mask = ov::Tensor(attention_mask.get_element_type(), {1, tmp_attn_mask.size()});
-            std::copy(tmp_ids.begin(), tmp_ids.end(), input_ids.data<int64_t>());
-            std::copy(tmp_attn_mask.begin(), tmp_attn_mask.end(), attention_mask.data<int64_t>());
-           
-            encoded_input = TokenizedInputs{input_ids, attention_mask};
+            encoded_input = m_tokenizer.encode(prompt);
         }
 
         auto encoded_results  = generate(encoded_input, config, streamer);
-        return {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+        DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+        
+        if (is_chat_conversation) {
+            // Tail of chat template is missing in KV cache.
+            // Find the tail to concatenate it with the next input prompt.
+            auto answer = decoded_results.texts[0];
+            m_templated_chat_history.append(answer);
+            m_history.push_back({{"role", "assistant"}, {"content", answer}});
+        }
+        
+        return decoded_results;
     }
 
     EncodedResults generate(
@@ -301,30 +301,28 @@ public:
         return tpl.RenderAsString(params).value();
     }
 
-    std::string apply_chat_template(std::string prompt, std::string role = "user") const {
+    std::string apply_chat_template(const ChatHistory& history, bool add_generation_prompt=true) const {
         jinja2::TemplateEnv env;
         env.GetSettings().lstripBlocks = true;
         env.GetSettings().trimBlocks = true;
         jinja2::Template tpl(&env);
         tpl.Load(m_chat_template);
         
-        jinja2::ValuesMap message {{"role", role}, {"content", prompt}};
+        jinja2::ValuesList jinja_messages;
+        jinja2::ValuesMap jinja_message;
+        for (const auto& message : history) {
+            jinja_message = {{"role", message.at("role")}, {"content", message.at("content")}};
+            jinja_messages.emplace_back(jinja_message);
+        }
+        
         jinja2::ValuesMap params = {
-            {"messages", jinja2::ValuesList({message})},
+            {"messages", jinja_messages},
             {"bos_token",  m_tokenizer.get_bos_token()},
             {"eos_token", m_tokenizer.get_eos_token()},
-            {"add_generation_prompt", true},
+            {"pad_token", m_tokenizer.get_pad_token()},
+            {"add_generation_prompt", add_generation_prompt},
         };
-    
         return tpl.RenderAsString(params).value();
-    }
-
-    std::vector<std::string> apply_chat_template(std::vector<std::string>& prompts, std::string role = "user") const {
-        std::vector<std::string> res;
-        for (const auto& prompt: prompts) {
-            res.emplace_back(apply_chat_template(prompt));
-        }
-        return res;
     }
 };
 
@@ -411,10 +409,13 @@ ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {
     return m_pimpl->m_tokenizer;
 }
 
-std::string ov::genai::LLMPipeline::apply_chat_template(std::string prompt, std::string role) const {
-    return m_pimpl->apply_chat_template(prompt, role);
-}
+// std::string ov::genai::LLMPipeline::apply_chat_template(std::string prompt, std::string role) const {
+//     return m_pimpl->apply_chat_template(prompt, role);
+// }
 
+std::string ov::genai::LLMPipeline::apply_chat_template(const ChatHistory& history, bool add_generation_prompt) const {
+    return m_pimpl->apply_chat_template(history, add_generation_prompt);
+}
 
 void ov::genai::LLMPipeline::start_chat() {
     m_pimpl->is_chat_conversation = true;

@@ -18,6 +18,7 @@ using StreamerVariant = std::variant<std::function<bool(std::string)>, std::shar
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
+using ChatHistory = std::vector<std::unordered_map<std::string, std::string>>;
 
 /**
 * @brief Structure to store resulting batched tokens and scores for each batch sequence. 
@@ -210,7 +211,7 @@ public:
 
     void start_chat();
     void finish_chat();
-    std::string apply_chat_template(std::string prompt, std::string role = "user") const;
+    std::string apply_chat_template(const ChatHistory& history, bool add_generation_prompt=true) const;
 private:
     class LLMPipelineImpl;
     std::unique_ptr<LLMPipelineImpl> m_pimpl;

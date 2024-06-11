@@ -9,14 +9,15 @@ import optimum.intel
 from openvino_genai import StopCriteria
 import pytest
 import transformers
-from list_test_models import models_list
+from list_test_models import models_list, chat_models_list
 from typing import Union, List, Dict, Tuple
 import sys
 from pathlib import Path
 import shutil
 import json
+import pathlib
 
-@functools.lru_cache(2)
+@functools.lru_cache(1)
 def read_model(params):
     model_id, path = params
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
@@ -159,7 +160,7 @@ test_configs = [
 ]
 batched_prompts = [
     ['table is made of', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
-    ['hello', 'Here is the longest nowel ever: '],
+    ['hello', 'Here is the longest novel ever: '],
     ['Alan Turing was a', 'return 0', '你好！ 你好嗎？']
 ]
 @pytest.mark.parametrize("generation_config", test_configs)
@@ -548,3 +549,67 @@ def test_unicode_pybind_decoding():
     model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
     pipe = read_model((model_id, path))[4]
     pipe.generate('你好！ 你好嗎？', max_new_tokens=20)
+
+
+quenstions = [
+    '1+1=',
+    'What is the previous answer?',
+    'Why is the sun yellow?',
+    'What was my first question?'
+]
+
+
+def gen_prompt(prompt):
+    return {'role': 'user', 'content': prompt}
+
+
+def gen_answer(answer):
+    return {'role': 'assistant', 'content': answer}
+
+
+test_cases = [
+    dict(max_new_tokens=100),
+    # dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0)
+]
+@pytest.mark.parametrize("generation_config", test_cases)
+@pytest.mark.parametrize("model_descr", chat_models_list())
+@pytest.mark.precommit
+def test_chat_1(model_descr, generation_config):
+    config = generation_config.copy()  # to avoid side effects
+    
+    if 'do_sample' not in config:
+        # Some HF model has default do_sample = True, and if we test beam search
+        # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
+        # Need to set exlicitly to False, but only if test arguments omitted this arg.
+        config['do_sample'] = False
+    
+    config_hf = config.copy()
+    if config_hf.get('stop_criteria'):
+        config_hf['early_stopping'] = stop_criteria_map()[config_hf.pop('stop_criteria')]
+    config_hf.pop('ignore_eos', None)
+
+    chat_history_hf = []
+    chat_history_ov = []
+    chat_prompt = ''
+    model_id, path, tokenizer, model_opt, pipe = read_model(model_descr)
+    
+    pipe.start_chat()    
+    for prompt in quenstions:
+        chat_history_hf.append(gen_prompt(prompt))
+        chat_history_ov.append(gen_prompt(prompt))
+        
+        chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
+        tokenized = tokenizer(chat_prompt, return_tensors='pt')
+        answer = model_opt.generate(**tokenized, **config_hf)
+        answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
+        chat_history_hf.append(gen_answer(answer_str))
+
+        answer_ov = pipe.generate(prompt, **config)
+        chat_history_ov.append(gen_answer(answer_ov))
+           
+    # pytest.set_trace()
+    pipe.finish_chat()
+    if chat_history_ov != chat_history_hf:
+        print(f'hf_output: {chat_history_hf}')
+        print(f'ov_output: {chat_history_ov}')
+    assert chat_history_ov == chat_history_hf
