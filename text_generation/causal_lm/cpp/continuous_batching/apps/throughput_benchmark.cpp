@@ -375,7 +375,7 @@ int main(int argc, char* argv[]) try {
     ("request_rate", "Number of requests per second. If this is inf, then all the requests are sent at time 0. Otherwise, we use Poisson process to synthesize the request arrival times.", cxxopts::value<std::string>()->default_value("inf"))
     ("cache_size", "Size of memory used for KV cache in GB. Default: 16", cxxopts::value<size_t>()->default_value("16"))
     ("device", "Target device to run the model. Default: CPU", cxxopts::value<std::string>()->default_value("CPU"))
-    ("plugin_config", "Plugin configuration JSON. Example: \\{\"MODEL_DISTRIBUTION_POLICY\":\"TENSOR_PARALLEL\",\"PERF_COUNT\":true\\} Default: ", cxxopts::value<std::string>()->default_value(""))
+    ("plugin_config", "Plugin configuration JSON. Example: '{"MODEL_DISTRIBUTION_POLICY":"TENSOR_PARALLEL","PERF_COUNT":true}' Default: ", cxxopts::value<std::string>()->default_value(""))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
