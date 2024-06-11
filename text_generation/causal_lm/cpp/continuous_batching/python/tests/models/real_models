@@ -48,8 +48,8 @@ bigscience/bloomz-1b7
 bigscience/bloomz-560m
 bigscience/bloomz-7b1
 cerebras/Cerebras-GPT-13B
-# core42/jais-13b: optimum - no SDPA
-# core42/jais-13b-chat: optimum - no SDPA
+# core42/jais-13b: wrong output with PA
+# core42/jais-13b-chat: wrong output with PA
 databricks/dolly-v1-6b
 databricks/dolly-v2-3b
 # deepseek-ai/deepseek-coder-33b-instruct: OpenVINO tokenizers - Cannot convert tokenizer of this type without `.model` file
@@ -60,7 +60,7 @@ databricks/dolly-v2-3b
 facebook/opt-1.3b
 facebook/opt-125m
 facebook/opt-2.7b
-# facebook/opt-350m: PA - Model references undeclared parameters: opset1::Parameter attention_mask () -> (i64[?,?])
+facebook/opt-350m
 facebook/opt-6.7b
 google/gemma-1.1-7b-it
 google/gemma-2b
