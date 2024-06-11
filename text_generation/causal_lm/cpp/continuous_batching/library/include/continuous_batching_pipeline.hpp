@@ -20,7 +20,9 @@ class ContinuousBatchingPipeline {
 
 public:
     ContinuousBatchingPipeline(const std::string& models_path,
-                               const SchedulerConfig& scheduler_config);
+                               const SchedulerConfig& scheduler_config,
+                               const std::string& device = "CPU",
+                               const std::string& plugin_config = {});
 
     std::shared_ptr<Tokenizer> get_tokenizer();
 

@@ -32,3 +32,4 @@ RUN git clone --branch ct-beam-search https://github.com/ilya-lavrenov/openvino.
 RUN python3 -m pip install --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly/ /workspace/openvino.genai/thirdparty/openvino_tokenizers
 RUN PIP_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cpu" python3 -m pip install -r /workspace/openvino.genai/text_generation/causal_lm/cpp/continuous_batching/python/tests/requirements.txt
 ENV PYTHONPATH=/workspace/openvino.genai/text_generation/causal_lm/cpp/continuous_batching/build/python
+ENV LD_LIBRARY_PATH=/workspace/openvino.genai/build/openvino_genai/

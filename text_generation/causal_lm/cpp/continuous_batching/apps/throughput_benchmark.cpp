@@ -374,6 +374,8 @@ int main(int argc, char* argv[]) try {
     ("max_output_len", "Max output length", cxxopts::value<size_t>()->default_value("2048"))
     ("request_rate", "Number of requests per second. If this is inf, then all the requests are sent at time 0. Otherwise, we use Poisson process to synthesize the request arrival times.", cxxopts::value<std::string>()->default_value("inf"))
     ("cache_size", "Size of memory used for KV cache in GB. Default: 16", cxxopts::value<size_t>()->default_value("16"))
+    ("device", "Target device to run the model. Default: CPU", cxxopts::value<std::string>()->default_value("CPU"))
+    ("plugin_config", "Plugin configuration JSON. Example: {\"ENABLE_PROFILING\":true} Default: ", cxxopts::value<std::string>()->default_value(""))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -398,6 +400,8 @@ int main(int argc, char* argv[]) try {
     const size_t max_input_len = result["max_input_len"].as<size_t>();
     const size_t max_output_len = result["max_output_len"].as<size_t>();
     const std::string request_rate = result["request_rate"].as<std::string>();
+    const std::string device = result["device"].as<std::string>();
+    const std::string plugin_config = result["plugin_config"].as<std::string>();
     const size_t cache_size = result["cache_size"].as<size_t>();
 
     // Create requests for generation
@@ -422,10 +426,12 @@ int main(int argc, char* argv[]) try {
     std::cout << "\tNum prompts: " << num_prompts << std::endl;
     std::cout << "\tMax input length: " << max_input_len << std::endl;
     std::cout << "\tMax output length: " << max_output_len << std::endl;
+    std::cout << "\tTarget device: " << device << std::endl;
+    std::cout << "\tPlugin configuration JSON: " << plugin_config << std::endl;
 
     // Benchmarking
     std::cout << "Loading models, creating pipelines, preparing environment..." << std::endl;
-    ContinuousBatchingPipeline pipe(models_path, scheduler_config);
+    ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, plugin_config);
 
     std::cout << "Setup finished, launching LLM executor, traffic simulation and statistics reporter threads" << std::endl;
 

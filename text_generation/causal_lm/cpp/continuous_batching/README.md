@@ -9,9 +9,22 @@ make
 ```Bash
 cd ../../../..
 docker run -it -v `pwd`:/workspace/openvino.genai/ openvino_llm:latest
-cd text_generation/causal_lm/cpp/continuous_batching/
+cd /workspace/openvino.genai/
 cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/ && cmake --build ./build/ -j
 ```
+
+# Downloading LLM models
+```Bash
+cd /workspace/openvino.genai/text_generation/causal_lm/cpp/continuous_batching/
+optimum-cli export openvino --model facebook/opt-125m ./ov_model
+```
+
+# Running throuput benchmark application
+```Bash
+cd /workspace/openvino.genai/text_generation/causal_lm/cpp/continuous_batching/
+./build/apps/throughput_benchmark --model /workspace/openvino.genai/text_generation/causal_lm/cpp/ov_model --dataset /workspace/ShareGPT_V3_unfiltered_cleaned_split.json --dynamic_split_fuse --num_prompts 100 --device CPU --plugin_config {"ENABLE_PROFILING":true}
+```
+
 
 # How to create environment to debug and develop continious batching project with OpenVINO:
 

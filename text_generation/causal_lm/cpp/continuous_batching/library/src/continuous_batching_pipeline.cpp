@@ -82,8 +82,6 @@ public:
         OPENVINO_ASSERT(parse_plugin_config(plugin_config),
                 "ERROR: Wrong json parameter in plugin_config.");
 
-        // Add default profiling parameter
-        this->plugin_config.insert({"ENABLE_PROFILING", true});
         ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), this->plugin_config).create_infer_request();
 
         // setup KV caches
@@ -166,10 +164,13 @@ public:
         for (auto& element : node.items()) {
             if (element.value().is_string()) {
                 plugin_config[std::string(element.key())] = element.value();
+                std::cout << "Setting plugin config: " << element.key() << " : " << element.value();
             } else if (element.value().is_number()) {
                 plugin_config[std::string(element.key())] = element.value().get<std::string>();
+                std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::string>();
             } else if (element.value().is_boolean()) {
                 plugin_config[std::string(element.key())] = bool(element.value());
+                std::cout << "Setting plugin config: " << element.key() << " : " << bool(element.value());
             } else {
                 std::cout << "Error: nlohmann json type not supported for: " << element.key() << std::endl;
                 return false;
@@ -314,9 +315,11 @@ public:
     }
 };
 
-ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::string& models_path,
-                     const SchedulerConfig& scheduler_config) {
-    m_impl = std::make_shared<Impl>(models_path, scheduler_config);
+ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::string& models_path,
+                                                        const SchedulerConfig& scheduler_config,
+                                                        const std::string& device,
+                                                        const std::string& plugin_config ) {
+    m_impl = std::make_shared<Impl>(models_path, scheduler_config, device, plugin_config);
 }
 
 std::shared_ptr<Tokenizer> ContinuousBatchingPipeline::get_tokenizer() {
