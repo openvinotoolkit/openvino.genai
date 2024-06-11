@@ -50,7 +50,6 @@ def read_model(params):
 
 def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, prompts: Union[str, List[str]]):
     model_id, path, tokenizer, model, pipe = model_descr
-    device = 'CPU'
     config = generation_config.copy()  # to avoid side effects
     num_beams = config['num_beams'] if 'num_beams' in config else 1
 
@@ -73,7 +72,6 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
     encoded_prompts = tokenizer(prompts, return_tensors='pt', padding=True, truncation=True)
     prompt_ids, attention_mask = encoded_prompts['input_ids'], encoded_prompts['attention_mask']
     
-    generation_config_hf['num_return_sequences'] = num_beams
     hf_encoded_outputs = model.generate(prompt_ids, attention_mask=attention_mask, 
                                         **generation_config_hf)
 
@@ -82,10 +80,6 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
         prompt_count = idx // num_beams
         hf_outputs.append(tokenizer.decode(hf_encoded_out[prompt_ids[prompt_count].shape[0]:], skip_special_tokens=True))
 
-    import openvino_genai as ov_genai
-    pipe = ov_genai.LLMPipeline(str(path), device)
-    
-    config['num_return_sequences'] = num_beams * len(prompts)
     ov_outputs = pipe.generate(prompts, **config)
     
     hf_outputs.sort()
@@ -97,7 +91,6 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
         assert hf_output == ov_output
 
 def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
-    device = 'CPU'
     model_id, path, tokenizer, model, pipe = model_descr
 
     config = generation_config.copy()  # to avoid side effects
@@ -117,9 +110,6 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
     hf_encoded_output = model.generate(encoded_prompt, **generation_config_hf)
     hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:])
 
-    import openvino_genai as ov_genai
-    pipe = ov_genai.LLMPipeline(str(path), device)
-    
     ov_output = pipe.generate(prompt, **config)
     if config.get('num_return_sequences', 1) > 1:
         assert hf_output in ov_output.texts

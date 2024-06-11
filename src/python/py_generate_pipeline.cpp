@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/stl_bind.h>
 #include <pybind11/functional.h>
 #include "openvino/genai/llm_pipeline.hpp"
 
@@ -17,6 +18,8 @@ using ov::genai::StopCriteria;
 using ov::genai::StreamerBase;
 using ov::genai::StreamerVariant;
 using ov::genai::OptionalGenerationConfig;
+
+PYBIND11_MAKE_OPAQUE(std::vector<float>);
 
 namespace {
 
@@ -39,29 +42,39 @@ void update_config_from_kwargs(GenerationConfig& config, const py::kwargs& kwarg
     if (kwargs.contains("eos_token_id")) config.eos_token_id = kwargs["eos_token_id"].cast<int64_t>();
 }
 
-class DecodedResultsPyStr {
-public:
-    std::vector<py::object> texts;
-    std::vector<float> scores;
-    explicit DecodedResultsPyStr(DecodedResults&& cpp) : scores{std::move(cpp.scores)} {
-        texts.reserve(cpp.texts.size());
-        for (const std::string& text : cpp.texts) {
-            texts.push_back(
-                py::reinterpret_steal<py::object>(
-                    PyUnicode_DecodeUTF8(text.data(), text.length(), "replace")
-                )
-            );
-        }
+py::list decode_replace(const std::vector<std::string>& texts) {
+    py::list encoded;
+    for (const std::string& text : texts) {
+        encoded.append(
+            PyUnicode_DecodeUTF8(text.data(), text.length(), "replace")
+        );
     }
+    return encoded;
+}
+
+class OpaqueDecodedResults {
+public:
+    const py::list texts;
+    const std::vector<float> scores;
+    // pybind11 decodes strings similar to Pythons's
+    // bytes.decode('utf-8'). It raises if the decoding fails.
+    // generate() may return incomplete Unicode points if max_new_tokens
+    // was reached. Replace such points with � instead of raising an
+    // exception. std::vector<std::string> can't be moved because texts
+    // need to be encoded. Store texts in py::list. Exploit move
+    // semantics for scores and make them opaque to Python.
+    explicit OpaqueDecodedResults(DecodedResults&& cpp) :
+        texts{decode_replace(cpp.texts)},
+        scores{std::move(cpp.scores)} {}
     operator std::string() const {
         std::stringstream ss;
         ss << *this;
         return ss.str();
     }
-    friend std::ostream& operator<<(std::ostream& os, const DecodedResultsPyStr& dr) {
+    friend std::ostream& operator<<(std::ostream& os, const OpaqueDecodedResults& dr) {
         OPENVINO_ASSERT(
             dr.scores.size() == dr.texts.size(),
-            "The number of scores and texts doesn't match in DecodedResultsPyStr."
+            "The number of scores and texts doesn't match in OpaqueDecodedResults."
         );
         if (dr.texts.empty()) {
             return os;
@@ -69,25 +82,25 @@ public:
         for (size_t i = 0; i < dr.texts.size() - 1; ++i) {
             os << dr.scores[i] << ": " << dr.texts[i].cast<std::string>() << '\n';
         }
-        return os << dr.scores.back() << ": " << dr.texts.back().cast<std::string>();
+        return os << dr.scores.back() << ": " << std::prev(dr.texts.end())->cast<std::string>();
     }
 };
 
-DecodedResultsPyStr call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config, const StreamerVariant& streamer) {
-    return DecodedResultsPyStr{pipe.generate(text, config, streamer)};
+OpaqueDecodedResults call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config, const StreamerVariant& streamer) {
+    return OpaqueDecodedResults{pipe.generate(text, config, streamer)};
 }
 
-DecodedResultsPyStr call_with_config(LLMPipeline& pipe, const std::vector<std::string>& text, const GenerationConfig& config, const StreamerVariant& streamer) {
-    return DecodedResultsPyStr{pipe.generate(text, config, streamer)};
+OpaqueDecodedResults call_with_config(LLMPipeline& pipe, const std::vector<std::string>& text, const GenerationConfig& config, const StreamerVariant& streamer) {
+    return OpaqueDecodedResults{pipe.generate(text, config, streamer)};
 }
 
-DecodedResultsPyStr call_with_kwargs(LLMPipeline& pipeline, const std::vector<std::string>& texts, const py::kwargs& kwargs) {
+OpaqueDecodedResults call_with_kwargs(LLMPipeline& pipeline, const std::vector<std::string>& texts, const py::kwargs& kwargs) {
     GenerationConfig config = pipeline.get_generation_config();
     update_config_from_kwargs(config, kwargs);
     return call_with_config(pipeline, texts, config, kwargs.contains("streamer") ? kwargs["streamer"].cast<StreamerVariant>() : std::monostate());
 }
 
-DecodedResultsPyStr call_with_kwargs(LLMPipeline& pipeline, const std::string& text, const py::kwargs& kwargs) {
+OpaqueDecodedResults call_with_kwargs(LLMPipeline& pipeline, const std::string& text, const py::kwargs& kwargs) {
     // Create a new GenerationConfig instance and initialize from kwargs
     GenerationConfig config = pipeline.get_generation_config();
     update_config_from_kwargs(config, kwargs);
@@ -276,10 +289,11 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("repetition_penalty", &GenerationConfig::repetition_penalty)
         .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id);
 
-    py::class_<DecodedResultsPyStr>(m, "DecodedResults")
-        .def_readonly("texts", &DecodedResultsPyStr::texts)
-        .def_readonly("scores", &DecodedResultsPyStr::scores)
-        .def("__str__", &DecodedResultsPyStr::operator std::string);
+    py::bind_vector<std::vector<float>>(m, "FloatVector");
+    py::class_<OpaqueDecodedResults>(m, "DecodedResults")
+        .def_readonly("texts", &OpaqueDecodedResults::texts)
+        .def_readonly("scores", &OpaqueDecodedResults::scores)
+        .def("__str__", &OpaqueDecodedResults::operator std::string);
 
     py::class_<EncodedResults>(m, "EncodedResults")
         .def_readonly("tokens", &EncodedResults::tokens)

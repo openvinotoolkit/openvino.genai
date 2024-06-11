@@ -20,7 +20,8 @@ using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
 
 /**
-* @brief Structure to store resulting batched tokens and scores for each batch sequence
+* @brief Structure to store resulting batched tokens and scores for each batch sequence.
+* The first num_return_sequences elements correspond to the first batch element.
 *
 * @param tokens sequence of resulting tokens
 * @param scores scores for each sequence
@@ -33,6 +34,7 @@ public:
 
 /**
 * @brief Structure to store resulting batched text outputs and scores for each batch
+* The first num_return_sequences elements correspond to the first batch element.
 *
 * @param texts vector of resulting sequences
 * @param scores scores for each sequence
