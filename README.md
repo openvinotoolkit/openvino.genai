@@ -4,7 +4,7 @@ The OpenVINO™ GenAI repository consists of GenAI library and additional GenAI 
 
 ## OpenVINO™ GenAI Library
 
-OpenVINO™ GenAI is a new flavor of OpenVINO, aiming to simplify running inference of generative AI models.
+OpenVINO™ GenAI is a flavor of OpenVINO, aiming to simplify running inference of generative AI models.
 It hides the complexity of the generation process and minimizes the amount of code required.
 
 For installation and usage guide, refer to the [GenAI Library README](./src/README.md).
@@ -16,10 +16,17 @@ The implementation uses OpenVINO capabilities to optimize the pipelines. Each sa
 a family of models and suggests certain modifications to adapt the code to specific needs.
 It includes the following pipelines:
 
-1. [Benchmarking script for large language models](./llm_bench/python/)
-2. [Text generation C++ samples that support most popular models like LLaMA 2](./text_generation/causal_lm/cpp/)
-3. [Stable Diffuison (with LoRA) C++ image generation pipeline](./image_generation/stable_diffusion_1_5/cpp/)
-4. [Latent Consistency Model (with LoRA) C++ image generation pipeline](./image_generation/lcm_dreamshaper_v7/cpp/)
+1. [Benchmarking script for large language models](./llm_bench/python/README.md)
+2. Text generation samples that support most popular models like LLaMA 2:
+   - C++:
+     1. [beam_search_causal_lm](./samples/cpp/beam_search_causal_lm/README.md)
+     2. [chat_sample](./samples/cpp/chat_sample/README.md)
+     3. [greedy_causal_lm](./samples/cpp/greedy_causal_lm/README.md)
+     4. [multinomial_causal_lm](./samples/cpp/multinomial_causal_lm/README.md)
+     5. [prompt_lookup_decoding_lm](./samples/cpp/prompt_lookup_decoding_lm/README.md)
+     6. [speculative_decoding_lm](./samples/cpp/speculative_decoding_lm/README.md)
+3. [Stable Diffuison (with LoRA) C++ image generation pipeline](./image_generation/stable_diffusion_1_5/cpp/README.md)
+4. [Latent Consistency Model (with LoRA) C++ image generation pipeline](./image_generation/lcm_dreamshaper_v7/cpp/README.md)
 
 ### Requirements
 
