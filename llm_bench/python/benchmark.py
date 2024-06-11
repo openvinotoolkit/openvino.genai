@@ -634,6 +634,23 @@ def get_argprser():
         help='Enables running the torch.compile() with specified backend: pytorch or openvino (default)',
     )
     parser.add_argument(
+        '--torch_compile_dynamic',
+        action='store_true',
+        help='Enables dynamic shape tracking for torch.compile()',
+    )
+    parser.add_argument(
+        '--torch_compile_options',
+        default=None,
+        required=False,
+        help='Options for torch.compile() in JSON format',
+    )
+    parser.add_argument(
+        '--torch_compile_input_module',
+        default=None,
+        required=False,
+        help='Specifies the module to decorate with torch.compile(). By default, parent module will be decorated.',
+    )
+    parser.add_argument(
         '--convert_tokenizer', action='store_true', help='Convert tokenizer to OpenVINO format'
     )
     parser.add_argument(
