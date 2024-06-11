@@ -54,7 +54,7 @@ jobs:
         working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_lcm_cpp
-          optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 --weight-format fp16 models/lcm_dreamshaper_v7/FP16
+          optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 models/lcm_dreamshaper_v7/FP16
 
       - name: Build app
         working-directory: ${{ env.working_directory }}
@@ -99,7 +99,7 @@ jobs:
         working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_lcm_cpp
-          optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 --weight-format fp16 models/lcm_dreamshaper_v7/FP16
+          optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 models/lcm_dreamshaper_v7/FP16
   
       - name: Build app
         working-directory: ${{ env.working_directory }}

@@ -20,7 +20,6 @@ import json
 def read_model(params):
     model_id, path = params
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    hf_model = transformers.AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
 
     if not (path / 'openvino_model.xml').is_file():
         ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
@@ -29,13 +28,14 @@ def read_model(params):
         
         # to store tokenizer config jsons with special tokens
         tokenizer.save_pretrained(path)
-        hf_model.generation_config.save_pretrained(path)
-        hf_model.config.save_pretrained(path)
         
-        optimum.intel.openvino.OVModelForCausalLM.from_pretrained(
+        model = optimum.intel.openvino.OVModelForCausalLM.from_pretrained(
             model_id, export=True, trust_remote_code=True,
             compile=False, device='CPU', load_in_8bit=False
-        ).save_pretrained(path)
+        )
+        model.generation_config.save_pretrained(path)
+        model.config.save_pretrained(path)
+        model.save_pretrained(path)
     # Return AutoModelForCausalLM instead of OVModelForCausalLM because
     # there's no way to disable mmap for now. That prohibits the same
     # model from being opened twice at the same time.
@@ -43,14 +43,13 @@ def read_model(params):
         model_id,
         path,
         tokenizer,
-        hf_model,
+        transformers.AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True),
         openvino_genai.LLMPipeline(str(path)),
     )
 
 
 def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, prompts: Union[str, List[str]]):
     model_id, path, tokenizer, model, pipe = model_descr
-    device = 'CPU'
     config = generation_config.copy()  # to avoid side effects
     num_beams = config['num_beams'] if 'num_beams' in config else 1
 
@@ -73,7 +72,6 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
     encoded_prompts = tokenizer(prompts, return_tensors='pt', padding=True, truncation=True)
     prompt_ids, attention_mask = encoded_prompts['input_ids'], encoded_prompts['attention_mask']
     
-    generation_config_hf['num_return_sequences'] = num_beams
     hf_encoded_outputs = model.generate(prompt_ids, attention_mask=attention_mask, 
                                         **generation_config_hf)
 
@@ -82,22 +80,19 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
         prompt_count = idx // num_beams
         hf_outputs.append(tokenizer.decode(hf_encoded_out[prompt_ids[prompt_count].shape[0]:], skip_special_tokens=True))
 
-    import openvino_genai as ov_genai
-    pipe = ov_genai.LLMPipeline(str(path), device)
-    
-    config['num_return_sequences'] = num_beams * len(prompts)
+    pipe = openvino_genai.LLMPipeline(str(path))
+
     ov_outputs = pipe.generate(prompts, **config)
     
     hf_outputs.sort()
-    ov_outputs.sort()
-    for i, (hf_output, ov_output) in enumerate(zip(hf_outputs, ov_outputs)):
+    ov_outputs.texts.sort()
+    for i, (hf_output, ov_output) in enumerate(zip(hf_outputs, ov_outputs.texts)):
         if hf_output != ov_output:
             print(f'hf_output: {hf_output}')
             print(f'ov_output: {ov_output}')
         assert hf_output == ov_output
 
 def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
-    device = 'CPU'
     model_id, path, tokenizer, model, pipe = model_descr
 
     config = generation_config.copy()  # to avoid side effects
@@ -117,18 +112,17 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
     hf_encoded_output = model.generate(encoded_prompt, **generation_config_hf)
     hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:])
 
-    import openvino_genai as ov_genai
-    pipe = ov_genai.LLMPipeline(str(path), device)
-    
+    pipe = openvino_genai.LLMPipeline(str(path))
+
     ov_output = pipe.generate(prompt, **config)
     if config.get('num_return_sequences', 1) > 1:
-        assert hf_output in ov_output
+        assert hf_output in ov_output.texts
     else:
-        if hf_output != ov_output:
+        if hf_output != ov_output.texts:
             print(f'hf_output: {hf_output}')
             print(f'ov_output: {ov_output}')
 
-        assert hf_output == ov_output
+        assert hf_output == ov_output.texts[0]
 
 
 def stop_criteria_map():
@@ -173,7 +167,7 @@ batched_prompts = [
 @pytest.mark.parametrize("model_descr", models_list())
 @pytest.mark.precommit
 @pytest.mark.xfail(
-    raises=AssertionError, reason="assert hf_output == ov_output fails",
+    raises=AssertionError, reason="assert hf_output == ov_output.texts fails",
     strict=False,
 )
 def test_multibatch(model_descr, generation_config, prompts):
@@ -279,7 +273,10 @@ def test_callback_kwargs_batch_fail(callback):
 
 class Printer(openvino_genai.StreamerBase):
     def __init__(self, tokenizer):
-        super().__init__()
+        # super() may work, but once you begin mixing Python and C++
+        # multiple inheritance, things will fall apart due to
+        # differences between Python’s MRO and C++’s mechanisms.
+        openvino_genai.StreamerBase.__init__(self)
         self.tokenizer = tokenizer
     def put(self, token_id):
         # print(self.tokenizer.decode([token_id]))  # Incorrect way to print, but easy to implement
@@ -315,7 +312,7 @@ def test_streamer_batch_fail():
 def test_streamer_kwargs_one_string():
     pipe = read_model(models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
-    pipe.generate('', max_new_tokens=10, do_sample=True, streamer=printer)
+    pipe.generate('', max_new_tokens=10, do_sample=False, streamer=printer)
 
 
 @pytest.mark.precommit
