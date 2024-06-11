@@ -438,6 +438,7 @@ EncodedResults beam_search(ov::InferRequest& lm,
                 plain_beams.push_back(beam);
             }
         }
+        assert(config.num_return_sequences <= plain_beams.size());
         std::partial_sort(
             plain_beams.begin(),
             plain_beams.begin() + config.num_return_sequences,

@@ -133,13 +133,13 @@ def stop_criteria_map():
 
 
 test_cases = [
-    (dict(max_new_tokens=20), 'table is made of'),
-    (dict(max_new_tokens=20), '你好！ 你好嗎？'),
-    (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0), 'Alan Turing was a'),
-    (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
-    (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
-    (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'The Sun is yellow because'),
-    (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.5), 'The Sun is yellow because'),
+    (dict(do_sample=False, max_new_tokens=20), 'table is made of'),
+    (dict(do_sample=False, max_new_tokens=20), '你好！ 你好嗎？'),
+    (dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0), 'Alan Turing was a'),
+    (dict(do_sample=False, num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
+    (dict(do_sample=False, num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
+    (dict(do_sample=False, num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'The Sun is yellow because'),
+    (dict(do_sample=False, num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.5), 'The Sun is yellow because'),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
 @pytest.mark.parametrize("model_descr", models_list())
@@ -149,9 +149,9 @@ def test_decoding(model_descr, generation_config, prompt):
 
 
 test_configs = [
-    dict(max_new_tokens=20),
-    dict(max_new_tokens=200, ignore_eos=True),
-    dict(max_new_tokens=20, num_beam_groups=3, num_beams=15, diversity_penalty=1.0)
+    dict(do_sample=False, max_new_tokens=20),
+    dict(do_sample=False, max_new_tokens=200, ignore_eos=True),
+    dict(do_sample=False, max_new_tokens=20, num_beam_groups=3, num_beams=15, diversity_penalty=1.0)
 ]
 batched_prompts = [
     ['table is made of', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
@@ -186,6 +186,7 @@ def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
         diversity_penalty=diversity_penalty, 
         num_return_sequences=num_beam_groups * group_size, 
         max_new_tokens=max_new_tokens, 
+        do_sample=False,
     )
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
@@ -207,6 +208,7 @@ def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
         num_return_sequences=2 * 3, 
         max_new_tokens=max_new_tokens, 
         stop_criteria=stop_criteria,
+        do_sample=False
     )
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
@@ -227,6 +229,7 @@ def test_beam_search_long_sentences(model_descr, num_beam_groups, group_size,
         diversity_penalty=1.0, 
         num_return_sequences=num_beam_groups * group_size, 
         max_new_tokens=max_new_tokens, 
+        do_sample=False
     )
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
