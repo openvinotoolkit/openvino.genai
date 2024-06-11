@@ -80,6 +80,8 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
         prompt_count = idx // num_beams
         hf_outputs.append(tokenizer.decode(hf_encoded_out[prompt_ids[prompt_count].shape[0]:], skip_special_tokens=True))
 
+    pipe = openvino_genai.LLMPipeline(str(path))
+
     ov_outputs = pipe.generate(prompts, **config)
     
     hf_outputs.sort()
@@ -109,6 +111,8 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
     encoded_prompt = tokenizer.encode(prompt, return_tensors='pt', add_special_tokens=True)
     hf_encoded_output = model.generate(encoded_prompt, **generation_config_hf)
     hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:])
+
+    pipe = openvino_genai.LLMPipeline(str(path))
 
     ov_output = pipe.generate(prompt, **config)
     if config.get('num_return_sequences', 1) > 1:

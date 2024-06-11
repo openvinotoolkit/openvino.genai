@@ -450,7 +450,7 @@ EncodedResults beam_search(ov::InferRequest& lm,
             beam != plain_beams.begin() + config.num_return_sequences;
             ++beam
         ) {
-            results.scores.push_back(std::move(beam->get().score));
+            results.scores.push_back(beam->get().score);
             results.tokens.push_back(std::move(beam->get().tokens));
         }
     }
