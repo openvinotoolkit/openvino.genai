@@ -21,6 +21,7 @@ def set_bf16(model, device, **kwargs):
         raise RuntimeError('Set prec_bf16 fail.')
     return model
 
+
 def torch_compile_child_module(model, child_modules, backend='openvino', dynamic=None, options=None):
     if len(child_modules) == 1:
         setattr(model, child_modules[0], torch.compile(getattr(model, child_modules[0]), backend=backend, dynamic=dynamic, fullgraph=True, options=options))
