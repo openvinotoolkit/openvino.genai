@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstdint>
 #include <mutex>
 #include <memory>
 
@@ -141,11 +142,22 @@ public:
 
     bool parse_plugin_config(std::string config_string) {
         if (config_string.empty()) {
+            std::cout << "Empty plugin config string. " << std::endl;
             return true;
         }
 
         nlohmann::json node;
-        node = nlohmann::json::parse(config_string);
+        try {
+            node = nlohmann::json::parse(config_string);
+        } catch (const nlohmann::json::parse_error& e) {
+        std::cout << "ERROR: Plugin config json parser error - message: " << e.what() << '\n'
+                  << "exception id: " << e.id << '\n'
+                  << "byte position of error: " << e.byte << std::endl;
+                  return false;
+        } catch (...) {
+            std::cout << "ERROR: Plugin config json parser error - message: " << std::endl;
+            return false;
+        }
 
         if (node.is_null()) {
             std::cout << "Error: nlohmann json object is null." << std::endl;
@@ -163,14 +175,20 @@ public:
 
         for (auto& element : node.items()) {
             if (element.value().is_string()) {
-                plugin_config[std::string(element.key())] = element.value();
-                std::cout << "Setting plugin config: " << element.key() << " : " << element.value();
-            } else if (element.value().is_number()) {
                 plugin_config[std::string(element.key())] = element.value().get<std::string>();
-                std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::string>();
+                std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::string>() << std::endl;
+            } else if (element.value().is_number_integer()) {
+                plugin_config[std::string(element.key())] = element.value().get<std::int64_t>();
+                std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::int64_t>() << std::endl;
+            } else if (element.value().is_number_float()) {
+                plugin_config[std::string(element.key())] = element.value().get<float>();
+                std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<float>() << std::endl;
+            } else if (element.value().is_number_unsigned()) {
+                plugin_config[std::string(element.key())] = element.value().get<uint64_t>();
+                std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<float>() << std::endl;
             } else if (element.value().is_boolean()) {
-                plugin_config[std::string(element.key())] = bool(element.value());
-                std::cout << "Setting plugin config: " << element.key() << " : " << bool(element.value());
+                plugin_config[std::string(element.key())] = element.value().get<bool>();
+                std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<bool>() << std::endl;
             } else {
                 std::cout << "Error: nlohmann json type not supported for: " << element.key() << std::endl;
                 return false;

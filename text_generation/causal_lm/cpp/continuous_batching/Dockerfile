@@ -5,7 +5,7 @@ WORKDIR /workspace
 RUN apt-get update -y && apt-get install -y python3-pip python3-venv git
 
 # Install OpenVINO
-RUN git clone https://github.com/openvinotoolkit/openvino.git && \
+RUN git clone --branch master https://github.com/openvinotoolkit/openvino.git && \
     cd /workspace/openvino && \
     git submodule update --init -- /workspace/openvino/thirdparty/xbyak /workspace/openvino/thirdparty/pugixml /workspace/openvino/thirdparty/open_model_zoo \
         /workspace/openvino/thirdparty/protobuf /workspace/openvino/thirdparty/snappy /workspace/openvino/thirdparty/telemetry /workspace/openvino/src/plugins/intel_cpu/thirdparty/mlas \
