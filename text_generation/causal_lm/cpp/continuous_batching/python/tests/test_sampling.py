@@ -113,10 +113,10 @@ RANDOM_SAMPLING_TEST_CASES = [
                              prompts=["Tell me something about UAE"],
                              ref_texts=[
                                 [
-                                    "?\nUAE is the country with a population of 3 million people living between 4pm - 8am daily. So yeah i'm pretty sure we",
-                                    '?\nThe name, emirate or not... there are many interesting places to stay while visiting here that you can do very well as an individual',
-                                    " and how it's different from Saudi Arabia but in my eyes I don't care if they have freedom fighters! /s Just kidding :) You're welcome",
-                                    '?\nThe U.A.. Is a small island nation full-fledged on top of Dubai lol  Edit: forgot Arabic means "small" where',
+                                    " and how it's not like we're all in the same boat right now lol (or even close) 😂😁! Just curious :) If",
+                                    "?  You are my country... so what does our military do here?? What am i missing out on?? And why don't u tell us?",
+                                    '?\nThe U.S government has been doing quite well with foreign-made aircraft for many years under US administration....and they have very good reasons',
+                                    '? I think that is a bit of an anomaly, but you might want to ask yourself this question: Where can some young people from Dubai or Bahrain'
                                 ]
                              ]),
     RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_presence_penalty(),

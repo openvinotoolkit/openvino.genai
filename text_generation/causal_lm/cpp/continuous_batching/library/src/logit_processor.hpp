@@ -18,21 +18,38 @@ class ILogitTransformer {
 public:
     virtual std::vector<ProbabilityWithIdx> apply(const std::vector<ProbabilityWithIdx>& input_logits) = 0;
 
+    void set_unique_generated_token_ids(const std::shared_ptr<std::map<int64_t, size_t>>& unique_generated_token_ids) {
+        if (unique_generated_token_ids != nullptr) {
+            m_unique_generated_token_ids = unique_generated_token_ids;
+        } else {
+            m_unique_generated_token_ids = std::shared_ptr<std::map<int64_t, size_t>>(new std::map<int64_t, size_t>);
+        }
+    }
+
+    void set_unique_prompt_token_ids(const std::shared_ptr<std::set<int64_t>>& unique_prompt_token_ids) {
+        if (unique_prompt_token_ids != nullptr) {
+            m_unique_prompt_token_ids = unique_prompt_token_ids;
+        } else {
+            m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
+        }
+    }
+
 protected:
     double m_value = 0.f;
-    std::map<int64_t, size_t> m_unique_generated_token_ids;
-    std::set<int64_t> m_unique_prompt_token_ids;
+    std::shared_ptr<std::map<int64_t, size_t>> m_unique_generated_token_ids = nullptr;
+    std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = nullptr;
 
     void extract_generated_tokens(const TokenIds& input_ids) {
-        std::map<int64_t, size_t> unique_input_ids;
+        set_unique_generated_token_ids(m_unique_generated_token_ids);
+        set_unique_prompt_token_ids(m_unique_prompt_token_ids);
+
         for (const auto& input_id : input_ids) {
-            if (unique_input_ids.count(input_id)) {
-                unique_input_ids[input_id]++;
+            if (m_unique_generated_token_ids->count(input_id)) {
+                m_unique_generated_token_ids->at(input_id)++;
             } else {
-                unique_input_ids.insert({input_id, 1});
+                m_unique_generated_token_ids->insert({input_id, 1});
             }
         }
-        this->m_unique_generated_token_ids = unique_input_ids;
     }
 
     ILogitTransformer() = default;
@@ -99,19 +116,14 @@ public:
 
 class RepetitionPenaltyTransform : public ILogitTransformer {
 public:
-    RepetitionPenaltyTransform(
-        double value,
-        const std::map<int64_t, size_t>& unique_generated_token_ids = {},
-        const std::set<int64_t>& unique_prompt_token_ids = {}) {
+    RepetitionPenaltyTransform(double value) {
         m_value = value;
-        m_unique_generated_token_ids = unique_generated_token_ids;
-        m_unique_prompt_token_ids = unique_prompt_token_ids;
     };
 
     std::vector<LogitWithIdx> apply(const std::vector<LogitWithIdx>& input_logits) override {
         std::vector<LogitWithIdx> output(input_logits.begin(), input_logits.end());
         size_t vocab_size = input_logits.size();
-        for (const auto& prompt_id : m_unique_prompt_token_ids) {
+        for (const auto& prompt_id : *m_unique_prompt_token_ids) {
             OPENVINO_ASSERT((prompt_id >= 0) && (prompt_id < vocab_size), "input_ids token out of bounds");
             OPENVINO_ASSERT(input_logits[prompt_id].second == prompt_id, "input_logits must have original index order");
             auto logit_value = output[prompt_id].first;
@@ -121,7 +133,7 @@ public:
                 output[prompt_id].first *= m_value;
             };
         }
-        for (const auto& input_id_pair : m_unique_generated_token_ids) {
+        for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
             OPENVINO_ASSERT(input_logits[input_id].second == input_id, "input_logits must have original index order");
@@ -143,17 +155,14 @@ public:
 
 class FrequencyPenaltyTransform : public ILogitTransformer {
 public:
-    FrequencyPenaltyTransform(
-        double value,
-        const std::map<int64_t, size_t>& unique_generated_token_ids = {}) {
+    FrequencyPenaltyTransform(double value) {
         m_value = value;
-        m_unique_generated_token_ids = unique_generated_token_ids;
     };
 
     std::vector<LogitWithIdx> apply(const std::vector<LogitWithIdx>& input_logits) override {
         std::vector<LogitWithIdx> output(input_logits.begin(), input_logits.end());
         size_t vocab_size = input_logits.size();
-        for (const auto& input_id_pair : m_unique_generated_token_ids) {
+        for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
             OPENVINO_ASSERT(input_logits[input_id].second == input_id, "input_logits must have original index order");
@@ -175,17 +184,14 @@ public:
 
 class PresencePenaltyTransform : public ILogitTransformer {
 public:
-    PresencePenaltyTransform(
-        double value,
-        const std::map<int64_t, size_t>& unique_generated_token_ids = {}) {
+    PresencePenaltyTransform(double value) {
         m_value = value;
-        m_unique_generated_token_ids = unique_generated_token_ids;
     };
 
     std::vector<LogitWithIdx> apply(const std::vector<LogitWithIdx>& input_logits) override {
         std::vector<LogitWithIdx> output(input_logits.begin(), input_logits.end());
         size_t vocab_size = input_logits.size();
-        for (const auto& input_id_pair : m_unique_generated_token_ids) {
+        for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
             OPENVINO_ASSERT(input_logits[input_id].second == input_id, "input_logits must have original index order");
@@ -224,24 +230,29 @@ public:
 class LogitProcessor {
 protected:
     std::vector<std::shared_ptr<LogitTransformers::ILogitTransformer>> m_logit_transformers;
+    
+    std::shared_ptr<std::map<int64_t, size_t>> m_unique_generated_token_ids = std::shared_ptr<std::map<int64_t, size_t>>(new std::map<int64_t, size_t>);
+    std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
 
 public:
     LogitProcessor(const GenerationConfig& sampling_params,
-                   const std::map<int64_t, size_t>& unique_generated_token_ids,
-                   const std::set<int64_t>& unique_prompt_token_ids) {
+                   const LogitTransformers::TokenIds& input_ids) {
+        for (const auto& input_id : input_ids) {
+            m_unique_prompt_token_ids->insert(input_id);
+        }
         if (sampling_params.is_multinomial() || sampling_params.is_greedy_sampling()) {
             if (sampling_params.repetition_penalty != 1.0f) {
                 m_logit_transformers.emplace_back(
-                    new LogitTransformers::RepetitionPenaltyTransform(sampling_params.repetition_penalty, unique_generated_token_ids, unique_prompt_token_ids)
+                    new LogitTransformers::RepetitionPenaltyTransform(sampling_params.repetition_penalty)
                 );
             }
             if (sampling_params.presence_penalty != 0.0f) {
-                m_logit_transformers.emplace_back(new LogitTransformers::PresencePenaltyTransform(sampling_params.presence_penalty, unique_generated_token_ids));
+                m_logit_transformers.emplace_back(new LogitTransformers::PresencePenaltyTransform(sampling_params.presence_penalty));
                 
             }
             if (sampling_params.frequence_penalty != 0.0f) {
                 m_logit_transformers.emplace_back(
-                    new LogitTransformers::FrequencyPenaltyTransform(sampling_params.frequence_penalty, unique_generated_token_ids)
+                    new LogitTransformers::FrequencyPenaltyTransform(sampling_params.frequence_penalty)
                 );
             }
 
@@ -256,6 +267,10 @@ public:
                 m_logit_transformers.emplace_back(new LogitTransformers::ProbabilityNormalizeTransform());
             }
         }
+        for (const auto& transformer : m_logit_transformers) {
+            transformer->set_unique_prompt_token_ids(m_unique_prompt_token_ids);
+            transformer->set_unique_generated_token_ids(m_unique_generated_token_ids);
+        }
     }
 
     std::vector<LogitTransformers::ProbabilityWithIdx> apply(const std::vector<LogitTransformers::ProbabilityWithIdx>& logits) {
@@ -264,5 +279,14 @@ public:
             outputs = transformer->apply(outputs);
         }
         return outputs;
+    }
+
+    void register_new_generated_token(int64_t new_token_id) {
+        auto it = m_unique_generated_token_ids->find(new_token_id);
+        if (it == m_unique_generated_token_ids->end()) {
+            m_unique_generated_token_ids->insert({new_token_id, 1});
+        } else {
+            it->second++;
+        }
     }
 };

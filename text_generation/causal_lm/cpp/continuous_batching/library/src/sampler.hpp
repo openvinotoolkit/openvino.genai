@@ -15,7 +15,6 @@
 
 #include "openvino/runtime/tensor.hpp"
 
-
 #include "logit_processor.hpp"
 #include "scheduler.hpp"
 #include "sequence_group.hpp"
@@ -227,33 +226,15 @@ class Sampler {
         return *out_token;
     }
 
-    std::vector<LogitWithIdx> _multinomial_sample(const std::vector<LogitWithIdx>& logit_vector, float temperature, float top_p, size_t top_k, size_t num_tokens_per_sequence) {
-        auto temperature_transform = TemperatureLogitTransform(temperature);
-        std::vector<ProbabilityWithIdx> softmax_vector = temperature_transform.apply(logit_vector);
-
-        std::vector<ProbabilityWithIdx> filtered(softmax_vector);
-
-        if (top_p != 0.0f) {
-            auto filter = TopPFilter(top_p);
-            filtered = filter.filter(filtered);
-        }
-
-        if (top_k != 0) {
-            auto filter = TopKFilter(top_k);
-            filtered = filter.filter(filtered);
-        }
-
-        auto normalize_transform = ProbabilityNormalizeTransform();
-        filtered = normalize_transform.apply(filtered);
-        std::vector<float> multinomial_weights(filtered.size());
-        for (size_t i = 0; i < filtered.size(); i++) multinomial_weights[i] = filtered[i].first;
-        // std::cout << filtered.size() << std::endl;
+    std::vector<LogitWithIdx> _multinomial_sample(const std::vector<LogitWithIdx>& logit_vector, size_t num_tokens_per_sequence) {
+        std::vector<float> multinomial_weights(logit_vector.size());
+        for (size_t i = 0; i < logit_vector.size(); i++) multinomial_weights[i] = logit_vector[i].first;
 
         auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
         std::vector<LogitWithIdx> out_tokens;
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
             size_t element_to_pick = dist(rng_engine);
-            out_tokens.push_back(filtered[element_to_pick]);
+            out_tokens.push_back(logit_vector[element_to_pick]);
         }
         return out_tokens;
     }
@@ -262,6 +243,8 @@ class Sampler {
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
 
     std::mt19937 rng_engine;
+    // { request_id, logit_processor }
+    std::map<uint64_t, LogitProcessor> m_logit_processors;
 
 public:
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits);
@@ -287,20 +270,23 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
         const GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
 
+        const auto request_id = sequence_group->get_request_id();
+        if (!m_logit_processors.count(request_id)) {
+            m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids())});
+        }
+        auto& logit_processor = m_logit_processors.at(request_id);
+
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
 
         if (sequence_group->requires_sampling()) {
-            LogitProcessor logit_processor(sampling_params, sequence_group->get_unique_generated_ids(), sequence_group->get_unique_prompt_ids());
             if (sampling_params.is_greedy_sampling() || sampling_params.is_multinomial()) {
-                auto logit_vector = _get_logit_vector(sequence_group_logits);  // TODO (vshampor): should be also applicable to beam search, but need to remove the batch size == 1 limitation
-                logit_vector = logit_processor.apply(logit_vector);
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
                 if (sampling_params.is_greedy_sampling()) {
                     OPENVINO_ASSERT(num_running_sequences == 1);
                 }
                 auto register_new_token = [&](const LogitWithIdx& sampled_token_id, Sequence::Ptr running_sequence) {
-                    sequence_group->register_generated_token_id(sampled_token_id.second);
+                    logit_processor.register_new_generated_token(sampled_token_id.second);
                     running_sequence->append_token(sampled_token_id.second, sampled_token_id.first);
 
                     if (sampling_params.max_new_tokens == running_sequence->get_generated_len() ||
@@ -313,33 +299,8 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 };
                 for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
                     auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id);
+                    logit_vector = logit_processor.apply(logit_vector);
 
-                std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
-                OPENVINO_ASSERT(running_sequences.size() == 1);
-                    if (sampling_params.repetition_penalty != 1.0f) {
-                        auto repetition_penalty_transform = RepetitionPenaltyTransform(sampling_params.repetition_penalty);
-                        logit_vector = repetition_penalty_transform.apply(logit_vector, sequence_group->get_unique_generated_ids());
-                    }
-
-                int64_t sampled_token_id;
-                if (sampling_params.is_greedy_sampling()) {
-                    sampled_token_id = _greedy_sample(logit_vector);
-                }
-                else {  // .is_multinomial()
-                    sampled_token_id = _multinomial_sample(logit_vector);
-                }
-
-                sequence_group->register_generated_token_id(sampled_token_id);
-
-                // in case of greedy search we always have a single parent sequence to sample from
-                running_sequences[0]->append_token(sampled_token_id, sequence_group_logits.data<const float>()[sampled_token_id]);
-
-                if (sampling_params.max_new_tokens == running_sequences[0]->get_generated_len() ||
-                    sampled_token_id == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
-                    // stop sequence by max_new_tokens or EOS token
-                    running_sequences[0]->set_status(SequenceStatus::FINISHED);
-                    // drop sequence from scheduler
-                    sampler_output.m_dropped_sequences.push_back(running_sequences[0]->get_id());
                     LogitWithIdx sampled_token_id;
                     if (sampling_params.is_greedy_sampling()) {
                         sampled_token_id = _greedy_sample(logit_vector);
@@ -347,8 +308,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         // is_multinomial()
                         const bool is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
                         const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
-                        auto sampled_token_ids = _multinomial_sample(logit_vector, sampling_params.temperature, sampling_params.top_p,
-                                                                     sampling_params.top_k, num_tokens_per_sequence);
+                        auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence);
                         sampled_token_id = sampled_token_ids[0];
 
                         if (is_generate_n_tokens) {
