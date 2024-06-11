@@ -62,7 +62,7 @@
     cmake --install ./build/ --config Release --prefix ov
     ```
 
-## Build for macOS systems (Intel CPU)
+## Build for macOS systems
 
 ### Software requirements 
 
