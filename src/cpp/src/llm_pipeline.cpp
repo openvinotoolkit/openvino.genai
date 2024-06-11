@@ -224,6 +224,7 @@ public:
 
         if (auto data = std::get_if<ov::Tensor>(&inputs)) {
             input_ids = *data;
+            attention_mask = ov::genai::utils::init_attention_mask(input_ids);
         } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
             input_ids = data->input_ids;
             attention_mask = data->attention_mask;

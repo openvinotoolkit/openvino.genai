@@ -10,7 +10,7 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-Tensor init_attention_mask(Tensor& position_ids);
+Tensor init_attention_mask(const Tensor& position_ids);
 
 void print_tensor(const ov::Tensor& tensor);
 

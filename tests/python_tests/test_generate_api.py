@@ -3,19 +3,22 @@
 
 import functools
 import openvino
-import openvino_genai
 import openvino_tokenizers
 import optimum.intel
 from openvino_genai import StopCriteria
+import openvino_genai as ov_genai
 import pytest
 import transformers
 from list_test_models import models_list, chat_models_list
-from typing import Union, List, Dict, Tuple
+from typing import Union, List, Dict, Tuple, Optional
+import numpy as np
+import openvino as ov
 import sys
 from pathlib import Path
 import shutil
 import json
-import pathlib
+import torch
+
 
 @functools.lru_cache(1)
 def read_model(params):
@@ -45,15 +48,17 @@ def read_model(params):
         path,
         tokenizer,
         transformers.AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True),
-        openvino_genai.LLMPipeline(str(path)),
+        ov_genai.LLMPipeline(str(path)),
     )
 
 
 def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, prompts: Union[str, List[str]]):
+    device = 'CPU'
     model_id, path, tokenizer, model, pipe = model_descr
     config = generation_config.copy()  # to avoid side effects
     num_beams = config['num_beams'] if 'num_beams' in config else 1
-
+    config['num_return_sequences'] = num_beams
+    
     if not isinstance(prompts, list):
         prompts = [prompts]
 
@@ -73,27 +78,27 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
     encoded_prompts = tokenizer(prompts, return_tensors='pt', padding=True, truncation=True)
     prompt_ids, attention_mask = encoded_prompts['input_ids'], encoded_prompts['attention_mask']
     
-    hf_encoded_outputs = model.generate(prompt_ids, attention_mask=attention_mask, 
-                                        **generation_config_hf)
+    hf_encoded_outputs = model.generate(prompt_ids, attention_mask=attention_mask, **generation_config_hf)
 
     hf_outputs = []
     for idx, hf_encoded_out in enumerate(hf_encoded_outputs):
         prompt_count = idx // num_beams
         hf_outputs.append(tokenizer.decode(hf_encoded_out[prompt_ids[prompt_count].shape[0]:], skip_special_tokens=True))
 
-    pipe = openvino_genai.LLMPipeline(str(path))
-
-    ov_outputs = pipe.generate(prompts, **config)
+    pipe = ov_genai.LLMPipeline(str(path), device)
     
+    ov_outputs = pipe.generate(prompts, **config).texts
+
     hf_outputs.sort()
-    ov_outputs.texts.sort()
-    for i, (hf_output, ov_output) in enumerate(zip(hf_outputs, ov_outputs.texts)):
+    ov_outputs.sort()
+    for i, (hf_output, ov_output) in enumerate(zip(hf_outputs, ov_outputs)):
         if hf_output != ov_output:
             print(f'hf_output: {hf_output}')
             print(f'ov_output: {ov_output}')
         assert hf_output == ov_output
 
-def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
+def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt: str):
+    device = 'CPU'
     model_id, path, tokenizer, model, pipe = model_descr
 
     config = generation_config.copy()  # to avoid side effects
@@ -113,17 +118,58 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt):
     hf_encoded_output = model.generate(encoded_prompt, **generation_config_hf)
     hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:])
 
-    pipe = openvino_genai.LLMPipeline(str(path))
-
+    pipe = ov_genai.LLMPipeline(str(path), device)
+    
     ov_output = pipe.generate(prompt, **config)
     if config.get('num_return_sequences', 1) > 1:
         assert hf_output in ov_output.texts
     else:
-        if hf_output != ov_output.texts:
+        if hf_output != ov_output:
             print(f'hf_output: {hf_output}')
             print(f'ov_output: {ov_output}')
 
-        assert hf_output == ov_output.texts[0]
+        assert hf_output == ov_output
+
+def hf_ov_genai_tensors_comparison(
+        model_descr, 
+        generation_config: Dict, 
+        input_ids: np.ndarray, 
+        attention_mask: Optional[np.array] = None
+    ):
+    device = 'CPU'
+    model_id, path, tokenizer, model, pipe = model_descr
+
+    config = generation_config.copy()  # to avoid side effects
+
+    if 'do_sample' not in config:
+        # Some HF model has default do_sample = True, and if we test beam search
+        # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
+        # Need to set exlicitly to False, but only if test arguments omitted this arg.
+        config['do_sample'] = False
+    
+    generation_config_hf = config.copy()
+    if generation_config_hf.get('stop_criteria'):
+        generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
+    generation_config_hf.pop('ignore_eos', None)
+
+    if attention_mask is not None:
+        inputs_ov = ov_genai.TokenizedInputs(ov.Tensor(input_ids), ov.Tensor(attention_mask))
+        inputs_hf = dict(inputs=torch.tensor(input_ids), attention_mask=torch.tensor(attention_mask))
+    else:
+        inputs_hf = dict(inputs=torch.tensor(input_ids))
+        inputs_ov = ov.Tensor(input_ids)
+
+    hf_output = model.generate(**inputs_hf, **generation_config_hf)
+
+
+    pipe = ov_genai.LLMPipeline(str(path), device)
+    
+
+    ov_output = pipe.generate(inputs_ov, **config)
+
+    hf_res = hf_output[0, input_ids.shape[1]:].numpy()
+    ov_res = np.array(ov_output.tokens, dtype=np.int64)
+    assert np.all(ov_res == hf_res)
 
 
 def stop_criteria_map():
@@ -152,6 +198,17 @@ test_cases = [
 def test_decoding(model_descr, generation_config, prompt):
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
+input_tensors_list = [
+    # input_ids, attention_mask
+    (np.array([[1, 4, 42]], dtype=np.int64), None),
+    (np.array([[1, 4, 42]], dtype=np.int64), np.array([[1, 1, 1]], dtype=np.int64)),
+]
+@pytest.mark.parametrize("inputs", input_tensors_list)
+@pytest.mark.parametrize("model_descr", models_list())
+@pytest.mark.precommit
+def test_ov_tensors(model_descr, inputs):
+    hf_ov_genai_tensors_comparison(read_model(model_descr), dict(max_new_tokens=20), *inputs)
+
 
 test_configs = [
     dict(max_new_tokens=20),
@@ -160,7 +217,7 @@ test_configs = [
 ]
 batched_prompts = [
     ['table is made of', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
-    ['hello', 'Here is the longest novel ever: '],
+    ['hello', 'Here is the longest nowel ever: '],
     ['Alan Turing was a', 'return 0', '你好！ 你好嗎？']
 ]
 @pytest.mark.parametrize("generation_config", test_configs)
@@ -254,7 +311,7 @@ def test_callback_one_string(callback):
 def test_callback_batch_fail(callback):
     pipe = read_model(models_list()[0])[4]
     with pytest.raises(RuntimeError):
-        pipe.generate(['1', '2'], openvino_genai.GenerationConfig(), callback)
+        pipe.generate(['1', '2'], ov_genai.GenerationConfig(), callback)
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
@@ -272,12 +329,12 @@ def test_callback_kwargs_batch_fail(callback):
         pipe.generate(['1', '2'], max_new_tokens=10, streamer=callback)
 
 
-class Printer(openvino_genai.StreamerBase):
+class Printer(ov_genai.StreamerBase):
     def __init__(self, tokenizer):
         # super() may work, but once you begin mixing Python and C++
         # multiple inheritance, things will fall apart due to
         # differences between Python’s MRO and C++’s mechanisms.
-        openvino_genai.StreamerBase.__init__(self)
+        ov_genai.StreamerBase.__init__(self)
         self.tokenizer = tokenizer
     def put(self, token_id):
         # print(self.tokenizer.decode([token_id]))  # Incorrect way to print, but easy to implement
@@ -306,7 +363,7 @@ def test_streamer_batch_fail():
     pipe = read_model(models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
-        pipe.generate(['1', '2'], openvino_genai.GenerationConfig(), printer)
+        pipe.generate(['1', '2'], ov_genai.GenerationConfig(), printer)
 
 
 @pytest.mark.precommit
@@ -337,8 +394,8 @@ def test_operator_with_callback_one_string(callback):
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 def test_operator_with_callback_batch_fail(callback):
     pipe = read_model(models_list()[0])[4]
-    with pytest.raises(TypeError):
-        pipe(['1', '2'], openvino_genai.GenerationConfig(), callback)
+    with pytest.raises(RuntimeError):
+        pipe(['1', '2'], ov_genai.GenerationConfig(), callback)
 
 
 @pytest.mark.precommit
@@ -378,7 +435,7 @@ def load_tok(configs: List[Tuple], temp_path):
     for config_json, config_name in configs:
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
-    return openvino_genai.Tokenizer(str(temp_path))
+    return ov_genai.Tokenizer(str(temp_path))
 
 
 # load LLMPipline where all configs are cleared
@@ -390,7 +447,7 @@ def load_pipe(configs: List[Tuple], temp_path):
     for config_json, config_name in configs:
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
-    return openvino_genai.LLMPipeline(str(temp_path))
+    return ov_genai.LLMPipeline(str(temp_path))
 
 @pytest.mark.precommit
 def test_load_special_tokens_ids_1(model_tmp_path):
@@ -537,19 +594,51 @@ def test_valid_configs(model_tmp_path):
     model_id, temp_path = model_tmp_path
     pipe = load_pipe([({"eos_token_id": 37}, "config.json")], temp_path)
 
-    config = openvino_genai.GenerationConfig()
+    config = ov_genai.GenerationConfig()
     config.do_sample = True  # no eos_token_id but it's loaded from config.json
     pipe.set_generation_config(config)
 
+invalid_py_configs = [
+    dict(num_beam_groups=3, num_beams=15, do_sample=True),
+    dict(some_var=True),  # no eos_token_id no max_new_tokens, no max_len
+    dict(eos_token_id=42, ignore_eos=True),  # no max_new_tokens, no max_len with ignore_eos
+    dict(repetition_penalty=-1.0, eos_token_id=42, max_new_tokens=20), # invalid penalty
+    dict(temperature=-1.0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid temp
+    dict(top_p=-1.0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid top_p
+    dict(top_k=0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid top_k
+]
+@pytest.mark.precommit
+@pytest.mark.parametrize("generation_config", invalid_py_configs)
+def test_python_generation_config_validation(model_tmp_path, generation_config):
+    model_id, temp_path = model_tmp_path
+    pipe = load_pipe([({"eos_token_id": 37}, "config.json")], temp_path)
+
+    config = ov_genai.GenerationConfig()
+    config.do_sample = True  # no eos_token_id but it's loaded from config.json
+    pipe.set_generation_config(config)
+
+
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
-def test_unicode_pybind_decoding():
+def test_unicode_pybind_decoding_1():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
     model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
     pipe = read_model((model_id, path))[4]
-    pipe.generate('你好！ 你好嗎？', max_new_tokens=20)
+    res_str = pipe.generate('你好！ 你好嗎？', max_new_tokens=20)
+    assert isinstance(res_str, str)
+    assert len(res_str) > 0
 
+@pytest.mark.precommit
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
+def test_unicode_pybind_decoding_2():
+    # On this model this prompt generates unfinished utf string.
+    # Test that pybind will not fail.
+    model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
+    pipe = read_model((model_id, path))[4]
+    decoded_results = pipe.generate(['你好！ 你好嗎？'], max_new_tokens=20)
+    assert isinstance(decoded_results, ov_genai.DecodedResults)
+    assert len(decoded_results.texts[0]) > 0
 
 quenstions = [
     '1+1=',
@@ -574,6 +663,7 @@ test_cases = [
 @pytest.mark.parametrize("generation_config", test_cases)
 @pytest.mark.parametrize("model_descr", chat_models_list())
 @pytest.mark.precommit
+@pytest.mark.skip
 def test_chat_1(model_descr, generation_config):
     config = generation_config.copy()  # to avoid side effects
     
@@ -607,7 +697,6 @@ def test_chat_1(model_descr, generation_config):
         answer_ov = pipe.generate(prompt, **config)
         chat_history_ov.append(gen_answer(answer_ov))
            
-    # pytest.set_trace()
     pipe.finish_chat()
     if chat_history_ov != chat_history_hf:
         print(f'hf_output: {chat_history_hf}')

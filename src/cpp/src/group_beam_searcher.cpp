@@ -374,10 +374,11 @@ EncodedResults beam_search(ov::InferRequest& lm,
                     "number of beams should be divisible by number of groups");
 
     // Initialize beam search
+    auto batch_size = input_ids.get_shape().at(0);
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     std::vector<std::vector<int64_t>> prompts;
-    prompts.reserve(input_ids.get_shape().at(0));
-    for (size_t batch = 0; batch < input_ids.get_shape().at(0); batch++) {
+    prompts.reserve(batch_size);
+    for (size_t batch = 0; batch < batch_size; batch++) {
         size_t sequence_length = input_ids.get_shape().at(1);
         size_t batch_offset = batch * sequence_length;
         const int64_t* prompt_start = prompt_data + batch_offset;
