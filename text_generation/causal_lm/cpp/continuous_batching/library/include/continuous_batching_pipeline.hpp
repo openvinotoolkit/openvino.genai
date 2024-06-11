@@ -12,8 +12,6 @@
 #include "generation_config.hpp"
 #include "generation_handle.hpp"
 
-using plugin_config_t = std::map<std::string, ov::Any>;
-
 class ContinuousBatchingPipeline {
     class Impl;
     std::shared_ptr<Impl> m_impl;
@@ -28,7 +26,7 @@ public:
 
     GenerationConfig get_config() const;
 
-    const plugin_config_t& get_plugin_config();
+    const ov::AnyMap& get_plugin_config();
 
     GenerationHandle add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params);
 

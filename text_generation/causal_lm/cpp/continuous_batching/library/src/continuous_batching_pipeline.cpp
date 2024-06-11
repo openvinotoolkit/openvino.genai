@@ -18,15 +18,13 @@
 
 void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
 
-using plugin_config_t = std::map<std::string, ov::Any>;
-
 class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<Tokenizer> m_tokenizer;
     std::shared_ptr<Scheduler> m_scheduler;
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
-    plugin_config_t plugin_config;
+    ov::AnyMap plugin_config;
 
 
     GenerationConfig m_generation_config;
@@ -115,7 +113,7 @@ public:
         return m_tokenizer;
     }
 
-    const plugin_config_t& get_plugin_config() const {
+    const ov::AnyMap& get_plugin_config() const {
         return this->plugin_config;
     }
 
