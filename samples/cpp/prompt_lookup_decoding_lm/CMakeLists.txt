@@ -10,6 +10,10 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 find_package(TBB REQUIRED COMPONENTS tbb)
 add_executable(prompt_lookup_decoding_lm prompt_lookup_decoding_lm.cpp)
 target_link_libraries(prompt_lookup_decoding_lm PRIVATE openvino::runtime TBB::tbb)
+set_target_properties(prompt_lookup_decoding_lm PROPERTIES
+    COMPILE_PDB_NAME prompt_lookup_decoding_lm
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
 target_compile_definitions(prompt_lookup_decoding_lm PRIVATE OPENVINO_TOKENIZERS_PATH="${OPENVINO_TOKENIZERS_PATH}")
 target_compile_features(prompt_lookup_decoding_lm PRIVATE cxx_std_17)
 install(TARGETS prompt_lookup_decoding_lm
