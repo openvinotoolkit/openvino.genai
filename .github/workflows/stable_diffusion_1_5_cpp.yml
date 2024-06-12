@@ -53,7 +53,7 @@ jobs:
         working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_sd_cpp
-          optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --weight-format fp16 models/stable_diffusion_v1_5_ov/FP16
+          optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
 
       - name: Build app
         working-directory: ${{ env.working_directory }}
@@ -96,7 +96,7 @@ jobs:
           working-directory: ${{ env.working_directory }}
           run: |
             conda activate openvino_sd_cpp
-            optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion --weight-format fp16 models/stable_diffusion_v1_5_ov/FP16
+            optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
   
         - name: Build app
           working-directory: ${{ env.working_directory }}

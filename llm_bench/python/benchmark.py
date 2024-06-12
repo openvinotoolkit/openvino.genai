@@ -290,6 +290,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     iter_data_list = []
     warmup_md5 = {}
     input_text_list = utils.model_utils.get_prompts(args)
+    text_gen_fn = run_text_generation if not use_genai else run_text_generation_genai
     if args['prompt_index'] is None:
         prompt_idx_list = [prompt_idx for prompt_idx, input_text in enumerate(input_text_list)]
         text_list = input_text_list
