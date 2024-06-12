@@ -52,7 +52,6 @@ class ContinuousBatchingPipeline::Impl {
         while (requests_iterator != m_requests.end()) {
             const auto& request = *requests_iterator;
             if(request->has_finished() || request->out_of_memory() || request->handle_dropped()) {
-                // Assuming there are no running sequences at this point
                 for (const auto& sequence: request->get_sequences()) {
                     m_scheduler->free_sequence(sequence->get_id());
                 }
