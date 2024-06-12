@@ -48,10 +48,18 @@ class ContinuousBatchingPipeline::Impl {
 
 
     void _free_non_running_requests() {
-        auto new_end = std::remove_if(m_requests.begin(), m_requests.end(), [] (SequenceGroup::Ptr seq_group) -> bool {
-            return seq_group->has_finished() || seq_group->out_of_memory() || seq_group->handle_dropped();
-        });
-        m_requests.erase(new_end, m_requests.end());
+        std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
+        while (requests_iterator != m_requests.end()) {
+            const auto& request = *requests_iterator;
+            if(request->has_finished() || request->out_of_memory() || request->handle_dropped()) {
+                for (const auto& sequence: request->get_sequences()) {
+                    m_scheduler->free_sequence(sequence->get_id());
+                }
+                requests_iterator = m_requests.erase(requests_iterator);
+            } else {
+                requests_iterator++;
+            }
+        }
     }
 
 public:
@@ -146,7 +154,6 @@ public:
                 sequence_group->set_out_of_memory();
                 sequence_group->notify_handle();
             }
-
             _free_non_running_requests();
             return;
         }
@@ -232,7 +239,6 @@ public:
 
         for (size_t generation_idx = 0; generation_idx < generations.size(); ++generation_idx) {
             const auto& generation = generations[generation_idx];
-            OPENVINO_ASSERT(generation->get_status() == GenerationStatus::FINISHED);
             GenerationResult result;
             result.m_request_id = 1;
             std::vector<GenerationOutput> generation_outputs = generation->read_all();

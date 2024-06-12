@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import pytest
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from py_continuous_batching import GenerationConfig
+from py_continuous_batching import GenerationConfig, ContinuousBatchingPipeline
 from typing import List
 
 from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, \
@@ -174,3 +175,31 @@ def test_individual_generation_configs_random(tmp_path, test_struct: RandomSampl
     save_ov_model_from_optimum(model, hf_tokenizer, model_path)
 
     generate_and_compare_with_reference_text(model_path, prompts, test_struct.ref_texts, generation_configs, DEFAULT_SCHEDULER_CONFIG)
+
+
+
+@pytest.mark.precommit
+def test_post_oom_health(tmp_path):
+    generation_config = get_greedy()
+    generation_config.ignore_eos = True
+    generation_config.max_new_tokens = 1000000
+
+    scheduler_config = get_scheduler_config()
+    # Low cache size to trigger OOM quickly
+    scheduler_config.num_kv_blocks = 10
+    generation_configs = [generation_config]
+    model_id : str = "facebook/opt-125m"
+    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
+
+    model_path : Path = tmp_path / model_id
+    save_ov_model_from_optimum(model, hf_tokenizer, model_path)
+
+    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config)
+    # First run should return incomplete response
+    output = pipe.generate(["What is OpenVINO?"], generation_configs)
+    assert(len(output))
+    # Same for the second run, here we want to make sure the cleanup works and we have free blocks after recent OOM
+    output = pipe.generate(["What is OpenVINO?"], generation_configs)
+    assert(len(output))
+    del pipe
+    shutil.rmtree(model_path)

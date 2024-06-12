@@ -241,6 +241,10 @@ public:
         return !has_finished();
     }
 
+    const std::vector<Sequence::Ptr>& get_sequences() const {
+        return m_sequences;
+    }
+
     std::vector<Sequence::CPtr> get_finished_sequences() const {
         std::vector<Sequence::CPtr> finished_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
