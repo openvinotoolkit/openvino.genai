@@ -24,8 +24,6 @@ class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
-    ov::AnyMap plugin_config;
-
 
     GenerationConfig m_generation_config;
 
@@ -67,7 +65,7 @@ class ContinuousBatchingPipeline::Impl {
     }
 
 public:
-    Impl(const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string device = "CPU", const std::string& plugin_config = "") {
+    Impl(const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string device = "CPU", const ov::AnyMap& plugin_config = {}) {
         ov::Core core;
         m_tokenizer = std::make_shared<Tokenizer>(models_path);
 
@@ -78,10 +76,7 @@ public:
 
         apply_paged_attention_transformations(model, device_config);
 
-        OPENVINO_ASSERT(parse_plugin_config(plugin_config),
-                "ERROR: Wrong json parameter in plugin_config.");
-
-        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), this->plugin_config).create_infer_request();
+        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
 
         // setup KV caches
         m_cache_manager = std::make_shared<CacheManager>(device_config);
@@ -113,10 +108,6 @@ public:
         return m_tokenizer;
     }
 
-    const ov::AnyMap& get_plugin_config() const {
-        return this->plugin_config;
-    }
-
     GenerationHandle add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
         sampling_params.set_eos_token_id(m_tokenizer->get_eos_token_id());
         sampling_params.validate();
@@ -136,64 +127,6 @@ public:
             m_awaiting_requests.push_back(sequence_group);
         }
         return std::make_unique<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
-    }
-
-    bool parse_plugin_config(std::string config_string) {
-        if (config_string.empty()) {
-            std::cout << "Empty plugin config string. " << std::endl;
-            return true;
-        }
-
-        nlohmann::json node;
-        try {
-            node = nlohmann::json::parse(config_string);
-        } catch (const nlohmann::json::parse_error& e) {
-        std::cout << "ERROR: Plugin config json parser error - message: " << e.what() << '\n'
-                  << "exception id: " << e.id << '\n'
-                  << "byte position of error: " << e.byte << std::endl;
-                  return false;
-        } catch (...) {
-            std::cout << "ERROR: Plugin config json parser error - message: " << std::endl;
-            return false;
-        }
-
-        if (node.is_null()) {
-            std::cout << "Error: nlohmann json object is null." << std::endl;
-            return false;
-        }
-
-        return parse_plugin_config(node);
-    }
-
-    bool parse_plugin_config(const nlohmann::json& node) {
-        if (!node.is_object()) {
-            std::cout << "Error: nlohmann json object is not an object." << std::endl;
-            return false;
-        }
-
-        for (auto& element : node.items()) {
-            if (element.value().is_string()) {
-                plugin_config[std::string(element.key())] = element.value().get<std::string>();
-                std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::string>() << std::endl;
-            } else if (element.value().is_number_integer()) {
-                plugin_config[std::string(element.key())] = element.value().get<std::int64_t>();
-                std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::int64_t>() << std::endl;
-            } else if (element.value().is_number_float()) {
-                plugin_config[std::string(element.key())] = element.value().get<float>();
-                std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<float>() << std::endl;
-            } else if (element.value().is_number_unsigned()) {
-                plugin_config[std::string(element.key())] = element.value().get<uint64_t>();
-                std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<float>() << std::endl;
-            } else if (element.value().is_boolean()) {
-                plugin_config[std::string(element.key())] = element.value().get<bool>();
-                std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<bool>() << std::endl;
-            } else {
-                std::cout << "Error: nlohmann json type not supported for: " << element.key() << std::endl;
-                return false;
-            }
-        }
-
-        return true;
     }
 
     void step() {
@@ -334,7 +267,7 @@ public:
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::string& models_path,
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
-                                                        const std::string& plugin_config ) {
+                                                        const ov::AnyMap& plugin_config ) {
     m_impl = std::make_shared<Impl>(models_path, scheduler_config, device, plugin_config);
 }
 
@@ -360,12 +293,4 @@ bool ContinuousBatchingPipeline::has_non_finished_requests() {
 
 std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, std::vector<GenerationConfig> sampling_params) {
     return m_impl->generate(prompts, sampling_params);
-}
-
-bool ContinuousBatchingPipeline::parse_plugin_config(std::string config_string) {
-    return m_impl->parse_plugin_config(config_string);
-}
-
-bool ContinuousBatchingPipeline::parse_plugin_config(const nlohmann::json& node) {
-   return m_impl->parse_plugin_config(node);
 }

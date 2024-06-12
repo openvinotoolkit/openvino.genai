@@ -4,6 +4,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <chrono>
+#include <ostream>
 #include <random>
 #include <stdexcept>
 #include <thread>
@@ -355,6 +356,63 @@ void statisticsReporter(GenerationInfoCollector* generations_info_collector, int
     std::cout << "Exiting statistics reporter thread." << std::endl;
 }
 
+bool parse_plugin_config_json(nlohmann::json& node, ov::AnyMap& device_config_map) {
+    if (!node.is_object()) {
+        std::cout << "Error: nlohmann json object is not an object." << std::endl;
+        return false;
+    }
+    for (auto& element : node.items()) {
+        if (element.value().is_string()) {
+            device_config_map[std::string(element.key())] = element.value().get<std::string>();
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::string>() << std::endl;
+        } else if (element.value().is_number_integer()) {
+            device_config_map[std::string(element.key())] = element.value().get<std::int64_t>();
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::int64_t>() << std::endl;
+        } else if (element.value().is_number_float()) {
+            device_config_map[std::string(element.key())] = element.value().get<float>();
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<float>() << std::endl;
+        } else if (element.value().is_number_unsigned()) {
+            device_config_map[std::string(element.key())] = element.value().get<uint64_t>();
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<float>() << std::endl;
+        } else if (element.value().is_boolean()) {
+            device_config_map[std::string(element.key())] = element.value().get<bool>();
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<bool>() << std::endl;
+        } else {
+            std::cout << "Error: nlohmann json type not supported for: " << element.key() << std::endl;
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool parse_plugin_config_string(const std::string& config_string, ov::AnyMap& device_config_map) {
+    if (config_string.empty()) {
+        std::cout << "Empty plugin config string. " << std::endl;
+        return true;
+    }
+
+    nlohmann::json node;
+    try {
+        node = nlohmann::json::parse(config_string);
+    } catch (const nlohmann::json::parse_error& e) {
+        std::cout << "ERROR: Plugin config json parser error - message: " << e.what() << '\n'
+                << "exception id: " << e.id << '\n'
+                << "byte position of error: " << e.byte << std::endl;
+                return false;
+    } catch (...) {
+        std::cout << "ERROR: Plugin config json parser error - message: " << std::endl;
+        return false;
+    }
+
+    if (node.is_null()) {
+        std::cout << "Error: nlohmann json object is null." << std::endl;
+        return false;
+    }
+
+    return parse_plugin_config_json(node, device_config_map);
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) try {
@@ -429,9 +487,12 @@ int main(int argc, char* argv[]) try {
     std::cout << "\tTarget device: " << device << std::endl;
     std::cout << "\tPlugin configuration JSON: " << device_config << std::endl;
 
+    ov::AnyMap device_config_map = {};
+    if (!parse_plugin_config_string(device_config, device_config_map))
+        std::cout << "ERROR: Wrong json parameter in device_config." << std::endl;
     // Benchmarking
     std::cout << "Loading models, creating pipelines, preparing environment..." << std::endl;
-    ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config);
+    ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map);
 
     std::cout << "Setup finished, launching LLM executor, traffic simulation and statistics reporter threads" << std::endl;
 
