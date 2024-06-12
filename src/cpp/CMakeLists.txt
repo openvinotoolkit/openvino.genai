@@ -28,6 +28,7 @@ function(ov_genai_build_jinja2cpp)
         set(JINJA2CPP_WITH_JSON_BINDINGS "none" CACHE STRING "")
         set(JINJA2CPP_STRICT_WARNINGS OFF CACHE BOOL "")
         set(JINJA2CPP_PIC ON CACHE BOOL "")
+        set(RapidJSON_DIR "${FETCHCONTENT_BASE_DIR}/rapidjson-build")
 
         add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
     endif()
