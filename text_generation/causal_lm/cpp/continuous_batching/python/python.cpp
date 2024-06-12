@@ -67,6 +67,7 @@ PYBIND11_MODULE(py_continuous_batching, m) {
     py::class_<GenerationConfig>(m, "GenerationConfig")
         .def(py::init<>())
         .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
+        .def_readwrite("min_new_tokens", &GenerationConfig::min_new_tokens)
         .def_readwrite("max_length", &GenerationConfig::max_length)
         .def_readwrite("ignore_eos", &GenerationConfig::ignore_eos)
         .def_readwrite("num_groups", &GenerationConfig::num_groups)

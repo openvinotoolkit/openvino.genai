@@ -18,6 +18,13 @@ def get_greedy() -> GenerationConfig:
     generation_config.num_return_sequences = 1
     return generation_config
 
+def get_greedy_with_min_and_max_tokens() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.num_return_sequences = 1
+    generation_config.min_new_tokens = 15
+    generation_config.max_new_tokens = 30
+    return generation_config
+
 def get_greedy_with_repetition_penalty() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_return_sequences = 1
@@ -31,11 +38,28 @@ def get_greedy_with_penalties() -> GenerationConfig:
     generation_config.frequence_penalty = 0.2
     return generation_config
 
+def get_greedy_with_min_and_max_tokens() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.num_return_sequences = 1
+    generation_config.min_new_tokens = 15
+    generation_config.max_new_tokens = 30
+    return generation_config
+
 
 def get_beam_search() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_groups = 3
     generation_config.group_size = 2
+    generation_config.max_new_tokens = 30
+    generation_config.num_return_sequences = 3
+    generation_config.num_return_sequences = generation_config.num_groups * generation_config.group_size
+    return generation_config
+
+def get_beam_search_min_and_max_tokens() -> GenerationConfig:
+    generation_config = GenerationConfig()
+    generation_config.num_groups = 3
+    generation_config.group_size = 2
+    generation_config.min_new_tokens = 15
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = 3
     generation_config.num_return_sequences = generation_config.num_groups * generation_config.group_size
@@ -113,6 +137,18 @@ def get_multinomial_temperature_and_presence_penalty() -> GenerationConfig:
     generation_config.presence_penalty = 0.1
     generation_config.num_return_sequences = 1
     return generation_config
+
+def get_multinomial_max_and_min_token() -> GenerationConfig:
+    multinomial = GenerationConfig()
+    multinomial.do_sample = True
+    multinomial.temperature = 0.9
+    multinomial.top_p = 0.9
+    multinomial.top_k = 20
+    multinomial.num_return_sequences = 3
+    multinomial.presence_penalty = 0.01
+    multinomial.frequence_penalty = 0.1
+    multinomial.min_new_tokens = 15
+    return multinomial
 
 def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
     prompts = [

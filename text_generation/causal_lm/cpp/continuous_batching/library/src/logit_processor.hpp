@@ -40,7 +40,8 @@ public:
     }
 
 protected:
-    double m_value = 0.f;
+    double m_float_value = 0.f;
+    double m_uint_value = 0;
     std::shared_ptr<std::map<int64_t, size_t>> m_unique_generated_token_ids = nullptr;
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = nullptr;
 
@@ -63,7 +64,7 @@ protected:
 class TopPFilter : public ILogitTransformer {
 public:
     TopPFilter(double top_p) {
-        m_value = top_p;
+        m_float_value = top_p;
     }
 
     std::vector<Token> apply(const std::vector<Token>& input_probs) override {
@@ -74,7 +75,7 @@ public:
         for (const auto& probability : tmp) {
             probability_sum += probability.m_log_prob;
             nucleus_size += 1;
-            if (probability_sum > m_value) break;
+            if (probability_sum > m_float_value) break;
         }
         tmp.resize(nucleus_size);
         return tmp;
@@ -84,13 +85,13 @@ public:
 class TopKFilter : public ILogitTransformer {
 public:
     TopKFilter(size_t top_k) {
-        m_value = top_k;
+        m_uint_value = top_k;
     }
 
     std::vector<Token> apply(const std::vector<Token>& input_probs) override {
         std::vector<Token> tmp(input_probs);
         std::sort(tmp.begin(), tmp.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
-        size_t top_k = input_probs.size() >= m_value ? m_value : input_probs.size();
+        size_t top_k = input_probs.size() >= m_uint_value ? m_uint_value : input_probs.size();
         tmp.resize(top_k);
         return tmp;
     }
@@ -99,7 +100,7 @@ public:
 class TemperatureLogitTransform : public ILogitTransformer {
 public:
     TemperatureLogitTransform(double temperature) {
-        m_value = temperature;
+        m_float_value = temperature;
     };
 
     std::vector<Token> apply(const std::vector<Token>& input_logits) override {
@@ -107,7 +108,7 @@ public:
         std::sort(output.begin(), output.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
         float max_logit = output[0].m_log_prob;
 
-        std::for_each(output.begin(), output.end(), [max_logit, this](Token& val) {val.m_log_prob = expf((val.m_log_prob - max_logit) / this->m_value);});
+        std::for_each(output.begin(), output.end(), [max_logit, this](Token& val) {val.m_log_prob = expf((val.m_log_prob - max_logit) / this->m_float_value);});
 
         float norm_sum = 0.0;
         for (const auto& val : output) {
@@ -122,7 +123,7 @@ public:
 class RepetitionPenaltyTransform : public ILogitTransformer {
 public:
     RepetitionPenaltyTransform(double value) {
-        m_value = value;
+        m_float_value = value;
     };
 
     std::vector<Token> apply(const std::vector<Token>& input_logits) override {
@@ -133,9 +134,9 @@ public:
             OPENVINO_ASSERT(input_logits[prompt_id].m_index == prompt_id, "input_logits must have original index order");
             auto logit_value = output[prompt_id].m_log_prob;
             if (logit_value >= 0) {
-                output[prompt_id].m_log_prob /= m_value;
+                output[prompt_id].m_log_prob /= m_float_value;
             } else {
-                output[prompt_id].m_log_prob *= m_value;
+                output[prompt_id].m_log_prob *= m_float_value;
             };
         }
         for (const auto& input_id_pair : *m_unique_generated_token_ids) {
@@ -144,9 +145,9 @@ public:
             OPENVINO_ASSERT(input_logits[input_id].m_index == input_id, "input_logits must have original index order");
             auto logit_value = output[input_id].m_log_prob;
             if (logit_value >= 0) {
-                output[input_id].m_log_prob /= m_value;
+                output[input_id].m_log_prob /= m_float_value;
             } else {
-                output[input_id].m_log_prob *= m_value;
+                output[input_id].m_log_prob *= m_float_value;
             };
         }
         return output;
@@ -158,10 +159,27 @@ public:
     }
 };
 
+class EOSPenaltyTransform : public ILogitTransformer {
+public:
+    EOSPenaltyTransform(size_t eos_token_id) {
+        m_uint_value = eos_token_id; 
+    }
+
+    std::vector<Token> apply(const std::vector<Token>& input_logits) {
+        std::vector<Token> output(input_logits.begin(), input_logits.end());
+        for (auto& token_id : output) {
+            if (token_id.m_index == m_uint_value) {
+                token_id.m_log_prob = 0.f;
+            }
+        }
+        return output;
+    }
+};
+
 class FrequencyPenaltyTransform : public ILogitTransformer {
 public:
     FrequencyPenaltyTransform(double value) {
-        m_value = value;
+        m_float_value = value;
     };
 
     std::vector<Token> apply(const std::vector<Token>& input_logits) override {
@@ -173,9 +191,9 @@ public:
             OPENVINO_ASSERT(input_logits[input_id].m_index == input_id, "input_logits must have original index order");
             auto logit_value = output[input_id].m_log_prob;
             if (logit_value >= 0) {
-                output[input_id].m_log_prob -= m_value * input_id_pair.second;
+                output[input_id].m_log_prob -= m_float_value * input_id_pair.second;
             } else {
-                output[input_id].m_log_prob += m_value * input_id_pair.second;
+                output[input_id].m_log_prob += m_float_value * input_id_pair.second;
             };
         }
         return output;
@@ -190,7 +208,7 @@ public:
 class PresencePenaltyTransform : public ILogitTransformer {
 public:
     PresencePenaltyTransform(double value) {
-        m_value = value;
+        m_float_value = value;
     };
 
     std::vector<Token> apply(const std::vector<Token>& input_logits) override {
@@ -202,9 +220,9 @@ public:
             OPENVINO_ASSERT(input_logits[input_id].m_index == input_id, "input_logits must have original index order");
             auto logit_value = output[input_id].m_log_prob;
             if (logit_value >= 0) {
-                output[input_id].m_log_prob -= m_value;
+                output[input_id].m_log_prob -= m_float_value;
             } else {
-                output[input_id].m_log_prob += m_value;
+                output[input_id].m_log_prob += m_float_value;
             };
         }
         return output;
@@ -238,6 +256,7 @@ protected:
     
     std::shared_ptr<std::map<int64_t, size_t>> m_unique_generated_token_ids = std::shared_ptr<std::map<int64_t, size_t>>(new std::map<int64_t, size_t>);
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
+    size_t m_generated_tokens = 0;
 
 public:
     LogitProcessor(const GenerationConfig& sampling_params,
@@ -245,6 +264,13 @@ public:
         for (const auto& input_id : input_ids) {
             m_unique_prompt_token_ids->insert(input_id);
         }
+
+        if (sampling_params.min_new_tokens > 0 && m_generated_tokens < sampling_params.min_new_tokens) {
+            m_logit_transformers.emplace_back(
+                new LogitTransformers::EOSPenaltyTransform(sampling_params.eos_token_id)
+            );
+        }
+
         if (sampling_params.is_multinomial() || sampling_params.is_greedy_sampling()) {
             if (sampling_params.repetition_penalty != 1.0f) {
                 m_logit_transformers.emplace_back(
@@ -284,6 +310,10 @@ public:
             outputs = transformer->apply(outputs);
         }
         return outputs;
+    }
+
+    void increment_gen_tokens() {
+        ++m_generated_tokens;
     }
 
     void register_new_generated_token(int64_t new_token_id) {

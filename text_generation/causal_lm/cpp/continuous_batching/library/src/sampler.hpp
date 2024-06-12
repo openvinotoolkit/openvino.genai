@@ -282,14 +282,6 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 auto register_new_token = [&](const Token& sampled_token_id, Sequence::Ptr running_sequence) {
                     logit_processor.register_new_generated_token(sampled_token_id.m_index);
                     running_sequence->append_token(sampled_token_id.m_index, sampled_token_id.m_log_prob);
-
-                    if (sampling_params.max_new_tokens == running_sequence->get_generated_len() ||
-                        sampled_token_id.m_index == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
-                        // stop sequence by max_new_tokens or EOS token
-                        running_sequence->set_status(SequenceStatus::FINISHED);
-                        // drop sequence from scheduler
-                        sampler_output.m_dropped_sequences.push_back(running_sequence->get_id());
-                    }
                 };
                 for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
                     auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id);
@@ -318,6 +310,12 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                     }
                     
                     register_new_token(sampled_token_id, running_sequences[running_sequence_id]);
+                    if (running_sequence_id == num_running_sequences - 1) {
+                        logit_processor.increment_gen_tokens();
+                    }
+                }
+                for (const auto& dropped_seq_id : sequence_group->stop_sequence_generation()) {
+                    sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
                 }
             } else if (sampling_params.is_beam_search()) {
                 uint64_t request_id = sequence_group->get_request_id();
@@ -341,7 +339,9 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
 
                 // check max length stop criteria
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
-                if (!sequence_group->has_finished() && running_sequences[0]->get_generated_len() == sampling_params.max_new_tokens) {
+                if (!sequence_group->has_finished() &&
+                    running_sequences[0]->get_generated_len() == sampling_params.max_new_tokens &&
+                    running_sequences[0]->get_generated_len() >= sampling_params.min_new_tokens) {
                     // stop sequence by max_new_tokens
                     m_beam_search_info.at(request_id).finalize(sampler_output);
                 }
@@ -368,7 +368,6 @@ GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group)
     : m_sequence_group(sequence_group),
         m_parameters{m_sequence_group->get_sampling_parameters()},
         m_groups{m_parameters.num_groups} {
-    OPENVINO_ASSERT(m_parameters.no_repeat_ngram_size > 0, "no_repeat_ngram_size must be positive");
     OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1);
 
     for (Group& group : m_groups) {

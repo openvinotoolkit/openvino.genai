@@ -9,10 +9,12 @@ from typing import List
 
 from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, \
     generate_and_compare_with_reference_text, get_greedy, get_beam_search, get_multinomial_temperature, \
-    get_greedy_with_penalties, \
+    get_greedy_with_penalties, get_multinomial_temperature, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature_and_top_p, \
     get_multinomial_temperature_top_p_and_top_k, DEFAULT_SCHEDULER_CONFIG, get_greedy_with_repetition_penalty, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
+    generate_and_compare_with_reference_text, get_greedy, get_greedy_with_min_and_max_tokens, \
+    get_beam_search, get_beam_search_min_and_max_tokens, get_multinomial_max_and_min_token, \
     get_multinomial_temperature_and_frequence_penalty, get_multinomial_temperature_and_presence_penalty, \
     generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty, get_scheduler_config
 
@@ -67,8 +69,14 @@ def test_eos_greedy(tmp_path):
     generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("generation_config", [get_greedy(), get_beam_search(), get_greedy_with_repetition_penalty()],
-        ids=["greedy", "beam", "greedy_with_repetition_penalty"])
+@pytest.mark.parametrize("generation_config", [get_greedy(), get_greedy_with_min_and_max_tokens(), get_greedy_with_repetition_penalty(), get_beam_search(), get_beam_search_min_and_max_tokens()],
+        ids=[
+            "greedy",
+            "greedy_with_min_and_max_tokens",
+            "greedy_with_repetition_penalty",
+            "beam",
+            "beam_search_min_and_max_tokens"
+            ])
 def test_individual_generation_configs_deterministic(tmp_path, generation_config):
     prompts = [
             "What is OpenVINO?",
@@ -128,6 +136,15 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(generation_config=get_greedy_with_penalties(),
                              prompts=["What is OpenVINO?"],
                              ref_texts=[ ["\nOpenVINO is a software that allows users to create and manage their own virtual machines. It's designed for use with Windows, Mac OS X"] ]),
+    RandomSamplingTestStruct(generation_config=get_multinomial_max_and_min_token(),
+                             prompts=["What is OpenVINO?"],
+                             ref_texts=[
+                                [
+                                    '\nOpenVINO is an open-source open-source software that allows anyone to work with a virtual machine, from virtual machines and PCs to cloud',
+                                    "\nOpenVINO is a Linux distro. It's not as simple as using the Linux distro itself. You need to download and install open",
+                                    '\n\nOpenVINO is a social networking tool. OpenVINO is a free virtualization service that works at scale. With the support of Open'
+                                ]
+                            ]),
 ]
 
 
@@ -142,7 +159,8 @@ RANDOM_SAMPLING_TEST_CASES = [
              "multinomial_all_parameters",
              "multinomial_temperature_and_presence_penalty",
              "multinomial_temperature_and_frequence_penalty",
-             "greedy_with_penalties"])
+             "greedy_with_penalties",
+             "multinomial_max_and_min_token"])
 def test_individual_generation_configs_random(tmp_path, test_struct: RandomSamplingTestStruct):
     generation_config = test_struct.generation_config
 

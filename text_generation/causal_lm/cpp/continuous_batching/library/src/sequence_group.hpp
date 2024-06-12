@@ -97,6 +97,9 @@ public:
 
     GenerationOutput get_last_generation_output() {
         GenerationOutput output;
+        if (!m_generated_ids.size()) {
+            int a = 0;
+        }
         OPENVINO_ASSERT(m_generated_ids.size());
         output.score = get_cumulative_log_probs();
         output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};
@@ -178,6 +181,23 @@ public:
         });
         OPENVINO_ASSERT(remove_it != m_sequences.end(), "Failed to remove sequence with specified ID");
         m_sequences.erase(remove_it);
+    }
+
+    std::vector<int64_t> stop_sequence_generation() {
+        std::vector<int64_t> dropped_seq_ids;
+        for (auto& running_sequence : get_running_sequences()) {
+            const auto generated_len = running_sequence->get_generated_len();
+            if (m_sampling_params.min_new_tokens > generated_len) {
+                continue;
+            }
+            if (m_sampling_params.max_new_tokens == generated_len ||
+                generated_len > 0 && running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
+                // stop sequence by max_new_tokens or EOS token
+                running_sequence->set_status(SequenceStatus::FINISHED);
+                dropped_seq_ids.push_back(running_sequence->get_id());
+            }
+        }
+        return dropped_seq_ids;
     }
 
     size_t get_prompt_len() const {
@@ -441,6 +461,9 @@ public:
                 for (auto& sequence : m_sequences) {
                     // todo: check seq.is_finished() to generate without several </s>
                     // or is it ok to use padding?
+                    if (!sequence->get_generated_len()) {
+                        continue;
+                    }
                     const auto last_gen_token = sequence->get_last_generation_output();
                     outputs.emplace(sequence->get_grouped_id(), last_gen_token);
                 }
