@@ -11,11 +11,11 @@ To build OpenVINO™ GenAI library from source, refer to the [Build Instructions
 
 For Python and C++ usage examples, refer to the [Generate API Usage Guide](./docs/USAGE.md).
 
-A minimalist example:
+A simple example:
 ```python
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path, "CPU")
-print(pipe.generate("The Sun is yellow bacause"))
+print(pipe.generate("The Sun is yellow because"))
 ```
 
 Calling generate with custom generation config parameters, e.g. config for grouped beam search
@@ -23,7 +23,7 @@ Calling generate with custom generation config parameters, e.g. config for group
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path, "CPU")
 
-result = pipe.generate("The Sun is yellow bacause", max_new_tokens=30, num_groups=3, group_size=5, diversity_penalty=1.5)
+result = pipe.generate("The Sun is yellow because", max_new_tokens=30, num_groups=3, group_size=5, diversity_penalty=1.5)
 print(result)
 ```
 
@@ -32,7 +32,7 @@ output:
 'it is made up of carbon atoms. The carbon atoms are arranged in a linear pattern, which gives the yellow color. The arrangement of carbon atoms in'
 ```
 
-A simples chat in python:
+A simple chat in Python:
 ```python
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path)
@@ -54,7 +54,7 @@ Test to compare with Huggingface outputs
 
 ### C++
 
-Minimalistc example
+A simple example:
 ```cpp
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
@@ -62,7 +62,7 @@ Minimalistc example
 int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
-    std::cout << pipe.generate("The Sun is yellow bacause");
+    std::cout << pipe.generate("The Sun is yellow because");
 }
 ```
 
@@ -81,7 +81,7 @@ int main(int argc, char* argv[]) {
     config.group_size = 5;
     config.diversity_penalty = 1.0f;
 
-    std::cout << pipe.generate("The Sun is yellow bacause", config);
+    std::cout << pipe.generate("The Sun is yellow because", config);
 }
 ```
 
@@ -117,7 +117,7 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-Streaming example with lambda function
+Streaming example with lambda function:
 ``` cpp
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
@@ -127,11 +127,11 @@ int main(int argc, char* argv[]) {
     ov::genai::LLMPipeline pipe(model_path, "CPU");
         
     auto streamer = [](std::string word) { std::cout << word << std::flush; };
-    std::cout << pipe.generate("The Sun is yellow bacause", streamer);
+    std::cout << pipe.generate("The Sun is yellow because", streamer);
 }
 ```
 
-Streaming with a custom class
+Streaming with a custom class:
 ``` cpp
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -159,7 +159,7 @@ int main(int argc, char* argv[]) {
 
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
-    std::cout << pipe.generate("The Sun is yellow bacause", custom_streamer);
+    std::cout << pipe.generate("The Sun is yellow because", custom_streamer);
 }
 ```
 
