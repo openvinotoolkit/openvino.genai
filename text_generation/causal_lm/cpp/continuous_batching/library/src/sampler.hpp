@@ -159,11 +159,10 @@ struct Group {
 };
 
 struct SamplerOutput {
-    // IDs of sequences that need to be dropped (used during Beam Search)
+    // IDs of sequences that need to be dropped
     std::vector<uint64_t> m_dropped_sequences;
     // IDs of sequences that need to be forked (note, the same sequence can be forked multiple times)
     // it will later be used by scheduler to fork block_tables for child sequences
-    // (used during Beam Search)
     std::unordered_map<uint64_t, std::list<uint64_t>> m_forked_sequences;
 };
 
@@ -310,11 +309,9 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                     }
                     
                     register_new_token(sampled_token_id, running_sequences[running_sequence_id]);
-                    if (running_sequence_id == num_running_sequences - 1) {
-                        logit_processor.increment_gen_tokens();
-                    }
                 }
-                for (const auto& dropped_seq_id : sequence_group->stop_sequence_generation()) {
+                logit_processor.increment_gen_tokens();
+                for (const auto& dropped_seq_id : sequence_group->try_finish_generation()) {
                     sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
                 }
             } else if (sampling_params.is_beam_search()) {

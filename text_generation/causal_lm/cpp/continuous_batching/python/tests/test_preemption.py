@@ -32,12 +32,16 @@ multinomial_params = RandomSamplingTestStruct(generation_config=[get_multinomial
                                                                    ["  You're getting much better results from doing this, than you are by not doing this.  I have a BH and I was so far"],
                                                                    ["\nI'm from Canada, and I'm from the US, so I'm not sure.\nI think you mean the Canadian version."]])
 
+
+
+# todo: Anastasiia Pnevskaya: fix the test because it is hanging according max_new_tokens = std::numeric_limits<std::size_t>::max()
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
 def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     generation_configs = multinomial_params.generation_config
     for config in generation_configs:
         config.rng_seed = 0
+        config.max_new_tokens = 30
     model_id : str = "facebook/opt-125m"
     model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
 

@@ -183,7 +183,7 @@ public:
         m_sequences.erase(remove_it);
     }
 
-    std::vector<int64_t> stop_sequence_generation() {
+    std::vector<int64_t> try_finish_generation() {
         std::vector<int64_t> dropped_seq_ids;
         for (auto& running_sequence : get_running_sequences()) {
             const auto generated_len = running_sequence->get_generated_len();
