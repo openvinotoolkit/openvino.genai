@@ -268,3 +268,142 @@ void reshape_tensor(const ov::Tensor& input, ov::Tensor& output, const std::vect
         }
     }
 }
+
+template <typename T>
+ov::Tensor cv_gaussian_blur(const ov::Tensor& input_tensor, int sigma) {
+    // Get input tensor dimensions (NHWC)
+    // Assume N and C are always 1 (we apply it to each channel of the heatmap)
+    auto input_shape = input_tensor.get_shape();
+    auto H = input_shape[1];
+    auto W = input_shape[2];
+
+    // Convert input tensor data pointer to cv::Mat
+    const T* input_data = input_tensor.data<T>();
+    cv::Mat img(H, W, cv::DataType<T>::type, const_cast<T*>(input_data));
+
+    // Calculate kernel size
+    int truncate = 4;
+    int radius = static_cast<int>(truncate * sigma + 0.5);
+    int ksize = 2 * radius + 1;
+
+    // Apply Gaussian blur
+    cv::Mat blurred_img;
+    cv::GaussianBlur(img, blurred_img, cv::Size(ksize, ksize), sigma, sigma);
+
+    // Copy blurred image data back to output tensor
+    ov::Tensor output_tensor(input_tensor.get_element_type(), input_shape);
+    T* output_data = output_tensor.data<T>();
+    for (int i = 0; i < H; ++i) {
+        for (int j = 0; j < W; ++j) {
+            output_data[i * W + j] = blurred_img.at<T>(i, j);
+        }
+    }
+
+    return output_tensor;
+}
+
+ov::Tensor cv_gaussian_blur(const ov::Tensor& input, int sigma) {
+    if (input.get_element_type() == ov::element::u8) {
+        return cv_gaussian_blur<uint8_t>(input, sigma);
+    } else if (input.get_element_type() == ov::element::f32) {
+        return cv_gaussian_blur<float>(input, sigma);
+    } else {
+        throw std::runtime_error("Unsupported tensor type");
+    }
+}
+
+std::vector<std::tuple<int, int, float, int>> find_heatmap_peaks(const ov::Tensor& heatmap_avg /* f32 */, float thre1) {
+    auto heatmap_shape = heatmap_avg.get_shape();
+    auto H = heatmap_shape[1];
+    auto W = heatmap_shape[2];
+    auto C = heatmap_shape[3];
+
+    std::vector<std::vector<std::tuple<int, int, float, int>>> all_peaks;
+    int peak_counter = 0;
+
+    for (int c = 0; c < C - 1; ++c) {
+        // Create a new shape for the single channel tensor
+        ov::Tensor single_channel_heatmap(heatmap_avg.get_element_type(), {1, H, W, 1});
+
+        // Copy the data for the current channel to the new tensor
+        const auto* input_data = heatmap_avg.data<float>();
+        auto* single_channel_data = single_channel_heatmap.data<float>();
+
+        for (size_t h = 0; h < H; ++h) {
+            for (size_t w = 0; w < W; ++w) {
+                single_channel_data[h * W + w] = input_data[h * W * C + w * C + c];
+            }
+        }
+
+        // Apply Gaussian blur
+        ov::Tensor one_heatmap = cv_gaussian_blur(single_channel_heatmap, 3);
+
+        // Create directional maps
+        ov::Shape shape = one_heatmap.get_shape();
+
+        ov::Tensor map_left(one_heatmap.get_element_type(), shape);
+        ov::Tensor map_right(one_heatmap.get_element_type(), shape);
+        ov::Tensor map_up(one_heatmap.get_element_type(), shape);
+        ov::Tensor map_down(one_heatmap.get_element_type(), shape);
+
+        const auto one_heatmap_data = one_heatmap.data<float>();
+        auto map_left_data = map_left.data<float>();
+        auto map_right_data = map_right.data<float>();
+        auto map_up_data = map_up.data<float>();
+        auto map_down_data = map_down.data<float>();
+
+        for (size_t h = 1; h < H; ++h) {
+            for (size_t w = 0; w < W; ++w) {
+                map_left_data[h * W + w] = one_heatmap_data[(h - 1) * W + w];
+            }
+        }
+
+        for (size_t h = 0; h < H - 1; ++h) {
+            for (size_t w = 0; w < W; ++w) {
+                map_right_data[h * W + w] = one_heatmap_data[(h + 1) * W + w];
+            }
+        }
+
+        for (size_t h = 0; h < H; ++h) {
+            for (size_t w = 1; w < W; ++w) {
+                map_up_data[h * W + w] = one_heatmap_data[h * W + w - 1];
+            }
+        }
+
+        for (size_t h = 0; h < H; ++h) {
+            for (size_t w = 0; w < W - 1; ++w) {
+                map_down_data[h * W + w] = one_heatmap_data[h * W + w + 1];
+            }
+        }
+
+        std::vector<std::tuple<int, int, float, int>> peaks_with_score_and_id;
+        std::vector<std::tuple<int, int, float>> peaks_with_score;
+
+        for (size_t h = 1; h < H - 1; ++h) {
+            for (size_t w = 1; w < W - 1; ++w) {
+                if (one_heatmap_data[h * W + w] >= map_left_data[h * W + w] &&
+                    one_heatmap_data[h * W + w] >= map_right_data[h * W + w] &&
+                    one_heatmap_data[h * W + w] >= map_up_data[h * W + w] &&
+                    one_heatmap_data[h * W + w] >= map_down_data[h * W + w] && one_heatmap_data[h * W + w] > thre1) {
+                    peaks_with_score.emplace_back(w, h, one_heatmap_data[h * W + w]);
+                }
+            }
+        }
+
+        for (auto& peak : peaks_with_score) {
+            peaks_with_score_and_id.emplace_back(std::get<0>(peak),
+                                                 std::get<1>(peak),
+                                                 std::get<2>(peak),
+                                                 peak_counter++);
+        }
+
+        all_peaks.push_back(peaks_with_score_and_id);
+    }
+
+    std::vector<std::tuple<int, int, float, int>> result;
+    for (const auto& peaks : all_peaks) {
+        result.insert(result.end(), peaks.begin(), peaks.end());
+    }
+
+    return result;
+}

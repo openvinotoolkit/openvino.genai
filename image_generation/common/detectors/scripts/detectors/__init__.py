@@ -156,6 +156,8 @@ class Body(object):
 
             all_peaks.append(peaks_with_score_and_id)
             peak_counter += len(peaks)
+        for peak in all_peaks:
+            print(f'peak: {peak}')
 
         # find connection in the specified sequence, center 29 is in the position 15
         limbSeq = [[2, 3], [2, 6], [3, 4], [4, 5], [6, 7], [7, 8], [2, 9], [9, 10], \

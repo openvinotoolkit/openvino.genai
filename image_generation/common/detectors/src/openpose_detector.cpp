@@ -191,7 +191,13 @@ void OpenposeDetector::forward(const std::string& im_txt, unsigned long w, unsig
         }
     }
 
-    // postprocess
+    // find the keypoints from heatmap
+    auto peaks = find_heatmap_peaks(heatmap_avg, thre1);
+    // iterate and print peaks
+    for (auto& peak : peaks) {
+        std::cout << "Peak: " << std::get<0>(peak) << " " << std::get<1>(peak) << " " << std::get<2>(peak) << std::endl;
+        std::cout << "Counter: " << std::get<3>(peak) << std::endl;
+    }
 }
 
 void OpenposeDetector::postprocess() {
