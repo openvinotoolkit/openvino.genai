@@ -99,8 +99,8 @@ public:
 
 /*
  * utils that allow to use generate and operator() in the following way:
- * pipe.generate(input_ids, ov::max_new_tokens(200), ov::temperature(1.0f),...)
- * pipe(text, ov::max_new_tokens(200), ov::temperature(1.0f),...)
+ * pipe.generate(input_ids, ov::genai::max_new_tokens(200), ov::genai::temperature(1.0f),...)
+ * pipe(text, ov::genai::max_new_tokens(200), ov::genai::temperature(1.0f),...)
 */
 static constexpr ov::Property<size_t> max_new_tokens{"max_new_tokens"};
 static constexpr ov::Property<size_t> max_length{"max_length"};

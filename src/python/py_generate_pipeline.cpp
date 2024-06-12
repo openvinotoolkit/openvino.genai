@@ -88,6 +88,15 @@ GenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& confi
         std::string key = py::cast<std::string>(item.first);
         py::object value = py::cast<py::object>(item.second);
 
+        if (item.second.is_none()) {
+            // Even if argument key name does not fit GenerationConfig name 
+            // it's not an eror if it's not defined. 
+            // Some HF configs can have parameters for methods currenly unsupported in ov_genai
+            // but if their values are not set / None, then this should not block 
+            // us from reading such configs, e.g. {"typical_p": None, 'top_p': 1.0,...}
+            return config;
+        }
+        
         if (key == "max_new_tokens") {
             config.max_new_tokens = py::cast<int>(item.second);
         } else if (key == "max_length") {
@@ -122,7 +131,7 @@ GenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& confi
             config.eos_token_id = py::cast<int>(item.second);
         } else {
             throw(std::invalid_argument("'" + key + "' is incorrect GenerationConfig parameter name. "
-                                        "Type help(openvino_genai.GenerationConfig) to get list of acceptable parameters."));
+                                        "Use help(openvino_genai.GenerationConfig) to get list of acceptable parameters."));
         }
     }
 

@@ -63,10 +63,12 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
         prompts = [prompts]
 
     if 'do_sample' not in config:
-        # Some HF model has default do_sample = True, and if we test beam search
+        # Some HF models have default do_sample = True, and if we set beam search generation config 
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
         # Need to set exlicitly to False, but only if test arguments omitted this arg.
+        # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
+        config['repetition_penalty'] = None
     
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
@@ -104,11 +106,13 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt: str
     config = generation_config.copy()  # to avoid side effects
 
     if 'do_sample' not in config:
-        # Some HF model has default do_sample = True, and if we test beam search
+        # Some HF models have default do_sample = True, and if we set beam search generation config 
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
         # Need to set exlicitly to False, but only if test arguments omitted this arg.
+        # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
-    
+        config['repetition_penalty'] = None
+
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
         generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
@@ -142,16 +146,18 @@ def hf_ov_genai_tensors_comparison(
     config = generation_config.copy()  # to avoid side effects
 
     if 'do_sample' not in config:
-        # Some HF model has default do_sample = True, and if we test beam search
+        # Some HF models have default do_sample = True, and if we set beam search generation config 
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
         # Need to set exlicitly to False, but only if test arguments omitted this arg.
+        # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
+        config['repetition_penalty'] = None
     
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
         generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
     generation_config_hf.pop('ignore_eos', None)
-
+    
     if attention_mask is not None:
         inputs_ov = ov_genai.TokenizedInputs(ov.Tensor(input_ids), ov.Tensor(attention_mask))
         inputs_hf = dict(inputs=torch.tensor(input_ids), attention_mask=torch.tensor(attention_mask))
@@ -161,10 +167,7 @@ def hf_ov_genai_tensors_comparison(
 
     hf_output = model.generate(**inputs_hf, **generation_config_hf)
 
-
     pipe = ov_genai.LLMPipeline(str(path), device)
-    
-
     ov_output = pipe.generate(inputs_ov, **config)
 
     hf_res = hf_output[0, input_ids.shape[1]:].numpy()
@@ -344,12 +347,6 @@ class Printer(ov_genai.StreamerBase):
 
 
 @pytest.mark.precommit
-@pytest.mark.xfail(
-    raises=RuntimeError, 
-    reason="resulting token is out of vocabulary range on Mac",
-    strict=False,
-    condition=sys.platform == "darwin"
-)
 def test_streamer_one_string():
     pipe = read_model(models_list()[0])[4]
     generation_config = pipe.get_generation_config()
@@ -600,7 +597,7 @@ def test_valid_configs(model_tmp_path):
 
 invalid_py_configs = [
     dict(num_beam_groups=3, num_beams=15, do_sample=True),
-    dict(some_var=True),  # no eos_token_id no max_new_tokens, no max_len
+    dict(unexisting_key_name=True),  # no eos_token_id no max_new_tokens, no max_len
     dict(eos_token_id=42, ignore_eos=True),  # no max_new_tokens, no max_len with ignore_eos
     dict(repetition_penalty=-1.0, eos_token_id=42, max_new_tokens=20), # invalid penalty
     dict(temperature=-1.0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid temp
@@ -612,10 +609,12 @@ invalid_py_configs = [
 def test_python_generation_config_validation(model_tmp_path, generation_config):
     model_id, temp_path = model_tmp_path
     pipe = load_pipe([({"eos_token_id": 37}, "config.json")], temp_path)
-
-    config = ov_genai.GenerationConfig()
-    config.do_sample = True  # no eos_token_id but it's loaded from config.json
-    pipe.set_generation_config(config)
+    
+    # 'unexisting_key_name' key validity is checked in pybind and ValueError will be returned
+    #  instead of RuntimeError, which is returned when GenerationConfig values are validated
+    return_exception_type = ValueError if 'unexisting_key_name' in generation_config else RuntimeError
+    with pytest.raises(return_exception_type):
+        pipe.set_generation_config(ov_genai.GenerationConfig(**generation_config))
 
 
 @pytest.mark.precommit
@@ -663,15 +662,16 @@ test_cases = [
 @pytest.mark.parametrize("generation_config", test_cases)
 @pytest.mark.parametrize("model_descr", chat_models_list())
 @pytest.mark.precommit
-@pytest.mark.skip
 def test_chat_1(model_descr, generation_config):
     config = generation_config.copy()  # to avoid side effects
     
     if 'do_sample' not in config:
-        # Some HF model has default do_sample = True, and if we test beam search
+        # Some HF models have default do_sample = True, and if we set beam search generation config 
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
         # Need to set exlicitly to False, but only if test arguments omitted this arg.
+        # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
+        config['repetition_penalty'] = None
     
     config_hf = config.copy()
     if config_hf.get('stop_criteria'):
@@ -696,8 +696,8 @@ def test_chat_1(model_descr, generation_config):
 
         answer_ov = pipe.generate(prompt, **config)
         chat_history_ov.append(gen_answer(answer_ov))
-           
     pipe.finish_chat()
+    
     if chat_history_ov != chat_history_hf:
         print(f'hf_output: {chat_history_hf}')
         print(f'ov_output: {chat_history_ov}')
