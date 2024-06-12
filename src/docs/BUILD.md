@@ -1,8 +1,8 @@
-# How To build OpenVINO™ GenAI
+# How to Build OpenVINO™ GenAI
 
-## Build for Linux systems
+## Build for Linux Systems
 
-### Software requirements 
+### Software Requirements 
 
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - GCC 7.5 or higher
@@ -30,9 +30,9 @@
     cmake --install ./build/ --config Release --prefix ov
     ```
 
-## Build for Windows systems
+## Build for Windows Systems
 
-### Software requirements 
+### Software Requirements 
 
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - Microsoft Visual Studio 2019 or higher, version 16.3 or later

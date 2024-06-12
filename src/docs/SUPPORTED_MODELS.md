@@ -141,8 +141,8 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
 4. `position_ids` (optional) encodes a position of currently generating token in the sequence and a single `logits` output.
 
 > [!NOTE]
-> Models should belong to the same family and have same tokenizers.
+> Models should belong to the same family and have the same tokenizers.
 
-Some models may require access request submission on their Hugging Face page to be downloaded.
+Some models may require access request submission on the Hugging Face page to be downloaded.
 
 If https://huggingface.co/ is down, the conversion step won't be able to download the models.

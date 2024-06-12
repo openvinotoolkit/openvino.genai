@@ -1,13 +1,13 @@
 # OpenVINO™ GenAI
 
-The OpenVINO™ GenAI repository consists of GenAI library and additional GenAI samples.
+The OpenVINO™ GenAI repository consists of the GenAI library and additional GenAI samples.
 
 ## OpenVINO™ GenAI Library
 
 OpenVINO™ GenAI is a flavor of OpenVINO, aiming to simplify running inference of generative AI models.
 It hides the complexity of the generation process and minimizes the amount of code required.
 
-For installation and usage guide, refer to the [GenAI Library README](./src/README.md).
+For installation and usage instructions, refer to the [GenAI Library README](./src/README.md).
 
 ## OpenVINO™ GenAI Samples
 
