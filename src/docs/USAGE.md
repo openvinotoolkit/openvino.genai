@@ -29,7 +29,7 @@ pipe = ov_genai.LLMPipeline(model_path, "CPU")
 print(pipe.generate("The Sun is yellow because"))
 ```
 
-Calling generate with custom generation config parameters, e.g. config for grouped beam search
+Calling generate with custom generation config parameters, e.g. config for grouped beam search:
 ```python
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path, "CPU")
@@ -63,9 +63,9 @@ pipe.finish_chat()
 
 Test to compare with Huggingface outputs
 
-## C++
+### C++
 
-A simple example: 
+A simple example:
 ```cpp
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
@@ -77,7 +77,7 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-Using Group Beam Search Decoding
+Using Group Beam Search Decoding:
 ```cpp
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
@@ -86,7 +86,7 @@ int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
 
-    ov::genai::GenerationConfig config = pipe.get_generation_config();
+    ov::genai::GenerationConfig config;
     config.max_new_tokens = 256;
     config.num_groups = 3;
     config.group_size = 5;
@@ -96,8 +96,8 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-A simple chat in C++ using grouped beam search decoding
-``` cpp
+A simple chat in C++ using grouped beam search decoding:
+```cpp
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
 
@@ -107,7 +107,7 @@ int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
     
-    ov::genai::GenerationConfig config = pipe.get_generation_config();
+    ov::genai::GenerationConfig config;
     config.max_new_tokens = 256;
     config.num_groups = 3;
     config.group_size = 5;
@@ -128,8 +128,8 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-Streaming example with lambda function
-``` cpp
+Streaming example with lambda function:
+```cpp
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
 
@@ -142,8 +142,8 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-Streaming with a custom class
-``` cpp
+Streaming with a custom class:
+```cpp
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
