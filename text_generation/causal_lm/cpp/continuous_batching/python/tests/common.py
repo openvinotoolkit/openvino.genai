@@ -160,6 +160,7 @@ def get_multinomial_max_and_min_token() -> GenerationConfig:
     multinomial.presence_penalty = 0.01
     multinomial.frequence_penalty = 0.1
     multinomial.min_new_tokens = 15
+    multinomial.max_new_tokens = 30
     return multinomial
 
 def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
