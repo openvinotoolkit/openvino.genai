@@ -76,7 +76,7 @@ int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
 
-    ov::genai::GenerationConfig config = pipe.get_generation_config();
+    ov::genai::GenerationConfig config;
     config.max_new_tokens = 256;
     config.num_groups = 3;
     config.group_size = 5;
@@ -97,7 +97,7 @@ int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
     
-    ov::genai::GenerationConfig config = pipe.get_generation_config();
+    ov::genai::GenerationConfig config;
     config.max_new_tokens = 256;
     config.num_groups = 3;
     config.group_size = 5;

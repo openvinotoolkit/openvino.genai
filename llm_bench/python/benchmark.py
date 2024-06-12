@@ -290,16 +290,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     iter_data_list = []
     warmup_md5 = {}
     input_text_list = utils.model_utils.get_prompts(args)
-    if args['prompt_index'] is None:
-        prompt_idx_list = [prompt_idx for prompt_idx, input_text in enumerate(input_text_list)]
-        text_list = input_text_list
-    else:
-        prompt_idx_list = []
-        text_list = []
-        for i in args['prompt_index']:
-            if 0 <= i < len(input_text_list):
-                text_list.append(input_text_list[i])
-                prompt_idx_list.append(i)
+    text_gen_fn = run_text_generation if not use_genai else run_text_generation_genai
     if len(input_text_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
     log.info(f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
@@ -313,13 +304,13 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
             for idx, input_text in enumerate(text_list):
                 if num == 0:
                     log.info(f'[warm-up] Input text: {input_text}')
-                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx_list[idx], bench_hook, model_precision, proc_id)
+                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
     else:
         for idx, input_text in enumerate(text_list):
             for num in range(num_iters + 1):
                 if num == 0:
                     log.info(f'[warm-up] Input text: {input_text}')
-                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx_list[idx], bench_hook, model_precision, proc_id)
+                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx, bench_hook, model_precision, proc_id)
 
     utils.metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time

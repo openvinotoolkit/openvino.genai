@@ -425,23 +425,34 @@ EncodedResults beam_search(ov::InferRequest& lm,
 
     std::vector<Beam> beams;
     auto result = finalize(std::move(group_beam_searcher));
+    ov::genai::EncodedResults results;
+    results.scores.reserve(config.num_return_sequences * result.size());
+    results.tokens.reserve(config.num_return_sequences * result.size());
     // align output with HF
     for (size_t prompt_id = 0; prompt_id < result.size(); prompt_id++) {
         auto prompt_group = result.at(prompt_id);
-
-        for (const std::vector<Beam> group : prompt_group) {
-            beams.insert(beams.end(), group.begin(), group.end());
+        std::vector<std::reference_wrapper<Beam>> plain_beams;
+        plain_beams.reserve(parameters.n_groups * parameters.group_size);
+        for (std::vector<Beam>& group : prompt_group) {
+            for (Beam& beam : group) {
+                plain_beams.push_back(beam);
+            }
         }
-
-        // sort beams per prompt
-        auto start = beams.begin() + prompt_id * parameters.group_size * parameters.n_groups;
-        std::sort(start, beams.end(), scores_comparator);
-    }
-
-    ov::genai::EncodedResults results;
-    for (auto beam = beams.begin(); beam != beams.begin() + config.num_return_sequences; ++beam) {
-        results.scores.emplace_back(beam->score);
-        results.tokens.emplace_back(beam->tokens);
+        assert(config.num_return_sequences <= plain_beams.size());
+        std::partial_sort(
+            plain_beams.begin(),
+            plain_beams.begin() + config.num_return_sequences,
+            plain_beams.end(),
+            scores_comparator
+        );
+        for (
+            auto beam = plain_beams.begin();
+            beam != plain_beams.begin() + config.num_return_sequences;
+            ++beam
+        ) {
+            results.scores.push_back(beam->get().score);
+            results.tokens.push_back(std::move(beam->get().tokens));
+        }
     }
     return results;
 }
