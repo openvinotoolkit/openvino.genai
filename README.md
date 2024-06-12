@@ -18,6 +18,11 @@ It includes the following pipelines:
 
 1. [Benchmarking script for large language models](./llm_bench/python/README.md)
 2. Text generation samples that support most popular models like LLaMA 2:
+   - Python:
+     1. [beam_search_causal_lm](./samples/python/beam_search_causal_lm/README.md)
+     2. [chat_sample](./samples/python/chat_sample/README.md)
+     3. [greedy_causal_lm](./samples/python/greedy_causal_lm/README.md)
+     4. [multinomial_causal_lm](./samples/python/multinomial_causal_lm/README.md)
    - C++:
      1. [beam_search_causal_lm](./samples/cpp/beam_search_causal_lm/README.md)
      2. [chat_sample](./samples/cpp/chat_sample/README.md)
