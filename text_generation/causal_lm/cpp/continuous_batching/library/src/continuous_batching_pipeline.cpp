@@ -5,7 +5,6 @@
 #include <mutex>
 #include <memory>
 
-#include <nlohmann/json.hpp>
 #include "continuous_batching_pipeline.hpp"
 #include "cache_manager.hpp"
 #include "sampler.hpp"
