@@ -62,9 +62,9 @@
     cmake --install ./build/ --config Release --prefix ov
     ```
 
-## Build for macOS systems
+## Build for macOS Systems
 
-### Software requirements 
+### Software Requirements
 
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - [brew](https://brew.sh/) package manager to install additional dependencies:
