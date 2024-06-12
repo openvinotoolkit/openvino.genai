@@ -548,3 +548,32 @@ def test_unicode_pybind_decoding():
     model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
     pipe = read_model((model_id, path))[4]
     pipe.generate('你好！ 你好嗎？', max_new_tokens=20)
+
+
+@pytest.mark.precommit
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
+def test_left_pad():
+    # test left pad tokenizer post processing implementation
+    prompts = [
+        "The Sun is yellow because",
+        "The Sun is yellow because [force left pad tokens]"
+    ]
+    models = read_model(("microsoft/phi-1_5", Path("phi-1_5/")))
+
+    config = {
+        "max_new_tokens": 20,
+        "num_beam_groups": 3,
+        "num_beams": 15,
+        "num_return_sequences": 15,
+        "do_sample": False,
+        "diversity_penalty": 1.0,
+        # phi 1_5 has no eos_token_id in model configuration
+        # ov genai will detect eos_token_id from tokenizer config
+        # hf implementation doesn't fetch it from tokenizer config and defaults to None
+        # align ov genai and hf by setting eos_token_id explicitly
+        "eos_token_id": 50256,
+    }
+
+    models[2].pad_token = models[2].eos_token
+    run_hf_ov_genai_comparison_batched(models, config, prompts)
+
