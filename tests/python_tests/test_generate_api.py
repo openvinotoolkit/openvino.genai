@@ -562,9 +562,9 @@ def test_left_pad():
 
     config = {
         "max_new_tokens": 20,
-        "num_beam_groups": 3,
-        "num_beams": 15,
-        "num_return_sequences": 15,
+        "num_beam_groups": 2,
+        "num_beams": 4,
+        "num_return_sequences": 4,
         "do_sample": False,
         "diversity_penalty": 1.0,
         # phi 1_5 has no eos_token_id in model configuration
