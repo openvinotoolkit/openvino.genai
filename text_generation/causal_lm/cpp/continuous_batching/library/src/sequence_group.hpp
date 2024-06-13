@@ -184,9 +184,6 @@ public:
         std::vector<int64_t> dropped_seq_ids;
         for (auto& running_sequence : get_running_sequences()) {
             const auto generated_len = running_sequence->get_generated_len();
-            if (m_sampling_params.min_new_tokens > generated_len) {
-                continue;
-            }
             if (m_sampling_params.max_new_tokens == generated_len ||
                 running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
                 // stop sequence by max_new_tokens or EOS token
