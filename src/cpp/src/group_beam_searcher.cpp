@@ -423,7 +423,6 @@ EncodedResults beam_search(ov::InferRequest& lm,
         return (left.score > right.score);
     };
 
-    std::vector<Beam> beams;
     auto result = finalize(std::move(group_beam_searcher));
     ov::genai::EncodedResults results;
     results.scores.reserve(config.num_return_sequences * result.size());

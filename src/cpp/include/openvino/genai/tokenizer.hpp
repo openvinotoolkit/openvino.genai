@@ -81,29 +81,5 @@ private:
     class TokenizerImpl;
     std::shared_ptr<TokenizerImpl> m_pimpl;
 };
-
-/**
-* @brief Returns an absolute path. The path is this library's directory
- * concatenated with openvino_tokenizers OS specific
- * * name (.so, .dll, .dylib, lib prefix). This is part of the interface
- * because it's reused in Python bindings.
- * tokenizers_relative_to_genai() and ScopedVar allow passing a path to
- * openvino_tokenizers through env var removing one argument from
- * Tokenizer's constructor.
-*/
-OPENVINO_GENAI_EXPORTS std::filesystem::path tokenizers_relative_to_genai();
-
-/**
-* @brief Sets ENVIRONMENT_VARIABLE_NAME to environment_variable_value
- * and unsets in destructor. Does nothing if ENVIRONMENT_VARIABLE_NAME
- * was already defined.
-*/
-class OPENVINO_GENAI_EXPORTS ScopedVar {
-public:
-    explicit ScopedVar(const std::string& environment_variable_value);
-    ~ScopedVar();
-    bool was_already_set;
-    static constexpr char ENVIRONMENT_VARIABLE_NAME[] = "OPENVINO_TOKENIZERS_PATH_GENAI";
-};
 }  // namespace genai
 }  // namespace ov
