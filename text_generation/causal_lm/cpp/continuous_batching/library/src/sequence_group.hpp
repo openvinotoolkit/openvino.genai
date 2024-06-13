@@ -188,7 +188,7 @@ public:
                 continue;
             }
             if (m_sampling_params.max_new_tokens == generated_len ||
-                generated_len > 0 && running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
+                running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
                 // stop sequence by max_new_tokens or EOS token
                 running_sequence->set_status(SequenceStatus::FINISHED);
                 dropped_seq_ids.push_back(running_sequence->get_id());
@@ -462,9 +462,6 @@ public:
                 for (auto& sequence : m_sequences) {
                     // todo: check seq.is_finished() to generate without several </s>
                     // or is it ok to use padding?
-                    if (!sequence->get_generated_len()) {
-                        continue;
-                    }
                     const auto last_gen_token = sequence->get_last_generation_output();
                     outputs.emplace(sequence->get_grouped_id(), last_gen_token);
                 }

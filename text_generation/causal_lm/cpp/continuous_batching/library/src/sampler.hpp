@@ -334,8 +334,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 // check max length stop criteria
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
                 if (!sequence_group->has_finished() &&
-                    running_sequences[0]->get_generated_len() == sampling_params.max_new_tokens &&
-                    running_sequences[0]->get_generated_len() >= sampling_params.min_new_tokens) {
+                    running_sequences[0]->get_generated_len() == sampling_params.max_new_tokens) {
                     // stop sequence by max_new_tokens
                     m_beam_search_info.at(request_id).finalize(sampler_output);
                 }
