@@ -8,7 +8,7 @@ It hides the complexity of the generation process and minimizes the amount of co
 The OpenVINO™ GenAI flavor is available for installation via Archive and PyPI distributions.
 To install OpenVINO™ GenAI, refer to the [Install Guide](https://docs.openvino.ai/2024/get-started/install-openvino.html).
 
-To build OpenVINO™ GenAI library from source, refer to the [Build Instructions](./docs/BUILD.md).
+To build OpenVINO™ GenAI library from source, refer to the [Build Instructions](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/BUILD.md).
 
 ## Usage
 
@@ -192,8 +192,8 @@ int main(int argc, char* argv[]) {
 
 ## How It Works
 
-For information on how OpenVINO™ GenAI works, refer to the [How It Works Section](./docs/HOW_IT_WORKS.md).
+For information on how OpenVINO™ GenAI works, refer to the [How It Works Section](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/HOW_IT_WORKS.md).
 
 ## Supported Models
 
-For a list of supported models, refer to the [Supported Models Section](./docs/SUPPORTED_MODELS.md).
+For a list of supported models, refer to the [Supported Models Section](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/SUPPORTED_MODELS.md).
