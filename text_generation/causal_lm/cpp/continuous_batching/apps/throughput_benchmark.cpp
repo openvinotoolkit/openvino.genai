@@ -4,6 +4,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <chrono>
+#include <ostream>
 #include <random>
 #include <stdexcept>
 #include <thread>
@@ -355,6 +356,63 @@ void statisticsReporter(GenerationInfoCollector* generations_info_collector, int
     std::cout << "Exiting statistics reporter thread." << std::endl;
 }
 
+bool parse_plugin_config_json(nlohmann::json& node, ov::AnyMap& device_config_map) {
+    if (!node.is_object()) {
+        std::cout << "Error: nlohmann json object is not an object." << std::endl;
+        return false;
+    }
+    for (auto& element : node.items()) {
+        if (element.value().is_string()) {
+            device_config_map[std::string(element.key())] = element.value().get<std::string>();
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::string>() << std::endl;
+        } else if (element.value().is_number_integer()) {
+            device_config_map[std::string(element.key())] = element.value().get<std::int64_t>();
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<std::int64_t>() << std::endl;
+        } else if (element.value().is_number_float()) {
+            device_config_map[std::string(element.key())] = element.value().get<float>();
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<float>() << std::endl;
+        } else if (element.value().is_number_unsigned()) {
+            device_config_map[std::string(element.key())] = element.value().get<uint64_t>();
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<float>() << std::endl;
+        } else if (element.value().is_boolean()) {
+            device_config_map[std::string(element.key())] = element.value().get<bool>();
+            std::cout << "Setting plugin config: " << element.key() << " : " << element.value().get<bool>() << std::endl;
+        } else {
+            std::cout << "Error: nlohmann json type not supported for: " << element.key() << std::endl;
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool parse_plugin_config_string(const std::string& config_string, ov::AnyMap& device_config_map) {
+    if (config_string.empty()) {
+        std::cout << "Empty plugin config string. " << std::endl;
+        return true;
+    }
+
+    nlohmann::json node;
+    try {
+        node = nlohmann::json::parse(config_string);
+    } catch (const nlohmann::json::parse_error& e) {
+        std::cout << "ERROR: Plugin config json parser error - message: " << e.what() << '\n'
+                << "exception id: " << e.id << '\n'
+                << "byte position of error: " << e.byte << std::endl;
+                return false;
+    } catch (...) {
+        std::cout << "ERROR: Plugin config json parser error - message: " << std::endl;
+        return false;
+    }
+
+    if (node.is_null()) {
+        std::cout << "Error: nlohmann json object is null." << std::endl;
+        return false;
+    }
+
+    return parse_plugin_config_json(node, device_config_map);
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) try {
@@ -374,6 +432,8 @@ int main(int argc, char* argv[]) try {
     ("max_output_len", "Max output length", cxxopts::value<size_t>()->default_value("2048"))
     ("request_rate", "Number of requests per second. If this is inf, then all the requests are sent at time 0. Otherwise, we use Poisson process to synthesize the request arrival times.", cxxopts::value<std::string>()->default_value("inf"))
     ("cache_size", "Size of memory used for KV cache in GB. Default: 16", cxxopts::value<size_t>()->default_value("16"))
+    ("device", "Target device to run the model. Default: CPU", cxxopts::value<std::string>()->default_value("CPU"))
+    ("device_config", "Plugin configuration JSON. Example: '{\"MODEL_DISTRIBUTION_POLICY\":\"TENSOR_PARALLEL\",\"PERF_COUNT\":true}' Default: {\"PERF_COUNT\":true}", cxxopts::value<std::string>()->default_value("{\"PERF_COUNT\":true}"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -398,6 +458,8 @@ int main(int argc, char* argv[]) try {
     const size_t max_input_len = result["max_input_len"].as<size_t>();
     const size_t max_output_len = result["max_output_len"].as<size_t>();
     const std::string request_rate = result["request_rate"].as<std::string>();
+    const std::string device = result["device"].as<std::string>();
+    const std::string device_config = result["device_config"].as<std::string>();
     const size_t cache_size = result["cache_size"].as<size_t>();
 
     // Create requests for generation
@@ -422,10 +484,18 @@ int main(int argc, char* argv[]) try {
     std::cout << "\tNum prompts: " << num_prompts << std::endl;
     std::cout << "\tMax input length: " << max_input_len << std::endl;
     std::cout << "\tMax output length: " << max_output_len << std::endl;
+    std::cout << "\tTarget device: " << device << std::endl;
+    std::cout << "\tPlugin configuration JSON: " << device_config << std::endl;
 
+    ov::AnyMap device_config_map = {};
+    if (!parse_plugin_config_string(device_config, device_config_map)) {
+        std::cout << "ERROR: Wrong json parameter in device_config." << std::endl;
+        return EXIT_FAILURE;
+    }
+    
     // Benchmarking
     std::cout << "Loading models, creating pipelines, preparing environment..." << std::endl;
-    ContinuousBatchingPipeline pipe(models_path, scheduler_config);
+    ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map);
 
     std::cout << "Setup finished, launching LLM executor, traffic simulation and statistics reporter threads" << std::endl;
 

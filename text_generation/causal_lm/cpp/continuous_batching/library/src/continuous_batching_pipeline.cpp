@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstdint>
 #include <mutex>
 #include <memory>
 
@@ -63,18 +64,18 @@ class ContinuousBatchingPipeline::Impl {
     }
 
 public:
-    Impl(const std::string& models_path, const SchedulerConfig& scheduler_config) {
+    Impl(const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string device, const ov::AnyMap& plugin_config) {
         ov::Core core;
         m_tokenizer = std::make_shared<Tokenizer>(models_path);
 
         // The model can be compiled for GPU as well
         std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
 
-        const std::string device = "CPU";
         DeviceConfig device_config(core, scheduler_config, device);
 
         apply_paged_attention_transformations(model, device_config);
-        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), ov::enable_profiling(true)).create_infer_request();
+
+        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
 
         // setup KV caches
         m_cache_manager = std::make_shared<CacheManager>(device_config);
@@ -262,9 +263,11 @@ public:
     }
 };
 
-ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::string& models_path,
-                     const SchedulerConfig& scheduler_config) {
-    m_impl = std::make_shared<Impl>(models_path, scheduler_config);
+ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::string& models_path,
+                                                        const SchedulerConfig& scheduler_config,
+                                                        const std::string& device,
+                                                        const ov::AnyMap& plugin_config ) {
+    m_impl = std::make_shared<Impl>(models_path, scheduler_config, device, plugin_config);
 }
 
 std::shared_ptr<Tokenizer> ContinuousBatchingPipeline::get_tokenizer() {
@@ -286,7 +289,6 @@ void ContinuousBatchingPipeline::step() {
 bool ContinuousBatchingPipeline::has_non_finished_requests() {
     return m_impl->has_non_finished_requests();
 }
-
 
 std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, std::vector<GenerationConfig> sampling_params) {
     return m_impl->generate(prompts, sampling_params);

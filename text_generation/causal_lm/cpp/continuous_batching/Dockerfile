@@ -5,7 +5,7 @@ WORKDIR /workspace
 RUN apt-get update -y && apt-get install -y python3-pip python3-venv git
 
 # Install OpenVINO
-RUN git clone https://github.com/openvinotoolkit/openvino.git && \
+RUN git clone --branch master https://github.com/openvinotoolkit/openvino.git && \
     cd /workspace/openvino && \
     git submodule update --init -- /workspace/openvino/thirdparty/xbyak /workspace/openvino/thirdparty/pugixml /workspace/openvino/thirdparty/open_model_zoo \
         /workspace/openvino/thirdparty/protobuf /workspace/openvino/thirdparty/snappy /workspace/openvino/thirdparty/telemetry /workspace/openvino/src/plugins/intel_cpu/thirdparty/mlas \
@@ -25,10 +25,11 @@ ENV OpenVINO_DIR=/workspace/openvino_build
 RUN wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
 
 # Build continuous batching library
-RUN git clone --branch request_rate https://github.com/mzegla/openvino.genai.git && cd /workspace/openvino.genai/text_generation/causal_lm/cpp/continuous_batching && \
+RUN git clone --branch ct-beam-search https://github.com/ilya-lavrenov/openvino.genai.git && cd /workspace/openvino.genai/text_generation/causal_lm/cpp/continuous_batching && \
         git submodule update --remote --init && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/ && cmake --build ./build/ -j $JOBS
 
 # Install test dependencies
 RUN python3 -m pip install --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly/ /workspace/openvino.genai/thirdparty/openvino_tokenizers
 RUN PIP_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cpu" python3 -m pip install -r /workspace/openvino.genai/text_generation/causal_lm/cpp/continuous_batching/python/tests/requirements.txt
 ENV PYTHONPATH=/workspace/openvino.genai/text_generation/causal_lm/cpp/continuous_batching/build/python
+ENV LD_LIBRARY_PATH=/workspace/openvino.genai/build/openvino_genai/
