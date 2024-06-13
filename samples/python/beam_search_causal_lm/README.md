@@ -1,6 +1,6 @@
-# Text generation C++ greedy_causal_lm that supports most popular models like LLaMA 2
+# Text generation Python sample that supports most popular models like LLaMA 2
 
-This example showcases inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample fearures `ov::genai::LLMPipeline` and configures it to run the simplest deterministic greedy sampling algorithm. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
+This example showcases inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. It's only possible to change the device for inference to a differnt one, GPU for example, from the command line interface. The sample fearures `openvino_genai.LLMPipeline` and configures it to use multiple beam grops. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/main/notebooks/254-llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
 
 ## Download and convert the model and tokenizers
 
@@ -13,7 +13,7 @@ optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B
 
 ## Run
 
-`greedy_causal_lm TinyLlama-1.1B-Chat-v1.0 "Why is the Sun yellow?"`
+`beam_search_causal_lm.py TinyLlama-1.1B-Chat-v1.0 "Why is the Sun yellow?"`
 
 To enable Unicode characters for Windows cmd open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
 
