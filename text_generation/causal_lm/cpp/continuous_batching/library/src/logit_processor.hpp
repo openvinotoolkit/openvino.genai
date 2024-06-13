@@ -23,6 +23,10 @@ class ILogitTransformer {
 public:
     virtual std::vector<Token> apply(const std::vector<Token>& input_logits) = 0;
 
+    bool is_applicable(size_t generated_tokens_cnt) {
+        return generated_tokens_cnt < m_applicable_tensor_len;
+    }
+
     void set_unique_generated_token_ids(const std::shared_ptr<std::map<int64_t, size_t>>& unique_generated_token_ids) {
         if (unique_generated_token_ids != nullptr) {
             m_unique_generated_token_ids = unique_generated_token_ids;
@@ -41,7 +45,8 @@ public:
 
 protected:
     double m_float_value = 0.f;
-    double m_uint_value = 0;
+    size_t m_uint_value = 0, m_applicable_tensor_len = std::numeric_limits<size_t>::max();
+
     std::shared_ptr<std::map<int64_t, size_t>> m_unique_generated_token_ids = nullptr;
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = nullptr;
 
@@ -161,8 +166,9 @@ public:
 
 class EOSPenaltyTransform : public ILogitTransformer {
 public:
-    EOSPenaltyTransform(size_t eos_token_id) {
-        m_uint_value = eos_token_id; 
+    EOSPenaltyTransform(size_t eos_token_id, size_t min_generated_tokens) {
+        m_uint_value = eos_token_id;
+        m_applicable_tensor_len = min_generated_tokens;
     }
 
     std::vector<Token> apply(const std::vector<Token>& input_logits) {
@@ -265,9 +271,9 @@ public:
             m_unique_prompt_token_ids->insert(input_id);
         }
 
-        if (sampling_params.min_new_tokens > 0 && m_generated_tokens < sampling_params.min_new_tokens) {
+        if (sampling_params.min_new_tokens > 0) {
             m_logit_transformers.emplace_back(
-                new LogitTransformers::EOSPenaltyTransform(sampling_params.eos_token_id)
+                new LogitTransformers::EOSPenaltyTransform(sampling_params.eos_token_id, sampling_params.min_new_tokens)
             );
         }
 
@@ -307,7 +313,9 @@ public:
     std::vector<Token> apply(const std::vector<Token>& logits) {
         std::vector<Token> outputs(logits.begin(), logits.end());
         for (const auto& transformer : m_logit_transformers) {
-            outputs = transformer->apply(outputs);
+            if (transformer->is_applicable(m_generated_tokens)) {
+                outputs = transformer->apply(outputs);
+            }
         }
         return outputs;
     }

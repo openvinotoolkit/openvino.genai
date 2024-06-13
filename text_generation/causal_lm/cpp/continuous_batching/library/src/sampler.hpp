@@ -64,9 +64,6 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
     ov::Shape shape = logits.get_shape();
     OPENVINO_ASSERT(shape.size() == 3);
     size_t batch = shape[0], seq_len = shape[1], vocab_size = shape[2];
-    if (!(batch_idx < batch)) {
-        int a = 0;
-    }
     OPENVINO_ASSERT(batch_idx < batch, "Logits batch size doesn't match the number of beams");
 
     size_t batch_offset = batch_idx * seq_len * vocab_size, sequence_offset = (seq_len - 1) * vocab_size;

@@ -97,9 +97,6 @@ public:
 
     GenerationOutput get_last_generation_output() {
         GenerationOutput output;
-        if (!m_generated_ids.size()) {
-            int a = 0;
-        }
         OPENVINO_ASSERT(m_generated_ids.size());
         output.score = get_cumulative_log_probs();
         output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};

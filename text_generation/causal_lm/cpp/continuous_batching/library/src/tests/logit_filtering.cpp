@@ -299,7 +299,7 @@ using EOSPenaltyTransformTest = testing::TestWithParam<EOSPenaltyTransformTestSt
 
 TEST_P(EOSPenaltyTransformTest, TransformResultEqualToReference) {
     auto test_struct = GetParam();
-    auto transform = EOSPenaltyTransform(test_struct.eos_token_id);
+    auto transform = EOSPenaltyTransform(test_struct.eos_token_id, std::numeric_limits<size_t>::max());
     auto test_result = transform.apply(test_struct.input_logits);
     ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
     for (size_t i = 0; i < test_result.size(); i++) {

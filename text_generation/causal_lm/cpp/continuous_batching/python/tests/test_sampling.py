@@ -141,9 +141,9 @@ RANDOM_SAMPLING_TEST_CASES = [
                              prompts=["What is OpenVINO?"],
                              ref_texts=[
                                 [
-                                    '\nOpenVINO is an open-source open-source software that allows anyone to work with a virtual machine, from virtual machines and PCs to cloud',
-                                    "\nOpenVINO is a Linux distro. It's not as simple as using the Linux distro itself. You need to download and install open",
-                                    '\n\nOpenVINO is a social networking tool. OpenVINO is a free virtualization service that works at scale. With the support of Open'
+                                    "\nOpenVINO is a Linux distro. It's not as simple as using the Linux distro itself. OpenVINO is essentially a dist",
+                                    '\nOpenVINO is an open-source open-source software that allows anyone to work with a virtual machine, from a smartphone to an iPhone,',
+                                    '\n\nOpenVINO is a social networking tool. OpenVINO is a free virtualization service that works at scale. The tool provides the ability'
                                 ]
                             ]),
 ]
