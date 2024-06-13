@@ -20,6 +20,9 @@ void GenerationConfig::set_eos_token_id(size_t tokenizer_eos_token_id) {
 }
 
 void GenerationConfig::validate() const {
+    OPENVINO_ASSERT(min_new_tokens <= max_new_tokens, "min_new_tokens must be less or equal max_new_tokens");
+    OPENVINO_ASSERT(min_new_tokens >= 0, "min_new_tokens must be greater 0");
+    OPENVINO_ASSERT(max_new_tokens >= 0, "max_new_tokens must be greater 0");
     if (is_multinomial()) {
         OPENVINO_ASSERT(top_p > 0.0f && top_p <= 1.0f, "top_p must be in the interval (0, 1]");
         OPENVINO_ASSERT(temperature >= 0.0f, "temperature must be a positive value");
@@ -46,6 +49,7 @@ GenerationConfig GenerationConfig::from_file(const std::string& generation_confi
     config.num_return_sequences = json_data.value("num_return_sequences", 1);
 
     config.max_new_tokens = json_data.value("max_new_tokens", std::numeric_limits<size_t>::max());
+    config.min_new_tokens = json_data.value("min_new_tokens", 0);
     config.max_length = json_data.value("max_length", std::numeric_limits<size_t>::max());
 
     config.temperature = json_data.value("temperature", 0.0f);
@@ -72,6 +76,7 @@ GenerationConfig GenerationConfig::greedy() {
     greedy_params.repetition_penalty = 3.0f;
     greedy_params.presence_penalty = 0.1f;
     greedy_params.frequence_penalty = 0.01f;
+    greedy_params.max_new_tokens = 30;
     return greedy_params;
 }
 
@@ -94,5 +99,7 @@ GenerationConfig GenerationConfig::multinomial() {
     multinomial.num_return_sequences = 3;
     multinomial.presence_penalty = 0.01f;
     multinomial.frequence_penalty = 0.1f;
+    multinomial.min_new_tokens = 15;
+    multinomial.max_new_tokens = 30;
     return multinomial;
 }

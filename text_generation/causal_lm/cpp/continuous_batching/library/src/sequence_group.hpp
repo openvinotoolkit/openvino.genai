@@ -180,6 +180,20 @@ public:
         m_sequences.erase(remove_it);
     }
 
+    std::vector<int64_t> try_finish_generation() {
+        std::vector<int64_t> dropped_seq_ids;
+        for (auto& running_sequence : get_running_sequences()) {
+            const auto generated_len = running_sequence->get_generated_len();
+            if (m_sampling_params.max_new_tokens == generated_len ||
+                running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
+                // stop sequence by max_new_tokens or EOS token
+                running_sequence->set_status(SequenceStatus::FINISHED);
+                dropped_seq_ids.push_back(running_sequence->get_id());
+            }
+        }
+        return dropped_seq_ids;
+    }
+
     size_t get_prompt_len() const {
         return m_prompt_ids.size();
     }

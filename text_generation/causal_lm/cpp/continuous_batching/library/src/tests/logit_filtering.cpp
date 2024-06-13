@@ -288,3 +288,35 @@ TEST(PresencePenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
     EXPECT_THROW(transform.apply({{43.0f, 0}}, {1337}), ov::Exception);
     EXPECT_THROW(transform.apply({{18.0f, 0}}, {0, -1} ), ov::Exception);
 }
+
+struct EOSPenaltyTransformTestStruct {
+    size_t eos_token_id;
+    std::vector<Token> input_logits;
+    std::vector<Token> expected_output;
+};
+
+using EOSPenaltyTransformTest = testing::TestWithParam<EOSPenaltyTransformTestStruct>;
+
+TEST_P(EOSPenaltyTransformTest, TransformResultEqualToReference) {
+    auto test_struct = GetParam();
+    auto transform = EOSPenaltyTransform(test_struct.eos_token_id, std::numeric_limits<size_t>::max());
+    auto test_result = transform.apply(test_struct.input_logits);
+    ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
+    for (size_t i = 0; i < test_result.size(); i++) {
+        EXPECT_NEAR(test_result[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
+        EXPECT_EQ(test_result[i].m_index, test_struct.expected_output[i].m_index);
+    }
+}
+
+
+const std::vector<EOSPenaltyTransformTestStruct> EOS_PENALTY_TRANSFORM_TEST_CASES = {
+    { // basic case, indices are applied, order is left as-is
+        1,
+        { {1.0f, 0}, {2.0f, 1}, {3.0f, 2} },
+        { {1.0f, 0}, {0.0f, 1}, {3.0f, 2} },
+    },
+};
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs,
+                         EOSPenaltyTransformTest,
+                         testing::ValuesIn(EOS_PENALTY_TRANSFORM_TEST_CASES));
