@@ -21,7 +21,7 @@ using StringInputs = std::variant<std::string, std::vector<std::string>>;
 using ChatHistory = std::vector<std::unordered_map<std::string, std::string>>;
 
 /**
-* @brief Structure to store resulting batched tokens and scores for each batch sequence. 
+* @brief Structure to store resulting batched tokens and scores for each batch sequence.
 * The first num_return_sequences elements correspond to the first batch element.
 * In the case if results decoded with beam search and random sampling scores contain 
 * sum of logarithmic probabilities for each token in the sequence. In the case 

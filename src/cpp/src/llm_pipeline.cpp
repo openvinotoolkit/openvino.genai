@@ -127,8 +127,8 @@ public:
         const ov::genai::Tokenizer& tokenizer, 
         OptionalGenerationConfig generation_config=std::nullopt
     ):  
-        m_model_runner(request), 
-        m_tokenizer(tokenizer) {
+            m_model_runner(request), 
+            m_tokenizer(tokenizer) {
         GenerationConfig default_config;
         m_generation_config = (generation_config.has_value()) ? *generation_config : default_config;
     }
@@ -187,7 +187,7 @@ public:
         if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
             encoded_input = m_tokenizer.encode(*input_vector);
         } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
-            std::string prompt = *input_prompt;
+            std::string& prompt = *input_prompt;
             
             if (is_chat_conversation) {
                 m_history.push_back({{"role", "user"}, {"content", prompt}});
@@ -302,7 +302,7 @@ public:
         return tpl.RenderAsString(params).value();
     }
 
-    std::string apply_chat_template(const ChatHistory& history, bool add_generation_prompt=true) const {
+    std::string apply_chat_template(const ChatHistory& history, bool add_generation_prompt) const {
         jinja2::TemplateEnv env;
         env.GetSettings().lstripBlocks = true;
         env.GetSettings().trimBlocks = true;

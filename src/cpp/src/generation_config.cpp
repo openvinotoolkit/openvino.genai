@@ -117,9 +117,6 @@ void GenerationConfig::validate() const {
     OPENVINO_ASSERT(repetition_penalty > 0,
                     "Repetition penalty must be a strictly positive float, but got ",
                     repetition_penalty);
-
-    OPENVINO_ASSERT(num_return_sequences == 1 || is_beam_search(),
-                    "'num_return_sequences' can be > 1 only when beam_search algorithm is used.");
     
     OPENVINO_ASSERT(!ignore_eos || max_new_tokens != SIZE_MAX || max_length != SIZE_MAX,
                     "ignore_eos == true, in this case either 'max_new_tokens', or 'max_length' should be defined.");
