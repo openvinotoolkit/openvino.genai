@@ -19,7 +19,7 @@ public:
     ContinuousBatchingPipeline(const std::string& models_path,
                                const SchedulerConfig& scheduler_config,
                                const std::string& device = "CPU",
-                               const ov::AnyMap& plugin_config = {});
+                               const ov::AnyMap& plugin_config = {{"PERF_COUNT", true}});
 
     std::shared_ptr<Tokenizer> get_tokenizer();
 
