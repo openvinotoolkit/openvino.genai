@@ -51,16 +51,23 @@ target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_j
 
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
 
-# Extract two last digits from CMAKE_PROJECT_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
-string(REGEX MATCH [=[[0-9][0-9]$]=] MAJOR_SUFFIX ${CMAKE_PROJECT_VERSION_MAJOR})
 set_target_properties(${TARGET_NAME} PROPERTIES
     EXPORT_NAME genai
-    VERSION ${CMAKE_PROJECT_VERSION}
-    SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH}
     ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
+# Extract two last digits from CMAKE_PROJECT_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
+string(REGEX MATCH [=[[0-9][0-9]$]=] MAJOR_SUFFIX ${CMAKE_PROJECT_VERSION_MAJOR})
+if(SKBUILD AND NOT WIN32)
+    # Don't pack symlinks but append version hash to the name for wheel
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        SUFFIX .so.${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH})
+else()
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        VERSION ${CMAKE_PROJECT_VERSION}
+        SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH})
+endif()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 install(TARGETS ${TARGET_NAME}
