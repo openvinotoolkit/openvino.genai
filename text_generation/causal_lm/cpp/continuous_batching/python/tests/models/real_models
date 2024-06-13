@@ -48,8 +48,8 @@ bigscience/bloomz-1b7
 bigscience/bloomz-560m
 bigscience/bloomz-7b1
 cerebras/Cerebras-GPT-13B
-# core42/jais-13b: optimum - no SDPA
-# core42/jais-13b-chat: optimum - no SDPA
+# core42/jais-13b: wrong output with PA
+# core42/jais-13b-chat: wrong output with PA
 databricks/dolly-v1-6b
 databricks/dolly-v2-3b
 # deepseek-ai/deepseek-coder-33b-instruct: OpenVINO tokenizers - Cannot convert tokenizer of this type without `.model` file
