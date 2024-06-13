@@ -59,10 +59,13 @@ set_target_properties(${TARGET_NAME} PROPERTIES
 )
 # Extract two last digits from CMAKE_PROJECT_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
 string(REGEX MATCH [=[[0-9][0-9]$]=] MAJOR_SUFFIX ${CMAKE_PROJECT_VERSION_MAJOR})
-if(SKBUILD AND NOT WIN32)
+if(SKBUILD AND LINUX)
     # Don't pack symlinks but append version hash to the name for wheel
     set_target_properties(${TARGET_NAME} PROPERTIES
         SUFFIX .so.${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH})
+elseif(SKBUILD AND APPELE)
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        SUFFIX .${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH}.dylib)
 else()
     set_target_properties(${TARGET_NAME} PROPERTIES
         VERSION ${CMAKE_PROJECT_VERSION}
