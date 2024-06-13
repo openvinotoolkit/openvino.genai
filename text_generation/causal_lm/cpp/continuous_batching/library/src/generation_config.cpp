@@ -76,6 +76,7 @@ GenerationConfig GenerationConfig::greedy() {
     greedy_params.repetition_penalty = 3.0f;
     greedy_params.presence_penalty = 0.1f;
     greedy_params.frequence_penalty = 0.01f;
+    greedy_params.max_new_tokens = 30;
     return greedy_params;
 }
 
@@ -99,5 +100,6 @@ GenerationConfig GenerationConfig::multinomial() {
     multinomial.presence_penalty = 0.01f;
     multinomial.frequence_penalty = 0.1f;
     multinomial.min_new_tokens = 15;
+    multinomial.max_new_tokens = 30;
     return multinomial;
 }
