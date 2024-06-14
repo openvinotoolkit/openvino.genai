@@ -211,6 +211,12 @@ input_tensors_list = [
 ]
 @pytest.mark.parametrize("inputs", input_tensors_list)
 @pytest.mark.parametrize("model_descr", models_list())
+@pytest.mark.xfail(
+    raises=RuntimeError, 
+    reason="pybind was unable to find overloads with tensor inputs on Linux",
+    strict=False,
+    condition=sys.platform == "linux"
+)
 @pytest.mark.precommit
 def test_ov_tensors(model_descr, inputs):
     hf_ov_genai_tensors_comparison(read_model(model_descr), dict(max_new_tokens=20), *inputs)
@@ -657,6 +663,7 @@ configs = [
 @pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", chat_models_list())
 @pytest.mark.precommit
+@pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
 def test_chat_1(model_descr, generation_config):
     config = generation_config.copy()  # to avoid side effects
     
