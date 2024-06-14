@@ -550,7 +550,7 @@ def test_unicode_pybind_decoding():
     pipe.generate('你好！ 你好嗎？', max_new_tokens=20)
 
 
-@pytest.skip(reason="probably both models ov + hf doesn't fit to memory")
+@pytest.mark.skip(reason="probably both models ov + hf doesn't fit to memory")
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
 def test_left_pad():
