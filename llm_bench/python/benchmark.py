@@ -104,10 +104,10 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         mem_consumption.start_collect_memory_consumption()
     start = time.perf_counter()
     result = model.generate(
-        **input_data, 
-        generation_config=GenerationConfig(), 
-        max_new_tokens=int(max_output_token_size), 
-        num_beams=args['num_beams'], 
+        **input_data,
+        generation_config=GenerationConfig(),
+        max_new_tokens=int(max_output_token_size),
+        num_beams=args['num_beams'],
         use_cache=True
     )
     end = time.perf_counter()
