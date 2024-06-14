@@ -46,6 +46,5 @@ install(TARGETS openvino_genai py_generate_pipeline LIBRARY DESTINATION python/o
 # wheel_genai component is used for wheel generation in pyproject.toml.
 # Exclude wheel_genai from normal packaging because there's pygenai_X_Y component for that.
 install(TARGETS openvino_genai py_generate_pipeline
-    LIBRARY DESTINATION . COMPONENT wheel_genai
-    RUNTIME DESTINATION . COMPONENT wheel_genai
-    EXCLUDE_FROM_ALL)
+    LIBRARY DESTINATION . COMPONENT wheel_genai EXCLUDE_FROM_ALL
+    RUNTIME DESTINATION . COMPONENT wheel_genai EXCLUDE_FROM_ALL)
