@@ -261,24 +261,29 @@ py::list handle_utf8_results(const std::vector<std::string>& decoded_res) {
 
 py::object call_common_generate(
     LLMPipeline& pipe, 
-    const std::variant<EncodedInputs, StringInputs>& inputs, 
+    const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs, 
     const OptionalGenerationConfig& config, 
     const StreamerVariant& streamer, 
     const py::kwargs& kwargs
 ) {
     auto updated_config = update_config_from_kwargs(config, kwargs);
+    EncodedInputs tensor_data;
 
-    if (auto data = std::get_if<EncodedInputs>(&inputs)) {
+    if (auto data = std::get_if<ov::Tensor>(&inputs)) {
         return py::cast(pipe.generate(*data, updated_config, streamer));
-    } else if (auto data = std::get_if<StringInputs>(&inputs)) {
+    } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
+        return py::cast(pipe.generate(*data, updated_config, streamer));
+    } else if (auto data = std::get_if<std::string>(&inputs)) {
         DecodedResults res = pipe.generate(*data, updated_config, streamer);
         // If input was a string return a single string otherwise return DecodedResults.
-        if (std::get_if<std::string>(&*data) && updated_config.num_return_sequences == 1) {
+        if (updated_config.num_return_sequences == 1) {
             return handle_utf8_results(res.texts)[0];
         } else {
-            // For DecodedResults texts getter already handles utf8 decoding.
             return py::cast(res);
         }
+    } else if (auto data = std::get_if<std::vector<std::string>>(&inputs)) {
+        // For DecodedResults texts getter already handles utf8 decoding.
+        return py::cast(pipe.generate(*data, updated_config, streamer));
     } else {
         throw std::invalid_argument("Provided input is neither encoded tokens, neither string");
     }
@@ -345,7 +350,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(
             "generate", 
             [](LLMPipeline& pipe, 
-                const std::variant<EncodedInputs, StringInputs>& inputs, 
+                const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs, 
                 const OptionalGenerationConfig& generation_config, 
                 const StreamerVariant& streamer, 
                 const py::kwargs& kwargs
@@ -361,7 +366,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(
             "__call__", 
             [](LLMPipeline& pipe, 
-                const std::variant<EncodedInputs, StringInputs>& inputs, 
+                const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs, 
                 const OptionalGenerationConfig& generation_config, 
                 const StreamerVariant& streamer, 
                 const py::kwargs& kwargs

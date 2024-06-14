@@ -105,16 +105,13 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config
     ): 
-        m_model_runner{
-            ov::Core{}.compile_model(
-                model_path / "openvino_model.xml", 
-                device, 
-                plugin_config
-            ).create_infer_request()
-        },
         m_tokenizer(tokenizer),
         m_generation_config{from_config_json_if_exists(model_path)}
     {
+        ov::Core core;
+        core.set_property(device, plugin_config);
+        m_model_runner = core.compile_model(model_path / "openvino_model.xml", device).create_infer_request();
+
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1)
             m_generation_config.eos_token_id = m_tokenizer.get_eos_token_id();
@@ -124,7 +121,7 @@ public:
         const std::filesystem::path& model_path, 
         const std::string& device, 
         const ov::AnyMap& plugin_config
-    ): LLMPipelineImpl{model_path, Tokenizer(model_path.string()), device,plugin_config} {}
+    ): LLMPipelineImpl{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
     
     DecodedResults generate(
         StringInputs inputs, 

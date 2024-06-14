@@ -23,9 +23,15 @@ import torch
 @functools.lru_cache(1)
 def read_model(params):
     model_id, path = params
-    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    
+    from optimum.intel.openvino import OVModelForCausalLM
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
-    if not (path / 'openvino_model.xml').is_file():
+    if path.exists():
+        opt_model = OVModelForCausalLM.from_pretrained(path, trust_remote_code=True, 
+                                                       compile=False, device='CPU')
+    else:
         ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
         openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
         openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
@@ -33,22 +39,18 @@ def read_model(params):
         # to store tokenizer config jsons with special tokens
         tokenizer.save_pretrained(path)
         
-        model = optimum.intel.openvino.OVModelForCausalLM.from_pretrained(
-            model_id, export=True, trust_remote_code=True,
-            compile=False, device='CPU', load_in_8bit=False
-        )
-        model.generation_config.save_pretrained(path)
-        model.config.save_pretrained(path)
-        model.save_pretrained(path)
-    # Return AutoModelForCausalLM instead of OVModelForCausalLM because
-    # there's no way to disable mmap for now. That prohibits the same
-    # model from being opened twice at the same time.
+        opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, 
+                                                       compile=False, device='CPU', load_in_8bit=False)
+        opt_model.generation_config.save_pretrained(path)
+        opt_model.config.save_pretrained(path)
+        opt_model.save_pretrained(path)
+    
     return (
         model_id,
         path,
         tokenizer,
-        transformers.AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True),
-        ov_genai.LLMPipeline(str(path)),
+        opt_model,
+        ov_genai.LLMPipeline(str(path), device='CPU', config={"ENABLE_MMAP": False}),
     )
 
 
@@ -190,10 +192,10 @@ test_cases = [
     (dict(max_new_tokens=20), 'table is made of'),
     (dict(max_new_tokens=20), '你好！ 你好嗎？'),
     (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0), 'Alan Turing was a'),
-    # (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
-    # (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
-    # (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'The Sun is yellow because'),
-    # (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.5), 'The Sun is yellow because'),
+    (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
+    (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
+    (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'The Sun is yellow because'),
+    (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.5), 'The Sun is yellow because'),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
 @pytest.mark.parametrize("model_descr", models_list())
