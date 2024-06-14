@@ -14,11 +14,11 @@
 namespace ov {
 namespace genai {
 
+// Return flag correspods whether generation should be stopped: false means continue generation, true means stop.
 using StreamerVariant = std::variant<std::function<bool(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
-using ChatHistory = std::vector<std::unordered_map<std::string, std::string>>;
 
 /**
 * @brief Structure to store resulting batched tokens and scores for each batch sequence.
@@ -211,7 +211,6 @@ public:
 
     void start_chat();
     void finish_chat();
-    std::string apply_chat_template(const ChatHistory& history, bool add_generation_prompt=true) const;
 private:
     class LLMPipelineImpl;
     std::unique_ptr<LLMPipelineImpl> m_pimpl;

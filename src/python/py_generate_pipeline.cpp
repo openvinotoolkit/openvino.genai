@@ -10,18 +10,20 @@
 #include <openvino/runtime/auto/properties.hpp>
 
 namespace py = pybind11;
-using ov::genai::LLMPipeline;
-using ov::genai::Tokenizer;
-using ov::genai::TokenizedInputs;
-using ov::genai::GenerationConfig;
-using ov::genai::EncodedInputs;
-using ov::genai::StringInputs;
-using ov::genai::EncodedResults;
+using ov::genai::ChatHistory;
 using ov::genai::DecodedResults;
+using ov::genai::EncodedInputs;
+using ov::genai::EncodedResults;
+using ov::genai::GenerationConfig;
+using ov::genai::LLMPipeline;
+using ov::genai::OptionalGenerationConfig;
 using ov::genai::StopCriteria;
 using ov::genai::StreamerBase;
 using ov::genai::StreamerVariant;
-using ov::genai::OptionalGenerationConfig;
+using ov::genai::StringInputs;
+using ov::genai::TokenizedInputs;
+using ov::genai::Tokenizer;
+
 
 PYBIND11_MAKE_OPAQUE(std::vector<float>);
 
@@ -77,7 +79,6 @@ auto generation_config_docstring = R"(
     repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.    
 )";
 
-ov::AnyMap py_object_to_any_map(const py::object& py_obj);
 
 GenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& config_, const py::kwargs& kwargs) {
     GenerationConfig config;
@@ -136,16 +137,6 @@ GenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& confi
     }
 
     return config;
-}
-
-bool py_object_is_any_map(const py::object& py_obj) {
-    if (!py::isinstance<py::dict>(py_obj)) {
-        return false;
-    }
-    auto dict = py::cast<py::dict>(py_obj);
-    return std::all_of(dict.begin(), dict.end(), [&](const std::pair<py::object::handle, py::object::handle>& elem) {
-        return py::isinstance<py::str>(elem.first);
-    });
 }
 
 ov::Any py_object_to_any(const py::object& py_obj) {
@@ -208,9 +199,8 @@ ov::Any py_object_to_any(const py::object& py_obj) {
         default:
             OPENVINO_ASSERT(false, "Unsupported attribute type.");
         }
+    
     // OV types
-    } else if (py_object_is_any_map(py_obj)) {
-        return py_object_to_any_map(py_obj);
     } else if (py::isinstance<ov::Any>(py_obj)) {
         return py::cast<ov::Any>(py_obj);
     } else if (py::isinstance<ov::element::Type>(py_obj)) {
@@ -245,21 +235,6 @@ ov::Any py_object_to_any(const py::object& py_obj) {
         return py_obj;
     }
     OPENVINO_ASSERT(false, "Unsupported attribute type.");
-}
-
-ov::AnyMap py_object_to_any_map(const py::object& py_obj) {
-    OPENVINO_ASSERT(py_object_is_any_map(py_obj), "Unsupported attribute type.");
-    ov::AnyMap return_value = {};
-    for (auto& item : py::cast<py::dict>(py_obj)) {
-        std::string key = py::cast<std::string>(item.first);
-        py::object value = py::cast<py::object>(item.second);
-        if (py_object_is_any_map(value)) {
-            return_value[key] = py_object_to_any_map(value);
-        } else {
-            return_value[key] = py_object_to_any(value);
-        }
-    }
-    return return_value;
 }
 
 std::map<std::string, ov::Any> properties_to_any_map(const std::map<std::string, py::object>& properties) {
@@ -341,10 +316,10 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init([](
             const std::string& model_path, 
             const std::string& device,
-            const py::object& config
+            const std::map<std::string, py::object>& config
         ) {
-                ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
-                return std::make_unique<LLMPipeline>(model_path, device, py_object_to_any_map(config));
+            ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
+            return std::make_unique<LLMPipeline>(model_path, device, properties_to_any_map(config));
         }),
         py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
         py::arg("device") = "CPU", "device on which inference will be done",
@@ -369,10 +344,10 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(
             "generate", 
             [](LLMPipeline& pipe, 
-               const std::variant<EncodedInputs, StringInputs>& inputs, 
-               const OptionalGenerationConfig& generation_config, 
-               const StreamerVariant& streamer, 
-               const py::kwargs& kwargs
+                const std::variant<EncodedInputs, StringInputs>& inputs, 
+                const OptionalGenerationConfig& generation_config, 
+                const StreamerVariant& streamer, 
+                const py::kwargs& kwargs
             ) {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
             },
@@ -385,10 +360,10 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(
             "__call__", 
             [](LLMPipeline& pipe, 
-               const std::variant<EncodedInputs, StringInputs>& inputs, 
-               const OptionalGenerationConfig& generation_config, 
-               const StreamerVariant& streamer, 
-               const py::kwargs& kwargs
+                const std::variant<EncodedInputs, StringInputs>& inputs, 
+                const OptionalGenerationConfig& generation_config, 
+                const StreamerVariant& streamer, 
+                const py::kwargs& kwargs
             ) {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
             },
@@ -405,23 +380,49 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("finish_chat", &LLMPipeline::finish_chat)
         .def("get_generation_config", &LLMPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &LLMPipeline::set_generation_config);
-        // .def("apply_chat_template", &LLMPipeline::apply_chat_template);
 
      // Binding for Tokenizer
     py::class_<Tokenizer>(m, "Tokenizer",
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer 
            if it's located in a different path than the main model.)")
+        
         .def(py::init([](const std::string& tokenizer_path) {
             ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
             return std::make_unique<Tokenizer>(tokenizer_path);
         }), py::arg("tokenizer_path"))
-        // .def("encode", py::overload_cast<std::vector<std::string>&>(&Tokenizer::encode),
-        //     py::arg("prompts"),
-        //     R"(Encodes a list of prompts into tokenized inputs.)")
-        .def("encode", py::overload_cast<const std::string>(&Tokenizer::encode))
-        .def("decode", py::overload_cast<std::vector<int64_t>>(&Tokenizer::decode),
+        
+        .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts){ return tok.encode(prompts); },
+            py::arg("prompts"),
+            R"(Encodes a list of prompts into tokenized inputs.)")
+
+        .def("encode", py::overload_cast<const std::string>(&Tokenizer::encode),
             py::arg("prompt"),
-            R"(Encodes a single prompt into tokenized inputs.)")
+            R"(Encodes a single prompt into tokenized input.)")
+        
+        // TODO: add unt8 processing
+        .def("decode", py::overload_cast<std::vector<int64_t>>(&Tokenizer::decode),
+            py::arg("tokens"),
+            R"(Decode a sequence into a string prompt.)")
+        
+        .def("decode", py::overload_cast<ov::Tensor>(&Tokenizer::decode),
+            py::arg("tokens"),
+            R"(Decode a sequence into a string prompt.)")
+        
+        .def("decode", py::overload_cast<std::vector<std::vector<int64_t>>>(&Tokenizer::decode),
+            py::arg("tokens"),
+            R"(Decode a batch of tokens into a list of string prompt.)")
+        
+        .def("apply_chat_template", [](Tokenizer& tok,
+                                        const ChatHistory& history,
+                                        bool add_generation_prompt,
+                                        const std::string& chat_template) {
+            return tok.apply_chat_template(history, add_generation_prompt, chat_template);
+        }, 
+            py::arg("history"), 
+            py::arg("add_generation_prompt"), 
+            py::arg("chat_template") = "",
+            R"(Embeds input prompts with special tags for a chat scenario.)")
+        
         .def("get_pad_token_id", &Tokenizer::get_pad_token_id)
         .def("get_bos_token_id", &Tokenizer::get_bos_token_id)
         .def("get_eos_token_id", &Tokenizer::get_eos_token_id)

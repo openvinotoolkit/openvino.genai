@@ -92,6 +92,11 @@ public:
     bool is_multinomial() const;
     void update_generation_config(const ov::AnyMap& config_map = {});
     
+    template <typename... Properties>
+    util::EnableIfAllStringAny<void, Properties...> update_generation_config(Properties&&... properties) {
+        return update_generation_config(AnyMap{std::forward<Properties>(properties)...});
+    }
+    
     /// @brief checks that are no conflicting parameters, e.g. do_sample=true and num_beams > 1.
     /// @throws Exception if config is invalid.
     void validate() const;

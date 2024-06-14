@@ -65,8 +65,6 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
     }
 }
 
-std::tuple<int64_t, int64_t, int64_t> get_special_tokens_from_config_json(const std::filesystem::path& config_path);
-
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

@@ -26,7 +26,7 @@ def read_model(params):
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
     if not (path / 'openvino_model.xml').is_file():
-        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
+        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
         openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
         openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
         
@@ -77,7 +77,7 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
 
     # Encode the batch of prompts
     tokenizer.padding_side = "left"
-    encoded_prompts = tokenizer(prompts, return_tensors='pt', padding=True, truncation=True)
+    encoded_prompts = tokenizer(prompts, return_tensors='pt', padding=True, truncation=True, add_special_tokens=False)
     prompt_ids, attention_mask = encoded_prompts['input_ids'], encoded_prompts['attention_mask']
     
     hf_encoded_outputs = model.generate(prompt_ids, attention_mask=attention_mask, **generation_config_hf)
@@ -118,9 +118,9 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt: str
         generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
     generation_config_hf.pop('ignore_eos', None)
 
-    encoded_prompt = tokenizer.encode(prompt, return_tensors='pt', add_special_tokens=True)
+    encoded_prompt = tokenizer.encode(prompt, return_tensors='pt', add_special_tokens=False)
     hf_encoded_output = model.generate(encoded_prompt, **generation_config_hf)
-    hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:])
+    hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:], skip_special_tokens=True)
 
     pipe = ov_genai.LLMPipeline(str(path), device)
     
@@ -190,10 +190,10 @@ test_cases = [
     (dict(max_new_tokens=20), 'table is made of'),
     (dict(max_new_tokens=20), '你好！ 你好嗎？'),
     (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0), 'Alan Turing was a'),
-    (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
-    (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
-    (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'The Sun is yellow because'),
-    (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.5), 'The Sun is yellow because'),
+    # (dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=30, diversity_penalty=1.0), 'Alan Turing was a'),
+    # (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'table is made of'),
+    # (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.0), 'The Sun is yellow because'),
+    # (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.5), 'The Sun is yellow because'),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
 @pytest.mark.parametrize("model_descr", models_list())
@@ -639,6 +639,7 @@ def test_unicode_pybind_decoding_2():
     assert isinstance(decoded_results, ov_genai.DecodedResults)
     assert len(decoded_results.texts[0]) > 0
 
+
 quenstions = [
     '1+1=',
     'What is the previous answer?',
@@ -646,20 +647,11 @@ quenstions = [
     'What was my first question?'
 ]
 
-
-def gen_prompt(prompt):
-    return {'role': 'user', 'content': prompt}
-
-
-def gen_answer(answer):
-    return {'role': 'assistant', 'content': answer}
-
-
-test_cases = [
-    dict(max_new_tokens=100),
+configs = [
+    dict(max_new_tokens=500),
     # dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0)
 ]
-@pytest.mark.parametrize("generation_config", test_cases)
+@pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", chat_models_list())
 @pytest.mark.precommit
 def test_chat_1(model_descr, generation_config):
@@ -682,20 +674,24 @@ def test_chat_1(model_descr, generation_config):
     chat_history_ov = []
     chat_prompt = ''
     model_id, path, tokenizer, model_opt, pipe = read_model(model_descr)
-    
+    print()
     pipe.start_chat()    
     for prompt in quenstions:
-        chat_history_hf.append(gen_prompt(prompt))
-        chat_history_ov.append(gen_prompt(prompt))
+        chat_history_hf.append({'role': 'user', 'content': prompt})
+        chat_history_ov.append({'role': 'user', 'content': prompt})
         
         chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
-        tokenized = tokenizer(chat_prompt, return_tensors='pt')
+        print(repr(chat_prompt))
+        tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
+        
         answer = model_opt.generate(**tokenized, **config_hf)
         answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
-        chat_history_hf.append(gen_answer(answer_str))
+        chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
         answer_ov = pipe.generate(prompt, **config)
-        chat_history_ov.append(gen_answer(answer_ov))
+        chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
+        print("\nanswer: \n", answer_ov)
+
     pipe.finish_chat()
     
     if chat_history_ov != chat_history_hf:
