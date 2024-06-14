@@ -8,6 +8,7 @@
 #include <pybind11/functional.h>
 #include "openvino/genai/llm_pipeline.hpp"
 #include <openvino/runtime/auto/properties.hpp>
+#include "../cpp/src/tokenizers_path.hpp"
 
 namespace py = pybind11;
 using ov::genai::ChatHistory;
@@ -285,7 +286,7 @@ py::object call_common_generate(
 
 std::string ov_tokenizers_module_path() {
     // Try a path relative to build artifacts folder first.
-    std::filesystem::path from_relative = ov::genai::tokenizers_relative_to_genai();
+    std::filesystem::path from_relative = tokenizers_relative_to_genai();
     if (std::filesystem::exists(from_relative)) {
         return from_relative.string();
     }
@@ -318,7 +319,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             const std::string& device,
             const std::map<std::string, py::object>& config
         ) {
-            ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
+            ScopedVar env_manager(ov_tokenizers_module_path());
             return std::make_unique<LLMPipeline>(model_path, device, properties_to_any_map(config));
         }),
         py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
@@ -387,7 +388,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
            if it's located in a different path than the main model.)")
         
         .def(py::init([](const std::string& tokenizer_path) {
-            ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
+            ScopedVar env_manager(ov_tokenizers_module_path());
             return std::make_unique<Tokenizer>(tokenizer_path);
         }), py::arg("tokenizer_path"))
         

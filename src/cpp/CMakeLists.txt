@@ -28,6 +28,7 @@ function(ov_genai_build_jinja2cpp)
         set(JINJA2CPP_WITH_JSON_BINDINGS "none" CACHE STRING "")
         set(JINJA2CPP_STRICT_WARNINGS OFF CACHE BOOL "")
         set(JINJA2CPP_PIC ON CACHE BOOL "")
+        set(RapidJSON_DIR "${FETCHCONTENT_BASE_DIR}/rapidjson-build")
 
         add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
     endif()
@@ -50,16 +51,26 @@ target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_j
 
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
 
-# Extract two last digits from CMAKE_PROJECT_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
-string(REGEX MATCH [=[[0-9][0-9]$]=] MAJOR_SUFFIX ${CMAKE_PROJECT_VERSION_MAJOR})
 set_target_properties(${TARGET_NAME} PROPERTIES
     EXPORT_NAME genai
-    VERSION ${CMAKE_PROJECT_VERSION}
-    SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH}
     ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
+# Extract two last digits from CMAKE_PROJECT_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
+string(REGEX MATCH [=[[0-9][0-9]$]=] MAJOR_SUFFIX ${CMAKE_PROJECT_VERSION_MAJOR})
+if(SKBUILD AND LINUX)
+    # Don't pack symlinks but append version hash to the name for wheel
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        SUFFIX ${CMAKE_SHARED_LIBRARY_SUFFIX}.${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH})
+elseif(SKBUILD AND APPELE)
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        SUFFIX .${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH}${CMAKE_SHARED_LIBRARY_SUFFIX})
+else()
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        VERSION ${CMAKE_PROJECT_VERSION}
+        SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH})
+endif()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 install(TARGETS ${TARGET_NAME}
