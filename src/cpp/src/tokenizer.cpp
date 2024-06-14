@@ -199,7 +199,7 @@ public:
         }
 
         // if pad_token_id not found use eos_token_id as pad_token_id
-        // todo: read m_pad_token_id from tokenizer rt_info once implemented in tokenizers
+        // todo: read m_pad_token_id from tokenizer rt_info once implemented in tokenizers (CVS-144174)
         if (m_pad_token_id == -1 && m_eos_token_id != -1) {
             m_pad_token_id = m_eos_token_id;
         }
