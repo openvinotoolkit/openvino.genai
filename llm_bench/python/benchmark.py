@@ -18,7 +18,7 @@ import hashlib
 import utils.metrics_print
 import utils.output_csv
 import traceback
-from transformers import set_seed
+from transformers import set_seed, GenerationConfig
 from PIL import Image
 from utils.memory_profile import MemConsumption
 from utils.hook_forward import StableDiffusionHook
@@ -103,7 +103,13 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
     start = time.perf_counter()
-    result = model.generate(**input_data, max_new_tokens=int(max_output_token_size), num_beams=args['num_beams'], use_cache=True)
+    result = model.generate(
+        **input_data, 
+        generation_config=GenerationConfig(), 
+        max_new_tokens=int(max_output_token_size), 
+        num_beams=args['num_beams'], 
+        use_cache=True
+    )
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
