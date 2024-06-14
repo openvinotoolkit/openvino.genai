@@ -216,8 +216,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     streamer.reset()
     start = time.perf_counter()
-    generated_text = model.generate(input_text_list, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], streamer=streamer)
-    log.info(generated_text)
+    generated_text = model.generate(input_text_list, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], streamer=streamer).texts
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
