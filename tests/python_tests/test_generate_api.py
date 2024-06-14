@@ -308,7 +308,7 @@ def test_callback_one_string(callback):
     pipe = read_model(models_list()[0])[4]
     generation_config = pipe.get_generation_config()
     generation_config.max_new_tokens = 10
-    pipe.generate('', generation_config, callback)
+    pipe.generate('table is made of', generation_config, callback)
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
@@ -323,7 +323,7 @@ def test_callback_batch_fail(callback):
 @pytest.mark.precommit
 def test_callback_kwargs_one_string(callback):
     pipe = read_model(models_list()[0])[4]
-    pipe.generate('', max_new_tokens=10, streamer=callback)
+    pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
@@ -354,7 +354,7 @@ def test_streamer_one_string():
     generation_config = pipe.get_generation_config()
     generation_config.max_new_tokens = 10
     printer = Printer(pipe.get_tokenizer())
-    pipe.generate('', generation_config, printer)
+    pipe.generate('table is made of', generation_config, printer)
 
 
 @pytest.mark.precommit
@@ -369,7 +369,7 @@ def test_streamer_batch_fail():
 def test_streamer_kwargs_one_string():
     pipe = read_model(models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
-    pipe.generate('', max_new_tokens=10, do_sample=False, streamer=printer)
+    pipe.generate('table is made of', max_new_tokens=10, do_sample=False, streamer=printer)
 
 
 @pytest.mark.precommit
@@ -386,7 +386,7 @@ def test_operator_with_callback_one_string(callback):
     pipe = read_model(models_list()[0])[4]
     ten_tokens = pipe.get_generation_config()
     ten_tokens.max_new_tokens = 10
-    pipe('', ten_tokens, callback)
+    pipe('talbe is made of', ten_tokens, callback)
 
 
 @pytest.mark.precommit
@@ -401,7 +401,7 @@ def test_operator_with_callback_batch_fail(callback):
 def test_operator_with_streamer_kwargs_one_string():
     pipe = read_model(models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
-    pipe('', max_new_tokens=10, do_sample=True, streamer=printer)
+    pipe('hi', max_new_tokens=10, do_sample=True, streamer=printer)
 
 
 @pytest.mark.precommit
