@@ -12,7 +12,7 @@ import utils.pt_utils
 import utils.model_utils
 import torch
 import numpy as np
-from openvino.runtime import get_version, Tensor
+from openvino.runtime import get_version
 import PIL
 import hashlib
 import utils.metrics_print
