@@ -212,7 +212,7 @@ input_tensors_list = [
 @pytest.mark.parametrize("inputs", input_tensors_list)
 @pytest.mark.parametrize("model_descr", models_list())
 @pytest.mark.xfail(
-    raises=RuntimeError, 
+    raises=TypeError, 
     reason="pybind was unable to find overloads with tensor inputs on Linux",
     strict=False,
     condition=sys.platform == "linux"
