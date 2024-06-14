@@ -64,7 +64,7 @@ A simple chat in Python:
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path)
 
-config = {'num_groups': 3, 'group_size': 5, 'diversity_penalty': 1.5}
+config = {'max_new_tokens': 100, 'num_groups': 3, 'group_size': 5, 'diversity_penalty': 1.5}
 pipe.set_generation_config(config)
 
 pipe.start_chat()
@@ -124,7 +124,7 @@ int main(int argc, char* argv[]) {
     ov::genai::LLMPipeline pipe(model_path, "CPU");
     
     ov::genai::GenerationConfig config;
-    config.max_new_tokens = 256;
+    config.max_new_tokens = 100;
     config.num_groups = 3;
     config.group_size = 5;
     config.diversity_penalty = 1.0f;
@@ -153,8 +153,13 @@ int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
         
-    auto streamer = [](std::string word) { std::cout << word << std::flush; };
-    std::cout << pipe.generate("The Sun is yellow because", streamer);
+    auto streamer = [](std::string word) { 
+        std::cout << word << std::flush; 
+        // Return flag correspods whether generation should be stopped.
+        // false means continue generation.
+        return false;
+    };
+    std::cout << pipe.generate("The Sun is yellow bacause", streamer);
 }
 ```
 
@@ -167,13 +172,14 @@ Streaming with a custom class:
 class CustomStreamer: public ov::genai::StreamerBase {
 public:
     bool put(int64_t token) {
-        bool stop_flag = false;
-        /* custom decoding/tokens processing code
+        bool stop_flag = false; 
+        /* 
+        custom decoding/tokens processing code
         tokens_cache.push_back(token);
         std::string text = m_tokenizer.decode(tokens_cache);
         ...
         */
-        return stop_flag;
+        return stop_flag;  // flag whether generation should be stoped, if true generation stops.
     };
 
     void end() {
