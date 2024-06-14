@@ -10,7 +10,7 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-Tensor init_attention_mask(Tensor& position_ids);
+Tensor init_attention_mask(const Tensor& position_ids);
 
 void print_tensor(const ov::Tensor& tensor);
 
@@ -64,8 +64,6 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
         param = config_map.at(name).as<T>();
     }
 }
-
-std::tuple<int64_t, int64_t, int64_t> get_special_tokens_from_config_json(const std::filesystem::path& config_path);
 
 }  // namespace utils
 }  // namespace genai

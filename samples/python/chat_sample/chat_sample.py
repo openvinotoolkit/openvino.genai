@@ -8,6 +8,8 @@ import openvino_genai
 
 def streamer(subword):
     print(subword, end='', flush=True)
+    # Return flag correspods whether generation should be stopped.
+    # False means continue generation.
     return False
 
 
@@ -20,7 +22,7 @@ def main():
     pipe = openvino_genai.LLMPipeline(args.model_dir, device)
 
     config = openvino_genai.GenerationConfig()
-    config.max_new_tokens = 10000
+    config.max_new_tokens = 100
 
     pipe.start_chat()
     while True:
