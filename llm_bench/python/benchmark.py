@@ -18,7 +18,7 @@ import hashlib
 import utils.metrics_print
 import utils.output_csv
 import traceback
-from transformers import set_seed
+from transformers import set_seed, GenerationConfig
 from PIL import Image
 from utils.memory_profile import MemConsumption
 from utils.hook_forward import StableDiffusionHook
@@ -75,6 +75,8 @@ def gen_iterate_data(
 
 def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_index, bench_hook, model_precision, proc_id):
     set_seed(args['seed'])
+
+    model.generation_config = GenerationConfig()
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(input_text_list):
@@ -104,9 +106,22 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     if args['infer_count'] is not None:
         model.generation_config.eos_token_id = None
         model.config.eos_token_id = None
-        result = model.generate(**input_data, max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True, eos_token_id=None)
+        result = model.generate(
+            **input_data,
+            generation_config=GenerationConfig(),
+            max_new_tokens=int(max_gen_tokens),
+            num_beams=args['num_beams'],
+            use_cache=True,
+            eos_token_id=None
+        )
     else:
-        result = model.generate(**input_data, max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True)
+        result = model.generate(
+            **input_data,
+            generation_config=GenerationConfig(),
+            max_new_tokens=int(max_gen_tokens),
+            num_beams=args['num_beams'],
+            use_cache=True
+        )
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
