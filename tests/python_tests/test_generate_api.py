@@ -550,6 +550,7 @@ def test_unicode_pybind_decoding():
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
 def test_left_pad():
     # test left pad tokenizer post processing implementation
+    # todo: remove once CVS-144174 implemented
     prompts = [
         "The Sun is yellow because",
         "The Sun is yellow because [force left pad tokens]"
