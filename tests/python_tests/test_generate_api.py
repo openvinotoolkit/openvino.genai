@@ -166,10 +166,6 @@ batched_prompts = [
 @pytest.mark.parametrize("prompts", batched_prompts)
 @pytest.mark.parametrize("model_descr", models_list())
 @pytest.mark.precommit
-@pytest.mark.xfail(
-    raises=AssertionError, reason="assert hf_output == ov_output.texts fails",
-    strict=False,
-)
 def test_multibatch(model_descr, generation_config, prompts):
     run_hf_ov_genai_comparison_batched(read_model(model_descr), generation_config, prompts)
 
@@ -550,7 +546,6 @@ def test_unicode_pybind_decoding():
     pipe.generate('你好！ 你好嗎？', max_new_tokens=20)
 
 
-@pytest.mark.skip(reason="probably both models ov + hf doesn't fit to memory")
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
 def test_left_pad():
@@ -563,11 +558,7 @@ def test_left_pad():
 
     config = {
         "max_new_tokens": 20,
-        "num_beam_groups": 2,
-        "num_beams": 2,
-        "num_return_sequences": 2,
         "do_sample": False,
-        "diversity_penalty": 1.0,
         # phi 1_5 has no eos_token_id in model configuration
         # ov genai will detect eos_token_id from tokenizer config
         # hf implementation doesn't fetch it from tokenizer config and defaults to None
