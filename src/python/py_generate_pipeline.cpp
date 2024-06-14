@@ -7,6 +7,7 @@
 #include <pybind11/stl_bind.h>
 #include <pybind11/functional.h>
 #include "openvino/genai/llm_pipeline.hpp"
+#include "../cpp/src/tokenizers_path.hpp"
 
 namespace py = pybind11;
 using ov::genai::LLMPipeline;
@@ -109,7 +110,7 @@ OpaqueDecodedResults call_with_kwargs(LLMPipeline& pipeline, const std::string& 
 
 std::string ov_tokenizers_module_path() {
     // Try a path relative to build artifacts folder first.
-    std::filesystem::path from_relative = ov::genai::tokenizers_relative_to_genai();
+    std::filesystem::path from_relative = tokenizers_relative_to_genai();
     if (std::filesystem::exists(from_relative)) {
         return from_relative.string();
     }
@@ -153,7 +154,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
     py::class_<LLMPipeline>(m, "LLMPipeline")
         .def(py::init([](const std::string& model_path, const std::string& device) {
-                ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
+                ScopedVar env_manager(ov_tokenizers_module_path());
                 return std::make_unique<LLMPipeline>(model_path, device);
             }),
         py::arg("model_path"), "path to the model path", 
@@ -178,7 +179,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init([](py::object infer_request, 
                             const Tokenizer& tokenizer,
                             OptionalGenerationConfig config) {
-            ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
+            ScopedVar env_manager(ov_tokenizers_module_path());
             return std::make_unique<LLMPipeline>(get_request_from_pyobj(infer_request), tokenizer, config);
         }),
         py::arg("infer_request"), "infer_request", 
@@ -247,7 +248,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer 
            if it's located in a different path than the main model.)")
         .def(py::init([](const std::string& tokenizer_path) {
-            ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
+            ScopedVar env_manager(ov_tokenizers_module_path());
             return std::make_unique<Tokenizer>(tokenizer_path);
         }), py::arg("tokenizer_path"))
         .def("get_pad_token_id", &Tokenizer::get_pad_token_id)
