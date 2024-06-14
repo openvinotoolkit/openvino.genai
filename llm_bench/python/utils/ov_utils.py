@@ -94,8 +94,8 @@ def build_ov_tokenizer(hf_tokenizer):
 
 
 def build_ov_tokenizer_wrapper(hf_tokenizer, tokenizer_model, detokenizer_model):
-    ov_compiled_tokenizer = ov.compile_model(tokenizer_model)
-    ov_compiled_detokenizer = ov.compile_model(detokenizer_model)
+    ov_compiled_tokenizer = ov.compile_model(tokenizer_model, "CPU")
+    ov_compiled_detokenizer = ov.compile_model(detokenizer_model, "CPU")
 
     def encode_ov_tokenizer_full(self, text, *args, **kwargs):
         if isinstance(text, str):
@@ -280,6 +280,6 @@ def is_genai_available(log_msg=False):
     except ImportError as ex:
         if log_msg:
             log.warning("Attempt to load OpenVINO GenaAI package failed. Please install openvino_genai package. Full error message available in debug mode")
-            log.debug(ex)
+            log.warning(ex)
             return False
     return True
