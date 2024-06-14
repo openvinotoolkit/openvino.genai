@@ -13,8 +13,8 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 function(ov_genai_build_jinja2cpp)
     FetchContent_Declare(jinja2cpp
-        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/9ae7e1fc45d707e1686dd425a154d30963801944.tar.gz
-        URL_HASH SHA256=aa41ae425225623ba91be5de3ef1e0d942e682d519311e6235b04b4e7d880e01)
+        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/bcc0e30f17f17f738ec2a7a31316d6efbe78a0e0.tar.gz
+        URL_HASH SHA256=f76547deb323240e7d181ecda6f658757ea5eb07ce772cf39e8bd20467412164)
 
     FetchContent_GetProperties(jinja2cpp)
     if(NOT jinja2cpp_POPULATED)
@@ -28,7 +28,6 @@ function(ov_genai_build_jinja2cpp)
         set(JINJA2CPP_WITH_JSON_BINDINGS "none" CACHE STRING "")
         set(JINJA2CPP_STRICT_WARNINGS OFF CACHE BOOL "")
         set(JINJA2CPP_PIC ON CACHE BOOL "")
-        set(RapidJSON_DIR "${FETCHCONTENT_BASE_DIR}/rapidjson-build")
 
         add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
     endif()
