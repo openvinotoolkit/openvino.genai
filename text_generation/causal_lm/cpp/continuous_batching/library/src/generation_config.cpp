@@ -23,16 +23,16 @@ void GenerationConfig::validate() const {
     OPENVINO_ASSERT(min_new_tokens <= max_new_tokens, "min_new_tokens must be less or equal max_new_tokens");
     OPENVINO_ASSERT(min_new_tokens >= 0, "min_new_tokens must be greater 0");
     OPENVINO_ASSERT(max_new_tokens >= 0, "max_new_tokens must be greater 0");
-    if (is_multinomial()) {
-        OPENVINO_ASSERT(top_p > 0.0f && top_p <= 1.0f, "top_p must be in the interval (0, 1]");
-        OPENVINO_ASSERT(temperature >= 0.0f, "temperature must be a positive value");
+    if (is_beam_search()) {
+        OPENVINO_ASSERT(no_repeat_ngram_size > 0, "no_repeat_ngram_size must be positive");
+    } else {
         OPENVINO_ASSERT(repetition_penalty >= 0.0f, "repetition penalty must be a positive value");
         OPENVINO_ASSERT(frequence_penalty >= -2.0f && frequence_penalty <= 2.0f, "frequence_penalty penalty must be a [-2; +2]");
         OPENVINO_ASSERT(presence_penalty >= -2.0f && presence_penalty <= 2.0f, "presence_penalty penalty must be a [-2; +2]");
-    }
-
-    if (is_beam_search()) {
-        OPENVINO_ASSERT(no_repeat_ngram_size > 0, "no_repeat_ngram_size must be positive");
+        if (is_multinomial()) {
+            OPENVINO_ASSERT(top_p > 0.0f && top_p <= 1.0f, "top_p must be in the interval (0, 1]");
+            OPENVINO_ASSERT(temperature >= 0.0f, "temperature must be a positive value");
+        }
     }
 }
 
