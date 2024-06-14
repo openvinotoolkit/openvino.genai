@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) try {
     ov::genai::LLMPipeline pipe(model_path, "CPU");
     
     ov::genai::GenerationConfig config;
-    config.max_new_tokens = 10000;
+    config.max_new_tokens = 100;
     std::function<bool(std::string)> streamer = [](std::string word) { 
         std::cout << word << std::flush;
         // Return flag correspods whether generation should be stopped.
