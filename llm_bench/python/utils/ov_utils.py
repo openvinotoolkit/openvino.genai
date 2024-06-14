@@ -181,6 +181,7 @@ def create_text_gen_model(model_path, device, **kwargs):
 def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     import openvino_tokenizers  # noqa: F401
     import openvino_genai
+    from transformers import AutoTokenizer
 
     class TokenStreamer(openvino_genai.StreamerBase):
         def __init__(self, tokenizer):
@@ -213,13 +214,13 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
         convert_ov_tokenizer(model_path)
 
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     start = time.perf_counter()
 
     llm_pipe = openvino_genai.LLMPipeline(str(model_path), device.upper(), ov_config)
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
-    tokenizer = llm_pipe.get_tokenizer()
-    streamer = TokenStreamer(tokenizer)
+    streamer = TokenStreamer(llm_pipe.get_tokenizer())
 
     return llm_pipe, tokenizer, end - start, streamer, True
 

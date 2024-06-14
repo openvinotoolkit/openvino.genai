@@ -209,13 +209,13 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(input_text_list):
             utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
+    pt_inputs = tokenizer(input_text_list, return_tensors="pt")
+    input_token_size = pt_inputs.input_ids.shape[1]
+    pipe_tokenizer = model.get_tokenizer()
     tok_encode_start = time.perf_counter()
-    input_data = tokenizer.encode(input_text_list)
+    input_data = pipe_tokenizer.encode(input_text_list)
     tok_encode_end = time.perf_counter()
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
-    # Remove `token_type_ids` from inputs
-    input_tokens = input_data.input_ids.data
-    input_token_size = input_tokens[0].size
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
         out_str += " Batch_size={}, ".format(args['batch_size'])
@@ -241,7 +241,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
 
     generation_time = end - start
     tok_decode_start = time.perf_counter()
-    generated_text = tokenizer.decode(generated_tokens)
+    generated_text = pipe_tokenizer.decode(generated_tokens)
     tok_decode_end = time.perf_counter()
     tok_decode_time = (tok_decode_end - tok_decode_start) * 1000
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
@@ -295,6 +295,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     else:
         utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
     streamer.reset()
+
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
