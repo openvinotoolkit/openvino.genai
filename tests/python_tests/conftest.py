@@ -1,5 +1,5 @@
 def pytest_make_parametrize_id(config, val, argname):
-    if argname in ['prompt', 'promtps']:
+    if argname in ['prompt', 'prompts', 'batched_prompts']:
         return f'{val}'
     elif argname == 'model_descr':
         return f"{val[0]}"

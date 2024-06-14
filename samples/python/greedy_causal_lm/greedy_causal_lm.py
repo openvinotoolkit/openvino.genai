@@ -6,11 +6,6 @@ import argparse
 import openvino_genai
 
 
-def streamer(subword):
-    print(subword, end='', flush=True)
-    return False
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_dir')
@@ -23,9 +18,7 @@ def main():
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
 
-    # Since the streamer is set, the results will
-    # be printed each time a new token is generated.
-    pipe.generate(args.prompt, config, streamer)
+    print(pipe.generate(args.prompt, config))
 
 
 if '__main__' == __name__:
