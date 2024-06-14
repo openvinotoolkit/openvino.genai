@@ -22,6 +22,13 @@ set_target_properties(py_generate_pipeline PROPERTIES
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py" DESTINATION "${CMAKE_BINARY_DIR}/openvino_genai/")
 write_file("${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" "__version__ = \"${CMAKE_PROJECT_VERSION}\"")
 
+if(SKBUILD)
+    # RPATH for wheel is mandatory to find openvino_genai library. It
+    # must be forced because GenAI may be built with OpenVINO targeting
+    # archive. Such OpenVINO configurations sets
+    # CMAKE_SKIP_INSTALL_RPATH to ON because it relyes on setupvars.sh.
+    set(CMAKE_SKIP_INSTALL_RPATH OFF)
+endif()
 # setting RPATH / LC_RPATH depending on platform
 if(LINUX)
     # to find libopenvino_genai.so in the same folder
