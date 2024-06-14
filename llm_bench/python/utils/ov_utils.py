@@ -2,7 +2,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
-from transformers import AutoConfig
+from transformers import AutoConfig, GenerationConfig
 from openvino.runtime import Core
 import openvino as ov
 import logging as log
@@ -160,11 +160,12 @@ def create_text_gen_model(model_path, device, **kwargs):
         ov_model = model_class.from_pretrained(
             model_path,
             device=device,
-            ov_config=ov_config,
+            #ov_config=ov_config,
             config=model_config,
             stateful=kwargs.get("stateful", None),
             trust_remote_code=remote_code
         )
+        ov_model.generation_config = GenerationConfig()
         if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
             patch_inter_processing_and_compile(ov_model, **kwargs)
         end = time.perf_counter()
