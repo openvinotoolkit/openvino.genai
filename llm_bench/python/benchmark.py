@@ -227,7 +227,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
 
     result = [streamer.get_tokens()]
     tok_decode_start = time.perf_counter()
-    _ = tokenizer.batch_decode(result)
+    _ = tokenizer.batch_decode(np.array(result, dtype=int))
     tok_decode_end = time.perf_counter()
     tok_decode_time = (tok_decode_end - tok_decode_start) * 1000
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
