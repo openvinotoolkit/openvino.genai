@@ -17,37 +17,30 @@ elseif(NOT GENERATOR_IS_MULTI_CONFIG_VAR AND NOT DEFINED CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel ...")
 endif()
 
-project(OpenVINOGenAI VERSION 2024.2.0.0)
+project(OpenVINOGenAI
+        VERSION 2024.2.0.0
+        DESCRIPTION "OpenVINO GenAI"
+        HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
+        LANGUAGES CXX)
 
-option(CPACK_INCLUDE_TOPLEVEL_DIRECTORY "Boolean toggle to include/exclude top level directory." OFF)
-if(WIN32)
-    set(CPACK_GENERATOR "ZIP" CACHE STRING "List of CPack generators to use.")
+# Find OpenVINODeveloperPackage first to compile with SDL flags
+find_package(OpenVINODeveloperPackage QUIET
+             PATHS "${OpenVINO_DIR}")
+if(NOT OpenVINODeveloperPackage_FOUND)
+    find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 endif()
 
-add_subdirectory(./thirdparty/)
-add_subdirectory(src)
-add_subdirectory(samples/cpp/beam_search_causal_lm/)
-add_subdirectory(samples/cpp/chat_sample/)
-add_subdirectory(samples/cpp/greedy_causal_lm/)
-add_subdirectory(samples/cpp/multinomial_causal_lm/)
-add_subdirectory(samples/cpp/prompt_lookup_decoding_lm/)
-add_subdirectory(samples/cpp/speculative_decoding_lm/)
+include(cmake/features.cmake)
 
-install(DIRECTORY
-        ./samples/cpp/beam_search_causal_lm
-        ./samples/cpp/chat_sample
-        ./samples/cpp/greedy_causal_lm
-        ./samples/cpp/multinomial_causal_lm
-        # Don't install prompt_lookup_decoding_lm and speculative_decoding_lm because they don't use openvino_genai library and arent verifyed yet.
-    DESTINATION samples/cpp/ COMPONENT cpp_samples_genai)
-install(DIRECTORY
-        ./samples/python/beam_search_causal_lm
-        ./samples/python/chat_sample
-        ./samples/python/greedy_causal_lm
-        ./samples/python/multinomial_causal_lm
-    DESTINATION samples/python/ COMPONENT cpp_samples_genai
-    USE_SOURCE_PERMISSIONS)
-install(FILES ./samples/requirements.txt DESTINATION ./samples/ COMPONENT cpp_samples_genai)
+add_subdirectory(thirdparty)
+add_subdirectory(src)
+add_subdirectory(samples)
+
 install(FILES LICENSE DESTINATION licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
 install(FILES third-party-programs.txt DESTINATION licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
+
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+if(WIN32 AND NOT DEFINED CPACK_GENERATOR)
+    set(CPACK_GENERATOR "ZIP")
+endif()
 include(CPack)

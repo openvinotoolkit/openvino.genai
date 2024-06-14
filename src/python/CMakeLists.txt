@@ -11,16 +11,31 @@ FetchContent_Declare(
 FetchContent_GetProperties(pybind11)
 if(NOT pybind11_POPULATED)
     FetchContent_Populate(pybind11)
+    # search for FindPython3.cmake instead of legacy modules
+    set(PYBIND11_FINDPYTHON ON)
+    # the following two calls are required for cross-compilation
+    if(OpenVINODeveloperPackage_DIR)
+        ov_find_python3(REQUIRED)
+        ov_detect_python_module_extension()
+    else()
+        if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
+            find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
+        else()
+            find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+        endif()
+    endif()
     add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
 endif()
 
 pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
-target_link_libraries(py_generate_pipeline PRIVATE openvino::genai nlohmann_json::nlohmann_json)
+target_link_libraries(py_generate_pipeline PRIVATE openvino::genai)
 set_target_properties(py_generate_pipeline PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py" DESTINATION "${CMAKE_BINARY_DIR}/openvino_genai/")
-write_file("${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" "__version__ = \"${CMAKE_PROJECT_VERSION}\"")
+
+configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/__version__.py.in"
+               "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" @ONLY)
 
 # setting RPATH / LC_RPATH depending on platform
 if(LINUX)
@@ -29,7 +44,7 @@ if(LINUX)
 elseif(APPLE)
     # to find libopenvino_genai.dylib in the same folder
     set(rpaths "@loader_path")
-    if(DEFINED SKBUILD)
+    if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME)
         # in case we build pip package, we need to refer to libopenvino.dylib from 'openvino' package
         list(APPEND rpaths "@loader_path/../openvino/libs")
     endif()
@@ -39,12 +54,28 @@ if(rpaths)
     set_target_properties(py_generate_pipeline PROPERTIES INSTALL_RPATH "${rpaths}")
 endif()
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-install(FILES "${CMAKE_BINARY_DIR}/openvino_genai/__init__.py" "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
-install(TARGETS openvino_genai py_generate_pipeline LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
+              "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py"
+        DESTINATION python/openvino_genai
+        COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+install(TARGETS py_generate_pipeline
+        LIBRARY DESTINATION python/openvino_genai
+        COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+
+install(FILES "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py"
+        DESTINATION openvino_genai
+        COMPONENT wheel_genai
+        EXCLUDE_FROM_ALL)
+
+install(FILES "${OpenVINOGenAI_SOURCE_DIR}/LICENSE"
+              "${OpenVINOGenAI_SOURCE_DIR}/third-party-programs.txt"
+              "${OpenVINOGenAI_SOURCE_DIR}/SECURITY.md"
+        DESTINATION "${PY_BUILD_CMAKE_PACKAGE_NAME}-${PY_BUILD_CMAKE_PACKAGE_VERSION}.dist-info"
+        COMPONENT wheel_genai
+        EXCLUDE_FROM_ALL)
 
 # wheel_genai component is used for wheel generation in pyproject.toml.
 # Exclude wheel_genai from normal packaging because there's pygenai_X_Y component for that.
 install(TARGETS openvino_genai py_generate_pipeline
-    LIBRARY DESTINATION . COMPONENT wheel_genai EXCLUDE_FROM_ALL
-    RUNTIME DESTINATION . COMPONENT wheel_genai EXCLUDE_FROM_ALL)
+        LIBRARY DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL
+        RUNTIME DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL)
