@@ -71,6 +71,10 @@ public:
         if (dr.texts.empty()) {
             return os;
         }
+        if (dr.texts.size() == 1) {
+            os << dr.texts[0];
+            return os;
+        }
         for (size_t i = 0; i < dr.texts.size() - 1; ++i) {
             os << dr.scores[i] << ": " << dr.texts[i] << '\n';
         }

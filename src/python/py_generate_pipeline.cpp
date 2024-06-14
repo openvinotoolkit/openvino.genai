@@ -379,8 +379,6 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             (generate_docstring + std::string(" \n ") + generation_config_docstring).c_str()
         )
 
-        // todo: if input_ids is a ov::Tensor/numpy tensor
-
         .def("get_tokenizer", &LLMPipeline::get_tokenizer)
         .def("start_chat", &LLMPipeline::start_chat)
         .def("finish_chat", &LLMPipeline::finish_chat)
@@ -405,16 +403,28 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             py::arg("prompt"),
             R"(Encodes a single prompt into tokenized input.)")
         
-        // TODO: add unt8 processing
-        .def("decode", py::overload_cast<std::vector<int64_t>>(&Tokenizer::decode),
+        .def(
+            "decode", 
+            [](Tokenizer& tok, std::vector<int64_t>& tokens){ 
+                return handle_utf8_results({tok.decode(tokens)})[0]; 
+            },
             py::arg("tokens"),
-            R"(Decode a sequence into a string prompt.)")
+            R"(Decode a sequence into a string prompt.)"
+        )
         
-        .def("decode", py::overload_cast<ov::Tensor>(&Tokenizer::decode),
+        .def(
+            "decode", 
+            [](Tokenizer& tok, ov::Tensor& tokens){ 
+                return handle_utf8_results(tok.decode(tokens)); 
+            },
             py::arg("tokens"),
-            R"(Decode a sequence into a string prompt.)")
+            R"(Decode tensor into a list of string prompts.)")
         
-        .def("decode", py::overload_cast<std::vector<std::vector<int64_t>>>(&Tokenizer::decode),
+        .def(
+            "decode", 
+            [](Tokenizer& tok, std::vector<std::vector<int64_t>>& tokens){ 
+                return handle_utf8_results(tok.decode(tokens)); 
+            },
             py::arg("tokens"),
             R"(Decode a batch of tokens into a list of string prompt.)")
         
