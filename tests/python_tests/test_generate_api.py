@@ -700,3 +700,33 @@ def test_chat_1(model_descr, generation_config):
         print(f'hf_output: {chat_history_hf}')
         print(f'ov_output: {chat_history_ov}')
     assert chat_history_ov == chat_history_hf
+    pipe.generate('你好！ 你好嗎？', max_new_tokens=20)
+
+
+@pytest.mark.skip(reason="probably both models ov + hf doesn't fit to memory")
+@pytest.mark.precommit
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
+def test_left_pad():
+    # test left pad tokenizer post processing implementation
+    prompts = [
+        "The Sun is yellow because",
+        "The Sun is yellow because [force left pad tokens]"
+    ]
+    models = read_model(("microsoft/phi-1_5", Path("phi-1_5/")))
+
+    config = {
+        "max_new_tokens": 20,
+        "num_beam_groups": 2,
+        "num_beams": 2,
+        "num_return_sequences": 2,
+        "do_sample": False,
+        "diversity_penalty": 1.0,
+        # phi 1_5 has no eos_token_id in model configuration
+        # ov genai will detect eos_token_id from tokenizer config
+        # hf implementation doesn't fetch it from tokenizer config and defaults to None
+        # align ov genai and hf by setting eos_token_id explicitly
+        "eos_token_id": 50256,
+    }
+
+    models[2].pad_token = models[2].eos_token
+    run_hf_ov_genai_comparison_batched(models, config, prompts)
