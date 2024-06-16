@@ -5,20 +5,19 @@
 import time
 import torch
 import warnings
-import transformers
-import torch.distributed as dist
 import logging as log
-import utils.hook_common as hook_common
-from packaging import version
 from typing import Optional, Tuple, Union, List
 from transformers.generation.stopping_criteria import (
+    EosTokenCriteria,
     StoppingCriteriaList,
     validate_stopping_criteria,
 )
 from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
-import utils.hook_greedy_search_old as hook_old_greedy
+
+
+logger = log.getLogger(__name__)
 
 
 class GenerateDecoderOnlyOutput(ModelOutput):
@@ -47,8 +46,8 @@ GenerateNonBeamOutput = Union[GenerateDecoderOnlyOutput, GenerateEncoderDecoderO
 tm_list = []
 tm_infer_list = []
 
-# Transformers version: Release/v4.39.2 97c00cdfe132164dbd793447a088432fa359fd36
-# Copied from https://github.com/huggingface/transformers/blob/v4.39-release/src/transformers/generation/utils.py#L2244
+# Transformers version: v4.40-release 4fdf58afb72b0754da30037fc800b6044e7d9c99
+# Copied from https://github.com/huggingface/transformers/blob/4fdf58afb72b0754da30037fc800b6044e7d9c99/src/transformers/generation/utils.py#L2310
 # Add the function of collecting latency
 def new_greedy_search(
         self,
@@ -173,10 +172,27 @@ def new_greedy_search(
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
         pad_token_id = pad_token_id if pad_token_id is not None else self.generation_config.pad_token_id
-        eos_token_id = eos_token_id if eos_token_id is not None else self.generation_config.eos_token_id
+        if eos_token_id is not None:
+            logger.warning_once(
+                "`eos_token_id` is deprecated in this function and will be removed in v4.41, use"
+                " `stopping_criteria=StoppingCriteriaList([EosTokenCriteria(eos_token_id=eos_token_id)])` instead."
+                " Otherwise make sure to set `model.generation_config.eos_token_id`",
+                FutureWarning,
+            )
+            stopping_criteria.append(EosTokenCriteria(eos_token_id=eos_token_id))
+        else:
+            # TODO remove when the method is totally private
+            # need to get `eos_token_id` and add stopping criteria, so that generation does not go forever
+            eos_token_id = [
+                criteria.eos_token_id.tolist() for criteria in stopping_criteria if hasattr(criteria, "eos_token_id")
+            ]
+            eos_token_id = eos_token_id[0] if eos_token_id else None
+            if eos_token_id is None and self.generation_config.eos_token_id is not None:
+                eos_token_id = self.generation_config.eos_token_id
+                stopping_criteria.append(EosTokenCriteria(eos_token_id=eos_token_id))
+
         if isinstance(eos_token_id, int):
             eos_token_id = [eos_token_id]
-        eos_token_id_tensor = torch.tensor(eos_token_id).to(input_ids.device) if eos_token_id is not None else None
         output_scores = output_scores if output_scores is not None else self.generation_config.output_scores
         output_attentions = (
             output_attentions if output_attentions is not None else self.generation_config.output_attentions
@@ -274,12 +290,6 @@ def new_greedy_search(
                 is_encoder_decoder=self.config.is_encoder_decoder,
             )
 
-            # if eos_token was found in one sentence, set sentence to finished
-            if eos_token_id_tensor is not None:
-                unfinished_sequences = unfinished_sequences.mul(
-                    next_tokens.tile(eos_token_id_tensor.shape[0], 1).ne(eos_token_id_tensor.unsqueeze(1)).prod(dim=0)
-                )
-
             unfinished_sequences = unfinished_sequences & ~stopping_criteria(input_ids, scores)
             this_peer_finished = unfinished_sequences.max() == 0
             tm_list.append(time.perf_counter() - tic)
@@ -340,15 +350,8 @@ class GreedySearchHook:
         global tm_infer_list
         return tm_infer_list
 
-    def new_forward(self, model, model_type=None):
+    def new_forward(self, model):
         """Define a new greedy search function."""
-        min_version = version.parse(hook_common.TRANS_MIN_VERSION)
-        trans_version = version.parse(transformers.__version__)
-        if trans_version < min_version:
-            log.warning(f'The function of getting latency of greedy search will not be available with current transformers version:{trans_version}')
-        else:
-            min_second_version = version.parse(hook_common.TRANS_SENCOND_VERSION)
-            if trans_version >= min_second_version:
-                model._greedy_search = new_greedy_search.__get__(model, model.__class__)
-            else:
-                model.greedy_search = hook_old_greedy.old_greedy_search.__get__(model, model.__class__)
+        model._greedy_search = new_greedy_search.__get__(model, model.__class__)
+        model._sample = new_greedy_search.__get__(model, model.__class__)
+            

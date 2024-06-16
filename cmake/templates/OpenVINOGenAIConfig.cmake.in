@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(OpenVINO COMPONENTS Runtime)
+
+if(NOT TARGET openvino_genai)
+    include("${CMAKE_CURRENT_LIST_DIR}/OpenVINOGenAITargets.cmake")
+endif()
+
+check_required_components(OpenVINOGenAI)

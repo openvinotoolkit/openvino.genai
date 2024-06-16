@@ -431,7 +431,6 @@ def _get_submodels_for_export_stable_diffusion(
     Returns the components of a Stable Diffusion model.
     """
     from diffusers import StableDiffusionXLImg2ImgPipeline
-    from diffusers.models.attention_processor import AttnProcessor
 
     models_for_export = {}
     if isinstance(pipeline, StableDiffusionXLImg2ImgPipeline):
@@ -450,7 +449,6 @@ def _get_submodels_for_export_stable_diffusion(
     # The U-NET time_ids inputs shapes depends on the value of `requires_aesthetics_score`
     # https://github.com/huggingface/diffusers/blob/v0.18.2/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl_img2img.py#L571
     pipeline.unet.config.requires_aesthetics_score = getattr(pipeline.config, "requires_aesthetics_score", False)
-    pipeline.unet.set_attn_processor(AttnProcessor())
     models_for_export["unet"] = pipeline.unet
 
     # VAE Encoder https://github.com/huggingface/diffusers/blob/v0.11.1/src/diffusers/models/vae.py#L565
@@ -969,7 +967,13 @@ def convert_mpt(args):
 
         save_ov_model_helper(ov_model, out_path, fp16=compress_to_fp16, tok=tok, config=pt_model.config)
 
-    config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+    remote_code = False
+    pt_model = None
+    try:
+        config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=False)
+    except Exception:
+        config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+        remote_code = True
     cuda, post_init = patch_gptq(config)
     model_kwargs = {}
     precision = args.precision
@@ -991,13 +995,16 @@ def convert_mpt(args):
 
         def create_model(model_id, config, model_kwargs):
             pt_model = AutoModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=True, config=config, **model_kwargs
+                model_id, trust_remote_code=remote_code, config=config, **model_kwargs
             )
             pt_model.config.use_cache = True
             pt_model.eval()
             return pt_model
 
         pt_model = create_model(args.model_id, config, model_kwargs)
+
+        if not remote_code:
+            return convert_optimum_causallm_base(pt_model, args, config, compression_only)
 
         if args.save_orig:
             pt_out_dir = Path(args.output_dir) / PYTORCH_DIR
@@ -1038,6 +1045,8 @@ def convert_mpt(args):
                 convert_to_ov(compressed_pt_model, tok, pt_path, compress_to_fp16)
 
     if is_ov_compression(args):
+        if not remote_code:
+            return convert_optimum_causallm_base(pt_model, args, config, compression_only)
         ov_path = get_fp_path(args, "openvino_model.xml")
         if compression_only:
             log.info(
@@ -1201,6 +1210,43 @@ def convert_falcon(args):
         unpatch_gptq(cuda, post_init)
 
 
+def convert_phi(args):
+    trust_remote_code = False
+    try:
+        config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=False)
+    except Exception:
+        config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
+        trust_remote_code = True
+    cuda, post_init = patch_gptq(config)
+    model_kwargs = {}
+    model_kwargs["trust_remote_code"] = trust_remote_code
+    precision = args.precision
+    compression_only = (
+        args.compress_weights
+        and not args.force_convert
+        and not is_torch_compression(args)
+        and is_ov_model_provided(args.model_id, args.output_dir, args.precision)
+    )
+    if post_init is not None:
+        model_kwargs["torch_dtype"] = torch.float32
+    pt_model = None
+    gptq_applied = is_gptq(config)
+    precision = precision if not gptq_applied else GPTQ_DIR.format(precision=args.precision)
+    if not compression_only:
+        pt_model = AutoModelForCausalLM.from_pretrained(
+            args.model_id,
+            config=config,
+            **model_kwargs,
+        )
+        pt_model.config.use_cache = True
+        pt_model.eval()
+
+    convert_optimum_causallm_base(pt_model, args, config, compression_only)
+
+    if post_init is not None:
+        unpatch_gptq(cuda, post_init)
+
+
 def convert_baichaun(args):
     config = AutoConfig.from_pretrained(args.model_id, trust_remote_code=True)
     cuda, post_init = patch_gptq(config)
@@ -1304,6 +1350,7 @@ converters = {
     "lcm": convert_lcm,
     "ldm": convert_ldm_super_res,
     "mpt": convert_mpt,
+    "phi-": convert_phi,
     "replit": convert_mpt,
     "chatglm2": convert_causal_lm,
     "chatglm3": convert_causal_lm,
