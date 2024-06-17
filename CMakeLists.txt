@@ -19,6 +19,7 @@ endif()
 
 project(OpenVINOGenAI VERSION 2024.2.0.0)
 
+option(CPACK_ARCHIVE_COMPONENT_INSTALL "If enabled (ON) multiple packages are generated." ON)
 option(CPACK_INCLUDE_TOPLEVEL_DIRECTORY "Boolean toggle to include/exclude top level directory." OFF)
 if(WIN32)
     set(CPACK_GENERATOR "ZIP" CACHE STRING "List of CPack generators to use.")

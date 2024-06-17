@@ -72,11 +72,6 @@ else()
         SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH})
 endif()
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-install(TARGETS ${TARGET_NAME}
-    LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR}
-    RUNTIME DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
-
 # - Windows: `<openvino_dir>\runtime\bin\intel64\Release\`
 # - MacOS_x86: `<openvino_dir>/runtime/lib/intel64/Release`
 # - MacOS_arm64: `<openvino_dir>/runtime/lib/arm64/Release/`

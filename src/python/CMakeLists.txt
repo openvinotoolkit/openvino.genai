@@ -48,7 +48,7 @@ endif()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 install(FILES "${CMAKE_BINARY_DIR}/openvino_genai/__init__.py" "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
-install(TARGETS openvino_genai py_generate_pipeline LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+install(TARGETS py_generate_pipeline LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
 
 # wheel_genai component is used for wheel generation in pyproject.toml.
 # Exclude wheel_genai from normal packaging because there's pygenai_X_Y component for that.
