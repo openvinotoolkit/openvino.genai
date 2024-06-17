@@ -192,11 +192,21 @@ void OpenposeDetector::forward(const std::string& im_txt, unsigned long w, unsig
     }
 
     // find the keypoints from heatmap
-    auto peaks = find_heatmap_peaks(heatmap_avg, thre1);
+    auto all_peaks = find_heatmap_peaks(heatmap_avg, thre1);
     // iterate and print peaks
-    for (auto& peak : peaks) {
-        std::cout << "Peak: " << std::get<0>(peak) << " " << std::get<1>(peak) << " " << std::get<2>(peak) << std::endl;
-        std::cout << "Counter: " << std::get<3>(peak) << std::endl;
+    for (auto& peak : all_peaks) {
+        std::cout << "Peak: " << std::get<0>(peak[0]) << " " << std::get<1>(peak[0]) << " " << std::get<2>(peak[0])
+                  << std::endl;
+        std::cout << "Counter: " << std::get<3>(peak[0]) << std::endl;
+    }
+
+    auto result = calculate_connections(paf_avg, all_peaks, ori_img, thre2);
+    auto connection_all = std::get<0>(result);
+    auto special_k = std::get<1>(result);
+
+    for (auto& connection : connection_all) {
+        std::cout << "Connection: " << std::get<0>(connection[0]) << " " << std::get<1>(connection[0]) << " "
+                  << std::get<2>(connection[0]) << " " << std::get<3>(connection[0]) << std::endl;
     }
 }
 

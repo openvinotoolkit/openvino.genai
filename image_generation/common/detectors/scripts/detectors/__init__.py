@@ -219,6 +219,13 @@ class Body(object):
                 special_k.append(k)
                 connection_all.append([])
 
+        for i in range(len(connection_all)):
+            print("connection_all[{}]: {}".format(i, connection_all[i]))
+        
+        for i in range(len(special_k)):
+            print("specital_k[{}]: {}".format(i, special_k[i]))
+ 
+
         # last number in each row is the total parts number of that person
         # the second last number in each row is the score of the overall configuration
         subset = -1 * np.ones((0, 20))

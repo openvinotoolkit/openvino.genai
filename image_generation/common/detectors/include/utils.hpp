@@ -312,7 +312,10 @@ ov::Tensor cv_gaussian_blur(const ov::Tensor& input, int sigma) {
     }
 }
 
-std::vector<std::tuple<int, int, float, int>> find_heatmap_peaks(const ov::Tensor& heatmap_avg /* f32 */, float thre1) {
+// find the peaks from heatmap, returns a vector of tuple
+// (x, y, score, id)
+std::vector<std::vector<std::tuple<int, int, float, int>>> find_heatmap_peaks(const ov::Tensor& heatmap_avg /* f32 */,
+                                                                              float thre1) {
     auto heatmap_shape = heatmap_avg.get_shape();
     auto H = heatmap_shape[1];
     auto W = heatmap_shape[2];
@@ -400,10 +403,146 @@ std::vector<std::tuple<int, int, float, int>> find_heatmap_peaks(const ov::Tenso
         all_peaks.push_back(peaks_with_score_and_id);
     }
 
-    std::vector<std::tuple<int, int, float, int>> result;
-    for (const auto& peaks : all_peaks) {
-        result.insert(result.end(), peaks.begin(), peaks.end());
+    return all_peaks;
+}
+
+std::tuple<std::vector<std::vector<std::tuple<int, int, float, int, int>>>, std::vector<int>> calculate_connections(
+    const ov::Tensor& paf_avg,
+    const std::vector<std::vector<std::tuple<int, int, float, int>>>& all_peaks,
+    const ov::Tensor& oriImg,
+    float thre2) {
+    const int mid_num = 10;
+    std::vector<std::vector<int>> limbSeq = {{2, 3},
+                                             {2, 6},
+                                             {3, 4},
+                                             {4, 5},
+                                             {6, 7},
+                                             {7, 8},
+                                             {2, 9},
+                                             {9, 10},
+                                             {10, 11},
+                                             {2, 12},
+                                             {12, 13},
+                                             {13, 14},
+                                             {2, 1},
+                                             {1, 15},
+                                             {15, 17},
+                                             {1, 16},
+                                             {16, 18},
+                                             {3, 17},
+                                             {6, 18}};
+
+    std::vector<std::vector<int>> mapIdx = {{31, 32},
+                                            {39, 40},
+                                            {33, 34},
+                                            {35, 36},
+                                            {41, 42},
+                                            {43, 44},
+                                            {19, 20},
+                                            {21, 22},
+                                            {23, 24},
+                                            {25, 26},
+                                            {27, 28},
+                                            {29, 30},
+                                            {47, 48},
+                                            {49, 50},
+                                            {53, 54},
+                                            {51, 52},
+                                            {55, 56},
+                                            {37, 38},
+                                            {45, 46}};
+    std::vector<std::vector<std::tuple<int, int, float, int, int>>> connection_all;
+    std::vector<int> special_k;
+
+    auto paf_shape = paf_avg.get_shape();
+    auto H = paf_shape[1];
+    auto W = paf_shape[2];
+    auto C = paf_shape[3];
+
+    auto paf_data = paf_avg.data<float>();
+
+    for (size_t k = 0; k < mapIdx.size(); ++k) {
+        auto score_mid_x_channel = (mapIdx[k][0] - 19);
+        auto score_mid_y_channel = (mapIdx[k][1] - 19);
+
+        const auto& candA = all_peaks[limbSeq[k][0] - 1];
+        const auto& candB = all_peaks[limbSeq[k][1] - 1];
+        int nA = candA.size();
+        int nB = candB.size();
+
+        if (nA == 0 || nB == 0) {
+            special_k.push_back(k);
+            connection_all.push_back({});
+            continue;
+        }
+
+        std::vector<std::tuple<int, int, float, float>> connection_candidate;
+
+        for (int i = 0; i < nA; ++i) {
+            for (int j = 0; j < nB; ++j) {
+                float vec_x = std::get<0>(candB[j]) - std::get<0>(candA[i]);
+                float vec_y = std::get<1>(candB[j]) - std::get<1>(candA[i]);
+                float norm = std::sqrt(vec_x * vec_x + vec_y * vec_y);
+                norm = std::max(0.001f, norm);
+                vec_x /= norm;
+                vec_y /= norm;
+
+                std::vector<std::pair<float, float>> startend(mid_num);
+                for (int l = 0; l < mid_num; ++l) {
+                    startend[l].first = std::get<0>(candA[i]) + l * vec_x / (mid_num - 1);
+                    startend[l].second = std::get<1>(candA[i]) + l * vec_y / (mid_num - 1);
+                }
+
+                std::vector<float> vec_scores(mid_num);
+                for (int l = 0; l < mid_num; ++l) {
+                    int x = std::round(startend[l].first);
+                    int y = std::round(startend[l].second);
+                    x = std::clamp(x, 0, int(W) - 1);
+                    y = std::clamp(y, 0, int(H) - 1);
+
+                    float score_mid_pts_x = paf_data[y * W * C + x * C + score_mid_x_channel];
+                    float score_mid_pts_y = paf_data[y * W * C + x * C + score_mid_y_channel];
+                    vec_scores[l] = vec_x * score_mid_pts_x + vec_y * score_mid_pts_y;
+                }
+
+                float score_with_dist_prior = std::accumulate(vec_scores.begin(), vec_scores.end(), 0.0f) / mid_num +
+                                              std::min(0.5f * oriImg.get_shape()[1] / norm - 1.0f, 0.0f);
+                int criterion1 = std::count_if(vec_scores.begin(), vec_scores.end(), [thre2](float v) {
+                                     return v > thre2;
+                                 }) > 0.8f * vec_scores.size();
+                int criterion2 = score_with_dist_prior > 0;
+
+                if (criterion1 && criterion2) {
+                    connection_candidate.emplace_back(
+                        i,
+                        j,
+                        score_with_dist_prior,
+                        score_with_dist_prior + std::get<2>(candA[i]) + std::get<2>(candB[j]));
+                }
+            }
+        }
+
+        std::sort(connection_candidate.begin(), connection_candidate.end(), [](const auto& a, const auto& b) {
+            return std::get<2>(a) > std::get<2>(b);
+        });
+
+        std::vector<std::tuple<int, int, float, int, int>> connection;
+        for (const auto& candidate : connection_candidate) {
+            int i = std::get<0>(candidate);
+            int j = std::get<1>(candidate);
+            float score = std::get<2>(candidate);
+            if (std::none_of(connection.begin(), connection.end(), [i, j](const auto& conn) {
+                    return std::get<3>(conn) == i || std::get<4>(conn) == j;
+                })) {
+                connection.emplace_back(std::get<3>(candA[i]), std::get<3>(candB[j]), score, i, j);
+                if (connection.size() >= std::min(nA, nB)) {
+                    break;
+                }
+            }
+        }
+
+        connection_all.push_back(connection);
     }
 
-    return result;
+    return {connection_all, special_k};
 }
