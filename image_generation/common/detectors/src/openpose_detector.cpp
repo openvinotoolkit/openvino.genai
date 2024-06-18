@@ -208,6 +208,23 @@ void OpenposeDetector::forward(const std::string& im_txt, unsigned long w, unsig
         std::cout << "Connection: " << std::get<0>(connection[0]) << " " << std::get<1>(connection[0]) << " "
                   << std::get<2>(connection[0]) << " " << std::get<3>(connection[0]) << std::endl;
     }
+
+    std::vector<std::vector<float>> subset;
+    std::vector<std::vector<float>> candidate;
+    process_connections(all_peaks, connection_all, special_k, subset, candidate);
+
+    // print candidate
+    for (auto& cand : candidate) {
+        std::cout << "Candidate: " << cand[0] << " " << cand[1] << " " << cand[2] << " " << cand[3] << std::endl;
+    }
+
+    for (auto& sub : subset) {
+        std::cout << "Subset: ";
+        for (auto& s : sub) {
+            std::cout << s << " ";
+        }
+        std::cout << std::endl;
+    }
 }
 
 void OpenposeDetector::postprocess() {

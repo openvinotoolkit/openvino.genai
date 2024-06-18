@@ -235,10 +235,20 @@ class Body(object):
             if k not in special_k:
                 partAs = connection_all[k][:, 0]
                 partBs = connection_all[k][:, 1]
+                print(f"partAs: {partAs}")
+                print(f"partBs: {partBs}")
                 indexA, indexB = np.array(limbSeq[k]) - 1
 
                 for i in range(len(connection_all[k])):  # = 1:size(temp,1)
                     found = 0
+                    partA = int(connection_all[k][i][0])
+                    partB = int(connection_all[k][i][1])
+                    part_score = connection_all[k][i][2]
+                    partA_score = candidate[partA, 2]
+                    partB_score = candidate[partB, 2]
+                    print(f"partA: {partA}, partB: {partB}")
+                    print(f"part score: {part_score}, partA score: {partA_score}, partB score: {partB_score}")
+
                     subset_idx = [-1, -1]
                     for j in range(len(subset)):  # 1:size(subset,1):
                         if subset[j][indexA] == partAs[i] or subset[j][indexB] == partBs[i]:
@@ -250,19 +260,19 @@ class Body(object):
                         if subset[j][indexB] != partBs[i]:
                             subset[j][indexB] = partBs[i]
                             subset[j][-1] += 1
-                            subset[j][-2] += candidate[partBs[i].astype(int), 2] + connection_all[k][i][2]
+                            subset[j][-2] += part_score + partB_score
                     elif found == 2:  # if found 2 and disjoint, merge them
                         j1, j2 = subset_idx
                         membership = ((subset[j1] >= 0).astype(int) + (subset[j2] >= 0).astype(int))[:-2]
                         if len(np.nonzero(membership == 2)[0]) == 0:  # merge
                             subset[j1][:-2] += (subset[j2][:-2] + 1)
                             subset[j1][-2:] += subset[j2][-2:]
-                            subset[j1][-2] += connection_all[k][i][2]
+                            subset[j1][-2] += part_score
                             subset = np.delete(subset, j2, 0)
                         else:  # as like found == 1
                             subset[j1][indexB] = partBs[i]
                             subset[j1][-1] += 1
-                            subset[j1][-2] += candidate[partBs[i].astype(int), 2] + connection_all[k][i][2]
+                            subset[j1][-2] += part_score + partB_score
 
                     # if find no partA in the subset, create a new subset
                     elif not found and k < 17:
@@ -270,7 +280,7 @@ class Body(object):
                         row[indexA] = partAs[i]
                         row[indexB] = partBs[i]
                         row[-1] = 2
-                        row[-2] = sum(candidate[connection_all[k][i, :2].astype(int), 2]) + connection_all[k][i][2]
+                        row[-2] = partA_score + partB_score + part_score
                         subset = np.vstack([subset, row])
         # delete some rows of subset which has few parts occur
         deleteIdx = []

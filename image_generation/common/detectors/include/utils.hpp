@@ -406,51 +406,53 @@ std::vector<std::vector<std::tuple<int, int, float, int>>> find_heatmap_peaks(co
     return all_peaks;
 }
 
+std::vector<std::vector<int>> limbSeq = {{2, 3},
+                                         {2, 6},
+                                         {3, 4},
+                                         {4, 5},
+                                         {6, 7},
+                                         {7, 8},
+                                         {2, 9},
+                                         {9, 10},
+                                         {10, 11},
+                                         {2, 12},
+                                         {12, 13},
+                                         {13, 14},
+                                         {2, 1},
+                                         {1, 15},
+                                         {15, 17},
+                                         {1, 16},
+                                         {16, 18},
+                                         {3, 17},
+                                         {6, 18}};
+
+std::vector<std::vector<int>> mapIdx = {{31, 32},
+                                        {39, 40},
+                                        {33, 34},
+                                        {35, 36},
+                                        {41, 42},
+                                        {43, 44},
+                                        {19, 20},
+                                        {21, 22},
+                                        {23, 24},
+                                        {25, 26},
+                                        {27, 28},
+                                        {29, 30},
+                                        {47, 48},
+                                        {49, 50},
+                                        {53, 54},
+                                        {51, 52},
+                                        {55, 56},
+                                        {37, 38},
+                                        {45, 46}};
+
 std::tuple<std::vector<std::vector<std::tuple<int, int, float, int, int>>>, std::vector<int>> calculate_connections(
     const ov::Tensor& paf_avg,
     const std::vector<std::vector<std::tuple<int, int, float, int>>>& all_peaks,
     const ov::Tensor& oriImg,
     float thre2) {
     const int mid_num = 10;
-    std::vector<std::vector<int>> limbSeq = {{2, 3},
-                                             {2, 6},
-                                             {3, 4},
-                                             {4, 5},
-                                             {6, 7},
-                                             {7, 8},
-                                             {2, 9},
-                                             {9, 10},
-                                             {10, 11},
-                                             {2, 12},
-                                             {12, 13},
-                                             {13, 14},
-                                             {2, 1},
-                                             {1, 15},
-                                             {15, 17},
-                                             {1, 16},
-                                             {16, 18},
-                                             {3, 17},
-                                             {6, 18}};
 
-    std::vector<std::vector<int>> mapIdx = {{31, 32},
-                                            {39, 40},
-                                            {33, 34},
-                                            {35, 36},
-                                            {41, 42},
-                                            {43, 44},
-                                            {19, 20},
-                                            {21, 22},
-                                            {23, 24},
-                                            {25, 26},
-                                            {27, 28},
-                                            {29, 30},
-                                            {47, 48},
-                                            {49, 50},
-                                            {53, 54},
-                                            {51, 52},
-                                            {55, 56},
-                                            {37, 38},
-                                            {45, 46}};
     std::vector<std::vector<std::tuple<int, int, float, int, int>>> connection_all;
     std::vector<int> special_k;
 
@@ -545,4 +547,96 @@ std::tuple<std::vector<std::vector<std::tuple<int, int, float, int, int>>>, std:
     }
 
     return {connection_all, special_k};
+}
+
+void process_connections(const std::vector<std::vector<std::tuple<int, int, float, int>>>& all_peaks,
+                         const std::vector<std::vector<std::tuple<int, int, float, int, int>>>& connection_all,
+                         const std::vector<int>& special_k,
+                         std::vector<std::vector<float>>& subset,
+                         std::vector<std::vector<float>>& candidate) {
+    // Initialize subset and candidate
+    subset.clear();
+    candidate.clear();
+
+    // Flatten all_peaks into candidate
+    for (const auto& peaks : all_peaks) {
+        for (const auto& peak : peaks) {
+            candidate.push_back({static_cast<float>(std::get<0>(peak)),
+                                 static_cast<float>(std::get<1>(peak)),
+                                 std::get<2>(peak),
+                                 static_cast<float>(std::get<3>(peak))});
+        }
+    }
+
+    for (size_t k = 0; k < mapIdx.size(); ++k) {
+        if (std::find(special_k.begin(), special_k.end(), k) == special_k.end()) {
+            const auto& parts = connection_all[k];
+            int indexA = limbSeq[k][0] - 1;
+            int indexB = limbSeq[k][1] - 1;
+
+            for (size_t i = 0; i < connection_all[k].size(); ++i) {
+                int found = 0;
+                int partA = std::get<0>(parts[i]);
+                int partB = std::get<1>(parts[i]);
+                float part_score = std::get<2>(parts[i]);
+                float partA_score = candidate[partA][2];
+                float partB_score = candidate[partB][2];
+
+                std::vector<int> subset_idx = {-1, -1};
+                for (size_t j = 0; j < subset.size(); ++j) {
+                    if (subset[j][indexA] == partA || subset[j][indexB] == partB) {
+                        subset_idx[found] = j;
+                        found += 1;
+                    }
+                }
+
+                if (found == 1) {
+                    int j = subset_idx[0];
+                    if (subset[j][indexB] != partB) {
+                        subset[j][indexB] = partB;
+                        subset[j][18] += 1;
+                        subset[j][19] += part_score + partB_score;
+                    }
+                } else if (found == 2) {
+                    int j1 = subset_idx[0];
+                    int j2 = subset_idx[1];
+                    std::vector<int> membership(subset[j1].begin(), subset[j1].begin() + 18);
+                    std::transform(membership.begin(),
+                                   membership.end(),
+                                   subset[j2].begin(),
+                                   membership.begin(),
+                                   std::plus<int>());
+                    if (std::none_of(membership.begin(), membership.end(), [](int v) {
+                            return v > 1;
+                        })) {
+                        std::transform(subset[j2].begin(),
+                                       subset[j2].begin() + 18,
+                                       subset[j1].begin(),
+                                       subset[j1].begin(),
+                                       std::plus<float>());
+                        subset[j1][19] += subset[j2][19];
+                        subset[j1][19] += part_score;
+                        subset.erase(subset.begin() + j2);
+                    } else {
+                        subset[j1][indexB] = partB;
+                        subset[j1][18] += 1;
+                        subset[j1][19] += part_score + partB_score;
+                    }
+                } else if (!found && k < 17) {
+                    std::vector<float> row(20, -1);
+                    row[indexA] = partA;
+                    row[indexB] = partB;
+                    row[18] = 2;
+                    row[19] = partA_score + partB_score + part_score;
+                    subset.push_back(row);
+                }
+            }
+        }
+    }
+
+    // Filter out invalid subsets
+    auto it = std::remove_if(subset.begin(), subset.end(), [](const std::vector<float>& row) {
+        return row[18] < 4 || (row[19] / row[18]) < 0.4;
+    });
+    subset.erase(it, subset.end());
 }
