@@ -353,4 +353,5 @@ class GreedySearchHook:
     def new_forward(self, model):
         """Define a new greedy search function."""
         model._greedy_search = new_greedy_search.__get__(model, model.__class__)
+        model._sample = new_greedy_search.__get__(model, model.__class__)
             

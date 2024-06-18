@@ -20,7 +20,8 @@ using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
 
 /**
-* @brief Structure to store resulting batched tokens and scores for each batch sequence
+* @brief Structure to store resulting batched tokens and scores for each batch sequence.
+* The first num_return_sequences elements correspond to the first batch element.
 *
 * @param tokens sequence of resulting tokens
 * @param scores scores for each sequence
@@ -33,6 +34,7 @@ public:
 
 /**
 * @brief Structure to store resulting batched text outputs and scores for each batch
+* The first num_return_sequences elements correspond to the first batch element.
 *
 * @param texts vector of resulting sequences
 * @param scores scores for each sequence
@@ -42,11 +44,11 @@ public:
     std::vector<std::string> texts;
     std::vector<float> scores;
 
-     // @brief Convert DecodedResults to a vector of strings.
-     // @return A std::vector<std::string> containing the texts from the DecodedResults object.
-    operator std::string() const { 
-        OPENVINO_ASSERT(texts.size() == 1, "DecodedResults can be converted to string only if contains a single prompt");
-        return texts.at(0); 
+    // @brief Convert DecodedResults to a string.
+    operator std::string() const {
+        std::stringstream ss;
+        ss << *this;
+        return ss.str();
     }
 
     // @brief Convert DecodedResults to a single string.
@@ -58,13 +60,17 @@ public:
      // @brief Overloads operator<< to enhance output the contents of DecodedResults.
      // @return A reference to the output stream with the concatenated texts.
     friend std::ostream& operator<<(std::ostream& os, const DecodedResults& dr) {
-       for (size_t i = 0; i < dr.texts.size(); ++i) {
-            os << dr.texts[i];
-            if (i != dr.texts.size() - 1) {
-                os << std::endl;
-            }
+        OPENVINO_ASSERT(
+            dr.scores.size() == dr.texts.size(),
+            "The number of scores and texts doesn't match in DecodedResults."
+        );
+        if (dr.texts.empty()) {
+            return os;
         }
-        return os;
+        for (size_t i = 0; i < dr.texts.size() - 1; ++i) {
+            os << dr.scores[i] << ": " << dr.texts[i] << '\n';
+        }
+        return os << dr.scores.back() << ": " << dr.texts.back();
     }
 };
 

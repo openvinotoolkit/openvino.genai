@@ -96,7 +96,7 @@ void GenerationConfig::validate() const {
                     "Beam search with sampling is not supported yet. "
                     "Please either set do_sample=false to use beam search "
                     "or set num_beams=1 if you with to use multinomial sampling.");
-    
+    OPENVINO_ASSERT(num_return_sequences <= num_beams, "num_return_sequences must be less or equal to num_beams");
     OPENVINO_ASSERT(max_new_tokens > 0, "'max_new_tokens' must be greater than 0");
     
     // max_new_tokens has priority over max_length
