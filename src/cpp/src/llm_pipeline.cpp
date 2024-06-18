@@ -517,10 +517,10 @@ public:
     ) override;
 
     void start_chat() override {
-        OPENVINO_THROW("Currently chat conversation mode isn't supported on NPU");
+        OPENVINO_THROW("Currently chat conversation mode isn't supported for NPU device");
     };
     void finish_chat() override {
-        OPENVINO_THROW("Currently chat conversation mode isn't supported on NPU");
+        OPENVINO_THROW("Currently chat conversation mode isn't supported for NPU device");
     };
 
 private:
@@ -607,7 +607,7 @@ DecodedResults NPULLMPipelineImpl::generate(
 ) {
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
     if (std::holds_alternative<std::vector<std::string>>(inputs)) {
-        OPENVINO_THROW("Currently only batch size=1 is supported for NPU");
+        OPENVINO_THROW("Currently only batch size=1 is supported for NPU device");
     }
 
     OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
@@ -635,7 +635,7 @@ EncodedResults NPULLMPipelineImpl::generate(
     }
 
     if (input_ids.get_shape().at(0) > 1u) {
-        OPENVINO_THROW("Currently only batch size=1 is supported for NPU");
+        OPENVINO_THROW("Currently only batch size=1 is supported for NPU device");
     }
 
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
@@ -654,7 +654,7 @@ EncodedResults NPULLMPipelineImpl::generate(
     }
 
     if (!config.is_greedy_decoding()) {
-        OPENVINO_THROW("Currently only greedy decoding is supported for NPU");
+        OPENVINO_THROW("Currently only greedy decoding is supported for NPU device");
     }
 
     ov::genai::EncodedResults results;
@@ -662,10 +662,10 @@ EncodedResults NPULLMPipelineImpl::generate(
     results.scores.resize(1u);
     results.tokens.resize(1u);
 
-    // NB: Check if input prompt less than maximum size supported on NPU
+    // NB: Check if input prompt less than maximum size supported for NPU device
     auto prompt_len = input_ids.get_size();
     if (prompt_len > m_kvcache_desc.total_size) {
-        OPENVINO_THROW("Currently NPU may only handle up to " + std::to_string(m_kvcache_desc.total_size) + " tokens");
+        OPENVINO_THROW("Currently NPU device may only process up to " + std::to_string(m_kvcache_desc.total_size) + " tokens");
     }
 
     // NB: Reset tensors on every generate call - chat conversation isn't supported yet!
