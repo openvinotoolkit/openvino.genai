@@ -495,6 +495,12 @@ class NPULLMPipelineImpl final : public LLMPipelineImplBase {
 public:
     NPULLMPipelineImpl(
         const std::filesystem::path& path,
+        const ov::genai::Tokenizer& tokenizer,
+        const ov::AnyMap& config
+    );
+
+    NPULLMPipelineImpl(
+        const std::filesystem::path& path,
         const ov::AnyMap& config
     );
 
@@ -533,8 +539,9 @@ private:
 
 NPULLMPipelineImpl::NPULLMPipelineImpl(
     const std::filesystem::path& path,
+    const ov::genai::Tokenizer& tokenizer,
     const ov::AnyMap& config
-) : LLMPipelineImplBase(path.string(),
+) : LLMPipelineImplBase(tokenizer,
                         from_config_json_if_exists(path),
                         chat_template_from_tokenizer_json_if_exists(path)) {
     /* NB: NPU-friendly LLM pipeline consists of two models,
@@ -579,6 +586,12 @@ NPULLMPipelineImpl::NPULLMPipelineImpl(
     prepareForNewConversation();
 };
 
+NPULLMPipelineImpl::NPULLMPipelineImpl(
+    const std::filesystem::path& path,
+    const ov::AnyMap& config
+) : NPULLMPipelineImpl(path, path.string(), config) {
+}
+
 void NPULLMPipelineImpl::prepareForNewConversation() {
     fill_tensor(m_prefill_request.get_tensor("input_ids"), m_tokenizer.get_pad_token_id());
     fill_tensor(m_prefill_request.get_tensor("position_ids"), 0u);
@@ -610,7 +623,6 @@ EncodedResults NPULLMPipelineImpl::generate(
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
 ) {
-    // FIXME: Most of this method is copy-paste from LLMPipelineImpl
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
 
@@ -715,7 +727,7 @@ EncodedResults NPULLMPipelineImpl::generate(
         results.tokens[0].push_back(last_token);
         results.scores[0] = 0u;
 
-        // NB: KV-cache is full, continue generation is impossible
+        // NB: KV-cache is full, further generation is impossible
         if (m_kvcache_desc.num_stored_tokens == m_kvcache_desc.total_size) {
             break;
         }
@@ -751,7 +763,11 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& plugin_config
 ) {
-    m_pimpl = make_unique<LLMPipelineImpl>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
+    if (device == "NPU") {
+        m_pimpl = make_unique<NPULLMPipelineImpl>(std::filesystem::path(model_path), tokenizer, plugin_config);
+    } else {
+        m_pimpl = make_unique<LLMPipelineImpl>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
+    }
 }
 
 ov::genai::LLMPipelineImpl::LLMPipelineImpl(
