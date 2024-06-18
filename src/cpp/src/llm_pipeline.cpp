@@ -69,7 +69,7 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
 
 void remove_special_tokens(ov::genai::TokenizedInputs& tokenized_input,
                            const std::string& original_text,
-                           const std::vector<std::string> special_tokens) {
+                           const std::vector<std::string>& special_tokens) {
     // todo: W/A If sentence begins with specfial tokens (<bos>, <s>, etc.) openvino_tokenizer inserts 2 special extra tokens <bos> and "▁",
     // but HF does not do that. Moreover openvino_tokenizer always inserts <bos> but in chat scenario HF does not do that because skip_special_tokens=True.
     // Need to remove both of that tokens manually to get exact token by token alignment with HF
