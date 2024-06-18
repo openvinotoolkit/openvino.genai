@@ -67,6 +67,35 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
         return std::nullopt;
 }
 
+void remove_special_tokens(ov::genai::TokenizedInputs& tokenized_input,
+                           const std::string& original_text,
+                           const std::vector<std::string> special_tokens) {
+    // todo: W/A If sentence begins with specfial tokens (<bos>, <s>, etc.) openvino_tokenizer inserts 2 special extra tokens <bos> and "▁",
+    // but HF does not do that. Moreover openvino_tokenizer always inserts <bos> but in chat scenario HF does not do that because skip_special_tokens=True.
+    // Need to remove both of that tokens manually to get exact token by token alignment with HF
+
+    auto& input_ids = tokenized_input.input_ids;
+    auto& attention_mask = tokenized_input.attention_mask;
+
+    auto size = input_ids.get_shape();
+    int64_t* inputs_data = input_ids.data<int64_t>();
+    std::vector<int64_t> tmp_ids(inputs_data, inputs_data + input_ids.get_size());
+
+    auto attention_mask_data = attention_mask.data<int64_t>();
+    std::vector<float> tmp_attn_mask(attention_mask_data, attention_mask_data + attention_mask.get_size());
+
+    auto prefix_match = [&original_text](std::string prefix) { return original_text.substr(0, prefix.length()) == prefix; };
+    if (std::any_of(special_tokens.begin(), special_tokens.end(), prefix_match)) {
+        tmp_ids.erase(tmp_ids.begin());
+        tmp_attn_mask.erase(tmp_attn_mask.begin());
+    }
+
+    input_ids = ov::Tensor(input_ids.get_element_type(), {1, tmp_ids.size()});
+    attention_mask = ov::Tensor(attention_mask.get_element_type(), {1, tmp_attn_mask.size()});
+    std::copy(tmp_ids.begin(), tmp_ids.end(), input_ids.data<int64_t>());
+    std::copy(tmp_attn_mask.begin(), tmp_attn_mask.end(), attention_mask.data<int64_t>());
+}
+
 }
 
 namespace ov {
@@ -122,8 +151,6 @@ public:
     Tokenizer m_tokenizer;
     GenerationConfig m_generation_config;
     std::string m_chat_template;
-    bool is_chat_conversation = false;
-    bool m_is_cache_empty = true;
 };
 
 LLMPipelineImplBase::LLMPipelineImplBase(const Tokenizer& tokenizer,
@@ -230,33 +257,9 @@ public:
             if (is_chat_conversation && !m_is_cache_empty)
                 text = m_tokenizer.get_eos_token() + text;
 
-            auto res = m_tokenizer.encode(text);
-            auto input_ids = res.input_ids;
-            auto attention_mask = res.attention_mask;
-
-            // todo: W/A If sentence begins with specfial tokens (<bos>, <s>, etc.) openvino_tokenizer inserts 2 special extra tokens <bos> and "▁",
-            // but HF does not do that. Moreover openvino_tokenizer always inserts <bos> but in chat scenario HF does not do that because skip_special_tokens=True.
-            // Need to remove both of that tokens manually to get exact token by token alignment with HF
-            auto size = input_ids.get_shape();
-            int64_t* inputs_data = input_ids.data<int64_t>();
-            std::vector<int64_t> tmp_ids(inputs_data, inputs_data + input_ids.get_size()); // todo: works only for batch 1
-
-            auto attention_mask_data = attention_mask.data<int64_t>();
-            std::vector<float> tmp_attn_mask(attention_mask_data, attention_mask_data + attention_mask.get_size());
-
-            std::vector<std::string> prefixes_to_exclude = {m_tokenizer.get_eos_token(), m_tokenizer.get_bos_token()};
-            auto prefix_match = [&text](std::string prefix) { return text.substr(0, prefix.length()) == prefix; };
-            if (std::any_of(prefixes_to_exclude.begin(), prefixes_to_exclude.end(), prefix_match)) {
-                tmp_ids.erase(tmp_ids.begin());
-                tmp_attn_mask.erase(tmp_attn_mask.begin());
-            }
-
-            input_ids = ov::Tensor(input_ids.get_element_type(), {1, tmp_ids.size()});
-            attention_mask = ov::Tensor(attention_mask.get_element_type(), {1, tmp_attn_mask.size()});
-            std::copy(tmp_ids.begin(), tmp_ids.end(), input_ids.data<int64_t>());
-            std::copy(tmp_attn_mask.begin(), tmp_attn_mask.end(), attention_mask.data<int64_t>());
-
-            encoded_input = TokenizedInputs{input_ids, attention_mask};
+            auto tokenized_input = m_tokenizer.encode(text);
+            remove_special_tokens(tokenized_input, text, {m_tokenizer.get_eos_token(), m_tokenizer.get_bos_token()});
+            encoded_input = tokenized_input;
         }
 
         auto encoded_results  = generate(encoded_input, config, streamer);
@@ -273,6 +276,7 @@ public:
 
         if (auto data = std::get_if<ov::Tensor>(&inputs)) {
             input_ids = *data;
+            attention_mask = ov::genai::utils::init_attention_mask(input_ids);
         } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
             input_ids = data->input_ids;
             attention_mask = data->attention_mask;
@@ -344,6 +348,8 @@ public:
         }
     }
 
+    bool is_chat_conversation = false;
+    bool m_is_cache_empty = true;
 };
 
 DecodedResults LLMPipeline::generate(
@@ -512,7 +518,7 @@ public:
     };
 
 private:
-    void reset_state();
+    void prepareForNewConversation();
 
 private:
     struct KVCacheDesc {
@@ -531,35 +537,49 @@ NPULLMPipelineImpl::NPULLMPipelineImpl(
 ) : LLMPipelineImplBase(path.string(),
                         from_config_json_if_exists(path),
                         chat_template_from_tokenizer_json_if_exists(path)) {
-    auto kvcache_model = get_core().read_model(path / "openvino_model.xml");
-    // TODO: Add this point, there must be transformation applied to expose KV-cache from the model
-    // ov::pass::ExposeKVCacheFromModel().run_on_model(kvcache_model);
-    auto prefill_model = kvcache_model->clone();
-    prefill_model->set_friendly_name(kvcache_model->get_friendly_name() + "_prefill");
+    /* NB: NPU-friendly LLM pipeline consists of two models,
+       first to process the input prompt (prefill), second to use in generation loop (kvcache)
 
+       Initialization assumes multiple steps:
+       1) Read the template model and clone it for the further use as kvcache and prefill models
+       2) Expose KV-cache input and output layers for the kvcache model
+       3) Reshape both models to static shape
+       4) Add slices to KV-cache inputs for kvcache model, this will make input and output KV-cache
+          layers to have the same shape and allow outputs writes directly to inputs for the next iteration.
+       5) Compile both models for NPUW
+       6) Initialize input tensors for kvcache and prefill models
+    */
+
+    // (1) Read the template model and clone it
+    auto kvcache_model = get_core().read_model(path / "openvino_model.xml");
+    auto prefill_model = kvcache_model->clone();
+    // TODO: (2) Expose KV-cache input and output layers
+    // ov::pass::ExposeKVCacheFromModel().run_on_model(kvcache_model);
+    prefill_model->set_friendly_name(kvcache_model->get_friendly_name() + "_prefill");
+    // (3) Reshape both models to static shape
     // FIXME: There must be better logic than just hardcoded values
     m_kvcache_desc = KVCacheDesc { 1024u, 0u };
     const uint32_t max_prompt_size = m_kvcache_desc.total_size;
     const uint32_t max_kvcache_size = m_kvcache_desc.total_size;
-
-    reshape_to_static(prefill_model, max_kvcache_size, max_kvcache_size);
+    reshape_to_static(prefill_model, max_prompt_size, max_kvcache_size);
     reshape_to_static(kvcache_model, 1u, max_kvcache_size);
+    // (4) Add slices to kvcache model
     kvcache_model = add_slices_to_kvcache_inputs(kvcache_model);
+    // (5) Compiled both models for NPUW
     std::map<std::string, std::string> cfg = { {"NPU_USE_NPUW", "YES"},
                                                {"NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
                                                {"NPUW_FOLD", "YES"},
                                                {"NPUW_DCOFF_TYPE", "f16"},
                                                {"NPUW_DCOFF_SCALE", "YES"},
                                                {"NPUW_ONLINE_PIPELINE", "NONE"} };
-
     ov::AnyMap properties{cfg.begin(), cfg.end()};
     m_prefill_request = get_core().compile_model(prefill_model, "NPU", properties).create_infer_request();
     m_kvcache_request = get_core().compile_model(kvcache_model, "NPU", properties).create_infer_request();
-
-    reset_state();
+    // (6) Initialize tensors
+    prepareForNewConversation();
 };
 
-void NPULLMPipelineImpl::reset_state() {
+void NPULLMPipelineImpl::prepareForNewConversation() {
     fill_tensor(m_prefill_request.get_tensor("input_ids"), m_tokenizer.get_pad_token_id());
     fill_tensor(m_prefill_request.get_tensor("position_ids"), 0u);
     fill_tensor(m_prefill_request.get_tensor("attention_mask"), 0u);
@@ -567,50 +587,21 @@ void NPULLMPipelineImpl::reset_state() {
     m_kvcache_desc.num_stored_tokens = 0u;
 }
 
-// FIXME: copy-paste from LLMPipelineImpl
 DecodedResults NPULLMPipelineImpl::generate(
     StringInputs inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
 ) {
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-    EncodedInputs encoded_input;
-
-    if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
-        encoded_input = m_tokenizer.encode(*input_vector);
-    } else if (auto input_str = std::get_if<std::string>(&inputs)) {
-
-        std::string text = *input_str;
-        auto res = m_tokenizer.encode(text);
-        auto input_ids = res.input_ids;
-        auto attention_mask = res.attention_mask;
-
-        // todo: W/A If sentence begins with specfial tokens (<bos>, <s>, etc.) openvino_tokenizer inserts 2 special extra tokens <bos> and "▁",
-        // but HF does not do that. Moreover openvino_tokenizer always inserts <bos> but in chat scenario HF does not do that because skip_special_tokens=True.
-        // Need to remove both of that tokens manually to get exact token by token alignment with HF
-        auto size = input_ids.get_shape();
-        int64_t* inputs_data = input_ids.data<int64_t>();
-        std::vector<int64_t> tmp_ids(inputs_data, inputs_data + input_ids.get_size()); // todo: works only for batch 1
-
-        auto attention_mask_data = attention_mask.data<int64_t>();
-        std::vector<float> tmp_attn_mask(attention_mask_data, attention_mask_data + attention_mask.get_size());
-
-        std::vector<std::string> prefixes_to_exclude = {m_tokenizer.get_eos_token(), m_tokenizer.get_bos_token()};
-        auto prefix_match = [&text](std::string prefix) { return text.substr(0, prefix.length()) == prefix; };
-        if (std::any_of(prefixes_to_exclude.begin(), prefixes_to_exclude.end(), prefix_match)) {
-            tmp_ids.erase(tmp_ids.begin());
-            tmp_attn_mask.erase(tmp_attn_mask.begin());
-        }
-
-        input_ids = ov::Tensor(input_ids.get_element_type(), {1, tmp_ids.size()});
-        attention_mask = ov::Tensor(attention_mask.get_element_type(), {1, tmp_attn_mask.size()});
-        std::copy(tmp_ids.begin(), tmp_ids.end(), input_ids.data<int64_t>());
-        std::copy(tmp_attn_mask.begin(), tmp_attn_mask.end(), attention_mask.data<int64_t>());
-
-        encoded_input = TokenizedInputs{input_ids, attention_mask};
+    if (std::holds_alternative<std::vector<std::string>>(inputs)) {
+        OPENVINO_THROW("Currently only batch size=1 is supported for NPU");
     }
 
-    auto encoded_results  = generate(encoded_input, config, streamer);
+    OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
+    const auto& text = std::get<std::string>(inputs);
+    auto tokenized_input = m_tokenizer.encode(std::get<std::string>(inputs));
+    remove_special_tokens(tokenized_input, text, {m_tokenizer.get_eos_token(), m_tokenizer.get_bos_token()});
+    auto encoded_results = generate(tokenized_input, config, streamer);
     return {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
 }
 
@@ -625,15 +616,17 @@ EncodedResults NPULLMPipelineImpl::generate(
 
     if (auto data = std::get_if<ov::Tensor>(&inputs)) {
         input_ids = *data;
-        // FIXME: As NPULLMpipelineImpl doesn't use search algorithms (e.g greedy_search)
-        // need to handle empty attention_mask somewhere in this code...
+        attention_mask = ov::genai::utils::init_attention_mask(input_ids);
     } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
         input_ids = data->input_ids;
         attention_mask = data->attention_mask;
     }
 
-    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    if (input_ids.get_shape().at(0) > 1u) {
+        OPENVINO_THROW("Currently only batch size=1 is supported for NPU");
+    }
 
+    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
     // If eos_token_id was not provided, take value from default m_generation_config
     if (config.eos_token_id == -1)
         config.eos_token_id = m_generation_config.eos_token_id;
@@ -648,24 +641,23 @@ EncodedResults NPULLMPipelineImpl::generate(
         streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
     }
 
-    auto batch_size = input_ids.get_shape().at(0);
-    if ((batch_size != 1 || !(config.is_greedy_decoding() || config.is_multinomial())) && streamer_ptr) {
-        OPENVINO_THROW("Currently streaming is possible only with batch size=1 and "
-                        "only for greedy or multinomial decoding");
+    if (!config.is_greedy_decoding()) {
+        OPENVINO_THROW("Currently only greedy decoding is supported for NPU");
     }
 
-    // NB: Start of NPU-friendly execution part
     ov::genai::EncodedResults results;
-
     // NB: Only batch=1 is supported now
     results.scores.resize(1u);
     results.tokens.resize(1u);
 
+    // NB: Check if input prompt less than maximum size supported on NPU
     auto prompt_len = input_ids.get_size();
-    int64_t last_token = -1;
+    if (prompt_len > m_kvcache_desc.total_size) {
+        OPENVINO_THROW("Currently NPU may only handle up to " + std::to_string(m_kvcache_desc.total_size) + " tokens");
+    }
 
-    // NB: Reset state on every generate call - chat conversation isn't supported yet!
-    reset_state();
+    // NB: Reset tensors on every generate call - chat conversation isn't supported yet!
+    prepareForNewConversation();
 
     auto padded_input_ids = m_prefill_request.get_tensor("input_ids");
     copy_with_left_offset(input_ids, padded_input_ids);
@@ -681,7 +673,7 @@ EncodedResults NPULLMPipelineImpl::generate(
 
     // NB: Now there are prompt_len tokens in KV-cache
     m_kvcache_desc.num_stored_tokens += prompt_len;
-    last_token = utils::argmax(m_prefill_request.get_tensor("logits"), 0);
+    int64_t last_token = utils::argmax(m_prefill_request.get_tensor("logits"), 0);
     if (streamer_ptr && streamer_ptr->put(last_token)) {
         return results;
     }
@@ -722,6 +714,11 @@ EncodedResults NPULLMPipelineImpl::generate(
         last_token = utils::argmax(m_kvcache_request.get_tensor("logits"), 0);
         results.tokens[0].push_back(last_token);
         results.scores[0] = 0u;
+
+        // NB: KV-cache is full, continue generation is impossible
+        if (m_kvcache_desc.num_stored_tokens == m_kvcache_desc.total_size) {
+            break;
+        }
 
         if (streamer_ptr && streamer_ptr->put(last_token)) {
             break;
