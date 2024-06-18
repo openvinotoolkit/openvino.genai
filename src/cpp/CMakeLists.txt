@@ -72,20 +72,15 @@ else()
         SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH})
 endif()
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-install(TARGETS ${TARGET_NAME}
-    LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR}
-    RUNTIME DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
-
 # - Windows: `<openvino_dir>\runtime\bin\intel64\Release\`
 # - MacOS_x86: `<openvino_dir>/runtime/lib/intel64/Release`
 # - MacOS_arm64: `<openvino_dir>/runtime/lib/arm64/Release/`
 # - Linux_x86: `<openvino_dir>/runtime/lib/intel64/`
 # - Linux_arm64: `<openvino_dir>/runtime/lib/aarch64/`
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" ARCH_DIR)
-if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "amd64.*|x86_64.*|AMD64.*")
+if(ARCH_DIR MATCHES "amd64.*|x86_64.*|AMD64.*")
     set(ARCH_DIR intel64)
-elseif(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(arm64.*|aarch64.*|AARCH64.*|ARM64.*)")
+elseif(ARCH_DIR MATCHES "^(arm64.*|aarch64.*|AARCH64.*|ARM64.*)")
     if(APPLE)
         set(ARCH_DIR "arm64")
     else()
