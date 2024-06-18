@@ -228,7 +228,7 @@ test_configs = [
     dict(max_new_tokens=20, num_beam_groups=3, num_beams=15, diversity_penalty=1.0)
 ]
 batched_prompts = [
-    ['table is made of', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
+    ['table is made', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
     ['hello', 'Here is the longest nowel ever: '],
     ['Alan Turing was a', 'return 0', '你好！ 你好嗎？']
 ]
