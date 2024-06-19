@@ -3,8 +3,8 @@ on:
   pull_request:
     paths:
       - .github/workflows/causal_lm_cpp.yml
-      - src/*
-      - samples/*
+      - src/**
+      - samples/**
       - thirdparty/openvino_tokenizers
       - "!**.md"
 concurrency:
