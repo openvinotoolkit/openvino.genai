@@ -94,8 +94,8 @@ def build_ov_tokenizer(hf_tokenizer):
 
 
 def build_ov_tokenizer_wrapper(hf_tokenizer, tokenizer_model, detokenizer_model):
-    ov_compiled_tokenizer = ov.compile_model(tokenizer_model)
-    ov_compiled_detokenizer = ov.compile_model(detokenizer_model)
+    ov_compiled_tokenizer = ov.compile_model(tokenizer_model, "CPU")
+    ov_compiled_detokenizer = ov.compile_model(detokenizer_model, "CPU")
 
     def encode_ov_tokenizer_full(self, text, *args, **kwargs):
         if isinstance(text, str):
@@ -185,7 +185,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
     class TokenStreamer(openvino_genai.StreamerBase):
         def __init__(self, tokenizer):
-            super().__init__()
+            openvino_genai.StreamerBase.__init__(self)
             self.tokenizer = tokenizer
             self.token_generation_time = []
             self.generated_tokens = []
@@ -214,21 +214,15 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
         convert_ov_tokenizer(model_path)
 
-    core = Core()
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-    ov_tok = core.read_model(model_path / "openvino_tokenizer.xml")
-    ov_detok = core.read_model(model_path / "openvino_detokenizer.xml")
-    hf_tokenizer = build_ov_tokenizer_wrapper(hf_tokenizer, ov_tok, ov_detok)
-
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     start = time.perf_counter()
 
-    # TO DO: add plugin config
-    llm_pipe = openvino_genai.LLMPipeline(str(model_path), device.upper())
+    llm_pipe = openvino_genai.LLMPipeline(str(model_path), device.upper(), ov_config)
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
     streamer = TokenStreamer(llm_pipe.get_tokenizer())
 
-    return llm_pipe, hf_tokenizer, end - start, streamer, True
+    return llm_pipe, tokenizer, end - start, streamer, True
 
 
 def convert_ov_tokenizer(tokenizer_path):
@@ -280,6 +274,6 @@ def is_genai_available(log_msg=False):
     except ImportError as ex:
         if log_msg:
             log.warning("Attempt to load OpenVINO GenaAI package failed. Please install openvino_genai package. Full error message available in debug mode")
-            log.debug(ex)
+            log.warning(ex)
             return False
     return True

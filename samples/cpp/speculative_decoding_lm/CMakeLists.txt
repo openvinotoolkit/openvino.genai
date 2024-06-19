@@ -10,6 +10,10 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 find_package(TBB REQUIRED COMPONENTS tbb)
 add_executable(speculative_decoding_lm speculative_decoding_lm.cpp)
 target_link_libraries(speculative_decoding_lm PRIVATE openvino::runtime TBB::tbb)
+set_target_properties(speculative_decoding_lm PROPERTIES
+    COMPILE_PDB_NAME speculative_decoding_lm
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
 target_compile_definitions(speculative_decoding_lm PRIVATE OPENVINO_TOKENIZERS_PATH="${OPENVINO_TOKENIZERS_PATH}")
 target_compile_features(speculative_decoding_lm PRIVATE cxx_std_17)
 install(TARGETS speculative_decoding_lm

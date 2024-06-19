@@ -18,7 +18,7 @@ import hashlib
 import utils.metrics_print
 import utils.output_csv
 import traceback
-from transformers import set_seed
+from transformers import set_seed, GenerationConfig
 from PIL import Image
 from utils.memory_profile import MemConsumption
 from utils.hook_forward import StableDiffusionHook
@@ -75,6 +75,8 @@ def gen_iterate_data(
 
 def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_index, bench_hook, model_precision, proc_id):
     set_seed(args['seed'])
+
+    model.generation_config = GenerationConfig()
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(input_text_list):
@@ -104,9 +106,22 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     if args['infer_count'] is not None:
         model.generation_config.eos_token_id = None
         model.config.eos_token_id = None
-        result = model.generate(**input_data, max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True, eos_token_id=None)
+        result = model.generate(
+            **input_data,
+            generation_config=GenerationConfig(),
+            max_new_tokens=int(max_gen_tokens),
+            num_beams=args['num_beams'],
+            use_cache=True,
+            eos_token_id=None
+        )
     else:
-        result = model.generate(**input_data, max_new_tokens=int(max_gen_tokens), num_beams=args['num_beams'], use_cache=True)
+        result = model.generate(
+            **input_data,
+            generation_config=GenerationConfig(),
+            max_new_tokens=int(max_gen_tokens),
+            num_beams=args['num_beams'],
+            use_cache=True
+        )
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
@@ -194,13 +209,13 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(input_text_list):
             utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
+    pt_inputs = tokenizer(input_text_list, return_tensors="pt")
+    input_token_size = pt_inputs.input_ids.shape[1]
+    pipe_tokenizer = model.get_tokenizer()
     tok_encode_start = time.perf_counter()
-    input_data = tokenizer(input_text_list, return_tensors='pt')
+    input_data = pipe_tokenizer.encode(input_text_list)
     tok_encode_end = time.perf_counter()
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
-    # Remove `token_type_ids` from inputs
-    input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
-    input_token_size = input_tokens[0].numel()
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
         out_str += " Batch_size={}, ".format(args['batch_size'])
@@ -216,26 +231,24 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     streamer.reset()
     start = time.perf_counter()
-    generated_text = model.generate(input_text_list, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], streamer=streamer)
-    log.info(generated_text)
+    generated_tokens = model.generate(input_data, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], streamer=streamer).tokens
     end = time.perf_counter()
+    log.info(type(generated_tokens[0]))
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
 
     generation_time = end - start
-
-    result = [streamer.get_tokens()]
     tok_decode_start = time.perf_counter()
-    _ = tokenizer.batch_decode(result)
+    generated_text = pipe_tokenizer.decode(generated_tokens)
     tok_decode_end = time.perf_counter()
     tok_decode_time = (tok_decode_end - tok_decode_start) * 1000
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
     for bs_idx in range(args['batch_size']):
-        generated_text_len = len(result[bs_idx])
+        generated_text_len = len(generated_tokens[bs_idx])
         num_tokens += generated_text_len
         if generated_text_len > max_gen_tokens:
             log.error('Output token size is over max output token size!')
@@ -290,6 +303,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     iter_data_list = []
     warmup_md5 = {}
     input_text_list = utils.model_utils.get_prompts(args)
+    text_gen_fn = run_text_generation if not use_genai else run_text_generation_genai
     if args['prompt_index'] is None:
         prompt_idx_list = [prompt_idx for prompt_idx, input_text in enumerate(input_text_list)]
         text_list = input_text_list
@@ -632,6 +646,23 @@ def get_argprser():
         default='openvino',
         required=False,
         help='Enables running the torch.compile() with specified backend: pytorch or openvino (default)',
+    )
+    parser.add_argument(
+        '--torch_compile_dynamic',
+        action='store_true',
+        help='Enables dynamic shape tracking for torch.compile()',
+    )
+    parser.add_argument(
+        '--torch_compile_options',
+        default=None,
+        required=False,
+        help='Options for torch.compile() in JSON format',
+    )
+    parser.add_argument(
+        '--torch_compile_input_module',
+        default=None,
+        required=False,
+        help='Specifies the module to decorate with torch.compile(). By default, parent module will be decorated.',
     )
     parser.add_argument(
         '--convert_tokenizer', action='store_true', help='Convert tokenizer to OpenVINO format'

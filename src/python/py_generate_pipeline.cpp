@@ -4,8 +4,10 @@
 #include <filesystem>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/stl_bind.h>
 #include <pybind11/functional.h>
 #include "openvino/genai/llm_pipeline.hpp"
+#include "../cpp/src/tokenizers_path.hpp"
 
 namespace py = pybind11;
 using ov::genai::LLMPipeline;
@@ -17,6 +19,8 @@ using ov::genai::StopCriteria;
 using ov::genai::StreamerBase;
 using ov::genai::StreamerVariant;
 using ov::genai::OptionalGenerationConfig;
+
+PYBIND11_MAKE_OPAQUE(std::vector<float>);
 
 namespace {
 
@@ -39,32 +43,65 @@ void update_config_from_kwargs(GenerationConfig& config, const py::kwargs& kwarg
     if (kwargs.contains("eos_token_id")) config.eos_token_id = kwargs["eos_token_id"].cast<int64_t>();
 }
 
-py::object call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config, const StreamerVariant& streamer) {
-    if (config.num_return_sequences > 1) {
-        py::list res;
-        for (auto s: pipe.generate({text}, config, streamer).texts) {
-            PyObject* py_s = PyUnicode_DecodeUTF8(s.data(), s.length(), "replace");
-            res.append(py_s);
-        }
-        return res;
-    } else {
-        auto res = std::string(pipe.generate(text, config, streamer));
-        PyObject* py_str = PyUnicode_DecodeUTF8(res.data(), res.length(), "replace");
-        return py::reinterpret_steal<py::object>(py_str);
+py::list decode_replace(const std::vector<std::string>& texts) {
+    py::list encoded;
+    for (const std::string& text : texts) {
+        encoded.append(
+            PyUnicode_DecodeUTF8(text.data(), text.length(), "replace")
+        );
     }
+    return encoded;
 }
 
-std::vector<std::string> call_with_config(LLMPipeline& pipe, const std::vector<std::string>& text, const GenerationConfig& config, const StreamerVariant& streamer) {
-    return pipe.generate(text, config, streamer);
+class OpaqueDecodedResults {
+public:
+    const py::list texts;
+    const std::vector<float> scores;
+    // pybind11 decodes strings similar to Pythons's
+    // bytes.decode('utf-8'). It raises if the decoding fails.
+    // generate() may return incomplete Unicode points if max_new_tokens
+    // was reached. Replace such points with � instead of raising an
+    // exception. std::vector<std::string> can't be moved because texts
+    // need to be encoded. Store texts in py::list. Exploit move
+    // semantics for scores and make them opaque to Python.
+    explicit OpaqueDecodedResults(DecodedResults&& cpp) :
+        texts{decode_replace(cpp.texts)},
+        scores{std::move(cpp.scores)} {}
+    operator std::string() const {
+        std::stringstream ss;
+        ss << *this;
+        return ss.str();
+    }
+    friend std::ostream& operator<<(std::ostream& os, const OpaqueDecodedResults& dr) {
+        OPENVINO_ASSERT(
+            dr.scores.size() == dr.texts.size(),
+            "The number of scores and texts doesn't match in OpaqueDecodedResults."
+        );
+        if (dr.texts.empty()) {
+            return os;
+        }
+        for (size_t i = 0; i < dr.texts.size() - 1; ++i) {
+            os << dr.scores[i] << ": " << dr.texts[i].cast<std::string>() << '\n';
+        }
+        return os << dr.scores.back() << ": " << std::prev(dr.texts.end())->cast<std::string>();
+    }
+};
+
+OpaqueDecodedResults call_with_config(LLMPipeline& pipe, const std::string& text, const GenerationConfig& config, const StreamerVariant& streamer) {
+    return OpaqueDecodedResults{pipe.generate(text, config, streamer)};
 }
 
-std::vector<std::string> call_with_kwargs(LLMPipeline& pipeline, const std::vector<std::string>& texts, const py::kwargs& kwargs) {
+OpaqueDecodedResults call_with_config(LLMPipeline& pipe, const std::vector<std::string>& text, const GenerationConfig& config, const StreamerVariant& streamer) {
+    return OpaqueDecodedResults{pipe.generate(text, config, streamer)};
+}
+
+OpaqueDecodedResults call_with_kwargs(LLMPipeline& pipeline, const std::vector<std::string>& texts, const py::kwargs& kwargs) {
     GenerationConfig config = pipeline.get_generation_config();
     update_config_from_kwargs(config, kwargs);
     return call_with_config(pipeline, texts, config, kwargs.contains("streamer") ? kwargs["streamer"].cast<StreamerVariant>() : std::monostate());
 }
 
-py::object call_with_kwargs(LLMPipeline& pipeline, const std::string& text, const py::kwargs& kwargs) {
+OpaqueDecodedResults call_with_kwargs(LLMPipeline& pipeline, const std::string& text, const py::kwargs& kwargs) {
     // Create a new GenerationConfig instance and initialize from kwargs
     GenerationConfig config = pipeline.get_generation_config();
     update_config_from_kwargs(config, kwargs);
@@ -73,15 +110,14 @@ py::object call_with_kwargs(LLMPipeline& pipeline, const std::string& text, cons
 
 std::string ov_tokenizers_module_path() {
     // Try a path relative to build artifacts folder first.
-    std::filesystem::path from_relative = ov::genai::tokenizers_relative_to_genai();
+    std::filesystem::path from_relative = tokenizers_relative_to_genai();
     if (std::filesystem::exists(from_relative)) {
         return from_relative.string();
     }
     return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
 }
 
-class EmptyStreamer: public StreamerBase {
-    // It's impossible to create an instance of pure virtual class. Define EmptyStreamer instead.
+class ConstructableStreamer: public StreamerBase {
     bool put(int64_t token) override {
         PYBIND11_OVERRIDE_PURE(
             bool,  // Return type
@@ -118,7 +154,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
     py::class_<LLMPipeline>(m, "LLMPipeline")
         .def(py::init([](const std::string& model_path, const std::string& device) {
-                ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
+                ScopedVar env_manager(ov_tokenizers_module_path());
                 return std::make_unique<LLMPipeline>(model_path, device);
             }),
         py::arg("model_path"), "path to the model path", 
@@ -143,7 +179,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init([](py::object infer_request, 
                             const Tokenizer& tokenizer,
                             OptionalGenerationConfig config) {
-            ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
+            ScopedVar env_manager(ov_tokenizers_module_path());
             return std::make_unique<LLMPipeline>(get_request_from_pyobj(infer_request), tokenizer, config);
         }),
         py::arg("infer_request"), "infer_request", 
@@ -182,10 +218,17 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, 
                                            const py::kwargs&>(&call_with_kwargs))
         .def("generate", py::overload_cast<LLMPipeline&, const std::vector<std::string>&, 
-                                           const GenerationConfig&, const StreamerVariant&>(&call_with_config))
+                                           const GenerationConfig&, const StreamerVariant&>(&call_with_config),
+            py::arg("inputs"), "lsit of prompts",
+            py::arg("config") = std::nullopt, "optional GenerationConfig",
+            py::arg("streamer") = std::monostate(), "optional streamer"
+        )
         .def("generate", py::overload_cast<LLMPipeline&, const std::string&, 
-                                           const GenerationConfig&, const StreamerVariant&>(&call_with_config))
-
+                                           const GenerationConfig&, const StreamerVariant&>(&call_with_config),
+            py::arg("inputs"), "input prompt",
+            py::arg("config") = std::nullopt, "optional GenerationConfig",
+            py::arg("streamer") = std::monostate(), "optional streamer"
+        )
         .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, 
                                            const py::kwargs&>(&call_with_kwargs))
         .def("__call__", py::overload_cast<LLMPipeline&, const std::string&, 
@@ -205,7 +248,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer 
            if it's located in a different path than the main model.)")
         .def(py::init([](const std::string& tokenizer_path) {
-            ov::genai::ScopedVar env_manager(ov_tokenizers_module_path());
+            ScopedVar env_manager(ov_tokenizers_module_path());
             return std::make_unique<Tokenizer>(tokenizer_path);
         }), py::arg("tokenizer_path"))
         .def("get_pad_token_id", &Tokenizer::get_pad_token_id)
@@ -247,17 +290,17 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("repetition_penalty", &GenerationConfig::repetition_penalty)
         .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id);
 
-    py::class_<DecodedResults>(m, "DecodedResults")
-        .def(py::init<>())
-        .def_readwrite("texts", &DecodedResults::texts)
-        .def_readwrite("scores", &DecodedResults::scores);
+    py::bind_vector<std::vector<float>>(m, "FloatVector");
+    py::class_<OpaqueDecodedResults>(m, "DecodedResults")
+        .def_readonly("texts", &OpaqueDecodedResults::texts)
+        .def_readonly("scores", &OpaqueDecodedResults::scores)
+        .def("__str__", &OpaqueDecodedResults::operator std::string);
 
     py::class_<EncodedResults>(m, "EncodedResults")
-        .def(py::init<>())
-        .def_readwrite("tokens", &EncodedResults::tokens)
-        .def_readwrite("scores", &EncodedResults::scores);
+        .def_readonly("tokens", &EncodedResults::tokens)
+        .def_readonly("scores", &EncodedResults::scores);
 
-    py::class_<StreamerBase, EmptyStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase")  // Change the holder form unique_ptr to shared_ptr
+    py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase")  // Change the holder form unique_ptr to shared_ptr
         .def(py::init<>())
         .def("put", &StreamerBase::put)
         .def("end", &StreamerBase::end);

@@ -13,8 +13,8 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 function(ov_genai_build_jinja2cpp)
     FetchContent_Declare(jinja2cpp
-        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/9ae7e1fc45d707e1686dd425a154d30963801944.tar.gz
-        URL_HASH SHA256=aa41ae425225623ba91be5de3ef1e0d942e682d519311e6235b04b4e7d880e01)
+        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/bcc0e30f17f17f738ec2a7a31316d6efbe78a0e0.tar.gz
+        URL_HASH SHA256=f76547deb323240e7d181ecda6f658757ea5eb07ce772cf39e8bd20467412164)
 
     FetchContent_GetProperties(jinja2cpp)
     if(NOT jinja2cpp_POPULATED)
@@ -50,21 +50,26 @@ target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_j
 
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_17)
 
-# Extract two last digits from CMAKE_PROJECT_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
-string(REGEX MATCH [=[[0-9][0-9]$]=] MAJOR_SUFFIX ${CMAKE_PROJECT_VERSION_MAJOR})
 set_target_properties(${TARGET_NAME} PROPERTIES
     EXPORT_NAME genai
-    VERSION ${CMAKE_PROJECT_VERSION}
-    SOVERSION ${MAJOR_SUFFIX}${CMAKE_PROJECT_VERSION_MINOR}${CMAKE_PROJECT_VERSION_PATCH}
     ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
-
-find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-install(TARGETS ${TARGET_NAME}
-    LIBRARY DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR}
-    RUNTIME DESTINATION python/openvino_genai/ COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+# Extract two last digits from CMAKE_PROJECT_VERSION_MAJOR because SOVERSION can only contain up to 4 symbols.
+string(REGEX MATCH [=[[0-9][0-9]$]=] MAJOR_SUFFIX ${OpenVINOGenAI_VERSION_MAJOR})
+if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND LINUX)
+    # Don't pack symlinks but append version hash to the name for wheel
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        SUFFIX ${CMAKE_SHARED_LIBRARY_SUFFIX}.${MAJOR_SUFFIX}${OpenVINOGenAI_VERSION_MINOR}${OpenVINOGenAI_VERSION_PATCH})
+elseif(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND APPELE)
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        SUFFIX .${MAJOR_SUFFIX}${OpenVINOGenAI_VERSION_MINOR}${OpenVINOGenAI_VERSION_PATCH}${CMAKE_SHARED_LIBRARY_SUFFIX})
+else()
+    set_target_properties(${TARGET_NAME} PROPERTIES
+        VERSION ${CMAKE_PROJECT_VERSION}
+        SOVERSION ${MAJOR_SUFFIX}${OpenVINOGenAI_VERSION_MINOR}${OpenVINOGenAI_VERSION_PATCH})
+endif()
 
 # - Windows: `<openvino_dir>\runtime\bin\intel64\Release\`
 # - MacOS_x86: `<openvino_dir>/runtime/lib/intel64/Release`
@@ -87,17 +92,24 @@ endif()
 if(MSVC OR APPLE)
     set(ARCH_DIR ${ARCH_DIR}/${CMAKE_BUILD_TYPE})
 endif()
+
 install(TARGETS ${TARGET_NAME} EXPORT OpenVINOGenAITargets
-    LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai
-        NAMELINK_COMPONENT core_genai_dev
-    ARCHIVE DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai_dev
-    RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai
-    INCLUDES DESTINATION runtime/include)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION runtime/include COMPONENT core_genai_dev)
-install(EXPORT OpenVINOGenAITargets FILE OpenVINOGenAITargets.cmake NAMESPACE openvino:: DESTINATION runtime/cmake)
+        LIBRARY DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai
+            NAMELINK_COMPONENT core_genai_dev
+        ARCHIVE DESTINATION runtime/lib/${ARCH_DIR} COMPONENT core_genai_dev
+        RUNTIME DESTINATION runtime/bin/${ARCH_DIR} COMPONENT core_genai
+        INCLUDES DESTINATION runtime/include)
+
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+        DESTINATION runtime/include COMPONENT core_genai_dev)
+install(EXPORT OpenVINOGenAITargets FILE OpenVINOGenAITargets.cmake
+        NAMESPACE openvino:: DESTINATION runtime/cmake)
+
 include(CMakePackageConfigHelpers)
-configure_package_config_file(OpenVINOGenAIConfig.cmake.in "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfig.cmake" INSTALL_DESTINATION runtime/cmake)
-install(FILES "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfig.cmake" "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfig.cmake" DESTINATION runtime/cmake COMPONENT core_genai_dev)
-include(CMakePackageConfigHelpers)
-write_basic_package_version_file("${CMAKE_BINARY_DIR}/OpenVINOGenAIConfigVersion.cmake" VERSION ${CMAKE_PROJECT_VERSION} COMPATIBILITY AnyNewerVersion)
+configure_package_config_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/OpenVINOGenAIConfig.cmake.in"
+                              "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfig.cmake" INSTALL_DESTINATION runtime/cmake)
+write_basic_package_version_file("${CMAKE_BINARY_DIR}/OpenVINOGenAIConfigVersion.cmake"
+                                 VERSION ${OpenVINOGenAI_VERSION} COMPATIBILITY AnyNewerVersion)
+install(FILES "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfig.cmake" "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfigVersion.cmake"
+        DESTINATION runtime/cmake COMPONENT core_genai_dev)
 export(EXPORT OpenVINOGenAITargets FILE "${CMAKE_BINARY_DIR}/OpenVINOGenAITargets.cmake" NAMESPACE openvino::)

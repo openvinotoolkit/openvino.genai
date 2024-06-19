@@ -17,30 +17,30 @@ elseif(NOT GENERATOR_IS_MULTI_CONFIG_VAR AND NOT DEFINED CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel ...")
 endif()
 
-project(OpenVINOGenAI VERSION 2024.2.0.0)
+project(OpenVINOGenAI
+        VERSION 2024.2.0.0
+        DESCRIPTION "OpenVINO GenAI"
+        HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
+        LANGUAGES CXX)
 
-add_subdirectory(./thirdparty/)
+# Find OpenVINODeveloperPackage first to compile with SDL flags
+find_package(OpenVINODeveloperPackage QUIET
+             PATHS "${OpenVINO_DIR}")
+if(NOT OpenVINODeveloperPackage_FOUND)
+    find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+endif()
+
+include(cmake/features.cmake)
+
+add_subdirectory(thirdparty)
 add_subdirectory(src)
-add_subdirectory(samples/cpp/beam_search_causal_lm/)
-add_subdirectory(samples/cpp/chat_sample/)
-add_subdirectory(samples/cpp/greedy_causal_lm/)
-add_subdirectory(samples/cpp/multinomial_causal_lm/)
-add_subdirectory(samples/cpp/prompt_lookup_decoding_lm/)
-add_subdirectory(samples/cpp/speculative_decoding_lm/)
-add_subdirectory(samples/cpp/rag_sample/)
+add_subdirectory(samples)
 
-install(DIRECTORY
-        ./samples/cpp/beam_search_causal_lm
-        ./samples/cpp/chat_sample
-        ./samples/cpp/greedy_causal_lm
-        ./samples/cpp/multinomial_causal_lm
-	./samples/cpp/rag_sample
-        # Don't install prompt_lookup_decoding_lm and speculative_decoding_lm because they don't use openvino_genai library and arent verifyed yet.
-    DESTINATION samples/cpp/ COMPONENT cpp_samples_genai)
-install(FILES ./samples/cpp/requirements.txt DESTINATION samples/cpp/ COMPONENT cpp_samples_genai)
 install(FILES LICENSE DESTINATION licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
 install(FILES third-party-programs.txt DESTINATION licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
-if(MSVC AND NOT DEFINED CPACK_GENERATOR)
+
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+if(WIN32 AND NOT DEFINED CPACK_GENERATOR)
     set(CPACK_GENERATOR "ZIP")
 endif()
 include(CPack)
