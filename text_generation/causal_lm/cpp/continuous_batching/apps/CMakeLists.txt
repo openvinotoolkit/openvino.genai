@@ -26,4 +26,4 @@ target_link_libraries(${TARGET_NAME} PRIVATE openvino::continuous_batching cxxop
 
 set(TARGET_NAME throughput_benchmark)
 add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
-target_link_libraries(${TARGET_NAME} PRIVATE openvino::continuous_batching nlohmann_json::nlohmann_json cxxopts::cxxopts)
+target_link_libraries(${TARGET_NAME} PRIVATE openvino::continuous_batching nlohmann_json::nlohmann_json cxxopts::cxxopts pthread)
