@@ -11,6 +11,11 @@ FetchContent_Declare(
 FetchContent_GetProperties(pybind11)
 if(NOT pybind11_POPULATED)
     FetchContent_Populate(pybind11)
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
+        find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
+    else()
+        find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+    endif()
     # search for FindPython3.cmake instead of legacy modules
     set(PYBIND11_FINDPYTHON ON)
     add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
