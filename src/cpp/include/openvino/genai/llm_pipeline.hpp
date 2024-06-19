@@ -14,6 +14,7 @@
 namespace ov {
 namespace genai {
 
+// Return flag correspods whether generation should be stopped: false means continue generation, true means stop.
 using StreamerVariant = std::variant<std::function<bool(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
@@ -22,9 +23,12 @@ using StringInputs = std::variant<std::string, std::vector<std::string>>;
 /**
 * @brief Structure to store resulting batched tokens and scores for each batch sequence.
 * The first num_return_sequences elements correspond to the first batch element.
+* In the case if results decoded with beam search and random sampling scores contain 
+* sum of logarithmic probabilities for each token in the sequence. In the case 
+* of greedy decoding scores are filled with zeros.
 *
 * @param tokens sequence of resulting tokens
-* @param scores scores for each sequence
+* @param scores sum of logarithmic probabilities of all tokens in the sequence
 */
 class EncodedResults {
 public:
@@ -65,6 +69,10 @@ public:
             "The number of scores and texts doesn't match in DecodedResults."
         );
         if (dr.texts.empty()) {
+            return os;
+        }
+        if (dr.texts.size() == 1) {
+            os << dr.texts[0];
             return os;
         }
         for (size_t i = 0; i < dr.texts.size() - 1; ++i) {
@@ -207,7 +215,6 @@ public:
 
     void start_chat();
     void finish_chat();
-    std::string apply_chat_template(std::string prompt, std::string role = "user") const;
 private:
     class LLMPipelineImpl;
     std::unique_ptr<LLMPipelineImpl> m_pimpl;
