@@ -55,3 +55,7 @@ FetchContent_Declare(
   add_executable(detectors_test detectors_test.cpp)
   target_link_libraries(detectors_test PRIVATE detectors gtest_main)
   gtest_discover_tests(detectors_test)
+
+
+add_executable(detectors_bridge detectors_bridge.cpp)
+target_link_libraries(detectors_bridge PRIVATE detectors)

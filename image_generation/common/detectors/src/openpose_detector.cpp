@@ -502,4 +502,9 @@ void OpenposeDetector::process_connections(
         return row[18] < 4 || (row[19] / row[18]) < 0.4;
     });
     subset.erase(it, subset.end());
+
+    // Swap row[18] and row[19], to keep with python side
+    for (auto& row : subset) {
+        std::swap(row[18], row[19]);
+    }
 }
