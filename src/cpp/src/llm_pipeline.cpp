@@ -402,11 +402,6 @@ std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
 
 namespace {
 
-ov::Core get_core() {
-    static ov::Core core;
-    return core;
-}
-
 std::shared_ptr<ov::Model> add_slices_to_kvcache_inputs(const std::shared_ptr<ov::Model>& model) {
     const auto kvcache_name_pattern = "past_key_values";
     std::vector<std::shared_ptr<ov::opset13::Parameter>> new_params;
@@ -557,8 +552,9 @@ NPULLMPipelineImpl::NPULLMPipelineImpl(
        6) Initialize input tensors for kvcache and prefill models
     */
 
+    ov::Core core;
     // (1) Read the template model and clone it
-    auto kvcache_model = get_core().read_model(path / "openvino_model.xml");
+    auto kvcache_model = core.read_model(path / "openvino_model.xml");
     auto prefill_model = kvcache_model->clone();
     // TODO: (2) Expose KV-cache input and output layers
     // ov::pass::ExposeKVCacheFromModel().run_on_model(kvcache_model);
@@ -580,8 +576,8 @@ NPULLMPipelineImpl::NPULLMPipelineImpl(
                                                {"NPUW_DCOFF_SCALE", "YES"},
                                                {"NPUW_ONLINE_PIPELINE", "NONE"} };
     ov::AnyMap properties{cfg.begin(), cfg.end()};
-    m_prefill_request = get_core().compile_model(prefill_model, "NPU", properties).create_infer_request();
-    m_kvcache_request = get_core().compile_model(kvcache_model, "NPU", properties).create_infer_request();
+    m_prefill_request = core.compile_model(prefill_model, "NPU", properties).create_infer_request();
+    m_kvcache_request = core.compile_model(kvcache_model, "NPU", properties).create_infer_request();
     // (6) Initialize tensors
     prepareForNewConversation();
 };
@@ -727,11 +723,6 @@ EncodedResults NPULLMPipelineImpl::generate(
         results.tokens[0].push_back(last_token);
         results.scores[0] = 0u;
 
-        // NB: KV-cache is full, further generation is impossible
-        if (m_kvcache_desc.num_stored_tokens == m_kvcache_desc.total_size) {
-            break;
-        }
-
         if (streamer_ptr && streamer_ptr->put(last_token)) {
             break;
         }
@@ -739,6 +730,12 @@ EncodedResults NPULLMPipelineImpl::generate(
         if (last_token == m_generation_config.eos_token_id) {
             break;
         }
+
+        // NB: KV-cache is full, further generation is impossible
+        if (m_kvcache_desc.num_stored_tokens == m_kvcache_desc.total_size) {
+            break;
+        }
+
     }
     return results;
 }
