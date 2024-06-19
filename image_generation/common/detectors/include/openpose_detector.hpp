@@ -3,21 +3,43 @@
 
 #pragma once
 
-#include "base_detector.hpp"
+#include <openvino/runtime/tensor.hpp>
+
 #include "openvino/runtime/compiled_model.hpp"
+#include "utils.hpp"
 
 class OpenposeDetector {
 public:
     OpenposeDetector() = default;
 
     void load(const std::string&);
-    ov::Tensor preprocess(ov::Tensor);
-    std::pair<ov::Tensor, ov::Tensor> inference(ov::Tensor);
-    void postprocess();
+    std::pair<ov::Tensor, ov::Tensor> inference(const ov::Tensor&);
 
-    // will be deleted
-    void forward(const std::string&, unsigned long w, unsigned long h, unsigned long c);
+    void forward(const ov::Tensor&,
+                 std::vector<std::vector<float>>& subset,
+                 std::vector<std::vector<float>>& candidate);
 
 private:
     ov::CompiledModel body_model;
+    static const std::vector<std::vector<int>> limbSeq;
+    static const std::vector<std::vector<int>> mapIdx;
+
+    // find the peaks from heatmap, returns a vector of tuple
+    // (x, y, score, id)
+    void find_heatmap_peaks(const ov::Tensor& heatmap_avg /* f32 */,
+                            float thre1,
+                            std::vector<std::vector<std::tuple<int, int, float, int>>>& all_peaks);
+
+    void calculate_connections(const ov::Tensor& paf_avg,
+                               const std::vector<std::vector<std::tuple<int, int, float, int>>>& all_peaks,
+                               const ov::Tensor& oriImg,
+                               const float thre2,
+                               std::vector<std::vector<std::tuple<int, int, float, int, int>>>& connection_all,
+                               std::vector<int>& special_k);
+
+    void process_connections(const std::vector<std::vector<std::tuple<int, int, float, int>>>& all_peaks,
+                             const std::vector<std::vector<std::tuple<int, int, float, int, int>>>& connection_all,
+                             const std::vector<int>& special_k,
+                             std::vector<std::vector<float>>& subset,
+                             std::vector<std::vector<float>>& candidate);
 };
