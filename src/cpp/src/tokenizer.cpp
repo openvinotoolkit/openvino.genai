@@ -4,6 +4,8 @@
 #include <openvino/openvino.hpp>
 #include "openvino/genai/tokenizer.hpp"
 #include "utils.hpp"
+#include <jinja2cpp/template.h>
+#include <jinja2cpp/template_env.h>
 #include "tokenizers_path.hpp"
 #include <fstream>
 
@@ -61,10 +63,13 @@ public:
     std::string m_pad_token = "";
     std::string m_bos_token = "";
     std::string m_eos_token = "";
+    
+    std::string m_chat_template = "";
 
     TokenizerImpl() = default;
 
-    TokenizerImpl(std::filesystem::path tokenizer_path) {
+    TokenizerImpl(std::filesystem::path tokenizer_path)
+        : m_chat_template{chat_template_from_tokenizer_json_if_exists(tokenizer_path)} {
         ov::Core core;
         
         if (tokenizer_path.extension() == ".xml")
@@ -277,6 +282,63 @@ public:
         auto res_data = res.data<std::string>();
         return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
     }
+
+    std::string chat_template_from_tokenizer_json_if_exists(const std::filesystem::path& path) {
+        auto tokenizer_config_file_path = path / "tokenizer_config.json";
+        if (!std::filesystem::exists(tokenizer_config_file_path))
+            return "";
+        
+        std::ifstream file(tokenizer_config_file_path);
+        if (!file.is_open())
+            return "";
+        
+        std::string res = "";
+        ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
+
+        // Replace what jinja2cpp doesn't support
+        std::pair<std::string, std::string> replace_str_map[] = {
+            {"\n'}", "\n' }"},
+            {".strip()", "\"\""}
+        };
+        if (!res.empty()) {
+            for (const auto& [from, to] : replace_str_map) {
+                size_t pos = 0;
+                while ((pos = res.find(from, pos)) != std::string::npos) {
+                    res.replace(pos, from.size(), to);
+                    pos += to.size();
+                }
+            }
+        }
+        return res;
+    }    
+
+    std::string apply_chat_template(const ChatHistory& history, 
+                                    bool add_generation_prompt, 
+                                    const std::string& chat_template) const {
+        jinja2::TemplateEnv env;
+        env.GetSettings().lstripBlocks = true;
+        env.GetSettings().trimBlocks = true;
+        jinja2::Template tpl(&env);
+        tpl.Load(chat_template.empty() ? m_chat_template : chat_template);
+        
+        jinja2::ValuesList jinja_messages;
+        jinja2::ValuesMap jinja_message;
+        for (const auto& message : history) {
+            jinja_message = {{"role", message.at("role")}, {"content", message.at("content")}};
+            jinja_messages.emplace_back(jinja_message);
+        }
+        
+        jinja2::ValuesMap params = {
+            {"messages", jinja_messages},
+            {"bos_token",  m_bos_token},
+            {"eos_token", m_eos_token},
+            {"pad_token", m_pad_token},
+            {"add_generation_prompt", add_generation_prompt},
+        };
+        return tpl.RenderAsString(params).value();
+    }
+
+    
 };
 
 Tokenizer::Tokenizer(const std::string& tokenizer_path) {
@@ -334,6 +396,12 @@ std::string Tokenizer::get_bos_token() const {
 
 std::string Tokenizer::get_eos_token() const {
     return m_pimpl->m_eos_token;
+}
+
+std::string Tokenizer::apply_chat_template(const ChatHistory& history,
+                                           bool add_generation_prompt,
+                                           const std::string& chat_template) const {
+    return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template);
 }
 
 Tokenizer::~Tokenizer() = default;
