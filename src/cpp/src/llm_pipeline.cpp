@@ -494,8 +494,7 @@ NPULLMPipelineImpl::NPULLMPipelineImpl(
                                                {"NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
                                                {"NPUW_FOLD", "YES"},
                                                {"NPUW_DCOFF_TYPE", "f16"},
-                                               {"NPUW_DCOFF_SCALE", "YES"},
-                                               {"NPUW_ONLINE_PIPELINE", "NONE"} };
+                                               {"NPUW_DCOFF_SCALE", "YES"} };
     ov::AnyMap properties{cfg.begin(), cfg.end()};
     m_prefill_request = core.compile_model(prefill_model, "NPU", properties).create_infer_request();
     m_kvcache_request = core.compile_model(kvcache_model, "NPU", properties).create_infer_request();
