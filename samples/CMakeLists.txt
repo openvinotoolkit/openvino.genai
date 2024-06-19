@@ -4,6 +4,7 @@
 
 add_subdirectory(cpp/beam_search_causal_lm)
 add_subdirectory(cpp/chat_sample)
+add_subdirectory(cpp/rag_sample)
 add_subdirectory(cpp/greedy_causal_lm)
 add_subdirectory(cpp/multinomial_causal_lm)
 add_subdirectory(cpp/prompt_lookup_decoding_lm)
@@ -17,6 +18,7 @@ install(DIRECTORY
             cpp/chat_sample
             cpp/greedy_causal_lm
             cpp/multinomial_causal_lm
+            cpp/rag_sample
             # Don't install prompt_lookup_decoding_lm and speculative_decoding_lm because they don't use openvino_genai library and arent verifyed yet.
         DESTINATION samples/cpp COMPONENT cpp_samples_genai)
 
