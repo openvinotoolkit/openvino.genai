@@ -37,7 +37,7 @@ file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py" DESTINATION "
 configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/__version__.py.in"
                "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" @ONLY)
 
-if(SKBUILD)
+if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME)
     # RPATH for wheel is mandatory to find openvino_genai library. It
     # must be forced because GenAI may be built with OpenVINO targeting
     # archive. Such OpenVINO configurations sets
