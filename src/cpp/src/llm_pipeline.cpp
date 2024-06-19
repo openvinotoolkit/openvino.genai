@@ -499,7 +499,7 @@ NPULLMPipelineImpl::NPULLMPipelineImpl(
     m_prefill_request = core.compile_model(prefill_model, "NPU", properties).create_infer_request();
     m_kvcache_request = core.compile_model(kvcache_model, "NPU", properties).create_infer_request();
     // (6) Initialize tensors
-    prepareForNewConversation();
+    prepare_for_new_conversation();
 };
 
 NPULLMPipelineImpl::NPULLMPipelineImpl(
