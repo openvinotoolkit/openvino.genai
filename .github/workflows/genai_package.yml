@@ -24,7 +24,7 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-      - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+      - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
       - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - run: source ./ov/setupvars.sh && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
       - run: ov/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
@@ -53,7 +53,7 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-      - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+      - run: source ./ov/setupvars.sh && python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
       - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - run: source ./ov/setupvars.sh && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
       - run: ov/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
@@ -93,7 +93,7 @@ jobs:
       - run: call ov\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
       - run: call ov\setupvars.bat && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
       - run: call ov\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-      - run: call ov\setupvars.bat && python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+      - run: call ov\setupvars.bat && python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
       - run: call ov\setupvars.bat && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - run: call ov\setupvars.bat && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
       - run: call ov\samples\cpp\build_samples_msvc.bat -i "${{ github.workspace }}/samples_install"
