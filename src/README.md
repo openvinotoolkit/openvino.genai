@@ -16,7 +16,7 @@ To build OpenVINO™ GenAI library from source, refer to the [Build Instructions
 
 1. Installed OpenVINO™ GenAI
 
-    > If OpenVINO GenAI is installed via archive distribution or built from source, you will need to install additional python dependencies (e.g. `optimum-cli` for simplified model downloading and exporting):
+    > If OpenVINO GenAI is installed via archive distribution or built from source, you will need to install additional python dependencies (e.g. `optimum-cli` for simplified model downloading and exporting, it's not required to install [./samples/cpp/requirements.txt](./samples/cpp/requirements.txt) for deplyment if the model has already been exported):
     > 
     > ```sh
     > # (Optional) Clone OpenVINO GenAI repository if it does not exist
