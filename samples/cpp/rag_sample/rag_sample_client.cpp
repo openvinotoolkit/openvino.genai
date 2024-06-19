@@ -25,13 +25,13 @@ int main(){
 
     std::cout << "embeddings->status: " << embeddings->status << "\n";
     std::cout << "embeddings->body: " << embeddings->body << "\n";
-
+    std::cout << "embeddings finished\n";
     //promot input sample
     std::string user_prompt = "What is OpenVINO?";
 
     auto llm_init = cli.Post("/llm_init",  "", "");
-    std::cout << "completions->status: " << llm_init->status << "\n";
-    std::cout << "completions->body: " << llm_init->body << "\n";
+    std::cout << "llm_init->status: " << llm_init->status << "\n";
+    std::cout << "llm_init->body: " << llm_init->body << "\n";
     sleep(1);
 
     auto completions = cli.Post("/completions", user_prompt, "text/plain");

@@ -11,7 +11,7 @@ Embeddings::Embeddings (std::string bert_path, std::string device){
 
 
 std::vector<ov::Tensor> Embeddings::tokenize(std::string prompt) {
-    constexpr size_t BATCH_SIZE = 1;
+    // constexpr size_t BATCH_SIZE = 1;
     auto input_tensor = ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt};
 
     // std::cout << "prompt length: " << prompt.length() << std::endl;
@@ -33,10 +33,7 @@ std::vector<ov::Tensor> Embeddings::tokenize(std::string prompt) {
     }
     
     // tokenizer.set_input_tensor(input_tensor);
-    std::cout << "Set input tensor works\n";
     tokenizer.infer();
-    
-    std::cout << "Tokenizer infer works\n";
     return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask"), tokenizer.get_tensor("token_type_ids")};
 }
 
@@ -68,26 +65,22 @@ void Embeddings::init(std::string bert_path , std::string bert_tokenizer_path, s
 }
 
 
-void Embeddings::run(std::string query){
-    // run_bert_embeddings(query, embedding_model, tokenizer);
-}
-
-
-std::vector<std::vector<std::vector<float>>> Embeddings::run(std::vector<std::string> queries){
+std::vector<std::vector<std::vector<float>>> Embeddings::encode_queries(std::vector<std::string> queries){
     std::cout << "size of queries: " << queries.size() << std::endl;
     std::vector<std::vector<std::vector<float>>> embedding_results;
     for(auto query: queries){
-        std::vector<std::vector<float>> embedding_result = run_bert_embeddings(query);
+        std::vector<std::vector<float>> embedding_result = encode_query(query);
         embedding_results.push_back(embedding_result);
     }
     std::cout << "size of embedding_results: " << embedding_results.size() << std::endl;
     std::cout << "size of embedding_results0: " << embedding_results[0].size() << std::endl;
     std::cout << "size of embedding_results00: " << embedding_results[0][0].size() << std::endl;
+    std::cout << "embedding infer successed\n";
     return embedding_results;
 }
 
 
-std::vector<std::vector<float>> Embeddings::run_bert_embeddings(std::string query){
+std::vector<std::vector<float>> Embeddings::encode_query(std::string query){
     //tokenize
     auto tokenied_output = tokenize(query);
 
@@ -109,7 +102,7 @@ std::vector<std::vector<float>> Embeddings::run_bert_embeddings(std::string quer
     // ov::Tensor token_type_ids = embedding_model.get_tensor("token_type_ids");
     // token_type_ids.set_shape(input_ids.get_shape());
     // std::iota(token_type_ids.data<int64_t>(), token_type_ids.data<int64_t>() + seq_len, 0);
-    constexpr size_t BATCH_SIZE = 1;
+    // constexpr size_t BATCH_SIZE = 1;
     embedding_model.infer();
     auto res = embedding_model.get_tensor("last_hidden_state");
 
@@ -129,7 +122,7 @@ std::vector<std::vector<float>> Embeddings::run_bert_embeddings(std::string quer
             // std::cout << std::endl;
         }
     }
-    std::cout << "embedding infer successed\n";
+    
     return embedding_result;
 }
 

@@ -20,12 +20,12 @@ class Embeddings{
         ov::InferRequest tokenizer;
 
         void init(std::string bert_path , std::string bert_tokenizer_path, std::string device);
-        void run(std::string query);
-        std::vector<std::vector<std::vector<float>>> run(std::vector<std::string> queries);
+        std::vector<std::vector<std::vector<float>>> encode_queries(std::vector<std::string> queries);
 
     private:
-
-        std::vector<std::vector<float>> run_bert_embeddings(std::string query);
+    
+        size_t BATCH_SIZE = 1;
+        std::vector<std::vector<float>> encode_query(std::string query);
         std::vector<ov::Tensor> tokenize(std::string prompt);
 
         inline ov::Tensor convert_inttensor_to_floattensor(ov::Tensor itensor);

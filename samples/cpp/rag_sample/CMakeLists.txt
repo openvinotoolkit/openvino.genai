@@ -32,22 +32,18 @@ target_compile_definitions(handle_master PRIVATE OPENVINO_TOKENIZERS_PATH="${OPE
 
 add_executable(rag_sample_server rag_sample_server.cpp)
 add_executable(rag_sample_client rag_sample_client.cpp)
-# add_executable(bert_sample bert_sample.cpp)
 
 target_link_libraries(rag_sample_server PRIVATE openvino::genai)
 target_link_libraries(rag_sample_server PRIVATE handle_master)
 target_link_libraries(rag_sample_server PRIVATE embeddings)
-# target_link_libraries(bert_sample PRIVATE openvino::genai)
-# target_link_libraries(bert_sample PRIVATE embeddings)
 
 
 target_compile_definitions(rag_sample_server PRIVATE OPENVINO_TOKENIZERS_PATH="${OPENVINO_TOKENIZERS_PATH}")
 
 target_compile_features(rag_sample_server PRIVATE cxx_std_17)
 target_compile_features(rag_sample_client PRIVATE cxx_std_17)
-# target_compile_features(bert_sample PRIVATE cxx_std_17)
 
-install(TARGETS rag_sample_server rag_sample_client #bert_sample
+install(TARGETS rag_sample_server rag_sample_client 
     RUNTIME DESTINATION samples_bin/
     COMPONENT samples_bin
     EXCLUDE_FROM_ALL)

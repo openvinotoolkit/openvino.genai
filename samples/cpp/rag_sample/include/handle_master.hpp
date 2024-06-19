@@ -13,7 +13,7 @@
 #include "util.hpp"
 
 using json = nlohmann::json;
-using HandleInput = std::variant<int, std::shared_ptr<Embeddings>, std::shared_ptr<util::LLMPipelineUtil>>;
+using HandleInput = std::variant<int, std::shared_ptr<Embeddings>, std::shared_ptr<ov::genai::LLMPipeline>>;
 
 class HandleMaster {
 public:
@@ -26,11 +26,11 @@ public:
 
 private:
     std::function<void(const httplib::Request&, httplib::Response&)> get_handle_llm_init(
-        std::shared_ptr<util::LLMPipelineUtil>& llm_pointer_ref,
+        std::shared_ptr<ov::genai::LLMPipeline>& llm_pointer_ref,
         util::Args args);
-
     std::function<void(const httplib::Request&, httplib::Response&)> get_handle_llm(
-        std::shared_ptr<util::LLMPipelineUtil>& llm_pointer_ref);
+        std::shared_ptr<ov::genai::LLMPipeline>& llm_pointer_ref,
+        util::Args args);
 
     std::function<void(const httplib::Request&, httplib::Response&)> get_handle_embeddings_init(
         std::shared_ptr<Embeddings>& embedding_pointer_ref,
