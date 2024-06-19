@@ -441,7 +441,7 @@ public:
     };
 
 private:
-    void prepareForNewConversation();
+    void prepare_for_new_conversation();
 
 private:
     struct KVCacheDesc {
@@ -508,7 +508,7 @@ NPULLMPipelineImpl::NPULLMPipelineImpl(
 ) : NPULLMPipelineImpl(path, path.string(), config) {
 }
 
-void NPULLMPipelineImpl::prepareForNewConversation() {
+void NPULLMPipelineImpl::prepare_for_new_conversation() {
     fill_tensor(m_prefill_request.get_tensor("input_ids"), m_tokenizer.get_pad_token_id());
     fill_tensor(m_prefill_request.get_tensor("position_ids"), 0u);
     fill_tensor(m_prefill_request.get_tensor("attention_mask"), 0u);
@@ -584,7 +584,7 @@ EncodedResults NPULLMPipelineImpl::generate(
     }
 
     // NB: Reset tensors on every generate call - chat conversation isn't supported yet!
-    prepareForNewConversation();
+    prepare_for_new_conversation();
 
     auto padded_input_ids = m_prefill_request.get_tensor("input_ids");
     copy_with_left_offset(input_ids, padded_input_ids);
