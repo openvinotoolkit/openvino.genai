@@ -5,11 +5,7 @@
 #include <fstream>
 #include <variant>
 #include <algorithm>
-
 #include <nlohmann/json.hpp>
-#include <jinja2cpp/template.h>
-#include <jinja2cpp/template_env.h>
-
 #include <openvino/openvino.hpp>
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -32,20 +28,6 @@ ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::pa
     }
 }
 
-std::string chat_template_from_tokenizer_json_if_exists(const std::filesystem::path& path) {
-    auto tokenizer_config_file_path = path / "tokenizer_config.json";
-    if (!std::filesystem::exists(tokenizer_config_file_path))
-        return "";
-
-    std::ifstream file(tokenizer_config_file_path);
-    if (!file.is_open())
-        return "";
-
-    std::string res = "";
-    ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
-    return res;
-}
-
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
     ov::genai::StreamerVariant streamer = std::monostate();
 
@@ -65,35 +47,6 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
         return config_map.at(CONFIG_ARG_NAME).as<ov::genai::GenerationConfig>();
     else
         return std::nullopt;
-}
-
-void remove_special_tokens(ov::genai::TokenizedInputs& tokenized_input,
-                           const std::string& original_text,
-                           const std::vector<std::string>& special_tokens) {
-    // todo: W/A If sentence begins with specfial tokens (<bos>, <s>, etc.) openvino_tokenizer inserts 2 special extra tokens <bos> and "▁",
-    // but HF does not do that. Moreover openvino_tokenizer always inserts <bos> but in chat scenario HF does not do that because skip_special_tokens=True.
-    // Need to remove both of that tokens manually to get exact token by token alignment with HF
-
-    auto& input_ids = tokenized_input.input_ids;
-    auto& attention_mask = tokenized_input.attention_mask;
-
-    auto size = input_ids.get_shape();
-    int64_t* inputs_data = input_ids.data<int64_t>();
-    std::vector<int64_t> tmp_ids(inputs_data, inputs_data + input_ids.get_size());
-
-    auto attention_mask_data = attention_mask.data<int64_t>();
-    std::vector<float> tmp_attn_mask(attention_mask_data, attention_mask_data + attention_mask.get_size());
-
-    auto prefix_match = [&original_text](std::string prefix) { return original_text.substr(0, prefix.length()) == prefix; };
-    if (std::any_of(special_tokens.begin(), special_tokens.end(), prefix_match)) {
-        tmp_ids.erase(tmp_ids.begin());
-        tmp_attn_mask.erase(tmp_attn_mask.begin());
-    }
-
-    input_ids = ov::Tensor(input_ids.get_element_type(), {1, tmp_ids.size()});
-    attention_mask = ov::Tensor(attention_mask.get_element_type(), {1, tmp_attn_mask.size()});
-    std::copy(tmp_ids.begin(), tmp_ids.end(), input_ids.data<int64_t>());
-    std::copy(tmp_attn_mask.begin(), tmp_attn_mask.end(), attention_mask.data<int64_t>());
 }
 
 }
@@ -119,13 +72,17 @@ ov::genai::EncodedResults multinominal_decoding(
     std::shared_ptr<StreamerBase> streamer
 );
 
-EncodedResults beam_search(ov::InferRequest& lm, ov::Tensor prompts, ov::Tensor attention_mask, GenerationConfig config);
+EncodedResults beam_search(
+    ov::InferRequest& lm, 
+    ov::Tensor prompts, 
+    ov::Tensor attention_mask, 
+    GenerationConfig config
+);
 
 class LLMPipelineImplBase {
 public:
     LLMPipelineImplBase(const Tokenizer& tokenzer,
-                        const GenerationConfig& config = {},
-                        const std::string& chat_template = "");
+                        const GenerationConfig& config = {});
 
     virtual DecodedResults generate(
         StringInputs inputs,
@@ -142,84 +99,34 @@ public:
     virtual void start_chat() = 0;
     virtual void finish_chat() = 0;
 
-    std::string apply_chat_template(const std::vector<std::pair<std::string, std::string>>& prompts) const;
-    std::string apply_chat_template(std::string prompt, std::string role = "user") const;
-    std::vector<std::string> apply_chat_template(std::vector<std::string>& prompts, std::string role = "user") const;
-
     virtual ~LLMPipelineImplBase() = default;
 
     Tokenizer m_tokenizer;
     GenerationConfig m_generation_config;
-    std::string m_chat_template;
 };
 
 LLMPipelineImplBase::LLMPipelineImplBase(const Tokenizer& tokenizer,
-                                         const GenerationConfig& config,
-                                         const std::string& chat_template)
-    : m_tokenizer(tokenizer),
-      m_generation_config(config),
-      m_chat_template(chat_template) {
-}
-
-std::string LLMPipelineImplBase::apply_chat_template(const std::vector<std::pair<std::string, std::string>>& prompts) const {
-    jinja2::TemplateEnv env;
-    env.GetSettings().lstripBlocks = true;
-    env.GetSettings().trimBlocks = true;
-    jinja2::Template tpl(&env);
-    tpl.Load(m_chat_template);
-
-    jinja2::ValuesList messages;
-    for (const auto& [prompt, role] : prompts) {
-        messages.push_back(jinja2::ValuesMap{{"role", role}, {"content", prompt}});
-    }
-
-    jinja2::ValuesMap params = {
-        {"messages", messages},
-        {"bos_token", m_tokenizer.get_bos_token()},
-        {"eos_token", m_tokenizer.get_eos_token()},
-        {"add_generation_prompt", true},
-    };
-
-    return tpl.RenderAsString(params).value();
-}
-
-std::string LLMPipelineImplBase::apply_chat_template(std::string prompt, std::string role) const {
-    jinja2::TemplateEnv env;
-    env.GetSettings().lstripBlocks = true;
-    env.GetSettings().trimBlocks = true;
-    jinja2::Template tpl(&env);
-    tpl.Load(m_chat_template);
-
-    jinja2::ValuesMap message {{"role", role}, {"content", prompt}};
-    jinja2::ValuesMap params = {
-        {"messages", jinja2::ValuesList({message})},
-        {"bos_token",  m_tokenizer.get_bos_token()},
-        {"eos_token", m_tokenizer.get_eos_token()},
-        {"add_generation_prompt", true},
-    };
-
-    return tpl.RenderAsString(params).value();
-}
-
-std::vector<std::string> LLMPipelineImplBase::apply_chat_template(std::vector<std::string>& prompts, std::string role) const {
-    std::vector<std::string> res;
-    for (const auto& prompt: prompts) {
-        res.emplace_back(apply_chat_template(prompt));
-    }
-    return res;
+                                         const GenerationConfig& config)
+    : m_tokenizer(tokenizer), m_generation_config(config) {
 }
 
 class LLMPipelineImpl final : public LLMPipelineImplBase {
 public:
     ov::InferRequest m_model_runner;
+    
+    bool is_chat_conversation = false;
+    bool m_is_cache_empty = true;
+    ChatHistory m_history;
+    std::string m_templated_chat_history = "";
 
     LLMPipelineImpl(
         const ov::InferRequest& request,
         const ov::genai::Tokenizer& tokenizer,
         OptionalGenerationConfig generation_config=std::nullopt
-    ): LLMPipelineImplBase(tokenizer), m_model_runner(request) {
-        GenerationConfig default_config;
-        m_generation_config = (generation_config.has_value()) ? *generation_config : default_config;
+    ): LLMPipelineImplBase(tokenizer),
+       m_model_runner(request) {
+       GenerationConfig default_config;
+       m_generation_config = (generation_config.has_value()) ? *generation_config : default_config;
     }
 
     LLMPipelineImpl(
@@ -227,14 +134,24 @@ public:
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    );
+    ): 
+        LLMPipelineImplBase(tokenizer, from_config_json_if_exists(model_path))
+    {
+        ov::Core core;
+        core.set_property(device, plugin_config);
+        m_model_runner = core.compile_model(model_path / "openvino_model.xml", device).create_infer_request();
+
+        // If eos_token_id was not provided, take value
+        if (m_generation_config.eos_token_id == -1)
+            m_generation_config.eos_token_id = m_tokenizer.get_eos_token_id();
+    }
 
     LLMPipelineImpl(
-        const std::filesystem::path& path,
-        const std::string& device,
-        const ov::AnyMap& config
-    );
-
+        const std::filesystem::path& model_path, 
+        const std::string& device, 
+        const ov::AnyMap& plugin_config
+    ): LLMPipelineImpl{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
+    
     DecodedResults generate(
         StringInputs inputs,
         OptionalGenerationConfig generation_config,
@@ -245,25 +162,33 @@ public:
 
         if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
             encoded_input = m_tokenizer.encode(*input_vector);
-        } else if (auto input_str = std::get_if<std::string>(&inputs)) {
-
-            std::string text = *input_str;
-            // todo: make for batched inputs as well
-            if (is_chat_conversation)
-                text = apply_chat_template(text);
-
-            // previous prompt generation in chat dialog stops with the end of sentence token,
-            // need to append this token to the current prompt
-            if (is_chat_conversation && !m_is_cache_empty)
-                text = m_tokenizer.get_eos_token() + text;
-
-            auto tokenized_input = m_tokenizer.encode(text);
-            remove_special_tokens(tokenized_input, text, {m_tokenizer.get_eos_token(), m_tokenizer.get_bos_token()});
-            encoded_input = tokenized_input;
+        } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
+            std::string& prompt = *input_prompt;
+            
+            if (is_chat_conversation) {
+                m_history.push_back({{"role", "user"}, {"content", prompt}});
+                constexpr bool add_generation_prompt = true;
+                auto new_templated_chat_history  = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+                
+                prompt = new_templated_chat_history.substr(m_templated_chat_history.size());
+                m_templated_chat_history = new_templated_chat_history;
+            }
+            
+            encoded_input = m_tokenizer.encode(prompt);
         }
 
         auto encoded_results  = generate(encoded_input, config, streamer);
-        return {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+        DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+        
+        if (is_chat_conversation) {
+            // Tail of chat template is missing in KV cache.
+            // Find the tail to concatenate it with the next input prompt.
+            auto answer = decoded_results.texts[0];
+            m_templated_chat_history.append(answer);
+            m_history.push_back({{"role", "assistant"}, {"content", answer}});
+        }
+        
+        return decoded_results;
     }
 
     EncodedResults generate(
@@ -347,9 +272,6 @@ public:
             m_is_cache_empty = true;
         }
     }
-
-    bool is_chat_conversation = false;
-    bool m_is_cache_empty = true;
 };
 
 DecodedResults LLMPipeline::generate(
@@ -537,8 +459,7 @@ NPULLMPipelineImpl::NPULLMPipelineImpl(
     const ov::genai::Tokenizer& tokenizer,
     const ov::AnyMap& config
 ) : LLMPipelineImplBase(tokenizer,
-                        from_config_json_if_exists(path),
-                        chat_template_from_tokenizer_json_if_exists(path)) {
+                        from_config_json_if_exists(path)) {
     /* NB: NPU-friendly LLM pipeline consists of two models,
        first to process the input prompt (prefill), second to use in generation loop (kvcache)
 
@@ -608,8 +529,7 @@ DecodedResults NPULLMPipelineImpl::generate(
 
     OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
     const auto& text = std::get<std::string>(inputs);
-    auto tokenized_input = m_tokenizer.encode(std::get<std::string>(inputs));
-    remove_special_tokens(tokenized_input, text, {m_tokenizer.get_eos_token(), m_tokenizer.get_bos_token()});
+    auto tokenized_input = m_tokenizer.encode(text);
     auto encoded_results = generate(tokenized_input, config, streamer);
     return {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
 }
@@ -753,7 +673,6 @@ ov::genai::LLMPipeline::LLMPipeline(
     m_pimpl = std::make_unique<LLMPipelineImpl>(request, tokenizer, generation_config);
 }
 
-
 ov::genai::LLMPipeline::LLMPipeline(
     const std::string& model_path,
     const ov::genai::Tokenizer& tokenizer,
@@ -765,20 +684,6 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else {
         m_pimpl = make_unique<LLMPipelineImpl>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
     }
-}
-
-ov::genai::LLMPipelineImpl::LLMPipelineImpl(
-    const std::filesystem::path& model_path,
-    const ov::genai::Tokenizer& tokenizer,
-    const std::string& device,
-    const ov::AnyMap& plugin_config
-): LLMPipelineImplBase(tokenizer) {
-    ov::Core core;
-
-    std::filesystem::path full_path = model_path;
-    if (full_path.extension() != ".xml")
-        full_path = model_path / "openvino_model.xml";
-    m_model_runner = core.compile_model(full_path, device, plugin_config).create_infer_request();
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
@@ -793,31 +698,12 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 }
 
-ov::genai::LLMPipelineImpl::LLMPipelineImpl(
-    const std::filesystem::path& path,
-    const std::string& device,
-    const ov::AnyMap& config
-):
-    LLMPipelineImplBase(path.string(),
-                        from_config_json_if_exists(path),
-                        chat_template_from_tokenizer_json_if_exists(path)),
-    m_model_runner{ov::Core{}.compile_model(path / "openvino_model.xml", device, config).create_infer_request()}
-{
-    // If eos_token_id was not provided, take value
-    if (m_generation_config.eos_token_id == -1)
-        m_generation_config.eos_token_id = m_tokenizer.get_eos_token_id();
-}
-
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
     return m_pimpl->m_generation_config;
 }
 
 ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {
     return m_pimpl->m_tokenizer;
-}
-
-std::string ov::genai::LLMPipeline::apply_chat_template(std::string prompt, std::string role) const {
-    return m_pimpl->apply_chat_template(prompt, role);
 }
 
 void ov::genai::LLMPipeline::start_chat() {
