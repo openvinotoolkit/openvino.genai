@@ -11,8 +11,6 @@ FetchContent_Declare(
 FetchContent_GetProperties(pybind11)
 if(NOT pybind11_POPULATED)
     FetchContent_Populate(pybind11)
-    # search for FindPython3.cmake instead of legacy modules
-    set(PYBIND11_FINDPYTHON ON)
     add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
 endif()
 
