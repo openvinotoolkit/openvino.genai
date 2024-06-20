@@ -5,50 +5,59 @@
 import time
 import torch
 import warnings
-import transformers
-import torch.distributed as dist
 import logging as log
 from torch import nn
-from packaging import version
 from typing import Optional, Tuple, Union, List
 from transformers.generation.stopping_criteria import (
+    EosTokenCriteria,
     StoppingCriteriaList,
     validate_stopping_criteria,
 )
 from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.beam_search import BeamScorer
+from transformers.generation.utils import (
+    _split_model_inputs,
+    stack_model_outputs,
+)
 from transformers.utils import ModelOutput
 
 
-class BeamSearchEncoderDecoderOutput(ModelOutput):
+logger = log.getLogger(__name__)
+
+
+class GenerateBeamDecoderOnlyOutput(ModelOutput):
     sequences: torch.LongTensor = None
     sequences_scores: Optional[torch.FloatTensor] = None
     scores: Optional[Tuple[torch.FloatTensor]] = None
+    logits: Optional[Tuple[torch.FloatTensor]] = None
+    beam_indices: Optional[torch.LongTensor] = None
+    attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    past_key_values: Optional[Tuple[Tuple[Tuple[torch.FloatTensor]]]] = None
+
+
+class GenerateBeamEncoderDecoderOutput(ModelOutput):
+    sequences: torch.LongTensor = None
+    sequences_scores: Optional[torch.FloatTensor] = None
+    scores: Optional[Tuple[torch.FloatTensor]] = None
+    logits: Optional[Tuple[torch.FloatTensor]] = None
     beam_indices: Optional[torch.LongTensor] = None
     encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
     encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     decoder_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     cross_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     decoder_hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    past_key_values: Optional[Tuple[Tuple[Tuple[torch.FloatTensor]]]] = None
 
 
-class BeamSearchDecoderOnlyOutput(ModelOutput):
-    sequences: torch.LongTensor = None
-    sequences_scores: Optional[torch.FloatTensor] = None
-    scores: Optional[Tuple[torch.FloatTensor]] = None
-    beam_indices: Optional[torch.LongTensor] = None
-    attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-    hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
-
-
-BeamSearchOutput = Union[BeamSearchEncoderDecoderOutput, BeamSearchDecoderOnlyOutput]
+GenerateBeamOutput = Union[GenerateBeamDecoderOnlyOutput, GenerateBeamEncoderDecoderOutput]
 
 tm_list = []
 tm_infer_list = []
 
 
-# Transformers version: Release/v4.35.2 514de24abfd4416aeba6a6455ad5920f57f3567d
-# Copied from https://github.com/huggingface/transformers/blob/514de24abfd4416aeba6a6455ad5920f57f3567d/src/transformers/generation/utils.py#L2894
+# Transformers version: v4.40-release 4fdf58afb72b0754da30037fc800b6044e7d9c99
+# Copied from https://github.com/huggingface/transformers/blob/4fdf58afb72b0754da30037fc800b6044e7d9c99/src/transformers/generation/utils.py#L2911
 # Add the function of collecting latency
 def new_beam_search(
         self,
@@ -62,17 +71,19 @@ def new_beam_search(
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
+        output_logits: Optional[bool] = None,
         return_dict_in_generate: Optional[bool] = None,
         synced_gpus: bool = False,
+        sequential: Optional[bool] = None,
         **model_kwargs,
-    ) -> Union[BeamSearchOutput, torch.LongTensor]:
+    ) -> Union[GenerateBeamOutput, torch.LongTensor]:
         r"""
         Generates sequences of token ids for models with a language modeling head using **beam search decoding** and
         can be used for text-decoder, text-to-text, speech-to-text, and vision-to-text models.
 
         <Tip warning={true}>
 
-        In most cases, you do not need to call [`~generation.GenerationMixin.beam_search`] directly. Use generate()
+        In most cases, you do not need to call [`~generation.GenerationMixin._beam_search`] directly. Use generate()
         instead. For an overview of generation strategies and code examples, check the [following
         guide](../generation_strategies).
 
@@ -103,21 +114,28 @@ def new_beam_search(
             output_hidden_states (`bool`, *optional*, defaults to `False`):
                 Whether or not to return the hidden states of all layers. See `hidden_states` under returned tensors
                 for more details.
+            output_logits (`bool`, *optional*, defaults to `False`):
+                Whether or not to return the raw prediction logit scores. See `logits` under returned tensors for
+                more details.
             output_scores (`bool`, *optional*, defaults to `False`):
                 Whether or not to return the prediction scores. See `scores` under returned tensors for more details.
             return_dict_in_generate (`bool`, *optional*, defaults to `False`):
                 Whether or not to return a [`~utils.ModelOutput`] instead of a plain tuple.
             synced_gpus (`bool`, *optional*, defaults to `False`):
                 Whether to continue running the while loop until max_length (needed for ZeRO stage 3)
+            sequential (`bool`, defaults to `False`):
+                By default, beam search has `batch_size * num_beams` as effective batch size (see `beam_search()` for
+                more details). This flag will avoid parallelizing the beam search and will instead run beam search
+                sequentially.
             model_kwargs:
                 Additional model specific kwargs will be forwarded to the `forward` function of the model. If model is
                 an encoder-decoder model the kwargs should include `encoder_outputs`.
 
         Return:
-            [`generation.BeamSearchDecoderOnlyOutput`], [`~generation.BeamSearchEncoderDecoderOutput`] or
+            [`generation.GenerateBeamDecoderOnlyOutput`], [`~generation.GenerateBeamEncoderDecoderOutput`] or
             `torch.LongTensor`: A `torch.LongTensor` containing the generated tokens (default behaviour) or a
-            [`~generation.BeamSearchDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
-            `return_dict_in_generate=True` or a [`~generation.BeamSearchEncoderDecoderOutput`] if
+            [`~generation.GenerateBeamDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
+            `return_dict_in_generate=True` or a [`~generation.GenerateBeamEncoderDecoderOutput`] if
             `model.config.is_encoder_decoder=True`.
 
 
@@ -133,8 +151,8 @@ def new_beam_search(
         ... )
         >>> import torch
 
-        >>> tokenizer = AutoTokenizer.from_pretrained("t5-base")
-        >>> model = AutoModelForSeq2SeqLM.from_pretrained("t5-base")
+        >>> tokenizer = AutoTokenizer.from_pretrained("google-t5/t5-base")
+        >>> model = AutoModelForSeq2SeqLM.from_pretrained("google-t5/t5-base")
 
         >>> encoder_input_str = "translate English to German: How old are you?"
         >>> encoder_input_ids = tokenizer(encoder_input_str, return_tensors="pt").input_ids
@@ -167,7 +185,7 @@ def new_beam_search(
         ...     ]
         ... )
 
-        >>> outputs = model.beam_search(input_ids, beam_scorer, logits_processor=logits_processor, **model_kwargs)
+        >>> outputs = model._beam_search(input_ids, beam_scorer, logits_processor=logits_processor, **model_kwargs)
 
         >>> tokenizer.batch_decode(outputs, skip_special_tokens=True)
         ['Wie alt bist du?']
@@ -175,20 +193,40 @@ def new_beam_search(
         # init values
         logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
         stopping_criteria = stopping_criteria if stopping_criteria is not None else StoppingCriteriaList()
+        sequential = sequential if sequential is not None else self.generation_config.low_memory
         if max_length is not None:
             warnings.warn(
                 "`max_length` is deprecated in this function, use"
-                " `stopping_criteria=StoppingCriteriaList(MaxLengthCriteria(max_length=max_length))` instead.",
+                " `stopping_criteria=StoppingCriteriaList([MaxLengthCriteria(max_length=max_length)])` instead.",
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
         if len(stopping_criteria) == 0:
             warnings.warn("You don't have defined any stopping_criteria, this will likely loop forever", UserWarning)
         pad_token_id = pad_token_id if pad_token_id is not None else self.generation_config.pad_token_id
-        eos_token_id = eos_token_id if eos_token_id is not None else self.generation_config.eos_token_id
+        if eos_token_id is not None:
+            logger.warning_once(
+                "`eos_token_id` is deprecated in this function and will be removed in v4.41, use"
+                " `stopping_criteria=StoppingCriteriaList([EosTokenCriteria(eos_token_id=eos_token_id)])` instead."
+                " Otherwise make sure to set `model.generation_config.eos_token_id`",
+                FutureWarning,
+            )
+            stopping_criteria.append(EosTokenCriteria(eos_token_id=eos_token_id))
+        else:
+            # TODO remove when the method is totally private and beam scorer refactored
+            # need to get `eos_token_id` and add stopping criteria, so that generation does not go forever
+            eos_token_id = [
+                criteria.eos_token_id.tolist() for criteria in stopping_criteria if hasattr(criteria, "eos_token_id")
+            ]
+            eos_token_id = eos_token_id[0] if eos_token_id else None
+            if eos_token_id is None and self.generation_config.eos_token_id is not None:
+                eos_token_id = self.generation_config.eos_token_id
+                stopping_criteria.append(EosTokenCriteria(eos_token_id=eos_token_id))
+
         if isinstance(eos_token_id, int):
             eos_token_id = [eos_token_id]
         output_scores = output_scores if output_scores is not None else self.generation_config.output_scores
+        output_logits = output_logits if output_logits is not None else self.generation_config.output_logits
         output_attentions = (
             output_attentions if output_attentions is not None else self.generation_config.output_attentions
         )
@@ -205,6 +243,9 @@ def new_beam_search(
         num_beams = beam_scorer.num_beams
 
         batch_beam_size, cur_len = input_ids.shape
+        if "inputs_embeds" in model_kwargs:
+            cur_len = model_kwargs["inputs_embeds"].shape[1]
+        model_kwargs["cache_position"] = torch.arange(cur_len, device=input_ids.device)
 
         if num_beams * batch_size != batch_beam_size:
             raise ValueError(
@@ -213,6 +254,7 @@ def new_beam_search(
 
         # init attention / hidden states / scores tuples
         scores = () if (return_dict_in_generate and output_scores) else None
+        raw_logits = () if (return_dict_in_generate and output_logits) else None
         beam_indices = (
             tuple(() for _ in range(batch_beam_size)) if (return_dict_in_generate and output_scores) else None
         )
@@ -233,29 +275,59 @@ def new_beam_search(
         beam_scores[:, 1:] = -1e9
         beam_scores = beam_scores.view((batch_size * num_beams,))
 
-        this_peer_finished = False  # used by synced_gpus only
-        while True:
+        this_peer_finished = False
+
+        decoder_prompt_len = input_ids.shape[-1]  # record the prompt length of decoder
+
+        while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
             tic = time.perf_counter()
-            if synced_gpus:
-                # Under synced_gpus the `forward` call must continue until all gpus complete their sequence.
-                # The following logic allows an early break if all peers finished generating their sequence
-                this_peer_finished_flag = torch.tensor(0.0 if this_peer_finished else 1.0).to(input_ids.device)
-                # send 0.0 if we finished, 1.0 otherwise
-                dist.all_reduce(this_peer_finished_flag, op=dist.ReduceOp.SUM)
-                # did all peers finish? the reduced sum will be 0.0 then
-                if this_peer_finished_flag.item() == 0.0:
-                    break
-
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
-            tic_infer = time.perf_counter()
-            outputs = self(
-                **model_inputs,
-                return_dict=True,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-            )
-            tm_infer_list.append(time.perf_counter() - tic_infer)
 
+            # if sequential is True, split the input to batches of batch_size and run sequentially
+            tic_infer = time.perf_counter()
+            if sequential:
+                if any(
+                    model_name in self.__class__.__name__.lower()
+                    for model_name in [
+                        "fsmt",
+                        "reformer",
+                        "bloom",
+                        "ctrl",
+                        "gpt_bigcode",
+                        "transo_xl",
+                        "xlnet",
+                        "cpm",
+                        "jamba",
+                    ]
+                ):
+                    raise RuntimeError(
+                        f"Currently generation for {self.__class__.__name__} is not supported "
+                        f"for `low_memory beam_search`. Please open an issue on GitHub if you need this feature."
+                    )
+
+                inputs_per_sub_batches = _split_model_inputs(
+                    model_inputs, split_size=batch_size, full_batch_size=batch_beam_size
+                )
+                outputs_per_sub_batch = [
+                    self(
+                        **inputs_per_sub_batch,
+                        return_dict=True,
+                        output_attentions=output_attentions,
+                        output_hidden_states=output_hidden_states,
+                    )
+                    for inputs_per_sub_batch in inputs_per_sub_batches
+                ]
+
+                outputs = stack_model_outputs(outputs_per_sub_batch)
+
+            else:  # Unchanged original behavior
+                outputs = self(
+                    **model_inputs,
+                    return_dict=True,
+                    output_attentions=output_attentions,
+                    output_hidden_states=output_hidden_states,
+                )
+            tm_infer_list.append(time.perf_counter() - tic_infer)
             if synced_gpus and this_peer_finished:
                 cur_len = cur_len + 1
                 continue  # don't waste resources running the code we don't need
@@ -274,13 +346,14 @@ def new_beam_search(
             if return_dict_in_generate:
                 if output_scores:
                     scores += (next_token_scores_processed,)
+                if output_logits:
+                    raw_logits += (next_token_logits,)
                 if output_attentions:
                     decoder_attentions += (
                         (outputs.decoder_attentions,) if self.config.is_encoder_decoder else (outputs.attentions,)
                     )
                     if self.config.is_encoder_decoder:
                         cross_attentions += (outputs.cross_attentions,)
-
                 if output_hidden_states:
                     decoder_hidden_states += (
                         (outputs.decoder_hidden_states,)
@@ -310,6 +383,7 @@ def new_beam_search(
                 pad_token_id=pad_token_id,
                 eos_token_id=eos_token_id,
                 beam_indices=beam_indices,
+                decoder_prompt_len=decoder_prompt_len,
             )
 
             beam_scores = beam_outputs["next_beam_scores"]
@@ -319,10 +393,14 @@ def new_beam_search(
             input_ids = torch.cat([input_ids[beam_idx, :], beam_next_tokens.unsqueeze(-1)], dim=-1)
 
             model_kwargs = self._update_model_kwargs_for_generation(
-                outputs, model_kwargs, is_encoder_decoder=self.config.is_encoder_decoder,
+                outputs,
+                model_kwargs,
+                is_encoder_decoder=self.config.is_encoder_decoder,
             )
-            if model_kwargs["past_key_values"] is not None:
-                model_kwargs["past_key_values"] = self._reorder_cache(model_kwargs["past_key_values"], beam_idx)
+            if model_kwargs.get("past_key_values", None) is not None:
+                model_kwargs["past_key_values"] = self._temporary_reorder_cache(
+                    model_kwargs["past_key_values"], beam_idx
+                )
 
             if return_dict_in_generate and output_scores:
                 beam_indices = tuple((beam_indices[beam_idx[i]] + (beam_idx[i],) for i in range(len(beam_indices))))
@@ -330,11 +408,8 @@ def new_beam_search(
             # increase cur_len
             cur_len = cur_len + 1
             tm_list.append(time.perf_counter() - tic)
-            if beam_scorer.is_done or stopping_criteria(input_ids, scores):
-                if not synced_gpus:
-                    break
-                else:
-                    this_peer_finished = True
+            if beam_scorer.is_done or all(stopping_criteria(input_ids, scores)):
+                this_peer_finished = True
 
         sequence_outputs = beam_scorer.finalize(
             input_ids,
@@ -345,6 +420,7 @@ def new_beam_search(
             eos_token_id=eos_token_id,
             max_length=stopping_criteria.max_length,
             beam_indices=beam_indices,
+            decoder_prompt_len=decoder_prompt_len,
         )
 
         if return_dict_in_generate:
@@ -352,25 +428,29 @@ def new_beam_search(
                 sequence_outputs["sequence_scores"] = None
 
             if self.config.is_encoder_decoder:
-                return BeamSearchEncoderDecoderOutput(
+                return GenerateBeamEncoderDecoderOutput(
                     sequences=sequence_outputs["sequences"],
                     sequences_scores=sequence_outputs["sequence_scores"],
                     scores=scores,
+                    logits=raw_logits,
                     beam_indices=sequence_outputs["beam_indices"],
                     encoder_attentions=encoder_attentions,
                     encoder_hidden_states=encoder_hidden_states,
                     decoder_attentions=decoder_attentions,
                     cross_attentions=cross_attentions,
                     decoder_hidden_states=decoder_hidden_states,
+                    past_key_values=model_kwargs.get("past_key_values"),
                 )
             else:
-                return BeamSearchDecoderOnlyOutput(
+                return GenerateBeamDecoderOnlyOutput(
                     sequences=sequence_outputs["sequences"],
                     sequences_scores=sequence_outputs["sequence_scores"],
                     scores=scores,
+                    logits=raw_logits,
                     beam_indices=sequence_outputs["beam_indices"],
                     attentions=decoder_attentions,
                     hidden_states=decoder_hidden_states,
+                    past_key_values=model_kwargs.get("past_key_values"),
                 )
         else:
             return sequence_outputs["sequences"]
@@ -403,12 +483,6 @@ class BeamSearchHook:
         global tm_infer_list
         return tm_infer_list
 
-    def new_forward(self, model, model_type=None):
+    def new_forward(self, model):
         """Define a new beam search function."""
-        min_version = version.parse('4.34.0')
-        trans_version = version.parse(transformers.__version__)
-        if trans_version < min_version:
-            log.warning(f'The function of getting latency of beam search will not be available with current transformers version:{trans_version}')
-        else:
-            bound_method = new_beam_search.__get__(model, model.__class__)
-            model.beam_search = bound_method
+        model._beam_search = new_beam_search.__get__(model, model.__class__)

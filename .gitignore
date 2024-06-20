@@ -1,0 +1,36 @@
+# build/artifact dirs
+[Bb]uild*/
+
+# but ensure we don't skip __init__.py and __main__.py
+!__init__.py
+!__main__.py
+
+# developer tools
+*.idea
+.vscode
+.vs/
+.vsconan/
+.DS_Store
+**/tags
+compile_commands.json
+.local_vimrc
+.gdb_history
+.vimspector.json
+doc/
+temp/
+.repo/
+CMakeLists.txt.user
+CMakeUserPresets.json
+
+*.project
+*.cproject
+*.pydevproject
+*.settings
+*/gen/
+*.swp
+/config.xml
+
+# Python-specific
+*.?env*
+*.pyc
+__pycache__

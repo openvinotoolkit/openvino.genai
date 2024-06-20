@@ -30,19 +30,6 @@ std::vector<T> linspace(U start, U end, size_t num, bool endpoint = false) {
     return indices;
 }
 
-// for torch.randn()
-std::vector<float> randn_function(uint32_t size, uint32_t seed = 42) {
-    std::vector<float> noise(size);
-    {
-        std::mt19937 gen{static_cast<unsigned long>(seed)};
-        std::normal_distribution<float> normal{0.0f, 1.0f};
-        std::for_each(noise.begin(), noise.end(), [&](float& x) {
-            x = normal(gen);
-        });
-    }
-    return noise;
-}
-
 std::vector<float> read_vector_from_txt(std::string& file_name) {
     std::ifstream input_data(file_name, std::ifstream::in);
     std::istream_iterator<float> start(input_data), end;
@@ -64,7 +51,8 @@ LCMScheduler::LCMScheduler(size_t num_train_timesteps,
                            float clip_sample_range,
                            float dynamic_thresholding_ratio,
                            float sample_max_value,
-                           bool read_torch_noise):
+                           bool read_torch_noise,
+                           uint32_t seed):
                            prediction_type_config(prediction_type),
                            num_train_timesteps_config(num_train_timesteps),
                            original_inference_steps_config(original_inference_steps),
@@ -74,7 +62,10 @@ LCMScheduler::LCMScheduler(size_t num_train_timesteps,
                            clip_sample_range(clip_sample_range),
                            dynamic_thresholding_ratio(dynamic_thresholding_ratio),
                            sample_max_value(sample_max_value),
-                           read_torch_noise(read_torch_noise) {
+                           read_torch_noise(read_torch_noise),
+                           seed(seed),
+                           gen(seed),
+                           normal(0.0f, 1.0f) {
 
     sigma_data = 0.5f; // Default: 0.5
 
@@ -201,10 +192,10 @@ std::map<std::string, ov::Tensor> LCMScheduler::step(ov::Tensor noise_pred, ov::
     if (inference_step != num_inference_steps - 1) {
         std::vector<float> noise;
         if (read_torch_noise) {
-            std::string noise_file = "../scripts/torch_noise_step_" + std::to_string(inference_step) + ".txt";
+            std::string noise_file = "./latents/torch_noise_step_" + std::to_string(inference_step) + ".txt";
             noise = read_vector_from_txt(noise_file);
         } else {
-            noise = randn_function(noise_pred.get_size());
+            noise = randn_function(noise_pred.get_size(), seed);
         }        
 
         for (std::size_t i = 0; i < noise_pred.get_size(); ++i) {
@@ -260,4 +251,14 @@ std::vector<float> LCMScheduler::threshold_sample(const std::vector<float>& flat
     }
 
     return thresholded_sample;
+}
+
+std::vector<float> LCMScheduler::randn_function(uint32_t size, uint32_t seed = 42) {
+    std::vector<float> noise(size);
+    {
+        std::for_each(noise.begin(), noise.end(), [&](float& x) {
+            x = normal(gen);
+        });
+    }
+    return noise;
 }

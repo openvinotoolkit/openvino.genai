@@ -129,9 +129,17 @@ def analyze_args(args):
     model_args['save_prepared_model'] = args.save_prepared_model
     model_args['num_beams'] = args.num_beams
     model_args['torch_compile_backend'] = args.torch_compile_backend
+    model_args['torch_compile_dynamic'] = args.torch_compile_dynamic
+    model_args['torch_compile_options'] = args.torch_compile_options
+    model_args['torch_compile_input_module'] = args.torch_compile_input_module
     model_args['convert_tokenizer'] = args.convert_tokenizer
-    model_args['interleave'] = args.interleave
+    model_args['subsequent'] = args.subsequent
     model_args['output_dir'] = args.output_dir
+    model_args['genai'] = args.genai
+    model_args['prompt_index'] = [] if args.prompt_index is not None else None
+    if model_args['prompt_index'] is not None:
+        # Deduplication
+        [model_args['prompt_index'].append(i) for i in args.prompt_index if i not in model_args['prompt_index']]
 
     model_framework = args.framework
     model_path = Path(args.model)
@@ -231,7 +239,8 @@ def get_model_precision(model_name_list):
         'OV_FP32-INT8_ASYM', 'OV_FP32-INT8_SYM', 'OV_FP16-INT8_ASYM', 'OV_FP16-INT8_SYM',
         'PT_FP32-INT8', 'PT_FP16-INT8', 'PT_FP32-INT8_ASYM', 'PT_FP32-INT8_SYM', 'PT_FP16-INT8_ASYM', 'PT_FP16-INT8_SYM',
         'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4',
-        'OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM', 'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT']
+        'OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM',
+        'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT', 'OV_FP32-4BIT_MAXIMUM', 'OV_FP16-4BIT_MAXIMUM']
     model_precision = 'unknown'
     # Search from right to left of model path
     for i in range(len(model_name_list) - 1, -1, -1):

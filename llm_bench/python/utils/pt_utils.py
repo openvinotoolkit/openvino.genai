@@ -7,11 +7,8 @@ from utils.config_class import PT_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPIN
 import os
 import time
 import logging as log
-import openvino.torch  # noqa: F401
-import utils.hook_greedy_search
-import utils.hook_beam_search
-
-MAX_CONNECT_TIME = 50
+import utils.hook_common as hook_common
+import json
 
 
 def set_bf16(model, device, **kwargs):
@@ -25,7 +22,15 @@ def set_bf16(model, device, **kwargs):
     return model
 
 
-def run_torch_compile(model, backend='openvino'):
+def torch_compile_child_module(model, child_modules, backend='openvino', dynamic=None, options=None):
+    if len(child_modules) == 1:
+        setattr(model, child_modules[0], torch.compile(getattr(model, child_modules[0]), backend=backend, dynamic=dynamic, fullgraph=True, options=options))
+        return model
+    setattr(model, child_modules[0], torch_compile_child_module(getattr(model, child_modules[0]), child_modules[1:], backend, dynamic, options))
+    return model
+
+
+def run_torch_compile(model, backend='openvino', dynamic=None, options=None, child_modules=None):
     if backend == 'pytorch':
         log.info(f'Running torch.compile() with {backend} backend')
         start = time.perf_counter()
@@ -36,7 +41,10 @@ def run_torch_compile(model, backend='openvino'):
     else:
         log.info(f'Running torch.compile() with {backend} backend')
         start = time.perf_counter()
-        compiled_model = torch.compile(model, backend=backend)
+        if child_modules and len(child_modules) > 0:
+            compiled_model = torch_compile_child_module(model, child_modules, backend, dynamic, options)
+        else:
+            compiled_model = torch.compile(model, backend=backend, dynamic=dynamic, options=options)
         end = time.perf_counter()
         compile_time = end - start
         log.info(f'Compiling model via torch.compile() took: {compile_time}')
@@ -95,17 +103,22 @@ def create_text_gen_model(model_path, device, **kwargs):
     else:
         raise RuntimeError('==Failure ==: no device to load')
 
-    if kwargs['num_beams'] > 1:
-        bench_hook = utils.hook_beam_search.BeamSearchHook()
-    else:
-        bench_hook = utils.hook_greedy_search.GreedySearchHook()
-    bench_hook.new_forward(model, model_type)
+    bench_hook = hook_common.get_bench_hook(kwargs['num_beams'], model)
 
     if kwargs['torch_compile_backend']:
         backend = kwargs['torch_compile_backend']
-        compiled_model = run_torch_compile(model, backend)
+        dynamic = None
+        options = None
+        child_modules = None
+        if kwargs['torch_compile_dynamic']:
+            dynamic = kwargs['torch_compile_dynamic']
+        if kwargs['torch_compile_options']:
+            options = json.loads(kwargs['torch_compile_options'])
+        if kwargs['torch_compile_input_module']:
+            child_modules = kwargs['torch_compile_input_module'].split(".")
+        compiled_model = run_torch_compile(model, backend, dynamic, options, child_modules)
         model = compiled_model
-    return model, tokenizer, from_pretrain_time, bench_hook
+    return model, tokenizer, from_pretrain_time, bench_hook, False
 
 
 def create_image_gen_model(model_path, device, **kwargs):

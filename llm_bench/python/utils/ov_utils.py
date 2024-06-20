@@ -9,11 +9,8 @@ import logging as log
 import torch
 import time
 import types
-import utils.hook_greedy_search
-import utils.hook_beam_search
-
+import utils.hook_common as hook_common
 from utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
-from .ov_model_classes import register_normalized_configs
 import openvino.runtime.opset13 as opset
 
 
@@ -93,8 +90,12 @@ def build_ov_tokenizer(hf_tokenizer):
         return hf_tokenizer
 
     ov_tokenizer, ov_detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
-    ov_compiled_tokenizer = ov.compile_model(ov_tokenizer)
-    ov_compiled_detokenizer = ov.compile_model(ov_detokenizer)
+    return build_ov_tokenizer_wrapper(hf_tokenizer, ov_tokenizer, ov_detokenizer)
+
+
+def build_ov_tokenizer_wrapper(hf_tokenizer, tokenizer_model, detokenizer_model):
+    ov_compiled_tokenizer = ov.compile_model(tokenizer_model, "CPU")
+    ov_compiled_detokenizer = ov.compile_model(detokenizer_model, "CPU")
 
     def encode_ov_tokenizer_full(self, text, *args, **kwargs):
         if isinstance(text, str):
@@ -136,49 +137,101 @@ def create_text_gen_model(model_path, device, **kwargs):
         model_path = model_path.parents[2]
 
     ov_config = kwargs['config']
-    register_normalized_configs()
 
     model_path_existed = Path(model_path).exists()
     # load model
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        if model_type in ['mpt', 'falcon', 'replit', 'codegen2', 'chatglm']:
-            start = time.perf_counter()
-            ov_model = model_class.from_pretrained(
-                model_path,
-                device=device,
-                ov_config=ov_config,
-                config=AutoConfig.from_pretrained(model_path, trust_remote_code=True),
-                stateful=kwargs.get("stateful", None)
-            )
-            end = time.perf_counter()
-        else:
-            start = time.perf_counter()
-            config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-            ov_model = model_class.from_pretrained(
-                model_path,
-                device=device,
-                ov_config=ov_config,
-                config=config,
-                compile=False,
-                stateful=kwargs.get("stateful", None)
-            )
-            if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
-                patch_inter_processing_and_compile(ov_model, **kwargs)
-            end = time.perf_counter()
-    if kwargs['num_beams'] > 1:
-        bench_hook = utils.hook_beam_search.BeamSearchHook()
-    else:
-        bench_hook = utils.hook_greedy_search.GreedySearchHook()
-    bench_hook.new_forward(ov_model, model_type)
+        if kwargs.get("genai", False) and is_genai_available(log_msg=True):
+            if kwargs["batch_size"] > 1 or kwargs["num_beams"] > 1:
+                log.warning("OpenVINO GenAI based benchmarking implmented only for batch_size == 1 and num_beams == 1")
+            elif model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type], OV_MODEL_CLASSES_MAPPING["mpt"]]:
+                log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
+            else:
+                return create_genai_text_gen_model(model_path, device, ov_config, **kwargs)
+        remote_code = False
+        try:
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
+        except Exception:
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+            remote_code = True
+        start = time.perf_counter()
+        ov_model = model_class.from_pretrained(
+            model_path,
+            device=device,
+            ov_config=ov_config,
+            config=model_config,
+            stateful=kwargs.get("stateful", None),
+            trust_remote_code=remote_code
+        )
+        if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
+            patch_inter_processing_and_compile(ov_model, **kwargs)
+        end = time.perf_counter()
+    bench_hook = hook_common.get_bench_hook(kwargs['num_beams'], ov_model)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     # load token
     tokenizer = token_class.from_pretrained(model_path, trust_remote_code=True)
     if kwargs.get("convert_tokenizer", False):
         tokenizer = build_ov_tokenizer(tokenizer)
-    return ov_model, tokenizer, from_pretrained_time, bench_hook
+    return ov_model, tokenizer, from_pretrained_time, bench_hook, False
+
+
+def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
+    import openvino_tokenizers  # noqa: F401
+    import openvino_genai
+    from transformers import AutoTokenizer
+
+    class TokenStreamer(openvino_genai.StreamerBase):
+        def __init__(self, tokenizer):
+            openvino_genai.StreamerBase.__init__(self)
+            self.tokenizer = tokenizer
+            self.token_generation_time = []
+            self.generated_tokens = []
+            self.start_time = time.perf_counter()
+
+        def put(self, token_id):
+            self.token_generation_time.append(time.perf_counter() - self.start_time)
+            self.generated_tokens.append(token_id)
+            self.start_time = time.perf_counter()
+            return False
+
+        def reset(self):
+            self.token_generation_time = []
+            self.generated_tokens = []
+            self.start_time = time.perf_counter()
+
+        def end(self):
+            pass
+
+        def get_tokens(self):
+            return self.generated_tokens
+
+        def get_time_list(self):
+            return self.token_generation_time
+
+    if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
+        convert_ov_tokenizer(model_path)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    start = time.perf_counter()
+
+    llm_pipe = openvino_genai.LLMPipeline(str(model_path), device.upper(), ov_config)
+    end = time.perf_counter()
+    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    streamer = TokenStreamer(llm_pipe.get_tokenizer())
+
+    return llm_pipe, tokenizer, end - start, streamer, True
+
+
+def convert_ov_tokenizer(tokenizer_path):
+    from optimum.exporters.openvino.convert import export_tokenizer
+    from transformers import AutoTokenizer
+
+    hf_tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
+
+    export_tokenizer(hf_tokenizer, tokenizer_path)
 
 
 def create_image_gen_model(model_path, device, **kwargs):
@@ -212,3 +265,15 @@ def create_ldm_super_resolution_model(model_path, device, **kwargs):
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, from_pretrained_time
+
+
+def is_genai_available(log_msg=False):
+    import importlib
+    try:
+        importlib.import_module('openvino_genai')
+    except ImportError as ex:
+        if log_msg:
+            log.warning("Attempt to load OpenVINO GenaAI package failed. Please install openvino_genai package. Full error message available in debug mode")
+            log.warning(ex)
+            return False
+    return True

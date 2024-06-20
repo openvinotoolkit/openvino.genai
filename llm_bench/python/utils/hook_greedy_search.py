@@ -5,12 +5,10 @@
 import time
 import torch
 import warnings
-import transformers
-import torch.distributed as dist
 import logging as log
-from packaging import version
 from typing import Optional, Tuple, Union, List
 from transformers.generation.stopping_criteria import (
+    EosTokenCriteria,
     StoppingCriteriaList,
     validate_stopping_criteria,
 )
@@ -19,30 +17,37 @@ from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
 
 
-class GreedySearchDecoderOnlyOutput(ModelOutput):
+logger = log.getLogger(__name__)
+
+
+class GenerateDecoderOnlyOutput(ModelOutput):
     sequences: torch.LongTensor = None
     scores: Optional[Tuple[torch.FloatTensor]] = None
+    logits: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    past_key_values: Optional[Tuple[Tuple[Tuple[torch.FloatTensor]]]] = None
 
 
-class GreedySearchEncoderDecoderOutput(ModelOutput):
+class GenerateEncoderDecoderOutput(ModelOutput):
     sequences: torch.LongTensor = None
     scores: Optional[Tuple[torch.FloatTensor]] = None
+    logits: Optional[Tuple[torch.FloatTensor]] = None
     encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
     encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     decoder_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     cross_attentions: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     decoder_hidden_states: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    past_key_values: Optional[Tuple[Tuple[Tuple[torch.FloatTensor]]]] = None
 
 
-GreedySearchOutput = Union[GreedySearchEncoderDecoderOutput, GreedySearchDecoderOnlyOutput]
+GenerateNonBeamOutput = Union[GenerateDecoderOnlyOutput, GenerateEncoderDecoderOutput]
 
 tm_list = []
 tm_infer_list = []
 
-# Transformers version: Release/v4.35.2 514de24abfd4416aeba6a6455ad5920f57f3567d
-# Copied from https://github.com/huggingface/transformers/blob/514de24abfd4416aeba6a6455ad5920f57f3567d/src/transformers/generation/utils.py#L2353
+# Transformers version: v4.40-release 4fdf58afb72b0754da30037fc800b6044e7d9c99
+# Copied from https://github.com/huggingface/transformers/blob/4fdf58afb72b0754da30037fc800b6044e7d9c99/src/transformers/generation/utils.py#L2310
 # Add the function of collecting latency
 def new_greedy_search(
         self,
@@ -55,18 +60,19 @@ def new_greedy_search(
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         output_scores: Optional[bool] = None,
+        output_logits: Optional[bool] = None,
         return_dict_in_generate: Optional[bool] = None,
         synced_gpus: bool = False,
         streamer: Optional["BaseStreamer"] = None,
         **model_kwargs,
-    ) -> Union[GreedySearchOutput, torch.LongTensor]:
+    ) -> Union[GenerateNonBeamOutput, torch.LongTensor]:
         r"""
         Generates sequences of token ids for models with a language modeling head using **greedy decoding** and can be
         used for text-decoder, text-to-text, speech-to-text, and vision-to-text models.
 
         <Tip warning={true}>
 
-        In most cases, you do not need to call [`~generation.GenerationMixin.greedy_search`] directly. Use generate()
+        In most cases, you do not need to call [`~generation.GenerationMixin._greedy_search`] directly. Use generate()
         instead. For an overview of generation strategies and code examples, check the [following
         guide](../generation_strategies).
 
@@ -98,6 +104,9 @@ def new_greedy_search(
                 for more details.
             output_scores (`bool`, *optional*, defaults to `False`):
                 Whether or not to return the prediction scores. See `scores` under returned tensors for more details.
+            output_logits (`bool`, *optional*, defaults to `False`):
+                Whether or not to return the raw prediction logit scores. See `logits` under returned tensors
+                for more details.
             return_dict_in_generate (`bool`, *optional*, defaults to `False`):
                 Whether or not to return a [`~utils.ModelOutput`] instead of a plain tuple.
             synced_gpus (`bool`, *optional*, defaults to `False`):
@@ -110,10 +119,10 @@ def new_greedy_search(
                 If model is an encoder-decoder model the kwargs should include `encoder_outputs`.
 
         Return:
-            [`~generation.GreedySearchDecoderOnlyOutput`], [`~generation.GreedySearchEncoderDecoderOutput`] or
+            [`~generation.GenerateDecoderOnlyOutput`], [`~generation.GenerateEncoderDecoderOutput`] or
             `torch.LongTensor`: A `torch.LongTensor` containing the generated tokens (default behaviour) or a
-            [`~generation.GreedySearchDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
-            `return_dict_in_generate=True` or a [`~generation.GreedySearchEncoderDecoderOutput`] if
+            [`~generation.GenerateDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
+            `return_dict_in_generate=True` or a [`~generation.GenerateEncoderDecoderOutput`] if
             `model.config.is_encoder_decoder=True`.
 
         Examples:
@@ -128,8 +137,8 @@ def new_greedy_search(
         ...     MaxLengthCriteria,
         ... )
 
-        >>> tokenizer = AutoTokenizer.from_pretrained("gpt2")
-        >>> model = AutoModelForCausalLM.from_pretrained("gpt2")
+        >>> tokenizer = AutoTokenizer.from_pretrained("openai-community/gpt2")
+        >>> model = AutoModelForCausalLM.from_pretrained("openai-community/gpt2")
 
         >>> # set pad_token_id to eos_token_id because GPT2 does not have a PAD token
         >>> model.generation_config.pad_token_id = model.generation_config.eos_token_id
@@ -145,7 +154,7 @@ def new_greedy_search(
         ... )
         >>> stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length=20)])
 
-        >>> outputs = model.greedy_search(
+        >>> outputs = model._greedy_search(
         ...     input_ids, logits_processor=logits_processor, stopping_criteria=stopping_criteria
         ... )
 
@@ -163,10 +172,27 @@ def new_greedy_search(
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
         pad_token_id = pad_token_id if pad_token_id is not None else self.generation_config.pad_token_id
-        eos_token_id = eos_token_id if eos_token_id is not None else self.generation_config.eos_token_id
+        if eos_token_id is not None:
+            logger.warning_once(
+                "`eos_token_id` is deprecated in this function and will be removed in v4.41, use"
+                " `stopping_criteria=StoppingCriteriaList([EosTokenCriteria(eos_token_id=eos_token_id)])` instead."
+                " Otherwise make sure to set `model.generation_config.eos_token_id`",
+                FutureWarning,
+            )
+            stopping_criteria.append(EosTokenCriteria(eos_token_id=eos_token_id))
+        else:
+            # TODO remove when the method is totally private
+            # need to get `eos_token_id` and add stopping criteria, so that generation does not go forever
+            eos_token_id = [
+                criteria.eos_token_id.tolist() for criteria in stopping_criteria if hasattr(criteria, "eos_token_id")
+            ]
+            eos_token_id = eos_token_id[0] if eos_token_id else None
+            if eos_token_id is None and self.generation_config.eos_token_id is not None:
+                eos_token_id = self.generation_config.eos_token_id
+                stopping_criteria.append(EosTokenCriteria(eos_token_id=eos_token_id))
+
         if isinstance(eos_token_id, int):
             eos_token_id = [eos_token_id]
-        eos_token_id_tensor = torch.tensor(eos_token_id).to(input_ids.device) if eos_token_id is not None else None
         output_scores = output_scores if output_scores is not None else self.generation_config.output_scores
         output_attentions = (
             output_attentions if output_attentions is not None else self.generation_config.output_attentions
@@ -181,6 +207,7 @@ def new_greedy_search(
         )
 
         # init attention / hidden states / scores tuples
+        raw_logits = () if (return_dict_in_generate and output_logits) else None
         scores = () if (return_dict_in_generate and output_scores) else None
         decoder_attentions = () if (return_dict_in_generate and output_attentions) else None
         cross_attentions = () if (return_dict_in_generate and output_attentions) else None
@@ -194,21 +221,15 @@ def new_greedy_search(
             )
 
         # keep track of which sequences are already finished
-        unfinished_sequences = torch.ones(input_ids.shape[0], dtype=torch.long, device=input_ids.device)
+        batch_size, cur_len = input_ids.shape
+        if "inputs_embeds" in model_kwargs:
+            cur_len = model_kwargs["inputs_embeds"].shape[1]
+        this_peer_finished = False
+        unfinished_sequences = torch.ones(batch_size, dtype=torch.long, device=input_ids.device)
+        model_kwargs["cache_position"] = torch.arange(cur_len, device=input_ids.device)
 
-        this_peer_finished = False  # used by synced_gpus only
-        while True:
+        while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
             tic = time.perf_counter()
-            if synced_gpus:
-                # Under synced_gpus the `forward` call must continue until all gpus complete their sequence.
-                # The following logic allows an early break if all peers finished generating their sequence
-                this_peer_finished_flag = torch.tensor(0.0 if this_peer_finished else 1.0).to(input_ids.device)
-                # send 0.0 if we finished, 1.0 otherwise
-                dist.all_reduce(this_peer_finished_flag, op=dist.ReduceOp.SUM)
-                # did all peers finish? the reduced sum will be 0.0 then
-                if this_peer_finished_flag.item() == 0.0:
-                    break
-
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
@@ -234,6 +255,8 @@ def new_greedy_search(
             if return_dict_in_generate:
                 if output_scores:
                     scores += (next_tokens_scores,)
+                if output_logits:
+                    raw_logits += (next_token_logits,)
                 if output_attentions:
                     decoder_attentions += (
                         (outputs.decoder_attentions,) if self.config.is_encoder_decoder else (outputs.attentions,)
@@ -262,46 +285,39 @@ def new_greedy_search(
             if streamer is not None:
                 streamer.put(next_tokens.cpu())
             model_kwargs = self._update_model_kwargs_for_generation(
-                outputs, model_kwargs, is_encoder_decoder=self.config.is_encoder_decoder
+                outputs,
+                model_kwargs,
+                is_encoder_decoder=self.config.is_encoder_decoder,
             )
 
-            # if eos_token was found in one sentence, set sentence to finished
-            if eos_token_id_tensor is not None:
-                unfinished_sequences = unfinished_sequences.mul(
-                    next_tokens.tile(eos_token_id_tensor.shape[0], 1).ne(eos_token_id_tensor.unsqueeze(1)).prod(dim=0)
-                )
-
-                # stop when each sentence is finished
-                if unfinished_sequences.max() == 0:
-                    this_peer_finished = True
-
-            # stop if we exceed the maximum length
-            if stopping_criteria(input_ids, scores):
-                this_peer_finished = True
+            unfinished_sequences = unfinished_sequences & ~stopping_criteria(input_ids, scores)
+            this_peer_finished = unfinished_sequences.max() == 0
             tm_list.append(time.perf_counter() - tic)
-            if this_peer_finished and not synced_gpus:
-                break
 
         if streamer is not None:
             streamer.end()
 
         if return_dict_in_generate:
             if self.config.is_encoder_decoder:
-                return GreedySearchEncoderDecoderOutput(
+                return GenerateEncoderDecoderOutput(
                     sequences=input_ids,
                     scores=scores,
+                    logits=raw_logits,
                     encoder_attentions=encoder_attentions,
                     encoder_hidden_states=encoder_hidden_states,
                     decoder_attentions=decoder_attentions,
                     cross_attentions=cross_attentions,
                     decoder_hidden_states=decoder_hidden_states,
+                    past_key_values=model_kwargs.get("past_key_values"),
                 )
             else:
-                return GreedySearchDecoderOnlyOutput(
+                return GenerateDecoderOnlyOutput(
                     sequences=input_ids,
                     scores=scores,
+                    logits=raw_logits,
                     attentions=decoder_attentions,
                     hidden_states=decoder_hidden_states,
+                    past_key_values=model_kwargs.get("past_key_values"),
                 )
         else:
             return input_ids
@@ -334,12 +350,8 @@ class GreedySearchHook:
         global tm_infer_list
         return tm_infer_list
 
-    def new_forward(self, model, model_type=None):
+    def new_forward(self, model):
         """Define a new greedy search function."""
-        min_version = version.parse('4.34.0')
-        trans_version = version.parse(transformers.__version__)
-        if trans_version < min_version:
-            log.warning(f'The function of getting latency of greedy search will not be available with current transformers version:{trans_version}')
-        else:
-            bound_method = new_greedy_search.__get__(model, model.__class__)
-            model.greedy_search = bound_method
+        model._greedy_search = new_greedy_search.__get__(model, model.__class__)
+        model._sample = new_greedy_search.__get__(model, model.__class__)
+            

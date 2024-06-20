@@ -1,4 +1,0 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.2.0+cpu
-diffusers==0.26.3
-optimum-intel[nncf,openvino]==1.15.2
