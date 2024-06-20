@@ -91,8 +91,6 @@ def get_image_param_from_prompt_file(args):
 
 
 def set_default_param_for_ov_config(ov_config):
-    if 'PERFORMANCE_HINT' not in ov_config:
-        ov_config['PERFORMANCE_HINT'] = 'LATENCY'
     # With this PR https://github.com/huggingface/optimum-intel/pull/362, we are able to disable model cache
     if 'CACHE_DIR' not in ov_config:
         ov_config['CACHE_DIR'] = ''
