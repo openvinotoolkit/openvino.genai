@@ -12,7 +12,7 @@ jobs:
         build-type: [Release, Debug]
     runs-on: ubuntu-20.04
     env:
-      CMAKE_BUILD_PARALLEL_LEVEL: "null"
+      CMAKE_BUILD_PARALLEL_LEVEL: null
     steps:
       - uses: actions/checkout@v4
         with:
@@ -77,7 +77,7 @@ jobs:
         build-type: [Release, Debug]
     runs-on: windows-latest
     env:
-      CMAKE_BUILD_PARALLEL_LEVEL: "null"
+      CMAKE_BUILD_PARALLEL_LEVEL: null
     defaults:
       run:
         shell: cmd
