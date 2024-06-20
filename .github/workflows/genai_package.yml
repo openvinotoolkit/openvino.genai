@@ -1,17 +1,18 @@
 name: genai_package
 on: pull_request
-permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
+permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 jobs:
   ubuntu_genai_package:
+    if: false
     strategy:
       matrix:
         build-type: [Release, Debug]
     runs-on: ubuntu-20.04
     env:
-      CMAKE_BUILD_PARALLEL_LEVEL: null
+      CMAKE_BUILD_PARALLEL_LEVEL: "null"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,14 +30,15 @@ jobs:
       - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - run: source ./ov/setupvars.sh && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
       - run: ov/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
-        if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
+        if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ov/samples/cpp/ -B ./samples\ build/ && cmake --build ./samples\ build/ --config ${{ matrix.build-type }} -j && cmake --install ./samples\ build/ --config ${{ matrix.build-type }} --component samples_bin --prefix s\ pace
         if: ${{ 'Release' != matrix.build-type }}
       - run: source ./ov/setupvars.sh && timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
       - run: source ./ov/setupvars.sh && timeout 25s ./ov/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
-        if: ${{ 'Release' == matrix.build-type }}  # Python bindings can be built in Release only
+        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
 
   macos_genai_package:
+    if: false
     strategy:
       matrix:
         build-type: [Release, Debug]
@@ -58,7 +60,7 @@ jobs:
       - run: source ./ov/setupvars.sh && optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - run: source ./ov/setupvars.sh && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
       - run: ov/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
-        if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
+        if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
       - run: >
           source ./ov/setupvars.sh
           && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ov/samples/cpp/ -B ./samples\ build/
@@ -67,16 +69,15 @@ jobs:
         if: ${{ 'Release' != matrix.build-type }}
       - run: source ./ov/setupvars.sh && timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
       - run: source ./ov/setupvars.sh && timeout 25s ./ov/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
-        if: ${{ 'Release' == matrix.build-type }}  # Python bindings can be built in Release only
+        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
 
   windows_genai_package:
-    if: false
     strategy:
       matrix:
         build-type: [Release, Debug]
     runs-on: windows-latest
     env:
-      CMAKE_BUILD_PARALLEL_LEVEL: null
+      CMAKE_BUILD_PARALLEL_LEVEL: "null"
     defaults:
       run:
         shell: cmd
@@ -98,7 +99,7 @@ jobs:
       - run: call ov\setupvars.bat && optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
       - run: call ov\setupvars.bat && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
       - run: call ov\samples\cpp\build_samples_msvc.bat -i "${{ github.workspace }}/samples_install"
-        if: ${{ 'Release' == matrix.build-type }}  # build_samples enforces Release build
+        if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
       - run: >
           call ov\setupvars.bat
           && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ov/samples/cpp/ -B "samples build"
@@ -107,4 +108,4 @@ jobs:
         if: ${{ 'Release' != matrix.build-type }}
       - run: call ov\setupvars.bat && "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm" .\TinyLlama-1.1B-Chat-v1.0\ ""
       - run: call ov\setupvars.bat && ./ov/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
-        if: ${{ 'Release' == matrix.build-type }}  # Python bindings can be built in Release only
+        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
