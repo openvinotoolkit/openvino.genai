@@ -228,18 +228,15 @@ test_configs = [
     dict(max_new_tokens=20, num_beam_groups=3, num_beams=15, diversity_penalty=1.0)
 ]
 batched_prompts = [
-    ['table is made of', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
+    ['table is made', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
     ['hello', 'Here is the longest nowel ever: '],
-    ['Alan Turing was a', 'return 0', '你好！ 你好嗎？']
+    ['Alan Turing was a', 'return 0', '你好！ 你好嗎？'],
+    ['table is made', 'table is made [force left pad tokens]']
 ]
 @pytest.mark.parametrize("generation_config", test_configs)
 @pytest.mark.parametrize("prompts", batched_prompts)
 @pytest.mark.parametrize("model_descr", models_list())
 @pytest.mark.precommit
-@pytest.mark.xfail(
-    raises=AssertionError, reason="assert hf_output == ov_output.texts fails",
-    strict=False,
-)
 def test_multibatch(model_descr, generation_config, prompts):
     run_hf_ov_genai_comparison_batched(read_model(model_descr), generation_config, prompts)
 

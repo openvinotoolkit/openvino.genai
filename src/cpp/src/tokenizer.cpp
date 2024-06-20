@@ -12,7 +12,7 @@
 namespace {
 
 // todo: remove when openvino-tokenizers will support left padding
-ov::genai::TokenizedInputs pad_left(ov::Tensor& input_ids, ov::Tensor& attention_mask, int64_t pad_token_id) {
+ov::genai::TokenizedInputs pad_left(ov::Tensor& input_ids, ov::Tensor& attention_mask) {
     const size_t batch_size = input_ids.get_shape()[0];
     const size_t sequence_length = input_ids.get_shape()[1];
     int64_t* inputs_data = input_ids.data<int64_t>();
@@ -22,14 +22,15 @@ ov::genai::TokenizedInputs pad_left(ov::Tensor& input_ids, ov::Tensor& attention
         const size_t batch_offset = batch * sequence_length;
 
         // last token in the sequence is not a PAD_TOKEN, skipping
-        if (inputs_data[batch_offset + sequence_length - 1] != pad_token_id)
+        if (attention_mask_data[batch_offset + sequence_length - 1] == 1)
             continue;
 
         size_t pad_tokens_number = 0;
         for (int i = sequence_length - 1; i >= 0; i--) {
             const size_t token_offset = batch_offset + i;
 
-            if (inputs_data[token_offset] == pad_token_id)
+            // count pad tokens
+            if (attention_mask_data[token_offset] == 0)
                 continue;
 
             if (pad_tokens_number == 0)
@@ -174,6 +175,11 @@ public:
         read_token_content_str(bos_token_key_name, m_bos_token);
         read_token_content_str(eos_token_key_name, m_eos_token);
 
+        // if pad_token not found use eos_token as pad_token
+        if (m_pad_token.empty() && !m_eos_token.empty()) {
+            m_pad_token = m_eos_token;
+        }
+
         // special token ids integer representation are already defined
         if (m_pad_token_id != -1 && m_bos_token_id != -1 && m_eos_token_id != -1)
             return ;
@@ -195,6 +201,12 @@ public:
                 m_bos_token_id = std::stoi(key);
             if (m_eos_token_id == -1 && content == m_eos_token)
                 m_eos_token_id = std::stoi(key);
+        }
+
+        // if pad_token_id not found use eos_token_id as pad_token_id
+        // todo: read m_pad_token_id from tokenizer rt_info once implemented in tokenizers (CVS-144174)
+        if (m_pad_token_id == -1 && m_eos_token_id != -1) {
+            m_pad_token_id = m_eos_token_id;
         }
     }
 
@@ -226,7 +238,7 @@ public:
         m_tokenize_request.infer();
        
         auto res = get_copied_results();
-        pad_left(res.input_ids, res.attention_mask, m_pad_token_id);
+        pad_left(res.input_ids, res.attention_mask);
         return {res.input_ids, res.attention_mask};
     }
 
