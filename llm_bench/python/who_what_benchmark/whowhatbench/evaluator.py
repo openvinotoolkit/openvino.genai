@@ -78,8 +78,8 @@ class Evaluator:
     def dump_gt(self, csv_name: str):
         self.gt_data.to_csv(csv_name)
 
-    def score(self, model):
-        predictions = self._generate_data(model)
+    def score(self, model, gen_answer_fn=None):
+        predictions = self._generate_data(model, gen_answer_fn)
 
         all_metrics_per_question = {}
         all_metrics = {}
@@ -119,7 +119,15 @@ class Evaluator:
 
         return res
 
-    def _generate_data(self, model):
+    def _generate_data(self, model, gen_answer_fn=None):
+        def default_gen_answer(model, tokenizer, question, max_new_tokens, crop_question):
+            inputs = self.tokenizer(question, return_tensors="pt")
+            tokens = model.generate(**inputs, max_new_tokens=max_new_tokens)
+            out = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
+            return out[len(question) :] if crop_question else out
+
+        gen_answer_fn = gen_answer_fn or default_gen_answer
+
         if self.test_data:
             if isinstance(self.test_data, str):
                 data = pd.read_csv(self.test_data)
@@ -138,11 +146,7 @@ class Evaluator:
         answers = []
 
         for q in tqdm(questions.values, desc="Evaluate pipeline"):
-            inputs = self.tokenizer(q, return_tensors="pt")
-            tokens = model.generate(**inputs, max_new_tokens=self.max_new_tokens)
-            out = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
-            answer = out[len(q):] if self._crop_question else out
-            answers.append(answer)
+            answers.append(gen_answer_fn(model, self.tokenizer, q, self.max_new_tokens, self._crop_question))
 
         res_data = {"questions": list(questions.values), "answers": answers}
         df = pd.DataFrame(res_data)
