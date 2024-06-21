@@ -47,9 +47,9 @@ struct TextStreamer {
         if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
             // Don't print incomplete text
             return;
-        } else if (text.size() > print_len && std::any_of(text.begin() + print_len, text.end(), [](char c) { return c == ' '; })) {
+        } else if (text.size() > print_len) {
             // It is possible to have a shorter text after adding new token.
-            // Print to output only if text lengh is increaesed and if containt full words.
+            // Print to output only if text lengh is increaesed.
             std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
             print_len = text.size();
         }
@@ -57,7 +57,7 @@ struct TextStreamer {
 
     void end() {
         std::string text = detokenize(detokenizer, token_cache);
-        if (text.size() < print_len)
+        if (text.size() <= print_len)
             return ;
         std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
         token_cache.clear();
