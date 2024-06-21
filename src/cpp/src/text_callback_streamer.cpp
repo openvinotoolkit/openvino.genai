@@ -22,18 +22,25 @@ bool TextCallbackStreamer::put(int64_t token) {
         print_len = 0;
         return on_finalized_subword_callback(res.str());
     }
+
     if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
         // Don't print incomplete text
         return on_finalized_subword_callback(res.str());
+    } else if (text.size() > print_len && std::any_of(text.begin() + print_len, text.end(), [](char c) { return c == ' '; })) {
+        // It is possible to have a shorter text after adding new token.
+        // Print to output only if text lengh is increaesed and if containt full words.
+        res << std::string{text.data() + print_len, text.size() - print_len} << std::flush;
+        print_len = text.size();
     }
-    res << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
-    print_len = text.size();
+
     return on_finalized_subword_callback(res.str());
 }
 
 void TextCallbackStreamer::end() {
     std::stringstream res;
     std::string text = m_tokenizer.decode(m_tokens_cache);
+    if (text.size() < print_len)
+            return ;
     res << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
     m_tokens_cache.clear();
     print_len = 0;

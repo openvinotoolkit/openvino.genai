@@ -634,6 +634,7 @@ def test_unicode_pybind_decoding_1():
     assert isinstance(res_str, str)
     assert len(res_str) > 0
 
+
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
 def test_unicode_pybind_decoding_2():
@@ -644,6 +645,16 @@ def test_unicode_pybind_decoding_2():
     decoded_results = pipe.generate(['你好！ 你好嗎？'], max_new_tokens=20)
     assert isinstance(decoded_results, ov_genai.DecodedResults)
     assert len(decoded_results.texts[0]) > 0
+
+
+@pytest.mark.precommit
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
+def test_unicode_pybind_decoding_3():
+    # On this model this prompt generates unfinished utf-8 string
+    # and streams it. Test that pybind will not fail while we pass string to python.
+    model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
+    pipe = read_model((model_id, path))[4]
+    pipe.generate('你好！ 你好嗎？', max_new_tokens=20, streamer=lambda x: print(x))
 
 
 quenstions = [

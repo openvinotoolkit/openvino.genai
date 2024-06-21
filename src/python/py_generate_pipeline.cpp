@@ -25,8 +25,12 @@ using ov::genai::StringInputs;
 using ov::genai::TokenizedInputs;
 using ov::genai::Tokenizer;
 
+// When StreamerVariant is used utf-8 decoding is done by pybind and can lead to exception on incomplete texts.
+// Therefore strings decoding should be handled with PyUnicode_DecodeUTF8(..., "replace") to not throw errors.
+using PyBindStreamerVariant = std::variant<std::function<py::object(py::object)>, std::shared_ptr<StreamerBase>, std::monostate>;
 
-PYBIND11_MAKE_OPAQUE(std::vector<float>);
+template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 namespace {
 
@@ -263,30 +267,54 @@ py::object call_common_generate(
     LLMPipeline& pipe, 
     const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs, 
     const OptionalGenerationConfig& config, 
-    const StreamerVariant& streamer, 
+    const PyBindStreamerVariant& py_streamer, 
     const py::kwargs& kwargs
 ) {
     auto updated_config = update_config_from_kwargs(config, kwargs);
+    py::object results;
     EncodedInputs tensor_data;
+    StreamerVariant streamer = std::monostate();
+    
+    std::visit(overloaded {
+    [&streamer](const std::function<py::object(py::object)>& py_callback){
+        // Wrap python streamer with manual utf-8 decoding. Do not rely
+        // on pybind automatic decoding since it raises exceptions on incomplete strings.
+        auto callback_wrapped = [&py_callback](std::string subword) -> bool {
+            auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
+            return py_callback(py::reinterpret_borrow<py::object>(py_str)).cast<bool>();
+        };
+        streamer = callback_wrapped;
+    },
+    [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
+        streamer = streamer_cls;
+    },
+    [](std::monostate none){ /*streamer is already a monostate */ }
+    }, py_streamer);
 
-    if (auto data = std::get_if<ov::Tensor>(&inputs)) {
-        return py::cast(pipe.generate(*data, updated_config, streamer));
-    } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
-        return py::cast(pipe.generate(*data, updated_config, streamer));
-    } else if (auto data = std::get_if<std::string>(&inputs)) {
-        DecodedResults res = pipe.generate(*data, updated_config, streamer);
+    // Call suitable generate overload for each type of input.
+    std::visit(overloaded {
+    [&](ov::Tensor ov_tensor) {
+        results = py::cast(pipe.generate(ov_tensor, updated_config, streamer));
+    },
+    [&](TokenizedInputs tokenized_input) {
+        results = py::cast(pipe.generate(tokenized_input, updated_config, streamer));
+    },
+    [&](std::string string_input) {
+        DecodedResults res = pipe.generate(string_input, updated_config, streamer);
         // If input was a string return a single string otherwise return DecodedResults.
         if (updated_config.num_return_sequences == 1) {
-            return handle_utf8_results(res.texts)[0];
+            results = py::cast<py::object>(handle_utf8_results(res.texts)[0]);
         } else {
-            return py::cast(res);
+            results = py::cast(res);
         }
-    } else if (auto data = std::get_if<std::vector<std::string>>(&inputs)) {
+    },
+    [&](std::vector<std::string> string_input) {
         // For DecodedResults texts getter already handles utf8 decoding.
-        return py::cast(pipe.generate(*data, updated_config, streamer));
-    } else {
-        throw std::invalid_argument("Provided input is neither encoded tokens, neither string");
-    }
+        results = py::cast(pipe.generate(string_input, updated_config, streamer));
+    }},
+    inputs);
+    
+    return results;
 }
 
 std::string ov_tokenizers_module_path() {
@@ -352,7 +380,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             [](LLMPipeline& pipe, 
                 const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs, 
                 const OptionalGenerationConfig& generation_config, 
-                const StreamerVariant& streamer, 
+                const PyBindStreamerVariant& streamer, 
                 const py::kwargs& kwargs
             ) {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
@@ -368,7 +396,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             [](LLMPipeline& pipe, 
                 const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs, 
                 const OptionalGenerationConfig& generation_config, 
-                const StreamerVariant& streamer, 
+                const PyBindStreamerVariant& streamer, 
                 const py::kwargs& kwargs
             ) {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
