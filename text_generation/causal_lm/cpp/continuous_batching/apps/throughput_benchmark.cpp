@@ -501,7 +501,7 @@ int main(int argc, char* argv[]) try {
 
     GenerationInfoCollector generation_info_collector;
 
-    std::atomic<bool> finishGenerationThread = false;
+    std::atomic<bool> finishGenerationThread{false};
     if (request_rate == "inf") {
         std::thread trafficSimulatorThread(trafficSimulator, &pipe, &dataset, request_rate, &generation_info_collector);
         trafficSimulatorThread.join();
