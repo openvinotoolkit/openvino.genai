@@ -23,7 +23,7 @@ To build OpenVINO™ GenAI library from source, refer to the [Build Instructions
     > git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
     > cd openvino.genai
     > # Install python dependencies
-    > python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+    > python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
     > python -m pip install --upgrade-strategy eager -r ./samples/cpp/requirements.txt
     > ```
 
