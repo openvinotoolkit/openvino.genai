@@ -90,10 +90,12 @@ def get_image_param_from_prompt_file(args):
     return image_param_list
 
 
-def set_default_param_for_ov_config(ov_config):
+def set_default_param_for_ov_config(args, ov_config):
     # With this PR https://github.com/huggingface/optimum-intel/pull/362, we are able to disable model cache
     if 'CACHE_DIR' not in ov_config:
         ov_config['CACHE_DIR'] = ''
+    if args.dynamic_quantization_group_size:
+        ov_config['DYNAMIC_QUANTIZATION_GROUP_SIZE'] = f"{args.dynamic_quantization_group_size}"
 
 
 def add_stateful_model_arguments(parser: argparse.ArgumentParser):
@@ -154,7 +156,7 @@ def analyze_args(args):
         if type(config) is dict and len(config) > 0:
             model_args['config'] = config
     if model_framework == 'ov':
-        set_default_param_for_ov_config(model_args['config'])
+        set_default_param_for_ov_config(args, model_args['config'])
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")

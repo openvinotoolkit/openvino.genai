@@ -674,6 +674,15 @@ def get_argprser():
         'if the value is False (default), input prompts are processed in interleave manner'
     )
     parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
+    parser.add_argument(
+        '-dq',
+        '--dynamic_quantization_group_size',
+        default=None,
+        required=False,
+        type=int,
+        help='Set group size of dynamic quantization. Dynamic quantization for GPU is enabled if this argument is equal to or bigger than 32.',
+    )
+
     utils.model_utils.add_stateful_model_arguments(parser)
     parser.add_argument("--genai", action="store_true")
 
