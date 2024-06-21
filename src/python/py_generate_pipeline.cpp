@@ -27,7 +27,7 @@ using ov::genai::Tokenizer;
 
 // When StreamerVariant is used utf-8 decoding is done by pybind and can lead to exception on incomplete texts.
 // Therefore strings decoding should be handled with PyUnicode_DecodeUTF8(..., "replace") to not throw errors.
-using PyBindStreamerVariant = std::variant<std::function<py::object(py::object)>, std::shared_ptr<StreamerBase>, std::monostate>;
+using PyBindStreamerVariant = std::variant<std::function<bool(py::str)>, std::shared_ptr<StreamerBase>, std::monostate>;
 
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
@@ -276,12 +276,12 @@ py::object call_common_generate(
     StreamerVariant streamer = std::monostate();
     
     std::visit(overloaded {
-    [&streamer](const std::function<py::object(py::object)>& py_callback){
+    [&streamer](const std::function<bool(py::str)>& py_callback){
         // Wrap python streamer with manual utf-8 decoding. Do not rely
         // on pybind automatic decoding since it raises exceptions on incomplete strings.
         auto callback_wrapped = [&py_callback](std::string subword) -> bool {
             auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-            return py_callback(py::reinterpret_borrow<py::object>(py_str)).cast<bool>();
+            return py_callback(py::reinterpret_borrow<py::str>(py_str));
         };
         streamer = callback_wrapped;
     },
