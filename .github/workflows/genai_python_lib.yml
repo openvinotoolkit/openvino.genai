@@ -21,11 +21,11 @@ jobs:
           python-version: 3.8
       - run: mkdir ./ov/
       # Install CentOS7 instead of Ubuntu to match PyPI distribution ABI.
-      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_centos7_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15750-d17b4058e0e/l_openvino_toolkit_centos7_2024.3.0.dev20240619_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
       - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
-      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --upgrade-strategy eager
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --upgrade-strategy eager
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
       - run: source ./ov/setupvars.sh && python -m pip install . --verbose
       - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
@@ -44,11 +44,11 @@ jobs:
         with:
           python-version: 3.8
       - run: mkdir ./ov/
-      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/macos/m_openvino_toolkit_macos_12_6_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15750-d17b4058e0e/m_openvino_toolkit_macos_12_6_2024.3.0.dev20240619_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
       - run: brew install coreutils scons
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
-      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --upgrade-strategy eager
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --upgrade-strategy eager
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
       - run: source ./ov/setupvars.sh && python -m pip install . --verbose
       - run: python -c "from openvino_genai import LLMPipeline"
@@ -69,13 +69,13 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/windows/w_openvino_toolkit_windows_2024.2.0.dev20240529_x86_64.zip
+      - run: curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15750-d17b4058e0e/w_openvino_toolkit_windows_2024.3.0.dev20240619_x86_64.zip
       - run: unzip ov.zip
       # Shorten the next setupvars calls.
-      - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240529_x86_64
+      - run: mklink /D ov w_openvino_toolkit_windows_2024.3.0.dev20240619_x86_64
       - run: call ./ov/setupvars.bat && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: call ./ov/setupvars.bat && cmake --build ./build/ --config Release -j
-      - run: call ./ov/setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --upgrade-strategy eager
+      - run: call ./ov/setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --upgrade-strategy eager
       # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
       - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
       - run: call ./ov/setupvars.bat && python -m pip install . --verbose

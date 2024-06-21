@@ -19,7 +19,7 @@
     <!-- TODO Update link to OV Archive -->
     ```sh
     mkdir ./ov/
-    curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240524_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+    curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15750-d17b4058e0e/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240619_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
     sudo ./ov/install_dependencies/install_openvino_dependencies.sh
     ```
 3. Build the project:
@@ -47,12 +47,11 @@
     cd openvino.genai
     ```
 2. Download OpenVINO archive and install dependencies:
-    <!-- TODO Update link to OV Archive -->
     ```sh
     mkdir ./ov/
-    curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/windows/w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64.zip
+    curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15750-d17b4058e0e/w_openvino_toolkit_windows_2024.3.0.dev20240619_x86_64.zip
     unzip ov.zip
-    mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64
+    mklink /D ov w_openvino_toolkit_windows_2024.3.0.dev20240619_x86_64
     ```
 3. Build the project:
     ```sh
@@ -88,7 +87,7 @@
     <!-- TODO Update link to OV Archive -->
     ```sh
     mkdir ./ov/
-    curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/macos/m_openvino_toolkit_macos_12_6_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+    curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15750-d17b4058e0e/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240619_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
     ```
 3. Build the project:
     ```sh
