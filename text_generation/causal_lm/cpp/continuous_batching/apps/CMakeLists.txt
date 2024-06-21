@@ -18,6 +18,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 find_package(Threads REQUIRED)
+
 # end of dependencies
 
 set(TARGET_NAME accuracy_sample)
