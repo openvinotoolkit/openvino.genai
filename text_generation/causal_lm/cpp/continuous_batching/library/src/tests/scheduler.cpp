@@ -52,7 +52,7 @@ TEST(TestScheduler, general_test) {
         Scheduler scheduler = Scheduler(scheduler_config);
         auto out1 = scheduler.schedule(requests);
 
-        std::vector<size_t> ref_ids = {0, 1, 2};
+        std::vector<uint64_t> ref_ids = {0, 1, 2};
         EXPECT_EQ(out1.m_scheduled_sequence_groups_ids, ref_ids);
         EXPECT_EQ(out1.m_block_tables[idx0].size(), 2);
         EXPECT_EQ(out1.m_block_tables[idx1].size(), 2);
