@@ -79,7 +79,7 @@ TEST(TestScheduler, general_test) {
             seq->finish_iteration();
         }
 
-        std::vector<size_t> ref_ids2 = {0, 1};
+        std::vector<uint64_t> ref_ids2 = {0, 1};
         EXPECT_EQ(out3.m_scheduled_sequence_groups_ids, ref_ids2);
         EXPECT_EQ(out3.m_block_tables[idx0].size(), 3);
         EXPECT_EQ(out3.m_block_tables[idx1].size(), 3);
@@ -143,7 +143,7 @@ TEST(TestScheduler, test_append_slots_considers_all_sequences) {
         Scheduler scheduler = Scheduler(scheduler_config);
         auto out1 = scheduler.schedule(requests);
 
-        std::vector<size_t> ref_ids = {0, 1};
+        std::vector<uint64_t> ref_ids = {0, 1};
         EXPECT_EQ(out1.m_scheduled_sequence_groups_ids, ref_ids);
         EXPECT_EQ(out1.m_block_tables[idx0].size(), 2);
         EXPECT_EQ(out1.m_block_tables[idx1].size(), 2);
@@ -236,7 +236,7 @@ TEST(TestScheduler, test_partial_preemption) {
         // sequence_group2 should be partially preempted
         auto out2 = scheduler.schedule(requests);
         
-        std::vector<size_t> ref_ids = {0};
+        std::vector<uint64_t> ref_ids = {0};
         EXPECT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
         auto block_table1 = scheduler.get_block_table(*(*sequence_group1)[0]);
         auto block_table2 = scheduler.get_block_table(*(*sequence_group2)[0]);
@@ -334,7 +334,7 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         EXPECT_EQ(out2.m_block_tables[idx0][2]->get_index(), 2);
         EXPECT_EQ(out2.m_block_tables[idx0][3]->get_index(), 5);
 
-        std::vector<size_t> ref_ids = {0};
+        std::vector<uint64_t> ref_ids = {0};
         EXPECT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
         EXPECT_EQ(out2.m_total_num_scheduled_tokens, 1); 
 
