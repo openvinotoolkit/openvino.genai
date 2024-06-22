@@ -680,7 +680,7 @@ def get_argprser():
         default=None,
         required=False,
         type=int,
-        help='Set group size of dynamic quantization. Dynamic quantization for GPU is enabled if this argument is equal to or bigger than 32.',
+        help='Set group size of Fully Connected dynamic quantization.',
     )
 
     utils.model_utils.add_stateful_model_arguments(parser)
