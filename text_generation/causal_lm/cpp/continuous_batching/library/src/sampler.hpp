@@ -540,7 +540,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
         if (!group.done) {
             for (Beam& child_beam : child_beams_per_group[group_id]) {
                 uint64_t parent_sequence_id = child_beam.m_sequence->get_id();
-                size_t& num_childs = parent_2_num_childs_map[parent_sequence_id];
+                uint64_t& num_childs = parent_2_num_childs_map[parent_sequence_id];
 
                 // if current beam is forked multiple times
                 if (num_childs > 1) {
