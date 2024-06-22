@@ -16,7 +16,6 @@
     cd openvino.genai
     ```
 2. Download OpenVINO archive and install dependencies:
-    <!-- TODO Update link to OV Archive -->
     ```sh
     mkdir ./ov/
     curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15750-d17b4058e0e/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240619_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
@@ -84,7 +83,6 @@
     cd openvino.genai
     ```
 2. Download OpenVINO archive and install dependencies:
-    <!-- TODO Update link to OV Archive -->
     ```sh
     mkdir ./ov/
     curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15750-d17b4058e0e/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240619_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
