@@ -38,9 +38,6 @@ add_subdirectory(samples)
 
 install(FILES LICENSE DESTINATION licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
 install(FILES third-party-programs.txt DESTINATION licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
-
+set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
-if(WIN32 AND NOT DEFINED CPACK_GENERATOR)
-    set(CPACK_GENERATOR "ZIP")
-endif()
 include(CPack)
