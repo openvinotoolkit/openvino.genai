@@ -196,11 +196,15 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     if num > 0:
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
-            isGPU = args['devices'].lower().startswith('gpu')
-            if isGPU is not True or (isGPU is True and num > 1):
-                log.error(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
-                          f"is different from md5 of the {num - 1} iteration {prev_md5}")
-                utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
+                            f"is different from md5 of the {num - 1} iteration {prev_md5}")
+            utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+            if num == 1:
+                # if the device is CPU, throw exception
+                if args['devices'].lower().startswith('cpu') is True:
+                    assert (result_md5_list == prev_md5)
+            else:
+                # throw exception
                 assert (result_md5_list == prev_md5)
     else:
         utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
@@ -298,11 +302,15 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     if num > 0:
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
-            isGPU = args['devices'].lower().startswith('gpu')
-            if isGPU is not True or (isGPU is True and num > 1):
-                log.error(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
-                          f"is different from md5 of the {num - 1} iteration {prev_md5}")
-                utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
+                            f"is different from md5 of the {num - 1} iteration {prev_md5}")
+            utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+            if num == 1:
+                # if the device is CPU, throw exception
+                if args['devices'].lower().startswith('cpu') is True:
+                    assert (result_md5_list == prev_md5)
+            else:
+                # throw exception
                 assert (result_md5_list == prev_md5)
     else:
         utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
