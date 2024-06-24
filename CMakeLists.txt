@@ -36,6 +36,8 @@ add_subdirectory(thirdparty)
 add_subdirectory(src)
 add_subdirectory(samples)
 
+add_subdirectory(text_generation/causal_lm/cpp/continuous_batching)
+
 install(FILES LICENSE DESTINATION licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
 install(FILES third-party-programs.txt DESTINATION licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
 set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
