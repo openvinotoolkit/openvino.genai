@@ -37,7 +37,7 @@ struct TextStreamer {
     void put(int64_t token) {
         token_cache.push_back(token);
         std::string text = detokenize(detokenizer, token_cache);
-        if (!text.empty() && '\n' == text.back()) {
+        if (!text.empty() && '\n' == text.back() && text.size() > print_len) {
             // Flush the cache after the new line symbol
             std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
             token_cache.clear();
