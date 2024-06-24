@@ -3,3 +3,5 @@ model
 *.bmp
 *.txt
 *.jpg
+*.xml
+*.bin
