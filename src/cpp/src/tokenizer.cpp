@@ -138,9 +138,9 @@ public:
         read_token_content_str(eos_token_key_name, m_eos_token);
     }
 
-    // Read string representation of special tokens if they exists.
+    // Read string representation of special tokens if they exist.
     // Also tries to load special token ids from added_tokens_decoder if they exist.
-    // Will not override special token strings or ids if they already exist
+    // Will not override special token strings or ids if they already exist.
     void read_tokenizer_config_if_necessary(const std::filesystem::path& tokenizer_path) {
         if (m_pad_token_id != -1 && m_bos_token_id != -1 && m_eos_token_id != -1 && 
             !m_pad_token.empty() && !m_bos_token.empty() && !m_eos_token.empty()) {
@@ -310,7 +310,7 @@ public:
         // Replace what jinja2cpp doesn't support
         std::pair<std::string, std::string> replace_str_map[] = {
             {"\n'}", "\n' }"},
-            {".strip()", "\"\""}
+            {".strip()", ""}
         };
         if (!res.empty()) {
             for (const auto& [from, to] : replace_str_map) {
@@ -322,29 +322,52 @@ public:
             }
         }
         return res;
-    }    
+    }
 
     std::string apply_chat_template(const ChatHistory& history, 
                                     bool add_generation_prompt, 
                                     const std::string& chat_template) const {
+        auto chat_tpl = chat_template.empty() ? m_chat_template : chat_template;
+
+        // Jinja2Cpp does not support slicing, e.g. [1:].
+        // In templates slicing is used typically in the header to find system prompt.
+        // If header containt that typical expression we update template and 
+        // extract system message manually from ChatHistory.
+        std::string header_with_slice = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}";
+        std::string replacement_string = "{% if false %}{% set placeholder = false %}";
+        ChatHistory modified_history = history;
+        std::string system_message = "";
+        
+        size_t pos = chat_tpl.find(header_with_slice);
+        if (pos != std::string::npos) {
+            chat_tpl.replace(pos, header_with_slice.length(), replacement_string);
+
+            if (!history.empty() && history[0].at("role") == "system") {
+                system_message = history[0].at("content");
+                modified_history.erase(modified_history.begin());
+            }
+        }
+
         jinja2::TemplateEnv env;
         env.GetSettings().lstripBlocks = true;
         env.GetSettings().trimBlocks = true;
         jinja2::Template tpl(&env);
-        tpl.Load(chat_template.empty() ? m_chat_template : chat_template);
+        tpl.Load(chat_tpl);
         
         jinja2::ValuesList jinja_messages;
         jinja2::ValuesMap jinja_message;
-        for (const auto& message : history) {
+        for (const auto& message : modified_history) {
             jinja_message = {{"role", message.at("role")}, {"content", message.at("content")}};
             jinja_messages.emplace_back(jinja_message);
         }
         
+
         jinja2::ValuesMap params = {
             {"messages", jinja_messages},
             {"bos_token",  m_bos_token},
             {"eos_token", m_eos_token},
             {"pad_token", m_pad_token},
+            {"system_message", system_message.empty() ? jinja2::ValuesMap() : jinja2::ValuesMap{{"content", system_message}}},
             {"add_generation_prompt", add_generation_prompt},
         };
         return tpl.RenderAsString(params).value();

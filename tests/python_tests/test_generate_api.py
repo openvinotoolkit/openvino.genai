@@ -742,8 +742,8 @@ quenstions = [
 ]
 
 configs = [
-    dict(max_new_tokens=500),
-    # dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0)
+    # dict(max_new_tokens=500),
+    dict(num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=500, diversity_penalty=1.0)
 ]
 @pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", chat_models_list())
@@ -772,7 +772,6 @@ def test_chat_1(model_descr, generation_config):
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
-    ov_genai.LLMPipeline(str(path), device='CPU', config={"ENABLE_MMAP": False})
 
     pipe.start_chat()    
     for prompt in quenstions:
@@ -795,7 +794,92 @@ def test_chat_1(model_descr, generation_config):
         print(f'hf_output: {chat_history_hf}')
         print(f'ov_output: {chat_history_ov}')
     assert chat_history_ov == chat_history_hf
-    pipe.generate('你好！ 你好嗎？', max_new_tokens=20)
+
+
+quenstions = [
+    '1+1=',
+    'What is the previous answer?',
+    # 'Why is the sun yellow?',
+    # 'What was my first question?'
+]
+configs = [
+    dict(max_new_tokens=500),
+    # dict(num_beam_groups=2, num_beams=4, num_return_sequences=1, max_new_tokens=500, diversity_penalty=1.0)
+]
+@pytest.mark.parametrize("config", configs)
+@pytest.mark.parametrize("model_descr", chat_models_list())
+@pytest.mark.precommit
+# @pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
+# Check that when history is stored in KV cache results are the same as when history stored in text.
+def test_chat_2(model_descr, config):
+    device ='CPU'
+    
+    chat_history_with_kv_cache = []
+    chat_history_ov = []
+    chat_prompt = ''
+    model_id, path, tokenizer, model_opt, pipe = read_model(model_descr)
+
+    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
+    openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
+    openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
+    
+    pipe = ov_genai.LLMPipeline(str(path), device, config={"ENABLE_MMAP": False})
+    pipe_with_kv_cache = ov_genai.LLMPipeline(str(path), device, config={"ENABLE_MMAP": False})
+
+    pipe_with_kv_cache.start_chat()
+    for question in quenstions:
+        chat_history_with_kv_cache.append({'role': 'user', 'content': question})
+        chat_history_ov.append({'role': 'user', 'content': question})
+        # pytest.set_trace()
+        answer = pipe_with_kv_cache.generate(question, **config)
+        chat_history_with_kv_cache.append({'role': 'assistant', 'content': answer})
+        
+        prompt = pipe.get_tokenizer().apply_chat_template(chat_history_ov, add_generation_prompt=True)
+        answer = pipe.generate(prompt, **config)
+        chat_history_ov.append({'role': 'assistant', 'content': answer})
+    pipe_with_kv_cache.finish_chat()
+
+    if chat_history_ov != chat_history_with_kv_cache:
+        print(f'kvcache_hist: {chat_history_with_kv_cache}')
+        print(f'text_history: {chat_history_ov}')
+    assert chat_history_ov == chat_history_with_kv_cache
+
+
+qwen2_instruct_config = {
+    "chat_template": "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}",
+    "eos_token": "<|im_end|>",
+    "pad_token": "<|endoftext|>",
+}
+llama_2_7b_chat_hf_config = {
+    "bos_token": "<s>",
+    "chat_template": "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}{% else %}{% set loop_messages = messages %}{% set system_message = false %}{% endif %}{% for message in loop_messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if loop.index0 == 0 and system_message != false %}{% set content = '<<SYS>>\\n' + system_message + '\\n<</SYS>>\\n\\n' + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ bos_token + '[INST] ' + content.strip() + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' '  + content.strip() + ' ' + eos_token }}{% endif %}{% endfor %}",
+    # "chat_template": "{% if false %}{% set placehold = false %}{% else %}{% set loop_messages = messages %}{% set system_message = false %}{% endif %}{% for message in loop_messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if loop.index0 == 0 and system_message != false %}{% set content = '<<SYS>>\\n' + system_message + '\\n<</SYS>>\\n\\n' + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ bos_token + '[INST] ' + content + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' '  + content + ' ' + eos_token }}{% endif %}{% endfor %}",
+    "eos_token": "</s>",
+    "unk_token": "<unk>",
+}
+chat_configs = [
+    # qwen2_instruct_config, 
+    llama_2_7b_chat_hf_config
+]
+conversation = [
+    {'role': 'user', 'content': '1+1='},
+    {'role': 'assistant', 'content': '1 + 1 = 2'},
+    {'role': 'user', 'content': 'What is the previous answer?'},
+    {'role': 'assistant', 'content': 'The previous answer was: 1 + 1 = 2'},
+    {'role': 'user', 'content': 'Why is the sun yellow?'},
+    {'role': 'assistant', 'content': 'Because it emits yeloow light.'},
+    {'role': 'user', 'content': 'What was my first question?'},
+    {'role': 'assistant', 'content': "I don't remember such difficult questions.\n Ask something different"},
+]
+@pytest.mark.precommit
+@pytest.mark.parametrize('tokenizer_config', chat_configs)
+def test_apply_chat_template(model_tmp_path, tokenizer_config):
+    # Will load openvino_model for tiny-random-phi as a placeholder
+    # but indeed only Tokenizer and apply_chat_template will be tested.
+
+    tok = load_tok([(tokenizer_config, "tokenizer_config.json")], model_tmp_path[1])
+    full_history_str = tok.apply_chat_template(conversation, add_generation_prompt=False)
+    # pytest.set_trace()
 
 
 @pytest.mark.skip(reason="probably both models ov + hf doesn't fit to memory")
