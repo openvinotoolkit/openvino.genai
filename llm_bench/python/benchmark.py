@@ -195,7 +195,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
-                            f"is different from md5 of the {num - 1} iteration {prev_md5}")
+                        f"is different from md5 of the {num - 1} iteration {prev_md5}")
             utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
             if num == 1:
                 # if the device is CPU, throw exception
@@ -301,7 +301,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
-                            f"is different from md5 of the {num - 1} iteration {prev_md5}")
+                        f"is different from md5 of the {num - 1} iteration {prev_md5}")
             utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
             if num == 1:
                 # if the device is CPU, throw exception
