@@ -59,7 +59,14 @@ void OpenposeDetector::load(const std::string& model_path) {
     ov::Core core;
     std::string device = "CPU";
     auto model = core.read_model(model_path + "/openpose.xml");
-    // TODO: W / H dimension should be dynamic, we reshape it before comlile
+
+    // W / H dimension should be dynamic, we reshape it before comlile
+    ov::PartialShape input_shape = model->input(0).get_partial_shape();
+    input_shape[2] = -1;
+    input_shape[3] = -1;
+    std::map<size_t, ov::PartialShape> idx_to_shape{{0, input_shape}};
+    model->reshape(idx_to_shape);
+
     body_model = core.compile_model(model, device);
 }
 
@@ -185,9 +192,11 @@ void OpenposeDetector::forward(const ov::Tensor& ori_img,
 
     // iterate and print peaks
     for (auto& peak : all_peaks) {
-        std::cout << "Peak: " << std::get<0>(peak[0]) << " " << std::get<1>(peak[0]) << " " << std::get<2>(peak[0])
-                  << std::endl;
-        std::cout << "Counter: " << std::get<3>(peak[0]) << std::endl;
+        for (auto& p : peak) {
+            std::cout << "Peak: " << std::get<0>(p) << " " << std::get<1>(p) << " " << std::get<2>(p) << " ";
+            std::cout << "Counter: " << std::get<3>(p) << std::endl;
+        }
+        std::cout << std::endl;
     }
 
     std::vector<std::vector<std::tuple<int, int, float, int, int>>> connection_all;
@@ -195,8 +204,10 @@ void OpenposeDetector::forward(const ov::Tensor& ori_img,
     calculate_connections(paf_avg, all_peaks, ori_img, thre2, connection_all, special_k);
 
     for (auto& connection : connection_all) {
-        std::cout << "Connection: " << std::get<0>(connection[0]) << " " << std::get<1>(connection[0]) << " "
-                  << std::get<2>(connection[0]) << " " << std::get<3>(connection[0]) << std::endl;
+        for (auto& c : connection) {
+            std::cout << "Connection: " << std::get<0>(c) << " " << std::get<1>(c) << " " << std::get<2>(c) << " "
+                      << std::get<3>(c) << std::endl;
+        }
     }
 
     process_connections(all_peaks, connection_all, special_k, subset, candidate);
@@ -248,10 +259,10 @@ void OpenposeDetector::find_heatmap_peaks(const ov::Tensor& heatmap_avg /* f32 *
         // Create directional maps
         ov::Shape shape = one_heatmap.get_shape();
 
-        ov::Tensor map_left(one_heatmap.get_element_type(), shape);
-        ov::Tensor map_right(one_heatmap.get_element_type(), shape);
-        ov::Tensor map_up(one_heatmap.get_element_type(), shape);
-        ov::Tensor map_down(one_heatmap.get_element_type(), shape);
+        ov::Tensor map_left = init_tensor_with_zeros(shape, one_heatmap.get_element_type());
+        ov::Tensor map_right = init_tensor_with_zeros(shape, one_heatmap.get_element_type());
+        ov::Tensor map_up = init_tensor_with_zeros(shape, one_heatmap.get_element_type());
+        ov::Tensor map_down = init_tensor_with_zeros(shape, one_heatmap.get_element_type());
 
         const auto one_heatmap_data = one_heatmap.data<float>();
         auto map_left_data = map_left.data<float>();
@@ -286,8 +297,8 @@ void OpenposeDetector::find_heatmap_peaks(const ov::Tensor& heatmap_avg /* f32 *
         std::vector<std::tuple<int, int, float, int>> peaks_with_score_and_id;
         std::vector<std::tuple<int, int, float>> peaks_with_score;
 
-        for (size_t h = 1; h < H - 1; ++h) {
-            for (size_t w = 1; w < W - 1; ++w) {
+        for (size_t h = 0; h < H; ++h) {
+            for (size_t w = 0; w < W; ++w) {
                 if (one_heatmap_data[h * W + w] >= map_left_data[h * W + w] &&
                     one_heatmap_data[h * W + w] >= map_right_data[h * W + w] &&
                     one_heatmap_data[h * W + w] >= map_up_data[h * W + w] &&
