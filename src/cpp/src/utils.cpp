@@ -8,9 +8,9 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-Tensor init_attention_mask(Tensor& position_ids) {
-    auto shape = position_ids.get_shape();
-    auto attention_mask = ov::Tensor{position_ids.get_element_type(), shape};
+Tensor init_attention_mask(const Tensor& input_ids) {
+    auto shape = input_ids.get_shape();
+    auto attention_mask = ov::Tensor{input_ids.get_element_type(), shape};
     std::fill_n(attention_mask.data<int64_t>(), shape[0] * shape[1], 1);
     return attention_mask;
 }

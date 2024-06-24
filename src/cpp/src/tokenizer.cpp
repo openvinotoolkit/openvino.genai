@@ -4,13 +4,15 @@
 #include <openvino/openvino.hpp>
 #include "openvino/genai/tokenizer.hpp"
 #include "utils.hpp"
+#include <jinja2cpp/template.h>
+#include <jinja2cpp/template_env.h>
 #include "tokenizers_path.hpp"
 #include <fstream>
 
 namespace {
 
 // todo: remove when openvino-tokenizers will support left padding
-ov::genai::TokenizedInputs pad_left(ov::Tensor& input_ids, ov::Tensor& attention_mask, int64_t pad_token_id) {
+ov::genai::TokenizedInputs pad_left(ov::Tensor& input_ids, ov::Tensor& attention_mask) {
     const size_t batch_size = input_ids.get_shape()[0];
     const size_t sequence_length = input_ids.get_shape()[1];
     int64_t* inputs_data = input_ids.data<int64_t>();
@@ -20,14 +22,15 @@ ov::genai::TokenizedInputs pad_left(ov::Tensor& input_ids, ov::Tensor& attention
         const size_t batch_offset = batch * sequence_length;
 
         // last token in the sequence is not a PAD_TOKEN, skipping
-        if (inputs_data[batch_offset + sequence_length - 1] != pad_token_id)
+        if (attention_mask_data[batch_offset + sequence_length - 1] == 1)
             continue;
 
         size_t pad_tokens_number = 0;
         for (int i = sequence_length - 1; i >= 0; i--) {
             const size_t token_offset = batch_offset + i;
 
-            if (inputs_data[token_offset] == pad_token_id)
+            // count pad tokens
+            if (attention_mask_data[token_offset] == 0)
                 continue;
 
             if (pad_tokens_number == 0)
@@ -61,10 +64,13 @@ public:
     std::string m_pad_token = "";
     std::string m_bos_token = "";
     std::string m_eos_token = "";
+    
+    std::string m_chat_template = "";
 
     TokenizerImpl() = default;
 
-    TokenizerImpl(std::filesystem::path tokenizer_path) {
+    TokenizerImpl(std::filesystem::path tokenizer_path)
+        : m_chat_template{chat_template_from_tokenizer_json_if_exists(tokenizer_path)} {
         ov::Core core;
         
         if (tokenizer_path.extension() == ".xml")
@@ -169,6 +175,11 @@ public:
         read_token_content_str(bos_token_key_name, m_bos_token);
         read_token_content_str(eos_token_key_name, m_eos_token);
 
+        // if pad_token not found use eos_token as pad_token
+        if (m_pad_token.empty() && !m_eos_token.empty()) {
+            m_pad_token = m_eos_token;
+        }
+
         // special token ids integer representation are already defined
         if (m_pad_token_id != -1 && m_bos_token_id != -1 && m_eos_token_id != -1)
             return ;
@@ -190,6 +201,12 @@ public:
                 m_bos_token_id = std::stoi(key);
             if (m_eos_token_id == -1 && content == m_eos_token)
                 m_eos_token_id = std::stoi(key);
+        }
+
+        // if pad_token_id not found use eos_token_id as pad_token_id
+        // todo: read m_pad_token_id from tokenizer rt_info once implemented in tokenizers (CVS-144174)
+        if (m_pad_token_id == -1 && m_eos_token_id != -1) {
+            m_pad_token_id = m_eos_token_id;
         }
     }
 
@@ -221,7 +238,7 @@ public:
         m_tokenize_request.infer();
        
         auto res = get_copied_results();
-        pad_left(res.input_ids, res.attention_mask, m_pad_token_id);
+        pad_left(res.input_ids, res.attention_mask);
         return {res.input_ids, res.attention_mask};
     }
 
@@ -277,6 +294,63 @@ public:
         auto res_data = res.data<std::string>();
         return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
     }
+
+    std::string chat_template_from_tokenizer_json_if_exists(const std::filesystem::path& path) {
+        auto tokenizer_config_file_path = path / "tokenizer_config.json";
+        if (!std::filesystem::exists(tokenizer_config_file_path))
+            return "";
+        
+        std::ifstream file(tokenizer_config_file_path);
+        if (!file.is_open())
+            return "";
+        
+        std::string res = "";
+        ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
+
+        // Replace what jinja2cpp doesn't support
+        std::pair<std::string, std::string> replace_str_map[] = {
+            {"\n'}", "\n' }"},
+            {".strip()", "\"\""}
+        };
+        if (!res.empty()) {
+            for (const auto& [from, to] : replace_str_map) {
+                size_t pos = 0;
+                while ((pos = res.find(from, pos)) != std::string::npos) {
+                    res.replace(pos, from.size(), to);
+                    pos += to.size();
+                }
+            }
+        }
+        return res;
+    }    
+
+    std::string apply_chat_template(const ChatHistory& history, 
+                                    bool add_generation_prompt, 
+                                    const std::string& chat_template) const {
+        jinja2::TemplateEnv env;
+        env.GetSettings().lstripBlocks = true;
+        env.GetSettings().trimBlocks = true;
+        jinja2::Template tpl(&env);
+        tpl.Load(chat_template.empty() ? m_chat_template : chat_template);
+        
+        jinja2::ValuesList jinja_messages;
+        jinja2::ValuesMap jinja_message;
+        for (const auto& message : history) {
+            jinja_message = {{"role", message.at("role")}, {"content", message.at("content")}};
+            jinja_messages.emplace_back(jinja_message);
+        }
+        
+        jinja2::ValuesMap params = {
+            {"messages", jinja_messages},
+            {"bos_token",  m_bos_token},
+            {"eos_token", m_eos_token},
+            {"pad_token", m_pad_token},
+            {"add_generation_prompt", add_generation_prompt},
+        };
+        return tpl.RenderAsString(params).value();
+    }
+
+    
 };
 
 Tokenizer::Tokenizer(const std::string& tokenizer_path) {
@@ -334,6 +408,12 @@ std::string Tokenizer::get_bos_token() const {
 
 std::string Tokenizer::get_eos_token() const {
     return m_pimpl->m_eos_token;
+}
+
+std::string Tokenizer::apply_chat_template(const ChatHistory& history,
+                                           bool add_generation_prompt,
+                                           const std::string& chat_template) const {
+    return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template);
 }
 
 Tokenizer::~Tokenizer() = default;

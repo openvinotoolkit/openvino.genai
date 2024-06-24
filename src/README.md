@@ -1,30 +1,56 @@
-# OpenVINO Generate API
+# OpenVINO™ GenAI Library
 
-## Usage 
+OpenVINO™ GenAI is a flavor of OpenVINO™, aiming to simplify running inference of generative AI models.
+It hides the complexity of the generation process and minimizes the amount of code required.
 
-First of all you need to convert your model with optimum-cli
-``` sh
-optimum-cli export openvino --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --trust-remote-code "TinyLlama-1.1B-Chat-v1.0"
-pip install openvino-genai
-```
+## Install OpenVINO™ GenAI
+
+The OpenVINO™ GenAI flavor is available for installation via Archive and PyPI distributions.
+To install OpenVINO™ GenAI, refer to the [Install Guide](https://docs.openvino.ai/2024/get-started/install-openvino.html).
+
+To build OpenVINO™ GenAI library from source, refer to the [Build Instructions](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/BUILD.md).
+
+## Usage
+
+### Prerequisites
+
+1. Installed OpenVINO™ GenAI
+
+    > If OpenVINO GenAI is installed via archive distribution or built from source, you will need to install additional python dependencies (e.g. `optimum-cli` for simplified model downloading and exporting, it's not required to install [./samples/cpp/requirements.txt](./samples/cpp/requirements.txt) for deployment if the model has already been exported):
+    > 
+    > ```sh
+    > # (Optional) Clone OpenVINO GenAI repository if it does not exist
+    > git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
+    > cd openvino.genai
+    > # Install python dependencies
+    > python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+    > python -m pip install --upgrade-strategy eager -r ./samples/cpp/requirements.txt
+    > ```
+
+2. A model in OpenVINO IR format
+
+    Download and convert a model with `optimum-cli`:
+    ``` sh
+    optimum-cli export openvino --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --trust-remote-code "TinyLlama-1.1B-Chat-v1.0"
+    ```
 
 `LLMPipeline` is the main object used for decoding. You can construct it straight away from the folder with the converted model. It will automatically load the main model, tokenizer, detokenizer and default generation configuration.
 
 ### Python
 
-A minimalist example:
+A simple example:
 ```python
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path, "CPU")
-print(pipe.generate("The Sun is yellow bacause"))
+print(pipe.generate("The Sun is yellow because"))
 ```
 
-Calling generate with custom generation config parameters, e.g. config for grouped beam search
+Calling generate with custom generation config parameters, e.g. config for grouped beam search:
 ```python
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path, "CPU")
 
-result = pipe.generate("The Sun is yellow bacause", max_new_tokens=30, num_groups=3, group_size=5, diversity_penalty=1.5)
+result = pipe.generate("The Sun is yellow because", max_new_tokens=30, num_groups=3, group_size=5, diversity_penalty=1.5)
 print(result)
 ```
 
@@ -33,12 +59,12 @@ output:
 'it is made up of carbon atoms. The carbon atoms are arranged in a linear pattern, which gives the yellow color. The arrangement of carbon atoms in'
 ```
 
-A simples chat in python:
+A simple chat in Python:
 ```python
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path)
 
-config = {'num_groups': 3, 'group_size': 5, 'diversity_penalty': 1.5}
+config = {'max_new_tokens': 100, 'num_groups': 3, 'group_size': 5, 'diversity_penalty': 1.5}
 pipe.set_generation_config(config)
 
 pipe.start_chat()
@@ -55,7 +81,7 @@ Test to compare with Huggingface outputs
 
 ### C++
 
-Minimalistc example
+A simple example:
 ```cpp
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
@@ -63,11 +89,11 @@ Minimalistc example
 int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
-    std::cout << pipe.generate("The Sun is yellow bacause");
+    std::cout << pipe.generate("The Sun is yellow because");
 }
 ```
 
-Using Group Beam Search Decoding
+Using group beam search decoding:
 ```cpp
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
@@ -82,12 +108,12 @@ int main(int argc, char* argv[]) {
     config.group_size = 5;
     config.diversity_penalty = 1.0f;
 
-    std::cout << pipe.generate("The Sun is yellow bacause", config);
+    std::cout << pipe.generate("The Sun is yellow because", config);
 }
 ```
 
-A simple chat in C++ using grouped beam search decoding
-``` cpp
+A simple chat in C++ using grouped beam search decoding:
+```cpp
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
 
@@ -98,7 +124,7 @@ int main(int argc, char* argv[]) {
     ov::genai::LLMPipeline pipe(model_path, "CPU");
     
     ov::genai::GenerationConfig config;
-    config.max_new_tokens = 256;
+    config.max_new_tokens = 100;
     config.num_groups = 3;
     config.group_size = 5;
     config.diversity_penalty = 1.0f;
@@ -118,8 +144,8 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-Streaming example with lambda function
-``` cpp
+Streaming example with lambda function:
+```cpp
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
 
@@ -127,13 +153,18 @@ int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
         
-    auto streamer = [](std::string word) { std::cout << word << std::flush; };
+    auto streamer = [](std::string word) { 
+        std::cout << word << std::flush; 
+        // Return flag correspods whether generation should be stopped.
+        // false means continue generation.
+        return false;
+    };
     std::cout << pipe.generate("The Sun is yellow bacause", streamer);
 }
 ```
 
-Streaming with a custom class
-``` cpp
+Streaming with a custom class:
+```cpp
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include <iostream>
@@ -141,13 +172,14 @@ Streaming with a custom class
 class CustomStreamer: public ov::genai::StreamerBase {
 public:
     bool put(int64_t token) {
-        bool stop_flag = false;
-        /* custom decoding/tokens processing code
+        bool stop_flag = false; 
+        /* 
+        custom decoding/tokens processing code
         tokens_cache.push_back(token);
         std::string text = m_tokenizer.decode(tokens_cache);
         ...
         */
-        return stop_flag;
+        return stop_flag;  // flag whether generation should be stoped, if true generation stops.
     };
 
     void end() {
@@ -160,87 +192,14 @@ int main(int argc, char* argv[]) {
 
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
-    std::cout << pipe.generate("The Sun is yellow bacause", custom_streamer);
+    std::cout << pipe.generate("The Sun is yellow because", custom_streamer);
 }
 ```
 
-## How it works
+## How It Works
 
-### Stateful LLM
+For information on how OpenVINO™ GenAI works, refer to the [How It Works Section](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/HOW_IT_WORKS.md).
 
-A common LLM inference optimisation is introduction of past KV (key/value)-cache. This cache is represented by the corresponding inputs and outputs in a model implemented originally in DL framework (e.g. PyTorch models from HuggingFace). To optimize it further and simplify usage, the model is transformed to a stateful form. This transformation improves inference performance and decreases amount of allocated runtime memory in long running text generation scenarios. It is achieved by hiding inputs and outputs of the model that represent past KV-cache tensors and handling them inside the model in a more efficient way. Although the cache is still accessible with state API. It is opposed to stateless model approach requiring manipulating these inputs and outputs explicitly. An introduction to stateful models can be found in https://docs.openvino.ai/2023.3/openvino_docs_OV_UG_stateful_models_intro.html.
+## Supported Models
 
-Hiding KV-cache introduces a peculiarity for beam search algorithm. Beam search suggests batched inference of multiple beams. The design described here so far would result in generating multiple independent sequences of tokens. Beam search algorithm, on the other hand, requires removing some of the ongoing beams and splitting other beams to multiple branches. Beam removal requires deleting corresponding KV-cache entry and beam splitting requires copying corresponding KV-cache values.
-
-To provide the possibility to implement beam search without accessing model's internal state, a stateful LLM converted with `optimum-intel` or [llm_bench](../../../llm_bench/python/) introduces an additional 1-dimentional `beam_idx` input. `beam_idx` must contain indexes of elements in a batch which are intended to be selected and will evolve during the next beam search iteration. There's only one beam when the generation starts. That beam corresponds to the initial prompt. `beam_idx` must have values: `[0, 0]` to keep the initial beam and introduce its copy. The dynamic batch size enables to change the number of beams dynamically. `beam_idx` must have `[1]` as the value to remove zeroth sequence and keep the second beam only.
-
-Assume there are two running beams. To proceed with generating both beams at the next iteration, `beam_idx` values must be `[0, 1]`, pointing to batch elements `0` and `1`. To drop the last beam and split the other beam in two, `beam_idx` must be set to `[0, 0]`. This results in utilizing only the part of KV cache corresponding to the zeroth element in the batch. The process of selecting proper entries in cache is called Cache Reorder.
-
-![](beam_idx-fork.gif)
-![](beam_idx-drop.gif)
-
-The images below represent stateless and stateful LLM pipelines. The model has 4 inputs:
-1. `input_ids` contains the next selected token
-2. `attention_mask` is filled with `1`
-3. `position_ids` encodes a position of currently generating token in the sequence
-4. `beam_idx` selects beams
-
-The model has 1 output `logits` describing the predicted distribution over the next tokens. And there's KV cache state.
-
-![](stateless.jpg)
-![](stateful.jpg)
-
-## Supported models
-
-1. chatglm
-   1. https://huggingface.co/THUDM/chatglm2-6b - refer to
-   [chatglm2-6b - AttributeError: can't set attribute](../../../llm_bench/python/doc/NOTES.md#chatglm2-6b---attributeerror-cant-set-attribute)
-   in case of `AttributeError`
-   2. https://huggingface.co/THUDM/chatglm3-6b
-2. LLaMA 2 (requires access request submission on its Hugging Face page to be downloaded)
-   1. https://huggingface.co/meta-llama/Llama-2-13b-chat-hf
-   2. https://huggingface.co/meta-llama/Llama-2-13b-hf
-   3. https://huggingface.co/meta-llama/Llama-2-7b-chat-hf
-   4. https://huggingface.co/meta-llama/Llama-2-7b-hf
-   5. https://huggingface.co/meta-llama/Llama-2-70b-chat-hf
-   6. https://huggingface.co/meta-llama/Llama-2-70b-hf
-3. [Llama2-7b-WhoIsHarryPotter](https://huggingface.co/microsoft/Llama2-7b-WhoIsHarryPotter)
-4. OpenLLaMA
-   1. https://huggingface.co/openlm-research/open_llama_13b
-   2. https://huggingface.co/openlm-research/open_llama_3b
-   3. https://huggingface.co/openlm-research/open_llama_3b_v2
-   4. https://huggingface.co/openlm-research/open_llama_7b
-   5. https://huggingface.co/openlm-research/open_llama_7b_v2
-5. [TinyLlama](https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0)
-6. Qwen
-   1. https://huggingface.co/Qwen/Qwen-7B-Chat
-   2. https://huggingface.co/Qwen/Qwen-7B-Chat-Int4 - refer to
-   3. https://huggingface.co/Qwen/Qwen1.5-7B-Chat
-   4. https://huggingface.co/Qwen/Qwen1.5-7B-Chat-GPTQ-Int4
-   [Qwen-7B-Chat-Int4 - Torch not compiled with CUDA enabled](../../../llm_bench/python/doc/NOTES.md#qwen-7b-chat-int4---torch-not-compiled-with-cuda-enabled)
-   in case of `AssertionError`
-7. Dolly
-   1. https://huggingface.co/databricks/dolly-v2-3b
-8. Phi
-   1. https://huggingface.co/microsoft/phi-2
-   2. https://huggingface.co/microsoft/phi-1_5
-9. [notus-7b-v1](https://huggingface.co/argilla/notus-7b-v1)
-10. [zephyr-7b-beta](https://huggingface.co/HuggingFaceH4/zephyr-7b-beta)
-11. [redpajama-3b-chat](https://huggingface.co/ikala/redpajama-3b-chat)
-12. [Mistral-7B-v0.1](https://huggingface.co/mistralai/Mistral-7B-v0.1)
-13. [Gemma-2B-it](https://huggingface.co/google/gemma-2b-it)
-
-This pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature. The model is required heve after the conversion the following inputs:
-1. `input_ids` contains the tokens
-2. `attention_mask` is filled with `1`
-3. `beam_idx` selects beams
-4. `position_ids` (optional) encodes a position of currently generating token in the sequence
-
-and a single `logits` output.
-
-Some models may require access request submission on their Hugging Face page to be downloaded.
-
-If https://huggingface.co/ is down, the conversion step won't be able to download the models.
-
-> [!NOTE]
-> Models should belong to the same family and have same tokenizers.
+For a list of supported models, refer to the [Supported Models Section](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/SUPPORTED_MODELS.md).

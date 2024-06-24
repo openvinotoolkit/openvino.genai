@@ -12,6 +12,7 @@ import numpy as np
 from nncf import compress_weights
 from nncf import Dataset
 from openvino import save_model
+import nncf
 from ..nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION
 from optimum.intel.openvino.configuration import _check_default_4bit_configs
 import warnings
@@ -185,6 +186,10 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
         warnings.warn("Usage INT8 mode is deprecated and will be removed soon. Please use INT8_ASYM instead", DeprecationWarning)
     if "4BIT_DEFAULT" in compress_weights_format:
         compression_args = _check_default_4bit_configs(config)
+        if compression_args:
+            sym = compression_args.pop("sym", False)
+            compression_args.pop("bits", 4)
+            compression_args["mode"] = nncf.CompressWeightsMode.INT4_SYM if sym else nncf.CompressWeightsMode.INT4_ASYM
         if compression_args is None:
             model_id = out_path.parents[3].name
             if model_id in INT4_MODEL_CONFIGURATION:
