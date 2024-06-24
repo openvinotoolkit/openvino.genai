@@ -18,7 +18,7 @@
 2. Download OpenVINO archive and install dependencies:
     ```sh
     mkdir ./ov/
-    curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15750-d17b4058e0e/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240619_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+    curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15766-dd43b82c058/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240621_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
     sudo ./ov/install_dependencies/install_openvino_dependencies.sh
     ```
 3. Build the project:
@@ -48,9 +48,9 @@
 2. Download OpenVINO archive and install dependencies:
     ```sh
     mkdir ./ov/
-    curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15750-d17b4058e0e/w_openvino_toolkit_windows_2024.3.0.dev20240619_x86_64.zip
+    curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15766-dd43b82c058/w_openvino_toolkit_windows_2024.3.0.dev20240621_x86_64.zip
     unzip ov.zip
-    mklink /D ov w_openvino_toolkit_windows_2024.3.0.dev20240619_x86_64
+    mklink /D ov w_openvino_toolkit_windows_2024.3.0.dev20240621_x86_64
     ```
 3. Build the project:
     ```sh
@@ -85,7 +85,7 @@
 2. Download OpenVINO archive and install dependencies:
     ```sh
     mkdir ./ov/
-    curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15750-d17b4058e0e/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240619_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+    curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15766-dd43b82c058/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240621_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
     ```
 3. Build the project:
     ```sh
