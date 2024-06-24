@@ -727,7 +727,8 @@ def test_unicode_pybind_decoding_3():
     # and streams it. Test that pybind will not fail while we pass string to python.
     model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     pipe = read_model((model_id, path))[4]
-    res_str = pipe.generate(",", max_new_tokens=4, streamer=lambda x: print(x))
+    res_str = []
+    pipe.generate(",", max_new_tokens=4, streamer=lambda x: res_str.append(x))
     assert '�' == res_str[-1]
 
 
