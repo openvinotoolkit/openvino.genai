@@ -258,7 +258,7 @@ py::list handle_utf8_results(const std::vector<std::string>& decoded_res) {
     py::list res;
     for (const auto s: decoded_res) {
         PyObject* py_s = PyUnicode_DecodeUTF8(s.data(), s.length(), "replace");
-        res.append(py_s);
+        res.append(py::reinterpret_steal<py::object>(py_s));
     }
     return res;
 }
@@ -423,7 +423,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             return std::make_unique<Tokenizer>(tokenizer_path);
         }), py::arg("tokenizer_path"))
         
-        .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts){ return tok.encode(prompts); },
+        .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts) { return tok.encode(prompts); },
             py::arg("prompts"),
             R"(Encodes a list of prompts into tokenized inputs.)")
 
@@ -433,8 +433,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         
         .def(
             "decode", 
-            [](Tokenizer& tok, std::vector<int64_t>& tokens){ 
-                return handle_utf8_results({tok.decode(tokens)})[0]; 
+            [](Tokenizer& tok, std::vector<int64_t>& tokens) -> py::str { 
+                return handle_utf8_results({tok.decode(tokens)})[0];
             },
             py::arg("tokens"),
             R"(Decode a sequence into a string prompt.)"
@@ -442,7 +442,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         
         .def(
             "decode", 
-            [](Tokenizer& tok, ov::Tensor& tokens){ 
+            [](Tokenizer& tok, ov::Tensor& tokens) -> py::list { 
                 return handle_utf8_results(tok.decode(tokens)); 
             },
             py::arg("tokens"),
@@ -450,7 +450,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         
         .def(
             "decode", 
-            [](Tokenizer& tok, std::vector<std::vector<int64_t>>& tokens){ 
+            [](Tokenizer& tok, std::vector<std::vector<int64_t>>& tokens) -> py::list{ 
                 return handle_utf8_results(tok.decode(tokens)); 
             },
             py::arg("tokens"),

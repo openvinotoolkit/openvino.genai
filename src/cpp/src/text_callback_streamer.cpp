@@ -15,7 +15,7 @@ bool TextCallbackStreamer::put(int64_t token) {
     std::stringstream res;
     m_tokens_cache.push_back(token);
     std::string text = m_tokenizer.decode(m_tokens_cache);
-    if (!text.empty() && '\n' == text.back()) {
+    if (!text.empty() && '\n' == text.back() && text.size() > print_len) {
         // Flush the cache after the new line symbol
         res << std::string_view{text.data() + print_len, text.size() - print_len};
         m_tokens_cache.clear();
