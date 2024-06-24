@@ -222,6 +222,71 @@ def test_ov_tensors(model_descr, inputs):
     hf_ov_genai_tensors_comparison(read_model(model_descr), dict(max_new_tokens=20), *inputs)
 
 
+prompts = [
+    'table is made of',
+    '你好！ 你好嗎？',
+    'Alan Turing was a',
+    'The Sun is yellow because',
+    ['The Sun is yellow because', 'Alan Turing was a', 'Alan Turing was a']
+]
+@pytest.mark.parametrize("model_descr", models_list())
+@pytest.mark.parametrize("prompt", prompts)
+@pytest.mark.precommit
+@pytest.mark.xfail(
+    raises=TypeError, 
+    reason="pybind was unable to find ov::Tensor from openvino yet",
+    strict=False,
+    condition=sys.platform in ["linux", "win32"]
+)
+def test_genai_tokenizer_encode(model_descr, prompt):
+    model_id, path, tokenizer, model, pipe = read_model(model_descr)
+    tok = pipe.get_tokenizer()
+    
+    encoded_ov = tok.encode(prompt).input_ids.data
+    if isinstance(prompt, list):
+        encoded_hf = tokenizer.batch_encode_plus(prompt)['input_ids']
+        for tokens_ov, tokens_hf in zip(encoded_ov, encoded_hf):
+            assert np.all(tokens_ov == tokens_hf)
+    else:
+        encoded_hf = tokenizer.encode(prompt)
+        assert np.all(encoded_hf == encoded_ov[0])
+
+encoded_prompts = [
+    [1, 1591, 338, 1754, 310],
+    [1, 17102,   323,  3864,   471,   263],
+    
+    # chineze characters
+    [1, 29871, 30919, 31076, 30584, 29871, 30919, 31076, 232, 154, 145, 30882],
+
+    # On meta-llama/Meta-Llama-3-8B-Instruct this becomes longer  after removing the last token
+    [3113, 264, 364, 267],
+
+    # batched tokens
+    [[1, 1591, 338, 1754, 310], [1, 1591, 338, 1754, 310], [1, 17102,   323,  3864,   471,   263]]
+]
+@pytest.mark.parametrize("model_descr", models_list())
+@pytest.mark.parametrize("encoded_prompt", encoded_prompts)
+@pytest.mark.precommit
+@pytest.mark.xfail(
+    raises=TypeError, 
+    reason="pybind was unable to find ov::Tensor from openvino yet",
+    strict=False,
+    condition=sys.platform in ["linux", "win32"]
+)
+def test_genai_tokenizer_decode(model_descr, encoded_prompt):
+    model_id, path, tokenizer, model, pipe = read_model(model_descr)
+    tok = pipe.get_tokenizer()
+    decoded_ov = tok.decode(encoded_prompt)
+    
+    if isinstance(encoded_prompt[0], list):
+        decoded_hf = tokenizer.batch_decode(encoded_prompt, skip_special_tokens=True)
+        for tokens_ov, tokens_hf in zip(decoded_ov, decoded_hf):
+            assert np.all(tokens_ov == tokens_hf)
+    else:
+        decoded_hf = tokenizer.decode(encoded_prompt, skip_special_tokens=True)
+        assert decoded_hf == decoded_ov
+
+
 test_configs = [
     dict(max_new_tokens=20),
     dict(max_new_tokens=200, ignore_eos=True),
@@ -328,6 +393,18 @@ def test_callback_batch_fail(callback):
 def test_callback_kwargs_one_string(callback):
     pipe = read_model(models_list()[0])[4]
     pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
+
+@pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
+@pytest.mark.precommit
+@pytest.mark.parametrize("model_descr", models_list())
+def test_callback_decoding_metallama(model_descr, callback):
+    # On metallam this prompt generates output which can shorten after adding new tokens.
+    # Test that streamer correctly handles such cases.
+    prompt = 'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
+    if model_descr[0] != 'meta-llama/Meta-Llama-3-8B-Instruct':
+        pytest.skip()
+    pipe = read_model(model_descr)[4]
+    pipe.generate(prompt, max_new_tokens=300, streamer=callback)
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
@@ -634,6 +711,7 @@ def test_unicode_pybind_decoding_1():
     assert isinstance(res_str, str)
     assert len(res_str) > 0
 
+
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
 def test_unicode_pybind_decoding_2():
@@ -644,6 +722,16 @@ def test_unicode_pybind_decoding_2():
     decoded_results = pipe.generate(['你好！ 你好嗎？'], max_new_tokens=20)
     assert isinstance(decoded_results, ov_genai.DecodedResults)
     assert len(decoded_results.texts[0]) > 0
+
+
+@pytest.mark.precommit
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
+def test_unicode_pybind_decoding_3():
+    # On this model this prompt generates unfinished utf-8 string
+    # and streams it. Test that pybind will not fail while we pass string to python.
+    model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
+    pipe = read_model((model_id, path))[4]
+    pipe.generate('你好！ 你好嗎？', max_new_tokens=20, streamer=lambda x: print(x))
 
 
 quenstions = [
