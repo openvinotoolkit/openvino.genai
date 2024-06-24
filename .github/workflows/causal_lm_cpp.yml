@@ -14,7 +14,6 @@ concurrency:
 
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
-    if: false
     runs-on: ubuntu-20.04-8-cores
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +50,6 @@ jobs:
           | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
 
   cpp-beam_search_causal_lm-ubuntu:
-    if: false
     strategy:
       matrix:
         executable:
@@ -188,7 +186,6 @@ jobs:
           echo "Multi prompt" passed
 
   cpp-greedy_causal_lm-windows:
-    # if: false
     runs-on: windows-latest
     defaults:
       run:
@@ -234,11 +231,10 @@ jobs:
           set PATH=".\build\openvino_genai\;%PATH%"
           && set "PYTHONPATH=./build/"
           && call .\ov\setupvars.bat
-          && samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
+          && python samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
       - run: fc .\cpp.txt .\py.txt
 
   cpp-beam_search_causal_lm-Qwen-7B-Chat:
-    if: false
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -266,7 +262,6 @@ jobs:
           && timeout 2m ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69 | diff <(timeout 2m samples/python/greedy_causal_lm/greedy_causal_lm.py ./Qwen-7B-Chat/ 69) -
 
   cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
-    if: false
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -295,7 +290,6 @@ jobs:
           | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./Qwen1.5-7B-Chat/ "你好！") -
 
   cpp-beam_search_causal_lm-Phi-2:
-    if: false
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -324,7 +318,6 @@ jobs:
           | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./phi-2/ 69) -
 
   cpp-beam_search_causal_lm-notus-7b-v1:
-    if: false
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -353,7 +346,6 @@ jobs:
           | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./notus-7b-v1/ 69) -
 
   cpp-speculative_decoding_lm-ubuntu:
-    if: false
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -391,7 +383,6 @@ jobs:
           echo "Alan Turing was a" passed
 
   cpp-prompt_lookup_decoding_lm-ubuntu:
-    if: false
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -436,7 +427,6 @@ jobs:
           echo "Prompt lookup" passed
 
   cpp-Phi-1_5:
-    if: false
     runs-on: ubuntu-20.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -485,7 +475,6 @@ jobs:
           | diff ./pred_greedy.txt -
 
   cpp-greedy_causal_lm-redpajama-3b-chat:
-    if: false
     runs-on: ubuntu-20.04-4-cores
     steps:
       - uses: actions/checkout@v4

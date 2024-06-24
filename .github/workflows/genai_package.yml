@@ -6,7 +6,6 @@ concurrency:
   cancel-in-progress: true
 jobs:
   ubuntu_genai_package:
-    if: false
     strategy:
       matrix:
         build-type: [Release, Debug]
@@ -38,7 +37,6 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
 
   macos_genai_package:
-    if: false
     strategy:
       matrix:
         build-type: [Release, Debug]
@@ -107,5 +105,5 @@ jobs:
           && cmake --install "samples build" --config ${{ matrix.build-type }} --component samples_bin --prefix samples_install
         if: ${{ 'Release' != matrix.build-type }}
       - run: call ov\setupvars.bat && "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm" .\TinyLlama-1.1B-Chat-v1.0\ ""
-      - run: call ov\setupvars.bat && ./ov/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+      - run: call ov\setupvars.bat && python ./ov/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
