@@ -231,7 +231,7 @@ jobs:
           set PATH=.\build\openvino_genai\;%PATH%
           && set "PYTHONPATH=./build/"
           && call .\ov\setupvars.bat
-          && python samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
+          && samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
       - run: fc .\cpp.txt .\py.txt
 
   cpp-beam_search_causal_lm-Qwen-7B-Chat:
