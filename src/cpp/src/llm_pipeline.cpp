@@ -42,7 +42,7 @@ EncodedResults beam_search(
     GenerationConfig config
 );
 
-class LLMPipelineImpl final : public LLMPipelineImplBase {
+class StatefulLLMPipeline final : public LLMPipelineImplBase {
 public:
     ov::InferRequest m_model_runner;
     
