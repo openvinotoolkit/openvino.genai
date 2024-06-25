@@ -8,16 +8,18 @@
 namespace ov {
 namespace genai {
 
-class NPULLMPipelineImpl final : public LLMPipelineImplBase {
+class StaticLLMPipeline final : public LLMPipelineImplBase {
 public:
-    NPULLMPipelineImpl(
+    StaticLLMPipeline(
         const std::filesystem::path& path,
         const ov::genai::Tokenizer& tokenizer,
+        const std::string& device,
         const ov::AnyMap& config
     );
 
-    NPULLMPipelineImpl(
+    StaticLLMPipeline(
         const std::filesystem::path& path,
+        const std::string& device,
         const ov::AnyMap& config
     );
 
@@ -34,10 +36,10 @@ public:
     ) override;
 
     void start_chat() override {
-        OPENVINO_THROW("Currently chat conversation mode isn't supported for NPU device");
+        OPENVINO_THROW("Currently chat conversation mode isn't supported");
     };
     void finish_chat() override {
-        OPENVINO_THROW("Currently chat conversation mode isn't supported for NPU device");
+        OPENVINO_THROW("Currently chat conversation mode isn't supported");
     };
 
 private:

@@ -1,7 +1,7 @@
 // Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "llm_pipeline_npu.hpp"
+#include "llm_pipeline_static.hpp"
 
 #include "openvino/opsets/opset13.hpp"
 #include "openvino/pass/stateful_to_stateless.hpp"
@@ -104,13 +104,14 @@ ov::AnyMap extract_config_or_empty(const ov::AnyMap& config, const std::string& 
 namespace ov {
 namespace genai {
 
-NPULLMPipelineImpl::NPULLMPipelineImpl(
+StaticLLMPipeline::StaticLLMPipeline(
     const std::filesystem::path& path,
     const ov::genai::Tokenizer& tokenizer,
+    const std::string& device,
     const ov::AnyMap& config
 ) : LLMPipelineImplBase(tokenizer,
                         utils::from_config_json_if_exists(path)) {
-    /* NB: NPU-friendly LLM pipeline consists of two models,
+    /* NB: Static LLM pipeline consists of two models,
        first to process the input prompt (prefill), second to use in generation loop (kvcache)
 
        Initialization assumes multiple steps:
@@ -120,7 +121,7 @@ NPULLMPipelineImpl::NPULLMPipelineImpl(
        3) Reshape both models to static shape
        4) Add slices to KV-cache inputs for kvcache model, this will make input and output KV-cache
           layers to have the same shape and allow outputs writes directly to inputs for the next iteration.
-       5) Compile both models for NPU
+       5) Compile both models
        6) Initialize input tensors for kvcache and prefill models
     */
     ov::Core core;
@@ -139,24 +140,25 @@ NPULLMPipelineImpl::NPULLMPipelineImpl(
     reshape_to_static(kvcache_model, 1u, max_kvcache_size);
     // (5) Add slices to kvcache model
     kvcache_model = add_slices_to_kvcache_inputs(kvcache_model);
-    // (6) Compile both model for NPU
+    // (6) Compile both model
     m_prefill_request = core.compile_model(
-        prefill_model, "NPU", extract_config_or_empty(config, "PREFILL_CONFIG")
+        prefill_model, device, extract_config_or_empty(config, "PREFILL_CONFIG")
     ).create_infer_request();
     m_kvcache_request = core.compile_model(
-        kvcache_model, "NPU", extract_config_or_empty(config, "GENERATE_CONFIG")
+        kvcache_model, device, extract_config_or_empty(config, "GENERATE_CONFIG")
     ).create_infer_request();
     // (7) Initialize tensors
     prepare_for_new_conversation();
 };
 
-NPULLMPipelineImpl::NPULLMPipelineImpl(
+StaticLLMPipeline::StaticLLMPipeline(
     const std::filesystem::path& path,
+    const std::string& device,
     const ov::AnyMap& config
-) : NPULLMPipelineImpl(path, path.string(), config) {
+) : StaticLLMPipeline(path, path.string(), device, config) {
 }
 
-void NPULLMPipelineImpl::prepare_for_new_conversation() {
+void StaticLLMPipeline::prepare_for_new_conversation() {
     fill_tensor(m_prefill_request.get_tensor("input_ids"), m_tokenizer.get_pad_token_id());
     fill_tensor(m_prefill_request.get_tensor("position_ids"), 0u);
     fill_tensor(m_prefill_request.get_tensor("attention_mask"), 0u);
@@ -164,14 +166,14 @@ void NPULLMPipelineImpl::prepare_for_new_conversation() {
     m_kvcache_desc.num_stored_tokens = 0u;
 }
 
-DecodedResults NPULLMPipelineImpl::generate(
+DecodedResults StaticLLMPipeline::generate(
     StringInputs inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
 ) {
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
     if (std::holds_alternative<std::vector<std::string>>(inputs)) {
-        OPENVINO_THROW("Currently only batch size=1 is supported for NPU device");
+        OPENVINO_THROW("Currently only batch size=1 is supported");
     }
 
     OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
@@ -182,7 +184,7 @@ DecodedResults NPULLMPipelineImpl::generate(
     return {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
 }
 
-EncodedResults NPULLMPipelineImpl::generate(
+EncodedResults StaticLLMPipeline::generate(
     const EncodedInputs& inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
@@ -199,7 +201,7 @@ EncodedResults NPULLMPipelineImpl::generate(
     }
 
     if (input_ids.get_shape().at(0) > 1u) {
-        OPENVINO_THROW("Currently only batch size=1 is supported for NPU device");
+        OPENVINO_THROW("Currently only batch size=1 is supported");
     }
 
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
@@ -218,7 +220,7 @@ EncodedResults NPULLMPipelineImpl::generate(
     }
 
     if (!config.is_greedy_decoding()) {
-        OPENVINO_THROW("Currently only greedy decoding is supported for NPU device");
+        OPENVINO_THROW("Currently only greedy decoding is supported");
     }
 
     ov::genai::EncodedResults results;
@@ -226,10 +228,10 @@ EncodedResults NPULLMPipelineImpl::generate(
     results.scores.resize(1u);
     results.tokens.resize(1u);
 
-    // NB: Check if input prompt less than maximum size supported for NPU device
+    // NB: Check if input prompt less than maximum size
     auto prompt_len = input_ids.get_size();
     if (prompt_len > m_kvcache_desc.total_size) {
-        OPENVINO_THROW("Currently NPU device may only process up to " + std::to_string(m_kvcache_desc.total_size) + " tokens");
+        OPENVINO_THROW("Currently static pipeline only process up to " + std::to_string(m_kvcache_desc.total_size) + " tokens");
     }
 
     // NB: Reset tensors on every generate call - chat conversation isn't supported yet!

@@ -10,7 +10,7 @@
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "llm_pipeline_base.hpp"
-#include "llm_pipeline_npu.hpp"
+#include "llm_pipeline_static.hpp"
 #include "utils.hpp"
 #include "text_callback_streamer.hpp"
 
@@ -271,7 +271,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::AnyMap& plugin_config
 ) {
     if (device == "NPU") {
-        m_pimpl = make_unique<NPULLMPipelineImpl>(std::filesystem::path(model_path), tokenizer, plugin_config);
+        m_pimpl = make_unique<StaticLLMPipeline>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
     } else {
         m_pimpl = make_unique<StatefulLLMPipeline>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
     }
@@ -283,7 +283,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::AnyMap& config
 ) {
     if (device == "NPU") {
-        m_pimpl = make_unique<NPULLMPipelineImpl>(std::filesystem::path(path), config);
+        m_pimpl = make_unique<StaticLLMPipeline>(std::filesystem::path(path), device, config);
     } else {
         m_pimpl = make_unique<StatefulLLMPipeline>(std::filesystem::path(path), device, config);
     }
