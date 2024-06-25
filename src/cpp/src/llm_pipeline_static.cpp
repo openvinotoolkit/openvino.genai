@@ -177,9 +177,7 @@ DecodedResults StaticLLMPipeline::generate(
     }
 
     OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
-    auto prompt = std::get<std::string>(inputs);
-    prompt = m_tokenizer.apply_chat_template({ {{"role", "user"}, {"content", prompt}} }, true /* add_generation_prompt */);
-    auto tokenized_input = m_tokenizer.encode(prompt);
+    auto tokenized_input = m_tokenizer.encode(std::get<std::string>(inputs));
     auto encoded_results = generate(tokenized_input, config, streamer);
     return {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
 }
