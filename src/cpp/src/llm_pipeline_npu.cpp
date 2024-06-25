@@ -93,7 +93,6 @@ void copy_with_left_offset(const ov::Tensor& orig, ov::Tensor& padded) {
 ov::AnyMap extract_config_or_empty(const ov::AnyMap& config, const std::string& config_name) {
     ov::AnyMap stage_cfg;
     if (auto it = config.find(config_name); it != config.end()) {
-        std::cout << "CONFIG NOT EMPTY" << std::endl;
         const auto& map = it->second.as<std::map<std::string, std::string>>();
         stage_cfg = { map.begin(), map.end() };
     }
