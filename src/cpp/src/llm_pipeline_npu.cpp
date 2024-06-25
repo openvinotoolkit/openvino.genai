@@ -90,6 +90,16 @@ void copy_with_left_offset(const ov::Tensor& orig, ov::Tensor& padded) {
     std::copy(orig_data, orig_data + orig_size, padded_data + kLeftOffset);
 }
 
+ov::AnyMap extract_config_or_empty(const ov::AnyMap& config, const std::string& config_name) {
+    ov::AnyMap stage_cfg;
+    if (auto it = config.find(config_name); it != config.end()) {
+        std::cout << "CONFIG NOT EMPTY" << std::endl;
+        const auto& map = it->second.as<std::map<std::string, std::string>>();
+        stage_cfg = { map.begin(), map.end() };
+    }
+    return stage_cfg;
+}
+
 } // anonymous namespace
 
 namespace ov {
@@ -105,25 +115,24 @@ NPULLMPipelineImpl::NPULLMPipelineImpl(
        first to process the input prompt (prefill), second to use in generation loop (kvcache)
 
        Initialization assumes multiple steps:
-       1) Read the template model and clone it for the further use as kvcache and prefill models
-       2) Expose KV-cache input and output layers for the kvcache model
+       1) Read the template model - this will be kvcache model
+       2) Expose KV-cache input and output layers from kvcache model
+       3) Clone the model - this will be prefill
        3) Reshape both models to static shape
        4) Add slices to KV-cache inputs for kvcache model, this will make input and output KV-cache
           layers to have the same shape and allow outputs writes directly to inputs for the next iteration.
-       5) Compile both models for NPUW
+       5) Compile both models for NPU
        6) Initialize input tensors for kvcache and prefill models
     */
-
     ov::Core core;
-    // (1) Read the template model - this will be kvcache
+    // (1) Read the template model - this will be kvcache model
     auto kvcache_model = core.read_model(path / "openvino_model.xml");
-    // (2) Expose KV-cache input and output layers
+    // (2) Expose KV-cache input and output layers from kvcache model
     ov::pass::StatefulToStateless().run_on_model(kvcache_model);
     // (3) Clone the model - this will be prefill
     auto prefill_model = kvcache_model->clone();
     prefill_model->set_friendly_name(kvcache_model->get_friendly_name() + "_prefill");
     // (4) Reshape both models to static shape
-    // FIXME: There must be better logic than just hardcoded values
     m_kvcache_desc = KVCacheDesc { 1024u, 0u };
     const uint32_t max_prompt_size = m_kvcache_desc.total_size;
     const uint32_t max_kvcache_size = m_kvcache_desc.total_size;
@@ -131,16 +140,13 @@ NPULLMPipelineImpl::NPULLMPipelineImpl(
     reshape_to_static(kvcache_model, 1u, max_kvcache_size);
     // (5) Add slices to kvcache model
     kvcache_model = add_slices_to_kvcache_inputs(kvcache_model);
-    // (6) Compiled both models for NPUW
-    std::map<std::string, std::string> cfg = { {"NPU_USE_NPUW", "YES"},
-                                               {"NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
-                                               {"NPUW_FOLD", "YES"},
-                                               {"NPUW_DCOFF_TYPE", "f16"},
-                                               {"NPUW_ONLINE_PIPELINE", "NONE"},
-                                               {"NPUW_DCOFF_SCALE", "YES"} };
-    ov::AnyMap properties{cfg.begin(), cfg.end()};
-    m_prefill_request = core.compile_model(prefill_model, "NPU", properties).create_infer_request();
-    m_kvcache_request = core.compile_model(kvcache_model, "NPU", properties).create_infer_request();
+    // (6) Compile both model for NPU
+    m_prefill_request = core.compile_model(
+        prefill_model, "NPU", extract_config_or_empty(config, "PREFILL_CONFIG")
+    ).create_infer_request();
+    m_kvcache_request = core.compile_model(
+        kvcache_model, "NPU", extract_config_or_empty(config, "GENERATE_CONFIG")
+    ).create_infer_request();
     // (7) Initialize tensors
     prepare_for_new_conversation();
 };
