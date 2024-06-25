@@ -3,10 +3,11 @@ on:
   pull_request:
     paths:
       - .github/workflows/causal_lm_cpp.yml
-      - src/*
-      - samples/*
+      - src/**
+      - samples/**
       - thirdparty/openvino_tokenizers
       - "!**.md"
+permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -29,7 +30,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -51,7 +52,11 @@ jobs:
   cpp-beam_search_causal_lm-ubuntu:
     strategy:
       matrix:
-        executable: [./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm, python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py]
+        executable:
+          [
+            ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm,
+            python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py,
+          ]
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v4
@@ -68,7 +73,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -179,8 +184,8 @@ jobs:
                 predictions = predictions[:idx] + predictions[idx + len(ref):]
           "
           echo "Multi prompt" passed
+
   cpp-greedy_causal_lm-windows:
-    if: false
     runs-on: windows-latest
     defaults:
       run:
@@ -201,7 +206,7 @@ jobs:
       - name: Download, convert and build
         run: |
           call .\ov\setupvars.bat
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -223,10 +228,10 @@ jobs:
           echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
       - run: python ref.py
       - run: >
-          set PATH=".\build\openvino_genai\;%PATH%"
+          set PATH=.\build\openvino_genai\;%PATH%
           && set "PYTHONPATH=./build/"
           && call .\ov\setupvars.bat
-          && samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
+          && python samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
       - run: fc .\cpp.txt .\py.txt
 
   cpp-beam_search_causal_lm-Qwen-7B-Chat:
@@ -246,7 +251,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -273,7 +278,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen1.5-7B-Chat Qwen1.5-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -301,7 +306,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-2 phi-2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -329,7 +334,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model argilla/notus-7b-v1 notus-7b-v1
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -357,7 +362,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-3b dolly-v2-3b
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-7b dolly-v2-7b
@@ -377,7 +382,6 @@ jobs:
           "
           echo "Alan Turing was a" passed
 
-
   cpp-prompt_lookup_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
     steps:
@@ -395,7 +399,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -439,7 +443,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-1_5 phi-1_5
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -469,7 +473,7 @@ jobs:
           && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./phi-1_5/ "Alan Turing was a"
           | diff ./pred_greedy.txt -
-          
+
   cpp-greedy_causal_lm-redpajama-3b-chat:
     runs-on: ubuntu-20.04-4-cores
     steps:
@@ -487,7 +491,7 @@ jobs:
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model ikala/redpajama-3b-chat redpajama-3b-chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/

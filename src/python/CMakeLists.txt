@@ -9,21 +9,21 @@ FetchContent_Declare(
     URL_HASH SHA256=bf8f242abd1abcd375d516a7067490fb71abd79519a282d22b6e4d19282185a7
 )
 FetchContent_GetProperties(pybind11)
+# search for FindPython3.cmake instead of legacy modules
+set(PYBIND11_FINDPYTHON ON)
+# the following two calls are required for cross-compilation
+if(OpenVINODeveloperPackage_DIR)
+    ov_find_python3(REQUIRED)
+    ov_detect_python_module_extension()
+else()
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
+        find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
+    else()
+        find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+    endif()
+endif()
 if(NOT pybind11_POPULATED)
     FetchContent_Populate(pybind11)
-    # search for FindPython3.cmake instead of legacy modules
-    set(PYBIND11_FINDPYTHON ON)
-    # the following two calls are required for cross-compilation
-    if(OpenVINODeveloperPackage_DIR)
-        ov_find_python3(REQUIRED)
-        ov_detect_python_module_extension()
-    else()
-        if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
-            find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
-        else()
-            find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-        endif()
-    endif()
     add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
 endif()
 
@@ -37,6 +37,13 @@ file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py" DESTINATION "
 configure_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/__version__.py.in"
                "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py" @ONLY)
 
+if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME)
+    # RPATH for wheel is mandatory to find openvino_genai library. It
+    # must be forced because GenAI may be built with OpenVINO targeting
+    # archive. Such OpenVINO configurations sets
+    # CMAKE_SKIP_INSTALL_RPATH to ON because it relyes on setupvars.sh.
+    set(CMAKE_SKIP_INSTALL_RPATH OFF)
+endif()
 # setting RPATH / LC_RPATH depending on platform
 if(LINUX)
     # to find libopenvino_genai.so in the same folder
