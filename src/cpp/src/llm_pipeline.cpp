@@ -51,7 +51,7 @@ public:
     ChatHistory m_history;
     std::string m_templated_chat_history = "";
 
-    LLMPipelineImpl(
+    StatefulLLMPipeline(
         const ov::InferRequest& request,
         const ov::genai::Tokenizer& tokenizer,
         OptionalGenerationConfig generation_config=std::nullopt
@@ -61,7 +61,7 @@ public:
        m_generation_config = (generation_config.has_value()) ? *generation_config : default_config;
     }
 
-    LLMPipelineImpl(
+    StatefulLLMPipeline(
         const std::filesystem::path& model_path,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
@@ -78,11 +78,11 @@ public:
             m_generation_config.eos_token_id = m_tokenizer.get_eos_token_id();
     }
 
-    LLMPipelineImpl(
+    StatefulLLMPipeline(
         const std::filesystem::path& model_path, 
         const std::string& device, 
         const ov::AnyMap& plugin_config
-    ): LLMPipelineImpl{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
+    ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
     
     DecodedResults generate(
         StringInputs inputs,
@@ -261,7 +261,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     OptionalGenerationConfig generation_config
 ) {
-    m_pimpl = std::make_unique<LLMPipelineImpl>(request, tokenizer, generation_config);
+    m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
@@ -273,7 +273,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     if (device == "NPU") {
         m_pimpl = make_unique<NPULLMPipelineImpl>(std::filesystem::path(model_path), tokenizer, plugin_config);
     } else {
-        m_pimpl = make_unique<LLMPipelineImpl>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
+        m_pimpl = make_unique<StatefulLLMPipeline>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
     }
 }
 
@@ -285,7 +285,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     if (device == "NPU") {
         m_pimpl = make_unique<NPULLMPipelineImpl>(std::filesystem::path(path), config);
     } else {
-        m_pimpl = make_unique<LLMPipelineImpl>(std::filesystem::path(path), device, config);
+        m_pimpl = make_unique<StatefulLLMPipeline>(std::filesystem::path(path), device, config);
     }
 }
 
