@@ -67,8 +67,8 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
     }
 }
 
-inline const char STREAMER_ARG_NAME[] = "streamer";
-inline const char CONFIG_ARG_NAME[] = "generation_config";
+const std::string STREAMER_ARG_NAME = "streamer";
+const std::string CONFIG_ARG_NAME = "generation_config";
 
 ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path);
 
