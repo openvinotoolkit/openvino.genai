@@ -11,6 +11,15 @@
 #include "generation_config.hpp"
 #include "generation_handle.hpp"
 
+struct PipelineMetrics { 
+    // All requests as viewed by the pipeline
+    size_t requests = 0;
+    // Requests scheduled for processing
+    size_t scheduled_requests = 0;
+    // Percentage of KV cache usage
+    float cache_usage = 0.0;
+};
+
 class ContinuousBatchingPipeline {
     class Impl;
     std::shared_ptr<Impl> m_impl;
@@ -24,6 +33,8 @@ public:
     std::shared_ptr<Tokenizer> get_tokenizer();
 
     GenerationConfig get_config() const;
+
+    PipelineMetrics get_metrics() const;
 
     GenerationHandle add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params);
 
