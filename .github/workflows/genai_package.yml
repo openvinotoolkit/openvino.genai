@@ -90,10 +90,12 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: curl --output ov.zip ${{ env.w_ov_link }}
-      - run: unzip -d ov ov.zip
-      - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
-        shell: bash
+      - run: >
+          curl --output ov.zip ${{ env.w_ov_link }}
+          && unzip -d ov ov.zip
+          && dirs=(ov/*)
+          && mv ov/*/* ov
+          && rmdir "${dirs[@]}"
       - run: call ov\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
       - run: call ov\setupvars.bat && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
       - run: call ov\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
