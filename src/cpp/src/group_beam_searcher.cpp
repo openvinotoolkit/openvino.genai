@@ -361,6 +361,13 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
     }
 }
 
+void reset_inputs(ov::InferRequest& request) {
+    request.set_tensor("input_ids", ov::Tensor(ov::element::i64, {}));
+    request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, {}));
+    request.set_tensor("beam_idx", ov::Tensor(ov::element::i32, {}));
+    if (request.get_compiled_model().inputs().size() == 4)
+        request.set_tensor("position_ids", ov::Tensor(ov::element::i64, {}));
+}
 }  // namespace
 
 namespace ov {
@@ -412,19 +419,17 @@ EncodedResults beam_search(ov::InferRequest& lm,
         }
         size_t batch_size = next_tokens.size();
         // Set pointers
-        ov::Tensor next_tokens_tensor(ov::element::i64, {batch_size, 1});
-        std::memcpy(next_tokens_tensor.data(), next_tokens.data(), next_tokens_tensor.get_byte_size());
-        lm.set_tensor("input_ids", next_tokens_tensor);
-
-        ov::Tensor next_beams_tensor(ov::element::i32, {batch_size});
-        std::memcpy(next_beams_tensor.data(), next_beams.data(), next_beams_tensor.get_byte_size());
-        lm.set_tensor("beam_idx", next_beams_tensor);
+        lm.set_tensor("input_ids", ov::Tensor{ov::element::i64, {batch_size, 1}, next_tokens.data()});
+        lm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
 
         // Set auxiliary inputs
         update_attention_mask_with_beams(lm.get_tensor("attention_mask"), next_beams);
         if (position_ids_available)
             update_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
     }
+
+    //reset all inputs with empty tensors
+    reset_inputs(lm);
 
     auto scores_comparator = [](Beam& left, Beam& right) {
         return (left.score > right.score);
