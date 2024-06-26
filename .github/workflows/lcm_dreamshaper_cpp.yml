@@ -50,7 +50,6 @@ jobs:
         run: |
           conda activate openvino_lcm_cpp
           python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
-
           python -m pip install -r requirements.txt
           
       - name: Download and convert model and tokenizer
@@ -96,7 +95,6 @@ jobs:
         run: |
           conda activate openvino_lcm_cpp
           python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
-
           python -m pip install -r requirements.txt
 
       - name: Download and convert model and tokenizer

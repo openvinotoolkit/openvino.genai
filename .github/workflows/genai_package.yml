@@ -4,6 +4,10 @@ permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
+env:
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15766-dd43b82c058/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240621_x86_64.tgz
+  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15766-dd43b82c058/m_openvino_toolkit_macos_12_6_2024.3.0.dev20240621_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15766-dd43b82c058/w_openvino_toolkit_windows_2024.3.0.dev20240621_x86_64.zip
 jobs:
   ubuntu_genai_package:
     strategy:
@@ -20,7 +24,7 @@ jobs:
         with:
           python-version: 3.8
       - run: mkdir ./ov/
-      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15766-dd43b82c058/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240621_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+      - run: curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
       - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
@@ -49,7 +53,7 @@ jobs:
         with:
           python-version: 3.8
       - run: mkdir ./ov/
-      - run: curl https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15766-dd43b82c058/m_openvino_toolkit_macos_12_6_2024.3.0.dev20240621_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+      - run: curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
       - run: brew install coreutils scons
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
@@ -86,10 +90,10 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15766-dd43b82c058/w_openvino_toolkit_windows_2024.3.0.dev20240621_x86_64.zip
+      - run: curl --output ov.zip ${{ env.l_ov_link }}
       - run: unzip ov.zip
-      # Shorten the next setupvars calls.
-      - run: mklink /D ov w_openvino_toolkit_windows_2024.3.0.dev20240621_x86_64
+      - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
+        shell: bash
       - run: call ov\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
       - run: call ov\setupvars.bat && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
       - run: call ov\setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
