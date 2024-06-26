@@ -412,8 +412,14 @@ EncodedResults beam_search(ov::InferRequest& lm,
         }
         size_t batch_size = next_tokens.size();
         // Set pointers
-        lm.set_tensor("input_ids", ov::Tensor{ov::element::i64, {batch_size, 1}, next_tokens.data()});
-        lm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
+        ov::Tensor next_tokens_tensor(ov::element::i64, {batch_size, 1});
+        std::memcpy(next_tokens_tensor.data(), next_tokens.data(), next_tokens_tensor.get_byte_size());
+        lm.set_tensor("input_ids", next_tokens_tensor);
+
+        ov::Tensor next_beams_tensor(ov::element::i32, {batch_size});
+        std::memcpy(next_beams_tensor.data(), next_beams.data(), next_beams_tensor.get_byte_size());
+        lm.set_tensor("beam_idx", next_beams_tensor);
+
         // Set auxiliary inputs
         update_attention_mask_with_beams(lm.get_tensor("attention_mask"), next_beams);
         if (position_ids_available)
