@@ -110,3 +110,8 @@ Read the numpy latent input and noise for scheduler instead of C++ std lib for t
 ## Benchmark:
 
 For the generation quality, C++ random generation with MT19937 results is differ from `numpy.random.randn()` and `diffusers.utils.randn_tensor`. Hence, please use `-r, --readNPLatent` for the alignment with Python (this latent file is for output image 512X512 only)
+
+## Notes
+
+Negative prompts don't work with LCM because they don’t have any effect on the denoising process.
+Details: https://huggingface.co/docs/diffusers/main/en/using-diffusers/inference_with_lcm?lcm-text2img=LCM#text-to-image
