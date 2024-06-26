@@ -53,7 +53,7 @@ jobs:
         with:
           python-version: 3.8
       - run: mkdir ./ov/
-      - run: curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+      - run: curl ${{ env.m_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
       - run: brew install coreutils scons
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
@@ -90,7 +90,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: curl --output ov.zip ${{ env.l_ov_link }}
+      - run: curl --output ov.zip ${{ env.w_ov_link }}
       - run: unzip -d ov ov.zip
       - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
         shell: bash
