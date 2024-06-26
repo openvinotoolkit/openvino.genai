@@ -31,8 +31,9 @@ void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, Dev
     for (size_t decoder_layer_id = 0; decoder_layer_id < num_layers; ++decoder_layer_id) {
         parameters[kv_caches_inputs_offset + 2 * decoder_layer_id]->set_element_type(device_config.get_cache_precision());
         parameters[kv_caches_inputs_offset + 2 * decoder_layer_id + 1]->set_element_type(device_config.get_cache_precision());
-        parameters[kv_caches_inputs_offset + 2 * decoder_layer_id]->set_partial_shape(device_config.get_key_cache_shape());
-        parameters[kv_caches_inputs_offset + 2 * decoder_layer_id + 1]->set_partial_shape(device_config.get_value_cache_shape());
+        // TODO: CVS-145270
+        // parameters[kv_caches_inputs_offset + 2 * decoder_layer_id]->set_partial_shape(device_config.get_key_cache_shape());
+        // parameters[kv_caches_inputs_offset + 2 * decoder_layer_id + 1]->set_partial_shape(device_config.get_value_cache_shape());
     }
     model->validate_nodes_and_infer_types();
 }
