@@ -38,7 +38,9 @@ def models_list():
 
 def chat_models_list():
     model_ids = [
-        "Qwen/Qwen2-0.5B-Instruct",
+        "mosaicml/mpt-7b-chat",
+        # "Qwen/Qwen2-0.5B-Instruct",
+        # "Qwen/Qwen2-1.5B-Instruct",
         # "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
         # "meta-llama/Meta-Llama-3-8B-Instruct",
         # "meta-llama/Llama-2-7b-chat-hf",
