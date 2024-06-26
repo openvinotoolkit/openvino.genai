@@ -353,7 +353,6 @@ int32_t main(int32_t argc, char* argv[]) try {
         return EXIT_FAILURE;
     }
 
-    // Stable Diffusion pipeline
     const size_t batch_size = 1;
     StableDiffusionModels models =
         compile_models(model_path, device, lora_path, alpha, use_cache, use_dynamic_shapes, batch_size, height, width);
@@ -364,48 +363,57 @@ int32_t main(int32_t argc, char* argv[]) try {
                         (sample_shape[2] * VAE_SCALE_FACTOR == height && sample_shape[3] * VAE_SCALE_FACTOR == width),
                     "UNet model has static shapes [1, 4, H/8, W/8] or dynamic shapes [?, 4, ?, ?]");
 
-    Timer t("Running Stable Diffusion pipeline");
+    std::string result_image_path;
 
-    ov::Tensor text_embeddings = text_encoder(models, positive_prompt, negative_prompt);
+    // Stable Diffusion pipeline
+    {
+        Timer t("Running Stable Diffusion pipeline");
 
-    for (uint32_t n = 0; n < num_images; n++) {
-        std::shared_ptr<Scheduler> scheduler = std::make_shared<LMSDiscreteScheduler>();
-        scheduler->set_timesteps(num_inference_steps);
-        std::vector<std::int64_t> timesteps = scheduler->get_timesteps();
+        ov::Tensor text_embeddings = text_encoder(models, positive_prompt, negative_prompt);
 
-        std::uint32_t seed = num_images == 1 ? user_seed : user_seed + n;
+        for (uint32_t n = 0; n < num_images; n++) {
+            std::shared_ptr<Scheduler> scheduler = std::make_shared<LMSDiscreteScheduler>();
+            scheduler->set_timesteps(num_inference_steps);
+            std::vector<std::int64_t> timesteps = scheduler->get_timesteps();
 
-        const size_t unet_in_channels = static_cast<size_t>(sample_shape[1].get_length());
+            std::uint32_t seed = num_images == 1 ? user_seed : user_seed + n;
 
-        // latents are multiplied by 'init_noise_sigma'
-        ov::Shape latent_shape = ov::Shape({batch_size, unet_in_channels, height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
-        ov::Shape latent_model_input_shape = latent_shape;
-        ov::Tensor noise = randn_tensor(latent_shape, read_np_latent, seed);
-        latent_model_input_shape[0] = 2;  // Unet accepts batch 2
-        ov::Tensor latent(ov::element::f32, latent_shape),
-            latent_model_input(ov::element::f32, latent_model_input_shape);
-        for (size_t i = 0; i < noise.get_size(); ++i) {
-            latent.data<float>()[i] = noise.data<float>()[i] * scheduler->get_init_noise_sigma();
+            const size_t unet_in_channels = static_cast<size_t>(sample_shape[1].get_length());
+
+            // latents are multiplied by 'init_noise_sigma'
+            ov::Shape latent_shape = ov::Shape({batch_size, unet_in_channels, height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
+            ov::Shape latent_model_input_shape = latent_shape;
+            ov::Tensor noise = randn_tensor(latent_shape, read_np_latent, seed);
+            latent_model_input_shape[0] = 2;  // Unet accepts batch 2
+            ov::Tensor latent(ov::element::f32, latent_shape),
+                latent_model_input(ov::element::f32, latent_model_input_shape);
+            for (size_t i = 0; i < noise.get_size(); ++i) {
+                latent.data<float>()[i] = noise.data<float>()[i] * scheduler->get_init_noise_sigma();
+            }
+
+            for (size_t inference_step = 0; inference_step < num_inference_steps; inference_step++) {
+                // concat the same latent twice along a batch dimension
+                latent.copy_to(
+                    ov::Tensor(latent_model_input, {0, 0, 0, 0}, {1, latent_shape[1], latent_shape[2], latent_shape[3]}));
+                latent.copy_to(
+                    ov::Tensor(latent_model_input, {1, 0, 0, 0}, {2, latent_shape[1], latent_shape[2], latent_shape[3]}));
+
+                scheduler->scale_model_input(latent_model_input, inference_step);
+
+                ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
+                ov::Tensor noisy_residual = unet(unet_infer_request, latent_model_input, timestep, text_embeddings);
+
+                latent = scheduler->step(noisy_residual, latent, inference_step)["latent"];
+            }
+
+            ov::Tensor decoded_image = vae_decoder(models.vae_decoder, latent);
+            result_image_path = std::string("./images/seed_") + std::to_string(seed) + ".bmp";
+            imwrite(result_image_path, postprocess_image(decoded_image), true);
+            
         }
-
-        for (size_t inference_step = 0; inference_step < num_inference_steps; inference_step++) {
-            // concat the same latent twice along a batch dimension
-            latent.copy_to(
-                ov::Tensor(latent_model_input, {0, 0, 0, 0}, {1, latent_shape[1], latent_shape[2], latent_shape[3]}));
-            latent.copy_to(
-                ov::Tensor(latent_model_input, {1, 0, 0, 0}, {2, latent_shape[1], latent_shape[2], latent_shape[3]}));
-
-            scheduler->scale_model_input(latent_model_input, inference_step);
-
-            ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
-            ov::Tensor noisy_residual = unet(unet_infer_request, latent_model_input, timestep, text_embeddings);
-
-            latent = scheduler->step(noisy_residual, latent, inference_step)["latent"];
-        }
-
-        ov::Tensor decoded_image = vae_decoder(models.vae_decoder, latent);
-        imwrite(std::string("./images/seed_") + std::to_string(seed) + ".bmp", postprocess_image(decoded_image), true);
     }
+
+    std::cout << "Result image is saved to: " << result_image_path << std::endl;
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
