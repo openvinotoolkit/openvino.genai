@@ -361,7 +361,7 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
     }
 }
 
-void reset_inputs(ov::InferRequest& request) {
+void reset_all_inputs_to_empty_tensors(ov::InferRequest& request) {
     request.set_tensor("input_ids", ov::Tensor(ov::element::i64, {}));
     request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, {}));
     request.set_tensor("beam_idx", ov::Tensor(ov::element::i32, {}));
@@ -428,8 +428,7 @@ EncodedResults beam_search(ov::InferRequest& lm,
             update_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
     }
 
-    //reset all inputs with empty tensors
-    reset_inputs(lm);
+    reset_all_inputs_to_empty_tensors(lm);
 
     auto scores_comparator = [](Beam& left, Beam& right) {
         return (left.score > right.score);
