@@ -362,11 +362,11 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
 }
 
 void reset_all_inputs_to_empty_tensors(ov::InferRequest& request) {
-    request.set_tensor("input_ids", ov::Tensor(ov::element::i64, {}));
-    request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, {}));
-    request.set_tensor("beam_idx", ov::Tensor(ov::element::i32, {}));
+    request.set_tensor("input_ids", ov::Tensor(ov::element::i64, {0, 0}));
+    request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, {0, 0}));
+    request.set_tensor("beam_idx", ov::Tensor(ov::element::i32, {0}));
     if (request.get_compiled_model().inputs().size() == 4)
-        request.set_tensor("position_ids", ov::Tensor(ov::element::i64, {}));
+        request.set_tensor("position_ids", ov::Tensor(ov::element::i64, {0, 0}));
 }
 }  // namespace
 
