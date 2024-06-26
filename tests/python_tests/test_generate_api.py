@@ -844,24 +844,25 @@ def test_chat_2(model_descr, config):
         print(f'text_history: {chat_history_ov}')
     assert chat_history_ov == chat_history_with_kv_cache
 
+from tokenizer_configs import get_tokenizer_configs
+chat_configs = [(k, v) for k, v in get_tokenizer_configs().items()]
 
-qwen2_instruct_config = {
-    "chat_template": "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}",
-    "eos_token": "<|im_end|>",
-    "pad_token": "<|endoftext|>",
-}
-llama_2_7b_chat_hf_config = {
-    "bos_token": "<s>",
-    "chat_template": "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}{% else %}{% set loop_messages = messages %}{% set system_message = false %}{% endif %}{% for message in loop_messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if loop.index0 == 0 and system_message != false %}{% set content = '<<SYS>>\\n' + system_message + '\\n<</SYS>>\\n\\n' + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ bos_token + '[INST] ' + content.strip() + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' '  + content.strip() + ' ' + eos_token }}{% endif %}{% endfor %}",
-    # "chat_template": "{% if false %}{% set placehold = false %}{% else %}{% set loop_messages = messages %}{% set system_message = false %}{% endif %}{% for message in loop_messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if loop.index0 == 0 and system_message != false %}{% set content = '<<SYS>>\\n' + system_message + '\\n<</SYS>>\\n\\n' + message['content'] %}{% else %}{% set content = message['content'] %}{% endif %}{% if message['role'] == 'user' %}{{ bos_token + '[INST] ' + content + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' '  + content + ' ' + eos_token }}{% endif %}{% endfor %}",
-    "eos_token": "</s>",
-    "unk_token": "<unk>",
-}
-chat_configs = [
-    # qwen2_instruct_config, 
-    llama_2_7b_chat_hf_config
+# These models fail even on HF so no need to check if applying chat matches.
+skipped_models = [
+    "vibhorag101/llama-2-13b-chat-hf-phr_mental_therapy",
+    "codellama/CodeLlama-34b-Instruct-hf",
+    "deepseek-ai/deepseek-math-7b-rl",
+    "allenai/tulu-2-7b",
+    "alexsobolev/IcaroLM",
+    "tokyotech-llm/Swallow-7b-instruct-v0.1",
+    "bofenghuang/vigogne-2-7b-chat",
+    "OpenBuddy/openbuddy-mistral2-7b-v20.3-32k",
+    "AliAbdelrasheed/maqa_llama_4bit",
+    "stephenlzc/Mistral-7B-v0.3-Chinese-Chat-uncensored"
 ]
+
 conversation = [
+    # {'role': 'system', 'content': 'You are a friendly bot.'},
     {'role': 'user', 'content': '1+1='},
     {'role': 'assistant', 'content': '1 + 1 = 2'},
     {'role': 'user', 'content': 'What is the previous answer?'},
@@ -872,14 +873,29 @@ conversation = [
     {'role': 'assistant', 'content': "I don't remember such difficult questions.\n Ask something different"},
 ]
 @pytest.mark.precommit
-@pytest.mark.parametrize('tokenizer_config', chat_configs)
-def test_apply_chat_template(model_tmp_path, tokenizer_config):
+@pytest.mark.parametrize('chat_config', chat_configs)
+def test_apply_chat_template(model_tmp_path, chat_config):
+    # pytest.set_trace()
+    if chat_config[0] in skipped_models:
+        pytest.skip()
+
+    tokenizer_config = chat_config[1]
+
     # Will load openvino_model for tiny-random-phi as a placeholder
     # but indeed only Tokenizer and apply_chat_template will be tested.
+    model_id, path, tokenizer, opt_model, pipe = read_model(models_list()[0])
+    
+    full_history_str_hf = tokenizer.apply_chat_template(conversation, 
+        add_generation_prompt=False, 
+        tokenize=False,
+        **tokenizer_config)
 
     tok = load_tok([(tokenizer_config, "tokenizer_config.json")], model_tmp_path[1])
     full_history_str = tok.apply_chat_template(conversation, add_generation_prompt=False)
-    # pytest.set_trace()
+    if full_history_str != full_history_str_hf:
+        print(f'hf reference: {full_history_str_hf}')
+        print(f'ov_genai out: {full_history_str}')
+    assert full_history_str == full_history_str_hf
 
 
 @pytest.mark.skip(reason="probably both models ov + hf doesn't fit to memory")

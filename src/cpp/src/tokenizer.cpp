@@ -306,19 +306,21 @@ public:
         
         std::string res = "";
         ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
-
+        if (res.empty())
+            return res;
+        
         // Replace what jinja2cpp doesn't support
         std::pair<std::string, std::string> replace_str_map[] = {
-            {"\n'}", "\n' }"},
+            {"'}", "' }"},
+            {"{'", "{ '"},
             {".strip()", ""}
         };
-        if (!res.empty()) {
-            for (const auto& [from, to] : replace_str_map) {
-                size_t pos = 0;
-                while ((pos = res.find(from, pos)) != std::string::npos) {
-                    res.replace(pos, from.size(), to);
-                    pos += to.size();
-                }
+
+        for (const auto& [from, to] : replace_str_map) {
+            size_t pos = 0;
+            while ((pos = res.find(from, pos)) != std::string::npos) {
+                res.replace(pos, from.size(), to);
+                pos += to.size();
             }
         }
         return res;
@@ -328,7 +330,6 @@ public:
                                     bool add_generation_prompt, 
                                     const std::string& chat_template) const {
         auto chat_tpl = chat_template.empty() ? m_chat_template : chat_template;
-
         // Jinja2Cpp does not support slicing, e.g. [1:].
         // In templates slicing is used typically in the header to find system prompt.
         // If header containt that typical expression we update template and 
@@ -336,15 +337,29 @@ public:
         std::string header_with_slice = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}";
         std::string replacement_string = "{% if false %}{% set placeholder = false %}";
         ChatHistory modified_history = history;
-        std::string system_message = "";
         
+        std::string system_message = "";
         size_t pos = chat_tpl.find(header_with_slice);
         if (pos != std::string::npos) {
             chat_tpl.replace(pos, header_with_slice.length(), replacement_string);
 
-            if (!history.empty() && history[0].at("role") == "system") {
-                system_message = history[0].at("content");
+            if (!modified_history.empty() && modified_history[0].at("role") == "system") {
+                system_message = modified_history[0].at("content");
                 modified_history.erase(modified_history.begin());
+            }
+        }
+
+        std::pair<std::string, std::string> replace_str_map[] = {
+            {"{% set system_message = false %}", ""},
+            {"system_message != false", "true"},
+        };
+        if (!system_message.empty()) {
+            for (const auto& [from, to] : replace_str_map) {
+                size_t pos = 0;
+                while ((pos = chat_tpl.find(from, pos)) != std::string::npos) {
+                    chat_tpl.replace(pos, from.size(), to);
+                    pos += to.size();
+                }
             }
         }
 
@@ -361,16 +376,24 @@ public:
             jinja_messages.emplace_back(jinja_message);
         }
         
-
         jinja2::ValuesMap params = {
             {"messages", jinja_messages},
             {"bos_token",  m_bos_token},
             {"eos_token", m_eos_token},
             {"pad_token", m_pad_token},
-            {"system_message", system_message.empty() ? jinja2::ValuesMap() : jinja2::ValuesMap{{"content", system_message}}},
+            {"system_message", system_message.empty() ? jinja2::EmptyValue() : jinja2::Value{system_message}},
             {"add_generation_prompt", add_generation_prompt},
         };
-        return tpl.RenderAsString(params).value();
+        std::string history_txt;
+        try {
+            history_txt = tpl.RenderAsString(params).value();
+        } catch (const std::exception& error) {
+            OPENVINO_THROW("chat_template is not supported please "
+                           "apply manually template to input string "
+                           "before calling generate.");
+        }
+
+        return history_txt;
     }
 
     
