@@ -48,7 +48,7 @@
 2. Download OpenVINO archive and install dependencies:
     ```sh
     mkdir ./ov/
-    curl --output ov.zip hhttps://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/w_openvino_toolkit_windows_2024.3.0.dev20240626_x86_64.zip
+    curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/w_openvino_toolkit_windows_2024.3.0.dev20240626_x86_64.zip
     unzip ov.zip
     mklink /D ov w_openvino_toolkit_windows_2024.3.0.dev20240626_x86_64
     ```
