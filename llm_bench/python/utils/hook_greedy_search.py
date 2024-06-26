@@ -15,6 +15,7 @@ from transformers.generation.stopping_criteria import (
 from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
+import utils.hook_sample as hook_sample
 
 
 logger = log.getLogger(__name__)
@@ -353,5 +354,4 @@ class GreedySearchHook:
     def new_forward(self, model):
         """Define a new greedy search function."""
         model._greedy_search = new_greedy_search.__get__(model, model.__class__)
-        model._sample = new_greedy_search.__get__(model, model.__class__)
-            
+        model._sample = hook_sample.new_sample.__get__(model, model.__class__)

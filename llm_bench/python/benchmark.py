@@ -18,7 +18,7 @@ import hashlib
 import utils.metrics_print
 import utils.output_csv
 import traceback
-from transformers import set_seed, GenerationConfig
+from transformers import set_seed
 from PIL import Image
 from utils.memory_profile import MemConsumption
 from utils.hook_forward import StableDiffusionHook
@@ -105,7 +105,6 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     start = time.perf_counter()
     result = model.generate(
         **input_data,
-        generation_config=GenerationConfig(),
         max_new_tokens=int(max_output_token_size),
         num_beams=args['num_beams'],
         use_cache=True
