@@ -201,7 +201,7 @@ jobs:
         with:
           python-version: 3.8
       - run: curl --output ov.zip ${{ env.w_ov_link }}
-      - run: unzip ov.zip
+      - run: unzip -d ov ov.zip
       - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
         shell: bash
       - name: Download, convert and build

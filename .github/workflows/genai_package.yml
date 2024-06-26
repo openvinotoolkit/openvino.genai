@@ -91,7 +91,7 @@ jobs:
         with:
           python-version: 3.8
       - run: curl --output ov.zip ${{ env.l_ov_link }}
-      - run: unzip ov.zip
+      - run: unzip -d ov ov.zip
       - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
         shell: bash
       - run: call ov\setupvars.bat && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
