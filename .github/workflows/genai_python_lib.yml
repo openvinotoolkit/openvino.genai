@@ -5,9 +5,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 env:
-  l_ov_centos_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15766-dd43b82c058/l_openvino_toolkit_centos7_2024.3.0.dev20240621_x86_64.tgz
-  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15766-dd43b82c058/m_openvino_toolkit_macos_12_6_2024.3.0.dev20240621_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15766-dd43b82c058/w_openvino_toolkit_windows_2024.3.0.dev20240621_x86_64.zip
+  l_ov_centos_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/l_openvino_toolkit_centos7_2024.3.0.dev20240626_x86_64.tgz
+  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/m_openvino_toolkit_macos_12_6_2024.3.0.dev20240626_arm64.tgz
+  w_ov_link: hhttps://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/w_openvino_toolkit_windows_2024.3.0.dev20240626_x86_64.zip
 jobs:
   ubuntu_genai_python_lib:
     # A tokenizers' dependency fails to compile on ubuntu-20 n CenOS7 env.
