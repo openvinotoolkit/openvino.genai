@@ -55,7 +55,6 @@ jobs:
       - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
 
   windows_genai_python_lib:
-    if: false
     runs-on: windows-latest
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: null
@@ -68,7 +67,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.12
       - run: curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/windows/w_openvino_toolkit_windows_2024.2.0.dev20240529_x86_64.zip
       - run: unzip ov.zip
       # Shorten the next setupvars calls.
@@ -77,6 +76,6 @@ jobs:
       - run: call ./ov/setupvars.bat && cmake --build ./build/ --config Release -j
       - run: call ./ov/setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release --upgrade-strategy eager
       # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
-      - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+      - run: set "PYTHONPATH=.\build\" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
       - run: call ./ov/setupvars.bat && python -m pip install . --verbose
       - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
