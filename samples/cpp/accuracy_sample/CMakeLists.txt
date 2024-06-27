@@ -21,6 +21,7 @@ find_package(Threads REQUIRED)
 
 # end of dependencies
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(TARGET_NAME accuracy_sample)
 add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::continuous_batching cxxopts::cxxopts)
