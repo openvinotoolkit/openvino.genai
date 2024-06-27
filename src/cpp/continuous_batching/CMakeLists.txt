@@ -37,11 +37,6 @@ add_library(openvino::continuous_batching ALIAS openvino_continuous_batching)
 
 target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
                                           PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-if(TARGET openvino_tokenizers)
-    set(OPENVINO_TOKENIZERS_PATH $<TARGET_FILE:openvino_tokenizers>)
-else()
-    message(FATAL_ERROR "openvino_continuous_batching must be compiled as part of OpenVIINOGenAI to have the path to openvino_tokenizers hardcoded.")
-endif()
 target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH="${OPENVINO_TOKENIZERS_PATH}")
 set_target_properties(${TARGET_NAME} PROPERTIES
     CXX_STANDARD 14
