@@ -21,7 +21,7 @@ from .py_generate_pipeline import (
 )
 try:
     from . import py_continuous_batching
-    continuous_batching = [py_continuous_batching]
+    continuous_batching = ["py_continuous_batching"]
 except ImportError:
     continuous_batching = []
 
