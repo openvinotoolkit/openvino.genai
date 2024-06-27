@@ -39,6 +39,7 @@ ov_genai_build_jinja2cpp()
 
 file(GLOB SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(TARGET_NAME openvino_genai)
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 add_library(openvino::genai ALIAS ${TARGET_NAME})
