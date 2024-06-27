@@ -432,6 +432,13 @@ public:
     }
 
     void notify_handle() {
+
+        if (out_of_memory()) {
+            set_generation_status(GenerationStatus::IGNORED);
+        } else if (has_finished()) {
+            set_generation_status(GenerationStatus::FINISHED);
+        }
+
         GenerationOutputs outputs;
 
         // For beam search streaming is not available, so we notify only upon finishing
@@ -478,12 +485,6 @@ public:
                     m_generation_stream->push(outputs);
                 }
             }
-        }
-
-        if (out_of_memory()) {
-            set_generation_status(GenerationStatus::IGNORED);
-        } else if (has_finished()) {
-            set_generation_status(GenerationStatus::FINISHED);
         }
     } 
 };

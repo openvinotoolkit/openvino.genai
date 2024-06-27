@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "openvino/genai/llm_pipeline.hpp"
+
 #include <openvino/openvino.hpp>
 #include <nlohmann/json.hpp>
 
@@ -64,6 +66,15 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
         param = config_map.at(name).as<T>();
     }
 }
+
+const std::string STREAMER_ARG_NAME = "streamer";
+const std::string CONFIG_ARG_NAME = "generation_config";
+
+ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path);
+
+ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
+
+ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
 
 }  // namespace utils
 }  // namespace genai
