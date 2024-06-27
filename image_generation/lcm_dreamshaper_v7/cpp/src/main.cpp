@@ -283,6 +283,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     ("d,device", "AUTO, CPU, or GPU.\nDoesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only", cxxopts::value<std::string>()->default_value("CPU"))
     ("step", "Number of diffusion steps", cxxopts::value<size_t>()->default_value("4"))
     ("s,seed", "Number of random seed to generate latent for one image output", cxxopts::value<size_t>()->default_value("42"))
+    ("guidanceScale", "A higher guidance scale value encourages the model to generate images closely linked to the text prompt at the expense of lower image quality", cxxopts::value<float>()->default_value("8.0"))
     ("num", "Number of image output", cxxopts::value<size_t>()->default_value("1"))
     ("height","Height of output image",cxxopts::value<size_t>()->default_value("512"))
     ("width", "Width of output image", cxxopts::value<size_t>()->default_value("512"))
@@ -313,6 +314,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     const std::string device = result["device"].as<std::string>();
     const uint32_t num_inference_steps = result["step"].as<size_t>();
     const uint32_t user_seed = result["seed"].as<size_t>();
+    const float guidance_scale = result["guidanceScale"].as<float>();
     const uint32_t num_images = result["num"].as<size_t>();
     const uint32_t height = result["height"].as<size_t>();
     const uint32_t width = result["width"].as<size_t>();
@@ -372,7 +374,6 @@ int32_t main(int32_t argc, char* argv[]) try {
         scheduler->set_timesteps(num_inference_steps);
         std::vector<std::int64_t> timesteps = scheduler->get_timesteps();
 
-        float guidance_scale = 8.0;
         const size_t unet_time_cond_proj_dim = static_cast<size_t>(models.unet.input("timestep_cond").get_partial_shape()[1].get_length());
         ov::Tensor guidance_scale_embedding = get_w_embedding(guidance_scale, unet_time_cond_proj_dim);
 

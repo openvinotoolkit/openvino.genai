@@ -74,6 +74,7 @@ Usage:
 * `-d, --device arg`    AUTO, CPU, or GPU. Doesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only (default: CPU)
 * `--step arg`          Number of diffusion step (default: 4)
 * `-s, --seed arg`      Number of random seed to generate latent (default: 42)
+* `--guidanceScale arg` A higher guidance scale value encourages the model to generate images closely linked to the text prompt at the expense of lower image quality (default: 8.0)
 * `--num arg`           Number of image output (default: 1)
 * `--height arg`        Height of output image (default: 512)
 * `--width arg`         Width of output image (default: 512)
