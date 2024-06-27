@@ -8,6 +8,12 @@
 
 #include "device_config.hpp"
 
+inline ov::PartialShape to_partial_with_dyn_0_dim(const ov::Shape& static_shape) {
+    ov::PartialShape partial_shape = static_shape;
+    partial_shape[0] = ov::Dimension::dynamic();
+    return partial_shape;
+}
+
 void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config) {
     const ov::op::util::VariableVector& variables = model->get_variables();
     OPENVINO_ASSERT(!variables.empty(), "Model is supposed to be stateful");
@@ -31,8 +37,9 @@ void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, Dev
     for (size_t decoder_layer_id = 0; decoder_layer_id < num_layers; ++decoder_layer_id) {
         parameters[kv_caches_inputs_offset + 2 * decoder_layer_id]->set_element_type(device_config.get_cache_precision());
         parameters[kv_caches_inputs_offset + 2 * decoder_layer_id + 1]->set_element_type(device_config.get_cache_precision());
-        parameters[kv_caches_inputs_offset + 2 * decoder_layer_id]->set_partial_shape(device_config.get_key_cache_shape());
-        parameters[kv_caches_inputs_offset + 2 * decoder_layer_id + 1]->set_partial_shape(device_config.get_value_cache_shape());
+        // TODO: CVS-145270
+        parameters[kv_caches_inputs_offset + 2 * decoder_layer_id]->set_partial_shape(to_partial_with_dyn_0_dim(device_config.get_key_cache_shape()));
+        parameters[kv_caches_inputs_offset + 2 * decoder_layer_id + 1]->set_partial_shape(to_partial_with_dyn_0_dim(device_config.get_value_cache_shape()));
     }
     model->validate_nodes_and_infer_types();
 }
