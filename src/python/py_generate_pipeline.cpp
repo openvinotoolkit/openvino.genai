@@ -414,13 +414,13 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("set_generation_config", &LLMPipeline::set_generation_config);
 
      // Binding for Tokenizer
-    py::class_<Tokenizer>(m, "Tokenizer",
+    py::class_<ov::genai::Tokenizer>(m, "Tokenizer",
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer 
            if it's located in a different path than the main model.)")
         
         .def(py::init([](const std::string& tokenizer_path) {
             ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<Tokenizer>(tokenizer_path);
+            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path);
         }), py::arg("tokenizer_path"))
         
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts) { return tok.encode(prompts); },

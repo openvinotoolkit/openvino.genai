@@ -86,3 +86,10 @@ install(FILES "${OpenVINOGenAI_SOURCE_DIR}/LICENSE"
 install(TARGETS openvino_genai py_generate_pipeline
         LIBRARY DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL
         RUNTIME DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL)
+
+if(ENABLE_CONTINUOUS_BATCHING AND ENABLE_PYTHON)
+    pybind11_add_module(py_continuous_batching python.cpp)
+    target_link_libraries(py_continuous_batching PRIVATE openvino::continuous_batching)
+    set_target_properties(py_continuous_batching PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai>")
+endif()

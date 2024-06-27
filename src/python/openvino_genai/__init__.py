@@ -19,6 +19,7 @@ from .py_generate_pipeline import (
     StreamerBase, 
     StopCriteria
 )
+from . import py_continuous_batching
 
 __all__ = [
     'LLMPipeline', 
@@ -28,5 +29,6 @@ __all__ = [
     'DecodedResults', 
     'EncodedResults',
     'StreamerBase', 
-    'StopCriteria'
+    'StopCriteria',
+    'py_continuous_batching',
 ]

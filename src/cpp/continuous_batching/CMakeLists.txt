@@ -28,7 +28,6 @@ find_file(spda_to_pa_header sdpa_to_paged_attention.hpp
 set(TARGET_NAME openvino_continuous_batching)
 
 add_library(${TARGET_NAME} STATIC
-    src/tokenizer.cpp
     src/generation_config.cpp
     src/generation_handle.cpp
     src/continuous_batching_pipeline.cpp
@@ -41,12 +40,12 @@ target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/s
 if(TARGET openvino_tokenizers)
     set(OPENVINO_TOKENIZERS_PATH $<TARGET_FILE:openvino_tokenizers>)
 else()
-    set(OPENVINO_TOKENIZERS_PATH libopenvino_tokenizers.so)
+    message(FATAL_ERROR "openvino_continuous_batching must be compiled as part of OpenVIINOGenAI to have the path to openvino_tokenizers hardcoded.")
 endif()
 target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH="${OPENVINO_TOKENIZERS_PATH}")
 set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON)
 
-target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime openvino::genai PRIVATE nlohmann_json::nlohmann_json)
 
 #
 # Installation

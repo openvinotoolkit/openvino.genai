@@ -106,10 +106,4 @@ PYBIND11_MODULE(py_continuous_batching, m) {
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
         .def("generate", &ContinuousBatchingPipeline::generate);
-
-    py::class_<Tokenizer, std::shared_ptr<Tokenizer>>(m, "Tokenizer")
-        .def(py::init<const std::string&>())
-        .def("encode", &Tokenizer::encode)
-        .def("decode", &Tokenizer::decode)
-        .def("get_eos_token_id", &Tokenizer::get_eos_token_id);
 }

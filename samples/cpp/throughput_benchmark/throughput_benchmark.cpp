@@ -16,7 +16,7 @@
 #include <nlohmann/json.hpp>
 #include <cxxopts.hpp>
 
-#include "tokenizer.hpp"
+#include "openvino/genai/tokenizer.hpp"
 #include "continuous_batching_pipeline.hpp"
 #include "generation_handle.hpp"
 
@@ -95,7 +95,7 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
     sampled_dataset.reserve(num_prompt_candidates);
     dataset.reserve(num_prompt_candidates);
 
-    Tokenizer tokenizer(models_path);
+    ov::genai::Tokenizer tokenizer(models_path);
 
     for (auto json_data_iterator = json_dataset.begin(); json_data_iterator != json_dataset.end() && dataset.size() < num_prompt_candidates; ++json_data_iterator) {
         auto & json_data = *json_data_iterator;
@@ -108,10 +108,10 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
         std::string human_question = json_data["conversations"][0]["value"];
         std::string gpt_answer = json_data["conversations"][1]["value"];
 
-        ov::Tensor _input_ids_prompt = tokenizer.encode(human_question);
+        ov::Tensor _input_ids_prompt = tokenizer.encode(human_question).input_ids;
         size_t input_len = _input_ids_prompt.get_size();
 
-        ov::Tensor _input_ids_answer = tokenizer.encode(gpt_answer);
+        ov::Tensor _input_ids_answer = tokenizer.encode(gpt_answer).input_ids;
         size_t output_len = _input_ids_answer.get_size();
 
         // Prune too short sequences.
