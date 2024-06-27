@@ -25,7 +25,6 @@ find_file(spda_to_pa_header sdpa_to_paged_attention.hpp
 
 # end of dependencies
 
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(TARGET_NAME openvino_continuous_batching)
 
 add_library(${TARGET_NAME} STATIC
@@ -44,7 +43,10 @@ else()
     message(FATAL_ERROR "openvino_continuous_batching must be compiled as part of OpenVIINOGenAI to have the path to openvino_tokenizers hardcoded.")
 endif()
 target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_TOKENIZERS_PATH="${OPENVINO_TOKENIZERS_PATH}")
-set_target_properties(${TARGET_NAME} PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED ON)
+set_target_properties(${TARGET_NAME} PROPERTIES
+    CXX_STANDARD 14
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON)
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime openvino::genai PRIVATE nlohmann_json::nlohmann_json)
 
@@ -71,6 +73,7 @@ FetchContent_Declare(
   URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
 )
 FetchContent_MakeAvailable(googletest)
+
 
 set(TEST_TARGET_NAME "tests_continuous_batching")
 add_executable(${TEST_TARGET_NAME} "src/tests/scheduler.cpp" "src/tests/block_manager.cpp" "src/tests/logit_filtering.cpp" "src/tests/cache_manager.cpp" "src/tests/generate_config.cpp")
