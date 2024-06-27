@@ -12,6 +12,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240626_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/w_openvino_toolkit_windows_2024.3.0.dev20240626_x86_64.zip
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -25,13 +28,13 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -68,13 +71,13 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -197,17 +200,15 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - name: Install OpenVINO
+      - run: curl --output ov.zip ${{ env.w_ov_link }}
+      - run: unzip -d ov ov.zip
+      - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
         shell: bash
-        run: |
-          curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/windows/w_openvino_toolkit_windows_2024.2.0.dev20240529_x86_64.zip
-          unzip ov.zip
-      - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240529_x86_64
       - name: Download, convert and build
         run: |
           call .\ov\setupvars.bat
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -246,13 +247,13 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -273,13 +274,13 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen1.5-7B-Chat Qwen1.5-7B-Chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -301,13 +302,13 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-2 phi-2
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j 15
@@ -329,13 +330,13 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model argilla/notus-7b-v1 notus-7b-v1
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -357,13 +358,13 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-3b dolly-v2-3b
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-7b dolly-v2-7b
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -394,13 +395,13 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
@@ -438,13 +439,13 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model microsoft/phi-1_5 phi-1_5
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j 15
@@ -486,13 +487,13 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model ikala/redpajama-3b-chat redpajama-3b-chat
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j

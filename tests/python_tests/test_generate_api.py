@@ -697,37 +697,35 @@ def test_python_generation_config_validation(model_tmp_path, generation_config):
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
 def test_unicode_pybind_decoding_1():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
-    model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
+    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     pipe = read_model((model_id, path))[4]
-    res_str = pipe.generate('你好！ 你好嗎？', max_new_tokens=20)
-    assert isinstance(res_str, str)
-    assert len(res_str) > 0
+    res_str = pipe.generate(',', max_new_tokens=4)
+    assert '�' == res_str[-1]
+
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
 def test_unicode_pybind_decoding_2():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
-    model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
+    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     pipe = read_model((model_id, path))[4]
-    decoded_results = pipe.generate(['你好！ 你好嗎？'], max_new_tokens=20)
-    assert isinstance(decoded_results, ov_genai.DecodedResults)
-    assert len(decoded_results.texts[0]) > 0
+    res_str = pipe.generate([","], max_new_tokens=4)
+    assert '�' == res_str.texts[0][-1]
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
 def test_unicode_pybind_decoding_3():
     # On this model this prompt generates unfinished utf-8 string
     # and streams it. Test that pybind will not fail while we pass string to python.
-    model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
+    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     pipe = read_model((model_id, path))[4]
-    pipe.generate('你好！ 你好嗎？', max_new_tokens=20, streamer=lambda x: print(x))
+    res_str = []
+    pipe.generate(",", max_new_tokens=4, streamer=lambda x: res_str.append(x))
+    assert '�' == res_str[-1]
 
 
 quenstions = [
