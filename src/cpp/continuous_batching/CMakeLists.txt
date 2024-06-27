@@ -71,7 +71,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(TEST_TARGET_NAME "tests_continuous_batching")
 add_executable(${TEST_TARGET_NAME} "src/tests/scheduler.cpp" "src/tests/block_manager.cpp" "src/tests/logit_filtering.cpp" "src/tests/cache_manager.cpp" "src/tests/generate_config.cpp")
 target_link_libraries(${TEST_TARGET_NAME} PUBLIC ${TARGET_NAME} openvino::runtime gtest_main)
