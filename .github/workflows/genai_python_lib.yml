@@ -57,7 +57,7 @@ jobs:
       - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
 
   windows_genai_python_lib:
-    runs-on: windows-latest
+    runs-on: windows-2019
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: null
     defaults:
