@@ -236,16 +236,16 @@ public:
     }
 
     TokenizedInputs encode(std::vector<std::string>& prompts) {
-        ov::Tensor input_ids, attention_mask;
+        TokenizedInputs unpadded;
         {
             std::unique_lock<std::mutex> lock(m_tokenizer_mutex);
             m_tokenizer_request.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
             auto size_ = m_tokenizer_request.get_input_tensor().get_shape();
             m_tokenizer_request.infer();
 
-            std::tie(input_ids, attention_mask) = get_copied_results();
+            unpadded = get_copied_results();
         }
-        return pad_left(input_ids, attention_mask);
+        return pad_left(unpadded.input_ids, unpadded.attention_mask);
     }
 
     TokenizedInputs get_copied_results() {
