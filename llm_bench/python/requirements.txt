@@ -1,8 +1,9 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 numpy
-openvino>=2024.2.0
-openvino_tokenizers>=2024.2.0
-openvino_genai>=2024.2.0
+--extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+openvino
+openvino-tokenizers
+openvino_genai
 auto-gptq>=0.5.1 # for gptq
 pillow
 torch
