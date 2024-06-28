@@ -76,7 +76,7 @@ jobs:
       - run: unzip -d ov ov.zip
       - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
         shell: bash
-      - run: call ./ov/setupvars.bat && cmake -G 'Ninja Multi-Config' -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+      - run: call ./ov/setupvars.bat && cmake -G "Ninja Multi-Config" -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: call ./ov/setupvars.bat && cmake --build ./build/ --config Release -j
       - run: call ./ov/setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
       # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
