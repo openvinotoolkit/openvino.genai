@@ -91,8 +91,6 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
         prompt_count = idx // num_beams
         hf_outputs.append(tokenizer.decode(hf_encoded_out[prompt_ids[prompt_count].shape[0]:], skip_special_tokens=True))
 
-    pipe = ov_genai.LLMPipeline(str(path), device)
-    
     ov_outputs = pipe.generate(prompts, **config).texts
 
     hf_outputs.sort()
@@ -126,8 +124,6 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt: str
     hf_encoded_output = model.generate(encoded_prompt, **generation_config_hf)
     hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:], skip_special_tokens=True)
 
-    pipe = ov_genai.LLMPipeline(str(path), device)
-    
     ov_output = pipe.generate(prompt, **config)
     if config.get('num_return_sequences', 1) > 1:
         assert hf_output in ov_output.texts

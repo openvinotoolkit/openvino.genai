@@ -9,55 +9,20 @@
 #include <openvino/openvino.hpp>
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
+#include "llm_pipeline_base.hpp"
+#include "llm_pipeline_static.hpp"
 #include "utils.hpp"
 #include "text_callback_streamer.hpp"
-
-namespace {
-
-const std::string STREAMER_ARG_NAME = "streamer";
-const std::string CONFIG_ARG_NAME = "generation_config";
-
-ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path) {
-    auto config_file_path = model_path / "generation_config.json";
-    if (std::filesystem::exists(config_file_path)) {
-        return ov::genai::GenerationConfig((config_file_path).string());
-    } else {
-        return ov::genai::GenerationConfig{};
-    }
-}
-
-ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
-    ov::genai::StreamerVariant streamer = std::monostate();
-
-    if (config_map.count(STREAMER_ARG_NAME)) {
-        auto any_val = config_map.at(STREAMER_ARG_NAME);
-        if (any_val.is<std::shared_ptr<ov::genai::StreamerBase>>()) {
-            streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
-        } else if (any_val.is<std::function<bool(std::string)>>()) {
-            streamer = any_val.as<std::function<bool(std::string)>>();
-        }
-    }
-    return streamer;
-}
-
-ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {
-    if (config_map.count(CONFIG_ARG_NAME))
-        return config_map.at(CONFIG_ARG_NAME).as<ov::genai::GenerationConfig>();
-    else
-        return std::nullopt;
-}
-
-}
 
 namespace ov {
 namespace genai {
 
 ov::genai::EncodedResults greedy_decoding(
-    ov::InferRequest& model_runner, 
-    ov::Tensor prompts, 
-    ov::Tensor attention_mask, 
-    const GenerationConfig sampling_params, 
-    const std::shared_ptr<StreamerBase> streamer, 
+    ov::InferRequest& model_runner,
+    ov::Tensor prompts,
+    ov::Tensor attention_mask,
+    const GenerationConfig sampling_params,
+    const std::shared_ptr<StreamerBase> streamer,
     const bool is_chat_conversation = false,
     const bool is_cache_empty = true
 );
@@ -77,36 +42,32 @@ EncodedResults beam_search(
     GenerationConfig config
 );
 
-
-class LLMPipeline::LLMPipelineImpl {
+class StatefulLLMPipeline final : public LLMPipelineImplBase {
 public:
     ov::InferRequest m_model_runner;
-    Tokenizer m_tokenizer;
-    GenerationConfig m_generation_config;
     
     bool is_chat_conversation = false;
     bool m_is_cache_empty = true;
     ChatHistory m_history;
     std::string m_templated_chat_history = "";
 
-    LLMPipelineImpl(
-        const ov::InferRequest& request, 
-        const ov::genai::Tokenizer& tokenizer, 
+    StatefulLLMPipeline(
+        const ov::InferRequest& request,
+        const ov::genai::Tokenizer& tokenizer,
         OptionalGenerationConfig generation_config=std::nullopt
-    ):  m_model_runner(request), 
-        m_tokenizer(tokenizer) {
-        GenerationConfig default_config;
-        m_generation_config = (generation_config.has_value()) ? *generation_config : default_config;
+    ): LLMPipelineImplBase(tokenizer),
+       m_model_runner(request) {
+       GenerationConfig default_config;
+       m_generation_config = (generation_config.has_value()) ? *generation_config : default_config;
     }
 
-    LLMPipelineImpl(
+    StatefulLLMPipeline(
         const std::filesystem::path& model_path,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap& plugin_config
     ): 
-        m_tokenizer(tokenizer),
-        m_generation_config{from_config_json_if_exists(model_path)}
+        LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(model_path))
     {
         ov::Core core;
         core.set_property(device, plugin_config);
@@ -117,20 +78,20 @@ public:
             m_generation_config.eos_token_id = m_tokenizer.get_eos_token_id();
     }
 
-    LLMPipelineImpl(
+    StatefulLLMPipeline(
         const std::filesystem::path& model_path, 
         const std::string& device, 
         const ov::AnyMap& plugin_config
-    ): LLMPipelineImpl{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
+    ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
     
     DecodedResults generate(
-        StringInputs inputs, 
-        OptionalGenerationConfig generation_config, 
+        StringInputs inputs,
+        OptionalGenerationConfig generation_config,
         StreamerVariant streamer
-    ) {
+    ) override {
         GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
         EncodedInputs encoded_input;
-        
+
         if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
             encoded_input = m_tokenizer.encode(*input_vector);
         } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
@@ -164,9 +125,9 @@ public:
 
     EncodedResults generate(
         const EncodedInputs& inputs,
-        OptionalGenerationConfig generation_config, 
+        OptionalGenerationConfig generation_config,
         StreamerVariant streamer
-    ) {
+    ) override {
         ov::Tensor input_ids;
         ov::Tensor attention_mask;
 
@@ -177,14 +138,14 @@ public:
             input_ids = data->input_ids;
             attention_mask = data->attention_mask;
         }
-        
+
         GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-        
+
         // If eos_token_id was not provided, take value from default m_generation_config
         if (config.eos_token_id == -1)
             config.eos_token_id = m_generation_config.eos_token_id;
         config.validate();
-        
+
         std::shared_ptr<StreamerBase> streamer_ptr;
         if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
             streamer_ptr = nullptr;
@@ -208,8 +169,8 @@ public:
 
         ov::genai::EncodedResults result;
         if (config.is_greedy_decoding()) {
-            result = ov::genai::greedy_decoding(m_model_runner, input_ids, attention_mask, 
-                                                config, streamer_ptr, 
+            result = ov::genai::greedy_decoding(m_model_runner, input_ids, attention_mask,
+                                                config, streamer_ptr,
                                                 is_chat_conversation, m_is_cache_empty);
         } else if (config.is_beam_search()) {
             result = beam_search(m_model_runner, input_ids, attention_mask, config);
@@ -224,29 +185,45 @@ public:
         } else {
             m_is_cache_empty = false;
         }
-        
-        return result;        
+
+        return result;
+    }
+
+    void start_chat() override {
+        is_chat_conversation = true;
+        if (!m_is_cache_empty) {
+            m_model_runner.reset_state();
+            m_is_cache_empty = true;
+        }
+    }
+
+    void finish_chat() override {
+        is_chat_conversation = false;
+        if (!m_is_cache_empty) {
+            m_model_runner.reset_state();
+            m_is_cache_empty = true;
+        }
     }
 };
 
 DecodedResults LLMPipeline::generate(
-        StringInputs inputs, 
-        OptionalGenerationConfig generation_config, 
+        StringInputs inputs,
+        OptionalGenerationConfig generation_config,
         StreamerVariant streamer
 ) {
     return m_pimpl->generate(inputs, generation_config, streamer);
 }
 
 DecodedResults LLMPipeline::generate(StringInputs text, const ov::AnyMap& config_map) {
-    auto config_arg = get_config_from_map(config_map);
+    auto config_arg = utils::get_config_from_map(config_map);
     GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
 
-    return m_pimpl->generate(text, config, get_streamer_from_map(config_map));
+    return m_pimpl->generate(text, config, utils::get_streamer_from_map(config_map));
 }
 
 EncodedResults LLMPipeline::generate(
-    const EncodedInputs& inputs, 
+    const EncodedInputs& inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
 ) {
@@ -254,24 +231,24 @@ EncodedResults LLMPipeline::generate(
 }
 
 EncodedResults LLMPipeline::generate(const EncodedInputs& inputs, const ov::AnyMap& config_map) {
-    auto config_arg = get_config_from_map(config_map);
+    auto config_arg = utils::get_config_from_map(config_map);
     GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
 
-    return m_pimpl->generate(inputs, config, get_streamer_from_map(config_map));
+    return m_pimpl->generate(inputs, config, utils::get_streamer_from_map(config_map));
 }
 
 std::pair<std::string, Any> streamer(StreamerVariant func) {
     if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&func)) {
-        return {STREAMER_ARG_NAME, Any::make<std::shared_ptr<StreamerBase>>(*streamer_obj)};
+        return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<StreamerBase>>(*streamer_obj)};
     } else  {
         auto callback = std::get<std::function<bool(std::string)>>(func);
-        return {STREAMER_ARG_NAME, Any::make<std::function<bool(std::string)>>(callback)};
-    } 
+        return {utils::STREAMER_ARG_NAME, Any::make<std::function<bool(std::string)>>(callback)};
+    }
 }
 
 std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
-    return {CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
+    return {utils::CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
 }
 
 }  // namespace genai
@@ -280,11 +257,11 @@ std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
 using namespace std;
 
 ov::genai::LLMPipeline::LLMPipeline(
-    const ov::InferRequest& request, 
-    const ov::genai::Tokenizer& tokenizer, 
+    const ov::InferRequest& request,
+    const ov::genai::Tokenizer& tokenizer,
     OptionalGenerationConfig generation_config
 ) {
-    m_pimpl = std::make_unique<LLMPipelineImpl>(request, tokenizer, generation_config);
+    m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
@@ -293,15 +270,23 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& plugin_config
 ) {
-    m_pimpl = make_unique<LLMPipelineImpl>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
+    if (device == "NPU") {
+        m_pimpl = make_unique<StaticLLMPipeline>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
+    } else {
+        m_pimpl = make_unique<StatefulLLMPipeline>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
+    }
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
-    const std::string& path, 
-    const std::string& device, 
+    const std::string& path,
+    const std::string& device,
     const ov::AnyMap& config
 ) {
-    m_pimpl = make_unique<LLMPipelineImpl>(std::filesystem::path(path), device, config);
+    if (device == "NPU") {
+        m_pimpl = make_unique<StaticLLMPipeline>(std::filesystem::path(path), device, config);
+    } else {
+        m_pimpl = make_unique<StatefulLLMPipeline>(std::filesystem::path(path), device, config);
+    }
 }
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
@@ -313,19 +298,11 @@ ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {
 }
 
 void ov::genai::LLMPipeline::start_chat() {
-    m_pimpl->is_chat_conversation = true;
-    if (!m_pimpl->m_is_cache_empty) {
-        m_pimpl->m_model_runner.reset_state();
-        m_pimpl->m_is_cache_empty = true;
-    }
+    m_pimpl->start_chat();
 }
 
 void ov::genai::LLMPipeline::finish_chat() {
-    m_pimpl->is_chat_conversation = false;
-    if (!m_pimpl->m_is_cache_empty) {
-        m_pimpl->m_model_runner.reset_state();
-        m_pimpl->m_is_cache_empty = true;
-    }
+    m_pimpl->finish_chat();
 }
 
 void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& config) {
@@ -334,7 +311,7 @@ void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& confi
     // if eos_token_id was not provided in config forward from default config
     if (config.eos_token_id == -1)
         m_pimpl->m_generation_config.eos_token_id = default_eos_token_id;
-    
+
     m_pimpl->m_generation_config.validate();
 }
 

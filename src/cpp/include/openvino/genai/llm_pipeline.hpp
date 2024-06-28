@@ -82,6 +82,8 @@ public:
     }
 };
 
+class LLMPipelineImplBase;
+
 /**
 * @brief This class is used for generation with LLMs.
  */
@@ -216,8 +218,7 @@ public:
     void start_chat();
     void finish_chat();
 private:
-    class LLMPipelineImpl;
-    std::unique_ptr<LLMPipelineImpl> m_pimpl;
+    std::unique_ptr<LLMPipelineImplBase> m_pimpl;
 };
 
 std::pair<std::string, Any> streamer(StreamerVariant func);

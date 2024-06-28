@@ -130,6 +130,10 @@ public:
         }
     }
 
+    float get_used_percentage() const {
+        return m_allocator.get_used_percentage();
+    }
+
     void fork_sequence(uint64_t parent_id, uint64_t child_id) {
         OPENVINO_ASSERT(m_block_table.count(child_id) == 0);
         m_block_table[child_id].reserve(m_block_table[parent_id].size());
