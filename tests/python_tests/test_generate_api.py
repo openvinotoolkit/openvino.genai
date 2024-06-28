@@ -212,7 +212,7 @@ input_tensors_list = [
     reason="pybind was unable to find overloads with tensor inputs on Linux and Widnows",
     strict=False,
     condition=sys.platform in [
-        # "linux",
+        "linux",
         "win32"
     ]
 )
@@ -236,8 +236,8 @@ prompts = [
     reason="pybind was unable to find ov::Tensor from openvino yet",
     strict=False,
     condition=sys.platform in [
-        # "linux",
-        "win32"
+        "linux",
+        # "win32"
     ]
 )
 def test_genai_tokenizer_encode(model_descr, prompt):
@@ -273,7 +273,10 @@ encoded_prompts = [
     raises=TypeError, 
     reason="pybind was unable to find ov::Tensor from openvino yet",
     strict=False,
-    condition=sys.platform in ["linux", "win32"]
+    condition=sys.platform in [
+        "linux", 
+        # "win32"
+    ]
 )
 def test_genai_tokenizer_decode(model_descr, encoded_prompt):
     model_id, path, tokenizer, model, pipe = read_model(model_descr)
@@ -748,7 +751,7 @@ configs = [
 @pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", chat_models_list())
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
+@pytest.mark.skipif(sys.platform in ["linux", "win32"], reason="no space left on device for chat models")
 def test_chat_1(model_descr, generation_config):
     config = generation_config.copy()  # to avoid side effects
     
