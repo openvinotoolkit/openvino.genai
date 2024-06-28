@@ -206,7 +206,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(input_text_list):
-            utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
+            llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
     pt_inputs = tokenizer(input_text_list, return_tensors="pt")
     input_token_size = pt_inputs.input_ids.shape[1]
     pipe_tokenizer = model.get_tokenizer()
@@ -252,7 +252,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
             log.error('Output token size is over max output token size!')
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
-            utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
+            llm_bench_utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
         result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
     if num == 0:
         warmup_md5[prompt_index] = result_md5_list
@@ -274,7 +274,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         tokenization_time=(tok_encode_time, tok_decode_time)
     )
     iter_data_list.append(iter_data)
-    utils.metrics_print.print_metrics(
+    llm_bench_utils.metrics_print.print_metrics(
         num,
         iter_data,
         tm_list,
@@ -289,9 +289,9 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         warmup_md5_list = warmup_md5[prompt_index]
         if result_md5_list != warmup_md5_list:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} is different from warm-up's md5 {warmup_md5_list}")
-            utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+            llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
     else:
-        utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+        llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
     streamer.reset()
 
 
