@@ -343,6 +343,13 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
     }
 }
 
+void reset_all_inputs_to_empty_tensors(ov::InferRequest& request) {
+    request.set_tensor("input_ids", ov::Tensor(ov::element::i64, {0, 0}));
+    request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, {0, 0}));
+    request.set_tensor("beam_idx", ov::Tensor(ov::element::i32, {0}));
+    if (request.get_compiled_model().inputs().size() == 4)
+        request.set_tensor("position_ids", ov::Tensor(ov::element::i64, {0, 0}));
+}
 }  // namespace
 
 namespace ov {
@@ -410,11 +417,14 @@ std::pair<EncodedResults, std::vector<int32_t>> beam_search(ov::InferRequest& lm
         // Set pointers
         lm.set_tensor("input_ids", ov::Tensor{ov::element::i64, {batch_size, 1}, next_tokens.data()});
         lm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
+
         // Set auxiliary inputs
         update_attention_mask_with_beams(lm.get_tensor("attention_mask"), next_beams);
         if (position_ids_available)
             update_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
     }
+
+    reset_all_inputs_to_empty_tensors(lm);
 
     auto scores_comparator = [](Beam& left, Beam& right) {
         return (left.score > right.score);

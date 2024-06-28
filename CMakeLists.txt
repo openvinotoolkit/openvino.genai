@@ -18,7 +18,7 @@ elseif(NOT GENERATOR_IS_MULTI_CONFIG_VAR AND NOT DEFINED CMAKE_BUILD_TYPE)
 endif()
 
 project(OpenVINOGenAI
-        VERSION 2024.2.0.0
+        VERSION 2024.3.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX)

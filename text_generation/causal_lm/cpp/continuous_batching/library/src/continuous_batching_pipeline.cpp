@@ -24,7 +24,11 @@ class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
 
+    // TODO (mzegla): GenerationConfig is request specific object
+    // and pipeline only uses default rng_seed. 
     GenerationConfig m_generation_config;
+
+    PipelineMetrics m_pipeline_metrics;
 
     struct PerfTime {
         float m_paged_attention_time_ms = 0.0f;
@@ -103,6 +107,10 @@ public:
         return m_generation_config;
     }
 
+    PipelineMetrics get_metrics() const {
+        return m_pipeline_metrics;
+    }
+
     std::shared_ptr<Tokenizer> get_tokenizer() {
         return m_tokenizer;
     }
@@ -139,11 +147,14 @@ public:
             m_awaiting_requests.clear();
         }
 
+        m_pipeline_metrics.requests = m_requests.size();
         Scheduler::Output scheduler_output;
         {
             static ManualTimer timer("scheduling");
             timer.start();
             scheduler_output = m_scheduler->schedule(m_requests);
+            m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
+            m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
             m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
             timer.end();
         }
@@ -276,6 +287,10 @@ std::shared_ptr<Tokenizer> ContinuousBatchingPipeline::get_tokenizer() {
 
 GenerationConfig ContinuousBatchingPipeline::get_config() const{
     return m_impl->get_config();
+}
+
+PipelineMetrics ContinuousBatchingPipeline::get_metrics() const{
+    return m_impl->get_metrics();
 }
 
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {

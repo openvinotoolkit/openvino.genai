@@ -21,6 +21,8 @@ public:
     
     /// @brief end is called at the end of generation. It can be used to flush cache if your own streamer has one
     virtual void end() = 0;
+
+    virtual ~StreamerBase() = default;
 };
 
 
