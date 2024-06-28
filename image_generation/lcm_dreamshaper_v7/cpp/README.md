@@ -114,5 +114,9 @@ For the generation quality, C++ random generation with MT19937 results is differ
 
 ## Notes
 
+#### Negative prompt
+
 Negative prompts don't work with LCM because they don’t have any effect on the denoising process.
-Details: https://huggingface.co/docs/diffusers/main/en/using-diffusers/inference_with_lcm?lcm-text2img=LCM#text-to-image
+When a LCM is distilled from an LDM via latent consistency distillation (Algorithm 1) with guided distillation, the forward pass of the LCM learns to approximate sampling from the LDM using CFG with the unconditional prompt "" (the empty string). 
+Due to this, LCMs currently do not support negative prompts.
+
