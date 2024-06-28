@@ -10,7 +10,6 @@ env:
   w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/w_openvino_toolkit_windows_2024.3.0.dev20240626_x86_64.zip
 jobs:
   ubuntu_genai_python_lib:
-    if: false
     # A tokenizers' dependency fails to compile on ubuntu-20 n CenOS7 env.
     runs-on: ubuntu-22.04
     env:
@@ -36,7 +35,6 @@ jobs:
       - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
 
   macos_genai_python_lib:
-    if: false
     runs-on: macos-12
     env:
       # A tokenizers' dependency fails to compile with Ninja.
@@ -61,7 +59,7 @@ jobs:
       - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
 
   windows_genai_python_lib:
-    runs-on: windows-2019
+    runs-on: windows-latest
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: null
     defaults:
@@ -73,7 +71,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.12
+          python-version: 3.11
       - run: curl --output ov.zip ${{ env.w_ov_link }}
       - run: unzip -d ov ov.zip
       - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"

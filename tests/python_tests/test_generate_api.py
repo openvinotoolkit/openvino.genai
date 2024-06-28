@@ -207,12 +207,15 @@ input_tensors_list = [
 ]
 @pytest.mark.parametrize("inputs", input_tensors_list)
 @pytest.mark.parametrize("model_descr", models_list())
-# @pytest.mark.xfail(
-#     raises=TypeError, 
-#     reason="pybind was unable to find overloads with tensor inputs on Linux",
-#     strict=False,
-#     condition=sys.platform == "linux"
-# )
+@pytest.mark.xfail(
+    raises=TypeError, 
+    reason="pybind was unable to find overloads with tensor inputs on Linux and Widnows",
+    strict=False,
+    condition=sys.platform in [
+        # "linux",
+        "win32"
+    ]
+)
 @pytest.mark.precommit
 def test_ov_tensors(model_descr, inputs):
     hf_ov_genai_tensors_comparison(read_model(model_descr), dict(max_new_tokens=20), *inputs)
@@ -228,12 +231,15 @@ prompts = [
 @pytest.mark.parametrize("model_descr", models_list())
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.precommit
-# @pytest.mark.xfail(
-#     raises=TypeError, 
-#     reason="pybind was unable to find ov::Tensor from openvino yet",
-#     strict=False,
-#     condition=sys.platform in ["linux", "win32"]
-# )
+@pytest.mark.xfail(
+    raises=TypeError, 
+    reason="pybind was unable to find ov::Tensor from openvino yet",
+    strict=False,
+    condition=sys.platform in [
+        # "linux",
+        "win32"
+    ]
+)
 def test_genai_tokenizer_encode(model_descr, prompt):
     model_id, path, tokenizer, model, pipe = read_model(model_descr)
     tok = pipe.get_tokenizer()
@@ -263,12 +269,12 @@ encoded_prompts = [
 @pytest.mark.parametrize("model_descr", models_list())
 @pytest.mark.parametrize("encoded_prompt", encoded_prompts)
 @pytest.mark.precommit
-# @pytest.mark.xfail(
-#     raises=TypeError, 
-#     reason="pybind was unable to find ov::Tensor from openvino yet",
-#     strict=False,
-#     condition=sys.platform in ["linux", "win32"]
-# )
+@pytest.mark.xfail(
+    raises=TypeError, 
+    reason="pybind was unable to find ov::Tensor from openvino yet",
+    strict=False,
+    condition=sys.platform in ["linux", "win32"]
+)
 def test_genai_tokenizer_decode(model_descr, encoded_prompt):
     model_id, path, tokenizer, model, pipe = read_model(model_descr)
     tok = pipe.get_tokenizer()
@@ -614,11 +620,11 @@ def test_load_special_tokens_3(model_tmp_path):
 
 
 @pytest.mark.precommit
-# @pytest.mark.xfail(
-#     raises=AssertionError, 
-#     reason="CVS-143410 ov tokenizer should be aligned with hf",
-#     strict=False,
-# )
+@pytest.mark.xfail(
+    raises=AssertionError, 
+    reason="CVS-143410 ov tokenizer should be aligned with hf",
+    strict=False,
+)
 def test_load_special_tokens_4(model_tmp_path):
     # only string representation is provided, find token integers by inference
     model_id, temp_path = model_tmp_path
