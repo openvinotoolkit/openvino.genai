@@ -85,7 +85,10 @@ auto generation_config_docstring = R"(
 )";
 
 
-GenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& config_, const py::kwargs& kwargs) {
+OptionalGenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& config_, const py::kwargs& kwargs) {
+    if(!config_.has_value() && kwargs.empty())
+        return std::nullopt;
+
     GenerationConfig config;
     if(config_.has_value())
         config = *config_;
@@ -302,7 +305,7 @@ py::object call_common_generate(
     [&](std::string string_input) {
         DecodedResults res = pipe.generate(string_input, updated_config, streamer);
         // If input was a string return a single string otherwise return DecodedResults.
-        if (updated_config.num_return_sequences == 1) {
+        if (updated_config.has_value() && (*updated_config).num_return_sequences == 1) {
             results = py::cast<py::object>(handle_utf8_results(res.texts)[0]);
         } else {
             results = py::cast(res);
@@ -488,7 +491,12 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
      // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
         .def(py::init<std::string>(), py::arg("json_path"), "path where generation_config.json is stored")
-        .def(py::init([](py::kwargs kwargs) { return update_config_from_kwargs(GenerationConfig(), kwargs); }))
+        .def(py::init([](py::kwargs kwargs) {
+            if (kwargs.empty()) {
+                return GenerationConfig();
+            } else {
+                return *update_config_from_kwargs(GenerationConfig(), kwargs);
+            }}))
         .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
         .def_readwrite("max_length", &GenerationConfig::max_length)
         .def_readwrite("ignore_eos", &GenerationConfig::ignore_eos)

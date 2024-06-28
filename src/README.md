@@ -159,7 +159,7 @@ int main(int argc, char* argv[]) {
         // false means continue generation.
         return false;
     };
-    std::cout << pipe.generate("The Sun is yellow bacause", streamer);
+    std::cout << pipe.generate("The Sun is yellow bacause", ov::genai::streamer(streamer));
 }
 ```
 
@@ -192,7 +192,7 @@ int main(int argc, char* argv[]) {
 
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
-    std::cout << pipe.generate("The Sun is yellow because", custom_streamer);
+    std::cout << pipe.generate("The Sun is yellow because", ov::genai::streamer(custom_streamer));
 }
 ```
 
