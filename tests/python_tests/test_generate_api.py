@@ -91,8 +91,6 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
         prompt_count = idx // num_beams
         hf_outputs.append(tokenizer.decode(hf_encoded_out[prompt_ids[prompt_count].shape[0]:], skip_special_tokens=True))
 
-    pipe = ov_genai.LLMPipeline(str(path), device)
-    
     ov_outputs = pipe.generate(prompts, **config).texts
 
     hf_outputs.sort()
@@ -126,8 +124,6 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt: str
     hf_encoded_output = model.generate(encoded_prompt, **generation_config_hf)
     hf_output = tokenizer.decode(hf_encoded_output[0, encoded_prompt.shape[1]:], skip_special_tokens=True)
 
-    pipe = ov_genai.LLMPipeline(str(path), device)
-    
     ov_output = pipe.generate(prompt, **config)
     if config.get('num_return_sequences', 1) > 1:
         assert hf_output in ov_output.texts
@@ -701,37 +697,35 @@ def test_python_generation_config_validation(model_tmp_path, generation_config):
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
 def test_unicode_pybind_decoding_1():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
-    model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
+    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     pipe = read_model((model_id, path))[4]
-    res_str = pipe.generate('你好！ 你好嗎？', max_new_tokens=20)
-    assert isinstance(res_str, str)
-    assert len(res_str) > 0
+    res_str = pipe.generate(',', max_new_tokens=4)
+    assert '�' == res_str[-1]
+
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
 def test_unicode_pybind_decoding_2():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
-    model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
+    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     pipe = read_model((model_id, path))[4]
-    decoded_results = pipe.generate(['你好！ 你好嗎？'], max_new_tokens=20)
-    assert isinstance(decoded_results, ov_genai.DecodedResults)
-    assert len(decoded_results.texts[0]) > 0
+    res_str = pipe.generate([","], max_new_tokens=4)
+    assert '�' == res_str.texts[0][-1]
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
 def test_unicode_pybind_decoding_3():
     # On this model this prompt generates unfinished utf-8 string
     # and streams it. Test that pybind will not fail while we pass string to python.
-    model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
+    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     pipe = read_model((model_id, path))[4]
-    pipe.generate('你好！ 你好嗎？', max_new_tokens=20, streamer=lambda x: print(x))
+    res_str = []
+    pipe.generate(",", max_new_tokens=4, streamer=lambda x: res_str.append(x))
+    assert '�' == res_str[-1]
 
 
 quenstions = [
