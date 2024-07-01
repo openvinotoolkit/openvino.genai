@@ -8,12 +8,12 @@ import pytest
 from typing import Union, List, Dict, Tuple, Optional
 import sys
 from ov_genai_test_utils import (
-    get_models_list, 
-    get_chat_models_list, 
-    read_model, 
-    load_tok, 
-    model_tmp_path, 
-    stop_criteria_map, 
+    get_models_list,
+    get_chat_models_list,
+    read_model,
+    load_tok,
+    model_tmp_path,
+    stop_criteria_map,
     get_chat_templates
 )
 
@@ -26,17 +26,17 @@ configs = [
 
 quenstions = [
     '1+1=',
-    'What is the previous answer?',
-    # 'Why is the sun yellow?',
-    # 'What was my first question?'
+    'What was the previous answer?',
+    'Why is the sun yellow?',
+    'What was my first question?'
 ]
 
 
 @pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
-# @pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
-def test_chat_compare_statefull_vs_text_history(model_descr, generation_config: Dict):
+@pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
+def test_chat_compare_with_HF(model_descr, generation_config: Dict):
     config = generation_config.copy()  # to avoid side effects
     
     if 'do_sample' not in config:
@@ -84,11 +84,11 @@ def test_chat_compare_statefull_vs_text_history(model_descr, generation_config: 
 
 
 
-@pytest.mark.parametrize("config", configs)
+@pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
-def test_chat_compare_with_HF(model_descr, config: Dict):
+def test_chat_compare_statefull_vs_text_history(model_descr, generation_config: Dict):
     # Check that when history is stored in KV cache results are the same as when history stored in a text.
     device ='CPU'
     
@@ -107,12 +107,11 @@ def test_chat_compare_with_HF(model_descr, config: Dict):
     for question in quenstions:
         chat_history_with_kv_cache.append({'role': 'user', 'content': question})
         chat_history_ov.append({'role': 'user', 'content': question})
-        # pytest.set_trace()
-        answer = pipe_with_kv_cache.generate(question, **config)
+        answer = pipe_with_kv_cache.generate(question, **generation_config)
         chat_history_with_kv_cache.append({'role': 'assistant', 'content': answer})
         
         prompt = pipe.get_tokenizer().apply_chat_template(chat_history_ov, add_generation_prompt=True)
-        answer = pipe.generate(prompt, **config)
+        answer = pipe.generate(prompt, **generation_config)
         chat_history_ov.append({'role': 'assistant', 'content': answer})
     pipe_with_kv_cache.finish_chat()
 
