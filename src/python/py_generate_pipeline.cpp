@@ -457,7 +457,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             R"(Decode a batch of tokens into a list of string prompt.)")
         
         .def("apply_chat_template", [](Tokenizer& tok,
-                                        const ChatHistory& history,
+                                        ChatHistory history,
                                         bool add_generation_prompt,
                                         const std::string& chat_template) {
             return tok.apply_chat_template(history, add_generation_prompt, chat_template);

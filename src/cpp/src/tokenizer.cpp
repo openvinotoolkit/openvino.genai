@@ -326,7 +326,7 @@ public:
         return res;
     }
 
-    std::string apply_chat_template(const ChatHistory& history, 
+    std::string apply_chat_template(ChatHistory history, 
                                     bool add_generation_prompt, 
                                     const std::string& chat_template) const {
         auto chat_tpl = chat_template.empty() ? m_chat_template : chat_template;
@@ -336,16 +336,15 @@ public:
         // extract system message manually from ChatHistory.
         std::string header_with_slice = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}";
         std::string replacement_string = "{% if false %}{% set placeholder = false %}";
-        ChatHistory modified_history = history;
         
         std::string system_message = "";
         size_t pos = chat_tpl.find(header_with_slice);
         if (pos != std::string::npos) {
             chat_tpl.replace(pos, header_with_slice.length(), replacement_string);
 
-            if (!modified_history.empty() && modified_history[0].at("role") == "system") {
-                system_message = modified_history[0].at("content");
-                modified_history.erase(modified_history.begin());
+            if (!history.empty() && history[0].at("role") == "system") {
+                system_message = history[0].at("content");
+                history.erase(history.begin());
             }
         }
 
@@ -371,7 +370,7 @@ public:
         
         jinja2::ValuesList jinja_messages;
         jinja2::ValuesMap jinja_message;
-        for (const auto& message : modified_history) {
+        for (const auto& message : history) {
             jinja_message = {{"role", message.at("role")}, {"content", message.at("content")}};
             jinja_messages.emplace_back(jinja_message);
         }
@@ -384,16 +383,15 @@ public:
             {"system_message", system_message.empty() ? jinja2::EmptyValue() : jinja2::Value{system_message}},
             {"add_generation_prompt", add_generation_prompt},
         };
-        std::string history_txt;
+        
         try {
-            history_txt = tpl.RenderAsString(params).value();
+            return tpl.RenderAsString(params).value();
         } catch (const std::exception& error) {
-            OPENVINO_THROW("chat_template is not supported please "
-                           "apply manually template to input string "
-                           "before calling generate.");
+            // todo: specify exception
+            OPENVINO_THROW("Chat template for the current model is not supported by Jinja2Cpp. "
+                           "Please apply template manually to your prompt before calling generate. "
+                           "For exmaple: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
         }
-
-        return history_txt;
     }
 
     
@@ -456,7 +454,7 @@ std::string Tokenizer::get_eos_token() const {
     return m_pimpl->m_eos_token;
 }
 
-std::string Tokenizer::apply_chat_template(const ChatHistory& history,
+std::string Tokenizer::apply_chat_template(ChatHistory history,
                                            bool add_generation_prompt,
                                            const std::string& chat_template) const {
     return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template);
