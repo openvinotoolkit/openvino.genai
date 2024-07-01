@@ -18,6 +18,7 @@
 #include "logit_processor.hpp"
 #include "scheduler.hpp"
 #include "sequence_group.hpp"
+#include "timer.hpp"
 
 // Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
 std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std::vector<int64_t>& needle) {
@@ -196,7 +197,7 @@ public:
 
 class Sampler {
 
-    std::vector<Token> _get_logit_vector(ov::Tensor logits, size_t batch_idx = 1) {
+    void _get_logit_vector(ov::Tensor& logits, std::vector<Token>& logit_vector, size_t batch_idx = 1) {
         ov::Shape logits_shape = logits.get_shape();
         size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
         OPENVINO_ASSERT(batch_idx <= batch_size);
@@ -204,16 +205,29 @@ class Sampler {
         size_t sequence_offset = (seq_len - 1) * vocab_size;
         const float* logits_data = logits.data<const float>() + batch_offset + sequence_offset;
 
-        std::vector<Token> logit_vector(vocab_size);
+        //std::vector<Token> logit_vector(vocab_size);
+        static ManualTimer timer("sample::_get_logit_vector::token_assignment_loop");
+        timer.start();
         for (size_t i = 0; i < logit_vector.size(); i++) {
             logit_vector[i] = Token(logits_data[i], i);
         }
-        return logit_vector;
+        timer.end();
+        //return logit_vector;
     }
 
+
     Token _greedy_sample(const std::vector<Token>& logit_vector) const {
-        auto out_token = std::max_element(logit_vector.begin(), logit_vector.end(), [](const Token& lhs, const Token& rhs) { return lhs.m_log_prob < rhs.m_log_prob; });
-        return *out_token;
+        //auto out_token = std::max_element(logit_vector.begin(), logit_vector.end(), [](const Token& lhs, const Token& rhs) { return lhs.m_log_prob < rhs.m_log_prob; });
+        float max_val = 0.0;
+        int max_token_index = 0;
+        for (int i = 0; i < logit_vector.size(); i++){
+            if(logit_vector[i].m_log_prob > max_val) {
+                max_val = logit_vector[i].m_log_prob;
+                max_token_index = i;
+            }
+        }
+        return logit_vector[max_token_index];
+        //return *out_token;
     }
 
     std::vector<Token> _multinomial_sample(const std::vector<Token>& logit_vector, size_t num_tokens_per_sequence) {
@@ -268,7 +282,6 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
 
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
-
         if (sequence_group->requires_sampling()) {
             if (sampling_params.is_greedy_sampling() || sampling_params.is_multinomial()) {
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
@@ -280,12 +293,25 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                     running_sequence->append_token(sampled_token_id.m_index, sampled_token_id.m_log_prob);
                 };
                 for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
-                    auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id);
-                    logit_vector = logit_processor.apply(logit_vector);
+                    
+                    static ManualTimer timerx("sample::_get_logit_vector");
+                    timerx.start();
+                    ov::Shape logits_shape = logits.get_shape();
+                    size_t vocab_size = logits_shape[2];
+                    std::vector<Token> logit_vector(vocab_size);
+                    _get_logit_vector(sequence_group_logits, logit_vector, running_sequence_id);
+                    timerx.end();
+                    static ManualTimer timery("sample::logit_processor.apply");
+                    timery.start();
+                    logit_processor.apply(logit_vector);
+                    timery.end();
 
                     Token sampled_token_id;
                     if (sampling_params.is_greedy_sampling()) {
+                        static ManualTimer timer("sample::_greedy_sample");
+                        timer.start();
                         sampled_token_id = _greedy_sample(logit_vector);
+                        timer.end();
                     } else {
                         // is_multinomial()
                         const bool is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
@@ -304,8 +330,12 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                             sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
                         }
                     }
-                    
-                    register_new_token(sampled_token_id, running_sequences[running_sequence_id]);
+                    {
+                        static ManualTimer timer("sample::register_new_token");
+                        timer.start();
+                        register_new_token(sampled_token_id, running_sequences[running_sequence_id]);
+                        timer.end();
+                    }
                 }
                 logit_processor.increment_gen_tokens();
                 for (const auto& dropped_seq_id : sequence_group->try_finish_generation()) {
@@ -341,7 +371,12 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
             }
             // Notify handle after sampling is done. 
             // For non-streaming this is effective only when the generation is finished.
-            sequence_group->notify_handle();
+            {
+                static ManualTimer timer("sample::notify_handle");
+                timer.start();
+                sequence_group->notify_handle();
+                timer.end();
+            }
         } else {
             // we are in prompt processing phase when prompt is split into chunks and processed step by step
         }

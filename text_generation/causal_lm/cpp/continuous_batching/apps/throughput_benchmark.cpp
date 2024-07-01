@@ -123,6 +123,11 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
 
         GenerationConfig greedy_search = GenerationConfig::greedy();
         greedy_search.max_new_tokens = std::min(max_output_len, output_len);
+        greedy_search.repetition_penalty = 1.0;
+        greedy_search.frequence_penalty = 0.0;
+        greedy_search.presence_penalty = 0.0;
+        greedy_search.diversity_penalty = 0.0;
+        greedy_search.length_penalty = 0.0;
 
         dataset.push_data(human_question, greedy_search);
         dataset.push_lens(input_len, output_len);
@@ -425,7 +430,7 @@ int main(int argc, char* argv[]) try {
     options.add_options()
     ("n,num_prompts", "A number of prompts", cxxopts::value<size_t>()->default_value("1000"))
     ("b,max_batch_size", "A maximum number of batched tokens", cxxopts::value<size_t>()->default_value("256"))
-    ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("false"))
+    ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("true"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
     ("dataset", "Path to dataset .json file", cxxopts::value<std::string>()->default_value("./ShareGPT_V3_unfiltered_cleaned_split.json"))
     ("max_input_len", "Max input length take from dataset", cxxopts::value<size_t>()->default_value("1024"))
