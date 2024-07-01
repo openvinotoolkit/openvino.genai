@@ -27,8 +27,3 @@ install(DIRECTORY
             python/multinomial_causal_lm
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)
-
-if(ENABLE_CONTINUOUS_BATCHING AND ENABLE_APPS)
-    add_subdirectory(cpp/accuracy_sample)
-    add_subdirectory(cpp/throughput_benchmark)
-endif()
