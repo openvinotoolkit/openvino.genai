@@ -3,8 +3,13 @@ from scipy.ndimage.filters import gaussian_filter
 import math
 import numpy as np
 import torch
+import os
 from .body_pose_model import bodypose_model
 from .utils import render_from_candidate_and_subset, cv_gaussian_blur
+
+def debug_print(*args, **kwargs):
+    if os.getenv("DEBUG"):
+        print(*args, **kwargs)
 
 def smart_resize(x, s):
     Ht, Wt = s
@@ -17,7 +22,7 @@ def smart_resize(x, s):
         k = float(Ht + Wt) / float(Ho + Wo)
         return cv2.resize(x, (int(Wt), int(Ht)), interpolation=cv2.INTER_AREA if k < 1 else cv2.INTER_LANCZOS4)
     else:
-        print(f"smart_resize Co {Co}")
+        debug_print(f"smart_resize Co {Co}")
         return np.stack([smart_resize(x[:, :, i], s) for i in range(Co)], axis=2)
 
 
@@ -32,7 +37,7 @@ def smart_resize_k(x, fx, fy):
         k = float(Ht + Wt) / float(Ho + Wo)
         return cv2.resize(x, (int(Wt), int(Ht)), interpolation=cv2.INTER_AREA if k < 1 else cv2.INTER_LANCZOS4)
     else:
-        print(f"smart_resize_k Co {Co}")
+        debug_print(f"smart_resize_k Co {Co}")
         return np.stack([smart_resize_k(x[:, :, i], fx, fy) for i in range(Co)], axis=2)
 
 def transfer(model, model_weights):
@@ -92,9 +97,9 @@ class Body(object):
             scale = multiplier[m]
             imageToTest = smart_resize_k(oriImg, fx=scale, fy=scale)
             imageToTest_padded, pad = padRightDownCorner(imageToTest, stride, padValue)
-            print(f"imageToTest_padded.shape: {imageToTest_padded.shape}") # HWC
+            debug_print(f"imageToTest_padded.shape: {imageToTest_padded.shape}") # HWC
             im = np.transpose(np.float32(imageToTest_padded[:, :, :, np.newaxis]), (3, 2, 0, 1)) / 256 - 0.5
-            print(f"im.shape: {im.shape}") # NCHW
+            debug_print(f"im.shape: {im.shape}") # NCHW
             im = np.ascontiguousarray(im)
 
             data = torch.from_numpy(im).float()
@@ -105,19 +110,19 @@ class Body(object):
             Mconv7_stage6_L1 = Mconv7_stage6_L1.cpu().numpy()
             Mconv7_stage6_L2 = Mconv7_stage6_L2.cpu().numpy()
 
-            print(f"Mconv7_stage6_L1.shape: {Mconv7_stage6_L1.shape}")
-            print(f"Mconv7_stage6_L2.shape: {Mconv7_stage6_L2.shape}")
+            debug_print(f"Mconv7_stage6_L1.shape: {Mconv7_stage6_L1.shape}")
+            debug_print(f"Mconv7_stage6_L2.shape: {Mconv7_stage6_L2.shape}")
 
             # extract outputs, resize, and remove padding
             # heatmap = np.transpose(np.squeeze(net.blobs[output_blobs.keys()[1]].data), (1, 2, 0))  # output 1 is heatmaps
             heatmap = np.transpose(np.squeeze(Mconv7_stage6_L2), (1, 2, 0))  # output 1 is heatmaps
-            print(f"heatmap.shape: {heatmap.shape}")
+            debug_print(f"heatmap.shape: {heatmap.shape}")
             heatmap = smart_resize_k(heatmap, fx=stride, fy=stride)
-            print(f"heatmap.shape: {heatmap.shape}")
+            debug_print(f"heatmap.shape: {heatmap.shape}")
             heatmap = heatmap[:imageToTest_padded.shape[0] - pad[2], :imageToTest_padded.shape[1] - pad[3], :]
-            print(f"heatmap.shape: {heatmap.shape}")
+            debug_print(f"heatmap.shape: {heatmap.shape}")
             heatmap = smart_resize(heatmap, (oriImg.shape[0], oriImg.shape[1]))
-            print(f"heatmap.shape: {heatmap.shape}")
+            debug_print(f"heatmap.shape: {heatmap.shape}")
 
             # paf = np.transpose(np.squeeze(net.blobs[output_blobs.keys()[0]].data), (1, 2, 0))  # output 0 is PAFs
             paf = np.transpose(np.squeeze(Mconv7_stage6_L1), (1, 2, 0))  # output 0 is PAFs
@@ -133,7 +138,7 @@ class Body(object):
 
         for part in range(18):
             map_ori = heatmap_avg[:, :, part]
-            print(f'{part}: map_ori.shape: {map_ori.shape}')
+            debug_print(f'{part}: map_ori.shape: {map_ori.shape}')
 
             # one_heatmap = gaussian_filter(map_ori, sigma=3)
             one_heatmap = cv_gaussian_blur(map_ori, sigma=3)
@@ -157,7 +162,7 @@ class Body(object):
             all_peaks.append(peaks_with_score_and_id)
             peak_counter += len(peaks)
         for peak in all_peaks:
-            print(f'peak: {peak}')
+            debug_print(f'peak: {peak}')
 
         # find connection in the specified sequence, center 29 is in the position 15
         limbSeq = [[2, 3], [2, 6], [3, 4], [4, 5], [6, 7], [7, 8], [2, 9], [9, 10], \
@@ -220,10 +225,10 @@ class Body(object):
                 connection_all.append([])
 
         for i in range(len(connection_all)):
-            print("connection_all[{}]: {}".format(i, connection_all[i]))
+            debug_print("connection_all[{}]: {}".format(i, connection_all[i]))
         
         for i in range(len(special_k)):
-            print("specital_k[{}]: {}".format(i, special_k[i]))
+            debug_print("specital_k[{}]: {}".format(i, special_k[i]))
  
 
         # last number in each row is the total parts number of that person
@@ -235,8 +240,8 @@ class Body(object):
             if k not in special_k:
                 partAs = connection_all[k][:, 0]
                 partBs = connection_all[k][:, 1]
-                print(f"partAs: {partAs}")
-                print(f"partBs: {partBs}")
+                debug_print(f"partAs: {partAs}")
+                debug_print(f"partBs: {partBs}")
                 indexA, indexB = np.array(limbSeq[k]) - 1
 
                 for i in range(len(connection_all[k])):  # = 1:size(temp,1)
@@ -246,8 +251,8 @@ class Body(object):
                     part_score = connection_all[k][i][2]
                     partA_score = candidate[partA, 2]
                     partB_score = candidate[partB, 2]
-                    print(f"partA: {partA}, partB: {partB}")
-                    print(f"part score: {part_score}, partA score: {partA_score}, partB score: {partB_score}")
+                    debug_print(f"partA: {partA}, partB: {partB}")
+                    debug_print(f"part score: {part_score}, partA score: {partA_score}, partB score: {partB_score}")
 
                     subset_idx = [-1, -1]
                     for j in range(len(subset)):  # 1:size(subset,1):

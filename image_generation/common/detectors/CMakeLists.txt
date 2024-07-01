@@ -30,16 +30,6 @@ target_link_libraries(detectors PUBLIC openvino::runtime imwrite::imwrite ${Open
 
 include(FetchContent)
 
-FetchContent_Declare(eigen3)
-FetchContent_GetProperties(eigen3)
-if(NOT eigen3_POPULATED)
-    FetchContent_Populate(eigen3 QUIET
-        URL https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip
-        URL_HASH SHA256=1ccaabbfe870f60af3d6a519c53e09f3dcf630207321dffa553564a8e75c4fc8)
-endif()
-
-target_include_directories(detectors SYSTEM PRIVATE "${eigen3_SOURCE_DIR}")
-
 # gtest
 FetchContent_Declare(
     googletest

@@ -6,7 +6,6 @@
 #include <openvino/runtime/tensor.hpp>
 
 #include "openvino/runtime/compiled_model.hpp"
-#include "utils.hpp"
 
 class OpenposeDetector {
 public:
