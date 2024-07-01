@@ -17,7 +17,10 @@ FetchContent_MakeAvailable(cxxopts)
 FetchContent_MakeAvailable(nlohmann_json)
 
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+<<<<<<< HEAD
 find_package(Threads REQUIRED)
+=======
+>>>>>>> master
 
 # end of dependencies
 
