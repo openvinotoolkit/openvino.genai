@@ -64,7 +64,7 @@ cmake --build build --config Release --parallel
 
 ## Step 4: Run Pipeline
 ```shell
-./build/lcm_dreamshaper [-p <posPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <device>] [-r <readNPLatent>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-t <modelType>]
+./build/lcm_dreamshaper [-p <posPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <device>] [-r <readNPLatent>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-t <modelType>] [--guidanceScale <guidanceScale>] [--dynamic]
 
 Usage:
   lcm_dreamshaper [OPTION...]
@@ -113,6 +113,11 @@ Read the numpy latent input and noise for scheduler instead of C++ std lib for t
 For the generation quality, C++ random generation with MT19937 results is differ from `numpy.random.randn()` and `diffusers.utils.randn_tensor`. Hence, please use `-r, --readNPLatent` for the alignment with Python (this latent file is for output image 512X512 only)
 
 ## Notes
+
+#### Guidance Scale
+
+Guidance scale controls how similar the generated image will be to the prompt. A higher guidance scale means the model will try to generate an image that follows the prompt more strictly. A lower guidance scale means the model will have more creativity.
+`guidance_scale` is a way to increase the adherence to the conditional signal that guides the generation (text, in this case) as well as overall sample quality. It is also known as [classifier-free guidance](https://arxiv.org/abs/2207.12598).
 
 #### Negative prompt
 

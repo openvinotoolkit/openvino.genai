@@ -71,17 +71,18 @@ cmake --build build --parallel
 
 ## Step 4: Run Pipeline
 ```shell
-./build/stable_diffusion [-p <posPrompt>] [-n <negPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <device>] [-r <readNPLatent>] [-l <lora.safetensors>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-t <modelType>] [--dynamic]
+./build/stable_diffusion [-p <posPrompt>] [-n <negPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <device>] [-r <readNPLatent>] [-l <lora.safetensors>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-t <modelType>] [--guidanceScale <guidanceScale>] [--dynamic]
 
 Usage:
   stable_diffusion [OPTION...]
 ```
 
-* `-p, --posPrompt arg` Initial positive prompt for SD  (default: cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting)
-* `-n, --negPrompt arg` Default is empty with space (default: )
+* `-p, --posPrompt arg` Initial positive prompt for SD (default: cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting)
+* `-n, --negPrompt arg` The prompt **not** to guide the image generation. Ignored when not using guidance (`--guidanceScale` is less than `1`) (default: )
 * `-d, --device arg`    AUTO, CPU, or GPU. Doesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only (default: CPU)
 * `--step arg`          Number of diffusion step ( default: 20)
 * `-s, --seed arg`      Number of random seed to generate latent (default: 42)
+* `--guidanceScale arg` A higher guidance scale value encourages the model to generate images closely linked to the text prompt at the expense of lower image quality (default: 7.5)
 * `--num arg`           Number of image output(default: 1)
 * `--height arg`        Height of output image (default: 512)
 * `--width arg`         Width of output image (default: 512)
@@ -101,7 +102,7 @@ Usage:
 
 Positive prompt: cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting
 
-Negative prompt: (empty, here couldn't use OV tokenizer, check the issues for details)
+Negative prompt: (empty, check the [Notes](#negative-prompt) for details)
 
 Read the numpy latent instead of C++ std lib for the alignment with Python pipeline
 
@@ -117,6 +118,17 @@ Read the numpy latent instead of C++ std lib for the alignment with Python pipel
 
    ![](./704x448.bmp)
 
-## Notes:
+## Notes
 
-For the generation quality, be careful with the negative prompt and random latent generation. C++ random generation with MT19937 results is differ from `numpy.random.randn()`. Hence, please use `-r, --readNPLatent` for the alignment with Python (this latent file is for output image 512X512 only)
+For the generation quality, be careful with the negative prompt and random latent generation. C++ random generation with MT19937 results is differ from `numpy.random.randn()`. Hence, please use `-r, --readNPLatent` for the alignment with Python (this latent file is for output image 512X512 only).
+
+#### Guidance Scale
+
+Guidance scale controls how similar the generated image will be to the prompt. A higher guidance scale means the model will try to generate an image that follows the prompt more strictly. A lower guidance scale means the model will have more creativity.
+`guidance_scale` is a way to increase the adherence to the conditional signal that guides the generation (text, in this case) as well as overall sample quality. It is also known as [classifier-free guidance](https://arxiv.org/abs/2207.12598).
+
+#### Negative prompt
+
+To improve image generation quality, model supports negative prompting. Technically, positive prompt steers the diffusion toward the images associated with it, while negative prompt steers the diffusion away from it. 
+In other words, negative prompt declares undesired concepts for generation image, e.g. if we want to have colorful and bright image, gray scale image will be result which we want to avoid, in this case gray scale can be treated as negative prompt.
+The positive and negative prompt are in equal footing. You can always use one with or without the other. More explanation of how it works can be found in this [article](https://stable-diffusion-art.com/how-negative-prompt-work/).
