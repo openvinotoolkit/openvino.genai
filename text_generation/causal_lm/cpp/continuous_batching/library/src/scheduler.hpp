@@ -28,6 +28,8 @@ public:
         size_t m_total_num_scheduled_tokens = 0;
         // dedicated prompt phase
         bool is_prompt = false;
+        // current cache usage
+        float m_cache_usage = 0.0;
     };
 
     explicit Scheduler(const SchedulerConfig & config = {}) :
@@ -56,6 +58,7 @@ public:
         }
 
         _clear_waiting_sequences(sequence_groups);
+        scheduler_output.m_cache_usage = m_block_manager.get_used_percentage();
         return scheduler_output;
     }
 

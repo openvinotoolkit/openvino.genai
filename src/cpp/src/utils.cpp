@@ -155,6 +155,36 @@ ov::Tensor extend_attention(ov::Tensor attention_mask) {
     return new_atten_mask;
 }
 
+ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path) {
+    auto config_file_path = model_path / "generation_config.json";
+    if (std::filesystem::exists(config_file_path)) {
+        return ov::genai::GenerationConfig((config_file_path).string());
+    } else {
+        return ov::genai::GenerationConfig{};
+    }
+}
+
+ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
+    ov::genai::StreamerVariant streamer = std::monostate();
+
+    if (config_map.count(STREAMER_ARG_NAME)) {
+        auto any_val = config_map.at(STREAMER_ARG_NAME);
+        if (any_val.is<std::shared_ptr<ov::genai::StreamerBase>>()) {
+            streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
+        } else if (any_val.is<std::function<bool(std::string)>>()) {
+            streamer = any_val.as<std::function<bool(std::string)>>();
+        }
+    }
+    return streamer;
+}
+
+ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {
+    if (config_map.count(CONFIG_ARG_NAME))
+        return config_map.at(CONFIG_ARG_NAME).as<ov::genai::GenerationConfig>();
+    else
+        return std::nullopt;
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
