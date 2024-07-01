@@ -23,6 +23,9 @@ project(OpenVINOGenAI
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX)
 
+option(ENABLE_CONTINUOUS_BATCHING "" OFF)
+option(ENABLE_APPS "Enable C++ continuous batching apps. Ignored if ENABLE_CONTINUOUS_BATCHING is OFF" ON)
+
 # Find OpenVINODeveloperPackage first to compile with SDL flags
 find_package(OpenVINODeveloperPackage QUIET
              PATHS "${OpenVINO_DIR}")
