@@ -15,7 +15,7 @@ from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
 from transformers.generation.configuration_utils import GenerationConfig
-import utils.hook_greedy_search as hook_greedy
+import llm_bench_utils.hook_greedy_search as hook_greedy
 
 
 logger = log.getLogger(__name__)

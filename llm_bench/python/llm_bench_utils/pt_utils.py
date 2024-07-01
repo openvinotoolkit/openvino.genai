@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
 import torch
-from utils.config_class import PT_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
+from llm_bench_utils.config_class import PT_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
 import os
 import time
 import logging as log
-import utils.hook_common as hook_common
+import llm_bench_utils.hook_common as hook_common
 import json
 
 
