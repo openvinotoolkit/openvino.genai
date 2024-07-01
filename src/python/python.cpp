@@ -68,36 +68,6 @@ PYBIND11_MODULE(py_continuous_batching, m) {
             return res;
         });
 
-    py::enum_<StopCriteria>(m, "StopCriteria")
-        .value("EARLY", StopCriteria::EARLY)
-        .value("HEURISTIC", StopCriteria::HEURISTIC)
-        .value("NEVER", StopCriteria::NEVER)
-        .export_values();
-
-    py::class_<GenerationConfig>(m, "GenerationConfig")
-        .def(py::init<>())
-        .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
-        .def_readwrite("min_new_tokens", &GenerationConfig::min_new_tokens)
-        .def_readwrite("max_length", &GenerationConfig::max_length)
-        .def_readwrite("ignore_eos", &GenerationConfig::ignore_eos)
-        .def_readwrite("num_groups", &GenerationConfig::num_groups)
-        .def_readwrite("group_size", &GenerationConfig::group_size)
-        .def_readwrite("diversity_penalty", &GenerationConfig::diversity_penalty)
-        .def_readwrite("stop_criteria", &GenerationConfig::stop_criteria)
-        .def_readwrite("num_return_sequences", &GenerationConfig::num_return_sequences)
-        .def_readwrite("repetition_penalty", &GenerationConfig::repetition_penalty)
-        .def_readwrite("presence_penalty", &GenerationConfig::presence_penalty)
-        .def_readwrite("frequence_penalty", &GenerationConfig::frequence_penalty)
-        .def_readwrite("length_penalty", &GenerationConfig::length_penalty)
-        .def_readwrite("no_repeat_ngram_size", &GenerationConfig::no_repeat_ngram_size)
-        .def_readwrite("temperature", &GenerationConfig::temperature)
-        .def_readwrite("top_k", &GenerationConfig::top_k)
-        .def_readwrite("top_p", &GenerationConfig::top_p)
-        .def_readwrite("do_sample", &GenerationConfig::do_sample)
-        .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
-        .def_property_readonly("is_greedy_sampling", &GenerationConfig::is_greedy_sampling)
-        .def_property_readonly("is_beam_search", &GenerationConfig::is_beam_search);
-
     py::class_<SchedulerConfig>(m, "SchedulerConfig")
         .def(py::init<>())
         .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)

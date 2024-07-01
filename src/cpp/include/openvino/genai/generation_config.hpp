@@ -59,6 +59,7 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * @param repetition_penalty the parameter for repetition penalty. 1.0 means no penalty.
  * @param presence_penalty reduces absolute log prob if the token was generated at least once. Ignored for non continuous batching.
  * @param frequency_penalty reduces absolute log prob as many times as the token was generated. Ignored for non continuous batching.
+ * @param rng_seed initializes random generator. Ignored for non continuous batching.
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
 public:
@@ -88,6 +89,7 @@ public:
     float repetition_penalty = 1.0f;
     float presence_penalty = 0.0;
     float frequency_penalty = 0.0f;
+    size_t rng_seed = 0;
 
     // EOS special token
     int64_t eos_token_id = -1;
@@ -134,6 +136,7 @@ static constexpr ov::Property<float> repetition_penalty{"repetition_penalty"};
 static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};
 static constexpr ov::Property<float> presence_penalty{"presence_penalty"};
 static constexpr ov::Property<float> frequency_penalty{"frequency_penalty"};
+static constexpr ov::Property<size_t> rng_seed{"rng_seed"};
 
 }  // namespace genai
 }  // namespace ov
