@@ -132,3 +132,6 @@ Guidance scale controls how similar the generated image will be to the prompt. A
 To improve image generation quality, model supports negative prompting. Technically, positive prompt steers the diffusion toward the images associated with it, while negative prompt steers the diffusion away from it. 
 In other words, negative prompt declares undesired concepts for generation image, e.g. if we want to have colorful and bright image, gray scale image will be result which we want to avoid, in this case gray scale can be treated as negative prompt.
 The positive and negative prompt are in equal footing. You can always use one with or without the other. More explanation of how it works can be found in this [article](https://stable-diffusion-art.com/how-negative-prompt-work/).
+
+> [!NOTE]
+> Negative prompting is applicable only for high guidance scale (at least > 1).
