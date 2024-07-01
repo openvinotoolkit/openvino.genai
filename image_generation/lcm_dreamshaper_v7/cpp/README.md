@@ -70,7 +70,7 @@ Usage:
   lcm_dreamshaper [OPTION...]
 ```
 
-* `-p, --posPrompt arg` Initial positive prompt for LCM (default: a beautiful pink unicorn)
+* `-p, --posPrompt arg` Initial positive prompt for LCM (default: "a beautiful pink unicorn")
 * `-d, --device arg`    AUTO, CPU, or GPU. Doesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only (default: CPU)
 * `--step arg`          Number of diffusion step (default: 4)
 * `-s, --seed arg`      Number of random seed to generate latent (default: 42)
@@ -124,4 +124,3 @@ Guidance scale controls how similar the generated image will be to the prompt. A
 Negative prompts don't work with LCM because they don’t have any effect on the denoising process.
 When a LCM is distilled from an LDM via latent consistency distillation (Algorithm 1) with guided distillation, the forward pass of the LCM learns to approximate sampling from the LDM using CFG with the unconditional prompt "" (the empty string). 
 Due to this, LCMs currently do not support negative prompts.
-

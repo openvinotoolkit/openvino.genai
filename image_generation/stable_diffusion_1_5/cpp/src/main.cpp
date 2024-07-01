@@ -276,8 +276,8 @@ int32_t main(int32_t argc, char* argv[]) try {
     cxxopts::Options options("stable_diffusion", "Stable Diffusion implementation in C++ using OpenVINO\n");
 
     options.add_options()
-    ("p,posPrompt", "Initial positive prompt for SD ", cxxopts::value<std::string>()->default_value("cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"))
-    ("n,negPrompt", "Defaut is empty with space", cxxopts::value<std::string>()->default_value(" "))
+    ("p,posPrompt", "Initial positive prompt for SD", cxxopts::value<std::string>()->default_value("cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"))
+    ("n,negPrompt", "The prompt to guide the image generation away from. Ignored when not using guidance (`--guidanceScale` is less than `1`)", cxxopts::value<std::string>()->default_value(""))
     ("d,device", "AUTO, CPU, or GPU.\nDoesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only", cxxopts::value<std::string>()->default_value("CPU"))
     ("step", "Number of diffusion steps", cxxopts::value<size_t>()->default_value("20"))
     ("s,seed", "Number of random seed to generate latent for one image output", cxxopts::value<size_t>()->default_value("42"))

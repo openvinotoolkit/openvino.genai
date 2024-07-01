@@ -77,8 +77,8 @@ Usage:
   stable_diffusion [OPTION...]
 ```
 
-* `-p, --posPrompt arg` Initial positive prompt for SD (default: cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting)
-* `-n, --negPrompt arg` The prompt **not** to guide the image generation. Ignored when not using guidance (`--guidanceScale` is less than `1`) (default: )
+* `-p, --posPrompt arg` Initial positive prompt for SD (default: "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting")
+* `-n, --negPrompt arg` The prompt to guide the image generation away from. Ignored when not using guidance (`--guidanceScale` is less than `1`) (default: "")
 * `-d, --device arg`    AUTO, CPU, or GPU. Doesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only (default: CPU)
 * `--step arg`          Number of diffusion step ( default: 20)
 * `-s, --seed arg`      Number of random seed to generate latent (default: 42)
