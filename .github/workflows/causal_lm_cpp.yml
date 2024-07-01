@@ -524,3 +524,58 @@ jobs:
           && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./redpajama-3b-chat/ "Alan Turing was a"
           | diff ./pred_greedy.txt -
+
+  cpp-chat_sample-ubuntu:
+    runs-on: ubuntu-20.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Compare
+        run: |
+          source ./ov/setupvars.sh
+          printf 'What is 2 + 2?\nWhat is the previous answer?\nAdd 1 to it.\nSubtract 5 from it.\nWhy is the sun yellow?\nWhat was my first question?\nStop!\n' > ./input.txt
+          timeout 30s cat input.txt | ./build/samples/cpp/chat_sample/chat_sample ./TinyLlama-1.1B-Chat-v1.0/ > ./pred.txt
+          python -c "
+          from transformers import LlamaTokenizer, AutoModelForCausalLM
+          with open('pred.txt', 'r') as file:
+              predictions = file.read()
+          model_id = 'TinyLlama/TinyLlama-1.1B-Chat-v1.0'
+          tokenizer = LlamaTokenizer.from_pretrained(model_id)
+          model = AutoModelForCausalLM.from_pretrained(model_id)
+          prompts = ['What is 2 + 2?', 'What is the previous answer?', 'Add 1 to it.', 'Subtract 5 from it.', 'Why is the sun yellow?', 'What was my first question?']
+          def gen_prompt(prompt):
+              return {'role': 'user', 'content': prompt}
+          def gen_answer(answer):
+              return {'role': 'assistant', 'content': answer}
+          chat_history = []
+          chat_prompt = ''
+          for prompt in prompts:
+              chat_history.append(gen_prompt(prompt))
+              chat_prompt = tokenizer.apply_chat_template(chat_history, tokenize=False, add_generation_prompt=True)
+              tokenized = tokenizer(chat_prompt, return_tensors='pt')
+              answer = model.generate(**tokenized, max_length=1000, do_sample=False)
+              answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
+              chat_history.append(gen_answer(answer_str))
+              idx = predictions.find(answer_str)
+              if -1 == idx:
+                  raise RuntimeError(f'Missing "{answer_str=}" from predictions')
+              predictions = predictions[:idx] + predictions[idx + len(answer_str):]
+          "
+          echo "Chat sample" passed
