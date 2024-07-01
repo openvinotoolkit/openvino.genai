@@ -86,3 +86,4 @@ install(FILES "${OpenVINOGenAI_SOURCE_DIR}/LICENSE"
 install(TARGETS openvino_genai py_generate_pipeline
         LIBRARY DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL
         RUNTIME DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL)
+        #
