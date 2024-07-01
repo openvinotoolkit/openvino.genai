@@ -25,7 +25,6 @@ project(OpenVINOGenAI
 
 option(ENABLE_CONTINUOUS_BATCHING "" OFF)
 option(ENABLE_APPS "Enable C++ continuous batching apps. Ignored if ENABLE_CONTINUOUS_BATCHING is OFF" ON)
-option(ENABLE_PYTHON "Enable continuous batching Python API. Ignored if ENABLE_CONTINUOUS_BATCHING is OFF" ON)
 
 # Find OpenVINODeveloperPackage first to compile with SDL flags
 find_package(OpenVINODeveloperPackage QUIET
