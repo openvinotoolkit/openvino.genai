@@ -225,8 +225,8 @@ ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt, s
 
     ov::Tensor text_embeddings(ov::element::f32, {2, TOKENIZER_MODEL_MAX_LENGTH, HIDDEN_SIZE});
 
-    if (!do_classifier_free_guidance) {
-        neg_prompt = "";
+    if (!do_classifier_free_guidance && neg_prompt != "") {
+        throw std::invalid_argument("Negative prompt is ignored when --guidanceScale < 1.0. Please remove --negPrompt argument.");
     }
 
     compute_text_embeddings(neg_prompt,
