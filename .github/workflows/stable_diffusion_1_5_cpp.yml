@@ -49,7 +49,8 @@ jobs:
         run: |
           conda activate openvino_sd_cpp
           python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
-          python -m pip install -r requirements.txt
+          # python -m pip install -r requirements.txt
+          python -m pip install -r ../../../samples/requirements.txt
 
       - name: Download and convert model and tokenizer
         working-directory: ${{ env.working_directory }}
@@ -92,7 +93,8 @@ jobs:
           run: |
             conda activate openvino_sd_cpp
             python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
-            python -m pip install -r requirements.txt
+            # python -m pip install -r requirements.txt
+            python -m pip install -r ../../../samples/requirements.txt
   
         - name: Download and convert model and tokenizer
           working-directory: ${{ env.working_directory }}
