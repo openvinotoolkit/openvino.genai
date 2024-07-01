@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 #include <openvino/core/except.hpp>
-#include "generation_config.hpp"
+#include "openvino/genai/generation_config.hpp"
 
 TEST(GenerationConfigTest, invalid_temperature) {
     GenerationConfig config;

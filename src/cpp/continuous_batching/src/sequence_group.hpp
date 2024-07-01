@@ -8,7 +8,7 @@
 #include <cstdlib>
 
 #include "generation_handle.hpp"
-#include "generation_config.hpp"
+#include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
 
 enum class SequenceStatus {
@@ -115,7 +115,7 @@ public:
         return m_cumulative_log_prob;
     }
 
-    float get_beam_search_score(const GenerationConfig& sampling_params) const {
+    float get_beam_search_score(const ov::genai::GenerationConfig& sampling_params) const {
         float cumulative_log_prob = get_cumulative_log_probs(), current_length = get_generated_len();
         float score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
         return score;
@@ -129,7 +129,7 @@ public:
 class SequenceGroup {
     uint64_t m_request_id;
     std::vector<Sequence::Ptr> m_sequences;
-    GenerationConfig m_sampling_params;
+    ov::genai::GenerationConfig m_sampling_params;
     std::size_t m_block_size;
     TokenIds m_prompt_ids;
     GenerationStream::Ptr m_generation_stream;
@@ -146,7 +146,7 @@ class SequenceGroup {
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
 
-    SequenceGroup(uint64_t request_id, const GenerationConfig& sampling_params, std::size_t block_size)
+    SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
           m_block_size(block_size) {
@@ -156,11 +156,11 @@ public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
 
-    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const GenerationConfig& sampling_params, std::size_t block_size)
+    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size) {
     }
 
-    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const GenerationConfig& sampling_params, std::size_t block_size)
+    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : SequenceGroup(request_id, sampling_params, block_size) {
         add_sequence(Sequence::create(m_next_sequence_id++));
 
@@ -363,7 +363,7 @@ public:
         return m_sequences.back();
     }
 
-    const GenerationConfig& get_sampling_parameters() const {
+    const ov::genai::GenerationConfig& get_sampling_parameters() const {
         return m_sampling_params;
     }
 
@@ -459,7 +459,7 @@ public:
                 }
             }
         // For greedy or multinomial sampling we decide whever to stream partial results depending on the user parameter
-        } else if (m_sampling_params.is_greedy_sampling() || m_sampling_params.is_multinomial()) {
+        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
             // TO DO: Now we always stream for greedy search for the sake of benchmarking 
             if (num_total_seqs() == 1 /* m_sampling_params.stream */) {
                 // TODO: support streamimg for n seqs

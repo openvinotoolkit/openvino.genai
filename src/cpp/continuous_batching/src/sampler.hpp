@@ -110,7 +110,7 @@ struct Group {
     std::vector<Beam> min_heap;  // The worst of the best completed beams is the first
     bool done = false;
 
-    int64_t finish(Beam beam, const GenerationConfig& sampling_params) {
+    int64_t finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {
         int64_t preeempted_sequence_id = -1;
         float generated_len = beam.get_generated_len() + (beam.m_token_id == sampling_params.eos_token_id ? 1 : 0); // HF counts EOS token in generation length
         beam.m_score /= std::pow(generated_len, sampling_params.length_penalty);
@@ -126,7 +126,7 @@ struct Group {
         return preeempted_sequence_id;
     }
 
-    void is_done(const GenerationConfig& sampling_params) {
+    void is_done(const ov::genai::GenerationConfig& sampling_params) {
         if (min_heap.size() < sampling_params.group_size)
             return;
 
@@ -165,7 +165,7 @@ struct SamplerOutput {
 
 class GroupBeamSearcher {
     SequenceGroup::Ptr m_sequence_group;
-    GenerationConfig m_parameters;
+    ov::genai::GenerationConfig m_parameters;
     std::vector<Group> m_groups;
 public:
     explicit GroupBeamSearcher(SequenceGroup::Ptr sequence_group);
@@ -258,7 +258,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         size_t num_running_sequences = sequence_group->num_running_seqs();
         size_t actual_seq_len = sequence_group->get_num_scheduled_tokens(); // points to a token which needs to be sampled
         size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
-        const GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
+        const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
 
         const auto request_id = sequence_group->get_request_id();
         if (!m_logit_processors.count(request_id)) {
