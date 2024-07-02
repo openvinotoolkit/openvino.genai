@@ -110,14 +110,17 @@ struct Group {
     std::vector<Beam> min_heap;  // The worst of the best completed beams is the first
     bool done = false;
 
-    int64_t finish(Beam beam, const GenerationConfig& sampling_params) {
+    int64_t finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {
         int64_t preeempted_sequence_id = -1;
         float generated_len = beam.get_generated_len() + (beam.m_token_id == sampling_params.eos_token_id ? 1 : 0); // HF counts EOS token in generation length
         beam.m_score /= std::pow(generated_len, sampling_params.length_penalty);
 
         min_heap.push_back(beam);
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
-        if (min_heap.size() > sampling_params.group_size) {
+        OPENVINO_ASSERT(sampling_params.num_beams % sampling_params.num_beam_groups == 0,
+            "number of beams should be divisible by number of groups");
+        size_t group_size = sampling_params.num_beams / sampling_params.num_beam_groups;
+        if (min_heap.size() > group_size) {
             std::pop_heap(min_heap.begin(), min_heap.end(), greater);
             preeempted_sequence_id = min_heap.back().m_sequence->get_id();
             min_heap.pop_back();
@@ -126,8 +129,11 @@ struct Group {
         return preeempted_sequence_id;
     }
 
-    void is_done(const GenerationConfig& sampling_params) {
-        if (min_heap.size() < sampling_params.group_size)
+    void is_done(const ov::genai::GenerationConfig& sampling_params) {
+        OPENVINO_ASSERT(sampling_params.num_beams % sampling_params.num_beam_groups == 0,
+            "number of beams should be divisible by number of groups");
+        size_t group_size = sampling_params.num_beams / sampling_params.num_beam_groups;
+        if (min_heap.size() < group_size)
             return;
 
         const Beam& best_running_sequence = ongoing.front(), & worst_finished_sequence = min_heap.front();
@@ -135,15 +141,15 @@ struct Group {
         float best_sum_logprobs = best_running_sequence.m_score;
         float worst_score = worst_finished_sequence.m_score;
         switch (sampling_params.stop_criteria) {
-        case StopCriteria::EARLY:
+        case ov::genai::StopCriteria::EARLY:
             done = true;
             return;
-        case StopCriteria::HEURISTIC: {
+        case ov::genai::StopCriteria::HEURISTIC: {
             float highest_attainable_score = best_sum_logprobs / std::pow(float(cur_len), sampling_params.length_penalty);
             done = worst_score >= highest_attainable_score;
             return;
         }
-        case StopCriteria::NEVER: {
+        case ov::genai::StopCriteria::NEVER: {
             size_t length = sampling_params.length_penalty > 0.0 ? sampling_params.max_new_tokens : cur_len;
             float highest_attainable_score = best_sum_logprobs / std::pow(float(length), sampling_params.length_penalty);
             done = worst_score >= highest_attainable_score;
@@ -165,7 +171,7 @@ struct SamplerOutput {
 
 class GroupBeamSearcher {
     SequenceGroup::Ptr m_sequence_group;
-    GenerationConfig m_parameters;
+    ov::genai::GenerationConfig m_parameters;
     std::vector<Group> m_groups;
 public:
     explicit GroupBeamSearcher(SequenceGroup::Ptr sequence_group);
@@ -258,7 +264,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         size_t num_running_sequences = sequence_group->num_running_seqs();
         size_t actual_seq_len = sequence_group->get_num_scheduled_tokens(); // points to a token which needs to be sampled
         size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
-        const GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
+        const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
 
         const auto request_id = sequence_group->get_request_id();
         if (!m_logit_processors.count(request_id)) {
@@ -270,9 +276,9 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
 
         if (sequence_group->requires_sampling()) {
-            if (sampling_params.is_greedy_sampling() || sampling_params.is_multinomial()) {
+            if (sampling_params.is_greedy_decoding() || sampling_params.is_multinomial()) {
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
-                if (sampling_params.is_greedy_sampling()) {
+                if (sampling_params.is_greedy_decoding()) {
                     OPENVINO_ASSERT(num_running_sequences == 1);
                 }
                 auto register_new_token = [&](const Token& sampled_token_id, Sequence::Ptr running_sequence) {
@@ -284,7 +290,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                     logit_vector = logit_processor.apply(logit_vector);
 
                     Token sampled_token_id;
-                    if (sampling_params.is_greedy_sampling()) {
+                    if (sampling_params.is_greedy_decoding()) {
                         sampled_token_id = _greedy_sample(logit_vector);
                     } else {
                         // is_multinomial()
@@ -360,13 +366,16 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
 GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group)
     : m_sequence_group(sequence_group),
         m_parameters{m_sequence_group->get_sampling_parameters()},
-        m_groups{m_parameters.num_groups} {
+        m_groups{m_parameters.num_beam_groups} {
     OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1);
+    OPENVINO_ASSERT(m_parameters.num_beams % m_parameters.num_beam_groups == 0,
+        "number of beams should be divisible by number of groups");
+    size_t group_size = m_parameters.num_beams / m_parameters.num_beam_groups;
 
     for (Group& group : m_groups) {
-        group.ongoing.reserve(m_parameters.group_size);
+        group.ongoing.reserve(group_size);
         // initially we just add our "base" sequence to beams inside each group
-        for (size_t i = 0; i < m_parameters.group_size; ++i)
+        for (size_t i = 0; i < group_size; ++i)
             group.ongoing.push_back(Beam((*sequence_group)[0]));
         // to avoid selecting the same tokens for beams within group, let's just initialize score
         // for the front one
@@ -375,10 +384,13 @@ GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group)
 }
 
 void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output) {
+    OPENVINO_ASSERT(m_parameters.num_beams % m_parameters.num_beam_groups == 0,
+        "number of beams should be divisible by number of groups");
+    size_t group_size = m_parameters.num_beams / m_parameters.num_beam_groups;
     std::vector<int64_t> next_tokens;
     std::vector<int32_t> next_beams;
-    next_tokens.reserve(m_parameters.num_groups * m_parameters.group_size);
-    next_beams.reserve(m_parameters.num_groups * m_parameters.group_size);
+    next_tokens.reserve(m_parameters.num_beams);
+    next_beams.reserve(m_parameters.num_beams);
 
     // parent sequence ID -> number of child sequences
     std::map<uint64_t, uint64_t> parent_2_num_childs_map;
@@ -447,7 +459,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
             continue;
 
         std::vector<Beam> candidates;
-        candidates.reserve(m_parameters.group_size * 2 * m_parameters.group_size);
+        candidates.reserve(group_size * 2 * group_size);
 
         for (const Beam& beam : group.ongoing) {
             std::vector<Token> tokens = log_softmax(logits, beam.m_global_beam_idx);
@@ -486,7 +498,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                     try_to_finish_candidate(group, new_candidate);
                 } else {
                     candidates.push_back(new_candidate);
-                    if (++add_count == 2 * m_parameters.group_size) {
+                    if (++add_count == 2 * group_size) {
                         break;
                     }
                 }
@@ -494,16 +506,16 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
         }
 
         // Sample 2 * group_size highest score tokens to get at least 1 non EOS token per beam
-        OPENVINO_ASSERT(candidates.size() >= 2 * m_parameters.group_size, "No beams left to search");
+        OPENVINO_ASSERT(candidates.size() >= 2 * group_size, "No beams left to search");
 
-        auto to_sort = candidates.begin() + ptrdiff_t(2 * m_parameters.group_size);
+        auto to_sort = candidates.begin() + ptrdiff_t(2 * group_size);
         std::partial_sort(candidates.begin(), to_sort, candidates.end(), greater);
 
         for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
             Beam & candidate = candidates[cand_idx];
             if (m_parameters.eos_token_id == candidate.m_token_id) {
                 // If beam_token does not belong to top num_beams tokens, it should not be added
-                if (cand_idx >= m_parameters.group_size)
+                if (cand_idx >= group_size)
                     continue;
 
                 // try to finish candidate
@@ -513,7 +525,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                 child_beams_per_group[group_id].push_back(candidate);
 
                 // if num childs are enough
-                if (child_beams_per_group[group_id].size() == m_parameters.group_size) {
+                if (child_beams_per_group[group_id].size() == group_size) {
                     break;
                 }
             }

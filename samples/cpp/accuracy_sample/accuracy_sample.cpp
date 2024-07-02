@@ -12,6 +12,42 @@ void print_generation_result(const GenerationResult& generation_result) {
     }
 }
 
+ov::genai::GenerationConfig beam_search() {
+    ov::genai::GenerationConfig beam_search;
+    beam_search.num_beams = 4;
+    beam_search.num_return_sequences = 3;
+    beam_search.num_beam_groups = 2;
+    beam_search.max_new_tokens = 100;
+    beam_search.diversity_penalty = 2.0f;
+    return beam_search;
+}
+
+ov::genai::GenerationConfig greedy() {
+    ov::genai::GenerationConfig greedy_params;
+    greedy_params.temperature = 0.0f;
+    greedy_params.ignore_eos = true;
+    greedy_params.num_return_sequences = 1;
+    greedy_params.repetition_penalty = 3.0f;
+    greedy_params.presence_penalty = 0.1f;
+    greedy_params.frequency_penalty = 0.01f;
+    greedy_params.max_new_tokens = 30;
+    return greedy_params;
+}
+
+ov::genai::GenerationConfig multinomial() {
+    ov::genai::GenerationConfig multinomial;
+    multinomial.do_sample = true;
+    multinomial.temperature = 0.9f;
+    multinomial.top_p = 0.9f;
+    multinomial.top_k = 20;
+    multinomial.num_return_sequences = 3;
+    multinomial.presence_penalty = 0.01f;
+    multinomial.frequency_penalty = 0.1f;
+    multinomial.min_new_tokens = 15;
+    multinomial.max_new_tokens = 30;
+    return multinomial;
+}
+
 int main(int argc, char* argv[]) try {
     // Command line options
 
@@ -51,14 +87,14 @@ int main(int argc, char* argv[]) try {
         "What is OpenVINO?",
     };
 
-    std::vector<GenerationConfig> sampling_params_examples {
-        GenerationConfig::beam_search(),
-        GenerationConfig::greedy(),
-        GenerationConfig::multinomial(),
+    std::vector<ov::genai::GenerationConfig> sampling_params_examples {
+        beam_search(),
+        greedy(),
+        multinomial(),
     };
 
     std::vector<std::string> prompts(num_prompts);
-    std::vector<GenerationConfig> sampling_params(num_prompts);
+    std::vector<ov::genai::GenerationConfig> sampling_params(num_prompts);
 
     for (size_t request_id = 0; request_id < num_prompts; ++request_id) {
         prompts[request_id] = prompt_examples[request_id % prompt_examples.size()];

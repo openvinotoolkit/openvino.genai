@@ -28,7 +28,6 @@ find_file(spda_to_pa_header sdpa_to_paged_attention.hpp
 set(TARGET_NAME openvino_continuous_batching)
 
 add_library(${TARGET_NAME} STATIC
-    src/generation_config.cpp
     src/generation_handle.cpp
     src/continuous_batching_pipeline.cpp
     src/paged_attention_transformations.cpp)
