@@ -511,7 +511,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id)
         .def_readwrite("presence_penalty", &GenerationConfig::presence_penalty)
         .def_readwrite("frequency_penalty", &GenerationConfig::frequency_penalty)
-        .def_readwrite("rng_seed", &GenerationConfig::rng_seed);
+        .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
+        .def("is_beam_search", &GenerationConfig::is_beam_search);
 
     py::class_<DecodedResults>(m, "DecodedResults")
         .def(py::init<>())

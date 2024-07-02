@@ -258,7 +258,7 @@ def run_hugging_face(
         generation_result = GenerationResult()
         generation_result.m_generation_ids = all_text_batch
         # sequences_scores are available only for beam search case
-        if generation_config.is_beam_search:
+        if generation_config.is_beam_search():
             generation_result.m_scores = [score for score in generate_outputs.sequences_scores]
         generation_results.append(generation_result)
 
