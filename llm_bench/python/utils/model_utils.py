@@ -134,6 +134,7 @@ def analyze_args(args):
     model_args['subsequent'] = args.subsequent
     model_args['output_dir'] = args.output_dir
     model_args['genai'] = args.genai
+    model_args['devices'] = args.device
     model_args['prompt_index'] = [] if args.prompt_index is not None else None
     if model_args['prompt_index'] is not None:
         # Deduplication
