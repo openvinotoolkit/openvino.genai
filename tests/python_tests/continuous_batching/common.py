@@ -52,21 +52,21 @@ def get_greedy_with_min_and_max_tokens() -> GenerationConfig:
 
 def get_beam_search() -> GenerationConfig:
     generation_config = GenerationConfig()
-    generation_config.num_groups = 3
-    generation_config.group_size = 2
+    generation_config.num_beam_groups = 3
+    generation_config.num_beams = 6
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = 3
-    generation_config.num_return_sequences = generation_config.num_groups * generation_config.group_size
+    generation_config.num_return_sequences = generation_config.num_beams
     return generation_config
 
 def get_beam_search_min_and_max_tokens() -> GenerationConfig:
     generation_config = GenerationConfig()
-    generation_config.num_groups = 3
-    generation_config.group_size = 2
+    generation_config.num_beam_groups = 3
+    generation_config.num_beams = 6
     generation_config.min_new_tokens = 15
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = 3
-    generation_config.num_return_sequences = generation_config.num_groups * generation_config.group_size
+    generation_config.num_return_sequences = generation_config.num_beams
     return generation_config
 
 def get_multinomial_temperature() -> GenerationConfig:
@@ -219,10 +219,10 @@ def convert_to_hf(
     kwargs['pad_token_id'] = default_generation_config.pad_token_id
     kwargs['repetition_penalty'] = generation_config.repetition_penalty
 
-    if generation_config.num_groups * generation_config.group_size > 1:
+    if generation_config.num_beams > 1:
         # beam search case
-        kwargs['num_beam_groups'] = generation_config.num_groups
-        kwargs['num_beams'] = generation_config.num_groups * generation_config.group_size
+        kwargs['num_beam_groups'] = generation_config.num_beam_groups
+        kwargs['num_beams'] = generation_config.num_beams
         kwargs['diversity_penalty'] = generation_config.diversity_penalty
         kwargs['length_penalty'] = generation_config.length_penalty
         kwargs['no_repeat_ngram_size'] = generation_config.no_repeat_ngram_size
