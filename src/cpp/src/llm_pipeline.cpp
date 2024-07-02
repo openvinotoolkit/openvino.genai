@@ -23,8 +23,7 @@ ov::genai::EncodedResults greedy_decoding(
     ov::Tensor attention_mask,
     const GenerationConfig sampling_params,
     const std::shared_ptr<StreamerBase> streamer,
-    const bool is_chat_conversation = false,
-    const bool is_cache_empty = true
+    std::optional<ov::Tensor> position_ids = std::nullopt
 );
 
 ov::genai::EncodedResults multinominal_decoding(
@@ -32,14 +31,17 @@ ov::genai::EncodedResults multinominal_decoding(
     ov::Tensor prompts,
     ov::Tensor attention_mask,
     GenerationConfig sampling_params,
-    std::shared_ptr<StreamerBase> streamer
+    std::shared_ptr<StreamerBase> streamer,
+    std::optional<ov::Tensor> position_ids = std::nullopt
 );
 
-EncodedResults beam_search(
+std::pair<EncodedResults, std::optional<int32_t>> beam_search(
     ov::InferRequest& lm, 
     ov::Tensor prompts, 
     ov::Tensor attention_mask, 
-    GenerationConfig config
+    GenerationConfig config,
+    std::optional<ov::Tensor> position_ids = std::nullopt,
+    std::optional<int32_t> selected_beam_idx = std::nullopt
 );
 
 class StatefulLLMPipeline final : public LLMPipelineImplBase {
@@ -48,6 +50,7 @@ public:
     
     bool is_chat_conversation = false;
     bool m_is_cache_empty = true;
+    std::optional<int32_t> m_selected_beam = std::nullopt;
     ChatHistory m_history;
     std::string m_templated_chat_history = "";
 
@@ -167,21 +170,51 @@ public:
                         "(input_ids, attention_mask, position_ids, beam_idx) "
                         "but you have '" + std::to_string(num_inputs) + "' inputs");
 
+        
+        size_t kv_cache_len = 0;
+        ov::Tensor concatenated_attention_mask;
+        if (is_chat_conversation && !m_is_cache_empty) {
+            OPENVINO_ASSERT(batch_size == 1, "continuation of generation is possible only for batch 1");
+            // If history is saved in KV cache concatenate new attention_mask with the already existing.
+            // Between subsequent runs attention_mask should not be modified.
+            auto atten_mask_history = m_model_runner.get_tensor("attention_mask");
+            auto prompt_len = attention_mask.get_shape()[1];
+            kv_cache_len = atten_mask_history.get_shape()[1];
+
+            ov::Tensor new_atten_mask =  ov::Tensor{ov::element::i64, {batch_size, kv_cache_len + prompt_len}};
+            std::copy(atten_mask_history.data<int64_t>(), atten_mask_history.data<int64_t>() + kv_cache_len,
+                    new_atten_mask.data<int64_t>());
+            std::copy(attention_mask.data<int64_t>(), attention_mask.data<int64_t>() + prompt_len,
+                    new_atten_mask.data<int64_t>() + kv_cache_len);
+            concatenated_attention_mask = new_atten_mask;
+        } else {
+            concatenated_attention_mask = attention_mask;
+        }
+
+        bool position_ids_available = (num_inputs == 4);
+        std::optional<ov::Tensor> position_ids = std::nullopt;
+        if (position_ids_available) {
+            position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
+            utils::initialize_position_ids(*position_ids, attention_mask, kv_cache_len);
+        }
+
         ov::genai::EncodedResults result;
         if (config.is_greedy_decoding()) {
-            result = ov::genai::greedy_decoding(m_model_runner, input_ids, attention_mask,
-                                                config, streamer_ptr,
-                                                is_chat_conversation, m_is_cache_empty);
+            result = ov::genai::greedy_decoding(m_model_runner, input_ids, concatenated_attention_mask, 
+                                                config, streamer_ptr, position_ids);
         } else if (config.is_beam_search()) {
-            result = beam_search(m_model_runner, input_ids, attention_mask, config);
+            std::tie(result, m_selected_beam) = beam_search(m_model_runner, input_ids, concatenated_attention_mask, 
+                                                            config, position_ids, m_selected_beam);
         } else if (config.is_multinomial()) {
-            result = multinominal_decoding(m_model_runner, input_ids, attention_mask, config, streamer_ptr);
+            result = multinominal_decoding(m_model_runner, input_ids, concatenated_attention_mask, 
+                                           config, streamer_ptr, position_ids);
         } else {
             OPENVINO_THROW("No decoding algorithm found for provided configuration parameters.");
         }
 
         if (!is_chat_conversation) {
             m_model_runner.reset_state();
+            m_selected_beam = std::nullopt;
         } else {
             m_is_cache_empty = false;
         }
@@ -191,6 +224,7 @@ public:
 
     void start_chat() override {
         is_chat_conversation = true;
+        m_selected_beam  = std::nullopt;
         if (!m_is_cache_empty) {
             m_model_runner.reset_state();
             m_is_cache_empty = true;
@@ -199,6 +233,7 @@ public:
 
     void finish_chat() override {
         is_chat_conversation = false;
+        m_selected_beam = std::nullopt;
         if (!m_is_cache_empty) {
             m_model_runner.reset_state();
             m_is_cache_empty = true;
