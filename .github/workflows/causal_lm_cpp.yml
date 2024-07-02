@@ -579,4 +579,8 @@ jobs:
           output.close()
           "
           diff pred.txt ref.txt
-          echo "Chat sample" passed
+          echo "Chat sample cpp" passed
+          export PYTHONPATH=./build/:$PYTHONPATH
+          timeout 30s ./samples/python/chat_sample/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
+          diff pred2.txt ref.txt
+          echo "Chat sample python" passed
