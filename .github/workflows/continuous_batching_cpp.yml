@@ -73,7 +73,7 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
       - run: >
           call .\ov\setupvars.bat
@@ -121,4 +121,4 @@ jobs:
           cmake --build ./build/ --config Release -j
       - run: >
           . ./ov/setupvars.sh
-          && timeout 25s ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 4
+          && ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 4
