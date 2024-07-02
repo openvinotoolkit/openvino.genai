@@ -75,13 +75,10 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      # - run: >
-      #     call .\ov\setupvars.bat
-      #     && .\build\samples\cpp\accuracy_sample\Release\accuracy_sample.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 4
       - run: >
-          . ./ov/setupvars.sh
-          && timeout 25s ./build/samples/cpp/accuracy_sample/Release/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 4
-        shell: bash
+          set PATH=.\build\openvino_genai\;%PATH%
+          && call .\ov\setupvars.bat
+          && .\build\samples\cpp\accuracy_sample\Release\accuracy_sample.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 4
       # - run: |
       #     echo import transformers > ref.py
       #     echo predictions = open('cpp.txt', 'r').read() >> ref.py
