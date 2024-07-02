@@ -5,7 +5,6 @@
 #include <cxxopts.hpp>
 
 #include "continuous_batching_pipeline.hpp"
-#include "tokenizer.hpp"
 
 void print_generation_result(const GenerationResult& generation_result) {
     for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {

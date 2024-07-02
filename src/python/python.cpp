@@ -6,6 +6,7 @@
 #include <pybind11/stl.h>
 
 #include "continuous_batching_pipeline.hpp"
+#include "../cpp/src/tokenizers_path.hpp"
 
 namespace py = pybind11;
 
@@ -19,6 +20,15 @@ std::ostream& operator << (std::ostream& stream, const GenerationResult& generat
         stream << generation_result.m_generation_ids[i] << " }" << std::endl;
     }
     return stream << std::endl;
+}
+
+std::string ov_tokenizers_module_path() {
+    // Try a path relative to build artifacts folder first.
+    std::filesystem::path from_relative = tokenizers_relative_to_genai();
+    if (std::filesystem::exists(from_relative)) {
+        return from_relative.string();
+    }
+    return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
 }
 
 PYBIND11_MODULE(py_continuous_batching, m) {
@@ -99,17 +109,14 @@ PYBIND11_MODULE(py_continuous_batching, m) {
         .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline")
-        .def(py::init<const std::string &, const SchedulerConfig&>())
+        .def(py::init([](const std::string& model_path, const SchedulerConfig& config) {
+            ScopedVar env_manager(ov_tokenizers_module_path());
+            return std::make_unique<ContinuousBatchingPipeline>(model_path, config);
+        }))
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
         .def("add_request", &ContinuousBatchingPipeline::add_request)
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
         .def("generate", &ContinuousBatchingPipeline::generate);
-
-    py::class_<Tokenizer, std::shared_ptr<Tokenizer>>(m, "Tokenizer")
-        .def(py::init<const std::string&>())
-        .def("encode", &Tokenizer::encode)
-        .def("decode", &Tokenizer::decode)
-        .def("get_eos_token_id", &Tokenizer::get_eos_token_id);
 }

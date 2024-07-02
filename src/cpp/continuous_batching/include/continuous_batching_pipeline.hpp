@@ -7,7 +7,7 @@
 #include <openvino/openvino.hpp>
 
 #include "scheduler_config.hpp"
-#include "tokenizer.hpp"
+#include "openvino/genai/tokenizer.hpp"
 #include "generation_config.hpp"
 #include "generation_handle.hpp"
 
@@ -30,7 +30,7 @@ public:
                                const std::string& device = "CPU",
                                const ov::AnyMap& plugin_config = {});
 
-    std::shared_ptr<Tokenizer> get_tokenizer();
+    std::shared_ptr<ov::genai::Tokenizer> get_tokenizer();
 
     GenerationConfig get_config() const;
 
