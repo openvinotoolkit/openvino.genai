@@ -526,7 +526,7 @@ jobs:
           | diff ./pred_greedy.txt -
 
   cpp-chat_sample-ubuntu:
-    runs-on: ubuntu-20.04-16-cores
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -551,11 +551,9 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           printf 'What is 2 + 2?\nWhat is the previous answer?\nAdd 1 to it.\nSubtract 5 from it.\nWhy is the sun yellow?\nWhat was my first question?\nStop!\n' > ./input.txt
-          timeout 30s cat input.txt | ./build/samples/cpp/chat_sample/chat_sample ./TinyLlama-1.1B-Chat-v1.0/ > ./pred.txt
+          timeout 30s ./build/samples/cpp/chat_sample/chat_sample ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred.txt
           python -c "
           from transformers import LlamaTokenizer, AutoModelForCausalLM
-          with open('pred.txt', 'r') as file:
-              predictions = file.read()
           model_id = 'TinyLlama/TinyLlama-1.1B-Chat-v1.0'
           tokenizer = LlamaTokenizer.from_pretrained(model_id)
           model = AutoModelForCausalLM.from_pretrained(model_id)
@@ -566,16 +564,19 @@ jobs:
               return {'role': 'assistant', 'content': answer}
           chat_history = []
           chat_prompt = ''
+          output = open('ref.txt', 'w')
           for prompt in prompts:
+              output.write('question:\n')
               chat_history.append(gen_prompt(prompt))
               chat_prompt = tokenizer.apply_chat_template(chat_history, tokenize=False, add_generation_prompt=True)
               tokenized = tokenizer(chat_prompt, return_tensors='pt')
               answer = model.generate(**tokenized, max_length=1000, do_sample=False)
               answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
               chat_history.append(gen_answer(answer_str))
-              idx = predictions.find(answer_str)
-              if -1 == idx:
-                  raise RuntimeError(f'Missing "{answer_str=}" from predictions')
-              predictions = predictions[:idx] + predictions[idx + len(answer_str):]
+              output.write(answer_str)
+              output.write('\n----------\n')
+          output.write('question:\n')
+          output.close()
           "
+          diff pred.txt ref.txt
           echo "Chat sample" passed
