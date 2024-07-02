@@ -109,7 +109,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.m_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           brew install coreutils scons
       - name: Download, convert and build
         run: |
