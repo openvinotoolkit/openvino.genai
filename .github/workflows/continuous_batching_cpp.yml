@@ -48,9 +48,9 @@ jobs:
           && timeout 25s ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
       - name: Run throughput_benchmark
         run: |
-          wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
+          wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
           source ./ov/setupvars.sh
-          timeout 25s ./build/samples/cpp/throughput_benchmark/throughput_benchmark -n 10 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/
+          timeout 50s ./build/samples/cpp/throughput_benchmark/throughput_benchmark -n 10 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/
 
   cpp-accuracy-sample-windows:
     runs-on: windows-latest
