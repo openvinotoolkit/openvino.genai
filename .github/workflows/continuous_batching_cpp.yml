@@ -38,18 +38,19 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON  -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - run: >
-          . ./ov/setupvars.sh
-          && timeout 25s ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 4
-      # - run: >
-      #     . ./ov/setupvars.sh
-      #     && PYTHONPATH=./build/:$PYTHONPATH timeout 25s
-      #     ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
-      # - run: >
-      #     . ./ov/setupvars.sh
-      #     && export PYTHONPATH=./build/:$PYTHONPATH
-      #     && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
-      #     | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
+      - name: Run gtests
+        run: |
+          source ./ov/setupvars.sh
+          ./build/src/cpp/continuous_batching/tests_continuous_batching
+      - name: Run accuracy_sample
+        run: >
+          source ./ov/setupvars.sh
+          && timeout 25s ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
+      - name: Run throughput_benchmark
+        run: |
+          wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
+          source ./ov/setupvars.sh
+          timeout 25s ./build/samples/cpp/throughput_benchmark/throughput_benchmark -n 10 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/
 
   cpp-accuracy-sample-windows:
     runs-on: windows-latest
@@ -78,7 +79,7 @@ jobs:
       - run: >
           set PATH=.\build\openvino_genai\;%PATH%
           && call .\ov\setupvars.bat
-          && .\build\samples\cpp\accuracy_sample\Release\accuracy_sample.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 4
+          && .\build\samples\cpp\accuracy_sample\Release\accuracy_sample.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 5
       # - run: |
       #     echo import transformers > ref.py
       #     echo predictions = open('cpp.txt', 'r').read() >> ref.py
@@ -121,5 +122,5 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON  -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
       - run: >
-          . ./ov/setupvars.sh
-          && ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 4
+          source ./ov/setupvars.sh
+          && ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
