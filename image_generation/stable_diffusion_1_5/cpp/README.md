@@ -32,7 +32,7 @@ conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 git submodule update --init
 # Reactivate Conda environment after installing dependencies and setting env vars
 conda activate openvino_sd_cpp
-python -m pip install -r requirements.txt
+python -m pip install -r ../../requirements.txt
 python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
 ```
 2. Download a huggingface SD v1.5 model like:

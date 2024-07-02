@@ -32,7 +32,7 @@ conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
     ```shell
     git submodule update --init
     conda activate openvino_lcm_cpp
-    python -m pip install -r requirements.txt
+    python -m pip install -r ../../requirements.txt
     python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
     ```
 
