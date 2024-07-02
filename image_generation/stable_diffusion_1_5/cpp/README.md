@@ -1,5 +1,5 @@
 # OpenVINO Stable Diffusion (with LoRA) C++ image generation pipeline
-The pure C++ text-to-image pipeline, driven by the OpenVINO native C++ API for Stable Diffusion v1.5 with LMS Discrete Scheduler, supports both static and dynamic model inference. It includes advanced features like [LoRA](https://huggingface.co/docs/peft/conceptual_guides/lora) integration with [safetensors](https://huggingface.co/docs/safetensors/index#format) and [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers). Loading `openvino_tokenizers` to `ov::Core` enables tokenization. The sample uses [diffusers](../../common/diffusers) for image generation and [imwrite](../../common/imwrite) for saving `.bmp` images. This demo has been tested on Windows and Unix platforms. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/stable-diffusion-text-to-image) which provides an example of image generation in Python.
+The pure C++ text-to-image pipeline, driven by the OpenVINO native C++ API for Stable Diffusion v1.5 with LMS Discrete Scheduler, supports both static and dynamic model inference. It includes advanced features like [LoRA](https://huggingface.co/docs/peft/main/en/conceptual_guides/lora#lora) integration with [safetensors](https://huggingface.co/docs/safetensors/index#format) and [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers). Loading `openvino_tokenizers` to `ov::Core` enables tokenization. The sample uses [diffusers](../../common/diffusers) for image generation and [imwrite](../../common/imwrite) for saving `.bmp` images. This demo has been tested on Windows and Unix platforms. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/stable-diffusion-text-to-image) which provides an example of image generation in Python.
 
 > [!NOTE]
 >This tutorial assumes that the current working directory is `<openvino.genai repo>/image_generation/stable_diffusion_1_5/cpp/` and all paths are relative to this folder.
@@ -52,14 +52,26 @@ python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
 > [!NOTE]
 > Now the pipeline support batch size = 1 only, i.e. static model `(1, 3, 512, 512)`
 
-### LoRA enabling with safetensors
+### (Optional) Enable LoRA Weights with Safetensors
 
-Refer to [python pipeline blog](https://blog.openvino.ai/blog-posts/enable-lora-weights-with-stable-diffusion-controlnet-pipeline).
-The safetensor model is loaded via [safetensors.h](https://github.com/hsnyder/safetensors.h). The layer name and weight are modified with `Eigen` library and inserted into the SD models with `ov::pass::MatcherPass` in the file [common/diffusers/src/lora.cpp](https://github.com/openvinotoolkit/openvino.genai/blob/master/image_generation/common/diffusers/src/lora.cpp).
+Low-Rank Adaptation(LoRA) is a novel technique introduced to deal with the problem of fine-tuning Diffusers and Large Language Models (LLMs). In the case of Stable Diffusion fine-tuning, LoRA can be applied to the cross-attention layers for the image representations with the latent described.
 
-SD model [dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0) and LoRA [soulcard](https://civitai.com/models/67927?modelVersionId=72591) are tested in this pipeline.
+LoRA weights can be enabled for Unet model of Stable Diffusion pipeline to generate images with different styles.
 
-Download and put safetensors and model IR into the models folder.
+#### LoRA Weights Format
+
+In this sample LoRA weights are used in [safetensors]((https://huggingface.co/docs/safetensors/index#format)) format.
+Safetensors is a serialization format developed by Hugging Face that is specifically designed for efficiently storing and loading large tensors. It provides a lightweight and efficient way to serialize tensors, making it easier to store and load machine learning models.
+
+The LoRA safetensors model is loaded via [safetensors.h](https://github.com/hsnyder/safetensors.h). The layer name and weight are modified with `Eigen` library and inserted into the SD models with `ov::pass::MatcherPass` in the file [common/diffusers/src/lora.cpp](https://github.com/openvinotoolkit/openvino.genai/blob/master/image_generation/common/diffusers/src/lora.cpp).
+
+#### Using LoRA Weights
+
+SD model [dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0) and LoRA [soulcard model](https://civitai.com/models/67927?modelVersionId=72591) are tested in this pipeline.
+
+There are various LoRA models on https://civitai.com/tag/lora and on HuggingFace, you can consider to choose your own LoRA model in safetensor format. 
+Download and put LoRA safetensors model into the models directory. When running the built sample provide the path to the LoRA model with `-l, --loraPath arg` argument.
+
 
 ## Step 3: Build the SD application
 
@@ -104,13 +116,13 @@ Positive prompt: cyberpunk cityscape like Tokyo New York  with tall buildings at
 
 Negative prompt: (empty, check the [Notes](#negative-prompt) for details)
 
-Read the numpy latent instead of C++ std lib for the alignment with Python pipeline
+To read the numpy latent instead of C++ std lib for the alignment with Python pipeline, use `-r, --readNPLatent` argument.
 
 * Generate image without lora `./build/stable_diffusion -r`
 
    ![](./without_lora.bmp)
 
-* Generate image with soulcard lora `./build/stable_diffusion -r`
+* Generate image with soulcard lora `./build/stable_diffusion -r -l path/to/soulcard.safetensors`
 
    ![](./soulcard_lora.bmp)
 
@@ -127,7 +139,7 @@ For the generation quality, be careful with the negative prompt and random laten
 Guidance scale controls how similar the generated image will be to the prompt. A higher guidance scale means the model will try to generate an image that follows the prompt more strictly. A lower guidance scale means the model will have more creativity.
 `guidance_scale` is a way to increase the adherence to the conditional signal that guides the generation (text, in this case) as well as overall sample quality. It is also known as [classifier-free guidance](https://arxiv.org/abs/2207.12598).
 
-#### Negative prompt
+#### Negative Prompt
 
 To improve image generation quality, model supports negative prompting. Technically, positive prompt steers the diffusion toward the images associated with it, while negative prompt steers the diffusion away from it. 
 In other words, negative prompt declares undesired concepts for generation image, e.g. if we want to have colorful and bright image, gray scale image will be result which we want to avoid, in this case gray scale can be treated as negative prompt.
@@ -135,3 +147,7 @@ The positive and negative prompt are in equal footing. You can always use one wi
 
 > [!NOTE]
 > Negative prompting is applicable only for high guidance scale (at least > 1).
+
+#### LoRA Weights Enabling
+
+Refer to the [OpenVINO blog](https://blog.openvino.ai/blog-posts/enable-lora-weights-with-stable-diffusion-controlnet-pipeline) to get more information on enabling LoRA weights.
