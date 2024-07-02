@@ -102,9 +102,10 @@ public:
         // setup KV caches
         m_cache_manager = std::make_shared<CacheManager>(device_config);
         for (size_t decoder_layer_id = 0; decoder_layer_id < device_config.get_num_layers(); ++decoder_layer_id) {
-            infer_request.set_input_tensor(2 + decoder_layer_id * 2, m_cache_manager->get_key_cache(decoder_layer_id));
-            infer_request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager->get_value_cache(decoder_layer_id));
+            infer_request.set_input_tensor(get_key_cache_tensor_id_for_decoder_layer(decoder_layer_id), m_cache_manager->get_key_cache(decoder_layer_id));
+            infer_request.set_input_tensor(get_value_cache_tensor_id_for_decoder_layer(decoder_layer_id), m_cache_manager->get_value_cache(decoder_layer_id));
         }
+
 
         SchedulerConfig updated_config = scheduler_config;
         // update KV number in scheduler config
