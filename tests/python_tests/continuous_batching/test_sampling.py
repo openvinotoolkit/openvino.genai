@@ -5,7 +5,8 @@ import pytest
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from openvino_genai.py_continuous_batching import GenerationConfig, ContinuousBatchingPipeline
+from openvino_genai.py_continuous_batching import ContinuousBatchingPipeline
+from openvino_genai import GenerationConfig
 from typing import List
 
 from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, \

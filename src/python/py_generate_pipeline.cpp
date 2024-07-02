@@ -495,6 +495,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
         .def_readwrite("max_length", &GenerationConfig::max_length)
         .def_readwrite("ignore_eos", &GenerationConfig::ignore_eos)
+        .def_readwrite("min_new_tokens", &GenerationConfig::min_new_tokens)
         .def_readwrite("num_beam_groups", &GenerationConfig::num_beam_groups)
         .def_readwrite("num_beams", &GenerationConfig::num_beams)
         .def_readwrite("diversity_penalty", &GenerationConfig::diversity_penalty)
@@ -507,7 +508,10 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("top_k", &GenerationConfig::top_k)
         .def_readwrite("do_sample", &GenerationConfig::do_sample)
         .def_readwrite("repetition_penalty", &GenerationConfig::repetition_penalty)
-        .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id);
+        .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id)
+        .def_readwrite("presence_penalty", &GenerationConfig::presence_penalty)
+        .def_readwrite("frequency_penalty", &GenerationConfig::frequency_penalty)
+        .def_readwrite("rng_seed", &GenerationConfig::rng_seed);
 
     py::class_<DecodedResults>(m, "DecodedResults")
         .def(py::init<>())

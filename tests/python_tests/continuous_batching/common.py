@@ -7,7 +7,8 @@ import pytest
 
 from optimum.intel import OVModelForCausalLM
 from pathlib import Path
-from openvino_genai.py_continuous_batching import ContinuousBatchingPipeline, GenerationConfig, SchedulerConfig, GenerationResult
+from openvino_genai.py_continuous_batching import ContinuousBatchingPipeline, SchedulerConfig, GenerationResult
+from openvino_genai import GenerationConfig
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
 from typing import List, Tuple
@@ -37,7 +38,7 @@ def get_greedy_with_penalties() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_return_sequences = 1
     generation_config.presence_penalty = 2.0
-    generation_config.frequence_penalty = 0.2
+    generation_config.frequency_penalty = 0.2
     generation_config.max_new_tokens = 30
     return generation_config
 
@@ -136,7 +137,7 @@ def get_multinomial_temperature_and_frequence_penalty() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.do_sample = True
     generation_config.temperature = 0.8
-    generation_config.frequence_penalty = 0.5
+    generation_config.frequency_penalty = 0.5
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = 30
     return generation_config
@@ -158,7 +159,7 @@ def get_multinomial_max_and_min_token() -> GenerationConfig:
     multinomial.top_k = 20
     multinomial.num_return_sequences = 3
     multinomial.presence_penalty = 0.01
-    multinomial.frequence_penalty = 0.1
+    multinomial.frequency_penalty = 0.1
     multinomial.min_new_tokens = 15
     multinomial.max_new_tokens = 30
     return multinomial
