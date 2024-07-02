@@ -36,20 +36,18 @@ ov::genai::EncodedResults multinominal_decoding(
 );
 
 EncodedResults beam_search(
-    ov::InferRequest& lm, 
-    ov::Tensor prompts, 
-    ov::Tensor attention_mask, 
+    ov::InferRequest& lm,
+    ov::Tensor prompts,
+    ov::Tensor attention_mask,
     GenerationConfig config
 );
 
 class StatefulLLMPipeline final : public LLMPipelineImplBase {
 public:
     ov::InferRequest m_model_runner;
-    
+
     bool is_chat_conversation = false;
     bool m_is_cache_empty = true;
-    ChatHistory m_history;
-    std::string m_templated_chat_history = "";
 
     StatefulLLMPipeline(
         const ov::InferRequest& request,
@@ -66,7 +64,7 @@ public:
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): 
+    ):
         LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(model_path))
     {
         ov::Core core;
@@ -79,11 +77,11 @@ public:
     }
 
     StatefulLLMPipeline(
-        const std::filesystem::path& model_path, 
-        const std::string& device, 
+        const std::filesystem::path& model_path,
+        const std::string& device,
         const ov::AnyMap& plugin_config
     ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
-    
+
     DecodedResults generate(
         StringInputs inputs,
         OptionalGenerationConfig generation_config,
@@ -96,30 +94,30 @@ public:
             encoded_input = m_tokenizer.encode(*input_vector);
         } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
             std::string& prompt = *input_prompt;
-            
+
             if (is_chat_conversation) {
-                m_history.push_back({{"role", "user"}, {"content", prompt}});
                 constexpr bool add_generation_prompt = true;
-                auto new_templated_chat_history  = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-                
-                prompt = new_templated_chat_history.substr(m_templated_chat_history.size());
-                m_templated_chat_history = new_templated_chat_history;
+                ChatHistory history = {{{"role", "user"}, {"content", prompt}}};
+                prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                // In case it's not the first prompt in chat conversation,
+                // need to append EOS token as this token already presented in KV-cache
+                if (!m_is_cache_empty) {
+                    prompt.insert(0, m_tokenizer.get_eos_token() + "\n");
+                }
             }
-            
+
             encoded_input = m_tokenizer.encode(prompt);
         }
 
         auto encoded_results  = generate(encoded_input, config, streamer);
         DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
-        
+
         if (is_chat_conversation) {
             // Tail of chat template is missing in KV cache.
             // Find the tail to concatenate it with the next input prompt.
             auto answer = decoded_results.texts[0];
-            m_templated_chat_history.append(answer);
-            m_history.push_back({{"role", "assistant"}, {"content", answer}});
         }
-        
+
         return decoded_results;
     }
 
