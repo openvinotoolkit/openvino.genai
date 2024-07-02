@@ -63,6 +63,7 @@ USE_CASES = {
         'decoder',
         't5',
         'falcon',
+        "glm",
         'gpt-',
         'gpt2',
         'aquila',
