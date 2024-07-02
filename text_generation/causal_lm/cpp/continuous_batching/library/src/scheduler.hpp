@@ -285,7 +285,6 @@ private:
 
                 // add information to scheduler_output
                 {
-                    auto request_id = sequence_group->get_request_id();
                     scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
                     scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens_per_seq * num_running_seqs;
 
