@@ -64,16 +64,17 @@ cmake --build build --config Release --parallel
 
 ## Step 4: Run Pipeline
 ```shell
-./build/lcm_dreamshaper [-p <posPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <device>] [-r <readNPLatent>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-t <modelType>]
+./build/lcm_dreamshaper [-p <posPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <device>] [-r <readNPLatent>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-t <modelType>] [--guidanceScale <guidanceScale>] [--dynamic]
 
 Usage:
   lcm_dreamshaper [OPTION...]
 ```
 
-* `-p, --posPrompt arg` Initial positive prompt for LCM (default: a beautiful pink unicorn)
+* `-p, --posPrompt arg` Initial positive prompt for LCM (default: "a beautiful pink unicorn")
 * `-d, --device arg`    AUTO, CPU, or GPU. Doesn't apply to Tokenizer model, OpenVINO Tokenizers can be inferred on a CPU device only (default: CPU)
 * `--step arg`          Number of diffusion step (default: 4)
 * `-s, --seed arg`      Number of random seed to generate latent (default: 42)
+* `--guidanceScale arg` A higher guidance scale value encourages the model to generate images closely linked to the text prompt at the expense of lower image quality (default: 8.0)
 * `--num arg`           Number of image output (default: 1)
 * `--height arg`        Height of output image (default: 512)
 * `--width arg`         Width of output image (default: 512)
@@ -110,3 +111,16 @@ Read the numpy latent input and noise for scheduler instead of C++ std lib for t
 ## Benchmark:
 
 For the generation quality, C++ random generation with MT19937 results is differ from `numpy.random.randn()` and `diffusers.utils.randn_tensor`. Hence, please use `-r, --readNPLatent` for the alignment with Python (this latent file is for output image 512X512 only)
+
+## Notes
+
+#### Guidance Scale
+
+Guidance scale controls how similar the generated image will be to the prompt. A higher guidance scale means the model will try to generate an image that follows the prompt more strictly. A lower guidance scale means the model will have more creativity.
+`guidance_scale` is a way to increase the adherence to the conditional signal that guides the generation (text, in this case) as well as overall sample quality. It is also known as [classifier-free guidance](https://arxiv.org/abs/2207.12598).
+
+#### Negative prompt
+
+Negative prompts don't work with LCM because they don’t have any effect on the denoising process.
+When a LCM is distilled from an LDM via latent consistency distillation (Algorithm 1) with guided distillation, the forward pass of the LCM learns to approximate sampling from the LDM using CFG with the unconditional prompt "" (the empty string). 
+Due to this, LCMs currently do not support negative prompts.
