@@ -82,7 +82,7 @@ public:
     StopCriteria stop_criteria = StopCriteria::HEURISTIC;
     
     // Multinomial
-    float temperature = 0.0f;
+    float temperature = 1.0f;
     float top_p = 1.0f;
     size_t top_k = std::numeric_limits<size_t>::max();
     bool do_sample = false;
