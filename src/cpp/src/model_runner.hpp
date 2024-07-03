@@ -14,13 +14,26 @@
 #include "timer.hpp"
 
 namespace ov::genai {
+using AttentionScoresForCacheOfSubsequence = ov::Tensor;
+using AttentionScoresForEachDecoderLayer = std::vector<AttentionScoresForCacheOfSubsequence>;
+using AttentionScoresForEachSubsequence = std::map<size_t, AttentionScoresForEachDecoderLayer>;
+
+std::string get_paged_attention_score_output_for_decoder_layer(size_t decoder_layer_id) {
+    std::stringstream ss;
+    ss << "paged_attn." << decoder_layer_id << "/score";
+    return ss.str();
+}
+
 class ModelRunner {
     ov::InferRequest m_request;
     SchedulerConfig m_scheduler_config;
+    AttentionScoresForEachSubsequence m_last_attention_scores;
+    size_t m_num_decoder_layers;
 public:
-    ModelRunner(ov::InferRequest request, const SchedulerConfig& scheduler_config) :
+    ModelRunner(ov::InferRequest request, const SchedulerConfig& scheduler_config, size_t num_decoder_layers) :
         m_request(std::move(request)),
-        m_scheduler_config(scheduler_config) { }
+        m_scheduler_config(scheduler_config),
+        m_num_decoder_layers(num_decoder_layers) { }
 
     ov::InferRequest get_infer_request() const {
         return m_request;
@@ -138,8 +151,50 @@ public:
             timer.end();
         }
 
+        m_last_attention_scores.clear();
+        using IndexSpan = std::pair<size_t, size_t>;
+        std::list<std::pair<size_t, IndexSpan>> running_sequence_ids_and_kvcache_spans;
+        size_t offset = 0;
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+            size_t num_blocks = sequence_group->get_num_blocks();
+            size_t sequence_kvcache_size = sequence_group->get_context_len();
+
+
+            for (size_t seq_id = 0; seq_id < running_sequences.size(); ++seq_id) {
+                Sequence::CPtr sequence = running_sequences[seq_id];
+                IndexSpan span = {offset, offset + sequence_kvcache_size - 1};
+                size_t global_sequence_id = sequence->get_id();
+                running_sequence_ids_and_kvcache_spans.push_back(std::make_pair(global_sequence_id, span));
+                offset += sequence_kvcache_size;
+            }
+
+        }
+
+        for (const auto& seq_id_and_score_span : running_sequence_ids_and_kvcache_spans) {
+            auto attention_scores_across_decoder_layers_for_current_sequence = AttentionScoresForEachDecoderLayer(m_num_decoder_layers);
+            size_t global_sequence_id = seq_id_and_score_span.first;
+            IndexSpan span = seq_id_and_score_span.second;
+            std::cout << "VSHAMPOR: global sequence id and index spans: " << '\n';
+            std::cout << "VSHAMPOR: " << seq_id_and_score_span.first << ": [" << seq_id_and_score_span.second.first << ", " << seq_id_and_score_span.second.second << "]\n";
+            for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; decoder_layer_id++) {
+                auto attention_score = m_request.get_tensor(get_paged_attention_score_output_for_decoder_layer(decoder_layer_id));
+                // std::cout << "VSHAMPOR: attention score shape for decoder layer " << decoder_layer_id << " is " << attention_score.get_shape() << '\n';
+                auto scores_for_cache_of_current_sequence = ov::Tensor(attention_score, ov::Coordinate{span.first}, ov::Coordinate{span.second});
+                std::cout << "VSHAMPOR: attention scores for decoder layer " << decoder_layer_id << " are ";
+                for (size_t j = 0; j < scores_for_cache_of_current_sequence.get_size(); j++) {
+                    std::cout << scores_for_cache_of_current_sequence.data<float>()[j] << " ";
+                }
+                std::cout << "\n";
+                attention_scores_across_decoder_layers_for_current_sequence.push_back(scores_for_cache_of_current_sequence);
+            }
+            m_last_attention_scores[global_sequence_id] = attention_scores_across_decoder_layers_for_current_sequence;
+        }
+
         // return logits
-        return m_request.get_output_tensor();
+        return m_request.get_tensor("logits");
     }
 };
 }

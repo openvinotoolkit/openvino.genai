@@ -6,6 +6,7 @@
 #include <memory>
 #include <list>
 #include <map>
+#include <algorithm>
 #include <chrono>
 
 #include "sequence_group.hpp"
@@ -311,7 +312,7 @@ public:
 
         for (size_t i = 0; i < num_blocks; ++i) {
 
-            ov::genai::KVCacheBlock::Ptr block = nullptr; 
+            ov::genai::KVCacheBlock::Ptr block = nullptr;
             if (m_enable_prefix_caching) {
                 num_hashed_tokens += m_block_size;
                 if (num_hashed_tokens > content_length) {
@@ -367,16 +368,28 @@ public:
     void free_sequence_partially(size_t seq_id, size_t block_num) {
 
         auto block_table = m_block_table[seq_id];
-        OPENVINO_ASSERT(block_table.size() >= block_num);
-        for (size_t idx = 0; idx < block_num; idx++) {
+        OPENVINO_ASSERT(block_table.size() >= num_blocks_to_free);
+        for (size_t idx = 0; idx < num_blocks_to_free; idx++) {
             size_t block_idx = m_block_table[seq_id].size() - idx - 1;
             m_allocator.free(block_table[block_idx]);
         } 
-        m_block_table[seq_id].resize(m_block_table[seq_id].size() - block_num);
+        m_block_table[seq_id].resize(m_block_table[seq_id].size() - num_blocks_to_free);
 
         if (m_block_table[seq_id].size() == 0) {
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
         }
+    }
+
+    void free_block_from_sequence(size_t seq_id, size_t logical_block_idx) {
+        auto sequence_blocks = m_block_table[seq_id];
+        size_t block_table_size = sequence_blocks.size();
+
+        OPENVINO_ASSERT(logical_block_idx <= block_table_size,
+                        "cannot free logical block ", logical_block_idx,
+                        "from sequence ", seq_id, " since it only has ", block_table_size, "logical blocks");
+        auto block = sequence_blocks[logical_block_idx];
+        m_allocator.free(block);
+        sequence_blocks.erase(sequence_blocks.begin() + logical_block_idx);
     }
 
     bool can_append_slots(SequenceGroup::CPtr seq_group) {
@@ -487,16 +500,16 @@ public:
 
 
     void _restore_cached_blocks(SequenceGroup::Ptr group, size_t block_size) {
-        auto prompt_ids = group->get_prompt_ids(); 
+        auto prompt_ids = group->get_prompt_ids();
         auto sequences = group->get_not_finished_sequences();
         OPENVINO_ASSERT(sequences.size() == 1);
         auto sequence = sequences[0];
         auto seq_id = sequence->get_id();
         auto& block_table = m_block_table[seq_id];
 
-        size_t content_len = 0;       
+        size_t content_len = 0;
         while (content_len < prompt_ids.size()) {
-            size_t prev_iteration_content_len = content_len; 
+            size_t prev_iteration_content_len = content_len;
             content_len += block_size;
             if (content_len > prompt_ids.size()) {
                 content_len = prompt_ids.size();
@@ -532,7 +545,7 @@ public:
                         break;
                     }
                 }
-                break;                
+                break;
             }
         }
     }

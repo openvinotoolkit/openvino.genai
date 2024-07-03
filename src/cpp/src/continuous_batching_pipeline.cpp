@@ -30,6 +30,8 @@ class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
 
+
+
     // TODO (mzegla): GenerationConfig is request specific object
     // and pipeline only uses default rng_seed. 
     ov::genai::GenerationConfig m_generation_config;
@@ -115,9 +117,10 @@ public:
 
         m_scheduler = std::make_shared<Scheduler>(updated_config);
         // and finally create model runner
-        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
+        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers());
         m_sampler = std::make_shared<Sampler>();
         m_sampler->set_seed(m_generation_config.rng_seed);
+
 
         // read default generation config
     }
@@ -209,6 +212,11 @@ public:
                 }
                 m_perf.m_infer_total_ms += current_time;
             }
+        }
+
+        // evict unimportant blocks from KV cache, if requested
+        if (m_generation_config.use_cache_eviction) {
+
         }
 
         SamplerOutput sampler_output;
