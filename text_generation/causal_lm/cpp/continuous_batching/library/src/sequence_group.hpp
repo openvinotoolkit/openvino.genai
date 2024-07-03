@@ -266,6 +266,17 @@ public:
         return running_seqs;
     }
 
+    std::vector<Sequence::Ptr> get_not_finished_sequences() {
+        std::vector<Sequence::Ptr> running_seqs;
+        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
+            if (!m_sequences[seq_id]->has_finished()) {
+                running_seqs.emplace_back(m_sequences[seq_id]);
+            }
+        }
+
+        return running_seqs;
+    }
+
     std::vector<Sequence::CPtr> get_running_sequences() const {
         std::vector<Sequence::CPtr> running_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
