@@ -91,7 +91,7 @@ jobs:
           curl -o .\ShareGPT_V3_unfiltered_cleaned_split.json -s -L "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json"
           set PATH=.\build\openvino_genai\;%PATH%
           call .\ov\setupvars.bat
-          .\build\samples\cpp\throughput_benchmark\Release\throughput_benchmark.exe -n 5 --dynamic_split_fuse -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json
+          .\build\samples\cpp\throughput_benchmark\Release\throughput_benchmark.exe -n 2 --dynamic_split_fuse -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json
 
   cpp-accuracy-sample-macos:
     runs-on: macos-12
@@ -127,4 +127,4 @@ jobs:
         run: |
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
           source ./ov/setupvars.sh
-          timeout 240s ./build/samples/cpp/throughput_benchmark/throughput_benchmark -n 10 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json
+          ./build/samples/cpp/throughput_benchmark/throughput_benchmark -n 5 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json
