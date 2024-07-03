@@ -26,7 +26,7 @@ configs = [
 
 quenstions = [
     '1+1=',
-    'What was the previous answer?',
+    'What is the previous answer?',
     'Why is the Sun yellow?',
     'What was my first question?'
 ]
@@ -72,11 +72,13 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
         print(f'ov_output: {chat_history_ov}')
     assert chat_history_ov == chat_history_hf
 
+
 @pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
-def test_chat_compare_with_HF_txt(model_descr, generation_config: Dict):
+def test_chat_compare_text_history_with_HF(model_descr, generation_config: Dict):
+    # compares with HF when history in ov_genai is save as a text
     device = 'CPU'
     chat_history_hf = []
     chat_history_ov = []
@@ -111,7 +113,6 @@ def test_chat_compare_with_HF_txt(model_descr, generation_config: Dict):
     assert chat_history_ov == chat_history_hf
 
 
-
 @pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
@@ -130,16 +131,15 @@ def test_chat_compare_statefull_vs_text_history(model_descr, generation_config: 
     openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
     pipe = ov_genai.LLMPipeline(str(path), device, config={"ENABLE_MMAP": False})
-    
     pipe_with_kv_cache = ov_genai.LLMPipeline(str(path), device, config={"ENABLE_MMAP": False})
-
+    
     pipe_with_kv_cache.start_chat()
     for question in quenstions:
         chat_history_with_kv_cache.append({'role': 'user', 'content': question})
-        chat_history_ov.append({'role': 'user', 'content': question})
         answer = pipe_with_kv_cache.generate(question, **generation_config)
         chat_history_with_kv_cache.append({'role': 'assistant', 'content': answer})
         
+        chat_history_ov.append({'role': 'user', 'content': question})
         prompt = pipe.get_tokenizer().apply_chat_template(chat_history_ov, add_generation_prompt=True)
         answer = pipe.generate(prompt, **generation_config)
         chat_history_ov.append({'role': 'assistant', 'content': answer})
