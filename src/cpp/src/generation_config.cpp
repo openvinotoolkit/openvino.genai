@@ -125,5 +125,40 @@ void GenerationConfig::validate() const {
                     "Either 'eos_token_id', or 'max_new_tokens', or 'max_length' should be defined.");
 }
 
+GenerationConfig beam_search() {
+    GenerationConfig beam_search_config;
+    beam_search_config.num_beams = 4;
+    beam_search_config.num_return_sequences = 3;
+    beam_search_config.num_beam_groups = 2;
+    beam_search_config.max_new_tokens = 100;
+    beam_search_config.diversity_penalty = 2.0f;
+    return beam_search_config;
+}
+
+GenerationConfig greedy() {
+    GenerationConfig greedy_config;
+    greedy_config.temperature = 0.0f;
+    greedy_config.ignore_eos = true;
+    greedy_config.num_return_sequences = 1;
+    greedy_config.repetition_penalty = 3.0f;
+    greedy_config.presence_penalty = 0.1f;
+    greedy_config.frequency_penalty = 0.01f;
+    greedy_config.max_new_tokens = 30;
+    return greedy_config;
+}
+
+GenerationConfig multinomial() {
+    GenerationConfig multinomial_config;
+    multinomial_config.do_sample = true;
+    multinomial_config.temperature = 0.9f;
+    multinomial_config.top_p = 0.9f;
+    multinomial_config.top_k = 20;
+    multinomial_config.num_return_sequences = 3;
+    multinomial_config.presence_penalty = 0.01f;
+    multinomial_config.frequency_penalty = 0.1f;
+    multinomial_config.min_new_tokens = 15;
+    multinomial_config.max_new_tokens = 30;
+    return multinomial_config;
+}
 }  // namespace genai
 }  // namespace ov
