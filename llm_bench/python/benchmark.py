@@ -73,7 +73,7 @@ def gen_iterate_data(
     return iter_data
 
 
-def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_index, bench_hook, model_precision, proc_id):
+def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_index, bench_hook, model_precision, proc_id):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
@@ -150,8 +150,10 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         if args["output_dir"] is not None:
             utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
         result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
-    if num == 0:
-        warmup_md5[prompt_index] = result_md5_list
+    if len(md5_list[num]) == 0:
+        md5_list[num] = {prompt_index : result_md5_list}
+    else:
+        md5_list[num][prompt_index] = result_md5_list
     per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
     tm_list = []
     tm_infer_list = []
@@ -190,10 +192,18 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         batch_size=args['batch_size']
     )
     if num > 0:
-        warmup_md5_list = warmup_md5[prompt_index]
-        if result_md5_list != warmup_md5_list:
-            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} is different from warm-up's md5 {warmup_md5_list}")
+        prev_md5 = md5_list[num - 1][prompt_index]
+        if result_md5_list != prev_md5:
+            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
+                        f"is different from md5 of the {num - 1} iteration {prev_md5}")
             utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+            if num == 1:
+                # if the device is CPU, throw exception
+                if args['devices'].lower().startswith('cpu') is True:
+                    assert (result_md5_list == prev_md5)
+            else:
+                # throw exception
+                assert (result_md5_list == prev_md5)
     else:
         utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
     if bench_hook is not None:
@@ -201,7 +211,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         bench_hook.clear_time_infer_list()
 
 
-def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_index, streamer, model_precision, proc_id):
+def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_index, streamer, model_precision, proc_id):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
@@ -254,8 +264,10 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         if args["output_dir"] is not None:
             utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
         result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
-    if num == 0:
-        warmup_md5[prompt_index] = result_md5_list
+    if len(md5_list[num]) == 0:
+        md5_list[num] = {prompt_index : result_md5_list}
+    else:
+        md5_list[num][prompt_index] = result_md5_list
     per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
     tm_list = streamer.get_time_list()
     log.debug('latency of all tokens:')
@@ -286,10 +298,18 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         batch_size=args['batch_size']
     )
     if num > 0:
-        warmup_md5_list = warmup_md5[prompt_index]
-        if result_md5_list != warmup_md5_list:
-            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} is different from warm-up's md5 {warmup_md5_list}")
+        prev_md5 = md5_list[num - 1][prompt_index]
+        if result_md5_list != prev_md5:
+            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
+                        f"is different from md5 of the {num - 1} iteration {prev_md5}")
             utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+            if num == 1:
+                # if the device is CPU, throw exception
+                if args['devices'].lower().startswith('cpu') is True:
+                    assert (result_md5_list == prev_md5)
+            else:
+                # throw exception
+                assert (result_md5_list == prev_md5)
     else:
         utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
     streamer.reset()
@@ -299,9 +319,8 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
     model_precision = utils.model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
-    warmup_md5 = {}
+    md5_list = {num : {} for num in range(num_iters + 1)}
     input_text_list = utils.model_utils.get_prompts(args)
-    text_gen_fn = run_text_generation if not use_genai else run_text_generation_genai
     if args['prompt_index'] is None:
         prompt_idx_list = [prompt_idx for prompt_idx, input_text in enumerate(input_text_list)]
         text_list = input_text_list
@@ -325,13 +344,13 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
             for idx, input_text in enumerate(text_list):
                 if num == 0:
                     log.info(f'[warm-up] Input text: {input_text}')
-                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx_list[idx], bench_hook, model_precision, proc_id)
+                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_idx_list[idx], bench_hook, model_precision, proc_id)
     else:
         for idx, input_text in enumerate(text_list):
             for num in range(num_iters + 1):
                 if num == 0:
                     log.info(f'[warm-up] Input text: {input_text}')
-                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, warmup_md5, prompt_idx_list[idx], bench_hook, model_precision, proc_id)
+                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_idx_list[idx], bench_hook, model_precision, proc_id)
 
     utils.metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time
