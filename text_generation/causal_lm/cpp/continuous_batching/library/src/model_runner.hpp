@@ -18,7 +18,7 @@ class ModelRunner {
     SchedulerConfig m_scheduler_config;
 public:
     ModelRunner(ov::InferRequest request, const SchedulerConfig& scheduler_config) :
-        m_request(request),
+        m_request(std::move(request)),
         m_scheduler_config(scheduler_config) { }
 
     ov::InferRequest get_infer_request() const {

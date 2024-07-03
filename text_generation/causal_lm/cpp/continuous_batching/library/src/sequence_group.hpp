@@ -359,7 +359,7 @@ public:
     }
 
     Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
-        m_sequences.emplace_back(Sequence::fork(sequence, m_next_sequence_id++));
+        m_sequences.emplace_back(Sequence::fork(std::move(sequence), m_next_sequence_id++));
         return m_sequences.back();
     }
 
@@ -455,7 +455,7 @@ public:
                 }
 
                 if (outputs.size()) {
-                    m_generation_stream->push(outputs);
+                    m_generation_stream->push(std::move(outputs));
                 }
             }
         // For greedy or multinomial sampling we decide whever to stream partial results depending on the user parameter
@@ -469,7 +469,7 @@ public:
                     const auto last_gen_token = sequence->get_last_generation_output();
                     outputs.emplace(sequence->get_grouped_id(), last_gen_token);
                 }
-                m_generation_stream->push(outputs);
+                m_generation_stream->push(std::move(outputs));
             } else if (has_finished()) {
                 std::vector<Sequence::CPtr> finished_sequences = get_finished_sequences();
 
@@ -482,7 +482,7 @@ public:
                 }
 
                 if (outputs.size()) {
-                    m_generation_stream->push(outputs);
+                    m_generation_stream->push(std::move(outputs));
                 }
             }
         }

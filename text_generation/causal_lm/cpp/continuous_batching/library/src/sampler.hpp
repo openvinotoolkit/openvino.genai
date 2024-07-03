@@ -96,7 +96,7 @@ struct Beam {
     float m_score = -std::numeric_limits<float>::infinity();
 
     Beam(Sequence::Ptr sequence)
-        : m_sequence(sequence) { }
+        : m_sequence(std::move(sequence)) { }
 
     size_t get_generated_len() const {
         return m_sequence->get_generated_len();

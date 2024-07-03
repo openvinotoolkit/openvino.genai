@@ -61,11 +61,11 @@ Tokenizer::Tokenizer(const std::string& models_path) {
 }
 
 ov::Tensor Tokenizer::encode(std::string prompt) {
-    return m_impl->encode(prompt);
+    return m_impl->encode(std::move(prompt));
 }
 
 std::string Tokenizer::decode(std::vector<int64_t> tokens) {
-    return m_impl->decode(tokens);
+    return m_impl->decode(std::move(tokens));
 }
 
 size_t Tokenizer::get_eos_token_id() const {

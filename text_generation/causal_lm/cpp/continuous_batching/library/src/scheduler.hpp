@@ -120,7 +120,7 @@ private:
                 // no blocks are allocated for this sequence, so it can't be preempted
                 return false;
             }
-            auto block_table = m_block_manager.get_block_table(seq_id);
+            const auto& block_table = m_block_manager.get_block_table(seq_id);
             size_t required_blocks = blocks_needed - total_num_released_blocks;
             if (required_blocks >= block_table.size()) {
                 // fully drop a sequence(s) from block_manager

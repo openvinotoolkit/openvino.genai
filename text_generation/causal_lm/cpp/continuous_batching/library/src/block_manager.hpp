@@ -172,7 +172,7 @@ public:
     }
 
     bool can_append_slots(SequenceGroup::CPtr seq_group) {
-        return required_blocks_count(seq_group) <= m_allocator.num_free_blocks();
+        return required_blocks_count(std::move(seq_group)) <= m_allocator.num_free_blocks();
     }
 
     size_t required_blocks_count(SequenceGroup::CPtr seq_group) {
@@ -250,7 +250,7 @@ public:
                     // write information about block forking for later usage in CacheManager
                     copy_blocks_map[last_block->get_index()].push_back(new_block->get_index());
                     // release `last_block` usage
-                    m_allocator.free(last_block);
+                    m_allocator.free(std::move(last_block));
                 } else {
                     // nothing to do, because we are the only users of this block
                 }

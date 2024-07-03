@@ -115,7 +115,7 @@ public:
         return m_tokenizer;
     }
 
-    GenerationHandle add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
+    GenerationHandle add_request(uint64_t request_id, const std::string& prompt, GenerationConfig sampling_params) {
         sampling_params.set_eos_token_id(m_tokenizer->get_eos_token_id());
         sampling_params.validate();
 
@@ -233,7 +233,7 @@ public:
         return !m_awaiting_requests.empty() || !m_requests.empty();
     }
 
-    std::vector<GenerationResult> generate(const std::vector<std::string> prompts, std::vector<GenerationConfig> sampling_params) {
+    std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, const std::vector<GenerationConfig>& sampling_params) {
         OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
         OPENVINO_ASSERT(prompts.size() == sampling_params.size());
 
@@ -293,8 +293,8 @@ PipelineMetrics ContinuousBatchingPipeline::get_metrics() const{
     return m_impl->get_metrics();
 }
 
-GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
-    return m_impl->add_request(request_id, prompt, sampling_params);
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, GenerationConfig sampling_params) {
+    return m_impl->add_request(request_id, prompt, std::move(sampling_params));
 }
 
 void ContinuousBatchingPipeline::step() {
@@ -305,6 +305,6 @@ bool ContinuousBatchingPipeline::has_non_finished_requests() {
     return m_impl->has_non_finished_requests();
 }
 
-std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, std::vector<GenerationConfig> sampling_params) {
+std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, const std::vector<GenerationConfig>& sampling_params) {
     return m_impl->generate(prompts, sampling_params);
 }
