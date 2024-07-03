@@ -69,6 +69,7 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
 
     size_t batch_offset = batch_idx * seq_len * vocab_size, sequence_offset = (seq_len - 1) * vocab_size;
     const float* beam_logits = logits.data<const float>() + batch_offset + sequence_offset;
+    // TODO: std::max_element can be suboptimal here
     float max_logit = *std::max_element(beam_logits, beam_logits + vocab_size);
     float log_sum = std::log(std::accumulate(
         beam_logits, beam_logits + vocab_size, 0.0f, [max_logit](float accumulated, float to_add) {
@@ -197,48 +198,41 @@ public:
 
 class Sampler {
 
-    void _get_logit_vector(ov::Tensor& logits, std::vector<Token>& logit_vector, size_t batch_idx = 1) {
+    float* _get_logit_array(ov::Tensor& logits, size_t batch_idx = 1) {
         ov::Shape logits_shape = logits.get_shape();
         size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
         OPENVINO_ASSERT(batch_idx <= batch_size);
         size_t batch_offset = batch_idx * seq_len * vocab_size;
         size_t sequence_offset = (seq_len - 1) * vocab_size;
-        const float* logits_data = logits.data<const float>() + batch_offset + sequence_offset;
-
-        //std::vector<Token> logit_vector(vocab_size);
-        static ManualTimer timer("sample::_get_logit_vector::token_assignment_loop");
-        timer.start();
-        for (size_t i = 0; i < logit_vector.size(); i++) {
-            logit_vector[i] = Token(logits_data[i], i);
-        }
-        timer.end();
-        //return logit_vector;
+        float* logits_array = logits.data<float>() + batch_offset + sequence_offset;
+        return logits_array;
     }
 
 
-    Token _greedy_sample(const std::vector<Token>& logit_vector) const {
-        //auto out_token = std::max_element(logit_vector.begin(), logit_vector.end(), [](const Token& lhs, const Token& rhs) { return lhs.m_log_prob < rhs.m_log_prob; });
+    Token _greedy_sample(LogitTransformWrapper& logits) const {
         float max_val = 0.0;
         int max_token_index = 0;
-        for (int i = 0; i < logit_vector.size(); i++){
-            if(logit_vector[i].m_log_prob > max_val) {
-                max_val = logit_vector[i].m_log_prob;
+        for (int i = 0; i < logits.m_effective_size; i++) {
+            if(logits.m_logit_data[i] > max_val) {
+                max_val = logits.m_logit_data[i];
                 max_token_index = i;
             }
         }
-        return logit_vector[max_token_index];
-        //return *out_token;
+        return Token(logits.m_logit_data[max_token_index], max_token_index);
     }
 
-    std::vector<Token> _multinomial_sample(const std::vector<Token>& logit_vector, size_t num_tokens_per_sequence) {
-        std::vector<float> multinomial_weights(logit_vector.size());
-        for (size_t i = 0; i < logit_vector.size(); i++) multinomial_weights[i] = logit_vector[i].m_log_prob;
+    std::vector<Token> _multinomial_sample(LogitTransformWrapper& logits, size_t num_tokens_per_sequence) {
+        // TODO: Copying values to new vector is suboptimal - think about a zero-copy way for multinomal sampling. 
+        std::vector<float> multinomial_weights(logits.m_effective_size);
+        for (size_t i = 0; i < logits.m_effective_size; i++) {
+            multinomial_weights[i] = logits.get_logit_at_position(i);
+        }
 
         auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
         std::vector<Token> out_tokens;
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
             size_t element_to_pick = dist(rng_engine);
-            out_tokens.push_back(logit_vector[element_to_pick]);
+            out_tokens.push_back(logits.get_token_at_position(element_to_pick));
         }
         return out_tokens;
     }
@@ -298,25 +292,25 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                     timerx.start();
                     ov::Shape logits_shape = logits.get_shape();
                     size_t vocab_size = logits_shape[2];
-                    std::vector<Token> logit_vector(vocab_size);
-                    _get_logit_vector(sequence_group_logits, logit_vector, running_sequence_id);
+                    float* logit_array = _get_logit_array(sequence_group_logits, running_sequence_id);
+                    LogitTransformWrapper logits(logit_array, vocab_size);
                     timerx.end();
                     static ManualTimer timery("sample::logit_processor.apply");
                     timery.start();
-                    logit_processor.apply(logit_vector);
+                    logit_processor.apply(logits);
                     timery.end();
 
                     Token sampled_token_id;
                     if (sampling_params.is_greedy_sampling()) {
                         static ManualTimer timer("sample::_greedy_sample");
                         timer.start();
-                        sampled_token_id = _greedy_sample(logit_vector);
+                        sampled_token_id = _greedy_sample(logits);
                         timer.end();
                     } else {
                         // is_multinomial()
                         const bool is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
                         const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
-                        auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence);
+                        auto sampled_token_ids = _multinomial_sample(logits, num_tokens_per_sequence);
                         sampled_token_id = sampled_token_ids[0];
 
                         if (is_generate_n_tokens) {

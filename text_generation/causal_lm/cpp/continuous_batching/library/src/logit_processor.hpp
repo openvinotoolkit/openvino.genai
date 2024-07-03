@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 
 #include "generation_config.hpp"
 #include "timer.hpp"
@@ -17,12 +18,62 @@ struct Token {
     Token() = default;
 };
 
+struct LogitTransformWrapper {
+    // Orignal logits buffer
+    float * m_logit_data;
+    // Tokens considered 
+    size_t m_effective_size;
+    // Vector with post transforation positioning information.
+    // Initialized only when needed. If there's no need for manipulating logits array we use
+    // original buffer to avoid unnecessary copying and sorting.
+    std::unique_ptr<std::vector<Token>> m_tokens = nullptr;
+
+    LogitTransformWrapper(float* logit_data, size_t effective_size): m_logit_data(logit_data), m_effective_size(effective_size) {}
+
+    size_t get_effective_size() { return m_effective_size; }
+
+    void set_effective_size(size_t size) {
+        m_effective_size = size;
+        if (m_tokens)
+            m_tokens->resize(size);
+    }
+
+    Token get_token_at_position(size_t position) const {
+        if (m_tokens)
+            return m_tokens->at(position);
+        else
+            return Token(m_logit_data[position], position);
+    }
+
+    float get_logit_at_position(size_t position) const {
+        if (m_tokens)
+            return m_tokens->at(position).m_log_prob;
+        else
+            return m_logit_data[position];
+    }
+
+    // Creates vector of Tokens sorted in order of decreasing log_prob
+    // Only first call is effective since there's no need to sort with every transformation
+    void initialize_tokens_vector() {
+        if (m_tokens == nullptr) {
+            m_tokens = std::make_unique<std::vector<Token>>();
+            m_tokens->reserve(get_effective_size());
+
+            for (int i = 0; i < get_effective_size(); i++) {
+                m_tokens->push_back(Token(m_logit_data[i], i));
+            }
+
+            std::sort(m_tokens->begin(), m_tokens->end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+        }
+    }
+};
+
 namespace LogitTransformers {
 using TokenIds = std::vector<int64_t>;
 
 class ILogitTransformer {
 public:
-    virtual void apply(std::vector<Token>& input_logits) = 0;
+    virtual void apply(LogitTransformWrapper& logits) = 0;
 
     virtual bool is_applicable(size_t generated_tokens_cnt = 0) {
         return true;
@@ -33,18 +84,16 @@ class TopPFilter : public ILogitTransformer {
 public:
     TopPFilter(double top_p) : m_top_p(top_p) {}
 
-    void apply(std::vector<Token>& input_probs) override {
-        //std::vector<Token> tmp(input_probs);
-        std::sort(input_probs.begin(), input_probs.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+    void apply(LogitTransformWrapper& logits) override {
+        logits.initialize_tokens_vector();
         float probability_sum = 0.0f;
         size_t nucleus_size = 0;
-        for (const auto& probability : input_probs) {
-            probability_sum += probability.m_log_prob;
+        for (int i = 0; i < logits.get_effective_size(); i++) {
+            probability_sum += logits.get_logit_at_position(i);
             nucleus_size += 1;
             if (probability_sum > m_top_p) break;
         }
-        input_probs.resize(nucleus_size);
-        //return input_probs;
+        logits.set_effective_size(nucleus_size);
     }
 
 protected:
@@ -55,12 +104,10 @@ class TopKFilter : public ILogitTransformer {
 public:
     TopKFilter(size_t top_k) : m_top_k(top_k) {}
 
-    void apply(std::vector<Token>& input_probs) override {
-        //std::vector<Token> tmp(input_probs);
-        std::sort(input_probs.begin(), input_probs.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
-        size_t top_k = input_probs.size() >= m_top_k ? m_top_k : input_probs.size();
-        input_probs.resize(top_k);
-        //return input_probs;
+    void apply(LogitTransformWrapper& logits) override {
+        logits.initialize_tokens_vector();
+        size_t top_k = logits.get_effective_size() >= m_top_k ? m_top_k : logits.get_effective_size();
+        logits.set_effective_size(top_k);
     }
 
 protected:
@@ -71,20 +118,28 @@ class TemperatureLogitTransform : public ILogitTransformer {
 public:
     TemperatureLogitTransform(double temperature) : m_temperature(temperature) {};
 
-    void apply(std::vector<Token>& input_logits) override {
-        //std::vector<Token> output(input_logits.begin(), input_logits.end());
-        std::sort(input_logits.begin(), input_logits.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
-        float max_logit = input_logits[0].m_log_prob;
-
-        std::for_each(input_logits.begin(), input_logits.end(), [max_logit, this](Token& val) {val.m_log_prob = expf((val.m_log_prob - max_logit) / this->m_temperature);});
-
-        float norm_sum = 0.0;
-        for (const auto& val : input_logits) {
-            norm_sum += val.m_log_prob;
+    void apply(LogitTransformWrapper& logits) override {
+        float max_logit = 0.0;
+        int max_index = 0;
+        for (int i = 0; i < logits.get_effective_size(); i++) {
+            if(logits.m_logit_data[i] > max_logit) {
+                max_logit = logits.m_logit_data[i];
+                max_index = i;
+            }
         }
 
-        std::for_each(input_logits.begin(), input_logits.end(), [norm_sum](Token& val) {val.m_log_prob /= norm_sum;});
-        //return output;
+        for (int i = 0; i < logits.get_effective_size(); i++) {
+            logits.m_logit_data[i] = expf((logits.m_logit_data[i] - max_logit) / this->m_temperature);
+        }
+
+        float norm_sum = 0.0;
+        for (int i = 0; i < logits.get_effective_size(); i++) {
+            norm_sum += logits.m_logit_data[i];
+        }
+
+        for (int i = 0; i < logits.get_effective_size(); i++) {
+            logits.m_logit_data[i] /= norm_sum;
+        }
     }
 
 protected:
@@ -125,37 +180,35 @@ public:
         m_penalty = repetition_penalty;
     };
 
-    void apply(std::vector<Token>& input_logits) override {
-        //std::vector<Token> output(input_logits.begin(), input_logits.end());
-        size_t vocab_size = input_logits.size();
+    void apply(LogitTransformWrapper& logits) override {
+        //std::vector<Token> output(logits.m_logit_data.begin(), logits.m_logit_data.end());
+        size_t vocab_size = logits.get_effective_size();
         for (const auto& prompt_id : *m_unique_prompt_token_ids) {
             OPENVINO_ASSERT((prompt_id >= 0) && (prompt_id < vocab_size), "input_ids token out of bounds");
-            OPENVINO_ASSERT(input_logits[prompt_id].m_index == prompt_id, "input_logits must have original index order");
-            auto logit_value = input_logits[prompt_id].m_log_prob;
-            if (logit_value >= 0) {
-                input_logits[prompt_id].m_log_prob /= m_penalty;
+            //OPENVINO_ASSERT(logits.m_logit_data[prompt_id].m_index == prompt_id, "logits.m_logit_data must have original index order");
+            if (logits.m_logit_data[prompt_id] >= 0) {
+                logits.m_logit_data[prompt_id] /= m_penalty;
             } else {
-                input_logits[prompt_id].m_log_prob *= m_penalty;
+                logits.m_logit_data[prompt_id] *= m_penalty;
             };
         }
         for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
-            OPENVINO_ASSERT(input_logits[input_id].m_index == input_id, "input_logits must have original index order");
-            auto logit_value = input_logits[input_id].m_log_prob;
-            if (logit_value >= 0) {
-                input_logits[input_id].m_log_prob /= m_penalty;
+            //OPENVINO_ASSERT(logits.m_logit_data[input_id].m_index == input_id, "logits.m_logit_data must have original index order");
+            if (logits.m_logit_data[input_id] >= 0) {
+                logits.m_logit_data[input_id] /= m_penalty;
             } else {
-                input_logits[input_id].m_log_prob *= m_penalty;
+                logits.m_logit_data[input_id] *= m_penalty;
             };
         }
         // return output;
     }
 
-    void apply(std::vector<Token>& input_logits, const TokenIds& input_ids) {
+    void apply(LogitTransformWrapper& logits, const TokenIds& input_ids) {
         set_unique_prompt_token_ids(nullptr);
         extract_generated_tokens(input_ids);
-        apply(input_logits);
+        apply(logits);
     }
 
     void set_unique_prompt_token_ids(const std::shared_ptr<std::set<int64_t>>& unique_prompt_token_ids) {
@@ -175,14 +228,13 @@ public:
     EOSPenaltyTransform(size_t eos_token_id, size_t min_generated_tokens) : 
         m_eos_token_id(eos_token_id), m_applicable_tensor_len(min_generated_tokens) {}
 
-    void apply(std::vector<Token>& input_logits) {
-        // std::vector<Token> output(input_logits.begin(), input_logits.end());
-        for (auto& token_id : input_logits) {
-            if (token_id.m_index == m_eos_token_id) {
-                token_id.m_log_prob = 0.f;
+    void apply(LogitTransformWrapper& logits) {
+        for (int i = 0; i < logits.get_effective_size(); i++) {
+            // This does not look right
+            if (i == m_eos_token_id) {
+                logits.m_logit_data[i] = 0.f;
             }
         }
-        // return output;
     }
     
 
@@ -201,26 +253,23 @@ public:
         m_penalty = value;
     };
 
-    void apply(std::vector<Token>& input_logits) override {
-        //std::vector<Token> output(input_logits.begin(), input_logits.end());
-        size_t vocab_size = input_logits.size();
+    void apply(LogitTransformWrapper& logits) override {
+        size_t vocab_size = logits.get_effective_size();
         for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
-            OPENVINO_ASSERT(input_logits[input_id].m_index == input_id, "input_logits must have original index order");
-            auto logit_value = input_logits[input_id].m_log_prob;
-            if (logit_value >= 0) {
-                input_logits[input_id].m_log_prob -= m_penalty * input_id_pair.second;
+            //OPENVINO_ASSERT(logits.m_logit_data[input_id].m_index == input_id, "logits.m_logit_data must have original index order");
+            if (logits.m_logit_data[input_id] >= 0) {
+                logits.m_logit_data[input_id] -= m_penalty * input_id_pair.second;
             } else {
-                input_logits[input_id].m_log_prob += m_penalty * input_id_pair.second;
+                logits.m_logit_data[input_id] += m_penalty * input_id_pair.second;
             };
         }
-        //return output;
     }
 
-    void apply(std::vector<Token>& input_logits, const TokenIds& input_ids) {
+    void apply(LogitTransformWrapper& logits, const TokenIds& input_ids) {
         extract_generated_tokens(input_ids);
-        apply(input_logits);
+        apply(logits);
     }
 };
 
@@ -230,26 +279,23 @@ public:
         m_penalty = value;
     };
 
-    void apply(std::vector<Token>& input_logits) override {
-        //std::vector<Token> output(input_logits.begin(), input_logits.end());
-        size_t vocab_size = input_logits.size();
+    void apply(LogitTransformWrapper& logits) override {
+        size_t vocab_size = logits.get_effective_size();
         for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
-            OPENVINO_ASSERT(input_logits[input_id].m_index == input_id, "input_logits must have original index order");
-            auto logit_value = input_logits[input_id].m_log_prob;
-            if (logit_value >= 0) {
-                input_logits[input_id].m_log_prob -= m_penalty;
+            // OPENVINO_ASSERT(logits.m_logit_data[input_id].m_index == input_id, "logits.m_logit_data must have original index order");
+            if (logits.m_logit_data[input_id] >= 0) {
+                logits.m_logit_data[input_id] -= m_penalty;
             } else {
-                input_logits[input_id].m_log_prob += m_penalty;
+                logits.m_logit_data[input_id] += m_penalty;
             };
         }
-        //return output;
     }
 
-    void apply(std::vector<Token>& input_logits, const TokenIds& input_ids) {
+    void apply(LogitTransformWrapper& logits, const TokenIds& input_ids) {
         extract_generated_tokens(input_ids);
-        apply(input_logits);
+        apply(logits);
     }
 };
 
@@ -258,12 +304,15 @@ class ProbabilityNormalizeTransform : public ILogitTransformer {
 public:
     ProbabilityNormalizeTransform() = default;
 
-    void apply(std::vector<Token>& input_probs) override {
-        //std::vector<Token> output(input_probs);
+    void apply(LogitTransformWrapper& logits) override {
         float norm_sum = 0.0;
-        for (const auto& val : input_probs) norm_sum += val.m_log_prob;
-        for (auto& val : input_probs) val.m_log_prob /= norm_sum;
-        //return output;
+        for (int i = 0; i < logits.get_effective_size(); i++) {
+            norm_sum += logits.m_logit_data[i];
+        }
+
+        for (int i = 0; i < logits.get_effective_size(); i++) {
+            logits.m_logit_data[i] /= norm_sum;
+        }
     }
 };
 
@@ -314,19 +363,20 @@ public:
 
             if (sampling_params.is_multinomial()) {
                 m_logit_transformers.emplace_back(new LogitTransformers::TemperatureLogitTransform(sampling_params.temperature));
+                
                 if (sampling_params.top_p != 0.0f) {
                     m_logit_transformers.emplace_back(new LogitTransformers::TopPFilter(sampling_params.top_p));
                 }
                 if (sampling_params.top_k > 0) {
                     m_logit_transformers.emplace_back(new LogitTransformers::TopKFilter(sampling_params.top_k));
                 }
+                
                 m_logit_transformers.emplace_back(new LogitTransformers::ProbabilityNormalizeTransform());
             }
         }
     }
 
-    void apply(std::vector<Token>& logits) {
-        //std::vector<Token> outputs(logits.begin(), logits.end());
+    void apply(LogitTransformWrapper& logits) {
         static ManualTimer timer("logit_processor::apply (no copy)");
         timer.start();
         for (const auto& transformer : m_logit_transformers) {
@@ -335,7 +385,6 @@ public:
             }
         }
         timer.end();
-        //return outputs;
     }
 
     void increment_gen_tokens() {
