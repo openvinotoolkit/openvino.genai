@@ -382,7 +382,6 @@ std::pair<EncodedResults, std::optional<int32_t>> beam_search(ov::InferRequest& 
         lm.set_tensor("position_ids", *position_ids);
 
     ov::Tensor beam_idx = ov::Tensor(ov::element::i32, {batch_size});
-
     auto beam_data = beam_idx.data<int32_t>();
     if (selected_beam_idx.has_value())
         beam_data[0] = *selected_beam_idx;
@@ -408,7 +407,10 @@ std::pair<EncodedResults, std::optional<int32_t>> beam_search(ov::InferRequest& 
         lm.infer();
 
         std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(lm.get_tensor("logits"));
-        if (next_tokens.empty()) {
+        if (next_tokens.empty() || length_count == parameters.max_new_tokens - 1) {
+            // Break the cycle right after we got next tokens but before masks are extended.
+            // If generation will be contined with kept KV caches, 
+            // attention_mask lenght should be equal to the number of processed tokens.
             break;
         }
         

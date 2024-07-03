@@ -20,14 +20,14 @@ from ov_genai_test_utils import (
 
 configs = [
     dict(max_new_tokens=100),
-    # dict(num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=100, diversity_penalty=1.0)
+    dict(num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=100, diversity_penalty=1.0)
 ]
 
 
 quenstions = [
     '1+1=',
     'What was the previous answer?',
-    'Why is the sun yellow?',
+    'Why is the Sun yellow?',
     'What was my first question?'
 ]
 
@@ -37,28 +37,18 @@ quenstions = [
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
 def test_chat_compare_with_HF(model_descr, generation_config: Dict):
-    config = generation_config.copy()  # to avoid side effects
-    
-    if 'do_sample' not in config:
-        # Some HF models have default do_sample = True, and if we set beam search generation config 
-        # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
-        # Need to set exlicitly to False, but only if test arguments omitted this arg.
-        # Do not apply 'repetition_penalty' if sampling is not used.
-        config['do_sample'] = False
-        config['repetition_penalty'] = None
-    
-    config_hf = config.copy()
-    if config_hf.get('stop_criteria'):
-        config_hf['early_stopping'] = stop_criteria_map()[config_hf.pop('stop_criteria')]
-    config_hf.pop('ignore_eos', None)
-
+    device = 'CPU'
     chat_history_hf = []
     chat_history_ov = []
     chat_prompt = ''
     model_id, path, tokenizer, model_opt, pipe = read_model(model_descr)
+
+    # HF in chat scenario does not add special tokens, but openvino tokenizer by default is converted with add_special_tokens=True.
+    # Since To match need to regenerate openvino_tokenizer/detokenizer.
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
+    pipe = ov_genai.LLMPipeline(str(path), device, config={"ENABLE_MMAP": False})
 
     pipe.start_chat()    
     for prompt in quenstions:
@@ -68,15 +58,53 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
         chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
         tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
         
-        answer = model_opt.generate(**tokenized, **config_hf)
+        answer = model_opt.generate(**tokenized, **generation_config, do_sample=False, repetition_penalty = None)
         answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
         chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
-        answer_ov = pipe.generate(prompt, **config)
+        answer_ov = pipe.generate(prompt, **generation_config)
         chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
 
     pipe.finish_chat()
     
+    if chat_history_ov != chat_history_hf:
+        print(f'hf_output: {chat_history_hf}')
+        print(f'ov_output: {chat_history_ov}')
+    assert chat_history_ov == chat_history_hf
+
+@pytest.mark.parametrize("generation_config", configs)
+@pytest.mark.parametrize("model_descr", get_chat_models_list())
+@pytest.mark.precommit
+@pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
+def test_chat_compare_with_HF_txt(model_descr, generation_config: Dict):
+    device = 'CPU'
+    chat_history_hf = []
+    chat_history_ov = []
+    chat_prompt = ''
+    model_id, path, tokenizer, model_opt, pipe = read_model(model_descr)
+
+    # HF in chat scenario does not add special tokens, but openvino tokenizer by default is converted with add_special_tokens=True.
+    # Since To match need to regenerate openvino_tokenizer/detokenizer.
+    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
+    openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
+    openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
+    pipe = ov_genai.LLMPipeline(str(path), device, config={"ENABLE_MMAP": False})
+    
+    for prompt in quenstions:
+        chat_history_hf.append({'role': 'user', 'content': prompt})
+        chat_history_ov.append({'role': 'user', 'content': prompt})
+        
+        chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
+        tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
+        
+        answer = model_opt.generate(**tokenized, **generation_config, do_sample=False, repetition_penalty = None)
+        answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
+        chat_history_hf.append({'role': 'assistant', 'content': answer_str})
+        
+        chat_prompt = pipe.get_tokenizer().apply_chat_template(chat_history_ov, add_generation_prompt=True)
+        answer_ov = pipe.generate(chat_prompt, **generation_config)
+        chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
+  
     if chat_history_ov != chat_history_hf:
         print(f'hf_output: {chat_history_hf}')
         print(f'ov_output: {chat_history_ov}')
@@ -96,11 +124,13 @@ def test_chat_compare_statefull_vs_text_history(model_descr, generation_config: 
     chat_history_ov = []
     model_id, path, tokenizer, model_opt, pipe = read_model(model_descr)
 
+    # HF in chat scenario does not add special tokens, but openvino tokenizer by default is converted with add_special_tokens=True.
+    # Since To match need to regenerate openvino_tokenizer/detokenizer.
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
-    
     pipe = ov_genai.LLMPipeline(str(path), device, config={"ENABLE_MMAP": False})
+    
     pipe_with_kv_cache = ov_genai.LLMPipeline(str(path), device, config={"ENABLE_MMAP": False})
 
     pipe_with_kv_cache.start_chat()
@@ -122,15 +152,13 @@ def test_chat_compare_statefull_vs_text_history(model_descr, generation_config: 
 
 
 conversation = [
-    # {'role': 'system', 'content': 'You are a friendly bot.'},
     {'role': 'user', 'content': '1+1='},
     {'role': 'assistant', 'content': '1 + 1 = 2'},
     {'role': 'user', 'content': 'What is the previous answer?'},
-    {'role': 'assistant', 'content': 'The previous answer was: 1 + 1 = 2'},
+    {'role': 'assistant', 'content': 'The previous answer was: 1 + 1 = 2. \n Please ask me your next question.'},
     {'role': 'user', 'content': 'Why is the sun yellow?'},
     {'role': 'assistant', 'content': 'Because it emits yeloow light.'},
     {'role': 'user', 'content': 'What was my first question?'},
-    {'role': 'assistant', 'content': "I don't remember such difficult questions.\n Ask something different"},
 ]
 @pytest.mark.precommit
 @pytest.mark.parametrize('chat_config', get_chat_templates())
@@ -145,7 +173,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
         add_generation_prompt=False, 
         tokenize=False,
         **tokenizer_config)
-
+    
     tok = load_tok([(tokenizer_config, "tokenizer_config.json")], model_tmp_path[1])
     full_history_str = tok.apply_chat_template(conversation, add_generation_prompt=False)
     if full_history_str != full_history_str_hf:

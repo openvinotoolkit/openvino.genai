@@ -182,7 +182,8 @@ public:
             kv_cache_len = atten_mask_history.get_shape()[1];
 
             ov::Tensor new_atten_mask =  ov::Tensor{ov::element::i64, {batch_size, kv_cache_len + prompt_len}};
-            std::copy(atten_mask_history.data<int64_t>(), atten_mask_history.data<int64_t>() + kv_cache_len,
+            auto start_atten_hst = atten_mask_history.data<int64_t>() + kv_cache_len * (*m_selected_beam);
+            std::copy(start_atten_hst, start_atten_hst + kv_cache_len,
                     new_atten_mask.data<int64_t>());
             std::copy(attention_mask.data<int64_t>(), attention_mask.data<int64_t>() + prompt_len,
                     new_atten_mask.data<int64_t>() + kv_cache_len);
@@ -222,13 +223,21 @@ public:
         return result;
     }
 
-    void start_chat() override {
+    void start_chat(std::string system_message) override {
         is_chat_conversation = true;
         m_selected_beam  = std::nullopt;
         if (!m_is_cache_empty) {
             m_model_runner.reset_state();
             m_is_cache_empty = true;
+            m_history = {};
+            m_templated_chat_history = "";
         }
+        if (system_message.empty())
+            return;
+
+        m_history.push_back({{"role", "system"}, {"content", system_message}});
+        constexpr bool add_generation_prompt = false;
+        m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
     }
 
     void finish_chat() override {
@@ -237,6 +246,8 @@ public:
         if (!m_is_cache_empty) {
             m_model_runner.reset_state();
             m_is_cache_empty = true;
+            m_history = {};
+            m_templated_chat_history = "";
         }
     }
 };
@@ -332,8 +343,8 @@ ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {
     return m_pimpl->m_tokenizer;
 }
 
-void ov::genai::LLMPipeline::start_chat() {
-    m_pimpl->start_chat();
+void ov::genai::LLMPipeline::start_chat(std::string system_message) {
+    m_pimpl->start_chat(system_message);
 }
 
 void ov::genai::LLMPipeline::finish_chat() {

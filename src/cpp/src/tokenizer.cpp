@@ -332,7 +332,7 @@ public:
         auto chat_tpl = chat_template.empty() ? m_chat_template : chat_template;
         // Jinja2Cpp does not support slicing, e.g. [1:].
         // In templates slicing is used typically in the header to find system prompt.
-        // If header containt that typical expression we update template and 
+        // If header containts that typical expression we update template and 
         // extract system message manually from ChatHistory.
         std::string header_with_slice = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}";
         std::string replacement_string = "{% if false %}{% set placeholder = false %}";
@@ -347,7 +347,10 @@ public:
                 history.erase(history.begin());
             }
         }
-
+        
+        // Jinja2Cpp accepts system_message only as a string and incorrectly handles it as a bool.
+        // Both this patters are found frequently in chat templates, replace so that jinja2cpp 
+        // will not stumble on them.
         std::pair<std::string, std::string> replace_str_map[] = {
             {"{% set system_message = false %}", ""},
             {"system_message != false", "true"},
@@ -386,8 +389,7 @@ public:
         
         try {
             return tpl.RenderAsString(params).value();
-        } catch (const std::exception& error) {
-            // todo: specify exception
+        } catch (const std::bad_alloc& error) {
             OPENVINO_THROW("Chat template for the current model is not supported by Jinja2Cpp. "
                            "Please apply template manually to your prompt before calling generate. "
                            "For exmaple: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");

@@ -93,6 +93,7 @@ def get_chat_templates():
         "AliAbdelrasheed/maqa_llama_4bit",
         "stephenlzc/Mistral-7B-v0.3-Chinese-Chat-uncensored",
 
+        # TODO: Need to support chat templates in more models: CVS-145963
         # Either ov_genai is unable to parse chat_template or results do not match with HF.
         "meta-llama/Meta-Llama-3-8B-Instruct",
         "databricks/dbrx-instruct",
