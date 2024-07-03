@@ -23,6 +23,9 @@ project(OpenVINOGenAI
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX)
 
+option(ENABLE_CONTINUOUS_BATCHING "" OFF)
+option(ENABLE_APPS "Enable C++ continuous batching apps. Ignored if ENABLE_CONTINUOUS_BATCHING is OFF" ON)
+
 # Find OpenVINODeveloperPackage first to compile with SDL flags
 find_package(OpenVINODeveloperPackage QUIET
              PATHS "${OpenVINO_DIR}")
@@ -35,8 +38,6 @@ include(cmake/features.cmake)
 add_subdirectory(thirdparty)
 add_subdirectory(src)
 add_subdirectory(samples)
-
-add_subdirectory(text_generation/causal_lm/cpp/continuous_batching)
 
 install(FILES LICENSE DESTINATION licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
 install(FILES third-party-programs.txt DESTINATION licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)

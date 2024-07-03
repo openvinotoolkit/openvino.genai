@@ -3,7 +3,6 @@
 
 import pytest
 from dataclasses import dataclass
-from py_continuous_batching import GenerationConfig, GenerationResult
 from typing import List
 
 from common import get_model_and_tokenizer, save_ov_model_from_optimum, generate_and_compare_with_reference_text, \

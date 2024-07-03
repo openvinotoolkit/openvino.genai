@@ -19,6 +19,11 @@ from .py_generate_pipeline import (
     StreamerBase, 
     StopCriteria
 )
+try:
+    from . import py_continuous_batching
+    continuous_batching = ["py_continuous_batching"]
+except ImportError:
+    continuous_batching = []
 
 __all__ = [
     'LLMPipeline', 
@@ -29,4 +34,4 @@ __all__ = [
     'EncodedResults',
     'StreamerBase', 
     'StopCriteria'
-]
+] + continuous_batching

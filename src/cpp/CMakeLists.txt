@@ -113,3 +113,7 @@ write_basic_package_version_file("${CMAKE_BINARY_DIR}/OpenVINOGenAIConfigVersion
 install(FILES "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfig.cmake" "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfigVersion.cmake"
         DESTINATION runtime/cmake COMPONENT core_genai_dev)
 export(EXPORT OpenVINOGenAITargets FILE "${CMAKE_BINARY_DIR}/OpenVINOGenAITargets.cmake" NAMESPACE openvino::)
+
+if(ENABLE_CONTINUOUS_BATCHING)
+    add_subdirectory(continuous_batching)
+endif()

@@ -11,14 +11,14 @@
 #include "model_runner.hpp"
 #include "scheduler.hpp"
 #include "timer.hpp"
-#include "tokenizer.hpp"
+#include "openvino/genai/tokenizer.hpp"
 
 #include "debug_utils.hpp"
 
 void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
 
 class ContinuousBatchingPipeline::Impl {
-    std::shared_ptr<Tokenizer> m_tokenizer;
+    std::shared_ptr<ov::genai::Tokenizer> m_tokenizer;
     std::shared_ptr<Scheduler> m_scheduler;
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
@@ -70,7 +70,7 @@ class ContinuousBatchingPipeline::Impl {
 public:
     Impl(const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string device, const ov::AnyMap& plugin_config) {
         ov::Core core;
-        m_tokenizer = std::make_shared<Tokenizer>(models_path);
+        m_tokenizer = std::make_shared<ov::genai::Tokenizer>(models_path);
 
         // The model can be compiled for GPU as well
         std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
@@ -111,7 +111,7 @@ public:
         return m_pipeline_metrics;
     }
 
-    std::shared_ptr<Tokenizer> get_tokenizer() {
+    std::shared_ptr<ov::genai::Tokenizer> get_tokenizer() {
         return m_tokenizer;
     }
 
@@ -123,7 +123,7 @@ public:
         {
             static ManualTimer timer("tokenize");
             timer.start();
-            input_ids = m_tokenizer->encode(prompt);
+            input_ids = m_tokenizer->encode(prompt).input_ids;
             timer.end();
         }
 
@@ -281,7 +281,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::string& model
     m_impl = std::make_shared<Impl>(models_path, scheduler_config, device, plugin_config);
 }
 
-std::shared_ptr<Tokenizer> ContinuousBatchingPipeline::get_tokenizer() {
+std::shared_ptr<ov::genai::Tokenizer> ContinuousBatchingPipeline::get_tokenizer() {
     return m_impl->get_tokenizer();
 }
 
