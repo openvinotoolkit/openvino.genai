@@ -294,7 +294,7 @@ def get_models_list(file_name: str):
 
 
 def compare_results(hf_result: GenerationResult, ov_result: GenerationResult, generation_config: GenerationConfig):
-    if generation_config.is_beam_search:
+    if generation_config.is_beam_search():
         assert len(hf_result.m_scores) == len(ov_result.m_scores)
         for hf_score, ov_score in zip(hf_result.m_scores, ov_result.m_scores):
             # Note, that for fp32 / fp16 models scores are different less than 0.001
