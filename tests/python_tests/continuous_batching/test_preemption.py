@@ -5,6 +5,7 @@ import pytest
 from dataclasses import dataclass
 from typing import List
 
+from openvino_genai.py_continuous_batching import GenerationConfig
 from common import get_model_and_tokenizer, save_ov_model_from_optimum, generate_and_compare_with_reference_text, \
     DEFAULT_SCHEDULER_CONFIG, get_scheduler_config, run_test_pipeline, get_models_list, get_beam_search, get_greedy, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
@@ -81,22 +82,21 @@ multinomial_params_n_seq = RandomSamplingTestStruct(generation_config=[
             ],
     ref_texts=[
         [
-            "\nI've seen this expression used too many times without making sense.\nAs an AI engineer, and as a scientist, we should all be looking"
+            "\nI've seen this expression used too many times without making sense.\nAs an AI engineer, and as a scientist, we should make everything easier"
         ],
         [
             ' significance of 3862?\n3829\nWhat is the greatest common divisor of 15 and 7763?\n9\nCalculate the',
-            ' third derivative of 939*v**3*r**2 + 133*v**3*r**2 + v**3 - 77*',
-            " climate in the future?  Do we have things to catch on fire, and if so does that mean we'll have a new climate before we have"
+            ' third derivative of 939*v**3*r**2 + 133*v**3*r**2 + v**3 - 16*',
+            " climate in the future?  Do we have things to catch on fire, and if so does that mean we'll have a new climate change or is"
         ],
         [
-            "\nIt's in the middle of nowhere if you haven’t seen one yet! It might be more convenient there than anywhere else 😊 we",
-            '\nUAE is a country with some great culture that has been living under Islamic oppression for almost 60 years now (including 20 years before) so no',
-            "\nI don't know anything.  I'm not sure what kind this sub wants though... but apparently they are pretty bad at taking selfies too..",
-            '\nNope, just wanted to say how awesome and beautiful it was when my brother came back from an adventure trip across Asia - very much alive on'
+            "\nIt's in the middle of nowhere if you haven’t seen one yet! It might be more convenient there than anywhere else.. maybe take",
+            '\nUAE is a country with some great culture that has been living under Islamic oppression for almost 60 years now (including 20 years as part of Arab',
+            '\nNope, just wanted to say how awesome and beautiful it was when my brother came back from an adventure trip across Asia - our 2nd year',
+            '\nI don\'t know anything.  I\'m not sure what kind this sub wants though... but apparently they are pretty bad at making videos/photos'
         ],
     ])
 
-@pytest.mark.skip(reason="should be fixed by support of n seqs in preemption")
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
 def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
