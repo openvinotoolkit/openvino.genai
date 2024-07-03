@@ -23,6 +23,7 @@ from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, 
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
+@pytest.mark.xfail(reason='CPU: head size must be multiple of 16, current: 8', raises=RuntimeError, strict=True)
 def test_sampling_precommit(tmp_path, model_id):
     run_test_pipeline(tmp_path, model_id)
 
