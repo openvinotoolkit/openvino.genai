@@ -50,7 +50,7 @@ jobs:
         run: |
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
           source ./ov/setupvars.sh
-          timeout 120s ./build/samples/cpp/throughput_benchmark/throughput_benchmark -n 10 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/
+          timeout 120s ./build/samples/cpp/throughput_benchmark/throughput_benchmark -n 10 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/ -dataset ./ShareGPT_V3_unfiltered_cleaned_split.json
 
   cpp-accuracy-sample-windows:
     runs-on: windows-latest
@@ -76,28 +76,22 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - run: >
+      - name: Run gtests
+        run: |
           set PATH=.\build\openvino_genai\;%PATH%
-          && call .\ov\setupvars.bat
-          && .\build\samples\cpp\accuracy_sample\Release\accuracy_sample.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 5
-      # - run: |
-      #     echo import transformers > ref.py
-      #     echo predictions = open('cpp.txt', 'r').read() >> ref.py
-      #     echo tokenizer = transformers.AutoTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0', trust_remote_code=True) >> ref.py
-      #     echo tokenized = tokenizer('69', return_tensors='pt') >> ref.py
-      #     echo for beam in transformers.AutoModelForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0', trust_remote_code=True).generate(**tokenized, max_new_tokens=100, do_sample=False): >> ref.py
-      #     echo     ref = tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True) >> ref.py
-      #     echo     idx = predictions.find(ref) >> ref.py
-      #     echo     if -1 == idx: >> ref.py
-      #     echo         raise RuntimeError(f'Missing "{ref=}" from predictions') >> ref.py
-      #     echo     predictions = predictions[:idx] + predictions[idx + len(ref):] >> ref.py
-      # - run: python ref.py
-      # - run: >
-      #     set PATH=.\build\openvino_genai\;%PATH%
-      #     && set "PYTHONPATH=./build/"
-      #     && call .\ov\setupvars.bat
-      #     && python samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
-      # - run: fc .\cpp.txt .\py.txt
+          call .\ov\setupvars.bat
+          .build\src\cpp\continuous_batching\Release\tests_continuous_batching.exe
+      - name: Run accuracy_sample
+        run: |
+          set PATH=.\build\openvino_genai\;%PATH%
+          call .\ov\setupvars.bat
+          .\build\samples\cpp\accuracy_sample\Release\accuracy_sample.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 5
+      - name: Run throughput_benchmark
+        run: |
+          curl -o .\ShareGPT_V3_unfiltered_cleaned_split.json -s -L "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json"
+          set PATH=.\build\openvino_genai\;%PATH%
+          call .\ov\setupvars.bat
+          .\build\samples\cpp\throughput_benchmark\Release\throughput_benchmark.exe -n 10 --dynamic_split_fuse -m .\TinyLlama-1.1B-Chat-v1.0\ -dataset .\ShareGPT_V3_unfiltered_cleaned_split.json
 
   cpp-accuracy-sample-macos:
     runs-on: macos-12
@@ -121,6 +115,16 @@ jobs:
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
           cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON  -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - run: >
+      - name: Run gtests
+        run: |
           source ./ov/setupvars.sh
-          && ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
+          ./build/src/cpp/continuous_batching/tests_continuous_batching
+      - name: Run accuracy_sample
+        run: >
+          source ./ov/setupvars.sh
+          && timeout 25s ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
+      - name: Run throughput_benchmark
+        run: |
+          wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
+          source ./ov/setupvars.sh
+          timeout 120s ./build/samples/cpp/throughput_benchmark/throughput_benchmark -n 10 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/ -dataset ./ShareGPT_V3_unfiltered_cleaned_split.json
