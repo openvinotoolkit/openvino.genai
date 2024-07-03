@@ -110,18 +110,6 @@ public:
         return m_block_table[seq_id];
     }
 
-    const size_t get_number_of_blocks_occupied_by_last_tokens(SequenceGroup::Ptr sequence_group) {
-        auto num_running_sequences = sequence_group->num_running_seqs();
-        std::set<size_t> indices;
-        for (size_t s = 0; s < num_running_sequences; ++s) {
-            auto seq_id = (*sequence_group)[s]->get_id();
-            OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
-            auto block_table = m_block_table[seq_id];
-            indices.insert(block_table.back()->get_index());
-        }
-        return indices.size();
-    }
-
     const size_t free_rightest_blocks(SequenceGroup::Ptr sequence_group) {
         size_t blocks_released = 0;
         auto running_sequences = sequence_group->get_not_finished_sequences();
@@ -149,8 +137,6 @@ public:
             phisical_blocks_released += released_count;
         }
         phisical_blocks_released = phisical_blocks_released;
-
-        
         return num_required_blocks <= phisical_blocks_released;
     }
 
@@ -192,7 +178,6 @@ public:
                 indices.insert(last_idx);
                 num_blocks += block_table.size();
             }
-
         }
         return num_blocks;
     }
