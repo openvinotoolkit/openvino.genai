@@ -12,6 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  l_ov_centos_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/l_openvino_toolkit_centos7_2024.3.0.dev20240626_x86_64.tgz
   l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240626_x86_64.tgz
   w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/w_openvino_toolkit_windows_2024.3.0.dev20240626_x86_64.zip
   m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/m_openvino_toolkit_macos_12_6_2024.3.0.dev20240626_x86_64.tgz
@@ -52,6 +53,31 @@ jobs:
           source ./ov/setupvars.sh
           timeout 150s ./build/samples/cpp/throughput_benchmark/throughput_benchmark -n 10 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json
 
+  continuous_batching_python_lib_ubuntu:
+    # A tokenizers' dependency fails to compile on ubuntu-20 n CenOS7 env.
+    runs-on: ubuntu-22.04
+    env:
+      # A tokenizers' dependency fails to compile with Ninja in CenOS7 env.
+      CMAKE_GENERATOR: Unix Makefiles
+      CMAKE_BUILD_PARALLEL_LEVEL: null
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - run: mkdir ./ov/
+      # Install CentOS7 instead of Ubuntu to match PyPI distribution ABI.
+      - run: curl ${{ env.l_ov_centos_link }} | tar --directory ./ov/ --strip-components 1 -xz
+      - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -DENABLE_PYTHON=ON -S ./ -B ./build/
+      - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
+      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/continuous_batching/test_sampling.py -m precommit
+      - run: source ./ov/setupvars.sh && python -m pip install .
+      - run: python -m pytest ./tests/python_tests/continuous_batching/test_sampling.py -m precommit
+
   cpp-accuracy-sample-windows:
     runs-on: windows-latest
     defaults:
@@ -86,12 +112,6 @@ jobs:
           set PATH=.\build\openvino_genai\;%PATH%
           call .\ov\setupvars.bat
           .\build\samples\cpp\accuracy_sample\Release\accuracy_sample.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 5
-      - name: Run throughput_benchmark
-        run: |
-          curl -o .\ShareGPT_V3_unfiltered_cleaned_split.json -s -L "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json"
-          set PATH=.\build\openvino_genai\;%PATH%
-          call .\ov\setupvars.bat
-          .\build\samples\cpp\throughput_benchmark\Release\throughput_benchmark.exe -n 2 --dynamic_split_fuse -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json
 
   cpp-accuracy-sample-macos:
     runs-on: macos-12
