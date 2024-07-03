@@ -1449,6 +1449,11 @@ def main():
         action="store_true",
         help="Apply AWQ algorithm during compression",
     )
+    compression_group.add_argument(
+        "--scale_estimation",
+        action="store_true",
+        help="Apply scale estimation algorithm during compression",
+    )
     add_stateful_model_arguments(parser)
 
     args = parser.parse_args()
