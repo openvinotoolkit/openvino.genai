@@ -137,7 +137,7 @@ OptionalGenerationConfig update_config_from_kwargs(const OptionalGenerationConfi
         } else if (key == "repetition_penalty") {
             res_config.repetition_penalty = py::cast<float>(item.second);
         } else if (key == "eos_token_id") {
-            res_config.eos_token_id = py::cast<int>(item.second);
+            res_config.set_eos_token_id(py::cast<int>(item.second));
         } else {
             throw(std::invalid_argument("'" + key + "' is incorrect GenerationConfig parameter name. "
                                         "Use help(openvino_genai.GenerationConfig) to get list of acceptable parameters."));
@@ -512,6 +512,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("presence_penalty", &GenerationConfig::presence_penalty)
         .def_readwrite("frequency_penalty", &GenerationConfig::frequency_penalty)
         .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
+        .def("set_eos_token_id", &GenerationConfig::set_eos_token_id)
         .def("is_beam_search", &GenerationConfig::is_beam_search);
 
     py::class_<DecodedResults>(m, "DecodedResults")

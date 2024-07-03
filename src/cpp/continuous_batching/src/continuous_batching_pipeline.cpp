@@ -116,7 +116,7 @@ public:
     }
 
     GenerationHandle add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params) {
-        sampling_params.eos_token_id = m_tokenizer->get_eos_token_id();
+        sampling_params.set_eos_token_id(m_tokenizer->get_eos_token_id());
         sampling_params.validate();
 
         ov::Tensor input_ids;

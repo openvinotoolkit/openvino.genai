@@ -94,6 +94,10 @@ public:
     // EOS special token
     int64_t eos_token_id = -1;
 
+    /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
+     * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
+     */
+    void set_eos_token_id(size_t tokenizer_eos_token_id);
     size_t get_max_new_tokens(size_t prompt_length = 0) const;
     bool is_greedy_decoding() const;
     bool is_beam_search() const;
