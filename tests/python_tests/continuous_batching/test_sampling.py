@@ -19,9 +19,13 @@ from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, 
     get_multinomial_temperature_and_frequence_penalty, get_multinomial_temperature_and_presence_penalty, \
     generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty, get_scheduler_config
 
-
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
+@pytest.mark.xfail(
+    raises=RuntimeError,
+    reason="Test fails with error: CPU: head size must be multiple of 16, current: X. CVS-145986.",
+    strict=False,
+)
 def test_sampling_precommit(tmp_path, model_id):
     run_test_pipeline(tmp_path, model_id)
 
@@ -163,6 +167,7 @@ RANDOM_SAMPLING_TEST_CASES = [
              "greedy_with_penalties",
              "multinomial_max_and_min_token"])
 def test_individual_generation_configs_random(tmp_path, test_struct: RandomSamplingTestStruct):
+
     generation_config = test_struct.generation_config
 
     prompts = test_struct.prompts
