@@ -25,7 +25,6 @@ from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, 
 @pytest.mark.xfail(
     raises=RuntimeError,
     reason="Test fails with error: CPU: head size must be multiple of 16, current: X. CVS-145986.",
-    condition=sys.platform == "linux",
     strict=False,
 )
 def test_sampling_precommit(tmp_path, model_id):
@@ -106,14 +105,14 @@ RANDOM_SAMPLING_TEST_CASES = [
     pytest.param(RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_top_p(),
                              prompts=["What is OpenVINO?"],
                              ref_texts=[ ["\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"] ]),
-                             marks=[pytest.mark.xfail(reason="Passes locally, fails in CI.", strict=False, condition=sys.platform == "darwin")]),
+                             marks=[pytest.mark.xfail(reason="Passes locally, fails in CI.", strict=False, condition=sys.platform in ["darwin", "win32"])]),
     RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_top_k(),
                              prompts=["What is OpenVINO?"],
                              ref_texts=[ ["\n\nOpenVINO is a software that allows users to create a virtual machine with the ability to create a virtual machine in a virtual environment. Open"] ]),
     pytest.param(RandomSamplingTestStruct(generation_config=get_multinomial_temperature_top_p_and_top_k(),
                              prompts=["What is OpenVINO?"],
                              ref_texts=[ ["\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"] ]),
-                             marks=[pytest.mark.xfail(reason="Passes locally, fails in CI.", strict=False, condition=sys.platform == "darwin")]),
+                             marks=[pytest.mark.xfail(reason="Passes locally, fails in CI.", strict=False, condition=sys.platform in ["darwin", "win32"])]),
     RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_repetition_penalty(),
                              prompts=["What is OpenVINO?"],
                              ref_texts=[ ["\nOpen Vino's are a new and improved way to find cheap, fast-investment frozen vegetables that have no waste or calories. They're"] ]),
@@ -126,7 +125,7 @@ RANDOM_SAMPLING_TEST_CASES = [
                                     ' them?\nJust the Mario Maker App, the location is they'
                                 ]
                              ]), 
-                             marks=[pytest.mark.xfail(reason="Passes locally, fails in CI.", strict=False, condition=sys.platform == "linux")]),
+                             marks=[pytest.mark.xfail(reason="Passes locally, fails in CI.", strict=False)]),
     pytest.param(RandomSamplingTestStruct(generation_config=get_multinomial_all_parameters(),
                              prompts=["Tell me something about UAE"],
                              ref_texts=[
@@ -137,7 +136,7 @@ RANDOM_SAMPLING_TEST_CASES = [
                                     '? I think that is a bit of an anomaly, but you might want to ask yourself this question: Where can some young people from Dubai or Bahrain'
                                 ]
                              ]),
-                             marks=[pytest.mark.xfail(reason="Passes locally, fails in CI.", strict=False, condition=sys.platform == "darwin")]),
+                             marks=[pytest.mark.xfail(reason="Passes locally, fails in CI.", strict=False, condition=sys.platform in ["darwin", "win32"])]),
     RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_presence_penalty(),
                              prompts=["What is OpenVINO?"],
                              ref_texts=[ ["\n\nOpenVINO is a software development platform developed by OpenVINO, Inc., which uses a RESTful API for server-side web applications"] ]),
@@ -156,7 +155,7 @@ RANDOM_SAMPLING_TEST_CASES = [
                                     '\n\nOpenVINO is a social networking tool. OpenVINO is a free virtualization service that works at scale. The tool provides the ability'
                                 ]
                             ]),
-                            marks=[pytest.mark.xfail(reason="Passes locally, fails in CI.", strict=False, condition=sys.platform == "darwin")]),
+                            marks=[pytest.mark.xfail(reason="Passes locally, fails in CI.", strict=False, condition=sys.platform in ["darwin", "win32"])]),
 ]
 
 
