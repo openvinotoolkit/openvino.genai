@@ -1,4 +1,4 @@
---extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly/
+--extra-index-url https://download.pytorch.org/whl/cpu
 optimum[openvino]==1.20.0
 pytest
 # requirements for specific models
