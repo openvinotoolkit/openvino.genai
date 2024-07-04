@@ -14,7 +14,6 @@
 #include "timer.hpp"
 #include "debug_utils.hpp"
 
-using namespace std;
 void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
 
 class ContinuousBatchingPipeline::Impl {

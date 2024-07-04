@@ -9,8 +9,7 @@
 
 #include "openvino/genai/scheduler_config.hpp"
 
-using namespace ov::genai;
-
+namespace ov::genai {
 class DeviceConfig {
     ov::element::Type m_kv_cache_type;
     ov::Shape m_key_cache_shape, m_value_cache_shape;
@@ -89,3 +88,4 @@ public:
         return m_num_kv_blocks;
     }
 };
+}

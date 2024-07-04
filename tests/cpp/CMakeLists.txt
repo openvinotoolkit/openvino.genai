@@ -8,4 +8,4 @@ set(TEST_TARGET_NAME "tests_continuous_batching")
 add_executable(${TEST_TARGET_NAME} scheduler.cpp block_manager.cpp logit_filtering.cpp cache_manager.cpp generate_config.cpp)
 target_link_libraries(${TEST_TARGET_NAME} PUBLIC openvino::genai gtest_main)
 target_include_directories(${TEST_TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/"
-                                          PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
