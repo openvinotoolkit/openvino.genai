@@ -14,6 +14,24 @@
 #include "utils.hpp"
 #include "text_callback_streamer.hpp"
 
+namespace {
+
+ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& fisrt, const ov::genai::TokenizedInputs& second){
+    auto first_size = fisrt.input_ids.get_size();
+    auto second_size = second.input_ids.get_size();
+    ov::Shape new_shape{1, first_size - second_size};
+
+    ov::Tensor new_input_ids(ov::element::i64, new_shape);
+    auto data_ptr = fisrt.input_ids.data<int64_t>();
+    std::copy(data_ptr + second_size, data_ptr + first_size, new_input_ids.data<int64_t>());
+
+    ov::Tensor new_attention_mask(ov::element::i64, new_shape);
+    std::fill_n(new_attention_mask.data<int64_t>(), new_shape[1], 1);
+
+    return {new_input_ids, new_attention_mask};
+}
+}
+
 namespace ov {
 namespace genai {
 
@@ -98,15 +116,29 @@ public:
             std::string& prompt = *input_prompt;
             
             if (is_chat_conversation) {
+                // KV cache in model already contains prompts and answers from previous iterations.
+                // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
+                // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
+                // <bos token> will be inserted on every iteration.
+                // So actual pipeline calculates input_ids for whole chat history + for whole chat history without the new prompt
+                // and takes only the difference between them.
+                // The chat history cannot be saved as already encoded tokens because generate call doesn't return <eos> token, but
+                // KV cache contains it. So we have to add it manually or get it by tokenization all chat history.
+
                 m_history.push_back({{"role", "user"}, {"content", prompt}});
                 constexpr bool add_generation_prompt = true;
                 auto new_templated_chat_history  = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-                
-                prompt = new_templated_chat_history.substr(m_templated_chat_history.size());
+                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history);
+                if (m_is_cache_empty) {
+                    encoded_input = new_chat_tokens;
+                } else {
+                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history);
+                    encoded_input = subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
+                }
                 m_templated_chat_history = new_templated_chat_history;
+            } else {
+                encoded_input = m_tokenizer.encode(prompt);
             }
-            
-            encoded_input = m_tokenizer.encode(prompt);
         }
 
         auto encoded_results  = generate(encoded_input, config, streamer);
