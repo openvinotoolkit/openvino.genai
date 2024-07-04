@@ -13,6 +13,7 @@
 #include "scheduler.hpp"
 #include "timer.hpp"
 
+namespace ov::genai {
 class ModelRunner {
     ov::InferRequest m_request;
     SchedulerConfig m_scheduler_config;
@@ -141,3 +142,4 @@ public:
         return m_request.get_output_tensor();
     }
 };
+}

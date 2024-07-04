@@ -10,7 +10,7 @@
 
 TEST(TestCacheManager, general_test) {
     ov::Core core;
-    SchedulerConfig scheduler_config;
+    ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 32;
     scheduler_config.num_kv_blocks = 0;
     scheduler_config.cache_size = 2;
@@ -18,11 +18,11 @@ TEST(TestCacheManager, general_test) {
     scheduler_config.max_num_seqs = 2;
 
     const std::string device = "CPU";
-    DeviceConfig device_config(core, scheduler_config, "CPU");
+    ov::genai::DeviceConfig device_config(core, scheduler_config, "CPU");
     size_t num_decoder_layers = 12;
     device_config.set_model_params(12, 64, num_decoder_layers);
 
-    auto cache_manager = std::make_shared<CacheManager>(device_config);
+    auto cache_manager = std::make_shared<ov::genai::CacheManager>(device_config);
 
     size_t allocated_bytes = 0;
     for (size_t i = 0; i < num_decoder_layers; i++) {

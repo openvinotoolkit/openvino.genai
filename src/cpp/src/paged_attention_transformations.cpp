@@ -8,6 +8,8 @@
 
 #include "device_config.hpp"
 
+using namespace ov::genai;
+
 inline ov::PartialShape to_partial_with_dyn_0_dim(const ov::Shape& static_shape) {
     ov::PartialShape partial_shape = static_shape;
     partial_shape[0] = ov::Dimension::dynamic();
