@@ -19,7 +19,7 @@ void clear_finished_sequences(std::vector<SequenceGroup::Ptr>& requests) {
 }
 
 TEST(TestScheduler, general_test) {
-    std::vector<SchedulerConfig> configs(2);
+    std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).max_num_batched_tokens = 32;
     configs.at(0).num_kv_blocks = 6;
     configs.at(0).block_size = 4;
@@ -110,7 +110,7 @@ TEST(TestScheduler, general_test) {
 }
 
 TEST(TestScheduler, test_append_slots_considers_all_sequences) {
-    std::vector<SchedulerConfig> configs(2);
+    std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).max_num_batched_tokens = 32;
     configs.at(0).num_kv_blocks = 5;
     configs.at(0).block_size = 4;
@@ -175,7 +175,7 @@ TEST(TestScheduler, test_append_slots_considers_all_sequences) {
 
 
 TEST(TestScheduler, test_partial_preemption) {
-    std::vector<SchedulerConfig> configs(2);
+    std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).max_num_batched_tokens = 32;
     configs.at(0).num_kv_blocks = 6;
     configs.at(0).block_size = 4;
@@ -267,7 +267,7 @@ TEST(TestScheduler, test_partial_preemption) {
 }
 
 TEST(TestScheduler, test_partially_preempted_prompt) {
-    std::vector<SchedulerConfig> configs(2);
+    std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).max_num_batched_tokens = 32;
     configs.at(0).num_kv_blocks = 6;
     configs.at(0).block_size = 4;
