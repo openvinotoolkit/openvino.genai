@@ -90,6 +90,11 @@ install(TARGETS openvino_genai py_generate_pipeline
 if(ENABLE_CONTINUOUS_BATCHING)
     pybind11_add_module(py_continuous_batching python.cpp)
     target_link_libraries(py_continuous_batching PRIVATE openvino::continuous_batching)
-    set_target_properties(py_continuous_batching PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai>")
+    set_target_properties(py_continuous_batching PROPERTIES LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai>")
+
+    # wheel_genai component is used for wheel generation in pyproject.toml.
+    # Exclude wheel_genai from normal packaging because there's pygenai_X_Y component for that.
+    install(TARGETS openvino_genai py_continuous_batching
+            LIBRARY DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL
+            RUNTIME DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL)
 endif()
