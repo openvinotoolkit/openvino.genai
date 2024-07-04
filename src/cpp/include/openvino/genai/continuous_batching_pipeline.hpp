@@ -6,11 +6,13 @@
 #include <memory>
 #include <openvino/openvino.hpp>
 
-#include "scheduler_config.hpp"
+#include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/generation_config.hpp"
-#include "generation_handle.hpp"
+#include "openvino/genai/generation_handle.hpp"
+#include "openvino/genai/visibility.hpp"
 
+namespace ov::genai {
 struct PipelineMetrics { 
     // All requests as viewed by the pipeline
     size_t requests = 0;
@@ -20,7 +22,7 @@ struct PipelineMetrics {
     float cache_usage = 0.0;
 };
 
-class ContinuousBatchingPipeline {
+class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {
     class Impl;
     std::shared_ptr<Impl> m_impl;
 
@@ -45,3 +47,4 @@ public:
     // more high level interface, which can process multiple prompts in continuous batching manner
     std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, std::vector<ov::genai::GenerationConfig> sampling_params);
 };
+}

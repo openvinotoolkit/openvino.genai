@@ -33,7 +33,7 @@ cd /workspace/openvino.genai/
 cd /path/to/openvino
 mkdir build
 cd build
-cmake -DENABLE_PYTHON=ON -DCMAKE_BUILD_TYPE={ov_build_type} ..
+cmake -DCMAKE_BUILD_TYPE={ov_build_type} ..
 make -j24
 ```
 2. Set PYTHONPATH, LD_LIBRARY_PATH and OpenVINO_DIR environment variables:
@@ -47,7 +47,7 @@ export OpenVINO_DIR=/path/to/openvino/{ov_build_type}
 cd /path/to/openvino.genai/thirdparty/openvino_tokenizers
 mkdir build
 cd build
-cmake -DENABLE_PYTHON=ON -DCMAKE_BUILD_TYPE={ov_build_type} ..
+cmake -DCMAKE_BUILD_TYPE={ov_build_type} ..
 make -j24
 ```
 4. Create virtual environment to generate models and run python tests:
@@ -71,7 +71,7 @@ mkdir /path/to/openvino.genai/text_generation/causal_lm/cpp/continuous_batching/
 7. Generate cmake project:
 ```
 cd build
-cmake -DCMAKE_BUILD_TYPE=Debug -DOpenVINO_DIR=/path/to/openvino/build -DENABLE_APPS=ON -DENABLE_PYTHON=ON ..
+cmake -DCMAKE_BUILD_TYPE=Debug -DOpenVINO_DIR=/path/to/openvino/build ..
 ```
 8. Build the project
 ```

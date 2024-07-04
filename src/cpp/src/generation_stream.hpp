@@ -4,11 +4,11 @@
 #pragma once
 #include <mutex>
 #include <atomic>
-#include "continuous_batching_pipeline.hpp"
+#include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "openvino/genai/generation_handle.hpp"
 #include "synchronized_queue.hpp"
-#include "generation_handle.hpp"
 
-
+namespace ov::genai {
 class GenerationStream {
     std::mutex m_mutex;
     GenerationStatus m_status = GenerationStatus::RUNNING;
@@ -54,3 +54,4 @@ public:
         m_status = GenerationStatus::DROPPED_BY_HANDLE;
     }
 };
+}

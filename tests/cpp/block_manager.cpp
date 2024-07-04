@@ -4,13 +4,13 @@
 
 #include <gtest/gtest.h>
 #include "openvino/runtime/core.hpp"
-#include "continuous_batching_pipeline.hpp"
-#include "sequence_group.hpp"
-#include "scheduler.hpp"
+#include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
+#include "../.././src/cpp/src/sequence_group.hpp"
+#include "../.././src/cpp/src/scheduler.hpp"
 
 TEST(TestBlockManager, general_test) {
-    BlockManager bm = BlockManager(6);
+    ov::genai::BlockManager bm = ov::genai::BlockManager(6);
 
     bm.allocate(0, 6);
     EXPECT_TRUE(bm.has_block_table(0));

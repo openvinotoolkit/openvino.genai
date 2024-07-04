@@ -7,11 +7,12 @@
 #include <cstdlib>
 #include <vector>
 
+#include "openvino/genai/scheduler_config.hpp"
 #include "block_manager.hpp"
 #include "sequence_group.hpp"
 #include "block_manager.hpp"
-#include "scheduler_config.hpp"
 
+namespace ov::genai {
 class Scheduler {
     SchedulerConfig m_config;
     BlockManager m_block_manager;
@@ -388,3 +389,4 @@ private:
         }
     }
 };
+}

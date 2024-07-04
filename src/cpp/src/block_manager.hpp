@@ -9,6 +9,7 @@
 
 #include "sequence_group.hpp"
 
+namespace ov::genai {
 class KVCacheBlock {
     int m_ref_count;
     int m_index;
@@ -261,3 +262,4 @@ public:
         return copy_blocks_map;
     }
 };
+}

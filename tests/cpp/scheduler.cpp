@@ -4,10 +4,12 @@
 
 #include <gtest/gtest.h>
 #include "openvino/runtime/core.hpp"
-#include "continuous_batching_pipeline.hpp"
-#include "sequence_group.hpp"
-#include "scheduler.hpp"
+#include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
+#include "../.././src/cpp/src/sequence_group.hpp"
+#include "../.././src/cpp/src/scheduler.hpp"
+
+using namespace ov::genai;
 
 void clear_finished_sequences(std::vector<SequenceGroup::Ptr>& requests) {
     auto new_end = std::remove_if(requests.begin(), requests.end(), [] (SequenceGroup::CPtr seq_group) -> bool {
@@ -17,22 +19,17 @@ void clear_finished_sequences(std::vector<SequenceGroup::Ptr>& requests) {
 }
 
 TEST(TestScheduler, general_test) {
-    std::vector<SchedulerConfig> configs{
-        SchedulerConfig {
-        .max_num_batched_tokens = 32,
-        .num_kv_blocks = 6,
-        .block_size = 4,
-        .dynamic_split_fuse = false,
-        .max_num_seqs = 5,
-    },
-        SchedulerConfig {
-        .max_num_batched_tokens = 32,
-        .num_kv_blocks = 6,
-        .block_size = 4,
-        .dynamic_split_fuse = true,
-        .max_num_seqs = 5,
-    }
-    };
+    std::vector<SchedulerConfig> configs(2);
+    configs.at(0).max_num_batched_tokens = 32;
+    configs.at(0).num_kv_blocks = 6;
+    configs.at(0).block_size = 4;
+    configs.at(0).dynamic_split_fuse = false;
+    configs.at(0).max_num_seqs = 5;
+    configs.at(1).max_num_batched_tokens = 32;
+    configs.at(1).num_kv_blocks = 6;
+    configs.at(1).block_size = 4;
+    configs.at(1).dynamic_split_fuse = true;
+    configs.at(1).max_num_seqs = 5;
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7};
         SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
@@ -113,22 +110,17 @@ TEST(TestScheduler, general_test) {
 }
 
 TEST(TestScheduler, test_append_slots_considers_all_sequences) {
-    std::vector<SchedulerConfig> configs{
-        SchedulerConfig {
-        .max_num_batched_tokens = 32,
-        .num_kv_blocks = 5,
-        .block_size = 4,
-        .dynamic_split_fuse = false,
-        .max_num_seqs = 5,
-    },
-        SchedulerConfig {
-        .max_num_batched_tokens = 32,
-        .num_kv_blocks = 5,
-        .block_size = 4,
-        .dynamic_split_fuse = true,
-        .max_num_seqs = 5,
-    }
-    };
+    std::vector<SchedulerConfig> configs(2);
+    configs.at(0).max_num_batched_tokens = 32;
+    configs.at(0).num_kv_blocks = 5;
+    configs.at(0).block_size = 4;
+    configs.at(0).dynamic_split_fuse = false;
+    configs.at(0).max_num_seqs = 5;
+    configs.at(1).max_num_batched_tokens = 32;
+    configs.at(1).num_kv_blocks = 5;
+    configs.at(1).block_size = 4;
+    configs.at(1).dynamic_split_fuse = true;
+    configs.at(1).max_num_seqs = 5;
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7};
         SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
@@ -183,22 +175,17 @@ TEST(TestScheduler, test_append_slots_considers_all_sequences) {
 
 
 TEST(TestScheduler, test_partial_preemption) {
-    std::vector<SchedulerConfig> configs{
-        SchedulerConfig {
-            .max_num_batched_tokens = 32,
-            .num_kv_blocks = 6,
-            .block_size = 4,
-            .dynamic_split_fuse = false,
-            .max_num_seqs = 5,
-        },
-        SchedulerConfig {
-            .max_num_batched_tokens = 32,
-            .num_kv_blocks = 6,
-            .block_size = 4,
-            .dynamic_split_fuse = true,
-            .max_num_seqs = 5,
-        }
-    };
+    std::vector<SchedulerConfig> configs(2);
+    configs.at(0).max_num_batched_tokens = 32;
+    configs.at(0).num_kv_blocks = 6;
+    configs.at(0).block_size = 4;
+    configs.at(0).dynamic_split_fuse = false;
+    configs.at(0).max_num_seqs = 5;
+    configs.at(1).max_num_batched_tokens = 32;
+    configs.at(1).num_kv_blocks = 6;
+    configs.at(1).block_size = 4;
+    configs.at(1).dynamic_split_fuse = true;
+    configs.at(1).max_num_seqs = 5;
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> tokens1 = {0,1,2,3,4,5,6,7,8,9,10};
         SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens1.size()}, tokens1.data()),
@@ -280,22 +267,17 @@ TEST(TestScheduler, test_partial_preemption) {
 }
 
 TEST(TestScheduler, test_partially_preempted_prompt) {
-    std::vector<SchedulerConfig> configs{
-        SchedulerConfig {
-            .max_num_batched_tokens = 32,
-            .num_kv_blocks = 6,
-            .block_size = 4,
-            .dynamic_split_fuse = false,
-            .max_num_seqs = 5,
-        },
-        SchedulerConfig {
-            .max_num_batched_tokens = 32,
-            .num_kv_blocks = 6,
-            .block_size = 4,
-            .dynamic_split_fuse = true,
-            .max_num_seqs = 5,
-        }
-    };
+    std::vector<SchedulerConfig> configs(2);
+    configs.at(0).max_num_batched_tokens = 32;
+    configs.at(0).num_kv_blocks = 6;
+    configs.at(0).block_size = 4;
+    configs.at(0).dynamic_split_fuse = false;
+    configs.at(0).max_num_seqs = 5;
+    configs.at(1).max_num_batched_tokens = 32;
+    configs.at(1).num_kv_blocks = 6;
+    configs.at(1).block_size = 4;
+    configs.at(1).dynamic_split_fuse = true;
+    configs.at(1).max_num_seqs = 5;
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7,8,9,10,11};
         SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),

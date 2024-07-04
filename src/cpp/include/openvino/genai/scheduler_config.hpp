@@ -5,6 +5,7 @@
 
 #include <cstddef>
 
+namespace ov::genai {
 struct SchedulerConfig {
     // a maximum number of tokens to batch
     // (in constrast to max_batch_size which combines independent sequences, we consider total amount of tokens in a batch)
@@ -30,3 +31,4 @@ struct SchedulerConfig {
     // max number of scheduled sequences (you can think of it as "max batch size")
     std::size_t max_num_seqs = 256;
 };
+}

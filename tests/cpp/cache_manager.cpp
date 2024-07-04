@@ -4,19 +4,18 @@
 
 #include <gtest/gtest.h>
 #include "openvino/runtime/core.hpp"
-#include "scheduler.hpp"
-#include "device_config.hpp"
-#include "cache_manager.hpp"
+#include "../.././src/cpp/src/scheduler.hpp"
+#include "../.././src/cpp/src/device_config.hpp"
+#include "../.././src/cpp/src/cache_manager.hpp"
 
 TEST(TestCacheManager, general_test) {
     ov::Core core;
-    SchedulerConfig scheduler_config = {
-        .max_num_batched_tokens = 32,
-        .num_kv_blocks = 0,
-        .cache_size = 2,
-        .block_size = 32,
-        .max_num_seqs = 2,
-    };
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 0;
+    scheduler_config.cache_size = 2;
+    scheduler_config.block_size = 32;
+    scheduler_config.max_num_seqs = 2;
 
     const std::string device = "CPU";
     DeviceConfig device_config(core, scheduler_config, "CPU");

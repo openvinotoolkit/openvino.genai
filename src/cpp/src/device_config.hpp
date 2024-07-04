@@ -7,7 +7,9 @@
 #include "openvino/core/shape.hpp"
 #include "openvino/core/type/element_type.hpp"
 
-#include "scheduler_config.hpp"
+#include "openvino/genai/scheduler_config.hpp"
+
+using namespace ov::genai;
 
 class DeviceConfig {
     ov::element::Type m_kv_cache_type;
