@@ -14,9 +14,9 @@ public:
     void load(const std::string&);
     std::pair<ov::Tensor, ov::Tensor> inference(const ov::Tensor&);
 
-    void forward(const ov::Tensor&,
-                 std::vector<std::vector<float>>& subset,
-                 std::vector<std::vector<float>>& candidate);
+    ov::Tensor forward(const ov::Tensor&,
+                       std::vector<std::vector<float>>& subset,
+                       std::vector<std::vector<float>>& candidate);
 
 private:
     ov::CompiledModel body_model;
@@ -41,4 +41,19 @@ private:
                              const std::vector<int>& special_k,
                              std::vector<std::vector<float>>& subset,
                              std::vector<std::vector<float>>& candidate);
+
+    ov::Tensor render_pose(const ov::Tensor& image,
+                           const std::vector<std::vector<float>>& subset,
+                           const std::vector<std::vector<float>>& candidate);
+    struct Keypoint {
+        float x, y;
+        float score = 1.0;
+        int id = -1;
+    };
+
+    struct BodyResult {
+        std::vector<Keypoint> keypoints;
+        float total_score;
+        int total_parts;
+    };
 };

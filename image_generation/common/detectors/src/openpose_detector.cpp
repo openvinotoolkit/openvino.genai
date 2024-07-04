@@ -3,12 +3,16 @@
 
 #include "openpose_detector.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <opencv2/core/types.hpp>
+#include <opencv2/opencv.hpp>
 #include <openvino/core/shape.hpp>
 #include <openvino/core/type/element_type.hpp>
 #include <openvino/runtime/tensor.hpp>
 #include <string>
+#include <vector>
 
 #include "openvino/runtime/core.hpp"
 #include "utils.hpp"
@@ -82,9 +86,9 @@ std::pair<ov::Tensor, ov::Tensor> OpenposeDetector::inference(const ov::Tensor& 
     return {res1, res2};
 }
 
-void OpenposeDetector::forward(const ov::Tensor& ori_img,
-                               std::vector<std::vector<float>>& subset,
-                               std::vector<std::vector<float>>& candidate) {
+ov::Tensor OpenposeDetector::forward(const ov::Tensor& ori_img,
+                                     std::vector<std::vector<float>>& subset,
+                                     std::vector<std::vector<float>>& candidate) {
     auto img_shape = ori_img.get_shape();  // NHWC
     // assume Batch should be always 1
     auto ori_img_H = img_shape[1];
@@ -224,6 +228,9 @@ void OpenposeDetector::forward(const ov::Tensor& ori_img,
         }
         std::cout << std::endl;
     }
+
+    auto output = render_pose(ori_img, subset, candidate);
+    return output;
 }
 
 // find the peaks from heatmap, returns a vector of tuple
@@ -518,4 +525,129 @@ void OpenposeDetector::process_connections(
     for (auto& row : subset) {
         std::swap(row[18], row[19]);
     }
+}
+
+ov::Tensor OpenposeDetector::render_pose(const ov::Tensor& image,
+                                         const std::vector<std::vector<float>>& subset,
+                                         const std::vector<std::vector<float>>& candidate) {
+    // Get input tensor dimensions (NHWC)
+    auto input_shape = image.get_shape();
+    auto N = input_shape[0];
+    auto H = input_shape[1];
+    auto W = input_shape[2];
+
+    ov::Tensor output_tensor = init_tensor_with_zeros({N, H, W, 3}, ov::element::u8);
+
+    std::vector<BodyResult> body_results;
+    for (auto person : subset) {
+        std::vector<Keypoint> keypoints;
+        for (size_t i = 0; i < 18; ++i) {
+            int candidate_index = static_cast<int>(person[i]);
+            if (candidate_index != -1) {
+                keypoints.push_back({candidate[candidate_index][0],
+                                     candidate[candidate_index][1],
+                                     candidate[candidate_index][2],
+                                     static_cast<int>(candidate[candidate_index][3])});
+            } else {
+                keypoints.push_back({0, 0, 0, -1});
+            }
+        }
+
+        BodyResult body_result{keypoints, person[18], static_cast<int>(person[19])};
+        body_results.push_back(body_result);
+    }
+
+    // normalize
+    for (size_t i = 0; i < body_results.size(); ++i) {
+        for (size_t j = 0; j < body_results[i].keypoints.size(); ++j) {
+            body_results[i].keypoints[j].x /= W;
+            body_results[i].keypoints[j].y /= H;
+        }
+    }
+
+    // render via opencv
+    auto data = output_tensor.data<unsigned char>();
+    cv::Mat canvas(H, W, CV_8UC3, data);
+
+    int stickwidth = 4;
+    std::vector<std::pair<int, int>> limbSeq = {{2, 3},
+                                                {2, 6},
+                                                {3, 4},
+                                                {4, 5},
+                                                {6, 7},
+                                                {7, 8},
+                                                {2, 9},
+                                                {9, 10},
+                                                {10, 11},
+                                                {2, 12},
+                                                {12, 13},
+                                                {13, 14},
+                                                {2, 1},
+                                                {1, 15},
+                                                {15, 17},
+                                                {1, 16},
+                                                {16, 18}};
+
+    std::vector<cv::Scalar> colors = {{255, 0, 0},
+                                      {255, 85, 0},
+                                      {255, 170, 0},
+                                      {255, 255, 0},
+                                      {170, 255, 0},
+                                      {85, 255, 0},
+                                      {0, 255, 0},
+                                      {0, 255, 85},
+                                      {0, 255, 170},
+                                      {0, 255, 255},
+                                      {0, 170, 255},
+                                      {0, 85, 255},
+                                      {0, 0, 255},
+                                      {85, 0, 255},
+                                      {170, 0, 255},
+                                      {255, 0, 255},
+                                      {255, 0, 170},
+                                      {255, 0, 85}};
+
+    for (auto body : body_results) {
+        auto keypoints = body.keypoints;
+        for (size_t i = 0; i < limbSeq.size(); ++i) {
+            int k1_index = limbSeq[i].first - 1;
+            int k2_index = limbSeq[i].second - 1;
+
+            const Keypoint& keypoint1 = keypoints[k1_index];
+            const Keypoint& keypoint2 = keypoints[k2_index];
+
+            if (keypoint1.id == -1 || keypoint2.id == -1) {
+                continue;
+            }
+
+            std::array<float, 2> Y = {keypoint1.x * W, keypoint2.x * W};
+            std::array<float, 2> X = {keypoint1.y * H, keypoint2.y * H};
+
+            float mX = std::accumulate(X.begin(), X.end(), 0.0f) / X.size();
+            float mY = std::accumulate(Y.begin(), Y.end(), 0.0f) / Y.size();
+            float length = std::sqrt(std::pow(X[0] - X[1], 2) + std::pow(Y[0] - Y[1], 2));
+            float angle = std::atan2(X[0] - X[1], Y[0] - Y[1]) * 180.0f / CV_PI;
+
+            cv::Point center(mY, mX);
+            cv::Size axes(length / 2, stickwidth);
+            cv::Scalar color = colors[i % colors.size()] * 0.6;
+
+            std::vector<cv::Point> points;
+            cv::ellipse2Poly(cv::Point{int(mY), int(mX)}, axes, int(angle), 0, 360, 1, points);
+            cv::fillConvexPoly(canvas, points, color);
+        }
+
+        for (size_t j = 0; j < keypoints.size(); ++j) {
+            auto keypoint = keypoints[j];
+            if (keypoint.id == -1) {
+                continue;
+            }
+
+            int x = static_cast<int>(keypoint.x * W);
+            int y = static_cast<int>(keypoint.y * H);
+            cv::circle(canvas, cv::Point(x, y), 4, colors[j % colors.size()], -1);
+        }
+    }
+
+    return output_tensor;
 }

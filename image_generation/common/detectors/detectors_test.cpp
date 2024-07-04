@@ -65,7 +65,8 @@ TEST(OpenposeDetectorTest, ForwardFunction) {
     // forward, get subset and candidate
     std::vector<std::vector<float>> subset;
     std::vector<std::vector<float>> candidate;
-    detector.forward(ori_img, subset, candidate);
+    auto pos_result = detector.forward(ori_img, subset, candidate);
+    imwrite(std::string("im.result.bmp"), pos_result, true);
 
     // print results
     for (auto& cand : candidate) {
