@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  l_ov_centos_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/l_openvino_toolkit_centos7_2024.3.0.dev20240626_x86_64.tgz
+  # l_ov_centos_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/l_openvino_toolkit_centos7_2024.3.0.dev20240626_x86_64.tgz
   l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240626_x86_64.tgz
   w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/w_openvino_toolkit_windows_2024.3.0.dev20240626_x86_64.zip
   m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/m_openvino_toolkit_macos_12_6_2024.3.0.dev20240626_x86_64.tgz
@@ -56,10 +56,10 @@ jobs:
   continuous_batching_python_lib_ubuntu:
     # A tokenizers' dependency fails to compile on ubuntu-20 n CenOS7 env.
     runs-on: ubuntu-22.04
-    env:
-      # A tokenizers' dependency fails to compile with Ninja in CenOS7 env.
-      CMAKE_GENERATOR: Unix Makefiles
-      CMAKE_BUILD_PARALLEL_LEVEL: null
+    # env:
+    # A tokenizers' dependency fails to compile with Ninja in CenOS7 env.
+    # CMAKE_GENERATOR: Unix Makefiles
+    # CMAKE_BUILD_PARALLEL_LEVEL: null
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,7 +69,7 @@ jobs:
           python-version: 3.8
       - run: mkdir ./ov/
       # Install CentOS7 instead of Ubuntu to match PyPI distribution ABI.
-      - run: curl ${{ env.l_ov_centos_link }} | tar --directory ./ov/ --strip-components 1 -xz
+      - run: curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
       - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -DENABLE_PYTHON=ON -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
@@ -77,7 +77,6 @@ jobs:
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/continuous_batching/test_sampling.py -m precommit
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/continuous_batching/test_preemption.py -m precommit
       - run: source ./ov/setupvars.sh && python -m pip install .
-      - run: python -m pytest ./tests/python_tests/continuous_batching/test_sampling.py -m precommit
       - run: python -m pytest ./tests/python_tests/continuous_batching/test_preemption.py -m precommit
 
   cpp-continuous-batching-windows:
@@ -121,6 +120,35 @@ jobs:
           call .\ov\setupvars.bat
           .\build\samples\cpp\throughput_benchmark\Release\throughput_benchmark.exe -n 2 --dynamic_split_fuse -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
+  continuous_batching_python_lib_windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - run: curl --output ov.zip ${{ env.w_ov_link }}
+      - run: unzip -d ov ov.zip
+      - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
+        shell: bash
+      - name: Download, convert and build
+        run: |
+          call .\ov\setupvars.bat
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/continuous_batching/test_sampling.py -m precommit
+      - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/continuous_batching/test_preemption.py -m precommit
+      - run: call ./ov/setupvars.bat && python -m pip install . --verbose
+      - run: python -m pytest ./tests/python_tests/continuous_batching/test_preemption.py -m precommit
+
   cpp-continuous-batching-macos:
     runs-on: macos-12
     steps:
@@ -156,3 +184,25 @@ jobs:
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
           source ./ov/setupvars.sh
           ./build/samples/cpp/throughput_benchmark/throughput_benchmark -n 5 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
+
+  continuous_batching_python_lib_macos:
+    runs-on: macos-12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.m_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          brew install coreutils scons
+      - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -DENABLE_PYTHON=ON -S ./ -B ./build/
+      - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
+      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
+      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/continuous_batching/test_sampling.py -m precommit
+      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/continuous_batching/test_preemption.py -m precommit
+      - run: source ./ov/setupvars.sh && python -m pip install .
+      - run: python -m pytest ./tests/python_tests/continuous_batching/test_preemption.py -m precommit
