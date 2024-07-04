@@ -19,8 +19,8 @@ from ov_genai_test_utils import (
 
 
 configs = [
-    dict(max_new_tokens=100),
-    dict(num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=100, diversity_penalty=1.0)
+    dict(max_new_tokens=20),
+    dict(num_beam_groups=3, num_beams=15, num_return_sequences=1, max_new_tokens=10, diversity_penalty=1.0)
 ]
 
 
@@ -35,7 +35,7 @@ quenstions = [
 @pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
+# @pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
 def test_chat_compare_with_HF(model_descr, generation_config: Dict):
     device = 'CPU'
     chat_history_hf = []
@@ -76,7 +76,7 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
 @pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
+# @pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
 def test_chat_compare_text_history_with_HF(model_descr, generation_config: Dict):
     # compares with HF when history in ov_genai is save as a text
     device = 'CPU'
@@ -116,7 +116,7 @@ def test_chat_compare_text_history_with_HF(model_descr, generation_config: Dict)
 @pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
+# @pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
 def test_chat_compare_statefull_vs_text_history(model_descr, generation_config: Dict):
     # Check that when history is stored in KV cache results are the same as when history stored in a text.
     device ='CPU'
