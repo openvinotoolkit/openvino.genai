@@ -52,20 +52,32 @@ struct LogitTransformWrapper {
             return m_logit_data[position];
     }
 
-    // Creates vector of Tokens sorted in order of decreasing log_prob
-    // Only first call is effective since there's no need to sort with every transformation
-    void initialize_tokens_vector() {
+    bool tokens_vector_initialized() const { return m_tokens != nullptr; }
+
+    // Creates vector of Tokens. Only first call is effective.
+    void _initialize_tokens_vector() {
         if (m_tokens == nullptr) {
             m_tokens = std::make_unique<std::vector<Token>>();
             m_tokens->reserve(get_effective_size());
-
             for (int i = 0; i < get_effective_size(); i++) {
                 m_tokens->push_back(Token(m_logit_data[i], i));
             }
-
-            std::sort(m_tokens->begin(), m_tokens->end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
         }
     }
+
+    // Currently used in top_p transform
+    void initialize_sorted_token_vector() {
+        _initialize_tokens_vector();
+        std::sort(m_tokens->begin(), m_tokens->end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+    }
+
+    // Currently used in top_k transform
+    void initialize_partially_sorted_token_vector(size_t top_k) {
+        _initialize_tokens_vector();
+        std::partial_sort(m_tokens->begin(), m_tokens->begin() + top_k, m_tokens->end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+    }
+
+    // Note that with above implemetation only one initialization is effective so order of transformations matter. 
 };
 
 namespace LogitTransformers {
@@ -85,7 +97,8 @@ public:
     TopPFilter(double top_p) : m_top_p(top_p) {}
 
     void apply(LogitTransformWrapper& logits) override {
-        logits.initialize_tokens_vector();
+        if (!logits.tokens_vector_initialized())
+            logits.initialize_sorted_token_vector();
         float probability_sum = 0.0f;
         size_t nucleus_size = 0;
         for (int i = 0; i < logits.get_effective_size(); i++) {
@@ -105,7 +118,8 @@ public:
     TopKFilter(size_t top_k) : m_top_k(top_k) {}
 
     void apply(LogitTransformWrapper& logits) override {
-        logits.initialize_tokens_vector();
+        if (!logits.tokens_vector_initialized())
+            logits.initialize_partially_sorted_token_vector(m_top_k);
         size_t top_k = logits.get_effective_size() >= m_top_k ? m_top_k : logits.get_effective_size();
         logits.set_effective_size(top_k);
     }
@@ -120,20 +134,15 @@ public:
 
     void apply(LogitTransformWrapper& logits) override {
         float max_logit = 0.0;
-        int max_index = 0;
         for (int i = 0; i < logits.get_effective_size(); i++) {
             if(logits.m_logit_data[i] > max_logit) {
                 max_logit = logits.m_logit_data[i];
-                max_index = i;
             }
-        }
-
-        for (int i = 0; i < logits.get_effective_size(); i++) {
-            logits.m_logit_data[i] = expf((logits.m_logit_data[i] - max_logit) / this->m_temperature);
         }
 
         float norm_sum = 0.0;
         for (int i = 0; i < logits.get_effective_size(); i++) {
+            logits.m_logit_data[i] = expf((logits.m_logit_data[i] - max_logit) / this->m_temperature);
             norm_sum += logits.m_logit_data[i];
         }
 
@@ -370,8 +379,8 @@ public:
                 if (sampling_params.top_k > 0) {
                     m_logit_transformers.emplace_back(new LogitTransformers::TopKFilter(sampling_params.top_k));
                 }
-                
-                m_logit_transformers.emplace_back(new LogitTransformers::ProbabilityNormalizeTransform());
+                // Normalization happens in temperature transformer and top_p/top_k do not require it
+                // m_logit_transformers.emplace_back(new LogitTransformers::ProbabilityNormalizeTransform());
             }
         }
     }

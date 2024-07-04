@@ -310,7 +310,10 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         // is_multinomial()
                         const bool is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
                         const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
+                        static ManualTimer timer("sample::_multinomial_sample");
+                        timer.start();
                         auto sampled_token_ids = _multinomial_sample(logits, num_tokens_per_sequence);
+                        timer.end();
                         sampled_token_id = sampled_token_ids[0];
 
                         if (is_generate_n_tokens) {
