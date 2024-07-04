@@ -352,9 +352,6 @@ def generate_and_compare_with_reference_text(model_path: Path, prompts: List[str
 
         assert len(ref_texts_for_this_prompt) == len(ov_result.m_generation_ids)
         for ref_text, ov_text in zip(ref_texts_for_this_prompt, ov_result.m_generation_ids):
-            if ref_text != ov_text:
-                print(ref_text)
-                print(ov_text)
             assert ref_text == ov_text
 
 def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = None, generation_config = None):
