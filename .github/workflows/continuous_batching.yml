@@ -1,7 +1,7 @@
 on:
   pull_request:
     paths:
-      - .github/workflows/continuous_batching_cpp.yml
+      - .github/workflows/continuous_batching.yml
       - src/**
       - samples/**
       - thirdparty/openvino_tokenizers
@@ -17,7 +17,7 @@ env:
   w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/w_openvino_toolkit_windows_2024.3.0.dev20240626_x86_64.zip
   m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/m_openvino_toolkit_macos_12_6_2024.3.0.dev20240626_x86_64.tgz
 jobs:
-  cpp-accuracy-sample-ubuntu:
+  cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
     steps:
       - uses: actions/checkout@v4
@@ -80,7 +80,7 @@ jobs:
       - run: python -m pytest ./tests/python_tests/continuous_batching/test_sampling.py -m precommit
       - run: python -m pytest ./tests/python_tests/continuous_batching/test_preemption.py -m precommit
 
-  cpp-accuracy-sample-windows:
+  cpp-continuous-batching-windows:
     runs-on: windows-latest
     defaults:
       run:
@@ -121,7 +121,7 @@ jobs:
           call .\ov\setupvars.bat
           .\build\samples\cpp\throughput_benchmark\Release\throughput_benchmark.exe -n 2 --dynamic_split_fuse -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
-  cpp-accuracy-sample-macos:
+  cpp-continuous-batching-macos:
     runs-on: macos-12
     steps:
       - uses: actions/checkout@v4

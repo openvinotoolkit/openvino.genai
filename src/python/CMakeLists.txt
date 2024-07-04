@@ -94,7 +94,7 @@ if(ENABLE_CONTINUOUS_BATCHING)
 
     # wheel_genai component is used for wheel generation in pyproject.toml.
     # Exclude wheel_genai from normal packaging because there's pygenai_X_Y component for that.
-    install(TARGETS openvino_genai py_continuous_batching
+    install(TARGETS py_continuous_batching
             LIBRARY DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL
             RUNTIME DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL)
 endif()
