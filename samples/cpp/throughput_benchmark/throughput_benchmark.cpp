@@ -37,7 +37,7 @@ public:
 
 struct Dataset {
     std::vector<std::string> m_prompts;
-    std::vector<GenerationConfig> m_sampling_params;
+    std::vector<ov::genai::GenerationConfig> m_sampling_params;
     std::vector<size_t> m_input_lens, m_output_lens;
 
     size_t m_total_input_len = 0;
@@ -50,7 +50,7 @@ struct Dataset {
         m_output_lens.reserve(size);
     }
 
-    void push_data(std::string prompt, GenerationConfig sampling_params) {
+    void push_data(std::string prompt, ov::genai::GenerationConfig sampling_params) {
         m_prompts.push_back(prompt);
         m_sampling_params.push_back(sampling_params);
     }
@@ -121,7 +121,7 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
         if (input_len > max_input_len || (input_len + output_len) > 2048)
             continue;
 
-        GenerationConfig greedy_search = GenerationConfig::greedy();
+        ov::genai::GenerationConfig greedy_search = ov::genai::greedy();
         greedy_search.max_new_tokens = std::min(max_output_len, output_len);
 
         dataset.push_data(human_question, greedy_search);

@@ -131,7 +131,7 @@ StaticLLMPipeline::StaticLLMPipeline(
     auto prefill_model = kvcache_model->clone();
     prefill_model->set_friendly_name(kvcache_model->get_friendly_name() + "_prefill");
     // (4) Reshape both models to static shape
-    m_kvcache_desc = KVCacheDesc { 1024, 0u };
+    m_kvcache_desc = KVCacheDesc { 1024u, 0u };
     const uint32_t max_prompt_size = m_kvcache_desc.total_size;
     const uint32_t max_kvcache_size = m_kvcache_desc.total_size;
     reshape_to_static(prefill_model, max_prompt_size, max_kvcache_size);
@@ -227,7 +227,7 @@ EncodedResults StaticLLMPipeline::generate(
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
     // If eos_token_id was not provided, take value from default m_generation_config
     if (config.eos_token_id == -1)
-        config.eos_token_id = m_generation_config.eos_token_id;
+        config.set_eos_token_id(m_generation_config.eos_token_id);
     config.validate();
 
     std::shared_ptr<StreamerBase> streamer_ptr;
