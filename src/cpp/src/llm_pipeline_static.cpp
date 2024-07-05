@@ -91,11 +91,31 @@ void copy_with_left_offset(const ov::Tensor& orig, ov::Tensor& padded) {
     std::copy(orig_data, orig_data + orig_size, padded_data + kLeftOffset);
 }
 
-ov::AnyMap extract_config_or_empty(const ov::AnyMap& config, const std::string& config_name) {
+ov::AnyMap extract_config_or_default(const ov::AnyMap& config, const std::string& config_name) {
     ov::AnyMap stage_cfg;
     if (auto it = config.find(config_name); it != config.end()) {
         const auto& map = it->second.as<std::map<std::string, std::string>>();
         stage_cfg = { map.begin(), map.end() };
+    } else if (config_name == "PREFILL_CONFIG") {
+        std::map<std::string, std::string> prefill_config = {
+			{ "NPU_USE_NPUW", "YES" },
+			{ "NPUW_FOLD", "YES" },
+			{ "NPUW_DCOFF_TYPE", "f16" },
+			{ "NPUW_DCOFF_SCALE",  "YES" },
+			{ "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
+        };
+        stage_cfg.insert(prefill_config.begin(), prefill_config.end());
+    } else if (config_name == "GENERATE_CONFIG") {
+        std::map<std::string, std::string> generate_config = {
+            { "NPU_USE_NPUW", "YES" },
+            { "NPUW_FOLD", "YES" },
+            { "NPUW_DCOFF_TYPE", "f16" },
+            { "NPUW_DCOFF_SCALE", "YES" },
+            { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
+            { "NPUW_PARALLEL_COMPILE", "YES" },
+            { "NPUW_FUNCALL_ASYNC", "YES" }
+        };
+        stage_cfg.insert(generate_config.begin(), generate_config.end());
     }
     return stage_cfg;
 }
@@ -143,10 +163,10 @@ StaticLLMPipeline::StaticLLMPipeline(
     kvcache_model = add_slices_to_kvcache_inputs(kvcache_model);
     // (6) Compile both model
     m_prefill_request = core.compile_model(
-        prefill_model, device, extract_config_or_empty(config, "PREFILL_CONFIG")
+        prefill_model, device, extract_config_or_default(config, "PREFILL_CONFIG")
     ).create_infer_request();
     m_kvcache_request = core.compile_model(
-        kvcache_model, device, extract_config_or_empty(config, "GENERATE_CONFIG")
+        kvcache_model, device, extract_config_or_default(config, "GENERATE_CONFIG")
     ).create_infer_request();
     // (7) Initialize tensors
     prepare_for_new_conversation();
