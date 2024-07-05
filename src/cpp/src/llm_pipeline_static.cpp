@@ -246,6 +246,7 @@ EncodedResults StaticLLMPipeline::generate(
     ov::genai::EncodedResults results;
     // NB: Only batch=1 is supported now
     results.scores.resize(1u);
+    results.scores[0] = 0u;
     results.tokens.resize(1u);
 
     // NB: Check if there is enough space in KV-cache to process input prompt
@@ -274,6 +275,7 @@ EncodedResults StaticLLMPipeline::generate(
     // NB: Now there are prompt_len tokens in KV-cache
     m_kvcache_desc.num_stored_tokens += prompt_len;
     int64_t last_token = utils::argmax(m_prefill_request.get_tensor("logits"), 0);
+    results.tokens[0].push_back(last_token);
     if (streamer_ptr && streamer_ptr->put(last_token)) {
         return results;
     }
@@ -311,7 +313,6 @@ EncodedResults StaticLLMPipeline::generate(
 
         last_token = utils::argmax(m_kvcache_request.get_tensor("logits"), 0);
         results.tokens[0].push_back(last_token);
-        results.scores[0] = 0u;
 
         if (streamer_ptr && streamer_ptr->put(last_token)) {
             break;
