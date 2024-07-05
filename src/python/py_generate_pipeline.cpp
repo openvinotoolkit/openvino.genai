@@ -85,10 +85,13 @@ auto generation_config_docstring = R"(
 )";
 
 
-GenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& config_, const py::kwargs& kwargs) {
-    GenerationConfig config;
-    if(config_.has_value())
-        config = *config_;
+OptionalGenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& config, const py::kwargs& kwargs) {
+    if(!config.has_value() && kwargs.empty())
+        return std::nullopt;
+
+    GenerationConfig res_config;
+    if(config.has_value())
+        res_config = *config;
  
     for (const auto& item : kwargs) {
         std::string key = py::cast<std::string>(item.first);
@@ -100,48 +103,48 @@ GenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& confi
             // Some HF configs can have parameters for methods currenly unsupported in ov_genai
             // but if their values are not set / None, then this should not block 
             // us from reading such configs, e.g. {"typical_p": None, 'top_p': 1.0,...}
-            return config;
+            return res_config;
         }
         
         if (key == "max_new_tokens") {
-            config.max_new_tokens = py::cast<int>(item.second);
+            res_config.max_new_tokens = py::cast<int>(item.second);
         } else if (key == "max_length") {
-            config.max_length = py::cast<int>(item.second);
+            res_config.max_length = py::cast<int>(item.second);
         } else if (key == "ignore_eos") {
-            config.ignore_eos = py::cast<bool>(item.second);
+            res_config.ignore_eos = py::cast<bool>(item.second);
         } else if (key == "num_beam_groups") {
-            config.num_beam_groups = py::cast<int>(item.second);
+            res_config.num_beam_groups = py::cast<int>(item.second);
         } else if (key == "num_beams") {
-            config.num_beams = py::cast<int>(item.second);
+            res_config.num_beams = py::cast<int>(item.second);
         } else if (key == "diversity_penalty") {
-            config.diversity_penalty = py::cast<float>(item.second);
+            res_config.diversity_penalty = py::cast<float>(item.second);
         } else if (key == "length_penalty") {
-            config.length_penalty = py::cast<float>(item.second);
+            res_config.length_penalty = py::cast<float>(item.second);
         } else if (key == "num_return_sequences") {
-            config.num_return_sequences = py::cast<int>(item.second);
+            res_config.num_return_sequences = py::cast<int>(item.second);
         } else if (key == "no_repeat_ngram_size") {
-            config.no_repeat_ngram_size = py::cast<int>(item.second);
+            res_config.no_repeat_ngram_size = py::cast<int>(item.second);
         } else if (key == "stop_criteria") {
-            config.stop_criteria = py::cast<StopCriteria>(item.second);
+            res_config.stop_criteria = py::cast<StopCriteria>(item.second);
         } else if (key == "temperature") {
-            config.temperature = py::cast<float>(item.second);
+            res_config.temperature = py::cast<float>(item.second);
         } else if (key == "top_p") {
-            config.top_p = py::cast<float>(item.second);
+            res_config.top_p = py::cast<float>(item.second);
         } else if (key == "top_k") {
-            config.top_k = py::cast<int>(item.second);
+            res_config.top_k = py::cast<int>(item.second);
         } else if (key == "do_sample") {
-            config.do_sample = py::cast<bool>(item.second);
+            res_config.do_sample = py::cast<bool>(item.second);
         } else if (key == "repetition_penalty") {
-            config.repetition_penalty = py::cast<float>(item.second);
+            res_config.repetition_penalty = py::cast<float>(item.second);
         } else if (key == "eos_token_id") {
-            config.eos_token_id = py::cast<int>(item.second);
+            res_config.set_eos_token_id(py::cast<int>(item.second));
         } else {
             throw(std::invalid_argument("'" + key + "' is incorrect GenerationConfig parameter name. "
                                         "Use help(openvino_genai.GenerationConfig) to get list of acceptable parameters."));
         }
     }
 
-    return config;
+    return res_config;
 }
 
 ov::Any py_object_to_any(const py::object& py_obj) {
@@ -302,7 +305,7 @@ py::object call_common_generate(
     [&](std::string string_input) {
         DecodedResults res = pipe.generate(string_input, updated_config, streamer);
         // If input was a string return a single string otherwise return DecodedResults.
-        if (updated_config.num_return_sequences == 1) {
+        if (updated_config.has_value() && (*updated_config).num_return_sequences == 1) {
             results = py::cast<py::object>(handle_utf8_results(res.texts)[0]);
         } else {
             results = py::cast(res);
@@ -421,13 +424,13 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("set_generation_config", &LLMPipeline::set_generation_config);
 
      // Binding for Tokenizer
-    py::class_<Tokenizer>(m, "Tokenizer",
+    py::class_<ov::genai::Tokenizer>(m, "Tokenizer",
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer 
            if it's located in a different path than the main model.)")
         
         .def(py::init([](const std::string& tokenizer_path) {
             ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<Tokenizer>(tokenizer_path);
+            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path);
         }), py::arg("tokenizer_path"))
         
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts) { return tok.encode(prompts); },
@@ -495,10 +498,11 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
      // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
         .def(py::init<std::string>(), py::arg("json_path"), "path where generation_config.json is stored")
-        .def(py::init([](py::kwargs kwargs) { return update_config_from_kwargs(GenerationConfig(), kwargs); }))
+        .def(py::init([](py::kwargs kwargs) { return *update_config_from_kwargs(GenerationConfig(), kwargs); }))
         .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
         .def_readwrite("max_length", &GenerationConfig::max_length)
         .def_readwrite("ignore_eos", &GenerationConfig::ignore_eos)
+        .def_readwrite("min_new_tokens", &GenerationConfig::min_new_tokens)
         .def_readwrite("num_beam_groups", &GenerationConfig::num_beam_groups)
         .def_readwrite("num_beams", &GenerationConfig::num_beams)
         .def_readwrite("diversity_penalty", &GenerationConfig::diversity_penalty)
@@ -511,7 +515,12 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("top_k", &GenerationConfig::top_k)
         .def_readwrite("do_sample", &GenerationConfig::do_sample)
         .def_readwrite("repetition_penalty", &GenerationConfig::repetition_penalty)
-        .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id);
+        .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id)
+        .def_readwrite("presence_penalty", &GenerationConfig::presence_penalty)
+        .def_readwrite("frequency_penalty", &GenerationConfig::frequency_penalty)
+        .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
+        .def("set_eos_token_id", &GenerationConfig::set_eos_token_id)
+        .def("is_beam_search", &GenerationConfig::is_beam_search);
 
     py::class_<DecodedResults>(m, "DecodedResults")
         .def(py::init<>())

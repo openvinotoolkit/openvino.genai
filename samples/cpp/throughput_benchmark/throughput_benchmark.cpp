@@ -16,7 +16,7 @@
 #include <nlohmann/json.hpp>
 #include <cxxopts.hpp>
 
-#include "tokenizer.hpp"
+#include "openvino/genai/tokenizer.hpp"
 #include "continuous_batching_pipeline.hpp"
 #include "generation_handle.hpp"
 
@@ -37,7 +37,7 @@ public:
 
 struct Dataset {
     std::vector<std::string> m_prompts;
-    std::vector<GenerationConfig> m_sampling_params;
+    std::vector<ov::genai::GenerationConfig> m_sampling_params;
     std::vector<size_t> m_input_lens, m_output_lens;
 
     size_t m_total_input_len = 0;
@@ -50,7 +50,7 @@ struct Dataset {
         m_output_lens.reserve(size);
     }
 
-    void push_data(std::string prompt, GenerationConfig sampling_params) {
+    void push_data(std::string prompt, ov::genai::GenerationConfig sampling_params) {
         m_prompts.push_back(prompt);
         m_sampling_params.push_back(sampling_params);
     }
@@ -95,7 +95,7 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
     sampled_dataset.reserve(num_prompt_candidates);
     dataset.reserve(num_prompt_candidates);
 
-    Tokenizer tokenizer(models_path);
+    ov::genai::Tokenizer tokenizer(models_path);
 
     for (auto json_data_iterator = json_dataset.begin(); json_data_iterator != json_dataset.end() && dataset.size() < num_prompt_candidates; ++json_data_iterator) {
         auto & json_data = *json_data_iterator;
@@ -108,10 +108,10 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
         std::string human_question = json_data["conversations"][0]["value"];
         std::string gpt_answer = json_data["conversations"][1]["value"];
 
-        ov::Tensor _input_ids_prompt = tokenizer.encode(human_question);
+        ov::Tensor _input_ids_prompt = tokenizer.encode(human_question).input_ids;
         size_t input_len = _input_ids_prompt.get_size();
 
-        ov::Tensor _input_ids_answer = tokenizer.encode(gpt_answer);
+        ov::Tensor _input_ids_answer = tokenizer.encode(gpt_answer).input_ids;
         size_t output_len = _input_ids_answer.get_size();
 
         // Prune too short sequences.
@@ -121,7 +121,7 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
         if (input_len > max_input_len || (input_len + output_len) > 2048)
             continue;
 
-        GenerationConfig greedy_search = GenerationConfig::greedy();
+        ov::genai::GenerationConfig greedy_search = ov::genai::greedy();
         greedy_search.max_new_tokens = std::min(max_output_len, output_len);
 
         dataset.push_data(human_question, greedy_search);

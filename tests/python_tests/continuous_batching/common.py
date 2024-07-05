@@ -7,7 +7,8 @@ import pytest
 
 from optimum.intel import OVModelForCausalLM
 from pathlib import Path
-from py_continuous_batching import ContinuousBatchingPipeline, GenerationConfig, SchedulerConfig, GenerationResult
+from openvino_genai.py_continuous_batching import ContinuousBatchingPipeline, SchedulerConfig, GenerationResult
+from openvino_genai import GenerationConfig
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
 from typing import List, Tuple
@@ -37,7 +38,7 @@ def get_greedy_with_penalties() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_return_sequences = 1
     generation_config.presence_penalty = 2.0
-    generation_config.frequence_penalty = 0.2
+    generation_config.frequency_penalty = 0.2
     generation_config.max_new_tokens = 30
     return generation_config
 
@@ -51,21 +52,21 @@ def get_greedy_with_min_and_max_tokens() -> GenerationConfig:
 
 def get_beam_search() -> GenerationConfig:
     generation_config = GenerationConfig()
-    generation_config.num_groups = 3
-    generation_config.group_size = 2
+    generation_config.num_beam_groups = 3
+    generation_config.num_beams = 6
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = 3
-    generation_config.num_return_sequences = generation_config.num_groups * generation_config.group_size
+    generation_config.num_return_sequences = generation_config.num_beams
     return generation_config
 
 def get_beam_search_min_and_max_tokens() -> GenerationConfig:
     generation_config = GenerationConfig()
-    generation_config.num_groups = 3
-    generation_config.group_size = 2
+    generation_config.num_beam_groups = 3
+    generation_config.num_beams = 6
     generation_config.min_new_tokens = 15
     generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = 3
-    generation_config.num_return_sequences = generation_config.num_groups * generation_config.group_size
+    generation_config.num_return_sequences = generation_config.num_beams
     return generation_config
 
 def get_multinomial_temperature() -> GenerationConfig:
@@ -136,7 +137,7 @@ def get_multinomial_temperature_and_frequence_penalty() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.do_sample = True
     generation_config.temperature = 0.8
-    generation_config.frequence_penalty = 0.5
+    generation_config.frequency_penalty = 0.5
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = 30
     return generation_config
@@ -158,7 +159,7 @@ def get_multinomial_max_and_min_token() -> GenerationConfig:
     multinomial.top_k = 20
     multinomial.num_return_sequences = 3
     multinomial.presence_penalty = 0.01
-    multinomial.frequence_penalty = 0.1
+    multinomial.frequency_penalty = 0.1
     multinomial.min_new_tokens = 15
     multinomial.max_new_tokens = 30
     return multinomial
@@ -218,10 +219,10 @@ def convert_to_hf(
     kwargs['pad_token_id'] = default_generation_config.pad_token_id
     kwargs['repetition_penalty'] = generation_config.repetition_penalty
 
-    if generation_config.num_groups * generation_config.group_size > 1:
+    if generation_config.num_beams > 1:
         # beam search case
-        kwargs['num_beam_groups'] = generation_config.num_groups
-        kwargs['num_beams'] = generation_config.num_groups * generation_config.group_size
+        kwargs['num_beam_groups'] = generation_config.num_beam_groups
+        kwargs['num_beams'] = generation_config.num_beams
         kwargs['diversity_penalty'] = generation_config.diversity_penalty
         kwargs['length_penalty'] = generation_config.length_penalty
         kwargs['no_repeat_ngram_size'] = generation_config.no_repeat_ngram_size
@@ -257,7 +258,7 @@ def run_hugging_face(
         generation_result = GenerationResult()
         generation_result.m_generation_ids = all_text_batch
         # sequences_scores are available only for beam search case
-        if generation_config.is_beam_search:
+        if generation_config.is_beam_search():
             generation_result.m_scores = [score for score in generate_outputs.sequences_scores]
         generation_results.append(generation_result)
 
@@ -293,7 +294,7 @@ def get_models_list(file_name: str):
 
 
 def compare_results(hf_result: GenerationResult, ov_result: GenerationResult, generation_config: GenerationConfig):
-    if generation_config.is_beam_search:
+    if generation_config.is_beam_search():
         assert len(hf_result.m_scores) == len(ov_result.m_scores)
         for hf_score, ov_score in zip(hf_result.m_scores, ov_result.m_scores):
             # Note, that for fp32 / fp16 models scores are different less than 0.001

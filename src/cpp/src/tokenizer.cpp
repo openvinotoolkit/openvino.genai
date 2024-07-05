@@ -55,8 +55,10 @@ namespace genai {
 
 class Tokenizer::TokenizerImpl {
 public:
-    ov::InferRequest m_tokenize_request;
+    ov::InferRequest m_tokenizer_request;
     ov::InferRequest m_detokenizer_request;
+    std::mutex m_tokenizer_mutex;
+    std::mutex m_detokenizer_mutex;
     int64_t m_pad_token_id = -1;
     int64_t m_bos_token_id = -1;
     int64_t m_eos_token_id = -1;
@@ -90,7 +92,7 @@ public:
         read_tokenizer_config_if_necessary(tokenizer_path); 
 
         auto device = "CPU"; // currently openvino_tokenizer supports only CPU
-        m_tokenize_request = core.compile_model(tokenizer_path / "openvino_tokenizer.xml", 
+        m_tokenizer_request = core.compile_model(tokenizer_path / "openvino_tokenizer.xml",
                                                 device).create_infer_request();
         m_detokenizer_request = core.compile_model(tokenizer_path / "openvino_detokenizer.xml", 
                                                    device).create_infer_request();
@@ -227,24 +229,28 @@ public:
 
     TokenizedInputs encode(std::string prompt) {
         size_t batch_size = 1;
-        m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
-        m_tokenize_request.infer();
+        std::unique_lock<std::mutex> lock(m_tokenizer_mutex);
+        m_tokenizer_request.set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
+        m_tokenizer_request.infer();
         return get_copied_results();
     }
 
     TokenizedInputs encode(std::vector<std::string>& prompts) {
-        m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
-        auto size_ = m_tokenize_request.get_input_tensor().get_shape();
-        m_tokenize_request.infer();
-       
-        auto res = get_copied_results();
-        pad_left(res.input_ids, res.attention_mask);
-        return {res.input_ids, res.attention_mask};
+        TokenizedInputs unpadded;
+        {
+            std::unique_lock<std::mutex> lock(m_tokenizer_mutex);
+            m_tokenizer_request.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
+            auto size_ = m_tokenizer_request.get_input_tensor().get_shape();
+            m_tokenizer_request.infer();
+
+            unpadded = get_copied_results();
+        }
+        return pad_left(unpadded.input_ids, unpadded.attention_mask);
     }
 
     TokenizedInputs get_copied_results() {
-        auto input_ids = m_tokenize_request.get_tensor("input_ids");
-        auto attention_mask = m_tokenize_request.get_tensor("attention_mask");
+        auto input_ids = m_tokenizer_request.get_tensor("input_ids");
+        auto attention_mask = m_tokenizer_request.get_tensor("attention_mask");
         ov::Tensor input_ids_ = ov::Tensor(input_ids.get_element_type(), input_ids.get_shape());
         ov::Tensor attention_mask_ = ov::Tensor(attention_mask.get_element_type(), attention_mask.get_shape());
         input_ids.copy_to(input_ids_);
@@ -255,6 +261,7 @@ public:
 
     std::string decode(std::vector<int64_t> tokens) {
         size_t batch_size = 1;
+        std::unique_lock<std::mutex> lock(m_detokenizer_mutex);
         m_detokenizer_request.set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
         m_detokenizer_request.infer();
         return m_detokenizer_request.get_output_tensor().data<std::string>()[0];
@@ -264,6 +271,7 @@ public:
         OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64, "tokens tensor element type should be an i64");
         OPENVINO_ASSERT(tokens.get_shape().size() == 2, "tokens tensor should of rank 2 with shape [batch_size, seq_len]");
 
+        std::unique_lock<std::mutex> lock(m_detokenizer_mutex);
         m_detokenizer_request.set_input_tensor(tokens);
         m_detokenizer_request.infer();
         
@@ -288,6 +296,7 @@ public:
             std::fill(tokens_data + i * max_len + line_len, tokens_data + (i + 1) * max_len, m_pad_token_id);
         }
 
+        std::unique_lock<std::mutex> lock(m_detokenizer_mutex);
         m_detokenizer_request.set_input_tensor(tokens);
         m_detokenizer_request.infer();
         auto res = m_detokenizer_request.get_output_tensor();

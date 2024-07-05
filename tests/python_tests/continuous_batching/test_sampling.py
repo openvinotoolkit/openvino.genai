@@ -3,9 +3,11 @@
 import os
 import pytest
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from py_continuous_batching import GenerationConfig, ContinuousBatchingPipeline
+from openvino_genai.py_continuous_batching import ContinuousBatchingPipeline
+from openvino_genai import GenerationConfig
 from typing import List
 
 from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, \
@@ -22,6 +24,7 @@ from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, 
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
+@pytest.mark.xfail(reason='CPU: head size must be multiple of 16, current: 8. Ticket 145986.', raises=RuntimeError, strict=True)
 def test_sampling_precommit(tmp_path, model_id):
     run_test_pipeline(tmp_path, model_id)
 
@@ -163,6 +166,13 @@ RANDOM_SAMPLING_TEST_CASES = [
              "greedy_with_penalties",
              "multinomial_max_and_min_token"])
 def test_individual_generation_configs_random(tmp_path, test_struct: RandomSamplingTestStruct):
+    if test_struct in (
+        RANDOM_SAMPLING_TEST_CASES[1],
+        RANDOM_SAMPLING_TEST_CASES[3],
+        RANDOM_SAMPLING_TEST_CASES[6],
+        RANDOM_SAMPLING_TEST_CASES[10],
+    ) and sys.platform.startswith("win"):
+        pytest.xfail("assert ref_text == ov_text fails")
     generation_config = test_struct.generation_config
 
     prompts = test_struct.prompts

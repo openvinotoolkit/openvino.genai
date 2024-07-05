@@ -5,7 +5,6 @@
 #include <cxxopts.hpp>
 
 #include "continuous_batching_pipeline.hpp"
-#include "tokenizer.hpp"
 
 void print_generation_result(const GenerationResult& generation_result) {
     for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
@@ -52,14 +51,14 @@ int main(int argc, char* argv[]) try {
         "What is OpenVINO?",
     };
 
-    std::vector<GenerationConfig> sampling_params_examples {
-        GenerationConfig::beam_search(),
-        GenerationConfig::greedy(),
-        GenerationConfig::multinomial(),
+    std::vector<ov::genai::GenerationConfig> sampling_params_examples {
+        ov::genai::beam_search(),
+        ov::genai::greedy(),
+        ov::genai::multinomial(),
     };
 
     std::vector<std::string> prompts(num_prompts);
-    std::vector<GenerationConfig> sampling_params(num_prompts);
+    std::vector<ov::genai::GenerationConfig> sampling_params(num_prompts);
 
     for (size_t request_id = 0; request_id < num_prompts; ++request_id) {
         prompts[request_id] = prompt_examples[request_id % prompt_examples.size()];
