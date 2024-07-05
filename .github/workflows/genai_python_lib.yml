@@ -146,6 +146,7 @@ jobs:
       - run: call ./ov/setupvars.bat && python -m pip install . --verbose
       - run: python -m pytest ./tests/python_tests/continuous_batching/test_preemption.py -m precommit
 
+
   continuous_batching_python_lib_macos:
     runs-on: macos-12
     steps:
