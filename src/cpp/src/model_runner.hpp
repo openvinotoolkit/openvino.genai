@@ -13,6 +13,8 @@
 #include "scheduler.hpp"
 #include "timer.hpp"
 
+#include "attention_output.hpp"
+
 namespace ov::genai {
 using AttentionScoresForCacheOfSubsequence = ov::Tensor;
 using AttentionScoresForEachDecoderLayer = std::vector<AttentionScoresForCacheOfSubsequence>;
@@ -37,6 +39,10 @@ public:
 
     ov::InferRequest get_infer_request() const {
         return m_request;
+    }
+
+    const AttentionScoresForEachSubsequence& get_last_attention_scores() const {
+        return m_last_attention_scores;
     }
 
     ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
@@ -172,6 +178,10 @@ public:
             }
 
         }
+
+
+        auto attn_tensor = m_request.get_tensor(get_paged_attention_score_output_for_decoder_layer(0));
+        std::cout << "VSHAMPOR: attn shape for each decoder layer is " << attn_tensor.get_shape() << '\n';
 
         for (const auto& seq_id_and_score_span : running_sequence_ids_and_kvcache_spans) {
             auto attention_scores_across_decoder_layers_for_current_sequence = AttentionScoresForEachDecoderLayer(m_num_decoder_layers);
