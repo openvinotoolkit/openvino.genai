@@ -1,5 +1,6 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.2.2+cpu; sys_platform != 'darwin'
-torch==2.2.2; sys_platform == 'darwin'
+torch==2.2.2; sys_platform == 'darwin'  # Torch wheel for 2.2.2+cpu does not exist for macOS, using 2.2.2 instead
 diffusers==0.27.2
 optimum-intel[openvino]==1.18.0
+-r ../samples/requirements.txt
