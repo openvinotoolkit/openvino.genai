@@ -338,10 +338,6 @@ protected:
 public:
     LogitProcessor(const GenerationConfig& sampling_params,
                    const LogitTransformers::TokenIds& input_ids) {
-        for (const auto& input_id : input_ids) {
-            m_unique_prompt_token_ids->insert(input_id);
-        }
-
         if (sampling_params.min_new_tokens > 0) {
             m_logit_transformers.emplace_back(
                 new LogitTransformers::EOSPenaltyTransform(sampling_params.eos_token_id, sampling_params.min_new_tokens)
@@ -352,6 +348,11 @@ public:
             if (sampling_params.repetition_penalty != 1.0f) {
                 std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform> transformer = 
                     std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform>(new LogitTransformers::RepetitionPenaltyTransform(sampling_params.repetition_penalty));
+                
+                for (const auto& input_id : input_ids) {
+                    m_unique_prompt_token_ids->insert(input_id);
+                }
+                
                 transformer->set_unique_prompt_token_ids(m_unique_prompt_token_ids);
                 transformer->set_unique_generated_token_ids(m_unique_generated_token_ids);
                 m_logit_transformers.push_back(transformer);
