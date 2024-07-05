@@ -378,24 +378,6 @@ public:
         return m_sampling_params;
     }
 
-    void reset() {
-        m_sequences.clear();
-        m_next_sequence_id = 0;
-        add_sequence(Sequence::create(m_next_sequence_id++));
-        clear_scheduled_tokens();
-        m_num_processed_tokens = 0;
-        m_max_content_len = 0;
-    }
-
-    bool is_empty() {
-        if (m_sequences.size() > 1)
-            return false;
-        OPENVINO_ASSERT(m_sequences.size() == 1);
-        if (m_sequences[0]->get_generated_len() > 0 || m_sequences[0]->get_cumulative_log_probs() != 0.0f)
-            return false;
-        return true; 
-    }
-
     void set_out_of_memory() {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_running()) {
