@@ -87,9 +87,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
+
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.40
+
       - run: >
           curl --output ov.zip ${{ env.w_ov_link }}
           && unzip -d ov ov.zip
