@@ -37,16 +37,16 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -DENABLE_PYTHON=ON  -S ./ -B ./build/
+          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
       - name: Run gtests
         run: |
           source ./ov/setupvars.sh
           ./build/src/cpp/continuous_batching/tests_continuous_batching
       - name: Run accuracy_sample
-        run: >
+        run: |
           source ./ov/setupvars.sh
-          && timeout 50s ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
+          timeout 50s ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
       - name: Run throughput_benchmark
         run: |
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
@@ -57,7 +57,7 @@ jobs:
     # A tokenizers' dependency fails to compile on ubuntu-20 n CenOS7 env.
     runs-on: ubuntu-22.04
     env:
-    # A tokenizers' dependency fails to compile with Ninja in CenOS7 env.
+      # A tokenizers' dependency fails to compile with Ninja in CenOS7 env.
       CMAKE_GENERATOR: Unix Makefiles
       CMAKE_BUILD_PARALLEL_LEVEL: null
     steps:
@@ -67,13 +67,18 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: mkdir ./ov/
       # Install CentOS7 instead of Ubuntu to match PyPI distribution ABI.
-      - run: curl ${{ env.l_ov_centos_link }} | tar --directory ./ov/ --strip-components 1 -xz
-      - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -DENABLE_PYTHON=ON -S ./ -B ./build/
-      - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
-      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_centos_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Install dependencies and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
+          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/continuous_batching/test_sampling.py -m precommit
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/continuous_batching/test_preemption.py -m precommit
       - run: source ./ov/setupvars.sh && python -m pip install .
@@ -91,11 +96,20 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: curl --output ov.zip ${{ env.w_ov_link }}
-      - run: unzip -d ov ov.zip
-      - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
+      - name: Install OpenVINO
+        run: |
+          curl --output ov.zip ${{ env.w_ov_link }}
+          unzip -d ov ov.zip
+          dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
         shell: bash
-      - name: Download, convert and build
+
+
+      # - run: curl --output ov.zip ${{ env.w_ov_link }}
+      # - run: unzip -d ov ov.zip
+      # - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
+      #   shell: bash
+
+      - name: Install dependencies and build
         run: |
           call .\ov\setupvars.bat
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
@@ -132,16 +146,23 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: curl --output ov.zip ${{ env.w_ov_link }}
-      - run: unzip -d ov ov.zip
-      - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
+
+      - name: Install OpenVINO
+        run: |
+          curl --output ov.zip ${{ env.w_ov_link }}
+          unzip -d ov ov.zip
+          dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
         shell: bash
-      - name: Download, convert and build
+      
+      # - run: curl --output ov.zip ${{ env.w_ov_link }}
+      # - run: unzip -d ov ov.zip
+      # - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
+      #   shell: bash
+      
+      - name: Install dependencies and build
         run: |
           call .\ov\setupvars.bat
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
           cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
       - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/continuous_batching/test_sampling.py -m precommit
@@ -169,16 +190,16 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON  -S ./ -B ./build/
+          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
       - name: Run gtests
         run: |
           source ./ov/setupvars.sh
           ./build/src/cpp/continuous_batching/tests_continuous_batching
       - name: Run accuracy_sample
-        run: >
+        run: |
           source ./ov/setupvars.sh
-          && timeout 120s ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
+          timeout 120s ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
       - name: Run throughput_benchmark
         run: |
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
@@ -199,9 +220,12 @@ jobs:
           mkdir ./ov/
           curl ${{ env.m_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           brew install coreutils scons
-      - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -DENABLE_PYTHON=ON -S ./ -B ./build/
-      - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
-      - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
+          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/continuous_batching/test_sampling.py -m precommit
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/continuous_batching/test_preemption.py -m precommit
       - run: source ./ov/setupvars.sh && python -m pip install .
