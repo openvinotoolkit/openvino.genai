@@ -50,7 +50,7 @@ markers = [
 
 [tool.cibuildwheel]
 before-all = "uname -a"
-build = "*manylinux_x86_64*"
+build = "cp38*manylinux_x86_64*"
 build-frontend = { name = "pip", args = ["--verbose", "--extra-index-url=https://storage.openvinotoolkit.org/simple/wheels/nightly"] }
 repair-wheel-command = ""
 archs = ["x86_64"]
