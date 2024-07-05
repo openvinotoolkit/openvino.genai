@@ -103,7 +103,7 @@ jobs:
         with:
           toolset: 14.40
 
-      - run: curl --output ov.zip ${{ env.l_ov_link }}
+      - run: curl --output ov.zip ${{ env.w_ov_link }}
       - run: unzip -d ov ov.zip
       - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
         shell: bash
