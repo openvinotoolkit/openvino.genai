@@ -4,7 +4,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
-    if (2 != argc || 3 != argc) {
+    if (2 != argc && 3 != argc) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <DEVICE>");
     }
     std::string prompt;
