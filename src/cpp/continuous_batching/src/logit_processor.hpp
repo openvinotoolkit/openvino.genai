@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "generation_config.hpp"
+#include "openvino/genai/generation_config.hpp"
 
 struct Token {
     float m_log_prob = 0.;
@@ -277,7 +277,7 @@ protected:
     size_t m_generated_tokens = 0;
 
 public:
-    LogitProcessor(const GenerationConfig& sampling_params,
+    LogitProcessor(const ov::genai::GenerationConfig& sampling_params,
                    const LogitTransformers::TokenIds& input_ids) {
         for (const auto& input_id : input_ids) {
             m_unique_prompt_token_ids->insert(input_id);
@@ -289,7 +289,7 @@ public:
             );
         }
 
-        if (sampling_params.is_multinomial() || sampling_params.is_greedy_sampling()) {
+        if (sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) {
             if (sampling_params.repetition_penalty != 1.0f) {
                 std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform> transformer = 
                     std::shared_ptr<LogitTransformers::RepetitionPenaltyTransform>(new LogitTransformers::RepetitionPenaltyTransform(sampling_params.repetition_penalty));
@@ -304,9 +304,9 @@ public:
                 m_logit_transformers.push_back(transformer);
                 
             }
-            if (sampling_params.frequence_penalty != 0.0f) {
+            if (sampling_params.frequency_penalty != 0.0f) {
                 std::shared_ptr<LogitTransformers::FrequencyPenaltyTransform> transformer = 
-                    std::shared_ptr<LogitTransformers::FrequencyPenaltyTransform>(new LogitTransformers::FrequencyPenaltyTransform(sampling_params.frequence_penalty)); 
+                    std::shared_ptr<LogitTransformers::FrequencyPenaltyTransform>(new LogitTransformers::FrequencyPenaltyTransform(sampling_params.frequency_penalty));
                 transformer->set_unique_generated_token_ids(m_unique_generated_token_ids);
                 m_logit_transformers.push_back(transformer);
             }
