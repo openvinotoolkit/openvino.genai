@@ -33,6 +33,7 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * @param max_new_tokens the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
  * @param ignore_eos if set to true, then generation will not stop even if <eos> token is met.
  * @param eos_token_id token_id of <eos> (end of sentence)
+ * @param min_new_tokens set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
  * 
  * Beam search specific parameters:
  * @param num_beams number of beams for beam search. 1 disables beam search.
@@ -56,6 +57,9 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * @param top_k the number of highest probability vocabulary tokens to keep for top-k-filtering.
  * @param do_sample whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
  * @param repetition_penalty the parameter for repetition penalty. 1.0 means no penalty.
+ * @param presence_penalty reduces absolute log prob if the token was generated at least once. Ignored for non continuous batching.
+ * @param frequency_penalty reduces absolute log prob as many times as the token was generated. Ignored for non continuous batching.
+ * @param rng_seed initializes random generator. Ignored for non continuous batching.
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
 public:
@@ -66,6 +70,7 @@ public:
     size_t max_new_tokens = SIZE_MAX;
     size_t max_length = SIZE_MAX;
     bool ignore_eos = false;
+    size_t min_new_tokens = 0;
 
     // Beam search specific
     size_t num_beam_groups = 1;
@@ -79,13 +84,20 @@ public:
     // Multinomial
     float temperature = 1.0f;
     float top_p = 1.0f;
-    size_t top_k = 50;
+    size_t top_k = std::numeric_limits<size_t>::max();
     bool do_sample = false;
     float repetition_penalty = 1.0f;
+    float presence_penalty = 0.0;
+    float frequency_penalty = 0.0f;
+    size_t rng_seed = 0;
 
     // EOS special token
     int64_t eos_token_id = -1;
 
+    /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
+     * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
+     */
+    void set_eos_token_id(size_t tokenizer_eos_token_id);
     size_t get_max_new_tokens(size_t prompt_length = 0) const;
     bool is_greedy_decoding() const;
     bool is_beam_search() const;
@@ -110,6 +122,7 @@ public:
 static constexpr ov::Property<size_t> max_new_tokens{"max_new_tokens"};
 static constexpr ov::Property<size_t> max_length{"max_length"};
 static constexpr ov::Property<bool> ignore_eos{"ignore_eos"};
+static constexpr ov::Property<size_t> min_new_tokens{"min_new_tokens"};
 
 static constexpr ov::Property<size_t> num_beam_groups{"num_beam_groups"};
 static constexpr ov::Property<size_t> num_beams{"num_beams"};
@@ -125,6 +138,13 @@ static constexpr ov::Property<int> top_k{"top_k"};
 static constexpr ov::Property<bool> do_sample{"do_sample"};
 static constexpr ov::Property<float> repetition_penalty{"repetition_penalty"};
 static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};
+static constexpr ov::Property<float> presence_penalty{"presence_penalty"};
+static constexpr ov::Property<float> frequency_penalty{"frequency_penalty"};
+static constexpr ov::Property<size_t> rng_seed{"rng_seed"};
 
+// Predefined Configs
+OPENVINO_GENAI_EXPORTS GenerationConfig beam_search();
+OPENVINO_GENAI_EXPORTS GenerationConfig greedy();
+OPENVINO_GENAI_EXPORTS GenerationConfig multinomial();
 }  // namespace genai
 }  // namespace ov

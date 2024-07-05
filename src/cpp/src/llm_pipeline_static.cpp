@@ -203,7 +203,7 @@ EncodedResults StaticLLMPipeline::generate(
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
     // If eos_token_id was not provided, take value from default m_generation_config
     if (config.eos_token_id == -1)
-        config.eos_token_id = m_generation_config.eos_token_id;
+        config.set_eos_token_id(m_generation_config.eos_token_id);
     config.validate();
 
     std::shared_ptr<StreamerBase> streamer_ptr;
