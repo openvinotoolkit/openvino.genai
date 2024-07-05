@@ -84,7 +84,6 @@ jobs:
       - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
 
   windows_genai_python_lib:
-    if: false
     runs-on: windows-latest
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: null
@@ -97,7 +96,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.11
 
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
