@@ -235,12 +235,14 @@ public:
         if (config.is_greedy_decoding()) {
             result = ov::genai::greedy_decoding(m_model_runner, input_ids, concatenated_attention_mask, 
                                                 config, streamer_ptr, position_ids);
+            m_selected_beam = 0;
         } else if (config.is_beam_search()) {
             std::tie(result, m_selected_beam) = beam_search(m_model_runner, input_ids, concatenated_attention_mask, 
                                                             config, position_ids, m_selected_beam);
         } else if (config.is_multinomial()) {
             result = multinominal_decoding(m_model_runner, input_ids, concatenated_attention_mask, 
                                            config, streamer_ptr, position_ids);
+            m_selected_beam = 0;
         } else {
             OPENVINO_THROW("No decoding algorithm found for provided configuration parameters.");
         }
