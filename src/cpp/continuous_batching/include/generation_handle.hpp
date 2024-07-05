@@ -6,7 +6,7 @@
 #include <memory>
 #include <unordered_map>
 
-#include "generation_config.hpp"
+#include "openvino/genai/generation_config.hpp"
 
 
 enum class GenerationStatus {
@@ -42,10 +42,10 @@ class GenerationStream;
 
 class GenerationHandleImpl {
     std::shared_ptr<GenerationStream> m_generation_stream;
-    GenerationConfig m_sampling_params;
+    ov::genai::GenerationConfig m_sampling_params;
  
 public:
-    GenerationHandleImpl(std::shared_ptr<GenerationStream> generation_stream, const GenerationConfig& sampling_params) :
+    GenerationHandleImpl(std::shared_ptr<GenerationStream> generation_stream, const ov::genai::GenerationConfig& sampling_params) :
     m_generation_stream(generation_stream),
     m_sampling_params(sampling_params) {};
 

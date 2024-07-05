@@ -26,7 +26,7 @@ class ContinuousBatchingPipeline::Impl {
 
     // TODO (mzegla): GenerationConfig is request specific object
     // and pipeline only uses default rng_seed. 
-    GenerationConfig m_generation_config;
+    ov::genai::GenerationConfig m_generation_config;
 
     PipelineMetrics m_pipeline_metrics;
 
@@ -103,7 +103,7 @@ public:
         // read default generation config
     }
 
-    GenerationConfig get_config() const {
+    ov::genai::GenerationConfig get_config() const {
         return m_generation_config;
     }
 
@@ -115,7 +115,7 @@ public:
         return m_tokenizer;
     }
 
-    GenerationHandle add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
+    GenerationHandle add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params) {
         sampling_params.set_eos_token_id(m_tokenizer->get_eos_token_id());
         sampling_params.validate();
 
@@ -233,7 +233,7 @@ public:
         return !m_awaiting_requests.empty() || !m_requests.empty();
     }
 
-    std::vector<GenerationResult> generate(const std::vector<std::string> prompts, std::vector<GenerationConfig> sampling_params) {
+    std::vector<GenerationResult> generate(const std::vector<std::string> prompts, std::vector<ov::genai::GenerationConfig> sampling_params) {
         OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
         OPENVINO_ASSERT(prompts.size() == sampling_params.size());
 
@@ -285,7 +285,7 @@ std::shared_ptr<ov::genai::Tokenizer> ContinuousBatchingPipeline::get_tokenizer(
     return m_impl->get_tokenizer();
 }
 
-GenerationConfig ContinuousBatchingPipeline::get_config() const{
+ov::genai::GenerationConfig ContinuousBatchingPipeline::get_config() const{
     return m_impl->get_config();
 }
 
@@ -293,7 +293,7 @@ PipelineMetrics ContinuousBatchingPipeline::get_metrics() const{
     return m_impl->get_metrics();
 }
 
-GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params) {
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params) {
     return m_impl->add_request(request_id, prompt, sampling_params);
 }
 
@@ -305,6 +305,6 @@ bool ContinuousBatchingPipeline::has_non_finished_requests() {
     return m_impl->has_non_finished_requests();
 }
 
-std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, std::vector<GenerationConfig> sampling_params) {
+std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, std::vector<ov::genai::GenerationConfig> sampling_params) {
     return m_impl->generate(prompts, sampling_params);
 }

@@ -49,6 +49,16 @@ GenerationConfig::GenerationConfig(const std::string& json_path) {
     }
 }
 
+void GenerationConfig::set_eos_token_id(size_t tokenizer_eos_token_id) {
+    if (eos_token_id < 0) {
+        eos_token_id = tokenizer_eos_token_id;
+    } else {
+        OPENVINO_ASSERT(eos_token_id == tokenizer_eos_token_id,
+            "EOS token ID is different in generation config (", eos_token_id, ") and tokenizer (",
+            tokenizer_eos_token_id, ")");
+    }
+}
+
 void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     using ov::genai::utils::read_anymap_param;
     
@@ -96,8 +106,9 @@ void GenerationConfig::validate() const {
                     "Beam search with sampling is not supported yet. "
                     "Please either set do_sample=false to use beam search "
                     "or set num_beams=1 if you with to use multinomial sampling.");
-    OPENVINO_ASSERT(num_return_sequences <= num_beams, "num_return_sequences must be less or equal to num_beams");
+    OPENVINO_ASSERT(num_return_sequences > 0, "num_return_sequences must be greater than 0");
     OPENVINO_ASSERT(max_new_tokens > 0, "'max_new_tokens' must be greater than 0");
+    OPENVINO_ASSERT(min_new_tokens <= max_new_tokens, "min_new_tokens must be less or equal max_new_tokens");
     
     // max_new_tokens has priority over max_length
     // if max_new_tokens is defined no need to check max_length
@@ -123,7 +134,48 @@ void GenerationConfig::validate() const {
 
     OPENVINO_ASSERT(eos_token_id != -1 || max_new_tokens != SIZE_MAX || max_length != SIZE_MAX,
                     "Either 'eos_token_id', or 'max_new_tokens', or 'max_length' should be defined.");
+    if (is_beam_search()) {
+        OPENVINO_ASSERT(no_repeat_ngram_size > 0, "no_repeat_ngram_size must be positive");
+    } else {
+        OPENVINO_ASSERT(frequency_penalty >= -2.0f && frequency_penalty <= 2.0f, "frequence_penalty penalty must be a [-2; +2]");
+        OPENVINO_ASSERT(presence_penalty >= -2.0f && presence_penalty <= 2.0f, "presence_penalty penalty must be a [-2; +2]");
+    }
 }
 
+GenerationConfig beam_search() {
+    GenerationConfig beam_search_config;
+    beam_search_config.num_beams = 4;
+    beam_search_config.num_return_sequences = 3;
+    beam_search_config.num_beam_groups = 2;
+    beam_search_config.max_new_tokens = 100;
+    beam_search_config.diversity_penalty = 2.0f;
+    return beam_search_config;
+}
+
+GenerationConfig greedy() {
+    GenerationConfig greedy_config;
+    greedy_config.temperature = 0.0f;
+    greedy_config.ignore_eos = true;
+    greedy_config.num_return_sequences = 1;
+    greedy_config.repetition_penalty = 3.0f;
+    greedy_config.presence_penalty = 0.1f;
+    greedy_config.frequency_penalty = 0.01f;
+    greedy_config.max_new_tokens = 30;
+    return greedy_config;
+}
+
+GenerationConfig multinomial() {
+    GenerationConfig multinomial_config;
+    multinomial_config.do_sample = true;
+    multinomial_config.temperature = 0.9f;
+    multinomial_config.top_p = 0.9f;
+    multinomial_config.top_k = 20;
+    multinomial_config.num_return_sequences = 3;
+    multinomial_config.presence_penalty = 0.01f;
+    multinomial_config.frequency_penalty = 0.1f;
+    multinomial_config.min_new_tokens = 15;
+    multinomial_config.max_new_tokens = 30;
+    return multinomial_config;
+}
 }  // namespace genai
 }  // namespace ov
