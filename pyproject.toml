@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "openvino_tokenizers~=2024.3.0.0"
+    "openvino_tokenizers~=2024.3.0.0.dev"
 ]
 
 [tool.py-build-cmake.module]
@@ -37,7 +37,8 @@ install_components = ["wheel_genai"]
 [build-system]
 requires = [
     "py-build-cmake@git+https://github.com/tttapa/py-build-cmake@7ab73da351c7140f06d727a8705bece4cf544cd9",
-    "cmake~=3.23"
+    "cmake~=3.23",
+    "openvino~=2024.3.0.0.dev"
 ]
 build-backend = "py_build_cmake.build"
 
