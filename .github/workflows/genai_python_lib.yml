@@ -32,15 +32,31 @@ jobs:
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
 
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v2.19.2
-        with:
-          package-dir: .
-          output-dir: wheelhouse
-          config-file: "{package}/pyproject.toml"
 
-      - run: python -m pip install openvino-genai --find-links=wheelhouse
-      - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+ubuntu_genai_wheels:
+  # A tokenizers' dependency fails to compile on ubuntu-20 n CenOS7 env.
+  runs-on: ubuntu-22.04
+  env:
+    # A tokenizers' dependency fails to compile with Ninja in CenOS7 env.
+    CMAKE_GENERATOR: Unix Makefiles
+    CMAKE_BUILD_PARALLEL_LEVEL: null
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - uses: actions/setup-python@v4
+      with:
+        python-version: 3.8
+
+    - name: Build wheels
+      uses: pypa/cibuildwheel@v2.19.2
+      with:
+        package-dir: .
+        output-dir: wheelhouse
+        config-file: "{package}/pyproject.toml"
+
+    - run: python -m pip install openvino-genai --find-links=wheelhouse
+    - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
 
 
   macos_genai_python_lib:
