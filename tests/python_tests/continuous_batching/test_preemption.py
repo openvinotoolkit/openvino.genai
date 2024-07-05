@@ -35,7 +35,7 @@ multinomial_params = RandomSamplingTestStruct(generation_config=[get_multinomial
 # todo: Anastasiia Pnevskaya: fix the test because it is hanging according max_new_tokens = std::numeric_limits<std::size_t>::max()
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
-@pytest.mark.xfail(raises=AssertionError, reason="Fails on CI.", condition=sys.platform in ["win32", "darwin"])
+@pytest.mark.xfail(raises=AssertionError, reason="assert ref_text == ov_text fails in CI.", condition=sys.platform in ["win32", "darwin"], strict=True)
 def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     generation_configs = multinomial_params.generation_config
     for config in generation_configs:

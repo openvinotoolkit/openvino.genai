@@ -55,7 +55,7 @@ TEST(GenerationConfigTest, valid_repeatition_penalty) {
     config.do_sample = true;
     config.repetition_penalty = 1.8;
     EXPECT_NO_THROW(config.validate());
-    config.repetition_penalty = 0.0;
+    config.repetition_penalty = 0.1;
     EXPECT_NO_THROW(config.validate());
 }
 

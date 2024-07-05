@@ -102,13 +102,6 @@ jobs:
           unzip -d ov ov.zip
           dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
         shell: bash
-
-
-      # - run: curl --output ov.zip ${{ env.w_ov_link }}
-      # - run: unzip -d ov ov.zip
-      # - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
-      #   shell: bash
-
       - name: Install dependencies and build
         run: |
           call .\ov\setupvars.bat
@@ -153,12 +146,6 @@ jobs:
           unzip -d ov ov.zip
           dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
         shell: bash
-      
-      # - run: curl --output ov.zip ${{ env.w_ov_link }}
-      # - run: unzip -d ov ov.zip
-      # - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
-      #   shell: bash
-      
       - name: Install dependencies and build
         run: |
           call .\ov\setupvars.bat
