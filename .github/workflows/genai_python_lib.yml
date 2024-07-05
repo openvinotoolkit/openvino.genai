@@ -31,8 +31,17 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
-      - run: source ./ov/setupvars.sh && python -m pip install . --verbose
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.19.2
+        with:
+          package-dir: .
+          output-dir: wheelhouse
+          config-file: "{package}/pyproject.toml"
+
+      - run: python -m pip install openvino-genai --find-links=wheelhouse
       - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+
 
   macos_genai_python_lib:
     runs-on: macos-12
