@@ -14,7 +14,7 @@
 namespace ov {
 namespace genai {
 
-// Return flag correspods whether generation should be stopped: false means continue generation, true means stop.
+// Return flag corresponds whether generation should be stopped: false means continue generation, true means stop.
 using StreamerVariant = std::variant<std::function<bool(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
