@@ -55,8 +55,17 @@ jobs:
           output-dir: wheelhouse
           config-file: "{package}/pyproject.toml"
 
-      - run: python -m pip install openvino-genai --find-links=wheelhouse
-      - run: python -m pip install openvino_tokenizers[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
+      - name: Install openvino-genai wheel
+        run: |
+          # Find and install wheel
+          pushd wheelhouse
+            wheel_name=$(find . -name 'openvino_genai*.whl')
+            python3 -m pip install $wheel_name
+          popd
+        env:
+          PIP_EXTRA_INDEX_URL: https://storage.openvinotoolkit.org/simple/wheels/nightly
+
+      - run: python -m pip install openvino_tokenizers[transformers] -r ./tests/python_tests/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
       - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
 
 
