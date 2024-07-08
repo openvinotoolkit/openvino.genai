@@ -4,7 +4,7 @@
 import sys
 import pytest
 
-from openvino_genai.py_continuous_batching import GenerationConfig
+from openvino_genai import GenerationConfig
 from common import get_model_and_tokenizer, save_ov_model_from_optimum, generate_and_compare_with_reference_text, \
     DEFAULT_SCHEDULER_CONFIG, get_scheduler_config, run_test_pipeline, get_models_list, get_beam_search, get_greedy, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
@@ -19,11 +19,11 @@ def get_greedy_seq_len_300() -> GenerationConfig:
 
 def get_beam_search_seq_len_300() -> GenerationConfig:
     generation_config = GenerationConfig()
-    generation_config.num_groups = 3
-    generation_config.group_size = 2
+    generation_config.num_beam_groups = 3
+    generation_config.num_beams = 6
     generation_config.max_new_tokens = 300
     generation_config.num_return_sequences = 3
-    generation_config.num_return_sequences = generation_config.num_groups * generation_config.group_size
+    generation_config.num_return_sequences = generation_config.num_beams
     return generation_config
 
 scheduler_params_list = [({"num_kv_blocks": 2, "block_size": 32, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256}, get_greedy()),
