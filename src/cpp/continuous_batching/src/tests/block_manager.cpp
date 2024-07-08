@@ -7,7 +7,7 @@
 #include "continuous_batching_pipeline.hpp"
 #include "sequence_group.hpp"
 #include "scheduler.hpp"
-#include "generation_config.hpp"
+#include "openvino/genai/generation_config.hpp"
 
 TEST(TestBlockManager, general_test) {
     BlockManager bm = BlockManager(6);

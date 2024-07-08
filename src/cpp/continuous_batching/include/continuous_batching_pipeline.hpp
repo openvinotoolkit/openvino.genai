@@ -8,7 +8,7 @@
 
 #include "scheduler_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
-#include "generation_config.hpp"
+#include "openvino/genai/generation_config.hpp"
 #include "generation_handle.hpp"
 
 struct PipelineMetrics { 
@@ -32,16 +32,16 @@ public:
 
     std::shared_ptr<ov::genai::Tokenizer> get_tokenizer();
 
-    GenerationConfig get_config() const;
+    ov::genai::GenerationConfig get_config() const;
 
     PipelineMetrics get_metrics() const;
 
-    GenerationHandle add_request(uint64_t request_id, std::string prompt, GenerationConfig sampling_params);
+    GenerationHandle add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params);
 
     void step();
 
     bool has_non_finished_requests();
 
     // more high level interface, which can process multiple prompts in continuous batching manner
-    std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, std::vector<GenerationConfig> sampling_params);
+    std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, std::vector<ov::genai::GenerationConfig> sampling_params);
 };
