@@ -107,14 +107,14 @@ RANDOM_SAMPLING_TEST_CASES = [
     pytest.param(RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_top_p(),
                              prompts=["What is OpenVINO?"],
                              ref_texts=[ ["\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"] ]),
-                             marks=[pytest.mark.xfail(reason="assert ref_text == ov_text fails in CI.", strict=True, condition=sys.platform in ["darwin", "win32"])]),
+                             ),
     RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_top_k(),
                              prompts=["What is OpenVINO?"],
                              ref_texts=[ ["\n\nOpenVINO is a software that allows users to create a virtual machine with the ability to create a virtual machine in a virtual environment. Open"] ]),
     pytest.param(RandomSamplingTestStruct(generation_config=get_multinomial_temperature_top_p_and_top_k(),
                              prompts=["What is OpenVINO?"],
                              ref_texts=[ ["\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"] ]),
-                             marks=[pytest.mark.xfail(reason="assert ref_text == ov_text fails in CI.", strict=True, condition=sys.platform in ["darwin", "win32"])]),
+                             ),
     RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_repetition_penalty(),
                              prompts=["What is OpenVINO?"],
                              ref_texts=[ ["\nOpen Vino's are a new and improved way to find cheap, fast-investment frozen vegetables that have no waste or calories. They're"] ]),
@@ -126,8 +126,7 @@ RANDOM_SAMPLING_TEST_CASES = [
                                     ' map and where does the game player base base?    I tend to like to do all draws on a specific spot (sometimes wide area,',
                                     ' them?\nJust the Mario Maker App, the location is they'
                                 ]
-                             ]), 
-                             marks=[pytest.mark.xfail(reason="assert ref_text == ov_text fails in CI.", strict=True)]),
+                             ])),
     pytest.param(RandomSamplingTestStruct(generation_config=get_multinomial_all_parameters(),
                              prompts=["Tell me something about UAE"],
                              ref_texts=[
@@ -138,7 +137,7 @@ RANDOM_SAMPLING_TEST_CASES = [
                                     '? I think that is a bit of an anomaly, but you might want to ask yourself this question: Where can some young people from Dubai or Bahrain'
                                 ]
                              ]),
-                             marks=[pytest.mark.xfail(reason="assert ref_text == ov_text fails in CI.", strict=True, condition=sys.platform in ["darwin", "win32"])]),
+                             ),
     RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_presence_penalty(),
                              prompts=["What is OpenVINO?"],
                              ref_texts=[ ["\n\nOpenVINO is a software development platform developed by OpenVINO, Inc., which uses a RESTful API for server-side web applications"] ]),
@@ -157,11 +156,12 @@ RANDOM_SAMPLING_TEST_CASES = [
                                     '\n\nOpenVINO is a social networking tool. OpenVINO is a free virtualization service that works at scale. The tool provides the ability'
                                 ]
                             ]),
-                            marks=[pytest.mark.xfail(reason="assert ref_text == ov_text fails in CI.", strict=True, condition=sys.platform in ["darwin", "win32"])]),
+                            ),
 ]
 
 
 @pytest.mark.precommit
+@pytest.mark.random
 @pytest.mark.parametrize("test_struct", RANDOM_SAMPLING_TEST_CASES,
         ids=["multinomial_temperature",
              "multinomial_temperature_and_top_p",

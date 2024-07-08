@@ -229,6 +229,7 @@ class Sampler {
         auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
         std::vector<Token> out_tokens;
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
+            std::cout << "Next rnd: " << rng_engine2() << std::endl;
             size_t element_to_pick = dist(rng_engine);
             out_tokens.push_back(logit_vector[element_to_pick]);
         }
@@ -239,13 +240,18 @@ class Sampler {
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
 
     std::mt19937 rng_engine;
+    std::mt19937 rng_engine2;
     // { request_id, logit_processor }
     std::map<uint64_t, LogitProcessor> m_logit_processors;
 
 public:
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits);
 
-    void set_seed(size_t seed) { rng_engine.seed(seed); }
+    void set_seed(size_t seed) { 
+        std::cout << "Set rnd seed" << seed << std::endl;
+        rng_engine.seed(seed);
+        rng_engine2.seed(seed);
+    }
 };
 
 SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits) {
