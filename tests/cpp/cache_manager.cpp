@@ -4,9 +4,9 @@
 
 #include <gtest/gtest.h>
 #include "openvino/runtime/core.hpp"
-#include "../../src/cpp/src/scheduler.hpp"
-#include "../../src/cpp/src/device_config.hpp"
-#include "../../src/cpp/src/cache_manager.hpp"
+#include "scheduler.hpp"
+#include "device_config.hpp"
+#include "cache_manager.hpp"
 
 TEST(TestCacheManager, general_test) {
     ov::Core core;

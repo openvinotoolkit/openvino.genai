@@ -6,8 +6,8 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
-#include "../../src/cpp/src/sequence_group.hpp"
-#include "../../src/cpp/src/scheduler.hpp"
+#include "sequence_group.hpp"
+#include "scheduler.hpp"
 
 using namespace ov::genai;
 
