@@ -1408,13 +1408,14 @@ def main():
         "-c",
         "--compress_weights",
         type=str,
-        choices=["INT8", "INT8_ASYM", "INT8_SYM", "4BIT_DEFAULT", "4BIT_MAXIMUM", "INT4_SYM", "INT4_ASYM"],
+        choices=["INT8", "INT8_ASYM", "INT8_SYM", "4BIT_DEFAULT", "4BIT_MAXIMUM", "INT4_SYM", "INT4_ASYM", "E2M1"],
         nargs="+",
         help=(
             "The weight compression option, e.g. INT8 - INT8 weights (deprecated, please use INT8_ASYM instead), "
             "4BIT_DEFAULT - for 4-bit compression with predefined configs with performance-accuracy trade-off, "
             "4BIT_MAXIMUM - for 4-bit compression with predefined configs for the best performance, "
-            "INT4_* - for INT4 compressed weights."
+            "INT4_* - for INT4 compressed weights, "
+            "E2M1 - for fp4 compression with fp8 (e8m0) scales."
         ),
     )
     compression_group.add_argument(
