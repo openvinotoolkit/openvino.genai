@@ -324,15 +324,6 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 if (m_beam_search_info.find(request_id) == m_beam_search_info.end()) {
                     m_beam_search_info.emplace(request_id, GroupBeamSearcher(sequence_group));
                 }
-                else {
-                    // sequence group can be empty if returned after preemption
-                    if (sequence_group->is_empty()) {
-                        // clear beam search info
-                        m_beam_search_info.erase(request_id);
-                        m_beam_search_info.emplace(request_id, GroupBeamSearcher(sequence_group));
-                    }
-                }
-
 
                 // current algorithm already adds new tokens to running sequences and
                 m_beam_search_info.at(request_id).select_next_tokens(sequence_group_logits, sampler_output);

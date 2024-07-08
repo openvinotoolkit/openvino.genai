@@ -101,52 +101,45 @@ private:
         size_t prev_blocks_count = m_block_manager.num_free_blocks();
         size_t num_running_sequences = sequence_group->num_running_seqs();
         size_t preempted_tokens = 0;
+        size_t num_blocks_occupied_by_sequence = m_block_manager.get_number_of_blocks_occupied_by_sequence(sequence_group);
 
-        if (num_running_sequences > 1) {
-            for (size_t s = 0; s < sequence_group->num_running_seqs(); ++s) {
-                auto seq_id = (*sequence_group)[s]->get_id();
+        if (num_blocks_occupied_by_sequence <= blocks_needed) {
+            auto sequences = sequence_group->get_not_finished_sequences();
+            for (size_t s = 0; s < sequences.size(); ++s) {
+                auto seq_id = sequences[s]->get_id();
                 m_block_manager.free_sequence(seq_id);
             }
-            sequence_group->reset();
+            sequence_group->preempt_tokens(processed_tokens);
             sequence_group->set_waiting();
             return m_block_manager.num_free_blocks() > prev_blocks_count;
         }
 
-        // currently partial preemtion is enabled only for single running sequence case
-        // TODO: implement partial preemption for case with muliple sequences in group
-        for (size_t s = 0; s < num_running_sequences; ++s) {
-            auto seq_id = (*sequence_group)[s]->get_id();
-            if (!m_block_manager.has_block_table(seq_id)) {
-                // no blocks are allocated for this sequence, so it can't be preempted
-                return false;
-            }
-            auto block_table = m_block_manager.get_block_table(seq_id);
-            size_t required_blocks = blocks_needed - total_num_released_blocks;
-            if (required_blocks >= block_table.size()) {
-                // fully drop a sequence(s) from block_manager
-                m_block_manager.free_sequence(seq_id);
-            }
-            else {
-                m_block_manager.free_sequence_partially(seq_id, required_blocks);
-            }
-
-            // calculate the number of released blocks
-            auto released_blocks = m_block_manager.num_free_blocks() - prev_blocks_count;
-            total_num_released_blocks += released_blocks;
-            prev_blocks_count = m_block_manager.num_free_blocks();
-
+        if (num_running_sequences > 1) {
+            size_t phisycal_blocks_released;
+            size_t logical_blocks_released;
+            m_block_manager.free_group_partially_multiple_runnning_sequence(sequence_group, blocks_needed, phisycal_blocks_released, logical_blocks_released);
 
             // calculate the number of preempted tokens
             auto tokens_in_last_block = processed_tokens % block_size;
             if (tokens_in_last_block == 0) {    
                 tokens_in_last_block = block_size;
             }
+            preempted_tokens = tokens_in_last_block + std::max<size_t>((int)logical_blocks_released - 1, 0) * block_size;
 
-            preempted_tokens += tokens_in_last_block + std::max<size_t>((int)released_blocks - 1, 0) * block_size;
-            if (m_block_manager.num_free_blocks() >= blocks_needed) {
-                break;
-            }
         }
+        else {
+            OPENVINO_ASSERT(num_running_sequences == 1);
+            size_t phisycal_blocks_released;
+            m_block_manager.free_group_partially_single_runnning_sequence(sequence_group, blocks_needed, phisycal_blocks_released);
+
+            // calculate the number of preempted tokens
+            auto tokens_in_last_block = processed_tokens % block_size;
+            if (tokens_in_last_block == 0) {    
+                tokens_in_last_block = block_size;
+            }
+            preempted_tokens = tokens_in_last_block + std::max<size_t>((int)phisycal_blocks_released - 1, 0) * block_size;
+        }
+
         // case when preemption requires preempt prompt tokens
         if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
             // preempt prompt fully to not leave partially generated prompt
