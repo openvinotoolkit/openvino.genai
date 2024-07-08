@@ -110,6 +110,78 @@ public:
         return m_block_table[seq_id];
     }
 
+    const size_t free_rightest_blocks(SequenceGroup::Ptr sequence_group) {
+        size_t blocks_released = 0;
+        auto running_sequences = sequence_group->get_not_finished_sequences();
+        std::set<size_t> blocks_released_indices;
+        for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
+            auto seq_id = running_sequences[idx]->get_id();
+            OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
+            auto block_table = m_block_table[seq_id];
+            if (free_last_block(seq_id)) {
+                blocks_released++;
+            }
+        }
+        return blocks_released;
+    }
+
+    const bool free_group_partially_multiple_runnning_sequence(SequenceGroup::Ptr sequence_group, size_t num_required_blocks, size_t& phisical_blocks_released, size_t& logical_blocks_released) {
+        phisical_blocks_released = 0;
+        logical_blocks_released = 0;
+        while (num_required_blocks > phisical_blocks_released) {
+            size_t released_count = free_rightest_blocks(sequence_group);
+            logical_blocks_released += 1;
+            if (get_number_of_blocks_occupied_by_sequence(sequence_group) == 0) {
+                break;
+            }
+            phisical_blocks_released += released_count;
+        }
+        phisical_blocks_released = phisical_blocks_released;
+        return num_required_blocks <= phisical_blocks_released;
+    }
+
+    const bool free_group_partially_single_runnning_sequence(SequenceGroup::Ptr sequence_group, size_t num_required_blocks, size_t& phisical_blocks_released) {
+        auto sequences = sequence_group->get_not_finished_sequences();
+        OPENVINO_ASSERT(sequences.size() == 1);
+        auto running_sequence = sequences[0];
+        auto seq_id = running_sequence->get_id();
+        if (!has_block_table(seq_id)) {
+            // no blocks are allocated for this sequence, so it can't be preempted
+            return false;
+        }
+        auto block_table = get_block_table(seq_id);
+        auto prev_blocks_count = num_free_blocks();
+        free_sequence_partially_single_runnning_sequence(seq_id, num_required_blocks);
+
+        // calculate the number of released blocks
+        phisical_blocks_released = num_free_blocks() - prev_blocks_count;
+
+        return num_required_blocks <= phisical_blocks_released;
+    }
+
+    const size_t get_number_of_blocks_occupied_by_sequence(SequenceGroup::Ptr sequence_group) {
+        auto running_sequences = sequence_group->get_not_finished_sequences();
+        size_t num_blocks = 0;
+        std::set<size_t> indices;
+        for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
+            auto seq_id = running_sequences[idx]->get_id();
+            if (m_block_table.count(seq_id) == 0) {
+                continue;
+            }
+           // OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
+            auto block_table = m_block_table[seq_id];
+            size_t last_idx = block_table.back()->get_index();
+            if (indices.find(last_idx) != indices.end()) {
+                continue;
+            }
+            else {
+                indices.insert(last_idx);
+                num_blocks += block_table.size();
+            }
+        }
+        return num_blocks;
+    }
+
     const bool has_block_table(uint64_t seq_id) {
         return m_block_table.count(seq_id) > 0;
     }
@@ -153,11 +225,23 @@ public:
         OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
     }
 
-    void free_sequence_partially(size_t seq_id, size_t block_num) {
-        // currently this method is applicable only for groups with single sequences
-        // TODO: support for groups with multiple sequences
+    bool free_last_block(size_t seq_id) {
         auto block_table = m_block_table[seq_id];
+        OPENVINO_ASSERT(block_table.size() >= 1);
+        size_t block_idx = m_block_table[seq_id].size() - 1;
+        m_allocator.free(block_table[block_idx]);
+        m_block_table[seq_id].resize(m_block_table[seq_id].size() - 1);
 
+        if (m_block_table[seq_id].size() == 0) {
+            OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
+        }
+        return block_table[block_idx]->is_free();
+    }
+
+    void free_sequence_partially_single_runnning_sequence(size_t seq_id, size_t block_num) {
+        // this method is applicable only for groups with single sequences
+
+        auto block_table = m_block_table[seq_id];
         OPENVINO_ASSERT(block_table.size() >= block_num);
         for (size_t idx = 0; idx < block_num; idx++) {
             size_t block_idx = m_block_table[seq_id].size() - idx - 1;
@@ -166,7 +250,7 @@ public:
         } 
         m_block_table[seq_id].resize(m_block_table[seq_id].size() - block_num);
 
-        if (m_block_table.size() == 0) {
+        if (m_block_table[seq_id].size() == 0) {
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
         }
     }
@@ -200,6 +284,7 @@ public:
             if (last_block_ids.find(last_block_id) != last_block_ids.end()) 
                 // this block was already processed
                 continue;
+            last_block_ids.insert(last_block_id);
 
             size_t needed_blocks_per_sequence = seq_group->get_num_logical_blocks() - num_physical_blocks;
 
