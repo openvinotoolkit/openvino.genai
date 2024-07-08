@@ -40,7 +40,7 @@ TEST(TestBlockManager, required_blocks_count) {
         0, 
         ov::Tensor(ov::element::i64, {
         tokens.size()}, tokens.data()),
-        GenerationConfig::beam_search(), 
+        ov::genai::beam_search(), 
         4);
     sequence_group->schedule_tokens(5);
     auto required_blocks = bm.required_blocks_count(sequence_group);
