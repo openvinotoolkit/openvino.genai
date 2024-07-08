@@ -1310,13 +1310,22 @@ def convert_codegen2(args):
     if config.model_type == "codegen":
         config.model_type = "codegen2"
     cuda, post_init = patch_gptq(config)
-    pt_model = AutoModelForCausalLM.from_pretrained(
-        args.model_id,
-        trust_remote_code=True,
-        config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
+    precision = args.precision
+    compression_only = (
+        args.compress_weights
+        and not args.force_convert
+        and not is_torch_compression(args)
+        and is_ov_model_provided(args.model_id, args.output_dir, precision)
     )
-    pt_model.config = config
-    convert_optimum_causallm_base(pt_model, args, model_config=config)
+    pt_model = None
+    if not compression_only:
+        pt_model = AutoModelForCausalLM.from_pretrained(
+            args.model_id,
+            trust_remote_code=True,
+            config=AutoConfig.from_pretrained(args.model_id, trust_remote_code=True),
+        )
+        pt_model.config = config
+    convert_optimum_causallm_base(pt_model, args, config, compression_only)
     if post_init is not None:
         unpatch_gptq(cuda, post_init)
 
