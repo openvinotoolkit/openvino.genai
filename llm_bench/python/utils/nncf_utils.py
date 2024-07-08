@@ -19,10 +19,6 @@ COMPRESSION_OPTIONS = {
         "ratio": 1,
         "all_layers": True,
     },
-    "INT4_ASYM": {
-        "mode": nncf.CompressWeightsMode.INT4_ASYM,
-        "group_size": 128,
-    },
     "E2M1": {
         "mode": nncf.CompressWeightsMode.E2M1,
         "group_size": 32,
