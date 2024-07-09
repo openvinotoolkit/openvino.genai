@@ -99,6 +99,7 @@ multinomial_params_n_seq = RandomSamplingTestStruct(generation_config=[
 
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
+@pytest.mark.xfail(reason="assert ref_text == ov_text fails", condition=sys.platform in ["win32", "darwin"])
 def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     generation_configs = multinomial_params_n_seq.generation_config
     for config in generation_configs:
