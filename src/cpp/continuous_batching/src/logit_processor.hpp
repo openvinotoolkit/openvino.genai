@@ -313,7 +313,7 @@ public:
 
             if (sampling_params.is_multinomial()) {
                 m_logit_transformers.emplace_back(new LogitTransformers::TemperatureLogitTransform(sampling_params.temperature));
-                if (sampling_params.top_p != 0.0f) {
+                if (sampling_params.top_p != 1.0f) {
                     m_logit_transformers.emplace_back(new LogitTransformers::TopPFilter(sampling_params.top_p));
                 }
                 if (sampling_params.top_k > 0) {
