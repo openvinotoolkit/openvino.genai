@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "log.hpp"
 #include "openvino/runtime/core.hpp"
 #include "utils.hpp"
 
@@ -110,14 +111,14 @@ ov::Tensor OpenposeDetector::forward(const ov::Tensor& ori_img,
     ov::Tensor heatmap_avg = init_tensor_with_zeros({1, ori_img_H, ori_img_W, 19}, ov::element::f32);
     ov::Tensor paf_avg = init_tensor_with_zeros({1, ori_img_H, ori_img_W, 38}, ov::element::f32);
     // Print the shape of the initialized tensors
-    std::cout << "Heatmap Average Tensor Shape: " << heatmap_avg.get_shape() << std::endl;
-    std::cout << "PAF Average Tensor Shape: " << paf_avg.get_shape() << std::endl;
+    debugPrint("Heatmap Average Tensor Shape: ", heatmap_avg.get_shape());
+    debugPrint("PAF Average Tensor Shape: ", paf_avg.get_shape());
 
     for (size_t m = 0; m < multiplier.size(); ++m) {
         float scale = multiplier[m];
         ov::Tensor image_to_test = smart_resize_k(ori_img, scale, scale);
         auto [image_to_test_padded, pad] = pad_right_down_corner(image_to_test, stride, pad_val);
-        std::cout << "image_to_test_padded.shape: " << image_to_test_padded.get_shape() << std::endl;  // NHWC
+        debugPrint("image_to_test_padded.shape: ", image_to_test_padded.get_shape());
         // NHWC -> NCHW
         ov::Tensor im(ov::element::u8,
                       {1,
@@ -125,56 +126,45 @@ ov::Tensor OpenposeDetector::forward(const ov::Tensor& ori_img,
                        image_to_test_padded.get_shape()[1],
                        image_to_test_padded.get_shape()[2]});
         reshape_tensor<uint8_t>(image_to_test_padded, im, {0, 3, 1, 2});
-        std::cout << "im.shape: " << im.get_shape() << std::endl;
+        debugPrint("im.shape: ", im.get_shape());
         // normalize to float32
         auto input = normalize_rgb_tensor(im);
 
         // Model inference code
         auto [Mconv7_stage6_L1, Mconv7_stage6_L2] = inference(input);
 
-        std::cout << "Mconv7_stage6_L1.shape: " << Mconv7_stage6_L1.get_shape() << std::endl;
-        std::cout << "Mconv7_stage6_L2.shape: " << Mconv7_stage6_L2.get_shape() << std::endl;
+        debugPrint("Mconv7_stage6_L1.shape: ", Mconv7_stage6_L1.get_shape());
+        debugPrint("Mconv7_stage6_L2.shape: ", Mconv7_stage6_L2.get_shape());
 
         // heatmap NCHW -> NHWC
         ov::Tensor heatmap(
             ov::element::f32,
             {1, Mconv7_stage6_L2.get_shape()[2], Mconv7_stage6_L2.get_shape()[3], Mconv7_stage6_L2.get_shape()[1]});
         reshape_tensor<float>(Mconv7_stage6_L2, heatmap, {0, 2, 3, 1});
-        std::cout << "heatmap.shape: " << heatmap.get_shape() << std::endl;
-        std::cout << "heatmap.element: " << heatmap.get_element_type() << std::endl;
 
         // Resize
         heatmap = smart_resize_k(heatmap, static_cast<float>(stride), static_cast<float>(stride));
-        std::cout << "heatmap.shape: " << heatmap.get_shape() << std::endl;
-        std::cout << "heatmap.element: " << heatmap.get_element_type() << std::endl;
 
         // Crop padding
         heatmap = crop_right_down_corner(heatmap, pad);
-        std::cout << "cropped heatmap.shape: " << heatmap.get_shape() << std::endl;
-        std::cout << "cropped heatmap.element: " << heatmap.get_element_type() << std::endl;
+
         // Resize
         heatmap = smart_resize(heatmap, ori_img_H, ori_img_W);
-        std::cout << "heatmap.shape: " << heatmap.get_shape() << std::endl;
 
         // PAF NCHW -> NHWC
         ov::Tensor paf(
             ov::element::f32,
             {1, Mconv7_stage6_L1.get_shape()[2], Mconv7_stage6_L1.get_shape()[3], Mconv7_stage6_L1.get_shape()[1]});
         reshape_tensor<float>(Mconv7_stage6_L1, paf, {0, 2, 3, 1});
-        std::cout << "paf.shape: " << paf.get_shape() << std::endl;
+
         // Resize
         paf = smart_resize_k(paf, static_cast<float>(stride), static_cast<float>(stride));
-        std::cout << "paf.shape: " << paf.get_shape() << std::endl;
-        std::cout << "paf.element: " << paf.get_element_type() << std::endl;
 
         // Crop padding
         paf = crop_right_down_corner(paf, pad);
-        std::cout << "paf.shape: " << paf.get_shape() << std::endl;
-        std::cout << "paf.element: " << paf.get_element_type() << std::endl;
 
         // Resize
         paf = smart_resize(paf, ori_img_H, ori_img_W);
-        std::cout << "cropped paf.shape: " << paf.get_shape() << std::endl;
 
         // Accumulate results
         auto heatmap_avg_data = heatmap_avg.data<float>();
@@ -197,10 +187,9 @@ ov::Tensor OpenposeDetector::forward(const ov::Tensor& ori_img,
     // iterate and print peaks
     for (auto& peak : all_peaks) {
         for (auto& p : peak) {
-            std::cout << "Peak: " << std::get<0>(p) << " " << std::get<1>(p) << " " << std::get<2>(p) << " ";
-            std::cout << "Counter: " << std::get<3>(p) << std::endl;
+            debugPrint("Peak: ");
+            debugPrint(p);
         }
-        std::cout << std::endl;
     }
 
     std::vector<std::vector<std::tuple<int, int, float, int, int>>> connection_all;
@@ -209,30 +198,24 @@ ov::Tensor OpenposeDetector::forward(const ov::Tensor& ori_img,
 
     for (auto& connection : connection_all) {
         for (auto& c : connection) {
-            std::cout << "Connection all: " << std::get<0>(c) << " " << std::get<1>(c) << " " << std::get<2>(c) << " "
-                      << std::get<3>(c) << std::endl;
+            debugPrint("Connection: ");
+            debugPrint(c);
         }
-        std::cout << std::endl;
     }
-    std::cout << "special k: " << std::endl;
-    for (auto& k : special_k) {
-        std::cout << k << " ";
-    }
-    std::cout << std::endl;
+    debugPrint("Special K");
+    debugPrint(special_k);
 
     process_connections(all_peaks, connection_all, special_k, subset, candidate);
 
     // print candidate
     for (auto& cand : candidate) {
-        std::cout << "Candidate: " << cand[0] << " " << cand[1] << " " << cand[2] << " " << cand[3] << std::endl;
+        debugPrint("Candidate: ");
+        debugPrint(cand);
     }
 
     for (auto& sub : subset) {
-        std::cout << "Subset: ";
-        for (auto& s : sub) {
-            std::cout << s << " ";
-        }
-        std::cout << std::endl;
+        debugPrint("Subset: ");
+        debugPrint(sub);
     }
 
     auto output = render_pose(ori_img, subset, candidate);
