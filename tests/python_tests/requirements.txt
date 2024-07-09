@@ -1,5 +1,5 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-optimum[openvino]==1.20.0
+optimum[openvino]==1.21.2
 pytest
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
