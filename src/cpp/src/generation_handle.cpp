@@ -3,8 +3,10 @@
 
 #include <openvino/openvino.hpp>
 
-#include "generation_handle.hpp"
+#include "openvino/genai/generation_handle.hpp"
 #include "generation_stream.hpp"
+
+using namespace ov::genai;
 
 GenerationHandleImpl::~GenerationHandleImpl() {
     m_generation_stream->drop();

@@ -26,10 +26,12 @@ It includes the following pipelines:
    - C++:
      1. [beam_search_causal_lm](./samples/cpp/beam_search_causal_lm/README.md)
      2. [chat_sample](./samples/cpp/chat_sample/README.md)
-     3. [greedy_causal_lm](./samples/cpp/greedy_causal_lm/README.md)
-     4. [multinomial_causal_lm](./samples/cpp/multinomial_causal_lm/README.md)
-     5. [prompt_lookup_decoding_lm](./samples/cpp/prompt_lookup_decoding_lm/README.md)
-     6. [speculative_decoding_lm](./samples/cpp/speculative_decoding_lm/README.md)
+     3. [continuous_batching_accuracy](./samples/cpp/continuous_batching_accuracy)
+     4. [continuous_batching_benchmark](./samples/cpp/continuous_batching_benchmark)
+     5. [greedy_causal_lm](./samples/cpp/greedy_causal_lm/README.md)
+     6. [multinomial_causal_lm](./samples/cpp/multinomial_causal_lm/README.md)
+     7. [prompt_lookup_decoding_lm](./samples/cpp/prompt_lookup_decoding_lm/README.md)
+     8. [speculative_decoding_lm](./samples/cpp/speculative_decoding_lm/README.md)
 3. [Stable Diffuison (with LoRA) C++ image generation pipeline](./image_generation/stable_diffusion_1_5/cpp/README.md)
 4. [Latent Consistency Model (with LoRA) C++ image generation pipeline](./image_generation/lcm_dreamshaper_v7/cpp/README.md)
 

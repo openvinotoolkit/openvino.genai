@@ -17,8 +17,8 @@
 #include <cxxopts.hpp>
 
 #include "openvino/genai/tokenizer.hpp"
-#include "continuous_batching_pipeline.hpp"
-#include "generation_handle.hpp"
+#include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "openvino/genai/generation_handle.hpp"
 
 namespace {
 
@@ -178,14 +178,14 @@ class GenerationInfo {
         size_t num_input_tokens;
     };
 
-    GenerationHandle generation_handle;
+    ov::genai::GenerationHandle generation_handle;
     std::chrono::steady_clock::time_point start_time;
     std::unordered_map<int64_t, SequenceInfo> sequences_info;
     bool active = true;
     size_t input_len;
 
 public:
-    GenerationInfo(GenerationHandle generation_handle, size_t input_len) : input_len(input_len)
+    GenerationInfo(ov::genai::GenerationHandle generation_handle, size_t input_len) : input_len(input_len)
     {
         this->generation_handle = std::move(generation_handle);
         start_time = std::chrono::steady_clock::now();
@@ -197,13 +197,13 @@ public:
         sequences_info.at(sequence_id).update();
     }
 
-    void update(GenerationOutputs& outputs){
+    void update(ov::genai::GenerationOutputs& outputs){
         for (auto const& output: outputs) {
             update_sequence(output.first);
         }
     }
 
-    GenerationOutputs read() {
+    ov::genai::GenerationOutputs read() {
         return generation_handle->read();
     }
 
@@ -212,7 +212,7 @@ public:
     }
 
     bool is_finished() {
-        return generation_handle->get_status() == GenerationStatus::FINISHED;
+        return generation_handle->get_status() == ov::genai::GenerationStatus::FINISHED;
     }
 
     void set_inactive() {
@@ -249,13 +249,13 @@ public:
         this->start_time = start_time;
     }
 
-    void add_generation(ContinuousBatchingPipeline* pipe, Dataset* dataset, size_t request_id) {
-        GenerationHandle generation_handle = pipe->add_request(request_id, dataset->m_prompts[request_id], dataset->m_sampling_params[request_id]);
+    void add_generation(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, size_t request_id) {
+        ov::genai::GenerationHandle generation_handle = pipe->add_request(request_id, dataset->m_prompts[request_id], dataset->m_sampling_params[request_id]);
         std::lock_guard<std::mutex> lock(mutex);
         generations_info.emplace_back(std::move(generation_handle), dataset->m_input_lens[request_id]);
     }
 
-    int run() {
+    size_t run() {
         std::lock_guard<std::mutex> lock(mutex);
         for (GenerationInfo& generation_info : generations_info) {
             if (!generation_info.is_active())
@@ -299,7 +299,7 @@ public:
     }
 };
 
-void trafficSimulator(ContinuousBatchingPipeline* pipe, Dataset* dataset, std::string request_rate, GenerationInfoCollector* generation_info_collector) {
+void trafficSimulator(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, std::string request_rate, GenerationInfoCollector* generation_info_collector) {
     double numeric_request_rate;
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -333,7 +333,7 @@ void trafficSimulator(ContinuousBatchingPipeline* pipe, Dataset* dataset, std::s
     std::cout << "All requests sent, traffic simulation finished. Exiting thread." << std::endl;
 }
 
-void llmEngineLoop(ContinuousBatchingPipeline* pipe, Dataset* dataset, std::atomic<bool>* finishThread) {
+void llmEngineLoop(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, std::atomic<bool>* finishThread) {
     std::cout << "Launching LLM engine thread" << std::endl;
     size_t num_finished = 0;
 
@@ -466,7 +466,7 @@ int main(int argc, char* argv[]) try {
     Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
 
     // Perform the first inference
-    SchedulerConfig scheduler_config {
+    ov::genai::SchedulerConfig scheduler_config {
         .max_num_batched_tokens = max_batch_size,
         .cache_size = cache_size,
         .block_size = 32,
@@ -495,7 +495,7 @@ int main(int argc, char* argv[]) try {
     
     // Benchmarking
     std::cout << "Loading models, creating pipelines, preparing environment..." << std::endl;
-    ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map);
+    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map);
 
     std::cout << "Setup finished, launching LLM executor, traffic simulation and statistics reporter threads" << std::endl;
 

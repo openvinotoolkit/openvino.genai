@@ -9,6 +9,7 @@
 
 #include "device_config.hpp"
 
+namespace ov::genai {
 class CacheManager {
     DeviceConfig m_device_config;
     std::vector<ov::Tensor> m_key_cache;
@@ -82,3 +83,4 @@ public:
         }
     }
 };
+}
