@@ -33,7 +33,6 @@ find_python3 = true
 build_args = ["--parallel"]
 install_args = ["--strip"]
 install_components = ["wheel_genai"]
-options = { "ENABLE_CONTINUOUS_BATCHING" = "ON" }
 
 [build-system]
 requires = [

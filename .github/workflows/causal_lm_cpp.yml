@@ -606,21 +606,22 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -S ./ -B ./build/
+          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING_SAMPLES=ON -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
       - name: Run gtests
         run: |
           source ./ov/setupvars.sh
-          ./build/src/cpp/continuous_batching/tests_continuous_batching
+          ./build/tests/cpp/tests_continuous_batching
       - name: Run accuracy_sample
         run: |
           source ./ov/setupvars.sh
-          timeout 50s ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
+          timeout 50s ./build/samples/cpp/continuous_batching_accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
       - name: Run throughput_benchmark
         run: |
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
           source ./ov/setupvars.sh
-          timeout 200s ./build/samples/cpp/throughput_benchmark/throughput_benchmark -n 10 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
+          timeout 200s ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 10 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
+          
 
   cpp-continuous-batching-windows:
     runs-on: windows-latest
@@ -646,24 +647,24 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -S ./ -B ./build/
+          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING_SAMPLES=ON -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
       - name: Run gtests
         run: |
           set PATH=.\build\openvino_genai\;%PATH%
           call .\ov\setupvars.bat
-          .\build\src\cpp\continuous_batching\Release\tests_continuous_batching.exe
+          .\build\tests\cpp\Release\tests_continuous_batching.exe
       - name: Run accuracy_sample
         run: |
           set PATH=.\build\openvino_genai\;%PATH%
           call .\ov\setupvars.bat
-          .\build\samples\cpp\accuracy_sample\Release\accuracy_sample.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 5
+          .\build\samples\cpp\continuous_batching_accuracy\Release\continuous_batching_accuracy.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 5
       - name: Run throughput_benchmark
         run: |
           curl -o .\ShareGPT_V3_unfiltered_cleaned_split.json -s -L "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json"
           set PATH=.\build\openvino_genai\;%PATH%
           call .\ov\setupvars.bat
-          .\build\samples\cpp\throughput_benchmark\Release\throughput_benchmark.exe -n 2 --dynamic_split_fuse -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
+          .\build\samples\cpp\continuous_batching_benchmark\Release\continuous_batching_benchmark.exe -n 2 --dynamic_split_fuse -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
   cpp-continuous-batching-macos:
     runs-on: macos-12
@@ -685,18 +686,18 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -S ./ -B ./build/
+          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CONTINUOUS_BATCHING_SAMPLES=ON -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
       - name: Run gtests
         run: |
           source ./ov/setupvars.sh
-          ./build/src/cpp/continuous_batching/tests_continuous_batching
+          ./build/tests/cpp/tests_continuous_batching
       - name: Run accuracy_sample
         run: |
           source ./ov/setupvars.sh
-          timeout 120s ./build/samples/cpp/accuracy_sample/accuracy_sample -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
+          timeout 120s ./build/samples/cpp/continuous_batching_accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
       - name: Run throughput_benchmark
         run: |
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
           source ./ov/setupvars.sh
-          ./build/samples/cpp/throughput_benchmark/throughput_benchmark -n 5 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
+          ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 5 --dynamic_split_fuse -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1

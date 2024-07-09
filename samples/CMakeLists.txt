@@ -28,3 +28,8 @@ install(DIRECTORY
             python/multinomial_causal_lm
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)
+
+if(ENABLE_CONTINUOUS_BATCHING_SAMPLES)
+        add_subdirectory(cpp/continuous_batching_accuracy)
+        add_subdirectory(cpp/continuous_batching_benchmark)
+endif()
