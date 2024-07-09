@@ -5,6 +5,7 @@ on:
     paths:
       - image_generation/lcm_dreamshaper_v7/cpp/**
       - image_generation/common/**
+      - samples/requirements.txt
       - .github/workflows/lcm_dreamshaper_cpp.yml
       - thirdparty/openvino_tokenizers
       - "!**.md"
@@ -49,8 +50,8 @@ jobs:
         working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_lcm_cpp
-          python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
-          python -m pip install -r requirements.txt
+          python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ../../requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           
       - name: Download and convert model and tokenizer
         working-directory: ${{ env.working_directory }}
@@ -94,8 +95,8 @@ jobs:
         working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_lcm_cpp
-          python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
-          python -m pip install -r requirements.txt
+          python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install -r ../../requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 
       - name: Download and convert model and tokenizer
         working-directory: ${{ env.working_directory }}

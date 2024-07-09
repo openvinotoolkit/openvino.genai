@@ -199,7 +199,7 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
             if model_id in INT4_MODEL_CONFIGURATION:
                 compression_args = INT4_MODEL_CONFIGURATION[model_id]
             else:
-                compression_args = COMPRESSION_OPTIONS["INT4_SYM"]
+                compression_args = COMPRESSION_OPTIONS["INT4_ASYM"]
 
     if compression_args is None:
         compression_args = COMPRESSION_OPTIONS[compress_weights_format]
