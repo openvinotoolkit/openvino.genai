@@ -5,15 +5,16 @@
 #include <mutex>
 #include <memory>
 
-#include "continuous_batching_pipeline.hpp"
+#include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "openvino/genai/tokenizer.hpp"
 #include "cache_manager.hpp"
 #include "sampler.hpp"
 #include "model_runner.hpp"
 #include "scheduler.hpp"
 #include "timer.hpp"
-#include "openvino/genai/tokenizer.hpp"
-
 #include "debug_utils.hpp"
+
+using namespace ov::genai;
 
 void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
 

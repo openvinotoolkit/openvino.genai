@@ -7,8 +7,9 @@
 #include <unordered_map>
 
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/visibility.hpp"
 
-
+namespace ov::genai {
 enum class GenerationStatus {
     RUNNING = 0, // Default status for ongoing generation
     FINISHED = 1, // Status set when generation has been finished
@@ -40,7 +41,7 @@ using GenerationOutputs = std::unordered_map<uint64_t, GenerationOutput>;
 
 class GenerationStream;
 
-class GenerationHandleImpl {
+class OPENVINO_GENAI_EXPORTS GenerationHandleImpl {
     std::shared_ptr<GenerationStream> m_generation_stream;
     ov::genai::GenerationConfig m_sampling_params;
  
@@ -66,3 +67,4 @@ public:
 };
 
 using GenerationHandle = std::unique_ptr<GenerationHandleImpl>;
+}

@@ -7,10 +7,11 @@
 #include <set>
 #include <cstdlib>
 
-#include "generation_handle.hpp"
+#include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
 
+namespace ov::genai {
 enum class SequenceStatus {
     RUNNING = 0,
     FINISHED = 1,
@@ -481,3 +482,4 @@ public:
         }
     } 
 };
+}

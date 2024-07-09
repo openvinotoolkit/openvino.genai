@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240626_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15805-6138d624dc1/w_openvino_toolkit_windows_2024.3.0.dev20240626_x86_64.zip
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15945-a349dc82f9a/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240708_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15945-a349dc82f9a/w_openvino_toolkit_windows_2024.3.0.dev20240708_x86_64.zip
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores

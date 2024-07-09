@@ -4,13 +4,13 @@
 
 #include <gtest/gtest.h>
 #include "openvino/runtime/core.hpp"
-#include "continuous_batching_pipeline.hpp"
+#include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "openvino/genai/generation_config.hpp"
 #include "sequence_group.hpp"
 #include "scheduler.hpp"
-#include "openvino/genai/generation_config.hpp"
 
 TEST(TestBlockManager, general_test) {
-    BlockManager bm = BlockManager(6);
+    ov::genai::BlockManager bm = ov::genai::BlockManager(6);
 
     bm.allocate(0, 6);
     EXPECT_TRUE(bm.has_block_table(0));
@@ -33,14 +33,14 @@ TEST(TestBlockManager, general_test) {
 }
 
 TEST(TestBlockManager, required_blocks_count) {
-    BlockManager bm = BlockManager(8);
+    ov::genai::BlockManager bm = ov::genai::BlockManager(8);
 
     std::vector<uint64_t> tokens = {0,1,2,3,4};
-    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
+    ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
         0, 
         ov::Tensor(ov::element::i64, {
         tokens.size()}, tokens.data()),
-        GenerationConfig::beam_search(), 
+        ov::genai::beam_search(),
         4);
     sequence_group->schedule_tokens(5);
     auto required_blocks = bm.required_blocks_count(sequence_group);
