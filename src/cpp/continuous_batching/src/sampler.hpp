@@ -229,8 +229,8 @@ class Sampler {
         auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
         std::vector<Token> out_tokens;
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
-            std::cout << "Next rnd: " << rng_engine2() << std::endl;
             size_t element_to_pick = dist(rng_engine);
+            std::cout << "Next rnd: " << rng_engine2() << " " << element_to_pick << std::endl;
             out_tokens.push_back(logit_vector[element_to_pick]);
         }
         return out_tokens;
@@ -239,6 +239,7 @@ class Sampler {
     // request ID => beam search tracking information
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
 
+    // https://stackoverflow.com/questions/40361041/achieve-same-random-number-sequence-on-different-os-with-same-seed
     std::mt19937 rng_engine;
     std::mt19937 rng_engine2;
     // { request_id, logit_processor }
