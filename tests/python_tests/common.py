@@ -165,10 +165,10 @@ def get_multinomial_max_and_min_token() -> GenerationConfig:
 
 def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
     prompts = [
-        "What is OpenVINO?",
-        "How are you?",
-        "What is your name?",
-        "Tell me something about Canada"
+        "What is OpenVINO?" * 10,
+        "How are you?" * 50,
+        "What is your name?" * 50,
+        "Tell me something about Canada" * 20
     ]
     generation_configs = [
         get_greedy(),

@@ -187,18 +187,20 @@ public:
             auto attention_scores_across_decoder_layers_for_current_sequence = AttentionScoresForEachDecoderLayer(m_num_decoder_layers);
             size_t global_sequence_id = seq_id_and_score_span.first;
             IndexSpan span = seq_id_and_score_span.second;
-            std::cout << "VSHAMPOR: global sequence id and index spans: " << '\n';
-            std::cout << "VSHAMPOR: " << seq_id_and_score_span.first << ": [" << seq_id_and_score_span.second.first << ", " << seq_id_and_score_span.second.second << "]\n";
+            //std::cout << "VSHAMPOR: global sequence id and index spans: " << '\n';
+            //std::cout << "VSHAMPOR: " << seq_id_and_score_span.first << ": [" << seq_id_and_score_span.second.first << ", " << seq_id_and_score_span.second.second << "]\n";
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; decoder_layer_id++) {
                 auto attention_score = m_request.get_tensor(get_paged_attention_score_output_for_decoder_layer(decoder_layer_id));
                 // std::cout << "VSHAMPOR: attention score shape for decoder layer " << decoder_layer_id << " is " << attention_score.get_shape() << '\n';
                 auto scores_for_cache_of_current_sequence = ov::Tensor(attention_score, ov::Coordinate{span.first}, ov::Coordinate{span.second});
-                std::cout << "VSHAMPOR: attention scores for decoder layer " << decoder_layer_id << " are ";
-                for (size_t j = 0; j < scores_for_cache_of_current_sequence.get_size(); j++) {
-                    std::cout << scores_for_cache_of_current_sequence.data<float>()[j] << " ";
-                }
-                std::cout << "\n";
-                attention_scores_across_decoder_layers_for_current_sequence.push_back(scores_for_cache_of_current_sequence);
+                auto copied_tensor = ov::Tensor(scores_for_cache_of_current_sequence.get_element_type(), ov::Shape{span.second - span.first});
+                scores_for_cache_of_current_sequence.copy_to(copied_tensor);
+                //std::cout << "VSHAMPOR: attention scores for decoder layer " << decoder_layer_id << " are ";
+                //for (size_t j = 0; j < scores_for_cache_of_current_sequence.get_size(); j++) {
+                //    std::cout << scores_for_cache_of_current_sequence.data<float>()[j] << " ";
+                //}
+                //std::cout << "\n";
+                attention_scores_across_decoder_layers_for_current_sequence[decoder_layer_id] = scores_for_cache_of_current_sequence;
             }
             m_last_attention_scores[global_sequence_id] = attention_scores_across_decoder_layers_for_current_sequence;
         }

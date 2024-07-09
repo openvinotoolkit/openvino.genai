@@ -218,20 +218,22 @@ public:
         }
 
         // evict unimportant blocks from KV cache, if requested
-        if (m_generation_config.use_cache_eviction) {
+        if (true) {
+        // if (m_generation_config.use_cache_eviction) {
             auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
             for (const auto& seq_id_and_attention_scores : sequence_attention_scores) {
                 auto seq_id = seq_id_and_attention_scores.first;
-                auto attention_scores_for_all_decoder_layers = seq_id_and_attention_scores.second;
+                const auto& attention_scores_for_all_decoder_layers = seq_id_and_attention_scores.second;
                 std::cout << "VSHAMPOR: starting eviction for seq_id " << seq_id << std::endl;
-                if (m_global_sequence_id_to_cache_eviction_algo_map.find(seq_id) != m_global_sequence_id_to_cache_eviction_algo_map.end()) {
+                if (m_global_sequence_id_to_cache_eviction_algo_map.find(seq_id) == m_global_sequence_id_to_cache_eviction_algo_map.end()) {
                     auto num_decoder_layers = attention_scores_for_all_decoder_layers.size();
-                    m_global_sequence_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(CacheEvictionConfig(), num_decoder_layers);
+                    auto cache_eviction_config = CacheEvictionConfig();
+                    m_global_sequence_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(cache_eviction_config, num_decoder_layers);
                 }
-                auto cache_eviction_algo = m_global_sequence_id_to_cache_eviction_algo_map[seq_id];
-                auto logical_blocks_to_keep = cache_eviction_algo.get_logical_block_indices_to_keep(attention_scores_for_all_decoder_layers);
-                std::cout << "VSHAMPOR: for decoder layer 0, keeping logical blocks ";
-                for (auto idx : logical_blocks_to_keep[0]) std::cout << idx << " ";
+                auto& cache_eviction_algo = m_global_sequence_id_to_cache_eviction_algo_map[seq_id];
+                auto logical_blocks_to_evict = cache_eviction_algo.get_logical_block_indices_to_evict(attention_scores_for_all_decoder_layers);
+                std::cout << "VSHAMPOR: for decoder layer 0, evicting logical blocks ";
+                for (auto idx : logical_blocks_to_evict[0]) std::cout << idx << " ";
                 std::cout << "\n" << std::endl;
             }
         }

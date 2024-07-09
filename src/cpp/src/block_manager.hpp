@@ -372,7 +372,7 @@ public:
         for (size_t idx = 0; idx < num_blocks_to_free; idx++) {
             size_t block_idx = m_block_table[seq_id].size() - idx - 1;
             m_allocator.free(block_table[block_idx]);
-        } 
+        }
         m_block_table[seq_id].resize(m_block_table[seq_id].size() - num_blocks_to_free);
 
         if (m_block_table[seq_id].size() == 0) {
@@ -380,16 +380,32 @@ public:
         }
     }
 
-    void free_block_from_sequence(size_t seq_id, size_t logical_block_idx) {
-        auto sequence_blocks = m_block_table[seq_id];
+    void free_blocks_from_sequence(size_t seq_id, std::set<size_t> logical_block_indices_to_free) {
+        if (logical_block_indices_to_free.empty()) {
+            return;
+        }
+
+        auto& sequence_blocks = m_block_table[seq_id];
         size_t block_table_size = sequence_blocks.size();
 
-        OPENVINO_ASSERT(logical_block_idx <= block_table_size,
-                        "cannot free logical block ", logical_block_idx,
-                        "from sequence ", seq_id, " since it only has ", block_table_size, "logical blocks");
-        auto block = sequence_blocks[logical_block_idx];
-        m_allocator.free(block);
-        sequence_blocks.erase(sequence_blocks.begin() + logical_block_idx);
+        for (size_t logical_block_idx : logical_block_indices_to_free) {
+            OPENVINO_ASSERT(logical_block_idx <= block_table_size,
+                            "cannot free logical block ", logical_block_idx,
+                            "from sequence ", seq_id, " since it only has ", block_table_size, "logical blocks");
+            auto block = sequence_blocks[logical_block_idx];
+            m_allocator.free(block);
+        }
+        std::vector<KVCacheBlock::Ptr> new_sequence_blocks;
+        OPENVINO_ASSERT(logical_block_indices_to_free.size() <= block_table_size, "too many blocks to free");
+        new_sequence_blocks.reserve(block_table_size - logical_block_indices_to_free.size());
+        for (size_t logical_block_idx = 0; logical_block_idx < block_table_size; logical_block_idx++) {
+            if (logical_block_indices_to_free.find(logical_block_idx) == logical_block_indices_to_free.end()) {
+                // idx NOT in the requested set to free, need to keep this block
+                new_sequence_blocks.push_back(sequence_blocks[logical_block_idx]);
+            }
+        }
+
+        sequence_blocks = new_sequence_blocks;
     }
 
     bool can_append_slots(SequenceGroup::CPtr seq_group) {
