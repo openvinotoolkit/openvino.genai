@@ -18,13 +18,14 @@ using TemperatureTransformTest = testing::TestWithParam<TemperatureTransformTest
 
 TEST_P(TemperatureTransformTest, TransformResultEqualToReference) {
     auto test_struct = GetParam();
+    auto logits = test_struct.input;
     auto transform = TemperatureLogitTransform(test_struct.temperature);
-    auto test_result = transform.apply(test_struct.input);
-    ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
-    std::sort(test_result.begin(), test_result.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
-    for (size_t i = 0; i < test_result.size(); i++) {
-        EXPECT_NEAR(test_result[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
-        EXPECT_EQ(test_result[i].m_index, test_struct.expected_output[i].m_index);
+    transform.apply(logits);
+    ASSERT_EQ(logits.size(), test_struct.expected_output.size());
+    std::sort(logits.begin(), logits.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+    for (size_t i = 0; i < logits.size(); i++) {
+        EXPECT_NEAR(logits[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
+        EXPECT_EQ(logits[i].m_index, test_struct.expected_output[i].m_index);
     }
 }
 
@@ -51,12 +52,13 @@ using TopPFilteringTest = testing::TestWithParam<TopPTestStruct>;
 
 TEST_P(TopPFilteringTest, FilterResultEqualToReference) {
     auto test_struct = GetParam();
+    auto logits = test_struct.input;
     auto transform = TopPFilter(test_struct.top_p);
-    auto test_result = transform.apply(test_struct.input);
-    ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
-    for (size_t i = 0; i < test_result.size(); i++) {
-        EXPECT_NEAR(test_result[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
-        EXPECT_EQ(test_result[i].m_index, test_struct.expected_output[i].m_index);
+    transform.apply(logits);
+    ASSERT_EQ(logits.size(), test_struct.expected_output.size());
+    for (size_t i = 0; i < logits.size(); i++) {
+        EXPECT_NEAR(logits[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
+        EXPECT_EQ(logits[i].m_index, test_struct.expected_output[i].m_index);
     }
 }
 
@@ -83,12 +85,13 @@ using TopKFilteringTest = testing::TestWithParam<TopKTestStruct>;
 
 TEST_P(TopKFilteringTest, FilterResultEqualToReference) {
     auto test_struct = GetParam();
+    auto logits = test_struct.input;
     auto transform = TopKFilter(test_struct.top_k);
-    auto test_result = transform.apply(test_struct.input);
-    ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
-    for (size_t i = 0; i < test_result.size(); i++) {
-        EXPECT_NEAR(test_result[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
-        EXPECT_EQ(test_result[i].m_index, test_struct.expected_output[i].m_index);
+    transform.apply(logits);
+    ASSERT_EQ(logits.size(), test_struct.expected_output.size());
+    for (size_t i = 0; i < logits.size(); i++) {
+        EXPECT_NEAR(logits[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
+        EXPECT_EQ(logits[i].m_index, test_struct.expected_output[i].m_index);
     }
 }
 
@@ -113,12 +116,13 @@ using ProbabilityNormalizeTransformTest = testing::TestWithParam<ProbabilityNorm
 
 TEST_P(ProbabilityNormalizeTransformTest, TransformResultEqualToReference) {
     auto test_struct = GetParam();
+    auto logits = test_struct.input;
     auto transform = ProbabilityNormalizeTransform();
-    auto test_result = transform.apply(test_struct.input);
-    ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
-    for (size_t i = 0; i < test_result.size(); i++) {
-        EXPECT_NEAR(test_result[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
-        EXPECT_EQ(test_result[i].m_index, test_struct.expected_output[i].m_index);
+    transform.apply(logits);
+    ASSERT_EQ(logits.size(), test_struct.expected_output.size());
+    for (size_t i = 0; i < logits.size(); i++) {
+        EXPECT_NEAR(logits[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
+        EXPECT_EQ(logits[i].m_index, test_struct.expected_output[i].m_index);
     }
 }
 
@@ -134,7 +138,7 @@ INSTANTIATE_TEST_SUITE_P(VariousInputs,
 
 struct RepetitionPenaltyTransformTestStruct {
     float penalty;
-    std::vector<Token> input_logits;
+    std::vector<Token> input;
     TokenIds input_ids;
     std::vector<Token> expected_output;
 };
@@ -143,12 +147,13 @@ using RepetitionPenaltyTransformTest = testing::TestWithParam<RepetitionPenaltyT
 
 TEST_P(RepetitionPenaltyTransformTest, TransformResultEqualToReference) {
     auto test_struct = GetParam();
+    auto logits = test_struct.input;
     auto transform = RepetitionPenaltyTransform(test_struct.penalty);
-    auto test_result = transform.apply(test_struct.input_logits, test_struct.input_ids);
-    ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
-    for (size_t i = 0; i < test_result.size(); i++) {
-        EXPECT_NEAR(test_result[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
-        EXPECT_EQ(test_result[i].m_index, test_struct.expected_output[i].m_index);
+    transform.apply(logits, test_struct.input_ids);
+    ASSERT_EQ(logits.size(), test_struct.expected_output.size());
+    for (size_t i = 0; i < logits.size(); i++) {
+        EXPECT_NEAR(logits[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
+        EXPECT_EQ(logits[i].m_index, test_struct.expected_output[i].m_index);
     }
 }
 
@@ -180,13 +185,15 @@ INSTANTIATE_TEST_SUITE_P(VariousInputs,
 
 TEST(RepetitionPenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
     auto transform = RepetitionPenaltyTransform(1.5);
-    EXPECT_THROW(transform.apply({{43.0f, 0}}, {1337}), ov::Exception);
-    EXPECT_THROW(transform.apply({{18.0f, 0}}, {0, -1}), ov::Exception);
+    std::vector<Token> input {{43.0f, 0}};
+    EXPECT_THROW(transform.apply(input, {1337}), ov::Exception);
+    input = {{18.0f, 0}};
+    EXPECT_THROW(transform.apply(input, {0, -1}), ov::Exception);
 }
 
 struct FrequencyPenaltyTransformTestStruct {
     float penalty;
-    std::vector<Token> input_logits;
+    std::vector<Token> input;
     TokenIds input_ids;
     std::vector<Token> expected_output;
 };
@@ -195,12 +202,13 @@ using FrequencyPenaltyTransformTest = testing::TestWithParam<FrequencyPenaltyTra
 
 TEST_P(FrequencyPenaltyTransformTest, TransformResultEqualToReference) {
     auto test_struct = GetParam();
+    auto logits = test_struct.input;
     auto transform = FrequencyPenaltyTransform(test_struct.penalty);
-    auto test_result = transform.apply(test_struct.input_logits, test_struct.input_ids);
-    ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
-    for (size_t i = 0; i < test_result.size(); i++) {
-        EXPECT_NEAR(test_result[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
-        EXPECT_EQ(test_result[i].m_index, test_struct.expected_output[i].m_index);
+    transform.apply(logits, test_struct.input_ids);
+    ASSERT_EQ(logits.size(), test_struct.expected_output.size());
+    for (size_t i = 0; i < logits.size(); i++) {
+        EXPECT_NEAR(logits[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
+        EXPECT_EQ(logits[i].m_index, test_struct.expected_output[i].m_index);
     }
 };
 
@@ -232,14 +240,16 @@ INSTANTIATE_TEST_SUITE_P(VariousInputs,
 
 TEST(FrequencyPenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
     auto transform = FrequencyPenaltyTransform(1.5);
-    EXPECT_THROW(transform.apply({{43.0f, 0}}, {1337}), ov::Exception);
-    EXPECT_THROW(transform.apply({{18.0f, 0}}, {0, -1}), ov::Exception);
+    std::vector<Token> input {{43.0f, 0}};
+    EXPECT_THROW(transform.apply(input, {1337}), ov::Exception);
+    input = {{18.0f, 0}};
+    EXPECT_THROW(transform.apply(input, {0, -1}), ov::Exception);
 }
 
 
 struct PresencePenaltyTransformTestStruct {
     float penalty;
-    std::vector<Token> input_logits;
+    std::vector<Token> input;
     TokenIds input_ids;
     std::vector<Token> expected_output;
 };
@@ -248,12 +258,13 @@ using PresencePenaltyTransformTest = testing::TestWithParam<PresencePenaltyTrans
 
 TEST_P(PresencePenaltyTransformTest, TransformResultEqualToReference) {
     auto test_struct = GetParam();
+    auto logits = test_struct.input;
     auto transform = PresencePenaltyTransform(test_struct.penalty);
-    auto test_result = transform.apply(test_struct.input_logits, test_struct.input_ids);
-    ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
-    for (size_t i = 0; i < test_result.size(); i++) {
-        EXPECT_NEAR(test_result[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
-        EXPECT_EQ(test_result[i].m_index, test_struct.expected_output[i].m_index);
+    transform.apply(logits, test_struct.input_ids);
+    ASSERT_EQ(logits.size(), test_struct.expected_output.size());
+    for (size_t i = 0; i < logits.size(); i++) {
+        EXPECT_NEAR(logits[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
+        EXPECT_EQ(logits[i].m_index, test_struct.expected_output[i].m_index);
     }
 };
 
@@ -285,13 +296,15 @@ INSTANTIATE_TEST_SUITE_P(VariousInputs,
 
 TEST(PresencePenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
     auto transform = PresencePenaltyTransform(1.5);
-    EXPECT_THROW(transform.apply({{43.0f, 0}}, {1337}), ov::Exception);
-    EXPECT_THROW(transform.apply({{18.0f, 0}}, {0, -1} ), ov::Exception);
+    std::vector<Token> input {{43.0f, 0}};
+    EXPECT_THROW(transform.apply(input, {1337}), ov::Exception);
+    input = {{18.0f, 0}};
+    EXPECT_THROW(transform.apply(input, {0, -1}), ov::Exception);
 }
 
 struct EOSPenaltyTransformTestStruct {
     size_t eos_token_id;
-    std::vector<Token> input_logits;
+    std::vector<Token> input;
     std::vector<Token> expected_output;
 };
 
@@ -299,12 +312,13 @@ using EOSPenaltyTransformTest = testing::TestWithParam<EOSPenaltyTransformTestSt
 
 TEST_P(EOSPenaltyTransformTest, TransformResultEqualToReference) {
     auto test_struct = GetParam();
+    auto logits = test_struct.input;
     auto transform = EOSPenaltyTransform(test_struct.eos_token_id, std::numeric_limits<size_t>::max());
-    auto test_result = transform.apply(test_struct.input_logits);
-    ASSERT_EQ(test_result.size(), test_struct.expected_output.size());
-    for (size_t i = 0; i < test_result.size(); i++) {
-        EXPECT_NEAR(test_result[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
-        EXPECT_EQ(test_result[i].m_index, test_struct.expected_output[i].m_index);
+    transform.apply(logits);
+    ASSERT_EQ(logits.size(), test_struct.expected_output.size());
+    for (size_t i = 0; i < logits.size(); i++) {
+        EXPECT_NEAR(logits[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
+        EXPECT_EQ(logits[i].m_index, test_struct.expected_output[i].m_index);
     }
 }
 
