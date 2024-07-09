@@ -1,10 +1,18 @@
 from PIL import Image
 
+def debug_print(*args, **kwargs):
+    import os
+    if os.getenv("DEBUG"):
+        print(*args, **kwargs)
+
+
 def render_from_candidate_and_subset(candidate, subset, H, W) -> Image:
     from controlnet_aux.open_pose import Body as CBody
     from controlnet_aux.open_pose import BodyResult, Keypoint, PoseResult, HWC3, resize_image, draw_poses
     import cv2
     bodies = CBody.format_body_result(candidate, subset)
+    debug_print(bodies)
+
     results = []
     for body in bodies:
         left_hand, right_hand, face = (None,) * 3
@@ -21,6 +29,7 @@ def render_from_candidate_and_subset(candidate, subset, H, W) -> Image:
             total_parts=body.total_parts
             ), left_hand, right_hand, face))
     
+    debug_print(results)
 
     canvas = draw_poses(results, H, W, draw_body=True, draw_hand=False, draw_face=False) 
 

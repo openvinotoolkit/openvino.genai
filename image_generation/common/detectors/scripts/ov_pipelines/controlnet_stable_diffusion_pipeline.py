@@ -90,7 +90,7 @@ class OVContrlNetStableDiffusionPipeline(DiffusionPipeline):
         self.vae_scale_factor = 8
         self.scheduler = scheduler
         self.load_models(core, device, controlnet, text_encoder, unet, vae_decoder)
-        self.set_progress_bar_config(disable=True)
+        self.set_progress_bar_config(disable=False)
 
     def load_models(
         self,

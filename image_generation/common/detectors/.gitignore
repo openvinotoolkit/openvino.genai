@@ -5,3 +5,4 @@ model
 *.jpg
 *.xml
 *.bin
+!requirements.txt
