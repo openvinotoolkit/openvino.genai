@@ -228,12 +228,6 @@ prompts = [
 @pytest.mark.parametrize("model_descr", models_list())
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.precommit
-@pytest.mark.xfail(
-    raises=TypeError, 
-    reason="pybind was unable to find ov::Tensor from openvino yet",
-    strict=False,
-    condition=sys.platform in ["linux", "win32"]
-)
 def test_genai_tokenizer_encode(model_descr, prompt):
     model_id, path, tokenizer, model, pipe = read_model(model_descr)
     tok = pipe.get_tokenizer()
@@ -263,12 +257,6 @@ encoded_prompts = [
 @pytest.mark.parametrize("model_descr", models_list())
 @pytest.mark.parametrize("encoded_prompt", encoded_prompts)
 @pytest.mark.precommit
-@pytest.mark.xfail(
-    raises=TypeError, 
-    reason="pybind was unable to find ov::Tensor from openvino yet",
-    strict=False,
-    condition=sys.platform in ["linux", "win32"]
-)
 def test_genai_tokenizer_decode(model_descr, encoded_prompt):
     model_id, path, tokenizer, model, pipe = read_model(model_descr)
     tok = pipe.get_tokenizer()

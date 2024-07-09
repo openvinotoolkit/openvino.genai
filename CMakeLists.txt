@@ -25,19 +25,27 @@ project(OpenVINOGenAI
 
 option(ENABLE_CONTINUOUS_BATCHING "" OFF)
 option(ENABLE_APPS "Enable C++ continuous batching apps. Ignored if ENABLE_CONTINUOUS_BATCHING is OFF" ON)
+# Looking for OpenVINO in the python distribution. It doesn't work for cross-compiling build
+if(NOT CMAKE_CROSSCOMPILING)
+    find_package(Python3 REQUIRED)
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -c "from openvino.utils import get_cmake_path; print(get_cmake_path(), end='')"
+        OUTPUT_VARIABLE OpenVINO_DIR_PY
+        ERROR_QUIET
+    )
+endif()
 
 # Find OpenVINODeveloperPackage first to compile with SDL flags
-find_package(OpenVINODeveloperPackage QUIET
-             PATHS "${OpenVINO_DIR}")
+find_package(OpenVINODeveloperPackage QUIET PATHS "${OpenVINO_DIR}")
 if(NOT OpenVINODeveloperPackage_FOUND)
-    find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+    find_package(OpenVINO REQUIRED COMPONENTS Runtime PATHS "${OpenVINO_DIR_PY}")
 endif()
 
 include(cmake/features.cmake)
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
-add_subdirectory(samples)
+# add_subdirectory(samples)
 
 install(FILES LICENSE DESTINATION licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
 install(FILES third-party-programs.txt DESTINATION licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
