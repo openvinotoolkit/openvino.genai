@@ -466,13 +466,12 @@ int main(int argc, char* argv[]) try {
     Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
 
     // Perform the first inference
-    ov::genai::SchedulerConfig scheduler_config {
-        .max_num_batched_tokens = max_batch_size,
-        .cache_size = cache_size,
-        .block_size = 32,
-        .dynamic_split_fuse = dynamic_split_fuse,
-        .max_num_seqs = 256, // not used if dynamic_split_fuse=True
-    };
+    ov::genai::SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = max_batch_size,
+    scheduler_config.cache_size = cache_size,
+    scheduler_config.block_size = 32,
+    scheduler_config.dynamic_split_fuse = dynamic_split_fuse,
+    scheduler_config.max_num_seqs = 256, // not used if dynamic_split_fuse=True
 
     std::cout << "Benchmarking parameters: " << std::endl;
     std::cout << "\tMax number of batched tokens: " << scheduler_config.max_num_batched_tokens << std::endl;
