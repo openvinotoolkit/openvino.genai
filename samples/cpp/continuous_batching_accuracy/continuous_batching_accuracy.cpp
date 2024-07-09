@@ -67,17 +67,16 @@ int main(int argc, char* argv[]) try {
 
     // Perform the inference
     
-    ov::genai::SchedulerConfig scheduler_config {
-        // batch size
-        .max_num_batched_tokens = 32,
-        // cache params
-        .num_kv_blocks = 364,
-        .block_size = 32,
-        // mode - vLLM or dynamic_split_fuse
-        .dynamic_split_fuse = dynamic_split_fuse,
-        // vLLM specific params
-        .max_num_seqs = 2,
-    };
+    ov::genai::SchedulerConfig scheduler_config;
+    // batch size
+    scheduler_config.max_num_batched_tokens = 32;
+    // cache params
+    scheduler_config.num_kv_blocks = 364;
+    scheduler_config.block_size = 32;
+    // mode - vLLM or dynamic_split_fuse
+    scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
+    // vLLM specific params
+    scheduler_config.max_num_seqs = 2;
 
     ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config);
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, sampling_params);
