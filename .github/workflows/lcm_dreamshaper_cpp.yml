@@ -5,6 +5,7 @@ on:
     paths:
       - image_generation/lcm_dreamshaper_v7/cpp/**
       - image_generation/common/**
+      - samples/requirements.txt
       - .github/workflows/lcm_dreamshaper_cpp.yml
       - thirdparty/openvino_tokenizers
       - "!**.md"
