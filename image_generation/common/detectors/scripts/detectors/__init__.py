@@ -195,18 +195,27 @@ class Body(object):
 
                         startend = list(zip(np.linspace(candA[i][0], candB[j][0], num=mid_num), \
                                             np.linspace(candA[i][1], candB[j][1], num=mid_num)))
+                        debug_print("startend: ", startend)
 
                         vec_x = np.array([score_mid[int(round(startend[I][1])), int(round(startend[I][0])), 0] \
                                           for I in range(len(startend))])
                         vec_y = np.array([score_mid[int(round(startend[I][1])), int(round(startend[I][0])), 1] \
                                           for I in range(len(startend))])
+                        debug_print("k: ", k)
+                        debug_print("vec_x: ", vec_x)
+                        debug_print("vec_y: ", vec_y)
+                        debug_print("vec[0]: ", vec[0])
+                        debug_print("vec[1]: ", vec[1])
 
                         score_midpts = np.multiply(vec_x, vec[0]) + np.multiply(vec_y, vec[1])
+                        debug_print("vec scores: ", score_midpts)
                         score_with_dist_prior = sum(score_midpts) / len(score_midpts) + min(
                             0.5 * oriImg.shape[0] / norm - 1, 0)
+                        debug_print(f"i: {i}, j: {j}, score: {score_with_dist_prior}")
                         criterion1 = len(np.nonzero(score_midpts > thre2)[0]) > 0.8 * len(score_midpts)
                         criterion2 = score_with_dist_prior > 0
                         if criterion1 and criterion2:
+                            debug_print(f"i: {i}, j: {j}, append: {[i, j, score_with_dist_prior, score_with_dist_prior + candA[i][2] + candB[j][2]]}")
                             connection_candidate.append(
                                 [i, j, score_with_dist_prior, score_with_dist_prior + candA[i][2] + candB[j][2]])
 
@@ -218,7 +227,7 @@ class Body(object):
                         connection = np.vstack([connection, [candA[i][3], candB[j][3], s, i, j]])
                         if (len(connection) >= min(nA, nB)):
                             break
-
+                debug_print("connection: ", connection)
                 connection_all.append(connection)
             else:
                 special_k.append(k)

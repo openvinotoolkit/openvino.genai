@@ -209,10 +209,16 @@ ov::Tensor OpenposeDetector::forward(const ov::Tensor& ori_img,
 
     for (auto& connection : connection_all) {
         for (auto& c : connection) {
-            std::cout << "Connection: " << std::get<0>(c) << " " << std::get<1>(c) << " " << std::get<2>(c) << " "
+            std::cout << "Connection all: " << std::get<0>(c) << " " << std::get<1>(c) << " " << std::get<2>(c) << " "
                       << std::get<3>(c) << std::endl;
         }
+        std::cout << std::endl;
     }
+    std::cout << "special k: " << std::endl;
+    for (auto& k : special_k) {
+        std::cout << k << " ";
+    }
+    std::cout << std::endl;
 
     process_connections(all_peaks, connection_all, special_k, subset, candidate);
 
@@ -366,16 +372,26 @@ void OpenposeDetector::calculate_connections(
             for (int j = 0; j < nB; ++j) {
                 float vec_x = std::get<0>(candB[j]) - std::get<0>(candA[i]);
                 float vec_y = std::get<1>(candB[j]) - std::get<1>(candA[i]);
-                float norm = std::sqrt(vec_x * vec_x + vec_y * vec_y);
-                norm = std::max(0.001f, norm);
-                vec_x /= norm;
-                vec_y /= norm;
 
                 std::vector<std::pair<float, float>> startend(mid_num);
                 for (int l = 0; l < mid_num; ++l) {
                     startend[l].first = std::get<0>(candA[i]) + l * vec_x / (mid_num - 1);
                     startend[l].second = std::get<1>(candA[i]) + l * vec_y / (mid_num - 1);
                 }
+
+                std::cout << "startend" << std::endl;
+                for (auto& se : startend) {
+                    std::cout << se.first << " " << se.second << std::endl;
+                }
+                std::cout << std::endl;
+
+                float norm = std::sqrt(vec_x * vec_x + vec_y * vec_y);
+                norm = std::max(0.001f, norm);
+                vec_x /= norm;
+                vec_y /= norm;
+
+                std::cout << "vec[0]: " << vec_x << std::endl;
+                std::cout << "vec[1]: " << vec_y << std::endl;
 
                 std::vector<float> vec_scores(mid_num);
                 for (int l = 0; l < mid_num; ++l) {
@@ -388,20 +404,31 @@ void OpenposeDetector::calculate_connections(
                     float score_mid_pts_y = paf_data[y * W * C + x * C + score_mid_y_channel];
                     vec_scores[l] = vec_x * score_mid_pts_x + vec_y * score_mid_pts_y;
                 }
+                std::cout << "vec_scores: ";
+                for (auto& v : vec_scores) {
+                    std::cout << v << " ";
+                }
+                std::cout << std::endl;
 
                 float score_with_dist_prior = std::accumulate(vec_scores.begin(), vec_scores.end(), 0.0f) / mid_num +
                                               std::min(0.5f * oriImg.get_shape()[1] / norm - 1.0f, 0.0f);
+
+                std::cout << "i: " << i << " j: " << j << " score: " << score_with_dist_prior << std::endl;
                 int criterion1 = std::count_if(vec_scores.begin(), vec_scores.end(), [thre2](float v) {
                                      return v > thre2;
                                  }) > 0.8f * vec_scores.size();
                 int criterion2 = score_with_dist_prior > 0;
 
+                // print when
                 if (criterion1 && criterion2) {
-                    connection_candidate.emplace_back(
-                        i,
-                        j,
-                        score_with_dist_prior,
-                        score_with_dist_prior + std::get<2>(candA[i]) + std::get<2>(candB[j]));
+                    auto candidate =
+                        std::make_tuple(i,
+                                        j,
+                                        score_with_dist_prior,
+                                        score_with_dist_prior + std::get<2>(candA[i]) + std::get<2>(candB[j]));
+                    connection_candidate.emplace_back(candidate);
+                    std::cout << "Candidate: " << i << " " << j << " " << score_with_dist_prior << " "
+                              << score_with_dist_prior + std::get<2>(candA[i]) + std::get<2>(candB[j]) << std::endl;
                 }
             }
         }
@@ -424,7 +451,12 @@ void OpenposeDetector::calculate_connections(
                 }
             }
         }
-
+        std::cout << "k: " << k << std::endl;
+        for (const auto& conn : connection) {
+            std::cout << "connection: " << std::get<0>(conn) << " " << std::get<1>(conn) << " " << std::get<2>(conn)
+                      << " " << std::get<3>(conn) << " " << std::get<4>(conn) << std::endl;
+        }
+        std::cout << std::endl;
         connection_all.push_back(connection);
     }
 }
