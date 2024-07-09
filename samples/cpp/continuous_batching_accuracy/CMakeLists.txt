@@ -20,7 +20,6 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 
 # end of dependencies
 
-set(TARGET_NAME accuracy_sample)
+set(TARGET_NAME continuous_batching_accuracy)
 add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
-target_link_libraries(${TARGET_NAME} PRIVATE openvino::continuous_batching cxxopts::cxxopts)
-target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
+target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai cxxopts::cxxopts)

@@ -18,6 +18,7 @@ install(DIRECTORY
             cpp/greedy_causal_lm
             cpp/multinomial_causal_lm
             # Don't install prompt_lookup_decoding_lm and speculative_decoding_lm because they don't use openvino_genai library and arent verifyed yet.
+            # Don't install continuous_batching_accuracy and continuous_batching_benchmark because they depend on json.
         DESTINATION samples/cpp COMPONENT cpp_samples_genai)
 
 install(DIRECTORY
@@ -27,8 +28,3 @@ install(DIRECTORY
             python/multinomial_causal_lm
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)
-
-if(ENABLE_CONTINUOUS_BATCHING AND ENABLE_APPS)
-    add_subdirectory(cpp/accuracy_sample)
-    add_subdirectory(cpp/throughput_benchmark)
-endif()
