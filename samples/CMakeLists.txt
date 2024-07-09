@@ -4,6 +4,8 @@
 
 add_subdirectory(cpp/beam_search_causal_lm)
 add_subdirectory(cpp/chat_sample)
+add_subdirectory(cpp/continuous_batching_accuracy)
+add_subdirectory(cpp/continuous_batching_benchmark)
 add_subdirectory(cpp/greedy_causal_lm)
 add_subdirectory(cpp/multinomial_causal_lm)
 add_subdirectory(cpp/prompt_lookup_decoding_lm)
@@ -28,8 +30,3 @@ install(DIRECTORY
             python/multinomial_causal_lm
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)
-
-if(ENABLE_CONTINUOUS_BATCHING_SAMPLES)
-        add_subdirectory(cpp/continuous_batching_accuracy)
-        add_subdirectory(cpp/continuous_batching_benchmark)
-endif()
