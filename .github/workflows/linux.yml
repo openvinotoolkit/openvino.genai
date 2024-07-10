@@ -225,12 +225,25 @@ jobs:
       - name: Install build dependencies
         run: sudo ${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh
 
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && cmake --build ./build/ --config Release -j
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && python -m pip install . --verbose
-      - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+      - name: Buils genai
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+
+      - name: test bindings
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/tools --upgrade-strategy eager
+          python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+        env:
+          PYTHONPATH: "./build/:$PYTHONPATH"
+
+      - name: test bindings (wheel)
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
+          python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
 
   genai_package:
     strategy:
