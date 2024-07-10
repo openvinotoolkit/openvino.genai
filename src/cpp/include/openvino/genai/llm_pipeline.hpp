@@ -116,10 +116,10 @@ public:
     );
     
     /**
-    * @brief Constructs a LLMPipeline when ov::Tokenizer is initialized manually using file from the different dirs.
+    * @brief Constructs a LLMPipeline when ov::genai::Tokenizer is initialized manually using file from the different dirs.
     *
     * @param model_path Path to the dir with model, tokenizer .xml/.bin files, and generation_configs.json
-    * @param tokenizer manually initialized ov::Tokenizer 
+    * @param tokenizer manually initialized ov::genai::Tokenizer 
     * @param device optional device
     * @param plugin_config optional plugin_config
     */
