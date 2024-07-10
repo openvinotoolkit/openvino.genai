@@ -7,6 +7,7 @@
 
 TEST(GenerationConfigTest, invalid_temperature) {
     ov::genai::GenerationConfig config;
+    config.max_new_tokens = 20;
     config.temperature = -0.1;
     config.do_sample = true;
     EXPECT_THROW(config.validate(), ov::Exception);
@@ -14,6 +15,7 @@ TEST(GenerationConfigTest, invalid_temperature) {
 
 TEST(GenerationConfigTest, valid_temperature) {
     ov::genai::GenerationConfig config;
+    config.max_new_tokens = 20;
     config.do_sample = true;
     config.temperature = 0.1;
     EXPECT_NO_THROW(config.validate());
@@ -21,6 +23,7 @@ TEST(GenerationConfigTest, valid_temperature) {
 
 TEST(GenerationConfigTest, invalid_top_p) {
     ov::genai::GenerationConfig config;
+    config.max_new_tokens = 20;
     config.do_sample = true;
     config.top_p = -0.5;
     EXPECT_THROW(config.validate(), ov::Exception);
@@ -30,6 +33,7 @@ TEST(GenerationConfigTest, invalid_top_p) {
 
 TEST(GenerationConfigTest, valid_top_p) {
     ov::genai::GenerationConfig config;
+    config.max_new_tokens = 20;
     config.do_sample = true;
     config.top_p = 0.1;
     EXPECT_NO_THROW(config.validate());
@@ -37,6 +41,7 @@ TEST(GenerationConfigTest, valid_top_p) {
 
 TEST(GenerationConfigTest, invalid_repeatition_penalty) {
     ov::genai::GenerationConfig config;
+    config.max_new_tokens = 20;
     config.do_sample = true;
     config.repetition_penalty = -3.0;
     EXPECT_THROW(config.validate(), ov::Exception);
@@ -46,15 +51,17 @@ TEST(GenerationConfigTest, invalid_repeatition_penalty) {
 
 TEST(GenerationConfigTest, valid_repeatition_penalty) {
     ov::genai::GenerationConfig config;
+    config.max_new_tokens = 20;
     config.do_sample = true;
     config.repetition_penalty = 1.8;
     EXPECT_NO_THROW(config.validate());
-    config.repetition_penalty = 0.0;
+    config.repetition_penalty = 0.1;
     EXPECT_NO_THROW(config.validate());
 }
 
 TEST(GenerationConfigTest, invalid_presence_penalty) {
     ov::genai::GenerationConfig config;
+    config.max_new_tokens = 20;
     config.do_sample = true;
     config.presence_penalty = 3.0;
     EXPECT_THROW(config.validate(), ov::Exception);
@@ -64,6 +71,7 @@ TEST(GenerationConfigTest, invalid_presence_penalty) {
 
 TEST(GenerationConfigTest, valid_presence_penalty) {
     ov::genai::GenerationConfig config;
+    config.max_new_tokens = 20;
     config.do_sample = true;
     config.presence_penalty = 1.8;
     EXPECT_NO_THROW(config.validate());
@@ -73,6 +81,7 @@ TEST(GenerationConfigTest, valid_presence_penalty) {
 
 TEST(GenerationConfigTest, invalid_frequency_penalty) {
     ov::genai::GenerationConfig config;
+    config.max_new_tokens = 20;
     config.do_sample = true;
     config.frequency_penalty = 3.0;
     EXPECT_THROW(config.validate(), ov::Exception);
@@ -82,6 +91,7 @@ TEST(GenerationConfigTest, invalid_frequency_penalty) {
 
 TEST(GenerationConfigTest, valid_frequency_penalty) {
     ov::genai::GenerationConfig config;
+    config.max_new_tokens = 20;
     config.do_sample = true;
     config.frequency_penalty = 1.8;
     EXPECT_NO_THROW(config.validate());
