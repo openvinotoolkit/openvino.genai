@@ -431,7 +431,7 @@ std::pair<EncodedResults, std::optional<int32_t>> beam_search(ov::InferRequest& 
 
     auto result = finalize(std::move(group_beam_searcher));
     ov::genai::EncodedResults results;
-    std::vector<int32_t> selected_beams;
+    std::optional<int32_t> res_selected_beam_idx = std::nullopt;
     results.scores.reserve(config.num_return_sequences * result.size());
     results.tokens.reserve(config.num_return_sequences * result.size());
     // align output with HF
@@ -451,6 +451,7 @@ std::pair<EncodedResults, std::optional<int32_t>> beam_search(ov::InferRequest& 
             plain_beams.end(),
             scores_comparator
         );
+        res_selected_beam_idx = plain_beams.at(0).get().global_beam_idx;
         for (
             auto beam = plain_beams.begin();
             beam != plain_beams.begin() + config.num_return_sequences;
@@ -458,14 +459,10 @@ std::pair<EncodedResults, std::optional<int32_t>> beam_search(ov::InferRequest& 
         ) {
             results.scores.push_back(beam->get().score);
             results.tokens.push_back(std::move(beam->get().tokens));
-            selected_beams.push_back(beam->get().global_beam_idx);
         }
     }
-    std::optional<int32_t> selected_beam = std::nullopt;
-    if (batch_size == 1)
-        selected_beam = selected_beams[0];
 
-    return {results, selected_beam};
+    return {results, res_selected_beam_idx};
 }
 
 }  // namespace genai
