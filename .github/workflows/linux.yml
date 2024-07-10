@@ -302,7 +302,6 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/tools
           optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 
-
       - run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ${OV_INSTALL_DIR}
@@ -322,4 +321,4 @@ jobs:
       - run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
-          if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
