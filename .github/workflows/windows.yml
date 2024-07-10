@@ -120,8 +120,6 @@ jobs:
 
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        with:
-          toolset: 14.40
 
       - name: CMake configure - OpenVINO
         run: |
@@ -193,7 +191,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-latest
+    runs-on: windows-2019
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
@@ -225,8 +223,6 @@ jobs:
 
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        with:
-          toolset: 14.40
 
       - name: build gen_ai
         run: |
@@ -260,7 +256,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-latest
+    runs-on: windows-2019
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
@@ -292,8 +288,6 @@ jobs:
 
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        with:
-          toolset: 14.40
 
       - name: Build gen_ai
         run: |
