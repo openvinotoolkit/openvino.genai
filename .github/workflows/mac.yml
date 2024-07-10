@@ -58,7 +58,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: 'macos-13-large'
+    runs-on: 'macos-12-large'
     env:
       CMAKE_BUILD_TYPE: 'Release'
       CMAKE_GENERATOR: 'Ninja Multi-Config'
@@ -183,7 +183,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-12
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -248,7 +248,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-12
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
