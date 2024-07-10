@@ -217,11 +217,18 @@ public:
 
 
     /**
-    * @brief Turn of keeping KV cache between generate calls and automatic applying of chat templates.
+    * @brief start chat withh keeping history in kv cache.
+    * Turns on keeping KV cache between generate calls and automatic applying of chat templates.
+    * In case if beam search is used KV cache is kept fot the generated sequence with maximal scores.
     * 
-    * @param system_message system message.
-    */    
+    * @param system_message optional system message.
+    */
     void start_chat(const std::string& system_message = "");
+
+    /**
+    * @brief finish chat and clear kv cache.
+    * Turns off keeping KV cache between generate calls.
+    */
     void finish_chat();
 private:
     std::unique_ptr<LLMPipelineImplBase> m_pimpl;

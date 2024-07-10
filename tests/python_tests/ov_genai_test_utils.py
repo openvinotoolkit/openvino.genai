@@ -80,7 +80,7 @@ def get_chat_templates():
     # Returns chat templates saved in tokenizer_configs.py, 
     # but skips some models that currently are not processed correctly.
 
-    skipped_models = [
+    skipped_models = {
         # These models fail even on HF so no need to check if applying chat matches.
         "vibhorag101/llama-2-13b-chat-hf-phr_mental_therapy",
         "codellama/CodeLlama-34b-Instruct-hf",
@@ -129,7 +129,7 @@ def get_chat_templates():
         "codellama/CodeLlama-70b-Instruct-hf",
         "gorilla-llm/gorilla-openfunctions-v2",
         "BramVanroy/Llama-2-13b-chat-dutch"
-    ]
+    }
     from tokenizer_configs import get_tokenizer_configs
     return [(k, v) for k, v in get_tokenizer_configs().items() if k not in skipped_models]
 
