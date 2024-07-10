@@ -106,36 +106,6 @@ INSTANTIATE_TEST_SUITE_P(VariousInputs,
                          TopKFilteringTest,
                          testing::ValuesIn(TOP_K_TRANSFORM_TEST_CASES));
 
-
-struct ProbabilityNormalizeTransformTestStruct {
-    std::vector<Token> input;
-    std::vector<Token> expected_output;
-};
-
-using ProbabilityNormalizeTransformTest = testing::TestWithParam<ProbabilityNormalizeTransformTestStruct>;
-
-TEST_P(ProbabilityNormalizeTransformTest, TransformResultEqualToReference) {
-    auto test_struct = GetParam();
-    auto logits = test_struct.input;
-    auto transform = ProbabilityNormalizeTransform();
-    transform.apply(logits);
-    ASSERT_EQ(logits.size(), test_struct.expected_output.size());
-    for (size_t i = 0; i < logits.size(); i++) {
-        EXPECT_NEAR(logits[i].m_log_prob, test_struct.expected_output[i].m_log_prob, 1e-6);
-        EXPECT_EQ(logits[i].m_index, test_struct.expected_output[i].m_index);
-    }
-}
-
-
-const std::vector<ProbabilityNormalizeTransformTestStruct> NORMALIZE_TRANSFORM_TEST_CASES = {
-    { { {0.090031, 2}, {0.244728, 0}, {0.665241, 1} }, { {0.090031, 2}, {0.244728, 0}, {0.665241, 1}  } },
-    { { {0.05, 0}, {0.03, 1}, {0.02, 2} }, { {0.5, 0}, {0.3, 1}, {0.2, 2}  } },
-};
-
-INSTANTIATE_TEST_SUITE_P(VariousInputs,
-                         ProbabilityNormalizeTransformTest,
-                         testing::ValuesIn(NORMALIZE_TRANSFORM_TEST_CASES));
-
 struct RepetitionPenaltyTransformTestStruct {
     float penalty;
     std::vector<Token> input;

@@ -21,7 +21,7 @@ using TokenIds = std::vector<int64_t>;
 
 class ILogitTransformer {
 public:
-    virtual void apply(std::vector<Token>& input_logits) = 0;
+    virtual void apply(std::vector<Token>& logits) = 0;
 
     virtual bool is_applicable(size_t generated_tokens_cnt = 0) {
         return true;
@@ -67,9 +67,8 @@ public:
     TemperatureLogitTransform(double temperature) : m_temperature(temperature) {};
 
     void apply(std::vector<Token>& logits) override {
-        // TODO: No need to sort entire vector if we only need max prob
-        std::sort(logits.begin(), logits.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
-        float max_logit = logits[0].m_log_prob;
+        auto max_prob_token = std::max_element(logits.begin(), logits.end(), [](const Token& lhs, const Token& rhs) { return lhs.m_log_prob < rhs.m_log_prob; });
+        float max_logit = max_prob_token->m_log_prob;
 
         std::for_each(logits.begin(), logits.end(), [max_logit, this](Token& val) {val.m_log_prob = expf((val.m_log_prob - max_logit) / this->m_temperature);});
 
@@ -168,13 +167,9 @@ public:
         m_eos_token_id(eos_token_id), m_applicable_tensor_len(min_generated_tokens) {}
 
     void apply(std::vector<Token>& logits) override {
-        for (auto& token_id : logits) {
-            // TODO: Is that right? m_index seems to be only a location of the token that logit is bound to
-            // while here we compare that index to token id
-            if (token_id.m_index == m_eos_token_id) {
-                token_id.m_log_prob = 0.f;
-            }
-        }
+        // Since EOS penalty is applied early, the token vector is not sorted
+        // and we can assume element order match token ids.
+        logits[m_eos_token_id].m_log_prob = 0.f;
     }
     
 
@@ -241,18 +236,6 @@ public:
     }
 };
 
-
-class ProbabilityNormalizeTransform : public ILogitTransformer {
-public:
-    ProbabilityNormalizeTransform() = default;
-
-    void apply(std::vector<Token>& logits) override {
-        float norm_sum = 0.0;
-        for (const auto& val : logits) norm_sum += val.m_log_prob;
-        for (auto& val : logits) val.m_log_prob /= norm_sum;
-    }
-};
-
 } // namespace LogitTransformers
 
 class LogitProcessor {
@@ -306,9 +289,6 @@ public:
                 if (sampling_params.top_k > 0) {
                     m_logit_transformers.emplace_back(new LogitTransformers::TopKFilter(sampling_params.top_k));
                 }
-                // TODO: Temperature transorm already does normalization and top_p/top_k do not seem to require it\
-                // It looks obsolete
-                m_logit_transformers.emplace_back(new LogitTransformers::ProbabilityNormalizeTransform());
             }
         }
     }
