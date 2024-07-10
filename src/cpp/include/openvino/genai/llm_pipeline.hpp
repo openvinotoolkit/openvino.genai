@@ -217,9 +217,9 @@ public:
 
 
     /**
-    * @brief start chat withh keeping history in kv cache.
+    * @brief start chat with keeping history in kv cache.
     * Turns on keeping KV cache between generate calls and automatic applying of chat templates.
-    * In case if beam search is used KV cache is kept fot the generated sequence with maximal scores.
+    * In case if beam search is used, KV cache is kept fot the generated sequence with maximal scores.
     * 
     * @param system_message optional system message.
     */

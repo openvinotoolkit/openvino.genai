@@ -207,7 +207,7 @@ public:
         ov::Tensor concatenated_attention_mask;
         if (is_chat_conversation && !m_is_cache_empty) {
             OPENVINO_ASSERT(batch_size == 1, "continuation of generation is possible only for batch 1");
-            // If history is saved in KV cache concatenate new attention_mask with the already existing.
+            // If history is saved in KV cache, concatenate new attention_mask with the already existing.
             // Between subsequent runs attention_mask should not be modified.
             auto atten_mask_history = m_model_runner.get_tensor("attention_mask");
             auto prompt_len = attention_mask.get_shape()[1];

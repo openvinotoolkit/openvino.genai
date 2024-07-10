@@ -8,7 +8,7 @@ import functools
 import openvino
 import openvino_tokenizers
 import openvino_genai as ov_genai
-from typing import Union, List, Dict, Tuple, Optional
+from typing import List, Tuple
 from pathlib import Path
 import shutil
 import json

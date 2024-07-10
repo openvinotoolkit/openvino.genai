@@ -5,8 +5,7 @@ import openvino
 import openvino_tokenizers
 import openvino_genai as ov_genai
 import pytest
-from typing import Union, List, Dict, Tuple, Optional
-import sys
+from typing import Dict, Tuple
 from ov_genai_test_utils import (
     get_models_list,
     get_chat_models_list,

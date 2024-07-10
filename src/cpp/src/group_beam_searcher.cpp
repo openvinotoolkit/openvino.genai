@@ -408,7 +408,7 @@ std::pair<EncodedResults, std::optional<int32_t>> beam_search(ov::InferRequest& 
         std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(lm.get_tensor("logits"));
         if (next_tokens.empty() || length_count == parameters.max_new_tokens - 1) {
             // Break the cycle before masks are extended in update_attention_mask_with_beams.
-            // If generation will be contined attention_mask length should be equal to KV cache size.
+            // If generation is continued, attention_mask length should be equal to KV cache size.
             break;
         }
         
