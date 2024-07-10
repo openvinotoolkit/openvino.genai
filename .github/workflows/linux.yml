@@ -224,7 +224,7 @@ jobs:
           popd
 
       - name: Install build dependencies
-        run: sudo ${OV_INSTALL_DIR}/install_dependencies/install_build_dependencies.sh
+        run: sudo ${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh
 
       - run: source ${OV_INSTALL_DIR}/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: source ${OV_INSTALL_DIR}/setupvars.sh && cmake --build ./build/ --config Release -j
@@ -275,7 +275,7 @@ jobs:
           popd
 
       - name: Install build dependencies
-        run: sudo ${OV_INSTALL_DIR}/install_dependencies/install_build_dependencies.sh
+        run: sudo ${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh
 
       - run: source ${OV_INSTALL_DIR}/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
       - run: source ${OV_INSTALL_DIR}/setupvars.sh && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
