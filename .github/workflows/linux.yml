@@ -315,11 +315,7 @@ jobs:
           cmake --install ./samples\ build/ --config ${{ matrix.build-type }} --component samples_bin --prefix s\ pace
         if: ${{ 'Release' != matrix.build-type }}
 
-      - run: |
-          source ${OV_INSTALL_DIR}/setupvars.sh
-          timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
+      - run: source ${OV_INSTALL_DIR}/setupvars.sh && timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
 
-      - run: |
-          source ${OV_INSTALL_DIR}/setupvars.sh
-          timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+      - run: source ${OV_INSTALL_DIR}/setupvars.sh && timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
