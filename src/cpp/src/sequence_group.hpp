@@ -35,6 +35,7 @@ class Sequence {
     SequenceStatus m_status = SequenceStatus::RUNNING;
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
+    size_t m_num_evicted_tokens = 0;
 
 public:
     using Ptr = std::shared_ptr<Sequence>;
@@ -133,7 +134,16 @@ public:
         return score;
     }
 
-    // Each KV block can be uniquely identified by 
+
+    void register_token_eviction(size_t num_evicted_tokens) {
+        m_num_evicted_tokens += num_evicted_tokens;
+    }
+
+    size_t get_num_evicted_tokens() const {
+        return m_num_evicted_tokens;
+    }
+
+    // Each KV block can be uniquely identified by
     // the tokens within the block and the tokens in the prefix before the block.
     // hash(prefix tokens + block tokens) <--> KV Block
     size_t get_hash(size_t content_length, const ov::genai::TokenIds& prompt_ids) const {
@@ -224,7 +234,7 @@ public:
                 } else if (m_sampling_params.max_new_tokens == generated_len) {
                     running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
                 }
-                
+
                 dropped_seq_ids.push_back(running_sequence->get_id());
             }
         }
@@ -274,6 +284,18 @@ public:
 
     const std::vector<Sequence::Ptr>& get_sequences() const {
         return m_sequences;
+    }
+
+    bool has_sequence_with_id(size_t seq_id) const {
+        auto it = std::find_if(m_sequences.begin(), m_sequences.end(), [seq_id](const Sequence::Ptr& val) {return val->get_id() == seq_id;});
+        return it != m_sequences.end();
+    }
+
+
+    Sequence::Ptr get_sequence_by_id(size_t seq_id) const {
+        auto it = std::find_if(m_sequences.begin(), m_sequences.end(), [seq_id](const Sequence::Ptr& val) {return val->get_id() == seq_id;});
+        OPENVINO_ASSERT(it != m_sequences.end(), "sequence with id ", seq_id, " not found in sequence group with request id ", m_request_id);
+        return *it;
     }
 
     std::vector<Sequence::CPtr> get_finished_sequences() const {
@@ -337,9 +359,6 @@ public:
         return m_num_processed_tokens;
     }
 
-    void register_token_eviction(size_t num_evicted_tokens) {
-        m_num_evicted_tokens += num_evicted_tokens;
-    }
 
     size_t get_expected_previous_kv_cache_size_in_tokens() const {
         if (m_num_processed_tokens < m_num_evicted_tokens) {
@@ -350,9 +369,6 @@ public:
         return m_num_processed_tokens - m_num_evicted_tokens;
     }
 
-    size_t get_expected_next_kv_cache_size_in_blocks() const {
-        return (get_expected_previous_kv_cache_size_in_tokens() + m_num_scheduled_tokens + (m_block_size - 1)) / m_block_size;
-    }
 
     void preempt_tokens(size_t num_preempt_tokens) {
         OPENVINO_ASSERT(num_preempt_tokens <= m_num_processed_tokens);
@@ -365,6 +381,11 @@ public:
         OPENVINO_ASSERT(!has_finished());
         return get_num_processed_tokens() + get_num_scheduled_tokens();
     }
+
+    size_t get_subsequence_len() const {
+        return get_num_processed_tokens() + get_num_scheduled_tokens() - m_num_evicted_tokens;
+    }
+
 
     bool requires_sampling() const {
         return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len;
@@ -522,7 +543,7 @@ public:
                 push_outputs();
             }
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
-            // TO DO: Now we always stream for greedy search for the sake of benchmarking 
+            // TO DO: Now we always stream for greedy search for the sake of benchmarking
             if (num_total_seqs() == 1) {
                 push_partial_outputs();
             } else if (has_finished() || out_of_memory()) {

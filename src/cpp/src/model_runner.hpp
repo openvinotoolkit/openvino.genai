@@ -94,11 +94,9 @@ public:
             std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
             size_t num_running_sequences = running_sequences.size();
             size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
-            size_t num_blocks = sequence_group->get_expected_next_kv_cache_size_in_blocks();
             size_t group_position_id = sequence_group->get_num_processed_tokens(),
                 // spec: In case of multiple input tokens for current sequence (prompt_len > 1), context_len corresponds to first token within subgroup of scheduled tokens
-                group_context_len = group_position_id,
-                expected_kv_cache_size = sequence_group->get_expected_previous_kv_cache_size_in_tokens();
+                group_context_len = group_position_id;
 
             for (size_t seq_id = 0; seq_id < num_running_sequences; ++seq_id) {
                 Sequence::CPtr sequence = running_sequences[seq_id];
@@ -112,9 +110,12 @@ public:
                     position_ids_data[token_id] = position_id;
                 }
 
+                size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence->get_num_evicted_tokens();
                 past_lens_data[0] = expected_kv_cache_size;
 
                 subsequence_begins_data[1] = subsequence_begins_data[0] + num_scheduled_tokens;
+
+                size_t num_blocks = (sequence_group->get_context_len()  - sequence->get_num_evicted_tokens() +  m_scheduler_config.block_size - 1) / m_scheduler_config.block_size;
                 block_indices_begins_data[1] = block_indices_begins_data[0] + num_blocks;
 
                 const std::vector<KVCacheBlock::Ptr> & kv_blocks = scheduler_output.m_block_tables.at(sequence->get_id());
@@ -166,31 +167,27 @@ public:
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
             SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
             std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
-            size_t sequence_kvcache_size = sequence_group->get_context_len();
 
-
-            // TODO (vshampor): is it enough to return results per sequence group, or do we need a per-sequence
-            //  granularity?
-//            for (size_t seq_id = 0; seq_id < running_sequences.size(); ++seq_id) {
-//                Sequence::CPtr sequence = running_sequences[seq_id];
-                IndexSpan span = {offset, offset + sequence_kvcache_size - 1};
-//                size_t global_sequence_id = sequence->get_id();
-                running_sequence_group_ids_and_kvcache_spans.emplace_back(sequence_group->get_request_id(), span);
-//                offset += sequence_kvcache_size;
-//            }
-
+            for (size_t seq_id = 0; seq_id < running_sequences.size(); ++seq_id) {
+                Sequence::CPtr sequence = running_sequences[seq_id];
+                size_t subsequence_length = sequence_group->get_context_len() - sequence->get_num_evicted_tokens();
+                IndexSpan span = {offset, offset + subsequence_length - 1};
+                size_t global_sequence_id = sequence->get_id();
+                running_sequence_group_ids_and_kvcache_spans.emplace_back(global_sequence_id, span);
+                offset += subsequence_length;
+            }
         }
 
 
         auto attn_tensor = m_request.get_tensor(get_paged_attention_score_output_for_decoder_layer(0));
         std::cout << "VSHAMPOR: attn shape for each decoder layer is " << attn_tensor.get_shape() << '\n';
 
-        for (const auto& seq_group_id_and_score_span : running_sequence_group_ids_and_kvcache_spans) {
-            auto attention_scores_across_decoder_layers_for_current_seq_group = AttentionScoresForEachDecoderLayer(m_num_decoder_layers);
-            size_t global_sequence_group_id = seq_group_id_and_score_span.first;
-            IndexSpan span = seq_group_id_and_score_span.second;
-            //std::cout << "VSHAMPOR: global sequence id and index spans: " << '\n';
-            //std::cout << "VSHAMPOR: " << seq_group_id_and_score_span.first << ": [" << seq_group_id_and_score_span.second.first << ", " << seq_group_id_and_score_span.second.second << "]\n";
+        for (const auto& seq_id_and_score_span : running_sequence_group_ids_and_kvcache_spans) {
+            auto attention_scores_across_decoder_layers_for_current_sequence = AttentionScoresForEachDecoderLayer(m_num_decoder_layers);
+            size_t global_sequence_id = seq_id_and_score_span.first;
+            IndexSpan span = seq_id_and_score_span.second;
+            std::cout << "VSHAMPOR: global sequence id and index spans: " << '\n';
+            std::cout << "VSHAMPOR: " << seq_id_and_score_span.first << ": [" << seq_id_and_score_span.second.first << ", " << seq_id_and_score_span.second.second << "]\n";
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; decoder_layer_id++) {
                 auto attention_score = m_request.get_tensor(get_paged_attention_score_output_for_decoder_layer(decoder_layer_id));
                 // std::cout << "VSHAMPOR: attention score shape for decoder layer " << decoder_layer_id << " is " << attention_score.get_shape() << '\n';
@@ -202,9 +199,9 @@ public:
                 //    std::cout << scores_for_cache_of_current_sequence_group.data<float>()[j] << " ";
                 //}
                 //std::cout << "\n";
-                attention_scores_across_decoder_layers_for_current_seq_group[decoder_layer_id] = scores_for_cache_of_current_sequence_group;
+                attention_scores_across_decoder_layers_for_current_sequence[decoder_layer_id] = scores_for_cache_of_current_sequence_group;
             }
-            m_last_attention_scores[global_sequence_group_id] = attention_scores_across_decoder_layers_for_current_seq_group;
+            m_last_attention_scores[global_sequence_id] = attention_scores_across_decoder_layers_for_current_sequence;
         }
 
         // return logits
