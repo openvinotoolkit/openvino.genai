@@ -62,7 +62,7 @@ class ContinuousBatchingPipeline::Impl {
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
 
-    std::map<size_t, CacheEvictionAlgorithm> m_global_sequence_id_to_cache_eviction_algo_map;
+    std::map<size_t, CacheEvictionAlgorithm> m_seq_group_id_to_cache_eviction_algo_map;
 
 
     void _notify_requests_dropped_by_handle() {
@@ -220,21 +220,32 @@ public:
         // evict unimportant blocks from KV cache, if requested
         if (true) {
         // if (m_generation_config.use_cache_eviction) {
-            auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
-            for (const auto& seq_id_and_attention_scores : sequence_attention_scores) {
-                auto seq_id = seq_id_and_attention_scores.first;
-                const auto& attention_scores_for_all_decoder_layers = seq_id_and_attention_scores.second;
-                std::cout << "VSHAMPOR: starting eviction for seq_id " << seq_id << std::endl;
-                if (m_global_sequence_id_to_cache_eviction_algo_map.find(seq_id) == m_global_sequence_id_to_cache_eviction_algo_map.end()) {
+            auto seq_group_attention_scores = m_model_runner->get_last_attention_scores();
+            for (const auto& seq_group_id_and_attention_scores : seq_group_attention_scores) {
+                auto seq_group_id = seq_group_id_and_attention_scores.first;
+                const auto& attention_scores_for_all_decoder_layers = seq_group_id_and_attention_scores.second;
+                std::cout << "VSHAMPOR: starting eviction for seq_group_id " << seq_group_id << std::endl;
+                if (m_seq_group_id_to_cache_eviction_algo_map.find(seq_group_id) == m_seq_group_id_to_cache_eviction_algo_map.end()) {
                     auto num_decoder_layers = attention_scores_for_all_decoder_layers.size();
                     auto cache_eviction_config = CacheEvictionConfig();
-                    m_global_sequence_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(cache_eviction_config, num_decoder_layers);
+                    m_seq_group_id_to_cache_eviction_algo_map[seq_group_id] = CacheEvictionAlgorithm(cache_eviction_config, num_decoder_layers);
                 }
-                auto& cache_eviction_algo = m_global_sequence_id_to_cache_eviction_algo_map[seq_id];
+                auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_group_id];
                 auto logical_blocks_to_evict = cache_eviction_algo.get_logical_block_indices_to_evict(attention_scores_for_all_decoder_layers);
                 std::cout << "VSHAMPOR: for decoder layer 0, evicting logical blocks ";
                 for (auto idx : logical_blocks_to_evict[0]) std::cout << idx << " ";
                 std::cout << "\n" << std::endl;
+                // FIXME (vshampor): rewrite to utilize per-decoder eviction when this is made possible in the rest of
+                //   the library
+                auto seq_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_group_id](const SequenceGroup::Ptr& val) { return val->get_request_id() == seq_group_id; });
+                OPENVINO_ASSERT(seq_it != m_requests.end(), "could not find sequence group ", seq_group_id);
+                auto sequence_group_ptr = *seq_it;
+                for (const auto& seq : sequence_group_ptr->get_running_sequences()) {
+                    m_scheduler->free_blocks_from_sequence(seq->get_id(), logical_blocks_to_evict[0]);
+                }
+
+                // Assuming that the evicted blocks are always full (since they by design are only selected from intermediate-age blocks)
+                sequence_group_ptr->register_token_eviction(logical_blocks_to_evict[0].size() * m_scheduler->get_config().block_size);
             }
         }
 

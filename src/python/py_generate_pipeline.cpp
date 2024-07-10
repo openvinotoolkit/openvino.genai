@@ -640,6 +640,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("max_length", &GenerationConfig::max_length)
         .def_readwrite("ignore_eos", &GenerationConfig::ignore_eos)
         .def_readwrite("min_new_tokens", &GenerationConfig::min_new_tokens)
+        .def_readwrite("use_cache_eviction", &GenerationConfig::use_cache_eviction)
         .def_readwrite("num_beam_groups", &GenerationConfig::num_beam_groups)
         .def_readwrite("num_beams", &GenerationConfig::num_beams)
         .def_readwrite("diversity_penalty", &GenerationConfig::diversity_penalty)

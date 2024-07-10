@@ -62,8 +62,17 @@ public:
 
         std::vector<std::set<size_t>> retval(m_num_decoder_layers);
 
+        // FIXME (vshampor): remove when per-layer cache eviction is possible
+        auto attention_scores = ov::Tensor(ov::element::f32, attention_scores_for_all_decoder_layers[0].get_shape());
+        for (auto& decoder_scores : attention_scores_for_all_decoder_layers) {
+            for (size_t i = 0; i < attention_scores.get_size(); i++) {
+                attention_scores.data<float>()[i] += decoder_scores.data<float>()[i];
+            }
+        }
+
         for (size_t decoder_layer_idx = 0; decoder_layer_idx < attention_scores_for_all_decoder_layers.size(); decoder_layer_idx++) {
-            auto attention_scores = attention_scores_for_all_decoder_layers[decoder_layer_idx];
+            // FIXME (vshampor): uncomment when per-layer cache eviction is possible
+            // auto attention_scores = attention_scores_for_all_decoder_layers[decoder_layer_idx];
             auto current_sequence_length = attention_scores.get_shape()[0];
             if (current_sequence_length <= m_eviction_config.get_total_cache_size()) {
                 // KV cache is not yet filled, keep all currently occupied blocks

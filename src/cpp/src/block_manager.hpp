@@ -368,19 +368,19 @@ public:
     void free_sequence_partially(size_t seq_id, size_t block_num) {
 
         auto block_table = m_block_table[seq_id];
-        OPENVINO_ASSERT(block_table.size() >= num_blocks_to_free);
-        for (size_t idx = 0; idx < num_blocks_to_free; idx++) {
+        OPENVINO_ASSERT(block_table.size() >= block_num);
+        for (size_t idx = 0; idx < block_num; idx++) {
             size_t block_idx = m_block_table[seq_id].size() - idx - 1;
             m_allocator.free(block_table[block_idx]);
         }
-        m_block_table[seq_id].resize(m_block_table[seq_id].size() - num_blocks_to_free);
+        m_block_table[seq_id].resize(m_block_table[seq_id].size() - block_num);
 
         if (m_block_table[seq_id].size() == 0) {
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
         }
     }
 
-    void free_blocks_from_sequence(size_t seq_id, std::set<size_t> logical_block_indices_to_free) {
+    void free_blocks_from_sequence(size_t seq_id, const std::set<size_t>& logical_block_indices_to_free) {
         if (logical_block_indices_to_free.empty()) {
             return;
         }

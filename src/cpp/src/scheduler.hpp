@@ -85,6 +85,10 @@ public:
         return m_config;
     }
 
+    void free_blocks_from_sequence(size_t seq_id, const std::set<size_t>& logical_block_indices_to_free) {
+        m_block_manager.free_blocks_from_sequence(seq_id, logical_block_indices_to_free);
+    }
+
 private:
     static size_t _num_running_sequence_groups(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         size_t num_running = 0;

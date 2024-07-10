@@ -173,6 +173,9 @@ class SequenceGroup {
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
 
+    // number of tokens evicted by the cache eviction algorithms throughout the lifetime of this sequence group
+    size_t m_num_evicted_tokens = 0;
+
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
@@ -332,6 +335,23 @@ public:
 
     size_t get_num_processed_tokens() const {
         return m_num_processed_tokens;
+    }
+
+    void register_token_eviction(size_t num_evicted_tokens) {
+        m_num_evicted_tokens += num_evicted_tokens;
+    }
+
+    size_t get_expected_previous_kv_cache_size_in_tokens() const {
+        if (m_num_processed_tokens < m_num_evicted_tokens) {
+            // might happen if the sequence has been preempted
+            OPENVINO_ASSERT(m_preempted, "only a preempted sequence may have less tokens processed than evicted");
+            return 0;
+        }
+        return m_num_processed_tokens - m_num_evicted_tokens;
+    }
+
+    size_t get_expected_next_kv_cache_size_in_blocks() const {
+        return (get_expected_previous_kv_cache_size_in_tokens() + m_num_scheduled_tokens + (m_block_size - 1)) / m_block_size;
     }
 
     void preempt_tokens(size_t num_preempt_tokens) {

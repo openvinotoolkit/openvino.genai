@@ -71,6 +71,7 @@ public:
     size_t max_length = SIZE_MAX;
     bool ignore_eos = false;
     size_t min_new_tokens = 0;
+    bool use_cache_eviction = false;
 
     // Beam search specific
     size_t num_beam_groups = 1;
