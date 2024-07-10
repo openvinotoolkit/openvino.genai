@@ -228,7 +228,7 @@ jobs:
           cmake --build ./build/ --config Release -j
 
       - name: test bindings
-        run:
+        run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
           python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
@@ -236,7 +236,84 @@ jobs:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
 
       - name: test bindings from whell
-        run:
+        run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose
           python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+
+  genai_package:
+    strategy:
+      matrix:
+        build-type: [Release, Debug]
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    runs-on: windows-latest
+
+    env:
+      OV_INSTALL_DIR: ${{ github.workspace }}\\ov
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@v4
+        with:
+          name: openvino_package
+          path: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${{ env.OV_INSTALL_DIR }}
+            Expand-Archive openvino_package.zip -DestinationPath ./tmp
+            mv ./tmp/*/* .
+          popd
+
+      - name: Build gen_ai
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
+          cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+
+      - name: Test bindings
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+
+      - run: |
+          if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ${{ env.OV_INSTALL_DIR }}
+          ${{ env.OV_INSTALL_DIR }}\samples\cpp\build_samples.ps1 -i "${{ github.workspace }}/samples_install"
+
+      - run: |
+          if: ${{ 'Release' != matrix.build-type }}
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ov/samples/cpp/ -B "samples build"
+          cmake --build "samples build" --config ${{ matrix.build-type }} -j
+          cmake --install "samples build" --config ${{ matrix.build-type }} --component samples_bin --prefix samples_install
+
+      - run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm" .\TinyLlama-1.1B-Chat-v1.0\ ""
+
+      - run: |
+          if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          python ${{ env.OV_INSTALL_DIR }}\samples\python\multinomial_causal_lm\multinomial_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 0
