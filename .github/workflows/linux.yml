@@ -133,7 +133,7 @@ jobs:
             -DCMAKE_VERBOSE_MAKEFILE=ON \
             -DCPACK_GENERATOR=TGZ \
             -DENABLE_JS=OFF \
-            -DENABLE_SAMPLES=OFF \
+            -DENABLE_SAMPLES=ON \
             -DENABLE_INTEL_NPU=OFF \
             -DENABLE_OV_ONNX_FRONTEND=OFF \
             -DENABLE_OV_PADDLE_FRONTEND=OFF \
@@ -225,7 +225,7 @@ jobs:
       - name: Install build dependencies
         run: sudo ${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh
 
-      - name: Buils genai
+      - name: Build genai
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -289,16 +289,37 @@ jobs:
       - name: Install build dependencies
         run: sudo ${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh
 
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ov
-      - run: ov/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
+      - name: Build genai
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
+          cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+
+      - name: Test bindings
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/tools
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/tools
+          optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+
+
+      - run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ${OV_INSTALL_DIR}
+          ${OV_INSTALL_DIR}/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
         if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${OV_INSTALL_DIR}/samples/cpp/ -B ./samples\ build/ && cmake --build ./samples\ build/ --config ${{ matrix.build-type }} -j && cmake --install ./samples\ build/ --config ${{ matrix.build-type }} --component samples_bin --prefix s\ pace
+
+      - run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${OV_INSTALL_DIR}/samples/cpp/ -B ./samples\ build/ && cmake --build ./samples\ build/ --config ${{ matrix.build-type }} -j
+          cmake --install ./samples\ build/ --config ${{ matrix.build-type }} --component samples_bin --prefix s\ pace
         if: ${{ 'Release' != matrix.build-type }}
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
-        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+
+      - run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
+
+      - run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+          if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
