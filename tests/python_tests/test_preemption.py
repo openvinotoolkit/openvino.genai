@@ -22,6 +22,10 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
     generation_config.max_new_tokens = 300
+<<<<<<< HEAD
+=======
+    generation_config.num_return_sequences = 3
+>>>>>>> upstream/master
     generation_config.num_return_sequences = generation_config.num_beams
     return generation_config
 
