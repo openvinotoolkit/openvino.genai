@@ -288,8 +288,11 @@ class OVChatGLMModel(OVModelForCausalLM):
         **kwargs,
     ):
         super().__init__(model, config, device, dynamic_shapes, ov_config, model_save_dir, **kwargs)
-        self.key_value_input_names = ['past_key_values']
-        self.key_value_output_names = [o.any_name for o in self.model.outputs[1:]]
+        self.is_v1 = False
+        if not self.stateful and not self.key_value_input_names:
+            self.is_v1 = True
+            self.key_value_input_names = ['past_key_values']
+            self.key_value_output_names = [o.any_name for o in self.model.outputs[1:]]
 
     def prepare_inputs_for_generation(
         self,
@@ -300,6 +303,13 @@ class OVChatGLMModel(OVModelForCausalLM):
         past: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> dict:
+        if not self.is_v1:
+            return super().prepare_inputs_for_generation(
+                input_ids=input_ids, past_key_values=past_key_values, attention_mask=attention_mask,
+                position_ids=position_ids,
+                past=past,
+                **kwargs
+            )
         batch_size, seq_length = input_ids.shape
         mask = self.mask_token_id
         g_mask = self.gmask_token_id
@@ -430,6 +440,9 @@ class OVChatGLMModel(OVModelForCausalLM):
         past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
         **kwargs,
     ) -> CausalLMOutputWithPast:
+        
+        if not self.is_v1:
+            return super().forward(input_ids=input_ids, attention_mask=attention_mask, past_key_values=past_key_values, **kwargs)
         self.compile()
 
         inputs = {}
