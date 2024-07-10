@@ -28,7 +28,7 @@ RUN wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfilter
 RUN git clone https://github.com/Wovchena/openvino.genai-public.git -b reuse-Tokenizer openvino.genai && \
         cd /workspace/openvino.genai/thirdparty && git submodule update --remote --init && \
         mkdir /workspace/openvino.genai/build && cd /workspace/openvino.genai/build && \
-        cmake -DENABLE_CONTINUOUS_BATCHING=ON -DENABLE_APPS=ON -DENABLE_PYTHON=ON -DCMAKE_BUILD_TYPE=Release .. && \
+        cmake -DCMAKE_BUILD_TYPE=Release .. && \
         make -j${JOBS}
 
 # Install test dependencies
