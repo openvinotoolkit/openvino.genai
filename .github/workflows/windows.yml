@@ -233,7 +233,7 @@ jobs:
       - name: test bindings
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${{ env.OV_INSTALL_DIR }}/tools--upgrade-strategy eager
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${{ env.OV_INSTALL_DIR }}\\tools--upgrade-strategy eager
           python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
@@ -298,8 +298,8 @@ jobs:
       - name: Test bindings
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${{ env.OV_INSTALL_DIR }}/tools
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${{ env.OV_INSTALL_DIR }}/tools
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${{ env.OV_INSTALL_DIR }}\\tools
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${{ env.OV_INSTALL_DIR }}\\tools
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 
       - run: |

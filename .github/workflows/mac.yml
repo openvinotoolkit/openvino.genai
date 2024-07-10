@@ -234,3 +234,78 @@ jobs:
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
           python -c "from openvino_genai import LLMPipeline"
           python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+
+  genai_package:
+    strategy:
+      matrix:
+        build-type: [Release, Debug]
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    runs-on: macos-13
+    env:
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@v4
+        with:
+          name: openvino_package
+          path: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${OV_INSTALL_DIR}
+            tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
+          popd
+
+      - name: Build genai
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
+          cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+
+      - name: Test bindings
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/tools
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/tools
+          optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+
+      - run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ${OV_INSTALL_DIR}
+          ${OV_INSTALL_DIR}/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
+        if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
+
+      - run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${OV_INSTALL_DIR}/samples/cpp/ -B ./samples\ build/
+          cmake --build ./samples\ build/ --config ${{ matrix.build-type }} -j
+          cmake --install ./samples\ build/ --config ${{ matrix.build-type }} --component samples_bin --prefix s\ pace
+        if: ${{ 'Release' != matrix.build-type }}
+
+      - run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
+
+      - run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only

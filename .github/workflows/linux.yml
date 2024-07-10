@@ -183,6 +183,7 @@ jobs:
           if-no-files-found: 'error'
 
   genai_python_lib:
+    name: OpenVINO genai extension
     needs: [ openvino_download, openvino_build ]
     if: |
       always() &&
