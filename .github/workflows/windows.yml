@@ -119,7 +119,9 @@ jobs:
             ccache-windows
 
       - name: Configure Developer Command Prompt for Microsoft Visual C++
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.40
 
       - name: CMake configure - OpenVINO
         run: |
@@ -221,6 +223,11 @@ jobs:
             mv ./tmp/*/* .
           popd
 
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.40
+
       - name: build gen_ai
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
@@ -282,6 +289,11 @@ jobs:
             Expand-Archive openvino_package.zip -DestinationPath ./tmp
             mv ./tmp/*/* .
           popd
+
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.40
 
       - name: Build gen_ai
         run: |
