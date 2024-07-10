@@ -32,8 +32,7 @@ jobs:
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
       - run: source ./ov/setupvars.sh && python -m pip install . --verbose
-      - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
-      - run: python -m pytest ./tests/python_tests/test_chat_generate_api.py -m precommit
+      - run: python -m pytest ./tests/python_tests/ -m precommit
 
   macos_genai_python_lib:
     runs-on: macos-12
@@ -57,8 +56,7 @@ jobs:
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
       - run: source ./ov/setupvars.sh && python -m pip install . --verbose
       - run: python -c "from openvino_genai import LLMPipeline"
-      - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
-      - run: python -m pytest ./tests/python_tests/test_chat_generate_api.py -m precommit
+      - run: python -m pytest ./tests/python_tests/ -m precommit
 
   windows_genai_python_lib:
     if: false
@@ -85,5 +83,4 @@ jobs:
       # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
       - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
       - run: call ./ov/setupvars.bat && python -m pip install . --verbose
-      - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
-      - run: python -m pytest ./tests/python_tests/test_chat_generate_api.py -m precommit
+      - run: python -m pytest ./tests/python_tests/ -m precommit

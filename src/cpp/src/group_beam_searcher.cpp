@@ -358,7 +358,7 @@ std::pair<EncodedResults, std::optional<int32_t>> beam_search(ov::InferRequest& 
                            ov::Tensor input_ids,
                            ov::Tensor attention_mask,
                            GenerationConfig config, 
-                           std::optional<ov::Tensor> position_ids = std::nullopt,
+                           std::optional<ov::Tensor> position_ids,
                            std::optional<int32_t> selected_beam_idx = std::nullopt) {
     OPENVINO_ASSERT(config.num_beams % config.num_beam_groups == 0,
                     "number of beams should be divisible by number of groups");
@@ -377,8 +377,7 @@ std::pair<EncodedResults, std::optional<int32_t>> beam_search(ov::InferRequest& 
 
     lm.set_tensor("input_ids", input_ids);
     lm.set_tensor("attention_mask", attention_mask);
-    bool position_ids_available = position_ids.has_value();
-    if (position_ids_available)
+    if (position_ids.has_value())
         lm.set_tensor("position_ids", *position_ids);
 
     ov::Tensor beam_idx = ov::Tensor(ov::element::i32, {batch_size});
@@ -403,14 +402,13 @@ std::pair<EncodedResults, std::optional<int32_t>> beam_search(ov::InferRequest& 
     std::vector<int64_t> next_tokens;
     std::vector<int32_t> next_beams;
     
-    for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
+    for (size_t length_count = 0; ; ++length_count) {
         lm.infer();
 
         std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(lm.get_tensor("logits"));
         if (next_tokens.empty() || length_count == parameters.max_new_tokens - 1) {
-            // Break the cycle right after we got next tokens but before masks are extended.
-            // If generation will be contined with kept KV caches, 
-            // attention_mask lenght should be equal to the number of processed tokens.
+            // Break the cycle before masks are extended in update_attention_mask_with_beams.
+            // If generation will be contined attention_mask length should be equal to KV cache size.
             break;
         }
         
@@ -421,7 +419,7 @@ std::pair<EncodedResults, std::optional<int32_t>> beam_search(ov::InferRequest& 
 
         // Set auxiliary inputs
         update_attention_mask_with_beams(lm.get_tensor("attention_mask"), next_beams);
-        if (position_ids_available)
+        if (position_ids.has_value())
             update_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
     }
 

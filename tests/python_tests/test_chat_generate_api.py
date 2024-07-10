@@ -43,7 +43,7 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
     model_id, path, tokenizer, model_opt, pipe = read_model(model_descr)
 
     # HF in chat scenario does not add special tokens, but openvino tokenizer by default is converted with add_special_tokens=True.
-    # Since To match need to regenerate openvino_tokenizer/detokenizer.
+    # Need to regenerate openvino_tokenizer/detokenizer.
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
@@ -84,7 +84,7 @@ def test_chat_compare_text_history_with_HF(model_descr, generation_config: Dict)
     model_id, path, tokenizer, model_opt, pipe = read_model(model_descr)
 
     # HF in chat scenario does not add special tokens, but openvino tokenizer by default is converted with add_special_tokens=True.
-    # Since To match need to regenerate openvino_tokenizer/detokenizer.
+    # Need to regenerate openvino_tokenizer/detokenizer.
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
@@ -123,7 +123,7 @@ def test_chat_compare_statefull_vs_text_history(model_descr, generation_config: 
     model_id, path, tokenizer, model_opt, pipe = read_model(model_descr)
 
     # HF in chat scenario does not add special tokens, but openvino tokenizer by default is converted with add_special_tokens=True.
-    # Since To match need to regenerate openvino_tokenizer/detokenizer.
+    # Need to regenerate openvino_tokenizer/detokenizer.
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")

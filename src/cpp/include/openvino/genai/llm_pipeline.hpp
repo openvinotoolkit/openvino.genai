@@ -215,7 +215,13 @@ public:
     GenerationConfig get_generation_config() const;
     void set_generation_config(const GenerationConfig& config);
 
-    void start_chat(std::string system_message = "");
+
+    /**
+    * @brief Turn of keeping KV cache between generate calls and automatic applying of chat templates.
+    * 
+    * @param system_message system message.
+    */    
+    void start_chat(const std::string& system_message = "");
     void finish_chat();
 private:
     std::unique_ptr<LLMPipelineImplBase> m_pimpl;

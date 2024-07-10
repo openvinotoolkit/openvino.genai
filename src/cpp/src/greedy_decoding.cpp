@@ -13,7 +13,7 @@ EncodedResults greedy_decoding(
     ov::Tensor attention_mask, 
     const ov::genai::GenerationConfig generation_config, 
     const std::shared_ptr<StreamerBase> streamer,
-    std::optional<ov::Tensor> position_ids = std::nullopt
+    std::optional<ov::Tensor> position_ids
 ) {
     ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
@@ -27,8 +27,7 @@ EncodedResults greedy_decoding(
        
     m_model_runner.set_tensor("input_ids", input_ids);
     m_model_runner.set_tensor("attention_mask", attention_mask);
-    bool position_ids_available = position_ids.has_value();
-    if (position_ids_available)
+    if (position_ids.has_value())
         m_model_runner.set_tensor("position_ids", *position_ids);
 
     m_model_runner.get_tensor("beam_idx").set_shape({running_batch_size});
@@ -61,7 +60,7 @@ EncodedResults greedy_decoding(
     
     size_t max_tokens = generation_config.get_max_new_tokens(prompt_len);
     for (size_t i = 0; i < max_tokens - 1; ++i) {
-        if (position_ids_available)
+        if (position_ids.has_value())
             utils::update_position_ids(m_model_runner.get_tensor("position_ids"), m_model_runner.get_tensor("attention_mask"));
         m_model_runner.set_tensor("attention_mask", utils::extend_attention(m_model_runner.get_tensor("attention_mask")));
 

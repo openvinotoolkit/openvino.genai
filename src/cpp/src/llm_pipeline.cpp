@@ -41,7 +41,7 @@ ov::genai::EncodedResults greedy_decoding(
     ov::Tensor attention_mask,
     const GenerationConfig sampling_params,
     const std::shared_ptr<StreamerBase> streamer,
-    std::optional<ov::Tensor> position_ids = std::nullopt
+    std::optional<ov::Tensor> position_ids
 );
 
 ov::genai::EncodedResults multinominal_decoding(
@@ -50,7 +50,7 @@ ov::genai::EncodedResults multinominal_decoding(
     ov::Tensor attention_mask,
     GenerationConfig sampling_params,
     std::shared_ptr<StreamerBase> streamer,
-    std::optional<ov::Tensor> position_ids = std::nullopt
+    std::optional<ov::Tensor> position_ids
 );
 
 std::pair<EncodedResults, std::optional<int32_t>> beam_search(
@@ -58,7 +58,7 @@ std::pair<EncodedResults, std::optional<int32_t>> beam_search(
     ov::Tensor prompts, 
     ov::Tensor attention_mask, 
     GenerationConfig config,
-    std::optional<ov::Tensor> position_ids = std::nullopt,
+    std::optional<ov::Tensor> position_ids,
     std::optional<int32_t> selected_beam_idx = std::nullopt
 );
 
@@ -213,7 +213,7 @@ public:
             auto prompt_len = attention_mask.get_shape()[1];
             kv_cache_len = atten_mask_history.get_shape()[1];
 
-            ov::Tensor new_atten_mask =  ov::Tensor{ov::element::i64, {batch_size, kv_cache_len + prompt_len}};
+            ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, {batch_size, kv_cache_len + prompt_len}};
             auto start_atten_hst = atten_mask_history.data<int64_t>() + kv_cache_len * (*m_selected_beam);
             std::copy(start_atten_hst, start_atten_hst + kv_cache_len,
                     new_atten_mask.data<int64_t>());
@@ -257,7 +257,7 @@ public:
         return result;
     }
 
-    void start_chat(std::string system_message) override {
+    void start_chat(const std::string& system_message) override {
         is_chat_conversation = true;
         m_selected_beam  = std::nullopt;
         if (!m_is_cache_empty) {
@@ -377,7 +377,7 @@ ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {
     return m_pimpl->m_tokenizer;
 }
 
-void ov::genai::LLMPipeline::start_chat(std::string system_message) {
+void ov::genai::LLMPipeline::start_chat(const std::string& system_message) {
     m_pimpl->start_chat(system_message);
 }
 

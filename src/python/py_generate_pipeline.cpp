@@ -411,14 +411,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         )
 
         .def("get_tokenizer", &LLMPipeline::get_tokenizer)
-        .def(
-            "start_chat", 
-            [](LLMPipeline& pipe, std::string system_message) { 
-                return pipe.start_chat(system_message); 
-            }, 
-            py::arg("system_message") = ""
-        )
-
+        .def("start_chat", &LLMPipeline::start_chat, py::arg("system_message") = "")
         .def("finish_chat", &LLMPipeline::finish_chat)
         .def("get_generation_config", &LLMPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &LLMPipeline::set_generation_config);

@@ -154,7 +154,7 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
                                                 ov::Tensor attention_mask,
                                                 ov::genai::GenerationConfig config,
                                                 std::shared_ptr<ov::genai::StreamerBase> streamer,
-                                                std::optional<ov::Tensor> position_ids = std::nullopt) {
+                                                std::optional<ov::Tensor> position_ids) {
     ov::Shape prompts_shape = input_ids.get_shape();
     size_t batch_size = prompts_shape[0];
 
@@ -170,8 +170,7 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
     m_model_runner.set_tensor("input_ids", input_ids);
     m_model_runner.set_tensor("attention_mask", attention_mask);
     
-    bool position_ids_available = position_ids.has_value();
-    if (position_ids_available)
+    if (position_ids.has_value())
         m_model_runner.set_tensor("position_ids", *position_ids);
     
     // Input values are persistent between inference calls.
@@ -213,7 +212,7 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
     size_t max_new_tokens = config.get_max_new_tokens(prompt_len);
 
     for (size_t i = 0; i < max_new_tokens - 1; i++) {
-        if (position_ids_available) {
+        if (position_ids.has_value()) {
             ov::genai::utils::update_position_ids(m_model_runner.get_tensor("position_ids"),
                                                   m_model_runner.get_tensor("attention_mask"));
         }
