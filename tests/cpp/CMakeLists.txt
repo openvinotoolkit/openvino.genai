@@ -4,6 +4,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 set(TEST_TARGET_NAME "tests_continuous_batching")
-add_executable(${TEST_TARGET_NAME} scheduler.cpp block_manager.cpp logit_filtering.cpp cache_manager.cpp generate_config.cpp)
+add_executable(${TEST_TARGET_NAME} scheduler.cpp block_manager.cpp logit_filtering.cpp cache_manager.cpp generate_config.cpp discrete_distribution.cpp)
 target_link_libraries(${TEST_TARGET_NAME} PUBLIC openvino::genai gtest_main)
 target_include_directories(${TEST_TARGET_NAME} PRIVATE "${PROJECT_SOURCE_DIR}/src/cpp/src")
