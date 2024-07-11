@@ -435,9 +435,9 @@ public:
                     int64_t* destination = input_ids.back().data<int64_t>();
                     size_t copy_count = 0;
                     for (size_t idx = 0; idx < max_len; ++idx) {
-                        // if (1 == attention_mask[batch_id * max_len + idx]) {
+                        if (1 == attention_mask[batch_id * max_len + idx]) {
                             destination[copy_count++] = source[batch_id * max_len + idx];
-                        // }
+                        }
                     }
                     input_ids.back().set_shape({1, copy_count});
                 }

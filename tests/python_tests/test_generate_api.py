@@ -678,19 +678,9 @@ def test_left_pad():
 def get_continuous_batching(path):
     return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), 'CB')
 
-test_configs = [
-    dict(max_new_tokens=20),
-    dict(max_new_tokens=200, ignore_eos=True),
-    dict(max_new_tokens=20, num_beam_groups=3, num_beams=15, diversity_penalty=1.0)
-]
-batched_prompts = [
-    ['table is made', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
-    ['hello', 'Here is the longest novel ever: '],
-    ['Alan Turing was a', 'return 0', '你好！ 你好嗎？'],
-    ['table is made', 'table is made [force left pad tokens]']
-]
+
 @pytest.mark.parametrize("generation_config", test_configs)
-@pytest.mark.parametrize("prompt", batched_prompts)
+@pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.precommit
 def test_continuous_batching_vs_stateful(prompt, generation_config):
     model_id, path, tokenizer, model, stateful = read_model((
@@ -700,6 +690,6 @@ def test_continuous_batching_vs_stateful(prompt, generation_config):
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = 100
     cb = get_continuous_batching(path)
-    vanilla = cb.generate(prompt, **generation_config)
+    generated = cb.generate(prompt, **generation_config)
     ref = stateful.generate(prompt, **generation_config)
-    assert vanilla == ref
+    assert generated == ref
