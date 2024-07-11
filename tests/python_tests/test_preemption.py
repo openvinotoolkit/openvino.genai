@@ -145,7 +145,6 @@ multinomial_params = RandomSamplingTestStruct(
 # todo: Anastasiia Pnevskaya: fix the test because it is hanging according max_new_tokens = std::numeric_limits<std::size_t>::max()
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
-@pytest.mark.random
 def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     generation_configs = multinomial_params.generation_config
     for config in generation_configs:
@@ -241,7 +240,6 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
 
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
-@pytest.mark.random
 def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     generation_configs = multinomial_params_n_seq.generation_config
     for config in generation_configs:

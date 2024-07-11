@@ -349,7 +349,6 @@ RANDOM_SAMPLING_TEST_CASES = [
         "multinomial_max_and_min_token",
     ],
 )
-@pytest.mark.random
 def test_individual_generation_configs_random(
     tmp_path, test_struct: RandomSamplingTestStruct
 ):
