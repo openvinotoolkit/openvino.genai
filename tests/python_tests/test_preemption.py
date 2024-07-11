@@ -136,7 +136,7 @@ multinomial_params = RandomSamplingTestStruct(
                 "  You're getting much better results from doing this, than you are by not doing this.  If you are truly trying to do something good,"
             ],
             [
-                "\nI'm from Canada, and I'm from the US, so I'm not sure.\nI think you mean the Canadian version."
+                "\nI'm from Canada, and I'm from the US, so I'm not sure what you're talking about.\nI'm Canadian and I"
             ],
         ],
     ),
@@ -215,9 +215,9 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
                 "\nI've had a friend with the capacity to test this in his own words.\nThe big problem with real-world results is the economics of"
             ],
             [
-                " significance of 3862?\n3829\nWhat is the greatest common divisor of 15 and 7763?\n9\nCalculate the",
-                " third derivative of 939*v**3*r**2 + 133*v**3*r**2 + v**3 - 16*",
-                " climate in the future?  Do we have things to catch on fire, and if so does that mean we'll have a new climate change or is",
+                " third derivative of -4 + 0*o**4 + o**3 + 0 + 2*o**2 - 4 wrt o?\n",
+                " significance of 3891 + 23542?\n9349\nWhat is the greatest common divisor of 134881837 and 1657?\n",
+                " climate in the world?\n\nA recent study by the Climate Discovery Network (CCN) states that climate change may be driving global warming.\n",
             ],
             [
                 "\nIt's in the middle of nowhere if you haven’t seen one yet! It might be more convenient there than anywhere else.. maybe take",
@@ -231,9 +231,9 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
                 "\nI've had a friend with the capacity to test this in his own words.\nThe big problem with real-world results is the rigidity"
             ],
             [
-                " significance of 3862?\n3829\nWhat is the greatest common divisor of 15 and 7763?\n9\nCalculate the",
-                " third derivative of 939*v**3*r**2 + 133*v**3*r**2 + v**3 - 16*",
-                " climate in the future?  Do we have things to catch on fire, and if so does that mean we'll have a new climate change or is",
+                " third derivative of -4 + 0*o**4 + o**3 + 0 + 2*o**2 - 4 wrt o?\n",
+                " significance of 3891 + 23542?\n92780\nWhat is the current significance of 9426 - 8941?\n-32391\n",
+                " climate in the world?\n\nA recent study by the Climate Discovery Network (CCN) states that climate change may be driving global warming.\n",
             ],
             [
                 "\nIt's in the middle of nowhere if you haven’t seen one yet! It might be more convenient there than anywhere else.. maybe take",

@@ -233,7 +233,6 @@ class Sampler {
             size_t element_to_pick = dist(rng_engine);
             out_tokens.push_back(logit_vector[element_to_pick]);
         }
-
         return out_tokens;
     }
 
