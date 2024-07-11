@@ -123,7 +123,6 @@ public:
     GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids, ov::genai::GenerationConfig sampling_params) {
         sampling_params.set_eos_token_id(m_tokenizer.get_eos_token_id());
         sampling_params.validate();
-
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
                                                                             sampling_params, m_scheduler->get_config().block_size);
         {
@@ -238,10 +237,7 @@ public:
         return !m_awaiting_requests.empty() || !m_requests.empty();
     }
 
-    std::vector<EncodedGenerationResult> generate(
-        const std::vector<ov::Tensor>& input_ids,
-        const std::vector<GenerationConfig>& sampling_params
-    ) {
+    std::vector<EncodedGenerationResult> generate( const std::vector<ov::Tensor>& input_ids, const std::vector<GenerationConfig>& sampling_params) {
         OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
         OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
 
@@ -276,6 +272,8 @@ public:
             result.m_status = generation->get_status();
             results.push_back(std::move(result));
         }
+
+        OPENVINO_ASSERT(results.size() == input_ids.size());
         return results;
     }
 

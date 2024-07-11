@@ -446,7 +446,6 @@ public:
         }, inputs);
         const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
         // -1 == config.eos_token_id and config.validate() are handled in m_impl.
-        std::cout << "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa\n";
         std::vector<EncodedGenerationResult> generated = m_impl.generate(input_ids, std::vector<GenerationConfig>{input_ids.size(), config});
         std::vector<std::vector<int64_t>> tokens;
         std::vector<float> scores;
@@ -480,29 +479,27 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& plugin_config
-) {
+): m_pimpl{[&]() -> std::unique_ptr<LLMPipelineImplBase> {
     if ("CB" == device) {
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_path, tokenizer, "CPU", plugin_config);
-    } else if ("NPU" == device) {
-        m_pimpl = std::make_unique<StaticLLMPipeline>(model_path, tokenizer, device, plugin_config);
-    } else {
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, plugin_config);
+        return std::make_unique<ContinuousBatchingAdapter>(model_path, tokenizer, "CPU", plugin_config);
+    } if ("NPU" == device) {
+        return std::make_unique<StaticLLMPipeline>(model_path, tokenizer, device, plugin_config);
     }
-}
+    return std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, plugin_config);
+}()} {}
 
 ov::genai::LLMPipeline::LLMPipeline(
     const std::string& path,
     const std::string& device,
     const ov::AnyMap& config
-) {
+): m_pimpl{[&]() -> std::unique_ptr<LLMPipelineImplBase> {
     if ("CB" == device) {
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(path, "CPU", config);
-    } else if ("NPU" == device) {
-        m_pimpl = std::make_unique<StaticLLMPipeline>(path, device, config);
-    } else {
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(path, device, config);
+        return std::make_unique<ContinuousBatchingAdapter>(path, "CPU", config);
+    } if ("NPU" == device) {
+        return std::make_unique<StaticLLMPipeline>(path, device, config);
     }
-}
+    return std::make_unique<StatefulLLMPipeline>(path, device, config);
+}()} {}
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
     return m_pimpl->m_generation_config;
