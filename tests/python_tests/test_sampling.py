@@ -7,7 +7,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from openvino_genai import ContinuousBatchingPipeline, GenerationConfig
-from typing import List, Union, Optional
+from typing import List, Optional
 
 from common import (
     run_test_pipeline,
