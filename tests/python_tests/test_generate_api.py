@@ -170,7 +170,7 @@ def get_continuous_batching(path):
     return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), 'CB')
 
 
-@pytest.mark.parametrize("prompt", questions)
+@pytest.mark.parametrize("question", questions)
 @pytest.mark.precommit
 def test_continuous_batching_vs_stateful(question):
     model_id, path, tokenizer, model, pipe = read_model("TinyLlama/TinyLlama-1.1B-Chat-v1.0", pathlib.Path("TinyLlama-1.1B-Chat-v1.0"))
