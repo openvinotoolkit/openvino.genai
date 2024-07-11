@@ -312,24 +312,6 @@ std::vector<std::vector<std::vector<Beam>>> finalize(GroupBeamSearcher&& group_b
     return finalized;
 }
 
-void initialize_inputs(const ov::Tensor& input_ids, const ov::Tensor& attention_mask, ov::InferRequest& request) {
-    request.set_tensor("input_ids", input_ids);
-    request.set_tensor("attention_mask", attention_mask);
-
-    ov::Shape input_shape = input_ids.get_shape();
-    auto num_inputs = request.get_compiled_model().inputs().size();
-    bool position_ids_available = num_inputs == 4;
-    if (position_ids_available){
-        ov::Tensor position_ids = request.get_tensor("position_ids");
-        position_ids.set_shape(input_shape);
-        ov::genai::utils::initialize_position_ids(position_ids, attention_mask);
-    }
-
-    ov::Tensor beam_idx = request.get_tensor("beam_idx");
-    beam_idx.set_shape({input_shape.at(0)});
-    std::fill_n(beam_idx.data<int32_t>(), input_shape.at(0), 0);
-}
-
 void update_attention_mask_with_beams(ov::Tensor&& attention_mask, std::vector<int32_t> next_beams) {
     ov::Tensor original_mask{ov::element::i64, attention_mask.get_shape()};
     ov::Shape original_shape = original_mask.get_shape();
@@ -363,7 +345,6 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
 
 void reset_all_inputs_to_empty_tensors(ov::InferRequest& request) {
     request.set_tensor("input_ids", ov::Tensor(ov::element::i64, {0, 0}));
-    request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, {0, 0}));
     request.set_tensor("beam_idx", ov::Tensor(ov::element::i32, {0}));
     if (request.get_compiled_model().inputs().size() == 4)
         request.set_tensor("position_ids", ov::Tensor(ov::element::i64, {0, 0}));
@@ -373,10 +354,12 @@ void reset_all_inputs_to_empty_tensors(ov::InferRequest& request) {
 namespace ov {
 namespace genai {
 
-EncodedResults beam_search(ov::InferRequest& lm,
+std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
                            ov::Tensor input_ids,
                            ov::Tensor attention_mask,
-                           GenerationConfig config) {
+                           GenerationConfig config, 
+                           std::optional<ov::Tensor> position_ids,
+                           std::optional<int32_t> selected_beam_idx) {
     OPENVINO_ASSERT(config.num_beams % config.num_beam_groups == 0,
                     "number of beams should be divisible by number of groups");
 
@@ -392,7 +375,18 @@ EncodedResults beam_search(ov::InferRequest& lm,
         prompts.push_back(std::vector<int64_t>{prompt_start, prompt_start + sequence_length});
     }
 
-    initialize_inputs(input_ids, attention_mask, lm);
+    lm.set_tensor("input_ids", input_ids);
+    lm.set_tensor("attention_mask", attention_mask);
+    if (position_ids.has_value())
+        lm.set_tensor("position_ids", *position_ids);
+
+    ov::Tensor beam_idx = ov::Tensor(ov::element::i32, {batch_size});
+    auto beam_data = beam_idx.data<int32_t>();
+    if (selected_beam_idx.has_value())
+        beam_data[0] = *selected_beam_idx;
+    else
+        std::fill_n(beam_data, batch_size, 0);
+    lm.set_tensor("beam_idx", beam_idx);
 
     Parameters parameters{std::move(prompts)};
     parameters.max_new_tokens = config.max_new_tokens;
@@ -407,24 +401,25 @@ EncodedResults beam_search(ov::InferRequest& lm,
 
     std::vector<int64_t> next_tokens;
     std::vector<int32_t> next_beams;
-    auto num_inputs = lm.get_compiled_model().inputs().size();
-    bool position_ids_available = num_inputs == 4;
     
-    for (size_t length_count = 0; length_count < parameters.max_new_tokens; ++length_count) {
+    for (size_t length_count = 0; ; ++length_count) {
         lm.infer();
 
         std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(lm.get_tensor("logits"));
-        if (next_tokens.empty()) {
+        if (next_tokens.empty() || length_count == parameters.max_new_tokens - 1) {
+            // Break the cycle before masks are extended in update_attention_mask_with_beams.
+            // If generation is continued, attention_mask length should be equal to KV cache size.
             break;
         }
-        size_t batch_size = next_tokens.size();
+        
+        size_t running_batch_size = next_tokens.size();
         // Set pointers
-        lm.set_tensor("input_ids", ov::Tensor{ov::element::i64, {batch_size, 1}, next_tokens.data()});
-        lm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {batch_size}, next_beams.data()});
+        lm.set_tensor("input_ids", ov::Tensor{ov::element::i64, {running_batch_size, 1}, next_tokens.data()});
+        lm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {running_batch_size}, next_beams.data()});
 
         // Set auxiliary inputs
         update_attention_mask_with_beams(lm.get_tensor("attention_mask"), next_beams);
-        if (position_ids_available)
+        if (position_ids.has_value())
             update_position_ids(lm.get_tensor("position_ids"), lm.get_tensor("attention_mask"));
     }
 
@@ -436,8 +431,10 @@ EncodedResults beam_search(ov::InferRequest& lm,
 
     auto result = finalize(std::move(group_beam_searcher));
     ov::genai::EncodedResults results;
+    int32_t res_selected_beam_idx = 0;
     results.scores.reserve(config.num_return_sequences * result.size());
     results.tokens.reserve(config.num_return_sequences * result.size());
+    
     // align output with HF
     for (size_t prompt_id = 0; prompt_id < result.size(); prompt_id++) {
         auto prompt_group = result.at(prompt_id);
@@ -455,6 +452,7 @@ EncodedResults beam_search(ov::InferRequest& lm,
             plain_beams.end(),
             scores_comparator
         );
+        res_selected_beam_idx = plain_beams.at(0).get().global_beam_idx;
         for (
             auto beam = plain_beams.begin();
             beam != plain_beams.begin() + config.num_return_sequences;
@@ -464,7 +462,8 @@ EncodedResults beam_search(ov::InferRequest& lm,
             results.tokens.push_back(std::move(beam->get().tokens));
         }
     }
-    return results;
+
+    return {results, res_selected_beam_idx};
 }
 
 }  // namespace genai

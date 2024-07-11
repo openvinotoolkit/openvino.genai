@@ -79,7 +79,7 @@ public:
      * @return A string with the transformed and concatenated prompts from the chat history.
      * @throws Exception if the chat template was unable to parse the input history.
      */
-    std::string apply_chat_template(const ChatHistory& history, 
+    std::string apply_chat_template(ChatHistory history, 
                                     bool add_generation_prompt, 
                                     const std::string& chat_template="") const;
 

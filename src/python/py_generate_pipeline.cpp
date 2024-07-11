@@ -426,7 +426,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         )
 
         .def("get_tokenizer", &LLMPipeline::get_tokenizer)
-        .def("start_chat", &LLMPipeline::start_chat)
+        .def("start_chat", &LLMPipeline::start_chat, py::arg("system_message") = "")
         .def("finish_chat", &LLMPipeline::finish_chat)
         .def("get_generation_config", &LLMPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &LLMPipeline::set_generation_config);
@@ -475,7 +475,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             R"(Decode a batch of tokens into a list of string prompt.)")
         
         .def("apply_chat_template", [](Tokenizer& tok,
-                                        const ChatHistory& history,
+                                        ChatHistory history,
                                         bool add_generation_prompt,
                                         const std::string& chat_template) {
             return tok.apply_chat_template(history, add_generation_prompt, chat_template);

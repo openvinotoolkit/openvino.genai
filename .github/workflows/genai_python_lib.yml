@@ -10,7 +10,7 @@ env:
   w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.3.0-15945-a349dc82f9a/w_openvino_toolkit_windows_2024.3.0.dev20240708_x86_64.zip
 jobs:
   ubuntu_genai_python_lib:
-    # A tokenizers' dependency fails to compile on ubuntu-20 in CenOS7 env.
+    # A tokenizers' dependency fails to compile on ubuntu-20 n CenOS7 env.
     runs-on: ubuntu-22.04
     env:
       # A tokenizers' dependency fails to compile with Ninja in CenOS7 env.
@@ -30,9 +30,9 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
-      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/
       - run: source ./ov/setupvars.sh && python -m pip install . --verbose
-      - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+      - run: python -m pytest ./tests/python_tests/
 
   macos_genai_python_lib:
     runs-on: macos-12
@@ -53,10 +53,10 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
-      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/
       - run: source ./ov/setupvars.sh && python -m pip install . --verbose
       - run: python -c "from openvino_genai import LLMPipeline"
-      - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+      - run: python -m pytest ./tests/python_tests/
 
   windows_genai_python_lib:
     if: false
@@ -81,12 +81,12 @@ jobs:
       - run: call ./ov/setupvars.bat && cmake --build ./build/ --config Release -j
       - run: call ./ov/setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
       # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
-      - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+      - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/
       - run: call ./ov/setupvars.bat && python -m pip install . --verbose
       - run: python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
 
   continuous_batching_python_lib_ubuntu:
-    # A tokenizers' dependency fails to compile on ubuntu-20 in CenOS7 env.
+    # A tokenizers' dependency fails to compile on ubuntu-20 n CenOS7 env.
     runs-on: ubuntu-22.04
     env:
       # A tokenizers' dependency fails to compile with Ninja in CenOS7 env.
