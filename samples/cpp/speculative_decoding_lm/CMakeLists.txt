@@ -18,7 +18,7 @@ target_compile_definitions(speculative_decoding_lm PRIVATE OPENVINO_TOKENIZERS_P
 target_compile_features(speculative_decoding_lm PRIVATE cxx_std_17)
 if(APPLE)
     # aligned deallocation is only available on macOS 10.14 or newer
-    target_compile_options(prompt_lookup_decoding_lm PRIVATE -fno-aligned-allocation)
+    target_compile_options(speculative_decoding_lm PRIVATE -fno-aligned-allocation)
 endif()
 install(TARGETS speculative_decoding_lm
     RUNTIME DESTINATION samples_bin/
