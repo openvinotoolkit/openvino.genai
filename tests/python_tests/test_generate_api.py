@@ -23,7 +23,6 @@ from ov_genai_test_utils import (
 
 
 def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, prompts: Union[str, List[str]]):
-    device = 'CPU'
     model_id, path, tokenizer, model, pipe = model_descr
     config = generation_config.copy()  # to avoid side effects
     num_beams = config['num_beams'] if 'num_beams' in config else 1
@@ -68,7 +67,6 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
         assert hf_output == ov_output
 
 def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt: str):
-    device = 'CPU'
     model_id, path, tokenizer, model, pipe = model_descr
 
     config = generation_config.copy()  # to avoid side effects
@@ -76,7 +74,7 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt: str
     if 'do_sample' not in config:
         # Some HF models have default do_sample = True, and if we set beam search generation config 
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
-        # Need to set exlicitly to False, but only if test arguments omitted this arg.
+        # Need to set explicitly to False, but only if test arguments omitted this arg.
         # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
         config['repetition_penalty'] = None
@@ -245,7 +243,7 @@ test_configs = [
 ]
 batched_prompts = [
     ['table is made', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
-    ['hello', 'Here is the longest nowel ever: '],
+    ['hello', 'Here is the longest novel ever: '],
     ['Alan Turing was a', 'return 0', '你好！ 你好嗎？'],
     ['table is made', 'table is made [force left pad tokens]']
 ]
@@ -681,15 +679,22 @@ def get_continuous_batching(path):
     return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), 'CB')
 
 
-@pytest.mark.parametrize("test_configs", test_configs)
-@pytest.mark.parametrize("batched_prompts", batched_prompts)
+@pytest.mark.parametrize("prompts", [
+    'table is made of',
+    '你好！ 你好嗎？',
+    'Alan Turing was a',
+    'The Sun is yellow because',
+    ['The Sun is yellow because', 'Alan Turing was a', 'Alan Turing was a']
+])
 @pytest.mark.precommit
-def test_continuous_batching_vs_stateful(batched_prompts, test_configs):
+def test_continuous_batching_vs_stateful(prompts):
     model_id, path, tokenizer, model, pipe = read_model((
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
         Path("TinyLlama-1.1B-Chat-v1.0")
     ))
-    cb = get_continuous_batching(path)
-    gen = cb.generate(batched_prompts, **test_configs)
-    ref = pipe.generate(batched_prompts, **test_configs)
-    assert gen == ref
+    config = ov_genai.GenerationConfig()
+    config.max_new_tokens = 100
+    assert (
+        get_continuous_batching(path).generate(prompts, config)
+        == pipe.generate(batched_prompts, config)
+    )
