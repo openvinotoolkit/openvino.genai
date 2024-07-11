@@ -206,7 +206,6 @@ RANDOM_SAMPLING_TEST_CASES = [
             #     strict=True,
             #     condition=sys.platform in ["darwin", "win32"],
             # )
-            pytest.mark.debug_weights
         ],
     ),
     RandomSamplingTestStruct(
