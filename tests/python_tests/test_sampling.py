@@ -7,7 +7,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from openvino_genai import ContinuousBatchingPipeline, GenerationConfig
-from typing import List, TypedDict, Union
+from typing import List, TypedDict, Union, Optional
 
 from common import (
     run_test_pipeline,
@@ -143,28 +143,34 @@ def test_individual_generation_configs_deterministic(tmp_path, generation_config
     )
 
 
-platform_ref_texts = TypedDict(
-    "platform_ref_texts",
-    {
-        "default": List[List[str]],
-        "win32": List[List[str]],
-        "linux": List[List[str]],
-        "darwin": List[List[str]],
-    },
-)
+@dataclass
+class PlatformRefTexts:
+    default: Optional[List[List[str]]] = None
+    win32: Optional[List[List[str]]] = None
+    linux: Optional[List[List[str]]] = None
+    darwin: Optional[List[List[str]]] = None
+
+    def get_ref_texts(self) -> List[List[str]]:
+        if sys.platform == 'darwin':
+            ref_texts = self.win32
+        else:
+            ref_texts = self.__getattribute__(sys.platform) or self.default
+        if not ref_texts:
+            raise RuntimeError("No ref_texts were provided")
+        return ref_texts
 
 
 @dataclass
 class RandomSamplingTestStruct:
     generation_config: GenerationConfig
     prompts: List[str]
-    ref_texts: Union[platform_ref_texts, List[List[str]]]
+    ref_texts: Union[PlatformRefTexts, List[List[str]]]
 
     def get_ref_texts(self) -> List[List[str]]:
         if type(self.ref_texts) is list:
             return self.ref_texts
-        assert type(self.ref_texts) is platform_ref_texts
-        return self.ref_texts[sys.platform] or self.ref_texts["default"]
+        assert type(self.ref_texts) is PlatformRefTexts
+        return self.ref_texts.get_ref_texts()
 
 
 RANDOM_SAMPLING_TEST_CASES = [
@@ -181,11 +187,18 @@ RANDOM_SAMPLING_TEST_CASES = [
         RandomSamplingTestStruct(
             generation_config=get_multinomial_temperature_and_top_p(),
             prompts=["What is OpenVINO?"],
-            ref_texts=[
-                [
-                    "\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"
-                ]
-            ],
+            ref_texts=PlatformRefTexts(
+                default=[
+                    [
+                        "\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"
+                    ]
+                ],
+                win32=[
+                    [
+                        "\n\nOpenVINO is a software development platform designed to allow developers to develop and commercialize the most important software products on the web. OpenV"
+                    ]
+                ],
+            ).get_ref_texts(),
         ),
         marks=[
             # pytest.mark.xfail(
@@ -208,11 +221,18 @@ RANDOM_SAMPLING_TEST_CASES = [
         RandomSamplingTestStruct(
             generation_config=get_multinomial_temperature_top_p_and_top_k(),
             prompts=["What is OpenVINO?"],
-            ref_texts=[
-                [
-                    "\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"
-                ]
-            ],
+            ref_texts=PlatformRefTexts(
+                default=[
+                    [
+                        "\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"
+                    ]
+                ],
+                win32=[
+                    [
+                        "\n\nOpenVINO is a software that allows users to create a virtual machine with the ability to create a virtual machine in a virtual environment. Open"
+                    ]
+                ],
+            ).get_ref_texts(),
         ),
         marks=[
             # pytest.mark.xfail(
@@ -235,13 +255,22 @@ RANDOM_SAMPLING_TEST_CASES = [
         RandomSamplingTestStruct(
             generation_config=get_multinomial_temperature_and_num_return_sequence(),
             prompts=["What is location of"],
-            ref_texts=[
-                [
-                    " your instruments?  Are they in an armpit?  Is it warm?  Are your instruments clear?  Are there any cuts and scratches",
-                    " map and where does the game player base base?    I tend to like to do all draws on a specific spot (sometimes wide area,",
-                    " them?\nJust the Mario Maker App, the location is they",
-                ]
-            ],
+            ref_texts=PlatformRefTexts(
+                default=[
+                    [
+                        " your instruments?  Are they in an armpit?  Is it warm?  Are your instruments clear?  Are there any cuts and scratches",
+                        " map and where does the game player base base?    I tend to like to do all draws on a specific spot (sometimes wide area,",
+                        " them?\nJust the Mario Maker App, the location is they",
+                    ]
+                ],
+                win32=[
+                    [
+                        " your instruments?  Are they in an off road environment?  Is it like a lab?\nYeah they are in an open field but their instruments",
+                        " map and where does the game player base base?    I tend to like to do all draws on a specific spot (sometimes wide area,",
+                        " them?\nJust the Mario Maker App, the location is they",
+                    ]
+                ],
+            ).get_ref_texts(),
         ),
         marks=[
             # pytest.mark.xfail(
@@ -253,14 +282,24 @@ RANDOM_SAMPLING_TEST_CASES = [
         RandomSamplingTestStruct(
             generation_config=get_multinomial_all_parameters(),
             prompts=["Tell me something about UAE"],
-            ref_texts=[
-                [
-                    " and how it's not like we're all in the same boat right now lol (or even close) 😂😁! Just curious :) If",
-                    "?  You are my country... so what does our military do here?? What am i missing out on?? And why don't u tell us?",
-                    "?\nThe U.S government has been doing quite well with foreign-made aircraft for many years under US administration....and they have very good reasons",
-                    "? I think that is a bit of an anomaly, but you might want to ask yourself this question: Where can some young people from Dubai or Bahrain",
-                ]
-            ],
+            ref_texts=PlatformRefTexts(
+                default=[
+                    [
+                        " and how it's not like we're all in the same boat right now lol (or even close) 😂😁! Just curious :) If",
+                        "?  You are my country... so what does our military do here?? What am i missing out on?? And why don't u tell us?",
+                        "?\nThe U.S government has been doing quite well with foreign-made aircraft for many years under US administration....and they have very good reasons",
+                        "? I think that is a bit of an anomaly, but you might want to ask yourself this question: Where can some young people from Dubai or Bahrain",
+                    ]
+                ],
+                win32=[
+                    [
+                        "? I think that is a bit of an anomaly, especially since there aren't many Americans living here (like us). What makes you say they've",
+                        "?  You are my country... so what does our future have to do with your problems?? \U0001f609\U0001f608\U0001f495 \U0001f5a4\ufffd",
+                        "?\\nThe U.S government has been doing quite well for decades now when compared strictly directly or indirectly as regards security issues.. They even made some",
+                        " and how it's not like we're all in the same boat either! We had such fun meeting each other at different times this past summer :) It",
+                    ]
+                ],
+            ).get_ref_texts(),
         ),
         marks=[
             # pytest.mark.xfail(
@@ -301,13 +340,22 @@ RANDOM_SAMPLING_TEST_CASES = [
         RandomSamplingTestStruct(
             generation_config=get_multinomial_max_and_min_token(),
             prompts=["What is OpenVINO?"],
-            ref_texts=[
-                [
-                    "\nOpenVINO is a Linux distro. It's not as simple as using the Linux distro itself. OpenVINO is essentially a dist",
-                    "\nOpenVINO is an open-source open-source software that allows anyone to work with a virtual machine, from a smartphone to an iPhone,",
-                    "\n\nOpenVINO is a social networking tool. OpenVINO is a free virtualization service that works at scale. The tool provides the ability",
-                ]
-            ],
+            ref_texts=PlatformRefTexts(
+                default=[
+                    [
+                        "\nOpenVINO is a Linux distro. It's not as simple as using the Linux distro itself. OpenVINO is essentially a dist",
+                        "\nOpenVINO is an open-source open-source software that allows anyone to work with a virtual machine, from a smartphone to an iPhone,",
+                        "\n\nOpenVINO is a social networking tool. OpenVINO is a free virtualization service that works at scale. The tool provides the ability",
+                    ]
+                ],
+                win32=[
+                    [
+                        "\nOpenVINO is the latest addition to the OpenVINO series of platforms. OpenVINO is an open source software development framework for all platforms",
+                        "\nOpenVINO is a browser-based virtual assistant that enables developers and developers to quickly communicate with their own virtual machines. Using this virtual assistant,",
+                        "\n\nOpenVINO is a program designed to help you find the best open source open source software. The program, which is a lightweight package and",
+                    ]
+                ],
+            ).get_ref_texts(),
         ),
         marks=[
             # pytest.mark.xfail(

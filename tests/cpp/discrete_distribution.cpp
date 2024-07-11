@@ -24,8 +24,6 @@ TEST(TestDiscreteDisctibution, rng_engine) {
         auto random_n = rng_engine();
         EXPECT_EQ(random_n, EXPECTED[i]);
     }
-
-    EXPECT_TRUE(true);
 }
 
 TEST(TestDiscreteDisctibution, discrete_distribution) {
@@ -33,12 +31,15 @@ TEST(TestDiscreteDisctibution, discrete_distribution) {
 
     std::discrete_distribution<size_t> distribution({25, 25, 25, 25});
 
-    const std::vector<size_t> EXPECTED = {0, 3, 3, 0, 1, 2, 0, 3, 3, 3, 2, 3, 0, 3, 1, 0, 0, 2, 3, 2, 3, 1, 0, 2, 1};
+    const std::vector<size_t> EXPECTED = {0, 3, 3, 0, 1, 2, 0, 3, 3, 3, 2, 3, 0, 3, 1, 0, 0, 2, 3, 2, 3, 1, 0, 2, 1,
+                                          2, 1, 1, 0, 1, 3, 1, 3, 0, 3, 3, 0, 3, 1, 2, 0, 0, 0, 0, 1, 1, 1, 3, 3, 3,
+                                          2, 0, 2, 2, 1, 3, 2, 3, 3, 0, 3, 3, 3, 1, 1, 2, 0, 3, 0, 3, 3, 1, 1, 0, 0,
+                                          3, 3, 3, 3, 3, 0, 3, 2, 2, 2, 2, 1, 2, 0, 2, 1, 1, 2, 1, 3, 0, 1, 1, 2, 1};
 
-    for (size_t i = 0; i < 25; i++) {
+    for (size_t i = 0; i < 100; i++) {
         size_t random_id = distribution(rng_engine);
         EXPECT_EQ(random_id, EXPECTED[i]);
     }
 
-    EXPECT_TRUE(true);
+    std::cout << std::endl;
 }
