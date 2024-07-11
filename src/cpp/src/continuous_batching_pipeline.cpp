@@ -237,7 +237,7 @@ public:
         return !m_awaiting_requests.empty() || !m_requests.empty();
     }
 
-    std::vector<EncodedGenerationResult> generate( const std::vector<ov::Tensor>& input_ids, const std::vector<GenerationConfig>& sampling_params) {
+    std::vector<EncodedGenerationResult> generate(const std::vector<ov::Tensor>& input_ids, const std::vector<GenerationConfig>& sampling_params) {
         OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
         OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
 
@@ -266,7 +266,7 @@ public:
             auto num_outputs = std::min(sampling_params[generation_idx].num_return_sequences, generation_outputs.size());
             for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
                 const auto& generation_output = generation_outputs[generation_output_idx];
-                result.m_generation_ids.push_back(generation_output.generated_token_ids);
+                result.m_generation_ids.push_back(std::move(generation_output.generated_token_ids));
                 result.m_scores.push_back(generation_output.score);
             }
             result.m_status = generation->get_status();

@@ -348,11 +348,11 @@ Tokenizer dont_construct() {
 
 class ContinuousBatchingAdapter final : public LLMPipelineImplBase {
 public:
-    ov::genai::ContinuousBatchingPipeline m_impl;
+    ContinuousBatchingPipeline m_impl;
 
     ContinuousBatchingAdapter(
         const ov::InferRequest& request,
-        const ov::genai::Tokenizer& tokenizer,
+        const Tokenizer& tokenizer,
         OptionalGenerationConfig generation_config
     ): LLMPipelineImplBase{dont_construct()}, m_impl{"", {}} {}
 
@@ -447,16 +447,16 @@ public:
         const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
         // -1 == config.eos_token_id and config.validate() are handled in m_impl.
         std::vector<EncodedGenerationResult> generated = m_impl.generate(input_ids, std::vector<GenerationConfig>{input_ids.size(), config});
-        std::vector<std::vector<int64_t>> tokens;
-        std::vector<float> scores;
+        std::vector<std::vector<int64_t>> plain_tokens;
+        std::vector<float> plain_scores;
         for (EncodedGenerationResult& res : generated) {
             if (GenerationStatus::FINISHED != res.m_status) {
                 OPENVINO_THROW("Got unfinished GenerationStatus");
             }
-            std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(tokens));
-            std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(scores));
+            std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_tokens));
+            std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
         }
-        return {std::move(tokens), std::move(scores)};
+        return {std::move(plain_tokens), std::move(plain_scores)};
     }
 
     void start_chat(const std::string& system_message) override {
@@ -474,7 +474,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     OptionalGenerationConfig generation_config
 ) {
-    m_pimpl = std::make_unique<ContinuousBatchingAdapter>(request, tokenizer, generation_config);
+    m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
