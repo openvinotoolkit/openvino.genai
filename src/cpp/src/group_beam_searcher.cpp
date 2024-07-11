@@ -354,7 +354,7 @@ void reset_all_inputs_to_empty_tensors(ov::InferRequest& request) {
 namespace ov {
 namespace genai {
 
-std::pair<EncodedResults, std::optional<int32_t>> beam_search(ov::InferRequest& lm,
+std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
                            ov::Tensor input_ids,
                            ov::Tensor attention_mask,
                            GenerationConfig config, 
@@ -431,9 +431,10 @@ std::pair<EncodedResults, std::optional<int32_t>> beam_search(ov::InferRequest& 
 
     auto result = finalize(std::move(group_beam_searcher));
     ov::genai::EncodedResults results;
-    std::optional<int32_t> res_selected_beam_idx = std::nullopt;
+    int32_t res_selected_beam_idx = 0;
     results.scores.reserve(config.num_return_sequences * result.size());
     results.tokens.reserve(config.num_return_sequences * result.size());
+    
     // align output with HF
     for (size_t prompt_id = 0; prompt_id < result.size(); prompt_id++) {
         auto prompt_group = result.at(prompt_id);

@@ -170,16 +170,14 @@ def read_model(params):
     )
 
 
-def stop_criteria_map():
-    from openvino_genai import StopCriteria
-    # in OpenVINO GenAI this parameter is called stop_criteria,
-    # while in HF it's called early_stopping. 
-    # HF values True, False and "never" correspond to OV GenAI values "EARLY", "HEURISTIC" and "NEVER"
-    return {
-        StopCriteria.NEVER: "never", 
-        StopCriteria.EARLY: True, 
-        StopCriteria.HEURISTIC: False
-    }
+# in OpenVINO GenAI this parameter is called stop_criteria,
+# while in HF it's called early_stopping. 
+# HF values True, False and "never" correspond to OV GenAI values "EARLY", "HEURISTIC" and "NEVER"
+STOP_CRITERIA_MAP = {
+    ov_genai.StopCriteria.NEVER: "never", 
+    ov_genai.StopCriteria.EARLY: True, 
+    ov_genai.StopCriteria.HEURISTIC: False
+}
 
 
 @pytest.fixture(scope="module")

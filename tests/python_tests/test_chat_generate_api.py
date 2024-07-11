@@ -12,7 +12,6 @@ from ov_genai_test_utils import (
     read_model,
     load_tok,
     model_tmp_path,
-    stop_criteria_map,
     get_chat_templates
 )
 

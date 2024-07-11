@@ -5,7 +5,7 @@ import openvino_genai as ov_genai
 from openvino_genai import StopCriteria
 import pytest
 import transformers
-from typing import Union, List, Dict, Tuple, Optional
+from typing import Union, List, Dict, Optional
 import numpy as np
 import openvino as ov
 import sys
@@ -17,7 +17,7 @@ from ov_genai_test_utils import (
     load_pipe,
     load_tok, 
     model_tmp_path, 
-    stop_criteria_map, 
+    STOP_CRITERIA_MAP, 
 )
 
 
@@ -41,7 +41,7 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
     
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
-        generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
+        generation_config_hf['early_stopping'] = STOP_CRITERIA_MAP[generation_config_hf.pop('stop_criteria')]
     generation_config_hf.pop('ignore_eos', None)
 
     # Encode the batch of prompts
@@ -82,7 +82,7 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt: str
 
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
-        generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
+        generation_config_hf['early_stopping'] = STOP_CRITERIA_MAP[generation_config_hf.pop('stop_criteria')]
     generation_config_hf.pop('ignore_eos', None)
 
     encoded_prompt = tokenizer.encode(prompt, return_tensors='pt', add_special_tokens=True)
@@ -120,7 +120,7 @@ def hf_ov_genai_tensors_comparison(
     
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
-        generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
+        generation_config_hf['early_stopping'] = STOP_CRITERIA_MAP[generation_config_hf.pop('stop_criteria')]
     generation_config_hf.pop('ignore_eos', None)
     
     if attention_mask is not None:
