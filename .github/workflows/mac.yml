@@ -14,7 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  MACOSX_DEPLOYMENT_TARGET: '10.12'
   PYTHON_VERSION: '3.8'
   OV_BRANCH: '4282043a9e38fb4fa3f6418f24bd061b736194c9'
   OV_TARBALL: ''
@@ -58,7 +57,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: 'macos-12-large'
+    runs-on: 'macos-13-large'
     env:
       CMAKE_BUILD_TYPE: 'Release'
       CMAKE_GENERATOR: 'Ninja Multi-Config'
@@ -183,7 +182,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-12
+    runs-on: macos-13
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -248,7 +247,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-12
+    runs-on: macos-13
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
