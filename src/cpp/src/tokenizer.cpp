@@ -140,9 +140,9 @@ public:
         read_token_content_str(eos_token_key_name, m_eos_token);
     }
 
-    // Read string representation of special tokens if they exists.
+    // Read string representation of special tokens if they exist.
     // Also tries to load special token ids from added_tokens_decoder if they exist.
-    // Will not override special token strings or ids if they already exist
+    // Will not override special token strings or ids if they already exist.
     void read_tokenizer_config_if_necessary(const std::filesystem::path& tokenizer_path) {
         if (m_pad_token_id != -1 && m_bos_token_id != -1 && m_eos_token_id != -1 && 
             !m_pad_token.empty() && !m_bos_token.empty() && !m_eos_token.empty()) {
@@ -315,32 +315,70 @@ public:
         
         std::string res = "";
         ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
-
+        if (res.empty())
+            return res;
+        
         // Replace what jinja2cpp doesn't support
         std::pair<std::string, std::string> replace_str_map[] = {
-            {"\n'}", "\n' }"},
-            {".strip()", "\"\""}
+            {"'}", "' }"},
+            {"{'", "{ '"},
+            {".strip()", ""}
         };
-        if (!res.empty()) {
+
+        for (const auto& [from, to] : replace_str_map) {
+            size_t pos = 0;
+            while ((pos = res.find(from, pos)) != std::string::npos) {
+                res.replace(pos, from.size(), to);
+                pos += to.size();
+            }
+        }
+        return res;
+    }
+
+    std::string apply_chat_template(ChatHistory history, 
+                                    bool add_generation_prompt, 
+                                    const std::string& chat_template) const {
+        auto chat_tpl = chat_template.empty() ? m_chat_template : chat_template;
+        // Jinja2Cpp does not support slicing, e.g. [1:].
+        // In templates slicing is used typically in the header to find system prompt.
+        // If header containts that typical expression we update template and 
+        // extract system message manually from ChatHistory.
+        std::string header_with_slice = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}";
+        std::string replacement_string = "{% if false %}{% set placeholder = false %}";
+        
+        std::string system_message = "";
+        size_t pos = chat_tpl.find(header_with_slice);
+        if (pos != std::string::npos) {
+            chat_tpl.replace(pos, header_with_slice.length(), replacement_string);
+
+            if (!history.empty() && history[0].at("role") == "system") {
+                system_message = history[0].at("content");
+                history.erase(history.begin());
+            }
+        }
+        
+        // Jinja2Cpp accepts system_message only as a string and incorrectly handles it as a bool.
+        // Both this patters are found frequently in chat templates, replace so that jinja2cpp 
+        // will not stumble on them.
+        std::pair<std::string, std::string> replace_str_map[] = {
+            {"{% set system_message = false %}", ""},
+            {"system_message != false", "true"},
+        };
+        if (!system_message.empty()) {
             for (const auto& [from, to] : replace_str_map) {
                 size_t pos = 0;
-                while ((pos = res.find(from, pos)) != std::string::npos) {
-                    res.replace(pos, from.size(), to);
+                while ((pos = chat_tpl.find(from, pos)) != std::string::npos) {
+                    chat_tpl.replace(pos, from.size(), to);
                     pos += to.size();
                 }
             }
         }
-        return res;
-    }    
 
-    std::string apply_chat_template(const ChatHistory& history, 
-                                    bool add_generation_prompt, 
-                                    const std::string& chat_template) const {
         jinja2::TemplateEnv env;
         env.GetSettings().lstripBlocks = true;
         env.GetSettings().trimBlocks = true;
         jinja2::Template tpl(&env);
-        tpl.Load(chat_template.empty() ? m_chat_template : chat_template);
+        tpl.Load(chat_tpl);
         
         jinja2::ValuesList jinja_messages;
         jinja2::ValuesMap jinja_message;
@@ -354,9 +392,17 @@ public:
             {"bos_token",  m_bos_token},
             {"eos_token", m_eos_token},
             {"pad_token", m_pad_token},
+            {"system_message", system_message.empty() ? jinja2::EmptyValue() : jinja2::Value{system_message}},
             {"add_generation_prompt", add_generation_prompt},
         };
-        return tpl.RenderAsString(params).value();
+        
+        try {
+            return tpl.RenderAsString(params).value();
+        } catch (const std::bad_alloc& error) {
+            OPENVINO_THROW("Chat template for the current model is not supported by Jinja2Cpp. "
+                           "Please apply template manually to your prompt before calling generate. "
+                           "For exmaple: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
+        }
     }
 
     
@@ -419,7 +465,7 @@ std::string Tokenizer::get_eos_token() const {
     return m_pimpl->m_eos_token;
 }
 
-std::string Tokenizer::apply_chat_template(const ChatHistory& history,
+std::string Tokenizer::apply_chat_template(ChatHistory history,
                                            bool add_generation_prompt,
                                            const std::string& chat_template) const {
     return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template);

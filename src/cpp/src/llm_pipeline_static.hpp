@@ -35,7 +35,7 @@ public:
         StreamerVariant streamer
     ) override;
 
-    void start_chat() override {
+    void start_chat(const std::string& system_message) override {
         OPENVINO_THROW("Currently chat conversation mode isn't supported");
     };
     void finish_chat() override {
