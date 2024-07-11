@@ -599,11 +599,13 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init([](const std::string& model_path, const SchedulerConfig& config) {
             ScopedVar env_manager(ov_tokenizers_module_path());
             return std::make_unique<ContinuousBatchingPipeline>(model_path, config);
-        }))
+        }), py::arg("device") = "CPU")  // TODO: other ctors
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
-        .def("add_request", &ContinuousBatchingPipeline::add_request)
+        .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request))
+        .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request))
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
         .def("generate", &ContinuousBatchingPipeline::generate);
+        .def("generate", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::generate))
 }
