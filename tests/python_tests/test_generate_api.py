@@ -173,7 +173,10 @@ def get_continuous_batching(path):
 @pytest.mark.parametrize("question", questions)
 @pytest.mark.precommit
 def test_continuous_batching_vs_stateful(question):
-    model_id, path, tokenizer, model, pipe = read_model("TinyLlama/TinyLlama-1.1B-Chat-v1.0", pathlib.Path("TinyLlama-1.1B-Chat-v1.0"))
+    model_id, path, tokenizer, model, pipe = read_model((
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        pathlib.Path("TinyLlama-1.1B-Chat-v1.0")
+    ))
     cb = get_continuous_batching(path)
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = 100
