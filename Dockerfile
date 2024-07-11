@@ -2,7 +2,7 @@ FROM ubuntu:22.04
 
 ARG JOBS
 WORKDIR /workspace
-RUN apt-get update -y && apt-get install -y python3-pip python3-venv git
+RUN apt-get update -y && apt-get install -y --no-install-recommends python3-pip python3-venv git
 
 # Install OpenVINO
 RUN git clone --branch master https://github.com/openvinotoolkit/openvino.git && \
@@ -25,7 +25,7 @@ ENV OpenVINO_DIR=/workspace/openvino_build
 RUN wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
 
 # Build GenAI library with dependencies
-RUN git clone https://github.com/Wovchena/openvino.genai-public.git -b reuse-Tokenizer openvino.genai && \
+RUN git clone https://github.com/openvinotoolkit/openvino.genai.git && \
         cd /workspace/openvino.genai/thirdparty && git submodule update --remote --init && \
         mkdir /workspace/openvino.genai/build && cd /workspace/openvino.genai/build && \
         cmake -DCMAKE_BUILD_TYPE=Release .. && \
@@ -33,6 +33,6 @@ RUN git clone https://github.com/Wovchena/openvino.genai-public.git -b reuse-Tok
 
 # Install test dependencies
 RUN python3 -m pip install --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly/ /workspace/openvino.genai/thirdparty/openvino_tokenizers
-RUN PIP_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cpu" python3 -m pip install -r /workspace/openvino.genai/tests/python_tests/continuous_batching/requirements.txt
+RUN PIP_EXTRA_INDEX_URL="https://download.pytorch.org/whl/cpu" python3 -m pip install -r /workspace/openvino.genai/tests/python_tests/requirements.txt
 ENV PYTHONPATH=/workspace/openvino.genai/build/
 ENV LD_LIBRARY_PATH=/workspace/openvino.genai/build/

@@ -371,7 +371,7 @@ public:
     }
 
     Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
-        m_sequences.emplace_back(Sequence::fork(sequence, m_next_sequence_id++));
+        m_sequences.emplace_back(Sequence::fork(std::move(sequence), m_next_sequence_id++));
         return m_sequences.back();
     }
 
@@ -433,7 +433,7 @@ public:
             output.score = sequence->get_beam_search_score(m_sampling_params);
             outputs.emplace(sequence->get_grouped_id(), output);
         }
-        m_generation_stream->push(outputs);
+        m_generation_stream->push(std::move(outputs));
     }
 
     void push_partial_outputs() {
@@ -445,7 +445,7 @@ public:
             const auto last_gen_token = sequence->get_last_generation_output();
             outputs.emplace(sequence->get_grouped_id(), last_gen_token);
         }
-        m_generation_stream->push(outputs);
+        m_generation_stream->push(std::move(outputs));
     }
 
     void notify_handle() {
