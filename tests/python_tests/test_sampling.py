@@ -7,7 +7,7 @@ import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from openvino_genai import ContinuousBatchingPipeline, GenerationConfig
+from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, Tokenizer
 from typing import List
 
 from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, \
@@ -205,7 +205,7 @@ def test_post_oom_health(tmp_path):
     model_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, model_path)
 
-    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config)
+    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix()) scheduler_config)
     # First run should return incomplete response
     output = pipe.generate(["What is OpenVINO?"], generation_configs)
     assert(len(output))
