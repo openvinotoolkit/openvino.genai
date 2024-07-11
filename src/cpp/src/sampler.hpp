@@ -233,12 +233,11 @@ class Sampler {
         std::cout << std::endl;
 
         auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
-        auto dist2 = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
         std::vector<Token> out_tokens;
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
             size_t element_to_pick = dist(rng_engine);
             
-            std::cout << rng_engine2() << ",";
+            std::cout << rng_engine2() << ":" << element_to_pick << ",";
 
             out_tokens.push_back(logit_vector[element_to_pick]);
         }

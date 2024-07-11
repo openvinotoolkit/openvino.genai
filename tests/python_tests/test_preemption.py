@@ -133,7 +133,7 @@ multinomial_params = RandomSamplingTestStruct(
                 "\n\nOpenVINO is a live platform that allows users to create and manage a new library of applications on the Virtuoso server, which can"
             ],
             [
-                "  You're getting much better results from doing this, than you are by not doing this.  I have a BH and I was so far"
+                "  You're getting much better results from doing this, than you are by not doing this.  If you are truly trying to do something good,"
             ],
             [
                 "\nI'm from Canada, and I'm from the US, so I'm not sure.\nI think you mean the Canadian version."
@@ -213,6 +213,22 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
         win32=[
             [
                 "\nI've had a friend with the capacity to test this in his own words.\nThe big problem with real-world results is the economics of"
+            ],
+            [
+                " significance of 3862?\n3829\nWhat is the greatest common divisor of 15 and 7763?\n9\nCalculate the",
+                " third derivative of 939*v**3*r**2 + 133*v**3*r**2 + v**3 - 16*",
+                " climate in the future?  Do we have things to catch on fire, and if so does that mean we'll have a new climate change or is",
+            ],
+            [
+                "\nIt's in the middle of nowhere if you haven’t seen one yet! It might be more convenient there than anywhere else.. maybe take",
+                "\nUAE is a country with some great culture that has been living under Islamic oppression for almost 60 years now (including 20 years as part of Arab",
+                "\nNope, just wanted to say how awesome and beautiful it was when my brother came back from an adventure trip across Asia - our 2nd year",
+                "\nI don't know anything.  I'm not sure what kind this sub wants though... but apparently they are pretty bad at making videos/photos",
+            ],
+        ],
+        darwin=[
+            [
+                "\nI've had a friend with the capacity to test this in his own words.\nThe big problem with real-world results is the rigidity"
             ],
             [
                 " significance of 3862?\n3829\nWhat is the greatest common divisor of 15 and 7763?\n9\nCalculate the",
