@@ -133,12 +133,13 @@ multinomial_params = RandomSamplingTestStruct(
 # todo: Anastasiia Pnevskaya: fix the test because it is hanging according max_new_tokens = std::numeric_limits<std::size_t>::max()
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
-@pytest.mark.xfail(
-    raises=AssertionError,
-    reason="assert ref_text == ov_text fails in CI.",
-    condition=sys.platform in ["win32", "darwin"],
-    strict=True,
-)
+# @pytest.mark.xfail(
+#     raises=AssertionError,
+#     reason="assert ref_text == ov_text fails in CI.",
+#     condition=sys.platform in ["win32", "darwin"],
+#     strict=True,
+# )
+@pytest.mark.random
 def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     generation_configs = multinomial_params.generation_config
     for config in generation_configs:
@@ -162,7 +163,7 @@ def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     generate_and_compare_with_reference_text(
         model_path,
         multinomial_params.prompts,
-        multinomial_params.ref_texts,
+        multinomial_params.get_ref_texts(),
         generation_configs,
         scheduler_config,
     )
@@ -200,10 +201,11 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
 
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
-@pytest.mark.xfail(
-    reason="assert ref_text == ov_text fails",
-    condition=sys.platform in ["win32", "darwin"],
-)
+# @pytest.mark.xfail(
+#     reason="assert ref_text == ov_text fails",
+#     condition=sys.platform in ["win32", "darwin"],
+# )
+@pytest.mark.random
 def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     generation_configs = multinomial_params_n_seq.generation_config
     for config in generation_configs:
@@ -227,7 +229,7 @@ def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     generate_and_compare_with_reference_text(
         model_path,
         multinomial_params_n_seq.prompts,
-        multinomial_params_n_seq.ref_texts,
+        multinomial_params_n_seq.get_ref_texts(),
         generation_configs,
         scheduler_config,
     )

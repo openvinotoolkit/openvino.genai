@@ -7,7 +7,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from openvino_genai import ContinuousBatchingPipeline, GenerationConfig
-from typing import List
+from typing import List, TypedDict, Union
 
 from common import (
     run_test_pipeline,
@@ -143,11 +143,28 @@ def test_individual_generation_configs_deterministic(tmp_path, generation_config
     )
 
 
+platform_ref_texts = TypedDict(
+    "platform_ref_texts",
+    {
+        "default": List[List[str]],
+        "win32": List[List[str]],
+        "linux": List[List[str]],
+        "darwin": List[List[str]],
+    },
+)
+
+
 @dataclass
 class RandomSamplingTestStruct:
     generation_config: GenerationConfig
     prompts: List[str]
-    ref_texts: List[List[str]]
+    ref_texts: Union[platform_ref_texts, List[List[str]]]
+
+    def get_ref_texts(self) -> List[List[str]]:
+        if type(self.ref_texts) is list:
+            return self.ref_texts
+        assert type(self.ref_texts) is platform_ref_texts
+        return self.ref_texts[sys.platform] or self.ref_texts["default"]
 
 
 RANDOM_SAMPLING_TEST_CASES = [
@@ -321,6 +338,7 @@ RANDOM_SAMPLING_TEST_CASES = [
         "multinomial_max_and_min_token",
     ],
 )
+@pytest.mark.random
 def test_individual_generation_configs_random(
     tmp_path, test_struct: RandomSamplingTestStruct
 ):
@@ -338,7 +356,7 @@ def test_individual_generation_configs_random(
     generate_and_compare_with_reference_text(
         model_path,
         prompts,
-        test_struct.ref_texts,
+        test_struct.get_ref_texts(),
         generation_configs,
         DEFAULT_SCHEDULER_CONFIG,
     )
