@@ -111,7 +111,7 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_sampling.py -m random -s
+      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_sampling.py -m debug_weights -s
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_preemption.py -m random
       - run: source ./ov/setupvars.sh && python -m pip install .
       - run: python -m pytest ./tests/python_tests/test_preemption.py -m random
@@ -141,7 +141,7 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/test_sampling.py -m random -s
+      - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/test_sampling.py -m debug_weights -s
       - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/test_preemption.py -m random
       - run: call ./ov/setupvars.bat && python -m pip install . --verbose
       - run: python -m pytest ./tests/python_tests/test_preemption.py -m random
@@ -167,7 +167,7 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
-      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_sampling.py -m random -s
+      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_sampling.py -m debug_weights -s
       - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/test_preemption.py -m random
       - run: source ./ov/setupvars.sh && python -m pip install .
       - run: python -m pytest ./tests/python_tests/test_preemption.py -m random

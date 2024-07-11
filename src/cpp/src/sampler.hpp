@@ -227,25 +227,21 @@ class Sampler {
         std::vector<float> multinomial_weights(logit_vector.size());
         for (size_t i = 0; i < logit_vector.size(); i++) multinomial_weights[i] = logit_vector[i].m_log_prob;
 
-        for (size_t i = 0; i < 20; i++) {
-            std::cout << multinomial_weights[i] << ",";
+        for (auto weight : multinomial_weights) {
+            std::cout << weight << ",";
         }
         std::cout << std::endl;
+
+        auto rng_n = rng_engine2();
 
         auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
         std::vector<Token> out_tokens;
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
             size_t element_to_pick = dist(rng_engine);
             
-            std::cout << rng_engine2() << ":" << element_to_pick << ",";
+            std::cout << rng_n << ":" << element_to_pick << ",";
 
             out_tokens.push_back(logit_vector[element_to_pick]);
-        }
-
-        std::cout << std::endl;
-
-        for (auto token : out_tokens) {
-            std::cout << token.m_index << ",";
         }
 
         std::cout << std::endl;
