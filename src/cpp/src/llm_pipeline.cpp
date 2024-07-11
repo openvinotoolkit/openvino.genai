@@ -53,7 +53,7 @@ ov::genai::EncodedResults multinominal_decoding(
     std::optional<ov::Tensor> position_ids
 );
 
-std::pair<EncodedResults, std::optional<int32_t>> beam_search(
+std::pair<EncodedResults, int32_t> beam_search(
     ov::InferRequest& lm, 
     ov::Tensor prompts, 
     ov::Tensor attention_mask, 
