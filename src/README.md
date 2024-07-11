@@ -155,7 +155,7 @@ int main(int argc, char* argv[]) {
         
     auto streamer = [](std::string word) { 
         std::cout << word << std::flush; 
-        // Return flag correspods whether generation should be stopped.
+        // Return flag corresponds whether generation should be stopped.
         // false means continue generation.
         return false;
     };

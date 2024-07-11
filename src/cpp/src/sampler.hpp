@@ -288,7 +288,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 };
                 for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
                     auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id);
-                    logit_vector = logit_processor.apply(logit_vector);
+                    logit_processor.apply(logit_vector);
 
                     Token sampled_token_id;
                     if (sampling_params.is_greedy_decoding()) {
