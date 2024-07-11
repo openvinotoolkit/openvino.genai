@@ -20,7 +20,7 @@ from common import (
     get_multinomial_temperature,
     get_multinomial_temperature_and_top_p,
 )
-from test_sampling import RandomSamplingTestStruct
+from test_sampling import RandomSamplingTestStruct, PlatformRefTexts
 
 
 def get_greedy_seq_len_300() -> GenerationConfig:
@@ -116,17 +116,30 @@ multinomial_params = RandomSamplingTestStruct(
         "How are you?",
         "Tell me something about Canada?",
     ],
-    ref_texts=[
-        [
-            "\n\nOpenVINO is a live platform that allows users to create and manage a new library for open source applications.\n\nOpenVINO is"
+    ref_texts=PlatformRefTexts(
+        default=[
+            [
+                "\n\nOpenVINO is a live platform that allows users to create and manage a new library for open source applications.\n\nOpenVINO is"
+            ],
+            [
+                "  You're getting much better results from doing this, than you are by not doing this.  I have a BH and I was so far"
+            ],
+            [
+                "\nI'm from Canada, and I'm from the US, so I'm not sure.\nI think you mean the Canadian version."
+            ],
         ],
-        [
-            "  You're getting much better results from doing this, than you are by not doing this.  I have a BH and I was so far"
+        win32=[
+            [
+                "\n\nOpenVINO is a live platform that allows users to create and manage a new library of applications on the Virtuoso server, which can"
+            ],
+            [
+                "  You're getting much better results from doing this, than you are by not doing this.  I have a BH and I was so far"
+            ],
+            [
+                "\nI'm from Canada, and I'm from the US, so I'm not sure.\nI think you mean the Canadian version."
+            ],
         ],
-        [
-            "\nI'm from Canada, and I'm from the US, so I'm not sure.\nI think you mean the Canadian version."
-        ],
-    ],
+    ),
 )
 
 
@@ -180,22 +193,40 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
         "What is the current",
         "Tell me something about UAE?",
     ],
-    ref_texts=[
-        [
-            "\nI've seen this expression used too many times without making sense.\nAs an AI engineer, and as a scientist, we should make everything easier"
+    ref_texts=PlatformRefTexts(
+        default=[
+            [
+                "\nI've seen this expression used too many times without making sense.\nAs an AI engineer, and as a scientist, we should make everything easier"
+            ],
+            [
+                " significance of 3862?\n3829\nWhat is the greatest common divisor of 15 and 7763?\n9\nCalculate the",
+                " third derivative of 939*v**3*r**2 + 133*v**3*r**2 + v**3 - 16*",
+                " climate in the future?  Do we have things to catch on fire, and if so does that mean we'll have a new climate change or is",
+            ],
+            [
+                "\nIt's in the middle of nowhere if you haven’t seen one yet! It might be more convenient there than anywhere else.. maybe take",
+                "\nUAE is a country with some great culture that has been living under Islamic oppression for almost 60 years now (including 20 years as part of Arab",
+                "\nNope, just wanted to say how awesome and beautiful it was when my brother came back from an adventure trip across Asia - our 2nd year",
+                "\nI don't know anything.  I'm not sure what kind this sub wants though... but apparently they are pretty bad at making videos/photos",
+            ],
         ],
-        [
-            " significance of 3862?\n3829\nWhat is the greatest common divisor of 15 and 7763?\n9\nCalculate the",
-            " third derivative of 939*v**3*r**2 + 133*v**3*r**2 + v**3 - 16*",
-            " climate in the future?  Do we have things to catch on fire, and if so does that mean we'll have a new climate change or is",
+        win32=[
+            [
+                "\nI've had a friend with the capacity to test this in his own words.\nThe big problem with real-world results is the economics of"
+            ],
+            [
+                " significance of 3862?\n3829\nWhat is the greatest common divisor of 15 and 7763?\n9\nCalculate the",
+                " third derivative of 939*v**3*r**2 + 133*v**3*r**2 + v**3 - 16*",
+                " climate in the future?  Do we have things to catch on fire, and if so does that mean we'll have a new climate change or is",
+            ],
+            [
+                "\nIt's in the middle of nowhere if you haven’t seen one yet! It might be more convenient there than anywhere else.. maybe take",
+                "\nUAE is a country with some great culture that has been living under Islamic oppression for almost 60 years now (including 20 years as part of Arab",
+                "\nNope, just wanted to say how awesome and beautiful it was when my brother came back from an adventure trip across Asia - our 2nd year",
+                "\nI don't know anything.  I'm not sure what kind this sub wants though... but apparently they are pretty bad at making videos/photos",
+            ],
         ],
-        [
-            "\nIt's in the middle of nowhere if you haven’t seen one yet! It might be more convenient there than anywhere else.. maybe take",
-            "\nUAE is a country with some great culture that has been living under Islamic oppression for almost 60 years now (including 20 years as part of Arab",
-            "\nNope, just wanted to say how awesome and beautiful it was when my brother came back from an adventure trip across Asia - our 2nd year",
-            "\nI don't know anything.  I'm not sure what kind this sub wants though... but apparently they are pretty bad at making videos/photos",
-        ],
-    ],
+    ),
 )
 
 

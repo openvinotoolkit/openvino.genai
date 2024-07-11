@@ -151,7 +151,7 @@ class PlatformRefTexts:
     darwin: Optional[List[List[str]]] = None
 
     def get_ref_texts(self) -> List[List[str]]:
-        if sys.platform == "darwin":
+        if not self.darwin and sys.platform == "darwin":
             ref_texts = self.win32
         else:
             ref_texts = self.__getattribute__(sys.platform) or self.default
