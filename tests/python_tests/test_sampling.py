@@ -151,7 +151,7 @@ class PlatformRefTexts:
     darwin: Optional[List[List[str]]] = None
 
     def get_ref_texts(self) -> List[List[str]]:
-        if sys.platform == 'darwin':
+        if sys.platform == "darwin":
             ref_texts = self.win32
         else:
             ref_texts = self.__getattribute__(sys.platform) or self.default
@@ -258,7 +258,7 @@ RANDOM_SAMPLING_TEST_CASES = [
             ref_texts=PlatformRefTexts(
                 default=[
                     [
-                        " your instruments?  Are they in an armpit?  Is it warm?  Are your instruments clear?  Are there any cuts and scratches",
+                        " your instruments?  Are they in an off road environment?  Is it like a lab?\nYeah they are in an open field but their instruments",
                         " map and where does the game player base base?    I tend to like to do all draws on a specific spot (sometimes wide area,",
                         " them?\nJust the Mario Maker App, the location is they",
                     ]
@@ -268,6 +268,13 @@ RANDOM_SAMPLING_TEST_CASES = [
                         " your instruments?  Are they in an off road environment?  Is it like a lab?\nYeah they are in an open field but their instruments",
                         " map and where does the game player base base?    I tend to like to do all draws on a specific spot (sometimes wide area,",
                         " them?\nJust the Mario Maker App, the location is they",
+                    ]
+                ],
+                darwin=[
+                    [
+                        " your instruments?  Are they in an off road environment?  Take your instruments and have them in sync.  Take your instruments where you need to",
+                        " them?\nJust the MAC address and phone number.",
+                        " map and where does the game player base base?     Because running around at a 40 min sufficiently long map in chat or offline off is",
                     ]
                 ],
             ).get_ref_texts(),
@@ -295,7 +302,7 @@ RANDOM_SAMPLING_TEST_CASES = [
                     [
                         "? I think that is a bit of an anomaly, especially since there aren't many Americans living here (like us). What makes you say they've",
                         "?  You are my country... so what does our future have to do with your problems?? \U0001f609\U0001f608\U0001f495 \U0001f5a4\ufffd",
-                        "?\\nThe U.S government has been doing quite well for decades now when compared strictly directly or indirectly as regards security issues.. They even made some",
+                        "?\nThe U.S government has been doing quite well for decades now when compared strictly directly or indirectly as regards security issues.. They even made some",
                         " and how it's not like we're all in the same boat either! We had such fun meeting each other at different times this past summer :) It",
                     ]
                 ],
