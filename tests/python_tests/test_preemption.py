@@ -1,7 +1,6 @@
 # Copyright (C) 2018-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import sys
 import pytest
 from pathlib import Path
 
@@ -117,7 +116,7 @@ multinomial_params = RandomSamplingTestStruct(
         "Tell me something about Canada?",
     ],
     ref_texts=PlatformRefTexts(
-        default=[
+        linux=[
             [
                 "\n\nOpenVINO is a live platform that allows users to create and manage a new library for open source applications.\n\nOpenVINO is"
             ],
@@ -139,19 +138,13 @@ multinomial_params = RandomSamplingTestStruct(
                 "\nI'm from Canada, and I'm from the US, so I'm not sure what you're talking about.\nI'm Canadian and I"
             ],
         ],
-    ),
+    ).get_ref_texts(),
 )
 
 
 # todo: Anastasiia Pnevskaya: fix the test because it is hanging according max_new_tokens = std::numeric_limits<std::size_t>::max()
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
-# @pytest.mark.xfail(
-#     raises=AssertionError,
-#     reason="assert ref_text == ov_text fails in CI.",
-#     condition=sys.platform in ["win32", "darwin"],
-#     strict=True,
-# )
 @pytest.mark.random
 def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     generation_configs = multinomial_params.generation_config
@@ -176,7 +169,7 @@ def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     generate_and_compare_with_reference_text(
         model_path,
         multinomial_params.prompts,
-        multinomial_params.get_ref_texts(),
+        multinomial_params.ref_texts,
         generation_configs,
         scheduler_config,
     )
@@ -194,7 +187,7 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
         "Tell me something about UAE?",
     ],
     ref_texts=PlatformRefTexts(
-        default=[
+        linux=[
             [
                 "\nI've seen this expression used too many times without making sense.\nAs an AI engineer, and as a scientist, we should make everything easier"
             ],
@@ -220,10 +213,10 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
                 " climate in the world?\n\nA recent study by the Climate Discovery Network (CCN) states that climate change may be driving global warming.\n",
             ],
             [
-                "\nIt's in the middle of nowhere if you haven’t seen one yet! It might be more convenient there than anywhere else.. maybe take",
-                "\nUAE is a country with some great culture that has been living under Islamic oppression for almost 60 years now (including 20 years as part of Arab",
-                "\nNope, just wanted to say how awesome and beautiful it was when my brother came back from an adventure trip across Asia - our 2nd year",
-                "\nI don't know anything.  I'm not sure what kind this sub wants though... but apparently they are pretty bad at making videos/photos",
+                "\nI don't have any knowledge on them. We are based out near Dubai so hopefully they will take care of us soon enough :) thanks though :",
+                "\nUAE is not one of the richest countries in Asia but definitely among those most corrupt nations because this corruption (and its own endemic practices) still",
+                "\nNope, I'm just going through my first semester there right now and it was nice to see some people who were doing well haha - we",
+                "\nIt's a country where your parents can never give you anything at all!  It also has an extremely low education system for many years... You",
             ],
         ],
         darwin=[
@@ -236,22 +229,18 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
                 " climate in the world?\n\nA recent study by the Climate Discovery Network (CCN) states that climate change may be driving global warming.\n",
             ],
             [
-                "\nIt's in the middle of nowhere if you haven’t seen one yet! It might be more convenient there than anywhere else.. maybe take",
-                "\nUAE is a country with some great culture that has been living under Islamic oppression for almost 60 years now (including 20 years as part of Arab",
-                "\nNope, just wanted to say how awesome and beautiful it was when my brother came back from an adventure trip across Asia - our 2nd year",
-                "\nI don't know anything.  I'm not sure what kind this sub wants though... but apparently they are pretty bad at making videos/photos",
+                "\nI don't have any knowledge on them. We are based out near Dubai so hopefully they will take care of us soon enough :) thanks though :",
+                "\nUAE is not one of the richest countries in Asia but definitely among those most corrupt nations because this corruption (and its own endemic practices) still",
+                "\nNope, I'm just going through my first semester there right now and it was nice to see some people who were doing well haha - we",
+                "\nIt's a country where your parents can never give you anything at all!  It also has an extremely low education system for many years... You",
             ],
         ],
-    ),
+    ).get_ref_texts(),
 )
 
 
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.precommit
-# @pytest.mark.xfail(
-#     reason="assert ref_text == ov_text fails",
-#     condition=sys.platform in ["win32", "darwin"],
-# )
 @pytest.mark.random
 def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     generation_configs = multinomial_params_n_seq.generation_config
@@ -276,7 +265,7 @@ def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     generate_and_compare_with_reference_text(
         model_path,
         multinomial_params_n_seq.prompts,
-        multinomial_params_n_seq.get_ref_texts(),
+        multinomial_params_n_seq.ref_texts,
         generation_configs,
         scheduler_config,
     )
