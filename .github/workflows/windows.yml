@@ -321,9 +321,9 @@ jobs:
 
       - run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          ${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm .\TinyLlama-1.1B-Chat-v1.0\ ""
+          ${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm TinyLlama-1.1B-Chat-v1.0 ""
 
       - run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python ${{ env.OV_INSTALL_DIR }}\samples\python\multinomial_causal_lm\multinomial_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 0
+          python ${{ env.OV_INSTALL_DIR }}\samples\python\multinomial_causal_lm\multinomial_causal_lm.py TinyLlama-1.1B-Chat-v1.0 0
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
