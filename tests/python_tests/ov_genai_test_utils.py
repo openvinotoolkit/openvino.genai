@@ -135,7 +135,7 @@ def get_chat_templates():
 
 
 @functools.lru_cache(1)
-def read_model(params):
+def read_model(params, **tokenizer_kwargs):
     model_id, path = params
     
     from optimum.intel.openvino import OVModelForCausalLM
@@ -147,8 +147,8 @@ def read_model(params):
                                                        compile=False, device='CPU')
     else:
         ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, 
-                                                                             add_special_tokens=True, 
-                                                                             with_detokenizer=True)
+                                                                             with_detokenizer=True,
+                                                                             **tokenizer_kwargs)
         openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
         openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
         

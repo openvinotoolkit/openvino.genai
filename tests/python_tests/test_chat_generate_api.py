@@ -38,16 +38,10 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
     chat_history_hf = []
     chat_history_ov = []
     chat_prompt = ''
-    model_id, path, tokenizer, model_opt, pipe = read_model(model_descr)
-
-    # TODO: Provide a better solution since overriding tokenizers might break other tests in test_generate_api,
-    # if the both will use the same model. At the moment we use 2 different models test_generate_api.py and test_chat_generate_api.py.
+    
     # HF in chat scenario does not add special tokens, but openvino tokenizer by default is converted with add_special_tokens=True.
     # Need to regenerate openvino_tokenizer/detokenizer.
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
-    openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
-    openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
-    pipe = ov_genai.LLMPipeline(str(path), device, config={"ENABLE_MMAP": False})
+    model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'), add_special_tokens=False)
 
     pipe.start_chat()    
     for prompt in quenstions:
@@ -81,16 +75,10 @@ def test_chat_compare_text_history_with_HF(model_descr, generation_config: Dict)
     chat_history_hf = []
     chat_history_ov = []
     chat_prompt = ''
-    model_id, path, tokenizer, model_opt, pipe = read_model(model_descr)
     
-    # TODO: Provide a better solution since overriding tokenizers might break other tests in test_generate_api,
-    # if the both will use the same model. At the moment we use 2 different models test_generate_api.py and test_chat_generate_api.py.
     # HF in chat scenario does not add special tokens, but openvino tokenizer by default is converted with add_special_tokens=True.
     # Need to regenerate openvino_tokenizer/detokenizer.
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
-    openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
-    openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
-    pipe = ov_genai.LLMPipeline(str(path), device, config={"ENABLE_MMAP": False})
+    model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'), add_special_tokens=False)
     
     for prompt in quenstions:
         chat_history_hf.append({'role': 'user', 'content': prompt})
@@ -122,18 +110,12 @@ def test_chat_compare_statefull_vs_text_history(model_descr, generation_config: 
     
     chat_history_with_kv_cache = []
     chat_history_ov = []
-    model_id, path, tokenizer, model_opt, pipe = read_model(model_descr)
-
-    # TODO: Provide a better solution since overriding tokenizers might break other tests in test_generate_api,
-    # if the both will use the same model. At the moment we use 2 different models test_generate_api.py and test_chat_generate_api.py.
+    
     # HF in chat scenario does not add special tokens, but openvino tokenizer by default is converted with add_special_tokens=True.
     # Need to regenerate openvino_tokenizer/detokenizer.
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
-    openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
-    openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
-    pipe = ov_genai.LLMPipeline(str(path), device, config={"ENABLE_MMAP": False})
+    model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'), add_special_tokens=False)
     pipe_with_kv_cache = ov_genai.LLMPipeline(str(path), device, config={"ENABLE_MMAP": False})
-    
+  
     pipe_with_kv_cache.start_chat()
     for question in quenstions:
         chat_history_with_kv_cache.append({'role': 'user', 'content': question})
