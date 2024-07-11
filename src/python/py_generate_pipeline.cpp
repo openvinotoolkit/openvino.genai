@@ -610,6 +610,6 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request))
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
-        .def("generate", &ContinuousBatchingPipeline::generate);
-        .def("generate", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::generate))
+        .def("generate", py::overload_cast<const std::vector<ov::Tensor>&, const std::vector<ov::genai::GenerationConfig>&>(&ContinuousBatchingPipeline::generate))
+        .def("generate", py::overload_cast<const std::vector<std::string>&, const std::vector<ov::genai::GenerationConfig>&>(&ContinuousBatchingPipeline::generate));
 }

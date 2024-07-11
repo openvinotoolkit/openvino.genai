@@ -403,7 +403,7 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
-        if (std::holds_alternative<std::monostate>(streamer)) {
+        if (!std::holds_alternative<std::monostate>(streamer)) {
             OPENVINO_THROW("streamer isn't supported for Continuous Batching");
         }
         std::vector<ov::Tensor> input_ids = std::visit(overloaded{
@@ -446,6 +446,7 @@ public:
         }, inputs);
         const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
         // -1 == config.eos_token_id and config.validate() are handled in m_impl.
+        std::cout << "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa\n";
         std::vector<EncodedGenerationResult> generated = m_impl.generate(input_ids, std::vector<GenerationConfig>{input_ids.size(), config});
         std::vector<std::vector<int64_t>> tokens;
         std::vector<float> scores;
@@ -456,7 +457,7 @@ public:
         return {std::move(tokens), std::move(scores)};
     }
 
-    void start_chat() override {
+    void start_chat(const std::string& system_message) override {
         OPENVINO_THROW("start_chat() isn't implemented.");
     }
 
@@ -471,11 +472,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     OptionalGenerationConfig generation_config
 ) {
-    if (std::getenv("USE_CONTINUOUS_BATCHING")) {
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(request, tokenizer, generation_config);
-    } else {
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
-    }
+    m_pimpl = std::make_unique<ContinuousBatchingAdapter>(request, tokenizer, generation_config);
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
@@ -484,8 +481,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& plugin_config
 ) {
-    if (std::getenv("USE_CONTINUOUS_BATCHING")) {
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_path, tokenizer, device, plugin_config);
+    if ("CB" == device) {
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_path, tokenizer, "CPU", plugin_config);
     } else if ("NPU" == device) {
         m_pimpl = std::make_unique<StaticLLMPipeline>(model_path, tokenizer, device, plugin_config);
     } else {
@@ -498,8 +495,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& config
 ) {
-    if (std::getenv("USE_CONTINUOUS_BATCHING")) {
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(path, device, config);
+    if ("CB" == device) {
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(path, "CPU", config);
     } else if ("NPU" == device) {
         m_pimpl = std::make_unique<StaticLLMPipeline>(path, device, config);
     } else {
