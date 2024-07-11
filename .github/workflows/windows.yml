@@ -321,7 +321,7 @@ jobs:
 
       - run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm" .\TinyLlama-1.1B-Chat-v1.0\ ""
+          ${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm .\TinyLlama-1.1B-Chat-v1.0\ ""
 
       - run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
