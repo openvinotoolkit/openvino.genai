@@ -450,6 +450,9 @@ public:
         std::vector<std::vector<int64_t>> tokens;
         std::vector<float> scores;
         for (EncodedGenerationResult& res : generated) {
+            if (GenerationStatus::FINISHED != res.m_status) {
+                OPENVINO_THROW("Got unfinished GenerationStatus");
+            }
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(tokens));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(scores));
         }
