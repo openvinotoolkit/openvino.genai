@@ -359,7 +359,7 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
                            ov::Tensor attention_mask,
                            GenerationConfig config, 
                            std::optional<ov::Tensor> position_ids,
-                           std::optional<int32_t> selected_beam_idx = std::nullopt) {
+                           std::optional<int32_t> selected_beam_idx) {
     OPENVINO_ASSERT(config.num_beams % config.num_beam_groups == 0,
                     "number of beams should be divisible by number of groups");
 

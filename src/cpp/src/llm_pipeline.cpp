@@ -59,7 +59,7 @@ std::pair<EncodedResults, std::optional<int32_t>> beam_search(
     ov::Tensor attention_mask, 
     GenerationConfig config,
     std::optional<ov::Tensor> position_ids,
-    std::optional<int32_t> selected_beam_idx = std::nullopt
+    std::optional<int32_t> selected_beam_idx
 );
 
 class StatefulLLMPipeline final : public LLMPipelineImplBase {
