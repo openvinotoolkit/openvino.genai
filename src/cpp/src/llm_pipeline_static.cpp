@@ -8,6 +8,8 @@
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
 
+#include <openvino/pass/stateful_to_stateless.hpp>
+
 namespace {
 
 std::shared_ptr<ov::Model> add_slices_to_kvcache_inputs(const std::shared_ptr<ov::Model>& model) {
@@ -89,11 +91,31 @@ void copy_with_left_offset(const ov::Tensor& orig, ov::Tensor& padded) {
     std::copy(orig_data, orig_data + orig_size, padded_data + kLeftOffset);
 }
 
-ov::AnyMap extract_config_or_empty(const ov::AnyMap& config, const std::string& config_name) {
+ov::AnyMap extract_config_or_default(const ov::AnyMap& config, const std::string& config_name) {
     ov::AnyMap stage_cfg;
     if (auto it = config.find(config_name); it != config.end()) {
         const auto& map = it->second.as<std::map<std::string, std::string>>();
         stage_cfg = { map.begin(), map.end() };
+    } else if (config_name == "PREFILL_CONFIG") {
+        std::map<std::string, std::string> prefill_config = {
+			{ "NPU_USE_NPUW", "YES" },
+			{ "NPUW_FOLD", "YES" },
+			{ "NPUW_DCOFF_TYPE", "f16" },
+			{ "NPUW_DCOFF_SCALE",  "YES" },
+			{ "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
+        };
+        stage_cfg.insert(prefill_config.begin(), prefill_config.end());
+    } else if (config_name == "GENERATE_CONFIG") {
+        std::map<std::string, std::string> generate_config = {
+            { "NPU_USE_NPUW", "YES" },
+            { "NPUW_FOLD", "YES" },
+            { "NPUW_DCOFF_TYPE", "f16" },
+            { "NPUW_DCOFF_SCALE", "YES" },
+            { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_RMSNorm" },
+            { "NPUW_PARALLEL_COMPILE", "YES" },
+            { "NPUW_FUNCALL_ASYNC", "YES" }
+        };
+        stage_cfg.insert(generate_config.begin(), generate_config.end());
     }
     return stage_cfg;
 }
@@ -126,7 +148,8 @@ StaticLLMPipeline::StaticLLMPipeline(
     ov::Core core;
     // (1) Read the template model - this will be kvcache model
     auto kvcache_model = core.read_model(path / "openvino_model.xml");
-    // (2) TODO: Expose KV-cache input and output layers from kvcache model
+    // (2) Expose KV-cache input and output layers from kvcache model
+    ov::pass::StatefulToStateless().run_on_model(kvcache_model);
     // (3) Clone the model - this will be prefill
     auto prefill_model = kvcache_model->clone();
     prefill_model->set_friendly_name(kvcache_model->get_friendly_name() + "_prefill");
@@ -140,10 +163,10 @@ StaticLLMPipeline::StaticLLMPipeline(
     kvcache_model = add_slices_to_kvcache_inputs(kvcache_model);
     // (6) Compile both model
     m_prefill_request = core.compile_model(
-        prefill_model, device, extract_config_or_empty(config, "PREFILL_CONFIG")
+        prefill_model, device, extract_config_or_default(config, "PREFILL_CONFIG")
     ).create_infer_request();
     m_kvcache_request = core.compile_model(
-        kvcache_model, device, extract_config_or_empty(config, "GENERATE_CONFIG")
+        kvcache_model, device, extract_config_or_default(config, "GENERATE_CONFIG")
     ).create_infer_request();
     // (7) Initialize tensors
     prepare_for_new_conversation();
