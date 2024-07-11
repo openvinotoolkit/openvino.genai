@@ -188,11 +188,11 @@ RANDOM_SAMPLING_TEST_CASES = [
             ],
         ),
         marks=[
-            pytest.mark.xfail(
-                reason="assert ref_text == ov_text fails in CI.",
-                strict=True,
-                condition=sys.platform in ["darwin", "win32"],
-            )
+            # pytest.mark.xfail(
+            #     reason="assert ref_text == ov_text fails in CI.",
+            #     strict=True,
+            #     condition=sys.platform in ["darwin", "win32"],
+            # )
         ],
     ),
     RandomSamplingTestStruct(
@@ -215,11 +215,11 @@ RANDOM_SAMPLING_TEST_CASES = [
             ],
         ),
         marks=[
-            pytest.mark.xfail(
-                reason="assert ref_text == ov_text fails in CI.",
-                strict=True,
-                condition=sys.platform in ["darwin", "win32"],
-            )
+            # pytest.mark.xfail(
+            #     reason="assert ref_text == ov_text fails in CI.",
+            #     strict=True,
+            #     condition=sys.platform in ["darwin", "win32"],
+            # )
         ],
     ),
     RandomSamplingTestStruct(
@@ -244,9 +244,9 @@ RANDOM_SAMPLING_TEST_CASES = [
             ],
         ),
         marks=[
-            pytest.mark.xfail(
-                reason="assert ref_text == ov_text fails in CI.", strict=True
-            )
+            # pytest.mark.xfail(
+            #     reason="assert ref_text == ov_text fails in CI.", strict=True
+            # )
         ],
     ),
     pytest.param(
@@ -263,11 +263,11 @@ RANDOM_SAMPLING_TEST_CASES = [
             ],
         ),
         marks=[
-            pytest.mark.xfail(
-                reason="assert ref_text == ov_text fails in CI.",
-                strict=True,
-                condition=sys.platform in ["darwin", "win32"],
-            )
+            # pytest.mark.xfail(
+            #     reason="assert ref_text == ov_text fails in CI.",
+            #     strict=True,
+            #     condition=sys.platform in ["darwin", "win32"],
+            # )
         ],
     ),
     RandomSamplingTestStruct(
@@ -310,11 +310,11 @@ RANDOM_SAMPLING_TEST_CASES = [
             ],
         ),
         marks=[
-            pytest.mark.xfail(
-                reason="assert ref_text == ov_text fails in CI.",
-                strict=True,
-                condition=sys.platform in ["darwin", "win32"],
-            )
+            # pytest.mark.xfail(
+            #     reason="assert ref_text == ov_text fails in CI.",
+            #     strict=True,
+            #     condition=sys.platform in ["darwin", "win32"],
+            # )
         ],
     ),
 ]
