@@ -180,13 +180,13 @@ RANDOM_SAMPLING_TEST_CASES = [
     pytest.param(
         RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_num_return_sequence(),
-        prompts=["What is OpenVINO?"],
+        prompts=["Tell me something about Canada?"],
         ref_texts=RandomSamplingRefTexts(
             linux=[
                 [
-                   '\n\nOpenVINO is a purer, more powerful version of OpenVINO, that allows you to create logic in a web environment where computers',
-                   ' OpenVINO is a macro-scaler for creating and developing antivirus, firewall and application control software.\n\nOpenVINO is able to',
-                   '\nOpenVINO, the origin of all the very popular web design forms.\nwas CPU core with closing one sided frame?: 1.1\n'
+                   "\nTheir GDP is higher than ours by the wayside.\nOh, I guess you don't think there's potential for the people that lives and",
+                   ' What do you guys do together?\nCanada has a lot to learn, even if you are in the same state.  I try to sell things',
+                   ' I think I could imagine that somewhere.\nI believe the North Pole usually gets the olive further south, actually. And that Algonquin would be'
                 ]
             ],
             win32=[
