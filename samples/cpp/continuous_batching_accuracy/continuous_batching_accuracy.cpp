@@ -79,7 +79,19 @@ int main(int argc, char* argv[]) try {
     scheduler_config.max_num_seqs = 2;
 
     ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config);
-    std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, sampling_params);
+    ov::genai::GenerationConfig prototype;
+    prototype.max_new_tokens = 20;
+    prototype.num_beam_groups = 3;
+    prototype.num_beams = 15;
+    prototype.diversity_penalty = 1.0;
+    std::vector<ov::genai::GenerationResult> generation_results = pipe.generate({
+        "hello",
+        "Here is the longest novel ever: "
+    }, std::vector(2, prototype));
+    generation_results = pipe.generate({
+        "hello",
+        "Here is the longest novel ever: "
+    }, std::vector(2, prototype));
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
         const ov::genai::GenerationResult & generation_result = generation_results[request_id];
