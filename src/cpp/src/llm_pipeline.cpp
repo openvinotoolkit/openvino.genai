@@ -9,6 +9,7 @@
 #include <openvino/openvino.hpp>
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/generation_metrics.hpp"
 #include "llm_pipeline_base.hpp"
 #include "llm_pipeline_static.hpp"
 #include "utils.hpp"
@@ -155,6 +156,8 @@ public:
             m_history.push_back({{"role", "assistant"}, {"content", answer}});
         }
         
+        decoded_results.metrics = std::move(encoded_results.metrics);
+        decoded_results.metrics.load_time = m_load_time_ms;
         return decoded_results;
     }
 
@@ -253,7 +256,6 @@ public:
         } else {
             m_is_cache_empty = false;
         }
-
         return result;
     }
 
@@ -350,6 +352,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& plugin_config
 ) {
+
     if (device == "NPU") {
         m_pimpl = make_unique<StaticLLMPipeline>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
     } else {
@@ -361,12 +364,15 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& path,
     const std::string& device,
     const ov::AnyMap& config
-) {
+) { 
+    auto start_time = std::chrono::steady_clock::now();
     if (device == "NPU") {
         m_pimpl = make_unique<StaticLLMPipeline>(std::filesystem::path(path), device, config);
     } else {
         m_pimpl = make_unique<StatefulLLMPipeline>(std::filesystem::path(path), device, config);
     }
+    auto stop_time = std::chrono::steady_clock::now();
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {

@@ -1,0 +1,2 @@
+# benchmark OpenVINO GenAI sample
+
