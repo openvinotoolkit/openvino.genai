@@ -309,16 +309,16 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ${{ env.OV_INSTALL_DIR }}
 
-      - name: Build samples (${{ matrix.build-type }})
+      - name: Build samples (Release)
         if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
         run: |
           & ${{ env.OV_INSTALL_DIR }}\samples\cpp\build_samples.ps1 -i ${{ github.workspace }}/samples_install
 
-      - name: Build samples (${{ matrix.build-type }})
+      - name: Build samples (Debug)
         if: ${{ 'Release' != matrix.build-type }}
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ov/samples/cpp/ -B "samples build"
+          cmake -DCMAKE_BUILD_TYPE= -S ./ov/samples/cpp/ -B "samples build"
           cmake --build "samples build" --config ${{ matrix.build-type }} -j
           cmake --install "samples build" --config ${{ matrix.build-type }} --component samples_bin --prefix samples_install
 
