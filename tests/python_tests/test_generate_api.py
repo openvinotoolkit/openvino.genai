@@ -165,7 +165,7 @@ input_tensors_list = [
     raises=TypeError, 
     reason="pybind was unable to find overloads with tensor inputs on Linux",
     strict=False,
-    condition=sys.platform == "linux"
+    condition=sys.platform in ["linux", "win32"]
 )
 @pytest.mark.precommit
 def test_ov_tensors(model_descr, inputs):

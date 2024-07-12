@@ -6,7 +6,33 @@
 
 #include <random>
 
-TEST(TestDiscreteDisctibution, discrete_distribution_float) {
+// std::mt19937 gives same output on different platforms
+// std::discrete_distribution is a platfrom specific
+// std::discrete_distribution used for random sampling
+// so random sampling tests are platfrom specific as well
+
+TEST(TestDiscreteDisctibution, random_gen) {
+    std::mt19937 rng_engine;
+
+    rng_engine.seed(0);
+
+    std::vector<size_t> EXPECTED{2357136044,
+                                 2546248239,
+                                 3071714933,
+                                 3626093760,
+                                 2588848963,
+                                 3684848379,
+                                 2340255427,
+                                 3638918503,
+                                 1819583497,
+                                 2678185683};
+
+    for (size_t i = 0; i < 10; i++) {
+        EXPECT_EQ(rng_engine(), EXPECTED[i]);
+    }
+}
+
+TEST(TestDiscreteDisctibution, discrete_distribution) {
     std::mt19937 rng_engine;
 
     rng_engine.seed(0);
@@ -30,6 +56,5 @@ TEST(TestDiscreteDisctibution, discrete_distribution_float) {
 #elif __linux__
         EXPECT_EQ(random_id, 0);
 #endif
-
     }
 }

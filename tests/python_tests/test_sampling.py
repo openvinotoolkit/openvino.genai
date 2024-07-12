@@ -146,7 +146,7 @@ def test_individual_generation_configs_deterministic(tmp_path, generation_config
 @dataclass
 class PlatformRefTexts:
     """
-    Handle test cases that may depend on a platform
+    Handle tests that depend on a platform
     """
 
     linux: Optional[List[List[str]]] = None
@@ -155,7 +155,7 @@ class PlatformRefTexts:
 
     def get_ref_texts(self) -> List[List[str]]:
         # darwin plarform most of the cases has identical to win32 output
-        # in order to not duplicate ref_texts, fallback to win32 if no darwin ref_texts found
+        # in order to not duplicate ref_texts, fallback to win32 if no darwin ref_texts were found
         if sys.platform == "darwin":
             ref_texts = self.darwin or self.win32
         else:
