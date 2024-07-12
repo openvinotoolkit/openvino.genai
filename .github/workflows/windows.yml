@@ -309,21 +309,27 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ${{ env.OV_INSTALL_DIR }}
 
-      - run: ${{ env.OV_INSTALL_DIR }}\samples\cpp\build_samples.ps1 -i "${{ github.workspace }}/samples_install"
+      - name: Build samples (${{ matrix.build-type }})
         if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
+        run: |
+          & ${{ env.OV_INSTALL_DIR }}\samples\cpp\build_samples.ps1 -i ${{ github.workspace }}/samples_install
 
-      - run: |
+      - name: Build samples (${{ matrix.build-type }})
+        if: ${{ 'Release' != matrix.build-type }}
+        run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ov/samples/cpp/ -B "samples build"
           cmake --build "samples build" --config ${{ matrix.build-type }} -j
           cmake --install "samples build" --config ${{ matrix.build-type }} --component samples_bin --prefix samples_install
-        if: ${{ 'Release' != matrix.build-type }}
 
-      - run: |
+      - name: Test C++ samples (greedy_causal_lm)
+        run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          ${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm TinyLlama-1.1B-Chat-v1.0 ""
+          Start-Process -FilePath "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm.exe" -ArgumentList "TinyLlama-1.1B-Chat-v1.0 ''"
 
-      - run: |
+      - name: Test python samples (multinomial_causal_lm)
+        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+        run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python ${{ env.OV_INSTALL_DIR }}\samples\python\multinomial_causal_lm\multinomial_causal_lm.py TinyLlama-1.1B-Chat-v1.0 0
-        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+
