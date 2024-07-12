@@ -177,15 +177,16 @@ RANDOM_SAMPLING_TEST_CASES = [
             ]
         ],
     ),
-    RandomSamplingTestStruct(
+    pytest.param(
+        RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_num_return_sequence(),
-        prompts=["What is location of"],
+        prompts=["What is OpenVINO?"],
         ref_texts=RandomSamplingRefTexts(
             linux=[
                 [
-                    " your instruments?  Are they in an off road environment?  Is it like a lab?\nYeah they are in an open field but their instruments",
-                    " map and where does the game player base base?    I tend to like to do all draws on a specific spot (sometimes wide area,",
-                    " them?\nJust the Mario Maker App, the location is they",
+                   '\n\nOpenVINO is a purer, more powerful version of OpenVINO, that allows you to create logic in a web environment where computers',
+                   ' OpenVINO is a macro-scaler for creating and developing antivirus, firewall and application control software.\n\nOpenVINO is able to',
+                   '\nOpenVINO, the origin of all the very popular web design forms.\nwas CPU core with closing one sided frame?: 1.1\n'
                 ]
             ],
             win32=[
@@ -203,6 +204,8 @@ RANDOM_SAMPLING_TEST_CASES = [
                 ]
             ],
         ).get_ref_texts(),
+    ),
+    marks=[pytest.mark.random]
     ),
     RandomSamplingTestStruct(
         generation_config=get_multinomial_all_parameters(),
