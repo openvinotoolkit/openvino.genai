@@ -94,18 +94,14 @@ def test_individual_generation_configs_deterministic(tmp_path, generation_config
 
 
 @dataclass
-class PlatformRefTexts:
-    """
-    Handle tests that depend on a platform
-    """
-
+class RandomSamplingRefTexts:
     linux: Optional[List[List[str]]] = None
     win32: Optional[List[List[str]]] = None
     darwin: Optional[List[List[str]]] = None
 
     def get_ref_texts(self) -> List[List[str]]:
-        # darwin plarform most of the cases has identical to win32 output
-        # in order to not duplicate ref_texts, fallback to win32 if no darwin ref_texts were found
+        # mac and win often have identical results
+        # to avoid duplication, use win32 ref_text if no mac ref_texts were found
         if sys.platform == "darwin":
             ref_texts = self.darwin or self.win32
         else:
@@ -134,7 +130,7 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_top_p(),
         prompts=["What is OpenVINO?"],
-        ref_texts=PlatformRefTexts(
+        ref_texts=RandomSamplingRefTexts(
             linux=[
                 [
                     "\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"
@@ -159,7 +155,7 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_top_p_and_top_k(),
         prompts=["What is OpenVINO?"],
-        ref_texts=PlatformRefTexts(
+        ref_texts=RandomSamplingRefTexts(
             linux=[
                 [
                     "\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"
@@ -184,7 +180,7 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_num_return_sequence(),
         prompts=["What is location of"],
-        ref_texts=PlatformRefTexts(
+        ref_texts=RandomSamplingRefTexts(
             linux=[
                 [
                     " your instruments?  Are they in an off road environment?  Is it like a lab?\nYeah they are in an open field but their instruments",
@@ -211,7 +207,7 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_all_parameters(),
         prompts=["Tell me something about UAE"],
-        ref_texts=PlatformRefTexts(
+        ref_texts=RandomSamplingRefTexts(
             linux=[
                 [
                     " and how it's not like we're all in the same boat right now lol (or even close) 😂😁! Just curious :) If",
@@ -260,7 +256,7 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_max_and_min_token(),
         prompts=["What is OpenVINO?"],
-        ref_texts=PlatformRefTexts(
+        ref_texts=RandomSamplingRefTexts(
             linux=[
                 [
                     "\nOpenVINO is a Linux distro. It's not as simple as using the Linux distro itself. OpenVINO is essentially a dist",
