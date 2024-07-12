@@ -180,27 +180,27 @@ RANDOM_SAMPLING_TEST_CASES = [
     pytest.param(
         RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_num_return_sequence(),
-        prompts=["Tell me something about Canada?"],
+        prompts=["What is location of"],
         ref_texts=RandomSamplingRefTexts(
             linux=[
                 [
-                   "\nTheir GDP is higher than ours by the wayside.\nOh, I guess you don't think there's potential for the people that lives and",
-                   ' What do you guys do together?\nCanada has a lot to learn, even if you are in the same state.  I try to sell things',
-                   ' I think I could imagine that somewhere.\nI believe the North Pole usually gets the olive further south, actually. And that Algonquin would be'
+                   ' this, and is this the inside of the building?\nI don’t know where this corner is.',
+                   ' this photo?\nThe 30ft line in the middle of my private area.\nI assumed you were on the beach\nAll right, it was',
+                   ' the pentagon?\nNo idea, just look at the map.'
                 ]
             ],
             win32=[
                 [
-                    " your instruments?  Are they in an off road environment?  Is it like a lab?\nYeah they are in an open field but their instruments",
-                    " map and where does the game player base base?    I tend to like to do all draws on a specific spot (sometimes wide area,",
-                    " them?\nJust the Mario Maker App, the location is they",
+                    '\n\nOpenVINO is a purer, more powerful version of OpenVINO, that allows you to create logic in a web environment where computers',
+                    ' OpenVINO is a macro-scaler for creating and developing antivirus, firewall and application control software.\n\nOpenVINO is able to',
+                    '\nOpenVINO, the origin of all the very popular web design forms.\nwas CPU core with closing one sided frame knowing a lot of people'
                 ]
             ],
             darwin=[
                 [
-                    " your instruments?  Are they in an off road environment?  Take your instruments and have them in sync.  Take your instruments where you need to",
-                    " them?\nJust the MAC address and phone number.",
-                    " map and where does the game player base base?     Because running around at a 40 min sufficiently long map in chat or offline off is",
+                    '\n\nOpenVINO is a purer, more powerful version of OpenVINO, that allows you to create logic in a web environment where computers',
+                    ' OpenVINO is a named version of the VINO- compatible Freeware App. The open VINO is based on the open library that became the',
+                    '\nOpenVINO, the origin of all the very popular web design forms.\nwas CPU core with closing one sided frame knowing a lot of people'
                 ]
             ],
         ).get_ref_texts(),
