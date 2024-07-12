@@ -269,6 +269,7 @@ public:
             result.m_status = generation->get_status();
             results.push_back(result);
         }
+        m_sampler->clear_beam_search_info();
 
         OPENVINO_ASSERT(results.size() == prompts.size());
         return results;
