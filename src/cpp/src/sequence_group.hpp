@@ -123,6 +123,11 @@ public:
     }
 };
 
+inline ov::Tensor init_copy(const TokenIds& input_ids) {
+    ov::Tensor tensor(ov::element::i64, ov::Shape{input_ids.size()});
+    std::copy(input_ids.begin(), input_ids.end(), tensor.data<int64_t>());
+    return tensor;
+}
 // contains a list of Sequences in generic case (beam search or parallel sampling)
 // - each sequence shares the same prompt and KV-caches for promp
 // - in case of beam search each sequence also shares specific part of generic phase
@@ -158,7 +163,7 @@ public:
     using CPtr = std::shared_ptr<const SequenceGroup>;
 
     SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size) {
+        : SequenceGroup(request_id, init_copy(input_ids), sampling_params, block_size) {
     }
 
     SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)

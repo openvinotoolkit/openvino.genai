@@ -278,8 +278,9 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         }
         auto& logit_processor = m_logit_processors.at(request_id);
 
-        const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
-        ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
+        const float * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
+        ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size});
+        std::copy_n(sequence_group_logits_data, sequence_group_logits.get_size(), sequence_group_logits.data<float>());
 
         if (sequence_group->requires_sampling()) {
             if (sampling_params.is_greedy_decoding() || sampling_params.is_multinomial()) {
