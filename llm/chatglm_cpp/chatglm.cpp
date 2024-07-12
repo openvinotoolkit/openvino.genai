@@ -386,7 +386,10 @@ public:
 }
 
 int main(int argc, char* argv[]) try {
-
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+    _setmode(_fileno(stdin), _O_WTEXT);
+#endif
     Args args = parse_args(argc, argv);
 
     std::cout << ov::get_openvino_version() << std::endl;
