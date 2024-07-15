@@ -59,7 +59,6 @@ jobs:
       - run: python -m pytest ./tests/python_tests/
 
   windows_genai_python_lib:
-    if: false
     runs-on: windows-latest
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: null
@@ -73,13 +72,18 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - run: curl --output ov.zip ${{ env.l_ov_link }}
-      - run: unzip -d ov ov.zip
-      - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
+      - name: Install OpenVINO
+        run: |
+          curl --output ov.zip ${{ env.w_ov_link }}
+          unzip -d ov ov.zip
+          dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
         shell: bash
-      - run: call ./ov/setupvars.bat && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-      - run: call ./ov/setupvars.bat && cmake --build ./build/ --config Release -j
-      - run: call ./ov/setupvars.bat && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
+      - name: Install dependencies and build
+        run: |
+          call .\ov\setupvars.bat
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
       # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
       - run: set "PYTHONPATH=./build/" && call ./ov/setupvars.bat && python -m pytest ./tests/python_tests/
       - run: call ./ov/setupvars.bat && python -m pip install . --verbose

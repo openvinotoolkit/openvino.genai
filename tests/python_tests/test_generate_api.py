@@ -163,9 +163,9 @@ input_tensors_list = [
 @pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.xfail(
     raises=TypeError, 
-    reason="pybind was unable to find overloads with tensor inputs on Linux",
+    reason="pybind was unable to find ov::Tensor from openvino yet",
     strict=False,
-    condition=sys.platform == "linux"
+    condition=sys.platform in ["linux", "win32"]
 )
 @pytest.mark.precommit
 def test_ov_tensors(model_descr, inputs):
