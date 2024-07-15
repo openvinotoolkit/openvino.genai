@@ -39,13 +39,16 @@ int main(int argc, char* argv[]) try {
 
     const size_t num_prompts = result["num_prompts"].as<size_t>();
     const bool dynamic_split_fuse = result["dynamic_split_fuse"].as<bool>();
-    const std::string models_path = "/home/panas/llm/models/TinyLlama-1.1B-Chat-v1.0/";
+    const std::string models_path = result["model"].as<std::string>();
 
     // create dataset
 
     std::vector<std::string> prompt_examples = {
-        "hello",
-        "Here is the longest novel ever: "
+        "What is OpenVINO?",
+        "How are you?",
+        "What is your name?",
+        "Tell me something about Canada",
+        "What is OpenVINO?",
     };
 
     std::vector<ov::genai::GenerationConfig> sampling_params_examples {
@@ -54,7 +57,7 @@ int main(int argc, char* argv[]) try {
         ov::genai::multinomial(),
     };
 
-    std::vector<std::string> prompts(2);
+    std::vector<std::string> prompts(num_prompts);
     std::vector<ov::genai::GenerationConfig> sampling_params(num_prompts);
 
     for (size_t request_id = 0; request_id < num_prompts; ++request_id) {
@@ -76,49 +79,7 @@ int main(int argc, char* argv[]) try {
     scheduler_config.max_num_seqs = 2;
 
     ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config);
-    ov::genai::GenerationConfig prototype;
-    prototype.max_new_tokens = 20;
-    prototype.num_beam_groups = 3;
-    prototype.num_beams = 15;
-    prototype.diversity_penalty = 1.0;
-    std::vector<ov::genai::GenerationResult> generation_results = pipe.generate({
-        "hello",
-        "Here is the longest novel ever: "
-    }, std::vector(2, prototype));
-
-
-    for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
-        const ov::genai::GenerationResult & generation_result = generation_results[request_id];
-        std::cout << "Question: " << prompts[request_id] << std::endl;
-        switch (generation_result.m_status)
-        {
-        case ov::genai::GenerationStatus::FINISHED:
-            print_generation_result(generation_result);
-            break;
-        case ov::genai::GenerationStatus::IGNORED:
-            std::cout << "Request was ignored due to lack of memory." <<std::endl;
-            if (generation_result.m_generation_ids.size() > 0) {
-                std::cout << "Partial result:" << std::endl;
-                print_generation_result(generation_result);
-            }
-            break;
-        case ov::genai::GenerationStatus::DROPPED_BY_PIPELINE:
-            std::cout << "Request was aborted." <<std::endl;
-            if (generation_result.m_generation_ids.size() > 0) {
-                std::cout << "Partial result:" << std::endl;
-                print_generation_result(generation_result);
-            }
-            break;   
-        default:
-            break;
-        }
-        std::cout << std::endl;
-    }
-
-    generation_results = pipe.generate({
-        "hello",
-        "Here is the longest novel ever: "
-    }, std::vector(2, prototype));
+    std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, sampling_params);
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
         const ov::genai::GenerationResult & generation_result = generation_results[request_id];
