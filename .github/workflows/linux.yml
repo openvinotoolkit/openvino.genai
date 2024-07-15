@@ -262,6 +262,10 @@ jobs:
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: null
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      CCACHE_DIR: ${{ github.workspace }}/ccache
+      CCACHE_MAXSIZE: 500Mi
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CMAKE_C_COMPILER_LAUNCHER: ccache
 
     steps:
       - name: Clone openvino.genai
@@ -289,6 +293,15 @@ jobs:
 
       - name: Install build dependencies
         run: sudo ${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh
+
+      - name: Setup ccache
+        uses: actions/cache@v4
+        with:
+          save-always: true
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-genai-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-ccache-genai
 
       - name: Build genai
         run: |
