@@ -276,6 +276,9 @@ jobs:
             tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
           popd
 
+      - name: Install build dependencies
+        run: brew install coreutils scons
+
       - name: Build genai
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
