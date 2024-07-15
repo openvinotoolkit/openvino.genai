@@ -11,6 +11,7 @@ FetchContent_Declare(
 FetchContent_GetProperties(pybind11)
 # search for FindPython3.cmake instead of legacy modules
 set(PYBIND11_FINDPYTHON ON)
+
 # the following two calls are required for cross-compilation
 if(OpenVINODeveloperPackage_DIR)
     ov_find_python3(REQUIRED)
