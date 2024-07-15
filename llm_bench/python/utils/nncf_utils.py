@@ -77,4 +77,5 @@ INT4_MODEL_CONFIGURATION = {
     "starcoder2-3b": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 0.9},
     "tiny-llama-1.1b-chat": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 0.8},
     "stablelm-7b": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 0.6, "scale": True},
+    "phi-2": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 0.9},
 }
