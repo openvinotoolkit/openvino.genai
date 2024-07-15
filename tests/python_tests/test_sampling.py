@@ -304,6 +304,34 @@ def test_individual_generation_configs_random(tmp_path, test_struct: RandomSampl
     generate_and_compare_with_reference_text(model_path, prompts, test_struct.ref_texts, generation_configs, DEFAULT_SCHEDULER_CONFIG)
 
 
+rgn_test_struct = RandomSamplingTestStruct(
+    generation_config=get_multinomial_temperature_and_num_return_sequence(),
+    prompts=["What is location of"],
+    ref_texts=[
+        [
+            ' your instruments?  Are they in an armpit?  Is it warm?  Are your instruments clear?  Are there any cuts and scratches',
+            ' map and where does the game player base base?    I tend to like to do all draws on a specific spot (sometimes wide area,',
+            ' them?\nJust the Mario Maker App, the location is they'
+        ]
+    ],
+)
+
+@pytest.mark.parametrize("test_struct", [rgn_test_struct])
+@pytest.mark.rgn
+def test_individual_generation_configs_random_rgn(tmp_path, test_struct: RandomSamplingTestStruct):
+    generation_config = test_struct.generation_config
+
+    prompts = test_struct.prompts
+    generation_config.rng_seed = 0
+    generation_configs = [generation_config]
+    model_id : str = "facebook/opt-125m"
+    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
+
+    model_path : Path = tmp_path / model_id
+    save_ov_model_from_optimum(model, hf_tokenizer, model_path)
+
+    generate_and_compare_with_reference_text(model_path, prompts, test_struct.ref_texts, generation_configs, DEFAULT_SCHEDULER_CONFIG)
+
 
 @pytest.mark.precommit
 def test_post_oom_health(tmp_path):

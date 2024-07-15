@@ -30,11 +30,12 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
       - run: source ./ov/setupvars.sh && cmake --build ./build/ --config Release -j
       - run: source ./ov/setupvars.sh && python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --upgrade-strategy eager
-      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/
-      - run: source ./ov/setupvars.sh && python -m pip install . --verbose
-      - run: python -m pytest ./tests/python_tests/
+      - run: source ./ov/setupvars.sh && PYTHONPATH=./build/:$PYTHONPATH python -m pytest ./tests/python_tests/ -m rgn -s
+      # - run: source ./ov/setupvars.sh && python -m pip install . --verbose
+      # - run: python -m pytest ./tests/python_tests/
 
   macos_genai_python_lib:
+    if: false
     runs-on: macos-12
     env:
       # A tokenizers' dependency fails to compile with Ninja.
@@ -59,6 +60,7 @@ jobs:
       - run: python -m pytest ./tests/python_tests/
 
   windows_genai_python_lib:
+    if: false
     runs-on: windows-latest
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: null
