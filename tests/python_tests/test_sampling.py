@@ -177,8 +177,7 @@ RANDOM_SAMPLING_TEST_CASES = [
             ]
         ],
     ),
-    pytest.param(
-        RandomSamplingTestStruct(
+    RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_num_return_sequence(),
         prompts=["What is location of"],
         ref_texts=RandomSamplingRefTexts(
@@ -198,14 +197,12 @@ RANDOM_SAMPLING_TEST_CASES = [
             ],
             darwin=[
                 [
-                    '\n\nOpenVINO is a purer, more powerful version of OpenVINO, that allows you to create logic in a web environment where computers',
-                    ' OpenVINO is a named version of the VINO- compatible Freeware App. The open VINO is based on the open library that became the',
-                    '\nOpenVINO, the origin of all the very popular web design forms.\nwas CPU core with closing one sided frame knowing a lot of people'
+                    " the exact same image?\nI've tried multiple times to find it, but I'm still not sure. I am sure it's the exact same",
+                    ' your new house?\nAnywhere that has a GPS. It will be up to you.',
+                    ' your cat?  He is more likely to be on the floor with him.\nTalduck'
                 ]
             ],
         ).get_ref_texts(),
-    ),
-    marks=[pytest.mark.random]
     ),
     RandomSamplingTestStruct(
         generation_config=get_multinomial_all_parameters(),
