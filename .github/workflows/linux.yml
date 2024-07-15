@@ -291,8 +291,17 @@ jobs:
             tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
           popd
 
+      - name: Set apt
+        run: |
+          echo 'Acquire::Retries "10";' > /etc/apt/apt.conf > /dev/null
+          echo 'APT::Get::Assume-Yes "true";' >> /etc/apt/apt.conf > /dev/null
+          echo 'APT::Get::Fix-Broken "true";' >> /etc/apt/apt.conf > /dev/null
+          echo 'APT::Get::no-install-recommends "true";' >> /etc/apt/apt.conf > /dev/null
+
       - name: Install build dependencies
-        run: sudo ${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh
+        run: |
+          sudo ${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh
+          sudo apt-get install ccache
 
       - name: Setup ccache
         uses: actions/cache@v4
