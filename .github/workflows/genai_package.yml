@@ -23,6 +23,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
+      - run: python -c "import sys; print(sys.stdout.buffer.raw, '\n', sys.stdout.encoding)"
       - name: Print symbol
         run: python -c "print('\u0643', end='', flush=True)"
       - run: mkdir ./ov/
@@ -54,6 +55,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
+      - run: python -c "import sys; print(sys.stdout.buffer.raw, '\n', sys.stdout.encoding)"
       - name: Print symbol
         run: python -c "print('\u0643', end='', flush=True)"
       - run: mkdir ./ov/
@@ -94,6 +96,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
+      - run: python -c "import sys; print(sys.stdout.buffer.raw, '\n', sys.stdout.encoding)"
       - name: Print symbol
         run: |
           python -c "import sys; print(sys.getdefaultencoding())"
