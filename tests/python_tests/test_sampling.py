@@ -180,29 +180,13 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_num_return_sequence(),
         prompts=["What is location of"],
-        ref_texts=RandomSamplingRefTexts(
-            linux=[
-                [
-                   " the exact same image?\nI've tried multiple times to find it, but I'm still not sure. I am sure it's the exact same",
-                   ' your new house?\nAnywhere that has a GPS. It will be up to you.',
-                   ' your cat?  He is more likely to be on the floor with him.\nTalduck'
-                ]
-            ],
-            win32=[
-                [
-                    " the exact same image?\nI've tried multiple times to find it, but I'm still not sure. I am sure it's the exact same",
-                    ' your new house?\nAnywhere that has a GPS. It will be up to you.',
-                    ' your cat?  He is more likely to be on the floor with him.\nTalduck'
-                ]
-            ],
-            darwin=[
-                [
-                    " the exact same image?\nI've tried multiple times to find it, but I'm still not sure. I am sure it's the exact same",
-                    ' your new house?\nAnywhere that has a GPS. It will be up to you.',
-                    ' your cat?  He is more likely to be on the floor with him.\nTalduck'
-                ]
-            ],
-        ).get_ref_texts(),
+        ref_texts=[
+            [
+                " the exact same image?\nI've tried multiple times to find it, but I'm still not sure. I am sure it's the exact same",
+                " your new house?\nAnywhere that has a GPS. It will be up to you.",
+                " your cat?  He is more likely to be on the floor with him.\nTalduck"
+            ]
+        ],
     ),
     RandomSamplingTestStruct(
         generation_config=get_multinomial_all_parameters(),
