@@ -29,7 +29,7 @@ public:
         StreamerVariant streamer
     ) = 0;
 
-    virtual void start_chat() = 0;
+    virtual void start_chat(const std::string& system_message) = 0;
     virtual void finish_chat() = 0;
 
     virtual ~LLMPipelineImplBase() = default;

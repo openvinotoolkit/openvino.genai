@@ -153,7 +153,8 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
                                                 ov::Tensor input_ids,
                                                 ov::Tensor attention_mask,
                                                 ov::genai::GenerationConfig config,
-                                                std::shared_ptr<ov::genai::StreamerBase> streamer) {
+                                                std::shared_ptr<ov::genai::StreamerBase> streamer,
+                                                std::optional<ov::Tensor> position_ids) {
     ov::Shape prompts_shape = input_ids.get_shape();
     size_t batch_size = prompts_shape[0];
 
@@ -168,14 +169,9 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
     // Initialize inputs
     m_model_runner.set_tensor("input_ids", input_ids);
     m_model_runner.set_tensor("attention_mask", attention_mask);
-
-    auto num_inputs = m_model_runner.get_compiled_model().inputs().size();
-    bool position_ids_available = num_inputs == 4;
-    if (position_ids_available) {
-        ov::Tensor position_ids = m_model_runner.get_tensor("position_ids");
-        position_ids.set_shape(input_ids.get_shape());
-        std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
-    }
+    
+    if (position_ids.has_value())
+        m_model_runner.set_tensor("position_ids", *position_ids);
     
     // Input values are persistent between inference calls.
     // That allows to set values, which aren't going to change, only once
@@ -212,13 +208,11 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
     }
 
     m_model_runner.get_tensor("input_ids").set_shape({batch_size, 1});
-    if (position_ids_available)
-        m_model_runner.get_tensor("position_ids").set_shape({batch_size, 1});
 
     size_t max_new_tokens = config.get_max_new_tokens(prompt_len);
 
     for (size_t i = 0; i < max_new_tokens - 1; i++) {
-        if (position_ids_available) {
+        if (position_ids.has_value()) {
             ov::genai::utils::update_position_ids(m_model_runner.get_tensor("position_ids"),
                                                   m_model_runner.get_tensor("attention_mask"));
         }

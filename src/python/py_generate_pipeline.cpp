@@ -6,18 +6,22 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 #include <pybind11/functional.h>
+#include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include <openvino/runtime/auto/properties.hpp>
 #include "../cpp/src/tokenizers_path.hpp"
 
 namespace py = pybind11;
 using ov::genai::ChatHistory;
+using ov::genai::ContinuousBatchingPipeline;
 using ov::genai::DecodedResults;
 using ov::genai::EncodedInputs;
 using ov::genai::EncodedResults;
 using ov::genai::GenerationConfig;
+using ov::genai::GenerationResult;
 using ov::genai::LLMPipeline;
 using ov::genai::OptionalGenerationConfig;
+using ov::genai::SchedulerConfig;
 using ov::genai::StopCriteria;
 using ov::genai::StreamerBase;
 using ov::genai::StreamerVariant;
@@ -343,6 +347,17 @@ class ConstructableStreamer: public StreamerBase {
     }
 };
 
+std::ostream& operator << (std::ostream& stream, const GenerationResult& generation_result) {
+    stream << generation_result.m_request_id << std::endl;
+    const bool has_scores = !generation_result.m_scores.empty();
+    for (size_t i = 0; i < generation_result.m_generation_ids.size(); ++i) {
+        stream << "{ ";
+        if (has_scores)
+            stream << generation_result.m_scores[i] << ", ";
+        stream << generation_result.m_generation_ids[i] << " }" << std::endl;
+    }
+    return stream << std::endl;
+}
 } // namespace
 
 
@@ -411,7 +426,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         )
 
         .def("get_tokenizer", &LLMPipeline::get_tokenizer)
-        .def("start_chat", &LLMPipeline::start_chat)
+        .def("start_chat", &LLMPipeline::start_chat, py::arg("system_message") = "")
         .def("finish_chat", &LLMPipeline::finish_chat)
         .def("get_generation_config", &LLMPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &LLMPipeline::set_generation_config);
@@ -460,7 +475,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             R"(Decode a batch of tokens into a list of string prompt.)")
         
         .def("apply_chat_template", [](Tokenizer& tok,
-                                        const ChatHistory& history,
+                                        ChatHistory history,
                                         bool add_generation_prompt,
                                         const std::string& chat_template) {
             return tok.apply_chat_template(history, add_generation_prompt, chat_template);
@@ -534,4 +549,61 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init<>())
         .def("put", &StreamerBase::put)
         .def("end", &StreamerBase::end);
+
+    py::class_<GenerationResult>(m, "GenerationResult")
+        .def(py::init<>())
+        .def_readonly("m_request_id", &GenerationResult::m_request_id)
+        .def_property("m_generation_ids",
+            [](GenerationResult &r) -> py::list {
+                py::list res;
+                for (auto s: r.m_generation_ids) {
+                    PyObject* py_s = PyUnicode_DecodeUTF8(s.data(), s.length(), "replace");
+                    res.append(py_s);
+                }
+                return res;
+            },
+            [](GenerationResult &r, std::vector<std::string> &generation_ids) {
+                r.m_generation_ids = generation_ids;
+            })
+        .def_readwrite("m_scores", &GenerationResult::m_scores)
+        .def("__repr__",
+            [](const GenerationResult &r) -> py::str{
+                std::stringstream stream;
+                stream << "<py_continuous_batching.GenerationResult " << r << ">";
+                std::string str = stream.str();
+                PyObject* py_s = PyUnicode_DecodeUTF8(str.data(), str.length(), "replace");
+                return py::reinterpret_steal<py::str>(py_s);
+            }
+        )
+        .def("get_generation_ids",
+        [](GenerationResult &r) -> py::list {
+            py::list res;
+            for (auto s: r.m_generation_ids) {
+                PyObject* py_s = PyUnicode_DecodeUTF8(s.data(), s.length(), "replace");
+                res.append(py_s);
+            }
+            return res;
+        });
+
+    py::class_<SchedulerConfig>(m, "SchedulerConfig")
+        .def(py::init<>())
+        .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
+        .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
+        .def_readwrite("cache_size", &SchedulerConfig::cache_size)
+        .def_readwrite("block_size", &SchedulerConfig::block_size)
+        .def_readwrite("cache_size", &SchedulerConfig::cache_size)
+        .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
+        .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs);
+
+    py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline")
+        .def(py::init([](const std::string& model_path, const SchedulerConfig& config) {
+            ScopedVar env_manager(ov_tokenizers_module_path());
+            return std::make_unique<ContinuousBatchingPipeline>(model_path, config);
+        }))
+        .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
+        .def("get_config", &ContinuousBatchingPipeline::get_config)
+        .def("add_request", &ContinuousBatchingPipeline::add_request)
+        .def("step", &ContinuousBatchingPipeline::step)
+        .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
+        .def("generate", &ContinuousBatchingPipeline::generate);
 }

@@ -34,3 +34,4 @@ CMakeUserPresets.json
 *.?env*
 *.pyc
 __pycache__
+.py-build-cmake_cache

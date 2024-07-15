@@ -30,6 +30,7 @@ endif()
 pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
 target_link_libraries(py_generate_pipeline PRIVATE openvino::genai)
 set_target_properties(py_generate_pipeline PROPERTIES
+    ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
 )
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py" DESTINATION "${CMAKE_BINARY_DIR}/openvino_genai/")
@@ -86,10 +87,3 @@ install(FILES "${OpenVINOGenAI_SOURCE_DIR}/LICENSE"
 install(TARGETS openvino_genai py_generate_pipeline
         LIBRARY DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL
         RUNTIME DESTINATION openvino_genai COMPONENT wheel_genai EXCLUDE_FROM_ALL)
-
-if(ENABLE_CONTINUOUS_BATCHING)
-    pybind11_add_module(py_continuous_batching python.cpp)
-    target_link_libraries(py_continuous_batching PRIVATE openvino::continuous_batching)
-    set_target_properties(py_continuous_batching PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai>")
-endif()

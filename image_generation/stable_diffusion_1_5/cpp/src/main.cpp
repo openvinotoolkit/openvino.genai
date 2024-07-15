@@ -365,11 +365,11 @@ int32_t main(int32_t argc, char* argv[]) try {
 
         ov::Tensor text_embeddings = text_encoder(models, positive_prompt, negative_prompt, do_classifier_free_guidance);
 
-        for (uint32_t n = 0; n < num_images; n++) {
-            std::shared_ptr<Scheduler> scheduler = std::make_shared<LMSDiscreteScheduler>();
-            scheduler->set_timesteps(num_inference_steps);
-            std::vector<std::int64_t> timesteps = scheduler->get_timesteps();
+        std::shared_ptr<Scheduler> scheduler = std::make_shared<LMSDiscreteScheduler>();
+        scheduler->set_timesteps(num_inference_steps);
+        std::vector<std::int64_t> timesteps = scheduler->get_timesteps();
 
+        for (uint32_t n = 0; n < num_images; n++) {
             std::uint32_t seed = num_images == 1 ? user_seed : user_seed + n;
 
             const size_t unet_in_channels = static_cast<size_t>(sample_shape[1].get_length());
