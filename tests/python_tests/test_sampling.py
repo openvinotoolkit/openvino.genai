@@ -184,9 +184,9 @@ RANDOM_SAMPLING_TEST_CASES = [
         ref_texts=RandomSamplingRefTexts(
             linux=[
                 [
-                   ' this, and is this the inside of the building?\nI don’t know where this corner is.',
-                   ' this photo?\nThe 30ft line in the middle of my private area.\nI assumed you were on the beach\nAll right, it was',
-                   ' the pentagon?\nNo idea, just look at the map.'
+                   " the exact same image?\nI've tried multiple times to find it, but I'm still not sure. I am sure it's the exact same",
+                   ' your new house?\nAnywhere that has a GPS. It will be up to you.',
+                   ' your cat?  He is more likely to be on the floor with him.\nTalduck'
                 ]
             ],
             win32=[
