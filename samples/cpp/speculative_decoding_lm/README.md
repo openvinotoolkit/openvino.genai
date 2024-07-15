@@ -1,4 +1,4 @@
-# speculative_decoding_lm C++ sample that supports most popular models like LLaMA 2
+# speculative_decoding_lm C++ sample that supports most popular models like LLaMA 3
 
 Speculative decoding (or [assisted-generation](https://huggingface.co/blog/assisted-generation#understanding-text-generation-latency) in HF terminology) is a recent technique, that allows to speed up token generation when an additional smaller draft model is used alonside with the main model.
 
