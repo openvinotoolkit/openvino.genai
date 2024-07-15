@@ -61,8 +61,8 @@ class ContinuousBatchingPipeline::Impl {
                 for (const auto& sequence: request->get_sequences()) {
                     m_scheduler->free_sequence(sequence->get_id());
                 }
-                requests_iterator = m_requests.erase(requests_iterator);
                 m_sampler->clear_beam_search_info(request->get_request_id());
+                requests_iterator = m_requests.erase(requests_iterator);
             } else {
                 requests_iterator++;
             }
