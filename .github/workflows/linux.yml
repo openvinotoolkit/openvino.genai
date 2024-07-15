@@ -308,16 +308,26 @@ jobs:
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ${OV_INSTALL_DIR}
 
-      - run: ${OV_INSTALL_DIR}/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
+      - name: Build samples (Release)
         if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
+        run: |
+          ${OV_INSTALL_DIR}/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
 
-      - run: |
+
+      - name: Build samples (Debug)
+        if: ${{ 'Release' != matrix.build-type }}
+        run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${OV_INSTALL_DIR}/samples/cpp/ -B ./samples\ build/ && cmake --build ./samples\ build/ --config ${{ matrix.build-type }} -j
           cmake --install ./samples\ build/ --config ${{ matrix.build-type }} --component samples_bin --prefix s\ pace
-        if: ${{ 'Release' != matrix.build-type }}
 
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
+      - name: Test C++ samples (greedy_causal_lm)
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
 
-      - run: source ${OV_INSTALL_DIR}/setupvars.sh && timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+      - name: Test python samples (multinomial_causal_lm)
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
