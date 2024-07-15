@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
+      - name: Print symbol
+        run: python -c "print('\u0643', end='', flush=True)"
       - run: mkdir ./ov/
       - run: curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
       - run: sudo ./ov/install_dependencies/install_openvino_dependencies.sh
@@ -37,11 +39,6 @@ jobs:
       - run: source ./ov/setupvars.sh && cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ov/samples/cpp/ -B ./samples\ build/ && cmake --build ./samples\ build/ --config ${{ matrix.build-type }} -j && cmake --install ./samples\ build/ --config ${{ matrix.build-type }} --component samples_bin --prefix s\ pace
         if: ${{ 'Release' != matrix.build-type }}
       - run: source ./ov/setupvars.sh && timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
-      - name: Print symbol
-        run: |
-          env | grep PYTHON
-          python -c "import sys; print(sys.getdefaultencoding())"
-          python -c "print('\u0643', end='', flush=True)"
       - run: source ./ov/setupvars.sh && timeout 25s ./ov/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
 
@@ -57,6 +54,8 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
+      - name: Print symbol
+        run: python -c "print('\u0643', end='', flush=True)"
       - run: mkdir ./ov/
       - run: curl ${{ env.m_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
       - run: brew install coreutils scons
@@ -75,11 +74,6 @@ jobs:
           && cmake --install ./samples\ build/ --config ${{ matrix.build-type }} --component samples_bin --prefix s\ pace
         if: ${{ 'Release' != matrix.build-type }}
       - run: source ./ov/setupvars.sh && timeout 30s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
-      - name: Print symbol
-        run: |
-          env | grep PYTHON
-          python -c "import sys; print(sys.getdefaultencoding())"
-          python -c "print('\u0643', end='', flush=True)"
       - run: source ./ov/setupvars.sh && timeout 25s ./ov/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
 
@@ -100,6 +94,10 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
+      - name: Print symbol
+        run: |
+          python -c "import sys; print(sys.getdefaultencoding())"
+          python -c "print('\u0643', end='', flush=True)"
       - run: >
           curl --output ov.zip ${{ env.w_ov_link }}
           && unzip -d ov ov.zip
@@ -122,9 +120,5 @@ jobs:
           && cmake --install "samples build" --config ${{ matrix.build-type }} --component samples_bin --prefix samples_install
         if: ${{ 'Release' != matrix.build-type }}
       - run: call ov\setupvars.bat && "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm" .\TinyLlama-1.1B-Chat-v1.0\ ""
-      - name: Print symbol
-        run: |
-          python -c "import sys; print(sys.getdefaultencoding())"
-          python -c "print('\u0643', end='', flush=True)"
       - run: call ov\setupvars.bat && python .\ov\samples\python\multinomial_causal_lm\multinomial_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 0
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
