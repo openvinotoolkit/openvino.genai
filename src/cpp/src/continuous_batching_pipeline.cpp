@@ -62,6 +62,7 @@ class ContinuousBatchingPipeline::Impl {
                     m_scheduler->free_sequence(sequence->get_id());
                 }
                 requests_iterator = m_requests.erase(requests_iterator);
+                m_sampler->clear_beam_search_info(request->get_request_id());
             } else {
                 requests_iterator++;
             }
@@ -269,7 +270,6 @@ public:
             result.m_status = generation->get_status();
             results.push_back(result);
         }
-        m_sampler->clear_beam_search_info();
 
         OPENVINO_ASSERT(results.size() == prompts.size());
         return results;
