@@ -112,5 +112,7 @@ jobs:
           && cmake --install "samples build" --config ${{ matrix.build-type }} --component samples_bin --prefix samples_install
         if: ${{ 'Release' != matrix.build-type }}
       - run: call ov\setupvars.bat && "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm" .\TinyLlama-1.1B-Chat-v1.0\ ""
+      - name: Print symbol
+        run: call ov\setupvars.bat && python -c "print('\u0643', end='', flush=True)"
       - run: call ov\setupvars.bat && python .\ov\samples\python\multinomial_causal_lm\multinomial_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 0
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
