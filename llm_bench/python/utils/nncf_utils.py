@@ -38,10 +38,9 @@ def get_compressed_path(output_dir: str, base_precision, option: str):
 
 
 INT4_MODEL_CONFIGURATION = {
-    "dolly-v2-3b": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 0.8},
+    "dolly-v2-3b": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 1.0, "scale": True},
     "gpt-j-6b": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 64},
     "opt-6.7b": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 64, "ratio": 0.8},
-    "bloomz-7b1": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 32, "ratio": 0.6},
     "red-pajama-incite-7b-instruct": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128},
     "zephyr-7b-beta": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.8,
                        "dataset": {"name": "wikitext,wikitext-2-v1,train[:1000],text", "awq": True}},
@@ -58,7 +57,7 @@ INT4_MODEL_CONFIGURATION = {
     "rocket-3b": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.8},
     "chatglm2-6b": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.72},
     "qwen-7b-chat": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.6},
-    "open-llama-3b": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 64, "all_layers": True},
+    "open-llama-3b": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 64, "ratio": 1.0, "all_layers": True},
     "falcon-7b-instruct": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 64, "all_layers": True},
     "orca-mini-3b": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 64, "all_layers": True,
                      "dataset": {"name": "wikitext,wikitext-2-v1,train[:1000],text", "awq": False}},
@@ -70,7 +69,13 @@ INT4_MODEL_CONFIGURATION = {
     "mistral-7b-v0.1": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.9},
     "llama-7b": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.7},
     "opt-2.7b": {"mode": nncf.CompressWeightsMode.INT4_SYM, "group_size": 128, "ratio": 0.7},
-    "red-pajama-incite-chat-3b-v1": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 0.8},
+    "red-pajama-incite-chat-3b-v1": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 1.0, "scale": True},
     "vicuna-7b-v1.5": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 1.0},
     "stablelm-tuned-alpha-3b": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 0.8},
+    "gpt-2": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 0.5, "scale": True},
+    "longchat-b7": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 0.9},
+    "starcoder2-3b": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 0.9},
+    "tiny-llama-1.1b-chat": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 0.8},
+    "stablelm-7b": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 0.6, "scale": True},
+    "phi-2": {"mode": nncf.CompressWeightsMode.INT4_ASYM, "group_size": 128, "ratio": 0.9},
 }
