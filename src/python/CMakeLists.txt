@@ -11,9 +11,50 @@ FetchContent_Declare(
 FetchContent_GetProperties(pybind11)
 # search for FindPython3.cmake instead of legacy modules
 set(PYBIND11_FINDPYTHON ON)
+
+# Wouraround Python_VERSION_MAJOR and MINOR not being set by finding
+# Python package instead of Python3
+macro(ov_find_python_no_3 find_package_mode)
+    # Settings for FindPython3.cmake
+    if(NOT DEFINED Python3_USE_STATIC_LIBS)
+        set(Python3_USE_STATIC_LIBS OFF)
+    endif()
+
+    if(NOT DEFINED Python3_FIND_VIRTUALENV)
+        set(Python3_FIND_VIRTUALENV FIRST)
+    endif()
+
+    if(NOT DEFINED Python3_FIND_IMPLEMENTATIONS)
+        set(Python3_FIND_IMPLEMENTATIONS CPython PyPy)
+    endif()
+
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
+        set(python3_development_component Development.Module)
+    else()
+        set(python3_development_component Development)
+    endif()
+
+    if(CMAKE_CROSSCOMPILING AND LINUX)
+        # allow to find python headers from host in case of cross-compilation
+        # e.g. install libpython3-dev:<foreign arch> and finds its headers
+        set(_old_CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ${CMAKE_FIND_ROOT_PATH_MODE_INCLUDE})
+        set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH)
+        ov_cross_compile_define_debian_arch()
+    endif()
+
+    find_package(Python ${find_package_mode} COMPONENTS Interpreter ${python3_development_component})
+
+    if(CMAKE_CROSSCOMPILING AND LINUX)
+        ov_cross_compile_define_debian_arch_reset()
+        set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ${_old_CMAKE_FIND_ROOT_PATH_MODE_INCLUDE})
+    endif()
+
+    unset(python3_development_component)
+endmacro()
+
 # the following two calls are required for cross-compilation
 if(OpenVINODeveloperPackage_DIR)
-    ov_find_python3(REQUIRED)
+    ov_find_python_no_3(REQUIRED)
     ov_detect_python_module_extension()
 else()
     if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
