@@ -308,9 +308,9 @@ jobs:
         with:
           save-always: true
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-${{ runner.arch }}-ccache-genai-${{ github.sha }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-genai-${{ matrix.build-type }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-ccache-genai
+            ${{ runner.os }}-${{ runner.arch }}-ccache-genai-${{ matrix.build-type }}
 
       - name: Build genai
         run: |
