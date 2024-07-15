@@ -176,7 +176,10 @@ StaticLLMPipeline::StaticLLMPipeline(
 ) : StaticLLMPipeline(path, path.string(), device, config) {
 }
 
-void StaticLLMPipeline::start_chat() {
+void StaticLLMPipeline::start_chat(const std::string& system_message) {
+    if (system_message.empty()) {
+        m_history.push_back({{"role", "system"}, {"content", system_message}});
+    }
     m_is_chat_conversation = true;
 };
 void StaticLLMPipeline::finish_chat() {
@@ -216,8 +219,6 @@ DecodedResults StaticLLMPipeline::generate(
     DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
 
     if (m_is_chat_conversation) {
-        // Tail of chat template is missing in KV cache.
-        // Find the tail to concatenate it with the next input prompt.
         auto answer = decoded_results.texts[0];
         m_history.push_back({{"role", "assistant"}, {"content", answer}});
     }
@@ -275,8 +276,8 @@ EncodedResults StaticLLMPipeline::generate(
         OPENVINO_THROW("Currently static pipeline only process up to " + std::to_string(m_kvcache_desc.total_size) + " tokens");
     }
 
-    // NB: From the "generate" perspective, every prompt is treated as start of new conversation,
-    // but in case the real chat, prompt contains information about past conversation context
+    // NB: From the "generate" perspective, every call is treated as start of new conversation,
+    // but if continuation is needed, prompt contains information about the entire conversation.
     prepare_for_new_conversation();
 
     auto padded_input_ids = m_prefill_request.get_tensor("input_ids");
@@ -338,7 +339,7 @@ EncodedResults StaticLLMPipeline::generate(
             break;
         }
 
-        if (last_token == m_generation_config.eos_token_id) {
+        if (last_token == config.eos_token_id && !config.ignore_eos) {
             break;
         }
 

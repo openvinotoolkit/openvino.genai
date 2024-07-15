@@ -35,9 +35,8 @@ public:
         StreamerVariant streamer
     ) override;
 
-    void start_chat() override;
+    void start_chat(const std::string& system_message) override;
     void finish_chat() override;
-
 private:
     void prepare_for_new_conversation();
 
