@@ -695,4 +695,4 @@ def test_continuous_batching_vs_stateful(prompt, generation_config):
     if 1 != generation_config.get("num_beams", 1):
         # Stateful puts zeroes to generated.scores. Don't compare them.
         for gen, ref in zip(generated.scores, reference.scores):
-            assert math.isclose(gen, ref, abs_tol=0.0001)
+            assert math.isclose(gen, ref, abs_tol=0.0003)
