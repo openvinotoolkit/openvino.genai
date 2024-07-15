@@ -139,6 +139,7 @@ def analyze_args(args):
     if model_args['prompt_index'] is not None:
         # Deduplication
         [model_args['prompt_index'].append(i) for i in args.prompt_index if i not in model_args['prompt_index']]
+    model_args['end_token_stopping'] = args.end_token_stopping
 
     model_framework = args.framework
     model_path = Path(args.model)
