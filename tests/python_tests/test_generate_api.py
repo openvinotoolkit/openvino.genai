@@ -11,6 +11,7 @@ import openvino as ov
 import sys
 from pathlib import Path
 import torch
+import functools
 import math
 from ov_genai_test_utils import (
     get_models_list, 
@@ -674,6 +675,7 @@ def test_left_pad():
     run_hf_ov_genai_comparison_batched(models, config, prompts)
 
 
+@functools.lru_cache(1)
 def get_continuous_batching(path):
     return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), 'CB')
 
