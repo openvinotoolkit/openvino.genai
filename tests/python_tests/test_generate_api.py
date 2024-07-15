@@ -243,7 +243,7 @@ test_configs = [
 ]
 batched_prompts = [
     ['table is made', 'They sky is blue because', 'Difference between Jupiter and Mars is that'],
-    ['hello', 'Here is the longest novel ever: '],
+    ['hello', 'Here is the longest nowel ever: '],
     ['Alan Turing was a', 'return 0', '你好！ 你好嗎？'],
     ['table is made', 'table is made [force left pad tokens]']
 ]
