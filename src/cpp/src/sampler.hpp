@@ -245,17 +245,13 @@ class Sampler {
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
 
     std::mt19937 rng_engine;
-    std::mt19937 rng_engine2;
     // { request_id, logit_processor }
     std::map<uint64_t, LogitProcessor> m_logit_processors;
 
 public:
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits);
 
-    void set_seed(size_t seed) { 
-        rng_engine.seed(seed);
-        rng_engine2.seed(seed);
-    }
+    void set_seed(size_t seed) { rng_engine.seed(seed); }
 };
 
 SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits) {
