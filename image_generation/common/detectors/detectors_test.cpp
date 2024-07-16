@@ -6,7 +6,7 @@
 
 TEST(OpenposeDetectorTest, UtilsFunction) {
     OpenposeDetector detector;
-    detector.load("model");
+    detector.load("model/openpose.xml");
 
     auto input_image = "scripts/im.txt";
 
@@ -49,7 +49,7 @@ TEST(OpenposeDetectorTest, UtilsFunction) {
 
 TEST(OpenposeDetectorTest, ForwardFunction) {
     OpenposeDetector detector;
-    detector.load("model");
+    detector.load("model/openpose.xml");
 
     unsigned long H = 768;
     unsigned long W = 512;

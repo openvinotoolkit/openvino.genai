@@ -63,7 +63,7 @@ void OpenposeDetector::load(const std::string& model_path) {
 
     ov::Core core;
     std::string device = "CPU";
-    auto model = core.read_model(model_path + "/openpose.xml");
+    auto model = core.read_model(model_path);
 
     // W / H dimension should be dynamic, we reshape it before comlile
     ov::PartialShape input_shape = model->input(0).get_partial_shape();

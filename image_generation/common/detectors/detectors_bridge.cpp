@@ -74,7 +74,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Input image tensor shape: " << ori_img.get_shape() << std::endl;
 
     OpenposeDetector detector;
-    detector.load(model_path);
+    detector.load(model_path + "/openpose.xml");
 
     // forward, get subset and candidate
     std::vector<std::vector<float>> subset;

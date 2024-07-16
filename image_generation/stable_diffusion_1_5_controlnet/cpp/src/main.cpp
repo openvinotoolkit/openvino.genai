@@ -15,6 +15,7 @@
 #include "openvino/core/preprocess/pre_post_process.hpp"
 #include "openvino/runtime/core.hpp"
 #include "scheduler_lms_discrete.hpp"
+#include "utils.hpp"
 
 const size_t TOKENIZER_MODEL_MAX_LENGTH = 77;  // 'model_max_length' parameter from 'tokenizer_config.json'
 const size_t VAE_SCALE_FACTOR = 8;
@@ -61,6 +62,16 @@ ov::Tensor randn_tensor(ov::Shape shape, bool use_np_latents, uint32_t seed = 42
     }
     return noise;
 }
+void pipeline_preprocess(ov::Tensor pose, int dst_width, int dst_height) {
+    auto shape = pose.get_shape();  // NHWC
+    auto image_height = shape[1];
+    auto image_width = shape[2];
+
+    float im_scale =
+        std::min(static_cast<float>(dst_height) / image_height, static_cast<float>(dst_width) / image_width);
+    int result_width = static_cast<int>(im_scale * image_width);
+    int result_height = static_cast<int>(im_scale * image_height);
+}
 
 struct StableDiffusionControlnetModels {
     ov::CompiledModel text_encoder;
@@ -79,31 +90,6 @@ void reshape_text_encoder(std::shared_ptr<ov::Model> model, size_t batch_size, s
     model->reshape(idx_to_shape);
 }
 
-// void reshape_unet(std::shared_ptr<ov::Model> model) {
-//     std::map<size_t, ov::PartialShape> idx_to_shape;
-//     {
-//         // reshape timestep's shape
-//         auto input_timestep = model->input(1);
-//         auto input_timestep_names = input_timestep.get_names();
-//         auto found = false;
-//         for (auto name : input_timestep_names) {
-//             if (name == "timestep") {
-//                 found = true;
-//                 break;
-//             }
-//         }
-//         if (!found) {
-//             std::cerr << "timestep not found or index not match in the model" << std::endl;
-//             return;
-//         }
-//         std::cout << "original shape: " << input_timestep.get_partial_shape() << std::endl;
-
-//         idx_to_shape[1] = {-1};
-
-//         model->reshape(idx_to_shape);
-//     }
-// }
-
 void reshape_vae_decoder(std::shared_ptr<ov::Model> model, int64_t height, int64_t width) {
     height = height / VAE_SCALE_FACTOR;
     width = width / VAE_SCALE_FACTOR;
@@ -116,7 +102,6 @@ void reshape_vae_decoder(std::shared_ptr<ov::Model> model, int64_t height, int64
 StableDiffusionControlnetModels compile_models(const std::string& model_path,
                                                const std::string& device,
                                                const bool use_cache,
-                                               const bool use_dynamic_shapes,
                                                const size_t batch_size,
                                                const size_t height,
                                                const size_t width) {
@@ -132,9 +117,7 @@ StableDiffusionControlnetModels compile_models(const std::string& model_path,
     {
         Timer t("Loading and compiling text encoder");
         auto text_encoder_model = core.read_model(model_path + "/text_encoder.xml");
-        if (!use_dynamic_shapes) {
-            reshape_text_encoder(text_encoder_model, batch_size, TOKENIZER_MODEL_MAX_LENGTH);
-        }
+        reshape_text_encoder(text_encoder_model, batch_size, TOKENIZER_MODEL_MAX_LENGTH);
         models.text_encoder = core.compile_model(text_encoder_model, device);
     }
 
@@ -149,7 +132,7 @@ StableDiffusionControlnetModels compile_models(const std::string& model_path,
     // Detector
     {
         Timer t("Loading and compiling Detector");
-        models.detector.load(model_path);
+        models.detector.load(model_path + +"/openpose.xml");
     }
 
     // Controlnet
@@ -163,9 +146,7 @@ StableDiffusionControlnetModels compile_models(const std::string& model_path,
     {
         Timer t("Loading and compiling VAE decoder");
         auto vae_decoder_model = core.read_model(model_path + "/vae_decoder.xml");
-        if (!use_dynamic_shapes) {
-            reshape_vae_decoder(vae_decoder_model, height, width);
-        }
+        reshape_vae_decoder(vae_decoder_model, height, width);
         ov::preprocess::PrePostProcessor ppp(vae_decoder_model);
         ppp.output().model().set_layout("NCHW");
         ppp.output().tensor().set_layout("NHWC");
@@ -217,7 +198,6 @@ ov::Tensor text_encoder(StableDiffusionControlnetModels models, std::string& pos
 }
 
 ov::Tensor unet(ov::InferRequest req, ov::Tensor sample, ov::Tensor timestep, ov::Tensor text_embedding_1d) {
-    // FIXME:
     req.set_tensor("sample", sample);
     req.set_tensor("timestep", timestep);
     req.set_tensor("encoder_hidden_states", text_embedding_1d);
@@ -272,8 +252,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     options.add_options()(
         "p,posPrompt",
         "Initial positive prompt for SD ",
-        cxxopts::value<std::string>()->default_value(
-            "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"))(
+        cxxopts::value<std::string>()->default_value("Dancing Darth Vader, best quality, extremely detailed"))(
         "n,negPrompt",
         "Defaut is empty with space",
         cxxopts::value<std::string>()->default_value(" "))(
@@ -292,18 +271,10 @@ int32_t main(int32_t argc, char* argv[]) try {
             "512"))("width", "Destination image width", cxxopts::value<size_t>()->default_value("512"))(
         "c,useCache",
         "Use model caching",
-        cxxopts::value<bool>()->default_value("false"))("r,readNPLatent",
-                                                        "Read numpy generated latents from file",
-                                                        cxxopts::value<bool>()->default_value("false"))(
+        cxxopts::value<bool>()->default_value("false"))(
         "m,modelPath",
         "Specify path of SD model IRs",
-        cxxopts::value<std::string>()->default_value("./models"))(
-        "t,type",
-        "Specify the type of SD model IRs (FP32, FP16 or INT8)",
-        cxxopts::value<std::string>()->default_value("FP16"))(
-        "dynamic",
-        "Specify the model input shape to use dynamic shape",
-        cxxopts::value<bool>()->default_value("false"))("h,help", "Print usage");
+        cxxopts::value<std::string>()->default_value("./models"))("h,help", "Print usage");
     cxxopts::ParseResult result;
 
     try {
@@ -328,14 +299,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     const uint32_t height = result["height"].as<size_t>();
     const uint32_t width = result["width"].as<size_t>();
     const bool use_cache = result["useCache"].as<bool>();
-    const bool read_np_latent = result["readNPLatent"].as<bool>();
     const std::string model_base_path = result["modelPath"].as<std::string>();
-    const bool use_dynamic_shapes = result["dynamic"].as<bool>();
-
-    OPENVINO_ASSERT(
-        !read_np_latent || (read_np_latent && (num_images == 1)),
-        "\"readNPLatent\" option is only supported for one output image. Number of image output was set to " +
-            std::to_string(num_images));
 
     const std::string folder_name = "images";
     try {
@@ -355,8 +319,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     // Stable Diffusion Controlnet pipeline
     const size_t batch_size = 1;
-    StableDiffusionControlnetModels models =
-        compile_models(model_path, device, use_cache, use_dynamic_shapes, batch_size, height, width);
+    StableDiffusionControlnetModels models = compile_models(model_path, device, use_cache, batch_size, height, width);
     ov::InferRequest unet_infer_request = models.unet.create_infer_request();
 
     ov::PartialShape sample_shape = models.unet.input("sample").get_partial_shape();
@@ -381,7 +344,7 @@ int32_t main(int32_t argc, char* argv[]) try {
         ov::Shape latent_shape =
             ov::Shape({batch_size, unet_in_channels, height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
         ov::Shape latent_model_input_shape = latent_shape;
-        ov::Tensor noise = randn_tensor(latent_shape, read_np_latent, seed);
+        ov::Tensor noise = randn_tensor(latent_shape, false, seed);
         latent_model_input_shape[0] = 2;  // Unet accepts batch 2
         ov::Tensor latent(ov::element::f32, latent_shape),
             latent_model_input(ov::element::f32, latent_model_input_shape);
