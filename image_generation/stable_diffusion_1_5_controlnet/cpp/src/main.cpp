@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -62,15 +63,63 @@ ov::Tensor randn_tensor(ov::Shape shape, bool use_np_latents, uint32_t seed = 42
     }
     return noise;
 }
-void pipeline_preprocess(ov::Tensor pose, int dst_width, int dst_height) {
+
+ov::Tensor concat_twice(const ov::Tensor& input) {
+    auto shape = input.get_shape();
+    shape[0] = 2;
+    ov::Tensor output_tensor(input.get_element_type(), shape);
+
+    input.copy_to(ov::Tensor(output_tensor, {0, 0, 0, 0}, {1, shape[1], shape[2], shape[3]}));
+    input.copy_to(ov::Tensor(output_tensor, {1, 0, 0, 0}, {2, shape[1], shape[2], shape[3]}));
+
+    return output_tensor;
+}
+
+ov::Tensor pipeline_preprocess(ov::Tensor pose) {
     auto shape = pose.get_shape();  // NHWC
     auto image_height = shape[1];
     auto image_width = shape[2];
 
-    float im_scale =
-        std::min(static_cast<float>(dst_height) / image_height, static_cast<float>(dst_width) / image_width);
+    // resize
+    float im_scale = std::min(512.f / image_height, 512.f / image_width);
     int result_width = static_cast<int>(im_scale * image_width);
     int result_height = static_cast<int>(im_scale * image_height);
+    auto resized_tensor = smart_resize(pose, result_height, result_width);
+
+    // pad the right bottom with 0
+    auto padded_tensor = init_tensor_with_zeros({1, 512, 512, 3}, ov::element::u8);
+    // Copy resized data to padded tensor
+    auto* padded_data = padded_tensor.data<uint8_t>();
+    auto* resized_data = resized_tensor.data<uint8_t>();
+    for (int h = 0; h < result_height; ++h) {
+        for (int w = 0; w < result_width; ++w) {
+            for (int c = 0; c < 3; ++c) {
+                padded_data[(h * 512 + w) * 3 + c] = resized_data[(h * result_width + w) * 3 + c];
+            }
+        }
+    }
+
+    imwrite("controlnet_input_tensor.bmp", padded_tensor, true);
+
+    // normalize to float32
+    auto normalized_tensor = init_tensor_with_zeros({1, 512, 512, 3}, ov::element::f32);
+    auto* normalized_data = normalized_tensor.data<float>();
+    for (size_t i = 0; i < padded_tensor.get_byte_size(); ++i) {
+        normalized_data[i] = static_cast<float>(padded_data[i]) / 255.f;
+    }
+
+    // transform to NCHW
+    auto result_tensor = init_tensor_with_zeros({1, 3, 512, 512}, ov::element::f32);
+    auto* output_data = result_tensor.data<float>();
+    for (int h = 0; h < 512; ++h) {
+        for (int w = 0; w < 512; ++w) {
+            for (int c = 0; c < 3; ++c) {
+                output_data[c * 512 * 512 + h * 512 + w] = normalized_data[h * 512 * 3 + w * 3 + c];
+            }
+        }
+    }
+
+    return result_tensor;
 }
 
 struct StableDiffusionControlnetModels {
@@ -221,6 +270,52 @@ ov::Tensor unet(ov::InferRequest req, ov::Tensor sample, ov::Tensor timestep, ov
     return noisy_residual;
 }
 
+ov::Tensor controlnet_unet(const ov::CompiledModel& controlnet_model,
+                           ov::InferRequest controlnet_infer_request,
+                           ov::InferRequest unet_infer_request,
+                           ov::Tensor sample,
+                           ov::Tensor timestep,
+                           ov::Tensor text_embedding_1d,
+                           ov::Tensor controlnet_cond) {
+    controlnet_infer_request.set_tensor("sample", sample);
+    controlnet_infer_request.set_tensor("timestep", timestep);
+    controlnet_infer_request.set_tensor("encoder_hidden_states", text_embedding_1d);
+    controlnet_infer_request.set_tensor("controlnet_cond", controlnet_cond);
+
+    controlnet_infer_request.infer();
+
+    // setup unet request and params
+    unet_infer_request.set_tensor("sample", sample);
+    unet_infer_request.set_tensor("timestep", timestep);
+    unet_infer_request.set_tensor("encoder_hidden_states", text_embedding_1d);
+    size_t unet_input_idx = 3;
+
+    for (size_t i = 0; i < controlnet_model.outputs().size(); i++, unet_input_idx++) {
+        auto t = controlnet_infer_request.get_output_tensor(i);
+        // TODO: controlnet_conditioning_scale, default to 1.0, so not scaling here
+        unet_infer_request.set_input_tensor(unet_input_idx, t);
+    }
+
+    // inference
+    unet_infer_request.infer();
+
+    ov::Tensor noise_pred_tensor = unet_infer_request.get_output_tensor();
+    ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
+    noise_pred_shape[0] = 1;
+
+    // perform guidance
+    const float guidance_scale = 7.5f;
+    const float* noise_pred_uncond = noise_pred_tensor.data<const float>();
+    const float* noise_pred_text = noise_pred_uncond + ov::shape_size(noise_pred_shape);
+
+    ov::Tensor noisy_residual(noise_pred_tensor.get_element_type(), noise_pred_shape);
+    for (size_t i = 0; i < ov::shape_size(noise_pred_shape); ++i)
+        noisy_residual.data<float>()[i] =
+            noise_pred_uncond[i] + guidance_scale * (noise_pred_text[i] - noise_pred_uncond[i]);
+
+    return noisy_residual;
+}
+
 ov::Tensor vae_decoder(ov::CompiledModel& decoder_compiled_model, ov::Tensor sample) {
     const float coeffs_const{1 / 0.18215};
     for (size_t i = 0; i < sample.get_size(); ++i)
@@ -271,10 +366,12 @@ int32_t main(int32_t argc, char* argv[]) try {
             "512"))("width", "Destination image width", cxxopts::value<size_t>()->default_value("512"))(
         "c,useCache",
         "Use model caching",
-        cxxopts::value<bool>()->default_value("false"))(
-        "m,modelPath",
-        "Specify path of SD model IRs",
-        cxxopts::value<std::string>()->default_value("./models"))("h,help", "Print usage");
+        cxxopts::value<bool>()->default_value("false"))("m,modelPath",
+                                                        "Specify path of SD model IRs",
+                                                        cxxopts::value<std::string>()->default_value("./models"))(
+        "i,inputImage",
+        "Specify path of Input image",
+        cxxopts::value<std::string>()->default_value(""))("h,help", "Print usage");
     cxxopts::ParseResult result;
 
     try {
@@ -300,6 +397,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     const uint32_t width = result["width"].as<size_t>();
     const bool use_cache = result["useCache"].as<bool>();
     const std::string model_base_path = result["modelPath"].as<std::string>();
+    const std::string input_image_path = result["inputImage"].as<std::string>();
 
     const std::string folder_name = "images";
     try {
@@ -321,6 +419,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     const size_t batch_size = 1;
     StableDiffusionControlnetModels models = compile_models(model_path, device, use_cache, batch_size, height, width);
     ov::InferRequest unet_infer_request = models.unet.create_infer_request();
+    ov::InferRequest controlnet_infer_request = models.controlnet.create_infer_request();
 
     ov::PartialShape sample_shape = models.unet.input("sample").get_partial_shape();
     OPENVINO_ASSERT(sample_shape.is_dynamic() ||
@@ -330,6 +429,18 @@ int32_t main(int32_t argc, char* argv[]) try {
     Timer t("Running Stable Diffusion pipeline");
 
     ov::Tensor text_embeddings = text_encoder(models, positive_prompt, negative_prompt);
+
+    // read image, then forward using detectors, then stack it and then pass it into controlnet
+    ov::Tensor controlnet_input_tensor;
+    if (input_image_path != "") {
+        ov::Tensor input_image = read_image_to_tensor(input_image_path);
+        std::vector<std::vector<float>> subset;
+        std::vector<std::vector<float>> candidate;
+        ov::Tensor pose_image = models.detector.forward(input_image, subset, candidate);
+        imwrite("pose.bmp", pose_image, true);
+        ov::Tensor preprocessed_tensor = pipeline_preprocess(pose_image);
+        controlnet_input_tensor = concat_twice(preprocessed_tensor);
+    }
 
     for (uint32_t n = 0; n < num_images; n++) {
         std::shared_ptr<Scheduler> scheduler = std::make_shared<LMSDiscreteScheduler>();
@@ -353,6 +464,8 @@ int32_t main(int32_t argc, char* argv[]) try {
         }
 
         for (size_t inference_step = 0; inference_step < num_inference_steps; inference_step++) {
+            std::cout << "running " << inference_step + 1 << "/" << num_inference_steps << std::endl;
+
             // concat the same latent twice along a batch dimension
             latent.copy_to(
                 ov::Tensor(latent_model_input, {0, 0, 0, 0}, {1, latent_shape[1], latent_shape[2], latent_shape[3]}));
@@ -362,7 +475,18 @@ int32_t main(int32_t argc, char* argv[]) try {
             scheduler->scale_model_input(latent_model_input, inference_step);
 
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
-            ov::Tensor noisy_residual = unet(unet_infer_request, latent_model_input, timestep, text_embeddings);
+            ov::Tensor noisy_residual;
+            if (input_image_path != "") {
+                noisy_residual = controlnet_unet(models.controlnet,
+                                                 controlnet_infer_request,
+                                                 unet_infer_request,
+                                                 latent_model_input,
+                                                 timestep,
+                                                 text_embeddings,
+                                                 controlnet_input_tensor);
+            } else {
+                noisy_residual = unet(unet_infer_request, latent_model_input, timestep, text_embeddings);
+            }
 
             latent = scheduler->step(noisy_residual, latent, inference_step)["latent"];
         }

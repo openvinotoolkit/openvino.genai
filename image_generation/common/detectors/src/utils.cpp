@@ -262,3 +262,42 @@ ov::Tensor cv_gaussian_blur(const ov::Tensor& input, int sigma) {
         throw std::runtime_error("Unsupported tensor type");
     }
 }
+
+ov::Tensor read_image_to_tensor(const std::string& image_path) {
+    cv::Mat image = cv::imread(image_path, cv::IMREAD_COLOR);
+    if (image.empty()) {
+        throw std::runtime_error("Failed to read the image file: " + image_path);
+    }
+
+    int height = image.rows;
+    int width = image.cols;
+
+    if (image.channels() == 4) {
+        cv::cvtColor(image, image, cv::COLOR_BGRA2BGR);
+    }
+
+    int resolution = 512;
+    float k = static_cast<float>(resolution) / std::min(height, width);
+    float kH = height * k;
+    float kW = width * k;
+
+    int H = static_cast<int>(std::round(kH / 64.0)) * 64;
+    int W = static_cast<int>(std::round(kW / 64.0)) * 64;
+
+    int interpolation_method = (k > 1) ? cv::INTER_LANCZOS4 : cv::INTER_AREA;
+    cv::resize(image, image, cv::Size(W, H), 0, 0, interpolation_method);
+
+    height = image.rows;
+    width = image.cols;
+
+    int channels = image.channels();
+    ov::Shape tensor_shape = {1,
+                              static_cast<unsigned long>(height),
+                              static_cast<unsigned long>(width),
+                              static_cast<unsigned long>(channels)};
+    ov::Tensor tensor(ov::element::u8, tensor_shape);
+
+    std::memcpy(tensor.data(), image.data, height * width * channels * sizeof(uint8_t));
+
+    return tensor;
+}

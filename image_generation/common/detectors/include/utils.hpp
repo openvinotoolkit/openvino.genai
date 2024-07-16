@@ -89,3 +89,5 @@ void reshape_tensor(const ov::Tensor& input, ov::Tensor& output, const std::vect
         }
     }
 }
+
+ov::Tensor read_image_to_tensor(const std::string& image_path);
