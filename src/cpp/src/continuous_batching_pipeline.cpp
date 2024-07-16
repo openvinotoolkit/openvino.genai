@@ -182,6 +182,7 @@ public:
             scheduler_output = m_scheduler->schedule(m_requests);
             m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
             m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
+            std::cout << "VSHAMPOR: cache usage " << m_pipeline_metrics.cache_usage << std::endl;
             m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
             timer.end();
         }

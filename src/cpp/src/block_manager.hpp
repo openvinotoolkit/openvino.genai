@@ -224,6 +224,7 @@ public:
     }
 
     float get_used_percentage() const {
+        std::cout << "VSHAMPOR: m_total_num_blocks " << m_total_num_blocks << std::endl;
         return static_cast<float>(m_total_num_blocks - num_free_blocks()) / m_total_num_blocks;
     }
 };
