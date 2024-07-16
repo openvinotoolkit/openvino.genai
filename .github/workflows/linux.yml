@@ -69,8 +69,12 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/openvino/build
 
     steps:
-      - name: Set apt retries
-        run: echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
+      - name: Set apt
+        run: |
+          echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
+          echo 'APT::Get::Assume-Yes "true";' | sudo tee -a /etc/apt/apt.conf.d/81-assume-yes > /dev/null
+          echo 'APT::Get::Fix-Broken "true";' | sudo tee -a /etc/apt/apt.conf.d/82-fix-broken > /dev/null
+          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-reсommends > /dev/null
 
       - name: Install git
         run: |
@@ -198,6 +202,10 @@ jobs:
       CMAKE_GENERATOR: Unix Makefiles
       CMAKE_BUILD_PARALLEL_LEVEL: null
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      CCACHE_DIR: ${{ github.workspace }}/ccache
+      CCACHE_MAXSIZE: 500Mi
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CMAKE_C_COMPILER_LAUNCHER: ccache
 
     steps:
       - name: Clone openvino.genai
@@ -223,8 +231,26 @@ jobs:
             tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
           popd
 
+      - name: Set apt
+        run: |
+          echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
+          echo 'APT::Get::Assume-Yes "true";' | sudo tee -a /etc/apt/apt.conf.d/81-assume-yes > /dev/null
+          echo 'APT::Get::Fix-Broken "true";' | sudo tee -a /etc/apt/apt.conf.d/82-fix-broken > /dev/null
+          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-reсommends > /dev/null
+
       - name: Install build dependencies
-        run: sudo ${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh
+        run: |
+          sudo ${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh
+          sudo apt-get install ccache
+
+      - name: Setup ccache
+        uses: actions/cache@v4
+        with:
+          save-always: true
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-genai-Release-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-ccache-genai-Release
 
       - name: Build genai
         run: |
