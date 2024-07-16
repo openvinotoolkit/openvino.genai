@@ -218,6 +218,11 @@ public:
             }
         }
 
+        static size_t step_count = 0;
+
+        CacheStateDumper dumper(CacheStateDumper::get_cache_dump_filename_for_generation_step(step_count, "before_eviction"));
+        dumper.dump_cache_state(*m_scheduler, m_requests);
+
         // evict unimportant blocks from KV cache, if requested
         if (true) {
         // if (m_generation_config.use_cache_eviction) {
@@ -236,7 +241,7 @@ public:
                 std::cout << "VSHAMPOR: for decoder layer 0, evicting logical blocks ";
                 for (auto idx : logical_blocks_to_evict[0]) std::cout << idx << " ";
                 std::cout << "\n" << std::endl;
-                // FIXME (vshampor): rewrite to utilize per-decoder eviction when this is made possible in the rest of
+                // FIXME (vshampor): rewrite to utilize per-decoder layer eviction when this is made possible in the rest of
                 //   the library
                 m_scheduler->free_blocks_from_sequence(seq_id, logical_blocks_to_evict[0]);
 
@@ -253,6 +258,10 @@ public:
                 sequence->register_token_eviction(logical_blocks_to_evict[0].size() * m_scheduler->get_config().block_size);
             }
         }
+
+        CacheStateDumper dumper_after(CacheStateDumper::get_cache_dump_filename_for_generation_step(step_count, "eviction"));
+        dumper_after.dump_cache_state(*m_scheduler, m_requests);
+        step_count++;
 
         SamplerOutput sampler_output;
         {

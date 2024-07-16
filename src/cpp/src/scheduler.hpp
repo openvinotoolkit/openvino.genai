@@ -15,6 +15,7 @@ namespace ov::genai {
 class Scheduler {
     SchedulerConfig m_config;
     BlockManager m_block_manager;
+    friend class CacheStateDumper;
 
 public:
     struct Output {
@@ -386,4 +387,53 @@ private:
         }
     }
 };
+
+    const std::string DEFAULT_POSTFIX = std::string();
+
+
+
+    class CacheStateDumper {
+    public:
+        CacheStateDumper(const std::string& fname) : m_file_path(fname) {
+            const auto folder = m_file_path.parent_path();
+            std::filesystem::create_directory(folder);
+            m_out_stream.open(m_file_path.string(), std::ios::out);
+            OPENVINO_ASSERT(m_out_stream.is_open());
+        }
+        void dump_cache_state(const BlockManager& block_mgr, const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+            m_out_stream << block_mgr.m_allocator.m_total_num_blocks << std::endl;
+            m_out_stream << sequence_groups.size() << std::endl;
+            for (const auto& seq_group_ptr: sequence_groups) {
+                m_out_stream << seq_group_ptr->get_request_id() << ' ';
+                for (const auto& seq_ptr : seq_group_ptr->get_sequences()) {
+                    m_out_stream << seq_ptr->get_id() << ' ';
+                }
+                m_out_stream << std::endl;
+            }
+            for (const auto& seq_id_and_blocks : block_mgr.m_block_table) {
+                for (const auto& block : seq_id_and_blocks.second) {
+                    const size_t seq_id = seq_id_and_blocks.first;
+                    m_out_stream << seq_id << " " << block->get_index() << " " << block->get_references_count() << std::endl;
+                }
+            }
+            m_out_stream.flush();
+        }
+        void dump_cache_state(const Scheduler& schdl, const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+            dump_cache_state(schdl.m_block_manager, sequence_groups);
+
+        }
+
+        static std::string get_cache_dump_filename_for_generation_step(size_t step, const std::string& postfix = DEFAULT_POSTFIX) {
+            std::stringstream ss;
+            ss << "debug/cache_dump";
+            if (!postfix.empty()) {
+                ss << "_" << postfix;
+            }
+            ss << "_step_" << step << ".txt";
+            return ss.str();
+        }
+    private:
+        std::filesystem::path m_file_path;
+        std::ofstream m_out_stream;
+    };
 }

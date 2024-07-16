@@ -7,9 +7,11 @@
 #include <list>
 #include <map>
 #include <algorithm>
+#include <fstream>
 #include <chrono>
 
 #include "sequence_group.hpp"
+
 
 namespace ov::genai {
 class KVCacheBlock {
@@ -115,11 +117,13 @@ public:
     }
 };
 
+class CacheStateDumper;
 
 class BlockAllocator {
     std::list<KVCacheBlock::Ptr> m_free_blocks;
     ov::genai::Evictor m_evictor;
     int m_total_num_blocks;
+    friend class CacheStateDumper;
     bool m_enable_prefix_caching;
 public:
     BlockAllocator(int num_blocks, bool enable_prefix_caching) :
@@ -230,6 +234,7 @@ public:
 };
 
 class BlockManager {
+    friend class CacheStateDumper;
     BlockAllocator m_allocator;
     bool m_enable_prefix_caching;
     size_t m_block_size;
@@ -567,4 +572,6 @@ public:
         }
     }
 };
+
+
 }
