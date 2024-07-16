@@ -262,7 +262,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/tools --upgrade-strategy eager
-          python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+          python -m pytest ./tests/python_tests
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
 
@@ -270,7 +270,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
-          python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+          python -m pytest ./tests/python_tests
 
   genai_package:
     strategy:
