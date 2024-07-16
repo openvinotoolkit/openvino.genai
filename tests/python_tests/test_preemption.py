@@ -9,7 +9,7 @@ from common import get_model_and_tokenizer, save_ov_model_from_optimum, generate
     DEFAULT_SCHEDULER_CONFIG, get_scheduler_config, run_test_pipeline, get_models_list, get_beam_search, get_greedy, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
-from test_sampling import RandomSamplingTestStruct, RandomSamplingRefTexts
+from test_sampling import RandomSamplingTestStruct, get_current_plarform_ref_texts
 
 def get_greedy_seq_len_300() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -50,8 +50,8 @@ multinomial_params = RandomSamplingTestStruct(
         "How are you?",
         "Tell me something about Canada?",
     ],
-    ref_texts=RandomSamplingRefTexts(
-        linux=[
+    ref_texts=get_current_plarform_ref_texts({
+        'linux': [
             [
                 "\n\nOpenVINO is a live platform that allows users to create and manage a new library for open source applications.\n\nOpenVINO is"
             ],
@@ -62,7 +62,7 @@ multinomial_params = RandomSamplingTestStruct(
                 "\nI'm from Canada, and I'm from the US, so I'm not sure.\nI think you mean the Canadian version."
             ],
         ],
-        win32=[
+        'win32': [
             [
                 "\n\nOpenVINO is a live platform that allows users to create and manage a new library of applications on the Virtuoso server, which can"
             ],
@@ -73,7 +73,7 @@ multinomial_params = RandomSamplingTestStruct(
                 "\nI'm from Canada, and I'm from the US, so I'm not sure what you're talking about.\nI'm Canadian and I"
             ],
         ],
-    ).get_ref_texts(),
+    }),
 )
 
 
@@ -106,8 +106,8 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
         "What is the current",
         "Tell me something about UAE?",
     ],
-    ref_texts=RandomSamplingRefTexts(
-        linux=[
+    ref_texts=get_current_plarform_ref_texts({
+        'linux': [
             [
                 "\nI've seen this expression used too many times without making sense.\nAs an AI engineer, and as a scientist, we should make everything easier"
             ],
@@ -123,7 +123,7 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
                 "\nI don't know anything.  I'm not sure what kind this sub wants though... but apparently they are pretty bad at making videos/photos",
             ],
         ],
-        win32=[
+        'win32': [
             [
                 "\nI've had a friend with the capacity to test this in his own words.\nThe big problem with real-world results is the economics of"
             ],
@@ -139,7 +139,7 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
                 "\nIt's a country where your parents can never give you anything at all!  It also has an extremely low education system for many years... You",
             ],
         ],
-        darwin=[
+        'darwin': [
             [
                 "\nI've had a friend with the capacity to test this in his own words.\nThe big problem with real-world results is the rigidity"
             ],
@@ -155,7 +155,7 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
                 "\nIt's a country where your parents can never give you anything at all!  It also has an extremely low education system for many years... You",
             ],
         ],
-    ).get_ref_texts(),
+    }),
 )
 
 
