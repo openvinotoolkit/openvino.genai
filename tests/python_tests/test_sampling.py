@@ -294,9 +294,9 @@ rgn_test_struct = RandomSamplingTestStruct(
     prompts=["What is location of"],
     ref_texts=[
         [
-            " the exact same image?\nI've tried multiple times to find it, but I'm still not sure. I am sure it's the exact same",
-            " your new house?\nAnywhere that has a GPS. It will be up to you.",
-            " your cat?  He is more likely to be on the floor with him.\nTalduck"
+            " your instruments?  Are they in an armpit?  Is it warm?  Are your instruments clear?  Are there any cuts and scratches",
+            " map and where does the game player base base?    I tend to like to do all draws on a specific spot (sometimes wide area,",
+            " them?\nJust the Mario Maker App, the location is they"
         ]
     ],
 )
