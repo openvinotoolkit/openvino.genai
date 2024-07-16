@@ -103,9 +103,9 @@ def get_current_plarform_ref_texts(ref_texts: PlatformsRefTexts) -> List[List[st
     # mac and win often have identical results
     # to avoid duplication, use win32 ref_text if no mac ref_texts were found
     if sys.platform == "darwin":
-        result = ref_texts["darwin"] or ref_texts["win32"]
+        result = ref_texts.get("darwin") or ref_texts.get("win32")
     else:
-        result = ref_texts[sys.platform]
+        result = ref_texts.get(sys.platform)
     if not result:
         raise RuntimeError("No ref_texts were provided")
     return result
