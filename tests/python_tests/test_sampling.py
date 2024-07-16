@@ -132,12 +132,12 @@ RANDOM_SAMPLING_TEST_CASES = [
         generation_config=get_multinomial_temperature_and_top_p(),
         prompts=["What is OpenVINO?"],
         ref_texts=get_current_plarform_ref_texts({
-            'linux': [
+            "linux": [
                 [
                     "\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"
                 ]
             ],
-            'win32': [
+            "win32": [
                 [
                     "\n\nOpenVINO is a software development platform designed to allow developers to develop and commercialize the most important software products on the web. OpenV"
                 ]
@@ -157,12 +157,12 @@ RANDOM_SAMPLING_TEST_CASES = [
         generation_config=get_multinomial_temperature_top_p_and_top_k(),
         prompts=["What is OpenVINO?"],
         ref_texts=get_current_plarform_ref_texts({
-            'linux': [
+            "linux": [
                 [
                     "\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"
                 ]
             ],
-            'win32': [
+            "win32": [
                 [
                     "\n\nOpenVINO is a software that allows users to create a virtual machine with the ability to create a virtual machine in a virtual environment. Open"
                 ]
@@ -193,7 +193,7 @@ RANDOM_SAMPLING_TEST_CASES = [
         generation_config=get_multinomial_all_parameters(),
         prompts=["Tell me something about UAE"],
         ref_texts=get_current_plarform_ref_texts({
-            'linux': [
+            "linux": [
                 [
                     " and how it's not like we're all in the same boat right now lol (or even close) 😂😁! Just curious :) If",
                     "?  You are my country... so what does our military do here?? What am i missing out on?? And why don't u tell us?",
@@ -201,7 +201,7 @@ RANDOM_SAMPLING_TEST_CASES = [
                     "? I think that is a bit of an anomaly, but you might want to ask yourself this question: Where can some young people from Dubai or Bahrain",
                 ]
             ],
-            'win32': [
+            "win32": [
                 [
                     "? I think that is a bit of an anomaly, especially since there aren't many Americans living here (like us). What makes you say they've",
                     "?  You are my country... so what does our future have to do with your problems?? \U0001f609\U0001f608\U0001f495 \U0001f5a4\ufffd",
@@ -242,14 +242,14 @@ RANDOM_SAMPLING_TEST_CASES = [
         generation_config=get_multinomial_max_and_min_token(),
         prompts=["What is OpenVINO?"],
         ref_texts=get_current_plarform_ref_texts({
-            'linux': [
+            "linux": [
                 [
                     "\nOpenVINO is a Linux distro. It's not as simple as using the Linux distro itself. OpenVINO is essentially a dist",
                     "\nOpenVINO is an open-source open-source software that allows anyone to work with a virtual machine, from a smartphone to an iPhone,",
                     "\n\nOpenVINO is a social networking tool. OpenVINO is a free virtualization service that works at scale. The tool provides the ability",
                 ]
             ],
-            'win32': [
+            "win32": [
                 [
                     "\nOpenVINO is the latest addition to the OpenVINO series of platforms. OpenVINO is an open source software development framework for all platforms",
                     "\nOpenVINO is a browser-based virtual assistant that enables developers and developers to quickly communicate with their own virtual machines. Using this virtual assistant,",
