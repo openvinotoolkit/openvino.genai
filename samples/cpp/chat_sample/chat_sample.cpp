@@ -5,7 +5,7 @@
 
 int main(int argc, char* argv[]) try {
     if (2 != argc && 3 != argc) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <DEVICE>");
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <DEVICE>(optional)");
     }
     std::string prompt;
     std::string model_path = argv[1];
