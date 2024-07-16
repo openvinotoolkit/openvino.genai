@@ -10,6 +10,7 @@
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/generation_handle.hpp"
+#include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/visibility.hpp"
 
 namespace ov::genai {
@@ -63,7 +64,7 @@ public:
     bool has_non_finished_requests();
 
     // more high level interface, which can process multiple prompts in continuous batching manner
-    std::vector<EncodedGenerationResult> generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params);
-    std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params);
+    std::vector<EncodedGenerationResult> generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const std::shared_ptr<StreamerBase>& streamer=nullptr);
+    std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const std::shared_ptr<StreamerBase>& streamer=nullptr);
 };
 }
