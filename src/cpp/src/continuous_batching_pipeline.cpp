@@ -80,7 +80,9 @@ public:
 
         apply_paged_attention_transformations(model, device_config);
 
-        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
+        ov::AnyMap config{{ov::inference_num_threads.name(), 1}, {ov::num_streams.name(), 1}};
+
+        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), config).create_infer_request();
 
         // setup KV caches
         m_cache_manager = std::make_shared<CacheManager>(device_config);

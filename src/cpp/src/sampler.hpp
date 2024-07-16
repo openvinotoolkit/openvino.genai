@@ -245,7 +245,7 @@ class Sampler {
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
             size_t element_to_pick = dist(rng_engine);
 
-            std::cout << rng_engine2() << ":" << element_to_pick << ", ";
+            std::cout << rng_engine2() << ":" << element_to_pick << ":" << logit_vector[element_to_pick].m_index << ", ";
 
             out_tokens.push_back(logit_vector[element_to_pick]);
         }
