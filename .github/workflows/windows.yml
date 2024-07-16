@@ -235,7 +235,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/tools --upgrade-strategy eager
-          python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+          python -m pytest ./tests/python_tests/
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
 
@@ -243,7 +243,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose
-          python -m pytest ./tests/python_tests/test_generate_api.py -m precommit
+          python -m pytest ./tests/python_tests/
 
   genai_package:
     strategy:
@@ -253,7 +253,7 @@ jobs:
     if: |
       always() &&
       (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
-    timeout-minutes: 30
+    timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
