@@ -8,7 +8,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from openvino_genai import ContinuousBatchingPipeline, GenerationConfig
+<<<<<<< HEAD
 from typing import List, Optional
+=======
+from typing import List, Optional, TypedDict
+>>>>>>> upstream/master
 
 from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, \
     generate_and_compare_with_reference_text, get_greedy, get_beam_search, get_multinomial_temperature, \
@@ -93,6 +97,24 @@ def test_individual_generation_configs_deterministic(tmp_path, generation_config
     generate_and_compare_with_hf(model_id, prompts, generation_configs, DEFAULT_SCHEDULER_CONFIG, tmp_path)
 
 
+class PlatformsRefTexts(TypedDict, total=False):
+    linux: List[List[str]]
+    win32: List[List[str]]
+    darwin: List[List[str]]
+
+
+def get_current_plarform_ref_texts(ref_texts: PlatformsRefTexts) -> List[List[str]]:
+    # mac and win often have identical results
+    # to avoid duplication, use win32 ref_text if no mac ref_texts were found
+    if sys.platform == "darwin":
+        result = ref_texts.get("darwin") or ref_texts.get("win32")
+    else:
+        result = ref_texts.get(sys.platform)
+    if not result:
+        raise RuntimeError("No ref_texts were provided")
+    return result
+
+
 @dataclass
 class RandomSamplingRefTexts:
     linux: Optional[List[List[str]]] = None
@@ -130,18 +152,18 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_top_p(),
         prompts=["What is OpenVINO?"],
-        ref_texts=RandomSamplingRefTexts(
-            linux=[
+        ref_texts=get_current_plarform_ref_texts({
+            "linux": [
                 [
                     "\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"
                 ]
             ],
-            win32=[
+            "win32": [
                 [
                     "\n\nOpenVINO is a software development platform designed to allow developers to develop and commercialize the most important software products on the web. OpenV"
                 ]
             ],
-        ).get_ref_texts(),
+        })
     ),
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_top_k(),
@@ -155,18 +177,18 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_top_p_and_top_k(),
         prompts=["What is OpenVINO?"],
-        ref_texts=RandomSamplingRefTexts(
-            linux=[
+        ref_texts=get_current_plarform_ref_texts({
+            "linux": [
                 [
                     "\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"
                 ]
             ],
-            win32=[
+            "win32": [
                 [
                     "\n\nOpenVINO is a software that allows users to create a virtual machine with the ability to create a virtual machine in a virtual environment. Open"
                 ]
             ],
-        ).get_ref_texts(),
+        }),
     ),
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_repetition_penalty(),
@@ -180,35 +202,19 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_num_return_sequence(),
         prompts=["What is location of"],
-        ref_texts=RandomSamplingRefTexts(
-            linux=[
-                [
-                   " the exact same image?\nI've tried multiple times to find it, but I'm still not sure. I am sure it's the exact same",
-                   ' your new house?\nAnywhere that has a GPS. It will be up to you.',
-                   ' your cat?  He is more likely to be on the floor with him.\nTalduck'
-                ]
-            ],
-            win32=[
-                [
-                    " the exact same image?\nI've tried multiple times to find it, but I'm still not sure. I am sure it's the exact same",
-                    ' your new house?\nAnywhere that has a GPS. It will be up to you.',
-                    ' your cat?  He is more likely to be on the floor with him.\nTalduck'
-                ]
-            ],
-            darwin=[
-                [
-                    " the exact same image?\nI've tried multiple times to find it, but I'm still not sure. I am sure it's the exact same",
-                    ' your new house?\nAnywhere that has a GPS. It will be up to you.',
-                    ' your cat?  He is more likely to be on the floor with him.\nTalduck'
-                ]
-            ],
-        ).get_ref_texts(),
+        ref_texts=[
+            [
+                " the exact same image?\nI've tried multiple times to find it, but I'm still not sure. I am sure it's the exact same",
+                " your new house?\nAnywhere that has a GPS. It will be up to you.",
+                " your cat?  He is more likely to be on the floor with him.\nTalduck"
+            ]
+        ],
     ),
     RandomSamplingTestStruct(
         generation_config=get_multinomial_all_parameters(),
         prompts=["Tell me something about UAE"],
-        ref_texts=RandomSamplingRefTexts(
-            linux=[
+        ref_texts=get_current_plarform_ref_texts({
+            "linux": [
                 [
                     " and how it's not like we're all in the same boat right now lol (or even close) 😂😁! Just curious :) If",
                     "?  You are my country... so what does our military do here?? What am i missing out on?? And why don't u tell us?",
@@ -216,7 +222,7 @@ RANDOM_SAMPLING_TEST_CASES = [
                     "? I think that is a bit of an anomaly, but you might want to ask yourself this question: Where can some young people from Dubai or Bahrain",
                 ]
             ],
-            win32=[
+            "win32": [
                 [
                     "? I think that is a bit of an anomaly, especially since there aren't many Americans living here (like us). What makes you say they've",
                     "?  You are my country... so what does our future have to do with your problems?? \U0001f609\U0001f608\U0001f495 \U0001f5a4\ufffd",
@@ -224,7 +230,7 @@ RANDOM_SAMPLING_TEST_CASES = [
                     " and how it's not like we're all in the same boat either! We had such fun meeting each other at different times this past summer :) It",
                 ]
             ],
-        ).get_ref_texts(),
+        }),
     ),
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_presence_penalty(),
@@ -256,22 +262,22 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_max_and_min_token(),
         prompts=["What is OpenVINO?"],
-        ref_texts=RandomSamplingRefTexts(
-            linux=[
+        ref_texts=get_current_plarform_ref_texts({
+            "linux": [
                 [
                     "\nOpenVINO is a Linux distro. It's not as simple as using the Linux distro itself. OpenVINO is essentially a dist",
                     "\nOpenVINO is an open-source open-source software that allows anyone to work with a virtual machine, from a smartphone to an iPhone,",
                     "\n\nOpenVINO is a social networking tool. OpenVINO is a free virtualization service that works at scale. The tool provides the ability",
                 ]
             ],
-            win32=[
+            "win32": [
                 [
                     "\nOpenVINO is the latest addition to the OpenVINO series of platforms. OpenVINO is an open source software development framework for all platforms",
                     "\nOpenVINO is a browser-based virtual assistant that enables developers and developers to quickly communicate with their own virtual machines. Using this virtual assistant,",
                     "\n\nOpenVINO is a program designed to help you find the best open source open source software. The program, which is a lightweight package and",
                 ]
             ],
-        ).get_ref_texts(),
+        }),
     ),
 ]
 

@@ -270,6 +270,7 @@ public:
         rng_engine.seed(seed);
         rng_engine2.seed(seed);
     }
+    void clear_beam_search_info(uint64_t request_id);
 };
 
 SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits) {
@@ -600,5 +601,9 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
             group.ongoing = child_beams_per_group[group_id];
         }
     }
+}
+
+void Sampler::clear_beam_search_info(uint64_t request_id) { 
+    m_beam_search_info.erase(request_id);
 }
 }
