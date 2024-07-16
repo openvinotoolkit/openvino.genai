@@ -179,7 +179,7 @@ jobs:
     if: |
       always() &&
       (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
-    timeout-minutes: 25
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
