@@ -9,11 +9,7 @@ from common import get_model_and_tokenizer, save_ov_model_from_optimum, generate
     DEFAULT_SCHEDULER_CONFIG, get_scheduler_config, run_test_pipeline, get_models_list, get_beam_search, get_greedy, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
-<<<<<<< HEAD
-from test_sampling import RandomSamplingTestStruct, RandomSamplingRefTexts
-=======
 from test_sampling import RandomSamplingTestStruct, get_current_plarform_ref_texts
->>>>>>> upstream/master
 
 def get_greedy_seq_len_300() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -54,13 +50,8 @@ multinomial_params = RandomSamplingTestStruct(
         "How are you?",
         "Tell me something about Canada?",
     ],
-<<<<<<< HEAD
-    ref_texts=RandomSamplingRefTexts(
-        linux=[
-=======
     ref_texts=get_current_plarform_ref_texts({
         "linux": [
->>>>>>> upstream/master
             [
                 "\n\nOpenVINO is a live platform that allows users to create and manage a new library for open source applications.\n\nOpenVINO is"
             ],
@@ -71,11 +62,7 @@ multinomial_params = RandomSamplingTestStruct(
                 "\nI'm from Canada, and I'm from the US, so I'm not sure.\nI think you mean the Canadian version."
             ],
         ],
-<<<<<<< HEAD
-        win32=[
-=======
         "win32": [
->>>>>>> upstream/master
             [
                 "\n\nOpenVINO is a live platform that allows users to create and manage a new library of applications on the Virtuoso server, which can"
             ],
@@ -86,11 +73,7 @@ multinomial_params = RandomSamplingTestStruct(
                 "\nI'm from Canada, and I'm from the US, so I'm not sure what you're talking about.\nI'm Canadian and I"
             ],
         ],
-<<<<<<< HEAD
-    ).get_ref_texts(),
-=======
     }),
->>>>>>> upstream/master
 )
 
 
@@ -123,26 +106,15 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
         "What is the current",
         "Tell me something about UAE?",
     ],
-<<<<<<< HEAD
-    ref_texts=RandomSamplingRefTexts(
-        linux=[
-=======
     ref_texts=get_current_plarform_ref_texts({
         "linux": [
->>>>>>> upstream/master
             [
                 "\nI've seen this expression used too many times without making sense.\nAs an AI engineer, and as a scientist, we should make everything easier"
             ],
             [
-<<<<<<< HEAD
-                ' position of the Z-shaped groove?\n0.41\nWhat is the current position of the Z-shaped groove?\n0.11\n',
-                " status of all of this? I can't stop thinking about it.\nIt's been a while since I've seen it. I found it a",
-                ' status of your blog? Do you accept feedback?\nYes, I’m happy to accept feedback at this time (I’m a'
-=======
                 " position of the Z-shaped groove?\n0.41\nWhat is the current position of the Z-shaped groove?\n0.11\n",
                 " status of all of this? I can't stop thinking about it.\nIt's been a while since I've seen it. I found it a",
                 " status of your blog? Do you accept feedback?\nYes, I’m happy to accept feedback at this time (I’m a"
->>>>>>> upstream/master
             ],
             [
                 "\nIt's in the middle of nowhere if you haven’t seen one yet! It might be more convenient there than anywhere else.. maybe take",
@@ -151,22 +123,13 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
                 "\nI don't know anything.  I'm not sure what kind this sub wants though... but apparently they are pretty bad at making videos/photos",
             ],
         ],
-<<<<<<< HEAD
-        win32=[
-=======
         "win32": [
->>>>>>> upstream/master
             [
                 "\nI've had a friend with the capacity to test this in his own words.\nThe big problem with real-world results is the economics of"
             ],
             [
-<<<<<<< HEAD
-                ' position of the patent application number of the present invention?\n\nIn the present invention, the present invention relates to an improved method for manufacturing a semic',
-                ' status of your town? How many houses do you have?\nThere are about three houses in our town. The closest place to us is about 25',
-=======
                 " position of the patent application number of the present invention?\n\nIn the present invention, the present invention relates to an improved method for manufacturing a semic",
                 " status of your town? How many houses do you have?\nThere are about three houses in our town. The closest place to us is about 25",
->>>>>>> upstream/master
                 " status of all the other passengers?\nWe're the only ones left, so no...\nI don't think they'll really leave.\nThey"
             ],
             [
@@ -176,22 +139,13 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
                 "\nIt's a country where your parents can never give you anything at all!  It also has an extremely low education system for many years... You",
             ],
         ],
-<<<<<<< HEAD
-        darwin=[
-=======
         "darwin": [
->>>>>>> upstream/master
             [
                 "\nI've had a friend with the capacity to test this in his own words.\nThe big problem with real-world results is the rigidity"
             ],
             [
-<<<<<<< HEAD
-               ' position of the patent application number of the present invention?\n\nIn the present invention, the present invention relates to an improved method for manufacturing a semic',
-               ' status of your town? How many houses do you have?\nThere are about three houses in our town. The closest place to us is about 25',
-=======
                " position of the patent application number of the present invention?\n\nIn the present invention, the present invention relates to an improved method for manufacturing a semic",
                " status of your town? How many houses do you have?\nThere are about three houses in our town. The closest place to us is about 25",
->>>>>>> upstream/master
                " status of all the other passengers?\nWe're the only ones left, so no...\nI don't think they'll really leave.\nThey"
             ],
             [
@@ -201,11 +155,7 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
                 "\nIt's a country where your parents can never give you anything at all!  It also has an extremely low education system for many years... You",
             ],
         ],
-<<<<<<< HEAD
-    ).get_ref_texts(),
-=======
     }),
->>>>>>> upstream/master
 )
 
 
