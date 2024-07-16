@@ -193,6 +193,7 @@ public:
         if (m_evictor.num_blocks() > 0) {
             // get least resently used block from evictor and reuse it
             KVCacheBlock::Ptr block = m_evictor.get_lru_block();
+            //6774594316161816335
             cashed_blocks.erase(block->get_hash());
 
             // update block with new hash
@@ -540,7 +541,6 @@ public:
             else {
                 break;                
             }
-            content_len += block_size;
         }
     }
 };

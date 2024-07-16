@@ -44,18 +44,18 @@ int main(int argc, char* argv[]) try {
     // create dataset
 
     std::vector<std::string> prompt_examples = {
-        "What is OpenVINO?",
-        "Explain this in more details?",
-        "What is your name?",
-        "Tell me something about Canada",
-        "What is OpenVINO?",
+        "What is OpenVINO?\n",
+        "Explain this in more details?\n",
+        "What is your name?\n",
+        "Tell me something about Canada\n",
+        "What is OpenVINO?\n",
     };
 
     std::vector<ov::genai::GenerationConfig> sampling_params_examples {
         ov::genai::greedy(),
     };
 
-    size_t num_chat_iterations = 2;
+    size_t num_chat_iterations = 5;
 
     std::vector<std::string> prompts(num_prompts);
     std::vector<ov::genai::GenerationConfig> sampling_params(num_prompts);
@@ -67,7 +67,7 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::SchedulerConfig scheduler_config {
         // batch size
-        .max_num_batched_tokens = 320,
+        .max_num_batched_tokens = 32,
         // cache params
         .num_kv_blocks = 364,
         .block_size = 32,
@@ -75,7 +75,7 @@ int main(int argc, char* argv[]) try {
         .dynamic_split_fuse = dynamic_split_fuse,
         // vLLM specific params
         .max_num_seqs = 2,
-        .enable_prefix_caching = false,
+        .enable_prefix_caching = true,
     };
 
     ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config);
@@ -83,11 +83,12 @@ int main(int argc, char* argv[]) try {
     for(size_t i = 0; i<num_chat_iterations; i++) {
         std::string question = conversation_history + prompt_examples[i % prompt_examples.size()];
 
+        std::cout << "History: " << question << std::endl;
         std::vector<ov::genai::GenerationResult> generation_results = pipe.generate({question}, sampling_params);
         
         for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
             const ov::genai::GenerationResult & generation_result = generation_results[request_id];
-            std::cout << "Question: " << question << std::endl;
+            
             switch (generation_result.m_status)
             {
             case ov::genai::GenerationStatus::FINISHED:
@@ -111,7 +112,7 @@ int main(int argc, char* argv[]) try {
                 break;
             }
             std::cout << std::endl;
-            conversation_history += question + generation_result.m_generation_ids[0] + "\n";
+            conversation_history = question + generation_result.m_generation_ids[0] + "\n";
         }
     }
 
