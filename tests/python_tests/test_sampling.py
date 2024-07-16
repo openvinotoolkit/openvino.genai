@@ -112,23 +112,6 @@ def get_current_plarform_ref_texts(ref_texts: PlatformsRefTexts) -> List[List[st
 
 
 @dataclass
-class RandomSamplingRefTexts:
-    linux: Optional[List[List[str]]] = None
-    win32: Optional[List[List[str]]] = None
-    darwin: Optional[List[List[str]]] = None
-
-    def get_ref_texts(self) -> List[List[str]]:
-        # mac and win often have identical results
-        # to avoid duplication, use win32 ref_text if no mac ref_texts were found
-        if sys.platform == "darwin":
-            ref_texts = self.darwin or self.win32
-        else:
-            ref_texts = self.__getattribute__(sys.platform)
-        if not ref_texts:
-            raise RuntimeError("No ref_texts were provided")
-        return ref_texts
-
-@dataclass
 class RandomSamplingTestStruct:
     generation_config: GenerationConfig
     prompts: List[str]
@@ -311,9 +294,9 @@ rgn_test_struct = RandomSamplingTestStruct(
     prompts=["What is location of"],
     ref_texts=[
         [
-            ' your instruments?  Are they in an armpit?  Is it warm?  Are your instruments clear?  Are there any cuts and scratches',
-            ' map and where does the game player base base?    I tend to like to do all draws on a specific spot (sometimes wide area,',
-            ' them?\nJust the Mario Maker App, the location is they'
+            " the exact same image?\nI've tried multiple times to find it, but I'm still not sure. I am sure it's the exact same",
+            " your new house?\nAnywhere that has a GPS. It will be up to you.",
+            " your cat?  He is more likely to be on the floor with him.\nTalduck"
         ]
     ],
 )
