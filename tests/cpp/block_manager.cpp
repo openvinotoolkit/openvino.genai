@@ -10,9 +10,10 @@
 #include "scheduler.hpp"
 
 TEST(TestBlockManager, general_test) {
-    ov::genai::BlockManager bm = ov::genai::BlockManager(6);
+    ov::genai::BlockManager bm = ov::genai::BlockManager(6, false, 4);
+    ov::genai::TokenIds prompt_ids;
 
-    bm.allocate(0, 6);
+    bm.allocate(0, prompt_ids, 6);
     EXPECT_TRUE(bm.has_block_table(0));
     EXPECT_EQ(bm.get_block_table(0).size(), 6);
     EXPECT_EQ(bm.num_free_blocks(), 0);
@@ -25,7 +26,7 @@ TEST(TestBlockManager, general_test) {
     EXPECT_FALSE(bm.has_block_table(0));
     EXPECT_EQ(bm.num_free_blocks(), 6);
 
-    bm.allocate(0, 2);
+    bm.allocate(0, prompt_ids, 2);
     bm.fork_sequence(0, 1);
     EXPECT_TRUE(bm.has_block_table(1));
     EXPECT_EQ(bm.get_block_table(1).back()->get_references_count(), 2);
@@ -33,7 +34,7 @@ TEST(TestBlockManager, general_test) {
 }
 
 TEST(TestBlockManager, required_blocks_count) {
-    ov::genai::BlockManager bm = ov::genai::BlockManager(8);
+    ov::genai::BlockManager bm = ov::genai::BlockManager(8, false, 4);
 
     std::vector<uint64_t> tokens = {0,1,2,3,4};
     ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(

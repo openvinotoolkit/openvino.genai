@@ -140,7 +140,6 @@ public:
     void step() {
         static ManualTimer step_timer("step()");
         step_timer.start();
-
         // Pull awaiting requests
         {
             std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
@@ -246,8 +245,11 @@ public:
         std::vector<GenerationResult> results;
         results.reserve(m_awaiting_requests.size());
 
+      //  size_t iter = 0;
         while (has_non_finished_requests()) {
+           // std::cout << iter << ": " <<std::endl;
             step();
+           // iter++;
         }
 
         for (size_t generation_idx = 0; generation_idx < generations.size(); ++generation_idx) {

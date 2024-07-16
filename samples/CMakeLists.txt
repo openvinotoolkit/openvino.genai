@@ -5,6 +5,7 @@
 add_subdirectory(cpp/beam_search_causal_lm)
 add_subdirectory(cpp/chat_sample)
 add_subdirectory(cpp/continuous_batching_accuracy)
+add_subdirectory(cpp/continuous_batching_multiple_generation_sample)
 add_subdirectory(cpp/continuous_batching_benchmark)
 add_subdirectory(cpp/greedy_causal_lm)
 add_subdirectory(cpp/multinomial_causal_lm)

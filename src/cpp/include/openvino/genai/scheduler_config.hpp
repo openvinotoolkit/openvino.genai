@@ -30,5 +30,8 @@ struct SchedulerConfig {
 
     // max number of scheduled sequences (you can think of it as "max batch size")
     std::size_t max_num_seqs = 256;
+
+    // enable caching of KV-blocks and reusage in next generations.
+    bool enable_prefix_caching = false;
 };
 }
