@@ -140,6 +140,7 @@ public:
     void step() {
         static ManualTimer step_timer("step()");
         step_timer.start();
+
         // Pull awaiting requests
         {
             std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};

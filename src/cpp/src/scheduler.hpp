@@ -14,9 +14,9 @@
 namespace ov::genai {
 class Scheduler {
     SchedulerConfig m_config;
+    BlockManager m_block_manager;
 
 public:
-    BlockManager m_block_manager;
     struct Output {
         // IDs of scheduled groups
         std::vector<uint64_t> m_scheduled_sequence_groups_ids;
