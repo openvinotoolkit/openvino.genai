@@ -21,7 +21,7 @@ using TokenIds = std::vector<int64_t>;
 
 class ILogitTransformer {
 public:
-    virtual std::vector<Token> apply(const std::vector<Token>& input_logits) = 0;
+    virtual void apply(std::vector<Token>& logits) = 0;
 
     virtual bool is_applicable(size_t generated_tokens_cnt = 0) {
         return true;
@@ -32,18 +32,16 @@ class TopPFilter : public ILogitTransformer {
 public:
     TopPFilter(double top_p) : m_top_p(top_p) {}
 
-    std::vector<Token> apply(const std::vector<Token>& input_probs) override {
-        std::vector<Token> tmp(input_probs);
-        std::sort(tmp.begin(), tmp.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+    void apply(std::vector<Token>& logits) override {
+        std::sort(logits.begin(), logits.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
         float probability_sum = 0.0f;
         size_t nucleus_size = 0;
-        for (const auto& probability : tmp) {
+        for (const auto& probability : logits) {
             probability_sum += probability.m_log_prob;
             nucleus_size += 1;
             if (probability_sum > m_top_p) break;
         }
-        tmp.resize(nucleus_size);
-        return tmp;
+        logits.resize(nucleus_size);
     }
 
 protected:
@@ -54,12 +52,10 @@ class TopKFilter : public ILogitTransformer {
 public:
     TopKFilter(size_t top_k) : m_top_k(top_k) {}
 
-    std::vector<Token> apply(const std::vector<Token>& input_probs) override {
-        std::vector<Token> tmp(input_probs);
-        std::sort(tmp.begin(), tmp.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
-        size_t top_k = input_probs.size() >= m_top_k ? m_top_k : input_probs.size();
-        tmp.resize(top_k);
-        return tmp;
+    void apply(std::vector<Token>& logits) override {
+        std::sort(logits.begin(), logits.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+        size_t top_k = logits.size() >= m_top_k ? m_top_k : logits.size();
+        logits.resize(top_k);
     }
 
 protected:
@@ -70,20 +66,18 @@ class TemperatureLogitTransform : public ILogitTransformer {
 public:
     TemperatureLogitTransform(double temperature) : m_temperature(temperature) {};
 
-    std::vector<Token> apply(const std::vector<Token>& input_logits) override {
-        std::vector<Token> output(input_logits.begin(), input_logits.end());
-        std::sort(output.begin(), output.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
-        float max_logit = output[0].m_log_prob;
+    void apply(std::vector<Token>& logits) override {
+        auto max_prob_token = std::max_element(logits.begin(), logits.end(), [](const Token& lhs, const Token& rhs) { return lhs.m_log_prob < rhs.m_log_prob; });
+        float max_logit = max_prob_token->m_log_prob;
 
-        std::for_each(output.begin(), output.end(), [max_logit, this](Token& val) {val.m_log_prob = expf((val.m_log_prob - max_logit) / this->m_temperature);});
+        std::for_each(logits.begin(), logits.end(), [max_logit, this](Token& val) {val.m_log_prob = expf((val.m_log_prob - max_logit) / this->m_temperature);});
 
         float norm_sum = 0.0;
-        for (const auto& val : output) {
+        for (const auto& val : logits) {
             norm_sum += val.m_log_prob;
         }
 
-        std::for_each(output.begin(), output.end(), [norm_sum](Token& val) {val.m_log_prob /= norm_sum;});
-        return output;
+        std::for_each(logits.begin(), logits.end(), [norm_sum](Token& val) {val.m_log_prob /= norm_sum;});
     }
 
 protected:
@@ -124,37 +118,35 @@ public:
         m_penalty = repetition_penalty;
     };
 
-    std::vector<Token> apply(const std::vector<Token>& input_logits) override {
-        std::vector<Token> output(input_logits.begin(), input_logits.end());
-        size_t vocab_size = input_logits.size();
+    void apply(std::vector<Token>& logits) override {
+        size_t vocab_size = logits.size();
         for (const auto& prompt_id : *m_unique_prompt_token_ids) {
             OPENVINO_ASSERT((prompt_id >= 0) && (prompt_id < vocab_size), "input_ids token out of bounds");
-            OPENVINO_ASSERT(input_logits[prompt_id].m_index == prompt_id, "input_logits must have original index order");
-            auto logit_value = output[prompt_id].m_log_prob;
+            OPENVINO_ASSERT(logits[prompt_id].m_index == prompt_id, "input_logits must have original index order");
+            auto logit_value = logits[prompt_id].m_log_prob;
             if (logit_value >= 0) {
-                output[prompt_id].m_log_prob /= m_penalty;
+                logits[prompt_id].m_log_prob /= m_penalty;
             } else {
-                output[prompt_id].m_log_prob *= m_penalty;
+                logits[prompt_id].m_log_prob *= m_penalty;
             };
         }
         for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
-            OPENVINO_ASSERT(input_logits[input_id].m_index == input_id, "input_logits must have original index order");
-            auto logit_value = output[input_id].m_log_prob;
+            OPENVINO_ASSERT(logits[input_id].m_index == input_id, "input_logits must have original index order");
+            auto logit_value = logits[input_id].m_log_prob;
             if (logit_value >= 0) {
-                output[input_id].m_log_prob /= m_penalty;
+                logits[input_id].m_log_prob /= m_penalty;
             } else {
-                output[input_id].m_log_prob *= m_penalty;
+                logits[input_id].m_log_prob *= m_penalty;
             };
         }
-        return output;
     }
 
-    std::vector<Token> apply(const std::vector<Token>& input_logits, const TokenIds& input_ids) {
+    void apply(std::vector<Token>& logits, const TokenIds& input_ids) {
         set_unique_prompt_token_ids(nullptr);
         extract_generated_tokens(input_ids);
-        return apply(input_logits);
+        apply(logits);
     }
 
     void set_unique_prompt_token_ids(const std::shared_ptr<std::set<int64_t>>& unique_prompt_token_ids) {
@@ -174,14 +166,10 @@ public:
     EOSPenaltyTransform(size_t eos_token_id, size_t min_generated_tokens) : 
         m_eos_token_id(eos_token_id), m_applicable_tensor_len(min_generated_tokens) {}
 
-    std::vector<Token> apply(const std::vector<Token>& input_logits) {
-        std::vector<Token> output(input_logits.begin(), input_logits.end());
-        for (auto& token_id : output) {
-            if (token_id.m_index == m_eos_token_id) {
-                token_id.m_log_prob = 0.f;
-            }
-        }
-        return output;
+    void apply(std::vector<Token>& logits) override {
+        // Since EOS penalty is applied early, the token vector is not sorted
+        // and we can assume element order match token ids.
+        logits[m_eos_token_id].m_log_prob = 0.f;
     }
     
 
@@ -200,26 +188,24 @@ public:
         m_penalty = value;
     };
 
-    std::vector<Token> apply(const std::vector<Token>& input_logits) override {
-        std::vector<Token> output(input_logits.begin(), input_logits.end());
-        size_t vocab_size = input_logits.size();
+    void apply(std::vector<Token>& logits) override {
+        size_t vocab_size = logits.size();
         for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
-            OPENVINO_ASSERT(input_logits[input_id].m_index == input_id, "input_logits must have original index order");
-            auto logit_value = output[input_id].m_log_prob;
+            OPENVINO_ASSERT(logits[input_id].m_index == input_id, "input_logits must have original index order");
+            auto logit_value = logits[input_id].m_log_prob;
             if (logit_value >= 0) {
-                output[input_id].m_log_prob -= m_penalty * input_id_pair.second;
+                logits[input_id].m_log_prob -= m_penalty * input_id_pair.second;
             } else {
-                output[input_id].m_log_prob += m_penalty * input_id_pair.second;
+                logits[input_id].m_log_prob += m_penalty * input_id_pair.second;
             };
         }
-        return output;
     }
 
-    std::vector<Token> apply(const std::vector<Token>& input_logits, const TokenIds& input_ids) {
+    void apply(std::vector<Token>& logits, const TokenIds& input_ids) {
         extract_generated_tokens(input_ids);
-        return apply(input_logits);
+        apply(logits);
     }
 };
 
@@ -229,40 +215,24 @@ public:
         m_penalty = value;
     };
 
-    std::vector<Token> apply(const std::vector<Token>& input_logits) override {
-        std::vector<Token> output(input_logits.begin(), input_logits.end());
-        size_t vocab_size = input_logits.size();
+    void apply(std::vector<Token>& logits) override {
+        size_t vocab_size = logits.size();
         for (const auto& input_id_pair : *m_unique_generated_token_ids) {
             const auto& input_id = input_id_pair.first;
             OPENVINO_ASSERT((input_id >= 0) && (input_id < vocab_size), "input_ids token out of bounds");
-            OPENVINO_ASSERT(input_logits[input_id].m_index == input_id, "input_logits must have original index order");
-            auto logit_value = output[input_id].m_log_prob;
+            OPENVINO_ASSERT(logits[input_id].m_index == input_id, "input_logits must have original index order");
+            auto logit_value = logits[input_id].m_log_prob;
             if (logit_value >= 0) {
-                output[input_id].m_log_prob -= m_penalty;
+                logits[input_id].m_log_prob -= m_penalty;
             } else {
-                output[input_id].m_log_prob += m_penalty;
+                logits[input_id].m_log_prob += m_penalty;
             };
         }
-        return output;
     }
 
-    std::vector<Token> apply(const std::vector<Token>& input_logits, const TokenIds& input_ids) {
+    void apply(std::vector<Token>& logits, const TokenIds& input_ids) {
         extract_generated_tokens(input_ids);
-        return apply(input_logits);
-    }
-};
-
-
-class ProbabilityNormalizeTransform : public ILogitTransformer {
-public:
-    ProbabilityNormalizeTransform() = default;
-
-    std::vector<Token> apply(const std::vector<Token>& input_probs) override {
-        std::vector<Token> output(input_probs);
-        float norm_sum = 0.0;
-        for (const auto& val : output) norm_sum += val.m_log_prob;
-        for (auto& val : output) val.m_log_prob /= norm_sum;
-        return output;
+        apply(logits);
     }
 };
 
@@ -319,19 +289,16 @@ public:
                 if (sampling_params.top_k > 0) {
                     m_logit_transformers.emplace_back(new LogitTransformers::TopKFilter(sampling_params.top_k));
                 }
-                m_logit_transformers.emplace_back(new LogitTransformers::ProbabilityNormalizeTransform());
             }
         }
     }
 
-    std::vector<Token> apply(const std::vector<Token>& logits) {
-        std::vector<Token> outputs(logits.begin(), logits.end());
+    void apply(std::vector<Token>& logits) {
         for (const auto& transformer : m_logit_transformers) {
             if (transformer->is_applicable(m_generated_tokens)) {
-                outputs = transformer->apply(outputs);
+                transformer->apply(logits);
             }
         }
-        return outputs;
     }
 
     void increment_gen_tokens() {

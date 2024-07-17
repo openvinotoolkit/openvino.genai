@@ -219,8 +219,13 @@ class Sampler {
     }
 
     Token _greedy_sample(const std::vector<Token>& logit_vector) const {
-        auto out_token = std::max_element(logit_vector.begin(), logit_vector.end(), [](const Token& lhs, const Token& rhs) { return lhs.m_log_prob < rhs.m_log_prob; });
-        return *out_token;
+        Token max_token{-std::numeric_limits<float>::infinity() , 0};
+        for (const auto& logit : logit_vector) {
+            if (logit.m_log_prob > max_token.m_log_prob) {
+                max_token = logit;
+            }
+        }
+        return max_token;
     }
 
     std::vector<Token> _multinomial_sample(const std::vector<Token>& logit_vector, size_t num_tokens_per_sequence) {
@@ -247,6 +252,8 @@ public:
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits);
 
     void set_seed(size_t seed) { rng_engine.seed(seed); }
+
+    void clear_beam_search_info(uint64_t request_id);
 };
 
 SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits) {
@@ -288,7 +295,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 };
                 for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
                     auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id);
-                    logit_vector = logit_processor.apply(logit_vector);
+                    logit_processor.apply(logit_vector);
 
                     Token sampled_token_id;
                     if (sampling_params.is_greedy_decoding()) {
@@ -577,5 +584,9 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
             group.ongoing = child_beams_per_group[group_id];
         }
     }
+}
+
+void Sampler::clear_beam_search_info(uint64_t request_id) { 
+    m_beam_search_info.erase(request_id);
 }
 }

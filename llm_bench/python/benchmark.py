@@ -101,7 +101,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         mem_consumption.start_collect_memory_consumption()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
     start = time.perf_counter()
-    if args['infer_count'] is not None:
+    if args['infer_count'] is not None and args['end_token_stopping'] is False:
         model.generation_config.eos_token_id = None
         model.config.eos_token_id = None
         result = model.generate(
@@ -693,6 +693,11 @@ def get_argprser():
     parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
     utils.model_utils.add_stateful_model_arguments(parser)
     parser.add_argument("--genai", action="store_true")
+    parser.add_argument(
+        '--end_token_stopping',
+        action='store_true',
+        help='Stop the generation even output token size does not achieve infer_count or max token size ({DEFAULT_OUTPUT_TOKEN_SIZE}}).'
+    )
 
     return parser.parse_args()
 
