@@ -177,7 +177,7 @@ StaticLLMPipeline::StaticLLMPipeline(
 }
 
 void StaticLLMPipeline::start_chat(const std::string& system_message) {
-    if (system_message.empty()) {
+    if (!system_message.empty()) {
         m_history.push_back({{"role", "system"}, {"content", system_message}});
     }
     m_is_chat_conversation = true;
