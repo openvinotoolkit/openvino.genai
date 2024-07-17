@@ -443,18 +443,7 @@ public:
         }, inputs);
         const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
         // -1 == config.eos_token_id and config.validate() are handled in m_impl.
-        std::shared_ptr<StreamerBase> streamer_ptr = std::visit(overloaded{
-            [this](std::monostate) -> std::shared_ptr<StreamerBase> {
-                return nullptr;
-            },
-            [this](const std::shared_ptr<StreamerBase>& streamer) {
-                return streamer;
-            },
-            [this](std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
-                return std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
-            }
-        }, streamer);
-        std::vector<EncodedGenerationResult> generated = m_impl.generate(input_ids, std::vector<GenerationConfig>{input_ids.size(), config}, streamer_ptr);
+        std::vector<EncodedGenerationResult> generated = m_impl.generate(input_ids, std::vector<GenerationConfig>{input_ids.size(), config}, streamer);
         std::vector<std::vector<int64_t>> plain_tokens;
         std::vector<float> plain_scores;
         for (EncodedGenerationResult& res : generated) {

@@ -12,10 +12,14 @@
 #include "sampler.hpp"
 #include "model_runner.hpp"
 #include "scheduler.hpp"
+#include "text_callback_streamer.hpp"
 #include "timer.hpp"
 #include "debug_utils.hpp"
 
 using namespace ov::genai;
+
+template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
 
@@ -238,9 +242,20 @@ public:
         return !m_awaiting_requests.empty() || !m_requests.empty();
     }
 
-    std::vector<EncodedGenerationResult> generate(const std::vector<ov::Tensor>& input_ids, const std::vector<GenerationConfig>& sampling_params, const std::shared_ptr<StreamerBase>& streamer) {
+    std::vector<EncodedGenerationResult> generate(const std::vector<ov::Tensor>& input_ids, const std::vector<GenerationConfig>& sampling_params, const StreamerVariant& streamer) {
         OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
         OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
+        const std::shared_ptr<StreamerBase>& streamer_ptr = std::visit(overloaded{
+            [](std::monostate) -> std::shared_ptr<StreamerBase> {
+                return nullptr;
+            },
+            [](const std::shared_ptr<StreamerBase>& streamer) {
+                return streamer;
+            },
+            [this](const std::function<bool(std::string)>& streamer) -> std::shared_ptr<StreamerBase> {
+                return std::make_unique<TextCallbackStreamer>(m_tokenizer, streamer);
+            }
+        }, streamer);
 
         std::vector<GenerationHandle> generations;
         for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
@@ -254,15 +269,15 @@ public:
         bool continue_generation = true;
         while (has_non_finished_requests() && continue_generation) {
             step();
-            if (streamer) {
+            if (streamer_ptr) {
                 std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
                 OPENVINO_ASSERT(1 == token.size());
                 OPENVINO_ASSERT(1 == token.begin()->second.generated_token_ids.size());
-                continue_generation = !streamer->put(token.begin()->second.generated_token_ids.at(0));
+                continue_generation = !streamer_ptr->put(token.begin()->second.generated_token_ids.at(0));
             }
         }
-        if (streamer) {
-            streamer->end();
+        if (streamer_ptr) {
+            streamer_ptr->end();
         }
 
         for (size_t generation_idx = 0; generation_idx < generations.size(); ++generation_idx) {
@@ -288,7 +303,7 @@ public:
         return results;
     }
 
-    std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, std::vector<ov::genai::GenerationConfig> sampling_params, const std::shared_ptr<StreamerBase>& streamer) {
+    std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, std::vector<ov::genai::GenerationConfig> sampling_params, const StreamerVariant& streamer) {
         std::vector<ov::Tensor> input_ids;
         input_ids.reserve(prompts.size());
         for (const std::string& prompt : prompts) {
@@ -360,10 +375,10 @@ bool ContinuousBatchingPipeline::has_non_finished_requests() {
     return m_impl->has_non_finished_requests();
 }
 
-std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const std::shared_ptr<StreamerBase>& streamer) {
+std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(const std::vector<ov::Tensor>& input_ids, const std::vector<ov::genai::GenerationConfig>& sampling_params, const StreamerVariant& streamer) {
     return m_impl->generate(input_ids, sampling_params, streamer);
 }
 
-std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const std::shared_ptr<StreamerBase>& streamer) {
+std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const StreamerVariant& streamer) {
     return m_impl->generate(prompts, sampling_params, streamer);
 }

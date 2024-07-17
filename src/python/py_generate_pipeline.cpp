@@ -612,16 +612,16 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
         .def(
             "generate",
-            py::overload_cast<const std::vector<ov::Tensor>&, const std::vector<ov::genai::GenerationConfig>&, const std::shared_ptr<StreamerBase>&>(&ContinuousBatchingPipeline::generate),
+            py::overload_cast<const std::vector<ov::Tensor>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
             py::arg("input_ids"),
             py::arg("sampling_params"),
-            py::arg("streamer") = nullptr
+            py::arg("streamer") = std::monostate{}
         )
         .def(
             "generate",
-            py::overload_cast<const std::vector<std::string>&, const std::vector<ov::genai::GenerationConfig>&, const std::shared_ptr<StreamerBase>&>(&ContinuousBatchingPipeline::generate),
-            py::arg("propts"),
+            py::overload_cast<const std::vector<std::string>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
+            py::arg("prompts"),
             py::arg("sampling_params"),
-            py::arg("streamer") = nullptr
+            py::arg("streamer") = std::monostate{}
         );
 }
