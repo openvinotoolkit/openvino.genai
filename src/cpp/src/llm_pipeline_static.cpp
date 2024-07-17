@@ -182,6 +182,7 @@ void StaticLLMPipeline::start_chat(const std::string& system_message) {
     }
     m_is_chat_conversation = true;
 };
+
 void StaticLLMPipeline::finish_chat() {
     m_is_chat_conversation = false;
     m_history.clear();
