@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) try {
         ov::genai::greedy(),
     };
 
-    size_t num_chat_iterations = 5;
+    size_t num_chat_iterations = 10;
 
     std::vector<std::string> prompts(num_prompts);
     std::vector<ov::genai::GenerationConfig> sampling_params(num_prompts);
@@ -67,7 +67,7 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::SchedulerConfig scheduler_config {
         // batch size
-        .max_num_batched_tokens = 32,
+        .max_num_batched_tokens = 64,
         // cache params
         .num_kv_blocks = 364,
         .block_size = 32,
@@ -83,7 +83,7 @@ int main(int argc, char* argv[]) try {
     for(size_t i = 0; i<num_chat_iterations; i++) {
         std::string question = conversation_history + prompt_examples[i % prompt_examples.size()];
 
-        std::cout << "History: " << question << std::endl;
+        std::cout <<"Iteration "<< i << std::endl << "History: " << question << std::endl;
         std::vector<ov::genai::GenerationResult> generation_results = pipe.generate({question}, sampling_params);
         
         for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {

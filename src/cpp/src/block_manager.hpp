@@ -344,8 +344,8 @@ public:
 
             ov::genai::KVCacheBlock::Ptr block = nullptr; 
             if (m_enable_prefix_caching) {
-                size_t num_hashed_tokens = allocated_content + (i + 1) * m_block_size < content_length ? m_block_size : num_hashed_tokens_in_last_block;
-                auto hash = sequence->get_hash(allocated_content + i * m_block_size + num_hashed_tokens, prompt_ids);
+                size_t num_hashed_tokens = (i + 1) * m_block_size + allocated_content <= content_length ? (i + 1) * m_block_size + allocated_content: num_hashed_tokens_in_last_block + allocated_content;
+                auto hash = sequence->get_hash(num_hashed_tokens, prompt_ids);
                 block = m_allocator.allocate_block(hash, num_hashed_tokens, cashed_blocks);
             }
             else {

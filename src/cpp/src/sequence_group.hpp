@@ -131,11 +131,10 @@ public:
         OPENVINO_ASSERT(content_length <= prompt_ids.size() + m_generated_ids.size());
         content.insert( content.end(), prompt_ids.begin(), prompt_ids.begin() + std::min(prompt_ids.size(), content_length));
         if (content_length > prompt_ids.size()) {
-            content.insert(content.end(), m_generated_ids.begin(), m_generated_ids.begin() + std::min(m_generated_ids.size(), content_length - prompt_ids.size()));
+            content.insert(content.end(), m_generated_ids.begin(), m_generated_ids.begin() + content_length - prompt_ids.size());
         }
         const char* data = reinterpret_cast<const char*>(content.data());
         std::size_t size = content.size() * sizeof(content[0]);
-
         return std::hash<std::string_view>{}(std::string_view(data, size));
     }
 };
