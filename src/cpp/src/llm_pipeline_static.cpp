@@ -108,7 +108,7 @@ ov::AnyMap extract_config_or_default(const ov::AnyMap& config, const std::string
             { "NPUW_FOLD", "YES" },
             { "NPUW_DCOFF_TYPE", "f16" },
             { "NPUW_DCOFF_SCALE", "YES" },
-            { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_RMSNorm" },
+            { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
             { "NPUW_PARALLEL_COMPILE", "YES" },
             { "NPUW_FUNCALL_ASYNC", "YES" }
         };
