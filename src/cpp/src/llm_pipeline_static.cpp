@@ -77,7 +77,7 @@ void reshape_to_static(std::shared_ptr<ov::Model> model,
     model->reshape(new_shapes);
 }
 
-void fill_tensor(ov::Tensor tensor, int64_t fill_val, int32_t offset = 0) {
+void fill_tensor(ov::Tensor tensor, int64_t fill_val, size_t offset = 0u) {
     int64_t* tensor_data = tensor.data<int64_t>();
     std::fill(tensor_data + offset, tensor_data + tensor.get_size(), fill_val);
 }
@@ -281,7 +281,7 @@ EncodedResults StaticLLMPipeline::generate(
     prepare_for_new_conversation();
 
     auto padded_input_ids = m_prefill_request.get_tensor("input_ids");
-    const auto offset = padded_input_ids.get_size() - input_ids.get_size();
+    const size_t offset = padded_input_ids.get_size() - input_ids.get_size();
     copy_with_offset(input_ids, offset, padded_input_ids);
 
     auto padded_attention_mask = m_prefill_request.get_tensor("attention_mask");
