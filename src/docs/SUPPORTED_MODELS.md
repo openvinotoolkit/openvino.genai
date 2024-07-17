@@ -45,7 +45,7 @@
       </td>
     </tr>
     <tr>
-      <td rowspan="3" vertical-align="top"><code>LlamaForCausalLM</code></td>
+      <td rowspan="4" vertical-align="top"><code>LlamaForCausalLM</code></td>
       <td>Llama 3</td>
       <td>
         <ul>
