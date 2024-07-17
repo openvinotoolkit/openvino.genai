@@ -45,7 +45,19 @@
       </td>
     </tr>
     <tr>
-      <td rowspan="3" vertical-align="top"><code>LlamaForCausalLM</code></td>
+      <td rowspan="4" vertical-align="top"><code>LlamaForCausalLM</code></td>
+      <td>Llama 3</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/meta-llama/Meta-Llama-3-8B"><code>meta-llama/Meta-Llama-3-8B</code></a></li>
+          <li><a href="https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct"><code>meta-llama/Meta-Llama-3-8B-Instruct</code></a></li>
+          <li><a href="https://huggingface.co/meta-llama/Meta-Llama-3-70B"><code>meta-llama/Meta-Llama-3-70B</code></a></li>
+          <li><a href="https://huggingface.co/meta-llama/Meta-Llama-3-70B-Instruct"><code>meta-llama/Meta-Llama-3-70B-Instruct</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <!-- <td><code>LlamaForCausalLM</code></td> -->
       <td>Llama 2</td>
       <td>
         <ul>

@@ -78,7 +78,9 @@ int main(int argc, char* argv[]) try {
     // vLLM specific params
     scheduler_config.max_num_seqs = 2;
 
-    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config);
+    // It's possible to construct a Tokenizer from a different path.
+    // If the Tokenizer isn't specified, it's loaded from the same folder.
+    ov::genai::ContinuousBatchingPipeline pipe(models_path, ov::genai::Tokenizer{models_path}, scheduler_config);
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, sampling_params);
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
