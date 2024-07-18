@@ -81,6 +81,8 @@ def get_chat_templates():
     # but skips some models that currently are not processed correctly.
 
     skipped_models = {
+        "berkeley-nest/Starling-LM-7B-alpha", #  TODO: Need to enable and unskip, since it's preset in continious batching and has ~30 000 downloads.
+        
         # These models fail even on HF so no need to check if applying chat matches.
         "vibhorag101/llama-2-13b-chat-hf-phr_mental_therapy",
         "codellama/CodeLlama-34b-Instruct-hf",
