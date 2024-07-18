@@ -191,6 +191,8 @@ jobs:
 
   cpp-greedy_causal_lm-windows:
     runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: "utf8"
     defaults:
       run:
         shell: cmd
@@ -626,6 +628,8 @@ jobs:
 
   cpp-continuous-batching-windows:
     runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: "utf8"
     defaults:
       run:
         shell: cmd
