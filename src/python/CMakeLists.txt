@@ -12,17 +12,6 @@ FetchContent_GetProperties(pybind11)
 # search for FindPython3.cmake instead of legacy modules
 set(PYBIND11_FINDPYTHON ON)
 
-# the following two calls are required for cross-compilation
-if(OpenVINODeveloperPackage_DIR)
-    ov_find_python3(REQUIRED)
-    ov_detect_python_module_extension()
-else()
-    if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
-        find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
-    else()
-        find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-    endif()
-endif()
 if(NOT pybind11_POPULATED)
     FetchContent_Populate(pybind11)
     add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
@@ -65,10 +54,10 @@ endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
               "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py"
         DESTINATION python/openvino_genai
-        COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+        COMPONENT pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
 install(TARGETS py_generate_pipeline
         LIBRARY DESTINATION python/openvino_genai
-        COMPONENT pygenai_${Python_VERSION_MAJOR}_${Python_VERSION_MINOR})
+        COMPONENT pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
 
 install(FILES "${CMAKE_BINARY_DIR}/openvino_genai/__version__.py"
         DESTINATION openvino_genai
