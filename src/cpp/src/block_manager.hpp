@@ -39,8 +39,8 @@ public:
     }
 
     void release() {
-        if (m_ref_count > 0)
-            --m_ref_count;
+        OPENVINO_ASSERT(m_ref_count > 0);
+        --m_ref_count;
     }
 
     bool copy_on_write() const {
@@ -71,8 +71,6 @@ public:
     time_t get_timestamp() {
         return m_timestamp;
     }
-
-
 };
 
 
@@ -185,7 +183,7 @@ public:
             KVCacheBlock::Ptr allocated_block = m_free_blocks.front();
             allocated_block->increment();
             allocated_block->set_hash(hash, num_hashed_tokens);
-            cashed_blocks[hash] = block;
+            cashed_blocks[hash] = allocated_block;
 
             m_free_blocks.pop_front();
             return allocated_block;
