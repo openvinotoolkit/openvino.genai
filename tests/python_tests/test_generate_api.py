@@ -11,7 +11,6 @@ import openvino as ov
 import sys
 from pathlib import Path
 import torch
-import functools
 import math
 from ov_genai_test_utils import (
     get_models_list, 
@@ -20,6 +19,7 @@ from ov_genai_test_utils import (
     load_tok, 
     model_tmp_path, 
     STOP_CRITERIA_MAP, 
+    get_continuous_batching,
 )
 
 
@@ -675,39 +675,31 @@ def test_left_pad():
     run_hf_ov_genai_comparison_batched(models, config, prompts)
 
 
-@functools.lru_cache(1)
-def get_continuous_batching(path):
-    return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), 'CB')
-
-
 @pytest.mark.parametrize("generation_config", test_configs)
 @pytest.mark.parametrize("prompt", batched_prompts)
+@pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
-def test_continuous_batching_vs_stateful(prompt, generation_config):
-    model_id, path, tokenizer, model, stateful = read_model((
-        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        Path("TinyLlama-1.1B-Chat-v1.0")
-    ))
+def test_continuous_batching_vs_stateful(model_descr, prompt, generation_config):
+    model_id, path, tokenizer, model, stateful = read_model(model_descr)
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = 100
     cb = get_continuous_batching(path)
     generated = cb.generate(prompt, **generation_config)
     reference = stateful.generate(prompt, **generation_config)
     assert generated.texts == reference.texts
-    if 1 != generation_config.get("num_beams", 1):
+    if 1 != generation_config.get("num_return_sequences", 1):
         # Stateful puts zeroes to generated.scores. Don't compare them.
         for gen, ref in zip(generated.scores, reference.scores):
             assert math.isclose(gen, ref, abs_tol=0.0003)
 
 @pytest.mark.parametrize("prompt", prompts)
+@pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
-def test_cb_streamer_vs_return_vs_stateful(prompt):
-    model_id, path, tokenizer, model, stateful = read_model((
-        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        Path("TinyLlama-1.1B-Chat-v1.0")
-    ))
+def test_cb_streamer_vs_return_vs_stateful(model_descr, prompt):
+    model_id, path, tokenizer, model, stateful = read_model(model_descr)
     cb = get_continuous_batching(path)
     streamed = []
     generated = cb.generate(prompt, max_new_tokens=20, streamer=lambda subword: streamed.append(subword))
     reference = stateful.generate(prompt, max_new_tokens=20)
-    assert generated == "".join(streamed) == reference
+    assert generated == "".join(streamed)
+    assert "".join(streamed) == reference

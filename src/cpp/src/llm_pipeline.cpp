@@ -115,6 +115,7 @@ public:
         EncodedInputs encoded_input;
 
         if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
+            OPENVINO_ASSERT(!is_chat_conversation, "Can't chat with multiple prompts");
             encoded_input = m_tokenizer.encode(*input_vector);
         } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
             std::string& prompt = *input_prompt;
@@ -386,16 +387,31 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
-        EncodedInputs input_ids_att = std::visit(overloaded{
-            [this](const std::string& prompt) {
-                return m_tokenizer.encode(prompt);
+        std::vector<std::string> prompts = std::visit(overloaded{
+            [](const std::string& prompt) {
+                return std::vector{prompt};
             },
-            [this](std::vector<std::string>& prompts) {
-                return m_tokenizer.encode(prompts);
+            [](std::vector<std::string>& prompts) {
+                return prompts;
             }
         }, inputs);
-        EncodedResults encoded = generate(input_ids_att, generation_config, streamer);
-        return {m_tokenizer.decode(encoded.tokens), encoded.scores};
+        const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
+        // -1 == config.eos_token_id and config.validate() are handled in m_impl.
+        std::vector<GenerationResult> generated = m_impl.generate(
+            prompts,
+            std::vector<GenerationConfig>{prompts.size(), config},
+            streamer
+        );
+        std::vector<std::string> plain_replies;
+        std::vector<float> plain_scores;
+        for (GenerationResult& res : generated) {
+            if (GenerationStatus::FINISHED != res.m_status) {
+                OPENVINO_THROW("Got unfinished GenerationStatus");
+            }
+            std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
+            std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
+        }
+        return {std::move(plain_replies), std::move(plain_scores)};
     }
 
     EncodedResults generate(
@@ -457,12 +473,12 @@ public:
     }
 
     void start_chat(const std::string& system_message) override {
-        OPENVINO_THROW("start_chat() isn't implemented.");
-    }
+        m_impl.start_chat();
+    };
 
     void finish_chat() override {
-        OPENVINO_THROW("finish_chat() isn't implemented.");
-    }
+        m_impl.finish_chat();
+    };
 };
 }
 

@@ -56,6 +56,8 @@ class ContinuousBatchingPipeline::Impl {
     std::vector<SequenceGroup::Ptr> m_awaiting_requests;
     // Mutex protecting access to m_awaiting_requests, so add_request and step methods can be called from different threads
     std::mutex m_awaiting_requests_mutex;
+    bool m_is_chat_conversation = false;
+    ChatHistory m_history;
 
 
     void _free_non_running_requests() {
@@ -305,12 +307,22 @@ public:
 
     std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, std::vector<ov::genai::GenerationConfig> sampling_params, const StreamerVariant& streamer) {
         std::vector<ov::Tensor> input_ids;
-        input_ids.reserve(prompts.size());
-        for (const std::string& prompt : prompts) {
-            static ManualTimer timer("tokenize");
+        static ManualTimer timer("tokenize");
+        if (m_is_chat_conversation) {
+            OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
+            m_history.push_back({{"role", "user"}, {"content", prompts.at(0)}});
+            constexpr bool add_generation_prompt = true;
+            std::string history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
             timer.start();
-            input_ids.push_back(m_tokenizer.encode(prompt).input_ids);
+            input_ids.push_back(m_tokenizer.encode(history).input_ids);
             timer.end();
+        } else {
+            input_ids.reserve(prompts.size());
+            for (const std::string& prompt : prompts) {
+                timer.start();
+                input_ids.push_back(m_tokenizer.encode(prompt).input_ids);
+                timer.end();
+            }
         }
         std::vector<EncodedGenerationResult> encoded = generate(input_ids, sampling_params, streamer);
         std::vector<GenerationResult> decoded;
@@ -318,8 +330,11 @@ public:
         for (EncodedGenerationResult& res : encoded) {
             std::vector<std::string> generated;
             generated.reserve(res.m_generation_ids.size());
-            for (const std::vector<int64_t>& tokens : res.m_generation_ids) {
-                generated.push_back(m_tokenizer.decode(tokens));
+            for (size_t idx = 0; idx < res.m_generation_ids.size(); ++idx) {
+                generated.push_back(m_tokenizer.decode(res.m_generation_ids.at(idx)));
+                if (m_is_chat_conversation && 0 == idx) {
+                    m_history.push_back({{"role", "assistant"}, {"content", generated.back()}});
+                }
             }
             decoded.push_back(GenerationResult{
                 res.m_request_id,
@@ -330,6 +345,18 @@ public:
         }
         return decoded;
     }
+
+    void start_chat(const std::string& system_message) {
+        if (!system_message.empty()) {
+            m_history.push_back({{"role", "system"}, {"content", system_message}});
+        }
+        m_is_chat_conversation = true;
+    };
+
+    void finish_chat() {
+        m_is_chat_conversation = false;
+        m_history.clear();
+    };
 };
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::string& models_path,
@@ -382,3 +409,11 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(const 
 std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const StreamerVariant& streamer) {
     return m_impl->generate(prompts, sampling_params, streamer);
 }
+
+void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
+    m_impl->start_chat(system_message);
+};
+
+void ContinuousBatchingPipeline::finish_chat() {
+    m_impl->finish_chat();
+};
