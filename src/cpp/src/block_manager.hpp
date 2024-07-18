@@ -532,6 +532,7 @@ public:
             auto hash = sequence->get_hash(content_len, prompt_ids);
             auto block = m_allocator.get_cashed_block(hash, cashed_blocks);
             if (block != nullptr) {
+                block->set_timestamp(time(NULL));
                 m_block_table[seq_id].push_back(block);
                 group->update_processed_tokens_num(content_len);
             }
