@@ -234,7 +234,7 @@ class Sampler {
 
         std::cout << "Stats: " << std::endl;
 
-        for (size_t i = 0; i < std::min(size_t(20), multinomial_weights.size()); i++) {
+        for (size_t i = 0; i < std::min(size_t(25), multinomial_weights.size()); i++) {
             std::cout << multinomial_weights[i] << ", ";
         }
 
