@@ -208,6 +208,7 @@ class OVContrlNetStableDiffusionPipeline(DiffusionPipeline):
 
                 result = self.controlnet([latent_model_input, t, text_embeddings, image])
                 down_and_mid_blok_samples = [sample * controlnet_conditioning_scale for _, sample in result.items()]
+                # print("down_and_mid_blok_samples length: ", len(down_and_mid_blok_samples))
 
                 # predict the noise residual
                 noise_pred = self.unet([latent_model_input, t, text_embeddings, *down_and_mid_blok_samples])[self.unet_out]
@@ -340,8 +341,16 @@ class OVContrlNetStableDiffusionPipeline(DiffusionPipeline):
         else:
             latents = latents
 
+        print(self.scheduler.init_noise_sigma.item())
+
+        latents_copy = np.copy(latents)
+        # (1, 4, 64, 64) -> (4096, 4)
+        latents_tmp = latents_copy.reshape(-1, latents_copy.shape[1])
+
+        np.savetxt("np_latents_512x512.txt", latents_tmp, fmt='%.8e')
         # scale the initial noise by the standard deviation required by the scheduler
-        latents = latents * self.scheduler.init_noise_sigma
+        # latents = latents * self.scheduler.init_noise_sigma
+        latents = latents * self.scheduler.init_noise_sigma.item()
         return latents
 
     def decode_latents(self, latents: np.array, pad: Tuple[int]):

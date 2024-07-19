@@ -39,7 +39,7 @@ ov::Tensor randn_tensor(ov::Shape shape, bool use_np_latents, uint32_t seed = 42
     ov::Tensor noise(ov::element::f32, shape);
     if (use_np_latents) {
         // read np generated latents with defaut seed 42
-        const char* latent_file_name = "../np_latents_512x512.txt";
+        const char* latent_file_name = "np_latents_512x512.txt";
         std::ifstream latent_copy_file(latent_file_name, std::ios::ate);
         OPENVINO_ASSERT(latent_copy_file.is_open(), "Cannot open ", latent_file_name);
 
@@ -407,11 +407,13 @@ int32_t main(int32_t argc, char* argv[]) try {
         "Destination image height",
         cxxopts::value<size_t>()->default_value(
             "512"))("width", "Destination image width", cxxopts::value<size_t>()->default_value("512"))(
-        "c,useCache",
-        "Use model caching",
-        cxxopts::value<bool>()->default_value("false"))("m,modelPath",
-                                                        "Specify path of SD model IRs",
-                                                        cxxopts::value<std::string>()->default_value("./models"))(
+        "r,readNPLatent",
+        "Read numpy generated latents from file",
+        cxxopts::value<bool>()->default_value(
+            "false"))("c,useCache", "Use model caching", cxxopts::value<bool>()->default_value("false"))(
+        "m,modelPath",
+        "Specify path of SD model IRs",
+        cxxopts::value<std::string>()->default_value("./models"))(
         "i,inputImage",
         "Specify path of Input image",
         cxxopts::value<std::string>()->default_value(""))("h,help", "Print usage");
@@ -441,6 +443,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     const bool use_cache = result["useCache"].as<bool>();
     const std::string model_base_path = result["modelPath"].as<std::string>();
     const std::string input_image_path = result["inputImage"].as<std::string>();
+    const bool read_np_latent = result["readNPLatent"].as<bool>();
 
     const std::string folder_name = "images";
     try {
@@ -506,7 +509,7 @@ int32_t main(int32_t argc, char* argv[]) try {
         ov::Shape latent_shape =
             ov::Shape({batch_size, unet_in_channels, height / VAE_SCALE_FACTOR, width / VAE_SCALE_FACTOR});
         ov::Shape latent_model_input_shape = latent_shape;
-        ov::Tensor noise = randn_tensor(latent_shape, false, seed);
+        ov::Tensor noise = randn_tensor(latent_shape, read_np_latent, seed);
         latent_model_input_shape[0] = 2;  // Unet accepts batch 2
         ov::Tensor latent(ov::element::f32, latent_shape),
             latent_model_input(ov::element::f32, latent_model_input_shape);
