@@ -16,13 +16,15 @@
     cd openvino.genai
     ```
 2. Download OpenVINO archive and install dependencies:
+
+    The OpenVINO archive link below is for Ubuntu 20 on x86. See [https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.3.0rc1/linux/](https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.3.0rc1/linux/) for other Linux versions.
     <!-- TODO Update link to OV Archive -->
     ```sh
     mkdir ./ov/
-    curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240524_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+    curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.3.0rc1/linux/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240711_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
     sudo ./ov/install_dependencies/install_openvino_dependencies.sh
     ```
-3. Build the project:
+4. Build the project:
     ```sh
     source ./ov/setupvars.sh
     cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -47,14 +49,15 @@
     cd openvino.genai
     ```
 2. Download OpenVINO archive and install dependencies:
-    <!-- TODO Update link to OV Archive -->
+
+     <!-- TODO Update link to OV Archive -->
     ```sh
     mkdir ./ov/
-    curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc1/windows/w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64.zip
-    unzip ov.zip
-    mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240524_x86_64
+    curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.3.0rc1/windows/w_openvino_toolkit_windows_2024.3.0.dev20240711_x86_64.zip
+    tar -xf ov.zip
+    mklink /D ov w_openvino_toolkit_windows_2024.3.0.dev20240711_x86_64
     ```
-3. Build the project:
+4. Build the project:
     ```sh
     call ov\setupvars.bat
     cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
@@ -85,10 +88,13 @@
     cd openvino.genai
     ```
 2. Download OpenVINO archive and install dependencies:
+
+  The OpenVINO archive link below is for the x86 version of OpenVINO. For the ARM version, use [https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.3.0rc1/macos/m_openvino_toolkit_macos_12_6_2024.3.0.dev20240711_arm64.tgz](https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.3.0rc1/macos/m_openvino_toolkit_macos_12_6_2024.3.0.dev20240711_arm64.tgz)
+
     <!-- TODO Update link to OV Archive -->
     ```sh
     mkdir ./ov/
-    curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/macos/m_openvino_toolkit_macos_12_6_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+    curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.3.0rc1/macos/m_openvino_toolkit_macos_12_6_2024.3.0.dev20240711_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
     ```
 3. Build the project:
     ```sh
