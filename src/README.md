@@ -8,7 +8,7 @@ It hides the complexity of the generation process and minimizes the amount of co
 The OpenVINO™ GenAI flavor is available for installation via Archive and PyPI distributions.
 To install OpenVINO™ GenAI, refer to the [Install Guide](https://docs.openvino.ai/2024/get-started/install-openvino.html).
 
-To build OpenVINO™ GenAI library from source, refer to the [Build Instructions](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/BUILD.md).
+To build OpenVINO™ GenAI library from source, refer to the [Build Instructions](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/BUILD.md)
 
 ## Usage
 
@@ -16,16 +16,17 @@ To build OpenVINO™ GenAI library from source, refer to the [Build Instructions
 
 1. Installed OpenVINO™ GenAI
 
-    > If OpenVINO GenAI is installed via archive distribution or built from source, you will need to install additional python dependencies (e.g. `optimum-cli` for simplified model downloading and exporting, it's not required to install [./samples/requirements.txt](./samples/requirements.txt) for deployment if the model has already been exported):
-    > 
-    > ```sh
-    > # (Optional) Clone OpenVINO GenAI repository if it does not exist
-    > git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
-    > cd openvino.genai
-    > # Install python dependencies
-    > python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-    > python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-    > ```
+    > To use OpenVINO GenAI with models that are already in OpenVINO format, no additional dependencies are needed. To
+    > convert models with optimum-cli and to run the examples, install the dependencies in
+    > [./samples/requirements.txt](./samples/requirements.txt):
+    ```sh
+    # (Optional) Clone OpenVINO GenAI repository if it does not exist
+    git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
+    cd openvino.genai
+    # Install python dependencies
+    python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+    python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+    ```
 
 2. A model in OpenVINO IR format
 
@@ -198,8 +199,8 @@ int main(int argc, char* argv[]) {
 
 ## How It Works
 
-For information on how OpenVINO™ GenAI works, refer to the [How It Works Section](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/HOW_IT_WORKS.md).
+For information on how OpenVINO™ GenAI works, refer to the [How It Works Section](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/BUILD.md).
 
 ## Supported Models
 
-For a list of supported models, refer to the [Supported Models Section](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/SUPPORTED_MODELS.md).
+For a list of supported models, refer to the [Supported Models Section](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/SUPPORTED_MODELS.md).
