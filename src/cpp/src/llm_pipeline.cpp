@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "perf_counters.hpp"
 #include <filesystem>
 #include <fstream>
 #include <variant>
@@ -9,7 +10,7 @@
 #include <openvino/openvino.hpp>
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
-#include "openvino/genai/generation_metrics.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 #include "llm_pipeline_base.hpp"
 #include "llm_pipeline_static.hpp"
 #include "utils.hpp"
@@ -111,8 +112,9 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
+        auto start_time = std::chrono::steady_clock::now();
         GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-        EncodedInputs encoded_input;
+        TokenizedInputs encoded_input;
 
         if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
             encoded_input = m_tokenizer.encode(*input_vector);
@@ -144,9 +146,12 @@ public:
                 encoded_input = m_tokenizer.encode(prompt);
             }
         }
+        auto encode_stop_time =  std::chrono::steady_clock::now();
+        auto encoded_results = generate(encoded_input, config, streamer);
 
-        auto encoded_results  = generate(encoded_input, config, streamer);
+        auto decode_start_time =  std::chrono::steady_clock::now();
         DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+        auto decode_stop_time =  std::chrono::steady_clock::now();
         
         if (is_chat_conversation) {
             // Tail of chat template is missing in KV cache.
@@ -155,9 +160,14 @@ public:
             m_templated_chat_history.append(answer);
             m_history.push_back({{"role", "assistant"}, {"content", answer}});
         }
+
+        auto& metrics = encoded_results.metrics;
+        // metrics.tokenization_duration = std::chrono::duration_cast<std::chrono::milliseconds>(encode_stop_time - start_time).count();
+        // metrics.detokenization_duration = std::chrono::duration_cast<std::chrono::milliseconds>(decode_stop_time - decode_start_time).count();
         
-        decoded_results.metrics = std::move(encoded_results.metrics);
-        decoded_results.metrics.load_time = m_load_time_ms;
+        // auto stop_time = std::chrono::steady_clock::now();
+        // metrics.generate_durations.emplace_back(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
+        decoded_results.metrics = std::move(metrics);
         return decoded_results;
     }
 
@@ -166,9 +176,9 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
+        auto start_time = std::chrono::steady_clock::now();
         ov::Tensor input_ids;
         ov::Tensor attention_mask;
-
         if (auto data = std::get_if<ov::Tensor>(&inputs)) {
             input_ids = *data;
             attention_mask = ov::genai::utils::init_attention_mask(input_ids);
@@ -256,6 +266,14 @@ public:
         } else {
             m_is_cache_empty = false;
         }
+
+
+
+        auto& metrics = result.metrics;
+        // metrics.batch_size = batch_size;
+        // metrics.num_generated_tokens = (metrics.m_durations.size() + 1) * batch_size;
+        metrics.num_input_tokens = batch_size * input_ids.get_shape().at(0);
+        result.metrics = std::move(metrics);
         return result;
     }
 

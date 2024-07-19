@@ -362,14 +362,20 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
                            std::optional<int32_t> selected_beam_idx) {
     OPENVINO_ASSERT(config.num_beams % config.num_beam_groups == 0,
                     "number of beams should be divisible by number of groups");
-
-    // Initialize beam search
+    
     auto batch_size = input_ids.get_shape().at(0);
+    auto sequence_length = input_ids.get_shape().at(1);
+    
+    // Initialize time metric counters.
+    // ov::genai::TimePoints tok_times;
+    // tok_times.reserve(config.get_max_new_tokens(sequence_length));
+    // tok_times.emplace_back(std::chrono::steady_clock::now());
+
+    // Initialize beam search.
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     std::vector<std::vector<int64_t>> prompts;
     prompts.reserve(batch_size);
     for (size_t batch = 0; batch < batch_size; batch++) {
-        size_t sequence_length = input_ids.get_shape().at(1);
         size_t batch_offset = batch * sequence_length;
         const int64_t* prompt_start = prompt_data + batch_offset;
         prompts.push_back(std::vector<int64_t>{prompt_start, prompt_start + sequence_length});
@@ -389,7 +395,7 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
     lm.set_tensor("beam_idx", beam_idx);
 
     Parameters parameters{std::move(prompts)};
-    parameters.max_new_tokens = config.max_new_tokens;
+    parameters.max_new_tokens = config.get_max_new_tokens(sequence_length);
     parameters.eos_token_id = config.eos_token_id;
     parameters.n_groups = config.num_beam_groups;
     parameters.group_size = config.num_beams / config.num_beam_groups;
@@ -406,6 +412,8 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
         lm.infer();
 
         std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(lm.get_tensor("logits"));
+        // tok_times.emplace_back(std::chrono::steady_clock::now());
+
         if (next_tokens.empty() || length_count == parameters.max_new_tokens - 1) {
             // Break the cycle before masks are extended in update_attention_mask_with_beams.
             // If generation is continued, attention_mask length should be equal to KV cache size.
@@ -462,7 +470,8 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
             results.tokens.push_back(std::move(beam->get().tokens));
         }
     }
-
+    
+    // results.metrics = PerfCounters(tok_times);
     return {results, res_selected_beam_idx};
 }
 

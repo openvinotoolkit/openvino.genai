@@ -323,6 +323,8 @@ public:
         
         // Replace what jinja2cpp doesn't support
         std::pair<std::string, std::string> replace_str_map[] = {
+            {"{-", "{"},
+            {"{%-", "{%"},
             {"'}", "' }"},
             {"{'", "{ '"},
             {".strip()", ""}

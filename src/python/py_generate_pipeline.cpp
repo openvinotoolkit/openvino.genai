@@ -21,6 +21,7 @@ using ov::genai::GenerationConfig;
 using ov::genai::GenerationResult;
 using ov::genai::LLMPipeline;
 using ov::genai::OptionalGenerationConfig;
+using ov::genai::PerfMetrics;
 using ov::genai::SchedulerConfig;
 using ov::genai::StopCriteria;
 using ov::genai::StreamerBase;
@@ -535,6 +536,19 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_property_readonly("texts", [](const DecodedResults &dr) { return handle_utf8_results(dr); })
         .def_readonly("scores", &DecodedResults::scores)
         .def("__str__", &DecodedResults::operator std::string);;
+
+    py::class_<PerfMetrics>(m, "PerfMetrics")
+        .def(py::init<>())
+        .def_readonly("mean_generate_duration", &PerfMetrics::mean_generate_duration)
+        .def_readonly("mean_decoding_duration", &PerfMetrics::mean_decoding_duration)
+        .def_readonly("mean_encoding_duration", &PerfMetrics::mean_encoding_duration)
+        .def_readonly("mean_tpot", &PerfMetrics::mean_tpot)
+        .def_readonly("mean_ttft", &PerfMetrics::mean_ttft)
+        .def_readonly("std_tpot", &PerfMetrics::std_tpot)
+        .def_readonly("std_ttft", &PerfMetrics::std_ttft)
+        .def_readonly("load_time", &PerfMetrics::load_time)
+        .def("__add__", &PerfMetrics::operator+)
+        .def("__iadd__", &PerfMetrics::operator+=);
 
     py::class_<TokenizedInputs>(m, "TokenizedInputs")
         .def(py::init<ov::Tensor, ov::Tensor>())

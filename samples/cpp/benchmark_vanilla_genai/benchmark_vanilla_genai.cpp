@@ -37,23 +37,25 @@ int main(int argc, char* argv[]) try {
   
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
+    config.num_beam_groups = 3;
+    config.num_beams = 15;
 
     ov::genai::LLMPipeline pipe(model_path, device);
     
     for (size_t i = 0; i < num_warmup; i++)
         pipe.generate(prompt, config);
     
-    ov::genai::GenerationMetrics metrics;
+    ov::genai::PerfMetrics metrics;
     for (size_t i = 0; i < num_iter; i++) {
         ov::genai::DecodedResults res = pipe.generate(prompt, config);
         metrics = metrics + res.metrics;
         metrics.load_time = res.metrics.load_time;
     }
-    
+
     std::cout << "Load time: " << metrics.load_time << " ms" << std::endl;
     std::cout << "ttft: " << metrics.mean_ttft << " ± " << metrics.std_ttft << " ms" << std::endl;
     std::cout << "tpot: " << metrics.mean_tpot << " ± " << metrics.std_tpot << " ms" << std::endl;
-    std::cout << "Tokens/s: " << metrics.get_tokens_per_sec().first << std::endl;
+    std::cout << "Tokens/s: " << metrics.mean_throughput << std::endl;
 
     return 0;
 } catch (const std::exception& error) {

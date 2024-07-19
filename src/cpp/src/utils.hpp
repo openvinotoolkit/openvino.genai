@@ -12,6 +12,20 @@ namespace ov {
 namespace genai {
 namespace utils {
 
+#include <iostream>
+#include <chrono>
+#include <functional>
+
+// Templated function to measure execution time of an object method.
+template<typename T, typename Ret, typename... Args>
+std::pair<Ret, float> execution_time_wrapper(T& instance, Ret(T::*method)(Args...), Args&&... args) {
+    auto start = std::chrono::steady_clock::now();
+    Ret result = (instance.*method)(std::forward<Args>(args)...);
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    return {result, duration};
+}
+
 Tensor init_attention_mask(const Tensor& position_ids);
 
 void print_tensor(const ov::Tensor& tensor);

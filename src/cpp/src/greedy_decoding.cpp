@@ -1,7 +1,8 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/perf_metrics.hpp"
+#include "perf_counters.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -22,11 +23,8 @@ EncodedResults greedy_decoding(
     size_t max_new_tokens = generation_config.get_max_new_tokens(prompt_len);
 
     EncodedResults results;
-    // Time before the first token generated as a reference point.
-    ov::genai::TimePoints tok_times;
-    tok_times.reserve(max_new_tokens);
-    tok_times.emplace_back(std::chrono::steady_clock::now());
-
+    auto& perf_counters = results.metrics.m_counters;
+    
     results.scores.resize(running_batch_size);
     results.tokens.resize(running_batch_size);
     std::fill(results.scores.begin(), results.scores.end(), 0);
@@ -56,8 +54,8 @@ EncodedResults greedy_decoding(
         eos_met[batch] = (out_token == generation_config.eos_token_id);
         m_model_runner.get_tensor("input_ids").data<int64_t>()[batch] = out_token;
     }
-    tok_times.emplace_back(std::chrono::steady_clock::now());
-
+    perf_counters->add_timestamp(running_batch_size);
+        
     if (streamer && streamer->put(token_iter_results[0])) {
         return results;
     }
@@ -88,7 +86,7 @@ EncodedResults greedy_decoding(
             
             m_model_runner.get_tensor("input_ids").data<int64_t>()[batch] = out_token;
         }
-        tok_times.emplace_back(std::chrono::steady_clock::now());
+        perf_counters->add_timestamp(running_batch_size);
 
         if (streamer && streamer->put(token_iter_results[0]))
             return results;
@@ -116,7 +114,6 @@ EncodedResults greedy_decoding(
         streamer->end();
     }
 
-    results.metrics = GenerationMetrics(tok_times);
     return results;
 }
 

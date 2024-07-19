@@ -11,7 +11,7 @@
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/streamer_base.hpp"
-#include "openvino/genai/generation_metrics.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 
 namespace ov {
 namespace genai {
@@ -36,7 +36,7 @@ class EncodedResults {
 public:
     std::vector<std::vector<int64_t>> tokens;
     std::vector<float> scores;
-    GenerationMetrics metrics;
+    PerfMetrics metrics;
 };
 
 /**
@@ -50,7 +50,7 @@ class DecodedResults {
 public:
     std::vector<std::string> texts;
     std::vector<float> scores;
-    GenerationMetrics metrics;
+    PerfMetrics metrics;
 
     // @brief Convert DecodedResults to a string.
     operator std::string() const {
