@@ -16,7 +16,7 @@ To build OpenVINO™ GenAI library from source, refer to the [Build Instructions
 
 1. Installed OpenVINO™ GenAI
 
-    > To use OpenVINO GenAI with models that are already in OpenVINO format, no additional dependencies are needed. To
+    > To use OpenVINO GenAI with models that are already in OpenVINO format, no additional python dependencies are needed. To
     > convert models with optimum-cli and to run the examples, install the dependencies in
     > [./samples/requirements.txt](./samples/requirements.txt):
     ```sh
