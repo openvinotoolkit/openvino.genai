@@ -696,7 +696,10 @@ def test_continuous_batching_vs_stateful(model_descr, prompt, generation_config)
 @pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
 def test_cb_streamer_vs_return_vs_stateful(model_descr, prompt):
-    model_id, path, tokenizer, model, stateful = read_model(model_descr)
+    model_id, path, tokenizer, model, stateful = read_model((
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        Path("TinyLlama-1.1B-Chat-v1.0")
+    ))
     cb = get_continuous_batching(path)
     streamed = []
     generated = cb.generate(prompt, max_new_tokens=20, streamer=lambda subword: streamed.append(subword))

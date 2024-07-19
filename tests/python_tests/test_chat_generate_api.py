@@ -171,7 +171,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
 def test_chat_continuous_batching_vs_stateful(model_descr, generation_config: Dict):
-    model_id, path, tokenizer, model, stateful = read_model(model_descr)
+    model_id, path, tokenizer, model, stateful = read_model((model_descr[0], model_descr[1] / '_test_chat'))
     cb = get_continuous_batching(path)
     stateful.start_chat()
     cb.start_chat()
