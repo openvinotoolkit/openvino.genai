@@ -96,11 +96,11 @@ def get_chat_templates():
         # TODO: Need to support chat templates in more models: CVS-145963
         # Either ov_genai is unable to parse chat_template or results do not match with HF.
         "meta-llama/Meta-Llama-3-8B-Instruct",
-        "databricks/dbrx-instruct",
+        "databricks/dbrx-instruct", # RuntimeError: bad_expected_access
         "mosaicml/mpt-30b-chat",
-        "deepseek-ai/deepseek-coder-6.7b-instruct",
-        "maldv/winter-garden-7b-alpha",
-        "ishorn5/RTLCoder-Deepseek-v1.1",
+        "deepseek-ai/deepseek-coder-6.7b-instruct", # RuntimeError: bad_expected_access
+        "maldv/winter-garden-7b-alpha", # RuntimeError: bad_expected_access
+        "ishorn5/RTLCoder-Deepseek-v1.1", # RuntimeError: bad_expected_access
         "openchat/openchat-3.5-0106",
         "casperhansen/llama-3-70b-instruct-awq",
         "TheBloke/deepseek-coder-33B-instruct-GPTQ",
@@ -108,26 +108,26 @@ def get_chat_templates():
         "google/gemma-7b-it",
         "THUDM/cogvlm2-llama3-chat-19B",
         "KnutJaegersberg/internlm-20b-llama",
-        "alpindale/WizardLM-2-8x22B",
+        # "alpindale/WizardLM-2-8x22B", # RuntimeError: bad_expected_access
         "maywell/Synatra-Mixtral-8x7B",
         "MediaTek-Research/Breeze-7B-Instruct-v1_0",
         "bofenghuang/vigostral-7b-chat",
-        "meetkai/functionary-small-v2.5",
-        "nvidia/Llama3-ChatQA-1.5-8B",
+        "meetkai/functionary-small-v2.5", # RuntimeError: bad_expected_access
+        # "nvidia/Llama3-ChatQA-1.5-8B", # RuntimeError: bad_expected_access
         "openchat/openchat-3.6-8b-20240522",
         "tenyx/TenyxChat-7B-v1",
         "LoneStriker/TinyLlama-1.1B-32k-Instruct-3.0bpw-h6-exl2",
         "yam-peleg/Hebrew-Gemma-11B-V2",
-        "shenzhi-wang/Llama3-8B-Chinese-Chat",
+        "shenzhi-wang/Llama3-8B-Chinese-Chat", # AssertionError
         "nlpai-lab/KULLM3",
         "HuggingFaceH4/zephyr-7b-gemma-sft-v0.1",
-        "MediaTek-Research/Breeze-7B-Instruct-v0_1",
-        "shanchen/llama3-8B-slerp-biomed-chat-chinese",
+        "MediaTek-Research/Breeze-7B-Instruct-v0_1", 
+        "shanchen/llama3-8B-slerp-biomed-chat-chinese", # AssertionError
         "MLP-KTLim/llama-3-Korean-Bllossom-8B",
-        "lucyknada/microsoft_WizardLM-2-7B",
-        "aloobun/CosmicBun-8B",
+        # "lucyknada/microsoft_WizardLM-2-7B", # RuntimeError: bad_expected_access
+        "aloobun/CosmicBun-8B", # RuntimeError: bad_expected_access
         "codellama/CodeLlama-70b-Instruct-hf",
-        "gorilla-llm/gorilla-openfunctions-v2",
+        "gorilla-llm/gorilla-openfunctions-v2", # RuntimeError: bad_expected_access
         "BramVanroy/Llama-2-13b-chat-dutch"
     }
     from tokenizer_configs import get_tokenizer_configs
