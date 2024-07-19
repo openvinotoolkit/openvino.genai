@@ -75,7 +75,7 @@ ov::Tensor concat_twice(const ov::Tensor& input) {
     return output_tensor;
 }
 
-ov::Tensor pipeline_preprocess(ov::Tensor pose) {
+ov::Tensor pipeline_preprocess(ov::Tensor pose, int* pad_width, int* pad_height) {
     auto shape = pose.get_shape();  // NHWC
     auto image_height = shape[1];
     auto image_width = shape[2];
@@ -84,6 +84,9 @@ ov::Tensor pipeline_preprocess(ov::Tensor pose) {
     float im_scale = std::min(512.f / image_height, 512.f / image_width);
     int result_width = static_cast<int>(im_scale * image_width);
     int result_height = static_cast<int>(im_scale * image_height);
+    *pad_width = 512 - result_width;
+    *pad_height = 512 - result_height;
+
     auto resized_tensor = smart_resize(pose, result_height, result_width);
 
     // pad the right bottom with 0
@@ -120,6 +123,46 @@ ov::Tensor pipeline_preprocess(ov::Tensor pose) {
     }
 
     return result_tensor;
+}
+
+ov::Tensor pipeline_postprocess(const ov::Tensor& decoded_image,
+                                int pad_height,
+                                int pad_width,
+                                int result_height,
+                                int result_width) {
+    auto shape = decoded_image.get_shape();  // NHWC
+    size_t batch_size = shape[0];
+    size_t height = shape[1];
+    size_t width = shape[2];
+    size_t channels = shape[3];
+
+    size_t unpad_height = height - pad_height;
+    size_t unpad_width = width - pad_width;
+
+    // unpadded tensor
+    std::vector<size_t> new_shape = {batch_size, unpad_height, unpad_width, channels};
+    ov::Tensor unpadded_image(decoded_image.get_element_type(), new_shape);
+
+    const auto* input_data = decoded_image.data<float>();
+    auto* output_data = unpadded_image.data<float>();
+
+    for (size_t n = 0; n < batch_size; ++n) {
+        for (size_t h = 0; h < unpad_height; ++h) {
+            for (size_t w = 0; w < unpad_width; ++w) {
+                for (size_t c = 0; c < channels; ++c) {
+                    size_t input_index = n * height * width * channels + h * width * channels + w * channels + c;
+                    size_t output_index =
+                        n * unpad_height * unpad_width * channels + h * unpad_width * channels + w * channels + c;
+                    output_data[output_index] = input_data[input_index];
+                }
+            }
+        }
+    }
+
+    // resize to result size
+    ov::Tensor result_image = smart_resize(unpadded_image, result_height, result_width);
+
+    return result_image;
 }
 
 struct StableDiffusionControlnetModels {
@@ -432,13 +475,21 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     // read image, then forward using detectors, then stack it and then pass it into controlnet
     ov::Tensor controlnet_input_tensor;
-    if (input_image_path != "") {
+    int pad_width, pad_height = 0;
+    int result_width, result_height = 0;
+    bool has_input_image = input_image_path != "";
+
+    if (has_input_image) {
         ov::Tensor input_image = read_image_to_tensor(input_image_path);
         std::vector<std::vector<float>> subset;
         std::vector<std::vector<float>> candidate;
+
         ov::Tensor pose_image = models.detector.forward(input_image, subset, candidate);
+        result_width = pose_image.get_shape()[2];
+        result_height = pose_image.get_shape()[1];
+
         imwrite("pose.bmp", pose_image, true);
-        ov::Tensor preprocessed_tensor = pipeline_preprocess(pose_image);
+        ov::Tensor preprocessed_tensor = pipeline_preprocess(pose_image, &pad_width, &pad_height);
         controlnet_input_tensor = concat_twice(preprocessed_tensor);
     }
 
@@ -476,7 +527,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
             ov::Tensor timestep(ov::element::i64, {1}, &timesteps[inference_step]);
             ov::Tensor noisy_residual;
-            if (input_image_path != "") {
+            if (has_input_image) {
                 noisy_residual = controlnet_unet(models.controlnet,
                                                  controlnet_infer_request,
                                                  unet_infer_request,
@@ -492,6 +543,9 @@ int32_t main(int32_t argc, char* argv[]) try {
         }
 
         ov::Tensor decoded_image = vae_decoder(models.vae_decoder, latent);
+        if (has_input_image) {
+            decoded_image = pipeline_postprocess(decoded_image, pad_height, pad_width, result_height, result_width);
+        }
         imwrite(std::string("./images/seed_") + std::to_string(seed) + ".bmp", postprocess_image(decoded_image), true);
     }
 
