@@ -347,14 +347,21 @@ public:
         std::string replacement_string = "{% if false %}{% set placeholder = false %}";
         
         std::string system_message = "";
-        size_t pos = chat_tpl.find(header_with_slice);
-        if (pos != std::string::npos) {
-            chat_tpl.replace(pos, header_with_slice.length(), replacement_string);
+        // size_t pos = chat_tpl.find(header_with_slice);
+        // if (pos != std::string::npos) {
+        //     chat_tpl.replace(pos, header_with_slice.length(), replacement_string);
 
-            if (!history.empty() && history[0].at("role") == "system") {
-                system_message = history[0].at("content");
-                history.erase(history.begin());
-            }
+        //     if (!history.empty() && history[0].at("role") == "system") {
+        //         system_message = history[0].at("content");
+        //         history.erase(history.begin());
+        //     }
+        // }
+
+        std::string slice_string = "messages[1:]";
+        std::string replacement_slice_string = "messages.slice(1)";
+        size_t slice_pos = chat_tpl.find(slice_string);
+        if (slice_pos != std::string::npos) {
+            chat_tpl.replace(slice_pos, slice_string.length(), replacement_slice_string);
         }
         
         // Jinja2Cpp accepts system_message only as a string and incorrectly handles it as a bool.
@@ -398,7 +405,7 @@ public:
         
         try {
             return tpl.RenderAsString(params).value();
-        } catch (const std::bad_alloc& error) {
+        } catch (const std::exception& error) {
             OPENVINO_THROW("Chat template for the current model is not supported by Jinja2Cpp. "
                            "Please apply template manually to your prompt before calling generate. "
                            "For exmaple: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
