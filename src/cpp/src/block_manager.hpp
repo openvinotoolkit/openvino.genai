@@ -81,10 +81,9 @@ public:
         blocks[hash] = block;
     }
 
-    static int compare_blocks(const std::pair<size_t, KVCacheBlock::Ptr>& lhs, const std::pair<size_t, KVCacheBlock::Ptr>& rhs){
-        return difftime(lhs.second->get_timestamp(), rhs.second->get_timestamp()) > 0.0 ? 1 : -1; 
+    static bool block_is_less(const std::pair<size_t, KVCacheBlock::Ptr>& lhs, const std::pair<size_t, KVCacheBlock::Ptr>& rhs) {
+        return difftime(lhs.second->get_timestamp(), rhs.second->get_timestamp()) > 0.0 ? false : true; 
     }
-
 
     KVCacheBlock::Ptr get_block(size_t hash) {
         if (blocks.find(hash)== blocks.end())
@@ -102,7 +101,7 @@ public:
         if (!blocks.size()) {
             return nullptr;
         }
-        auto hash_block = std::min_element(blocks.begin(), blocks.end(), compare_blocks);
+        auto hash_block = std::min_element(std::begin(blocks), std::end(blocks), block_is_less);
         auto block = hash_block->second;
         block->set_timestamp(time(NULL));
         block->increment();
@@ -163,19 +162,19 @@ public:
         return allocated_block;
     }
 
-    KVCacheBlock::Ptr allocate_block(size_t hash, size_t num_hashed_tokens, std::map<uint64_t, KVCacheBlock::Ptr>& cashed_blocks) {
+    KVCacheBlock::Ptr allocate_block(size_t hash, size_t num_hashed_tokens, std::map<uint64_t, KVCacheBlock::Ptr>& cached_blocks) {
         OPENVINO_ASSERT(m_enable_prefix_caching);
         OPENVINO_ASSERT(can_allocate_blocks(1));
         auto block = m_evictor.get_block(hash);
         if (block != nullptr) {
-            // use cashed block from evictor
-            cashed_blocks[hash] = block;
+            // use cached block from evictor
+            cached_blocks[hash] = block;
             return block;
         }
-        if (cashed_blocks.find(hash) != cashed_blocks.end()) {
-            // use cashed block from cashed_blocks
-            block = cashed_blocks[hash];
-            cashed_blocks[hash]->increment();
+        if (cached_blocks.find(hash) != cached_blocks.end()) {
+            // use cashed block from cached_blocks
+            block = cached_blocks[hash];
+            cached_blocks[hash]->increment();
             return block;
         }
         if (m_free_blocks.size() > 0) {
@@ -183,7 +182,7 @@ public:
             KVCacheBlock::Ptr allocated_block = m_free_blocks.front();
             allocated_block->increment();
             allocated_block->set_hash(hash, num_hashed_tokens);
-            cashed_blocks[hash] = allocated_block;
+            cached_blocks[hash] = allocated_block;
 
             m_free_blocks.pop_front();
             return allocated_block;
@@ -191,28 +190,28 @@ public:
         if (m_evictor.num_blocks() > 0) {
             // get least resently used block from evictor and reuse it
             KVCacheBlock::Ptr block = m_evictor.get_lru_block();
-            cashed_blocks.erase(block->get_hash());
+            cached_blocks.erase(block->get_hash());
 
             // update block with new hash
             block->set_hash(hash, num_hashed_tokens);
-            cashed_blocks[hash] = block;
+            cached_blocks[hash] = block;
             return block;
         }
         // out of memory
         return nullptr;
     }
 
-    KVCacheBlock::Ptr get_cashed_block(size_t hash, std::map<uint64_t, KVCacheBlock::Ptr>& cashed_blocks) {
+    KVCacheBlock::Ptr get_cashed_block(size_t hash, std::map<uint64_t, KVCacheBlock::Ptr>& cached_blocks) {
         auto block = m_evictor.get_block(hash);
         if (block != nullptr) {
             // use cashed block from evictor
-            cashed_blocks[hash] = block;
+            cached_blocks[hash] = block;
             return block;
         }
-        if (cashed_blocks.find(hash) != cashed_blocks.end()) {
-            // use cashed block from cashed_blocks
-            block = cashed_blocks[hash];
-            cashed_blocks[hash]->increment();
+        if (cached_blocks.find(hash) != cached_blocks.end()) {
+            // use cashed block from cached_blocks
+            block = cached_blocks[hash];
+            cached_blocks[hash]->increment();
             return block;
         }
         return nullptr;
@@ -227,12 +226,12 @@ class BlockManager {
     BlockAllocator m_allocator;
     bool m_enable_prefix_caching;
     size_t m_block_size;
+    std::map<uint64_t, KVCacheBlock::Ptr> cached_blocks;
 
     // stores blocks for each sequence (not sequence group)
     // the same block can be seen in multiple block_tables for different sequences
     std::map<uint64_t, std::vector<KVCacheBlock::Ptr>> m_block_table;
 public:
-    std::map<uint64_t, KVCacheBlock::Ptr> cashed_blocks;
     BlockManager(int num_blocks, bool enable_prefix_caching, size_t block_size)
         : m_allocator(num_blocks, enable_prefix_caching), m_enable_prefix_caching(enable_prefix_caching), m_block_size(block_size) { }
 
@@ -342,9 +341,13 @@ public:
 
             ov::genai::KVCacheBlock::Ptr block = nullptr; 
             if (m_enable_prefix_caching) {
+                // allocated_content += m_block_size;
+                // if (allocated_content > content_length) {
+                //     allocated_content = content_length;
+                // }
                 size_t num_hashed_tokens = (i + 1) * m_block_size + allocated_content <= content_length ? (i + 1) * m_block_size + allocated_content: num_hashed_tokens_in_last_block + allocated_content;
                 auto hash = sequence->get_hash(num_hashed_tokens, prompt_ids);
-                block = m_allocator.allocate_block(hash, num_hashed_tokens, cashed_blocks);
+                block = m_allocator.allocate_block(hash, num_hashed_tokens, cached_blocks);
             }
             else {
                 block = m_allocator.allocate_block();
@@ -485,8 +488,8 @@ public:
                     KVCacheBlock::Ptr new_block = nullptr;
                     if (m_enable_prefix_caching) {
                         auto hash = sequence->get_hash(seq_group->get_context_len(), seq_group->get_prompt_ids());
-                        new_block = m_allocator.allocate_block(hash, seq_group->get_context_len(), cashed_blocks);
-                        cashed_blocks[hash] = new_block;
+                        new_block = m_allocator.allocate_block(hash, seq_group->get_context_len(), cached_blocks);
+                        cached_blocks[hash] = new_block;
                     }
                     else {
                         new_block = m_allocator.allocate_block();
@@ -503,8 +506,8 @@ public:
                         auto prev_hash = last_block->get_hash();
                         auto hash = sequence->get_hash(seq_group->get_context_len(), seq_group->get_prompt_ids());
                         last_block->set_hash(hash, seq_group->get_context_len());
-                        cashed_blocks.erase(prev_hash);
-                        cashed_blocks[hash] = last_block;
+                        cached_blocks.erase(prev_hash);
+                        cached_blocks[hash] = last_block;
                     }
                 }
             }
@@ -515,7 +518,7 @@ public:
     }
 
 
-    void _restore_cashed_blocks(SequenceGroup::Ptr group, size_t block_size) {
+    void _restore_cached_blocks(SequenceGroup::Ptr group, size_t block_size) {
         auto prompt_ids = group->get_prompt_ids(); 
         auto sequences = group->get_not_finished_sequences();
         OPENVINO_ASSERT(sequences.size() == 1);
@@ -530,7 +533,7 @@ public:
                 content_len = prompt_ids.size();
             }
             auto hash = sequence->get_hash(content_len, prompt_ids);
-            auto block = m_allocator.get_cashed_block(hash, cashed_blocks);
+            auto block = m_allocator.get_cashed_block(hash, cached_blocks);
             if (block != nullptr) {
                 block->set_timestamp(time(NULL));
                 m_block_table[seq_id].push_back(block);

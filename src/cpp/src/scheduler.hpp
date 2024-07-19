@@ -39,7 +39,7 @@ public:
         Output scheduler_output;
 
         if (m_config.enable_prefix_caching)
-            _restore_cashed_blocks(sequence_groups);
+            _restore_cached_blocks(sequence_groups);
 
         if (m_config.dynamic_split_fuse) {
             // deepspeed-mii case
@@ -168,12 +168,12 @@ private:
 
         return std::numeric_limits<size_t>::max();
     }
-    void _restore_cashed_blocks(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+    void _restore_cached_blocks(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
             if (sequence_group->can_generate_tokens() || sequence_group->num_running_seqs() != 1)
                 continue;
-            m_block_manager._restore_cashed_blocks(sequence_group, m_config.block_size);
+            m_block_manager._restore_cached_blocks(sequence_group, m_config.block_size);
         }
     }
 
@@ -343,6 +343,10 @@ private:
                 size_t num_available_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t sequence_len = sequence_group->get_num_available_tokens_for_batching();
                 max_sequence_len = std::max(max_sequence_len, sequence_len);
+
+                if (m_config.max_num_batched_tokens < sequence_len) {
+                    std::cout << "kk" << std::endl;
+                }
 
                 // TODO: better handling
                 // e.g. return status that sequence is ignored and cannot be processed by current scheduling algorigthm
