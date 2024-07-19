@@ -139,6 +139,8 @@ public:
             timer.end();
         }
 
+        print_tensor("logits", m_request.get_output_tensor());
+
         // return logits
         return m_request.get_output_tensor();
     }
