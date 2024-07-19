@@ -680,7 +680,10 @@ def test_left_pad():
 @pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
 def test_continuous_batching_vs_stateful(model_descr, prompt, generation_config):
-    model_id, path, tokenizer, model, stateful = read_model(model_descr)
+    model_id, path, tokenizer, model, stateful = read_model((
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        Path("TinyLlama-1.1B-Chat-v1.0")
+    ))
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = 100
     cb = get_continuous_batching(path)
