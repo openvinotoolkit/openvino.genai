@@ -434,7 +434,7 @@ public:
             size_t num_physical_blocks = block_table.size();
             OPENVINO_ASSERT(num_physical_blocks > 0);
 
-            if (num_physical_blocks > seq_group->get_num_logical_blocks())
+            if (num_physical_blocks >= seq_group->get_num_logical_blocks(seq_id))
                 // new blocks are not required
                 continue;
 
@@ -445,7 +445,7 @@ public:
                 continue;
             last_block_ids.insert(last_block_id);
 
-            size_t needed_blocks_per_sequence = seq_group->get_num_logical_blocks() - num_physical_blocks;
+            size_t needed_blocks_per_sequence = seq_group->get_num_logical_blocks(seq_id) - num_physical_blocks;
 
             KVCacheBlock::Ptr last_block = block_table.back();
             if (last_block->copy_on_write()) {

@@ -183,8 +183,6 @@ class SequenceGroup {
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
 
-    // number of tokens evicted by the cache eviction algorithms throughout the lifetime of this sequence group
-    size_t m_num_evicted_tokens = 0;
 
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : m_request_id(request_id),
@@ -360,16 +358,6 @@ public:
     }
 
 
-    size_t get_expected_previous_kv_cache_size_in_tokens() const {
-        if (m_num_processed_tokens < m_num_evicted_tokens) {
-            // might happen if the sequence has been preempted
-            OPENVINO_ASSERT(m_preempted, "only a preempted sequence may have less tokens processed than evicted");
-            return 0;
-        }
-        return m_num_processed_tokens - m_num_evicted_tokens;
-    }
-
-
     void preempt_tokens(size_t num_preempt_tokens) {
         OPENVINO_ASSERT(num_preempt_tokens <= m_num_processed_tokens);
         m_num_processed_tokens -= num_preempt_tokens;
@@ -380,10 +368,6 @@ public:
     size_t get_context_len() const {
         OPENVINO_ASSERT(!has_finished());
         return get_num_processed_tokens() + get_num_scheduled_tokens();
-    }
-
-    size_t get_subsequence_len() const {
-        return get_num_processed_tokens() + get_num_scheduled_tokens() - m_num_evicted_tokens;
     }
 
 
@@ -437,7 +421,17 @@ public:
     }
 
     size_t get_num_logical_blocks() const {
-        return (get_context_len() + m_block_size - 1) / m_block_size;
+        size_t max_num_logical_blocks = 0;
+        for (const auto& seq : m_sequences) {
+            max_num_logical_blocks = std::max(max_num_logical_blocks,
+                                              (get_context_len() - seq->get_num_evicted_tokens() + m_block_size - 1) / m_block_size);
+        }
+        return max_num_logical_blocks;
+    }
+
+
+    size_t get_num_logical_blocks(size_t seq_id) const {
+        return (get_context_len() - get_sequence_by_id(seq_id)->get_num_evicted_tokens() + m_block_size - 1) / m_block_size;
     }
 
     // requires number of physical blocks for next generation
