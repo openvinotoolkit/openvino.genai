@@ -537,7 +537,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_property_readonly("texts", [](const DecodedResults &dr) { return handle_utf8_results(dr); })
         .def_readonly("scores", &DecodedResults::scores)
         .def_readonly("metrics", &DecodedResults::metrics)
-        .def("__str__", &DecodedResults::operator std::string);;
+        .def("__str__", &DecodedResults::operator std::string);
 
     py::class_<RawPerfMetrics>(m, "RawPerfMetrics")
         .def(py::init<>())
@@ -566,7 +566,9 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readonly("std_ttft", &PerfMetrics::std_ttft)
         .def_readonly("load_time", &PerfMetrics::load_time)
         .def("__add__", &PerfMetrics::operator+)
-        .def("__iadd__", &PerfMetrics::operator+=);
+        .def("__iadd__", &PerfMetrics::operator+=)
+        .def_readonly("raw_counters", &PerfMetrics::raw_counters)
+        ;
 
     py::class_<TokenizedInputs>(m, "TokenizedInputs")
         .def(py::init<ov::Tensor, ov::Tensor>())

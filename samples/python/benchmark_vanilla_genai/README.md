@@ -56,11 +56,12 @@ python benchmark_vanilla_genai.py -m TinyLlama-1.1B-Chat-v1.0/
 ```
 
 ```
-Load time: 3446 ms
-Generate time: 876.2 ± 3.30719 ms
-Tokenization time: 0 ± 0 ms
-Detokenization time: 0 ± 0 ms
-ttft: 168 ± 0 ms
-tpot: 174.68 ± 4.08671 ms
-Tokens/s: 5.72475 ± 0.133933
+Load time: 3405.69 ms
+Generate time: 1430.77 ± 3.04 ms
+Tokenization time: 0.51 ± 0.02 ms
+Detokenization time: 0.37 ± 0.01 ms
+TTFT: 81.60 ± 0.54 ms
+TPOT: 71.52 ± 2.72 ms
+Throughput tokens/s: 13.98 ± 0.53
 ```
+s

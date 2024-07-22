@@ -165,7 +165,7 @@ public:
 
         auto& raw_counters = decoded_results.metrics.raw_counters;
         auto stop_time = std::chrono::steady_clock::now();
-
+        raw_counters.generate_durations = std::vector<MicroSeconds>();
         raw_counters.generate_durations.emplace_back(PerfMetrics::get_duration_ms(stop_time - start_time));
         raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_duration_ms(encode_stop_time - start_time));
         raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_duration_ms(decode_stop_time - decode_start_time));
@@ -269,11 +269,13 @@ public:
         } else {
             m_is_cache_empty = false;
         }
+        auto stop_time = std::chrono::steady_clock::now();
 
         // If is called without tokenization then that stat will not be reported.
         auto& metrics = result.metrics;
         metrics.num_input_tokens = batch_size * input_ids.get_shape().at(1);
         metrics.load_time = this->m_load_time_ms;
+        metrics.raw_counters.generate_durations.emplace_back(PerfMetrics::get_duration_ms(stop_time - start_time));
         metrics.evaluate_statistics(start_time);
         return result;
     }
@@ -391,7 +393,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = make_unique<StatefulLLMPipeline>(std::filesystem::path(path), device, config);
     }
     auto stop_time = std::chrono::steady_clock::now();
-    m_pimpl->m_load_time_ms = PerfMetrics::get_duration_ms(stop_time - start_time);
+    m_pimpl->m_load_time_ms = PerfMetrics::get_duration_ms(stop_time - start_time) / 1000.0f;
 }
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {

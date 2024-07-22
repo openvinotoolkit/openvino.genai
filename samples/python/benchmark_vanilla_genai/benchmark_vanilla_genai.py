@@ -10,7 +10,7 @@ def main():
     parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
     parser.add_argument("-p", "--prompt", type=str, default="The Sky is blue because", help="Prompt")
     parser.add_argument("-nw", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
-    parser.add_argument("-n", "--num_iter", type=int, default=3, help="Number of iterations")
+    parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
     parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
     parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
     
@@ -22,9 +22,8 @@ def main():
     num_warmup = args.num_warmup
     num_iter = args.num_iter
     
-
     config = ov_genai.GenerationConfig()
-    config.max_new_tokens = args.num_new_tokens
+    config.max_new_tokens = args.max_new_tokens
 
     pipe = ov_genai.LLMPipeline(model_path, device)
     
@@ -37,8 +36,8 @@ def main():
         # pdb.set_trace()
         res = pipe.generate(prompt, config)
         metrics += res.metrics
-
-    print(f"Load time: {metrics.load_time} ms")
+    
+    print(f"Load time: {metrics.load_time:.2f} ms")
     print(f"Generate time: {metrics.mean_generate_duration:.2f} ± {metrics.std_generate_duration:.2f} ms")
     print(f"Tokenization time: {metrics.mean_tokenization_duration:.2f} ± {metrics.std_tokenization_duration:.2f} ms")
     print(f"Detokenization time: {metrics.mean_detokenization_duration:.2f} ± {metrics.std_detokenization_duration:.2f} ms")

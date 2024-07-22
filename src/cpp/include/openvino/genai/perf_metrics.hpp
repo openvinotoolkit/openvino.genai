@@ -13,19 +13,20 @@ namespace ov {
 namespace genai {
 
 using TimePoint = std::chrono::steady_clock::time_point;
+using MicroSeconds = std::chrono::duration<float, std::ratio<1, 1000000>>;
 
 /**
 * @brief Structure with raw performance metrics for each generation before any statistics calculated.
 */
 struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
-    std::vector<float> generate_durations;
-    std::vector<float> tokenization_durations;
-    std::vector<float> detokenization_durations;
+    std::vector<MicroSeconds> generate_durations;
+    std::vector<MicroSeconds> tokenization_durations;
+    std::vector<MicroSeconds> detokenization_durations;
     
-    std::vector<float> m_times_to_first_token;
+    std::vector<MicroSeconds> m_times_to_first_token;
     std::vector<TimePoint> m_new_token_times;
     std::vector<size_t> m_batch_sizes;
-    std::vector<float> m_durations;
+    std::vector<MicroSeconds> m_durations;
 
     size_t num_generated_tokens;
     size_t num_input_tokens;

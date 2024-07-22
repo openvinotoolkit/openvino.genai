@@ -9,12 +9,18 @@
 
 namespace {
 
-std::pair<float, float> calc_mean_and_std(const std::vector<float>& durations) {
-    float mean = std::accumulate(durations.begin(), durations.end(), 0.0f) / durations.size();
+// std::pair<float, float> calc_mean_and_std(const std::vector<float>& durations) {
+std::pair<float, float> calc_mean_and_std(const std::vector<ov::genai::MicroSeconds>& durations) {
+    float mean = std::accumulate(durations.begin(), durations.end(), 0.0f, 
+        [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
+            return acc + duration.count();
+        });
+    mean /= durations.size();
+    mean /= 1000.f;
     
     float sum_square_durations = std::accumulate(durations.begin(), durations.end(), 0.0f,
-        [](const float& acc, const float& duration) -> float {
-            return acc + duration * duration;
+        [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
+            return acc + duration.count() * duration.count() / 1000000.0f;
         });
     float std = std::sqrt(sum_square_durations / durations.size() - mean * mean);
     return {mean, std};
@@ -27,7 +33,7 @@ namespace ov {
 namespace genai {
 
 float PerfMetrics::get_duration_ms(std::chrono::steady_clock::duration duration) {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
 }
     
 void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
@@ -36,14 +42,14 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
         auto start_time_val = *start_time;
         auto& tok_times = raw_counters.m_new_token_times;
         auto& batch_sizes = raw_counters.m_batch_sizes;
-        raw_counters.m_durations = std::vector<float>(tok_times.size());
+        raw_counters.m_durations = std::vector<MicroSeconds>(tok_times.size());
 
-        auto ttft = std::chrono::duration_cast<std::chrono::milliseconds>(tok_times[0] - start_time_val).count();
-        raw_counters.m_times_to_first_token = std::vector<float>();
+        auto ttft = tok_times[0] - start_time_val;
+        raw_counters.m_times_to_first_token = std::vector<MicroSeconds>();
         raw_counters.m_times_to_first_token.emplace_back(ttft);
         num_generated_tokens = 0;
         for (size_t i = 0; i < tok_times.size(); ++i) {
-            raw_counters.m_durations[i] = std::chrono::duration_cast<std::chrono::milliseconds>(tok_times[i] - start_time_val).count();
+            raw_counters.m_durations[i] = tok_times[i] - start_time_val;
             
             // If in 10 ms a batch of 5 new tokens is generated then TTOT is 10 ms / 5.
             // todo: float check that it's valid for batch > 1.

@@ -22,6 +22,7 @@ EncodedResults greedy_decoding(
     size_t prompt_len = prompts_shape[1];
     size_t max_new_tokens = generation_config.get_max_new_tokens(prompt_len);
 
+    // Initialize results and performance metrics.
     EncodedResults results;
     auto& raw_perf_counters = results.metrics.raw_counters;
     
