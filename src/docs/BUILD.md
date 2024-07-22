@@ -29,6 +29,9 @@
     cmake --install ./build/ --config Release --prefix ov
     ```
 
+> **NOTE**: There is a known Python API issue with `ov::Tensor`. The issue is reproduced when building OpenVINO GenAI from sources while using OpenVINO from archives. Using `ov::Tensor` with OpenVINO GenAI will fail on Windows and Linux Systems. Possible errors: `TypeError: generate(): incompatible function arguments.`, `TypeError: __init__(): incompatible constructor arguments.`, `TypeError: Unregistered type : ov::Tensor`.
+The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources using the same build environment. Or to install OpenVINO GenAI from [distribution channels](https://docs.openvino.ai/2024/get-started/install-openvino.html).
+
 ## Build for Windows Systems
 
 ### Software Requirements 
@@ -59,6 +62,9 @@
     cmake --build ./build/ --config Release --target package -j
     cmake --install ./build/ --config Release --prefix ov
     ```
+
+> **NOTE**: There is a known Python API issue with `ov::Tensor`. The issue is reproduced when building OpenVINO GenAI from sources while using OpenVINO from archives. Using `ov::Tensor` with OpenVINO GenAI will fail on Windows and Linux Systems. Possible errors: `TypeError: generate(): incompatible function arguments.`, `TypeError: __init__(): incompatible constructor arguments.`, `TypeError: Unregistered type : ov::Tensor`.
+The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources using the same build environment. Or to install OpenVINO GenAI from [distribution channels](https://docs.openvino.ai/2024/get-started/install-openvino.html).
 
 ## Build for macOS Systems
 
