@@ -96,15 +96,14 @@ public:
         // Try to read tokenizer_config if some token ids or token str are not defined.
         read_tokenizer_config_if_necessary(tokenizer_path); 
 
-        //std::map<std::string, ov::Any> plugin_config{{"PERFORMANCE_HINT", "THROUGHPUT"}};
         auto device = "CPU"; // currently openvino_tokenizer supports only CPU
-    
         m_tokenizer = core.compile_model(tokenizer_path / "openvino_tokenizer.xml",
                                                 device, plugin_config);
         m_detokenizer = core.compile_model(tokenizer_path / "openvino_detokenizer.xml", 
                                                    device, plugin_config);
 
-        const size_t INFER_REQUEST_QUEUE_SIZE = 256;
+        
+        const size_t INFER_REQUEST_QUEUE_SIZE = m_tokenizer.get_property(ov::num_streams);
         m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
             INFER_REQUEST_QUEUE_SIZE,
             [this]() -> ov::InferRequest {
