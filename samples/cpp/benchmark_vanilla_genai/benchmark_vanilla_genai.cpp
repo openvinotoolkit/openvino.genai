@@ -11,7 +11,8 @@ int main(int argc, char* argv[]) try {
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value("The Sky is blue because"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
-    ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
+    ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(5)))
+    ("mt,max_new_tokens", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
     ("h,help", "Print usage");
 
@@ -36,26 +37,27 @@ int main(int argc, char* argv[]) try {
     size_t num_iter = result["num_iter"].as<size_t>();
   
     ov::genai::GenerationConfig config;
-    config.max_new_tokens = 100;
-    config.num_beam_groups = 3;
-    config.num_beams = 15;
+    config.max_new_tokens = result["max_new_tokens"].as<size_t>();
 
     ov::genai::LLMPipeline pipe(model_path, device);
     
     for (size_t i = 0; i < num_warmup; i++)
         pipe.generate(prompt, config);
     
-    ov::genai::PerfMetrics metrics;
-    for (size_t i = 0; i < num_iter; i++) {
-        ov::genai::DecodedResults res = pipe.generate(prompt, config);
+    ov::genai::DecodedResults res = pipe.generate(prompt, config);
+    ov::genai::PerfMetrics metrics = res.metrics;
+    for (size_t i = 0; i < num_iter - 1; i++) {
+        res = pipe.generate(prompt, config);
         metrics = metrics + res.metrics;
-        metrics.load_time = res.metrics.load_time;
     }
 
     std::cout << "Load time: " << metrics.load_time << " ms" << std::endl;
+    std::cout << "Generate time: " << metrics.mean_generate_duration << " ± " << metrics.std_generate_duration << " ms" << std::endl;
+    std::cout << "Tokenization time: " << metrics.mean_tokenization_duration << " ± " << metrics.std_tokenization_duration << " ms" << std::endl;
+    std::cout << "Detokenization time: " << metrics.mean_detokenization_duration << " ± " << metrics.std_detokenization_duration << " ms" << std::endl;
     std::cout << "ttft: " << metrics.mean_ttft << " ± " << metrics.std_ttft << " ms" << std::endl;
-    std::cout << "tpot: " << metrics.mean_tpot << " ± " << metrics.std_tpot << " ms" << std::endl;
-    std::cout << "Tokens/s: " << metrics.mean_throughput << std::endl;
+    std::cout << "tpot: " << metrics.mean_tpot << " ± " << metrics.std_tpot << " ms " << std::endl;
+    std::cout << "Tokens/s: " << metrics.mean_throughput << " ± " << metrics.std_throughput << std::endl;
 
     return 0;
 } catch (const std::exception& error) {

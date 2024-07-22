@@ -1,7 +1,6 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "perf_counters.hpp"
 #include <filesystem>
 #include <fstream>
 #include <variant>
@@ -160,14 +159,18 @@ public:
             m_templated_chat_history.append(answer);
             m_history.push_back({{"role", "assistant"}, {"content", answer}});
         }
-
-        auto& metrics = encoded_results.metrics;
-        // metrics.tokenization_duration = std::chrono::duration_cast<std::chrono::milliseconds>(encode_stop_time - start_time).count();
-        // metrics.detokenization_duration = std::chrono::duration_cast<std::chrono::milliseconds>(decode_stop_time - decode_start_time).count();
         
-        // auto stop_time = std::chrono::steady_clock::now();
-        // metrics.generate_durations.emplace_back(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
-        decoded_results.metrics = std::move(metrics);
+        // generate_durations
+        decoded_results.metrics = encoded_results.metrics;
+
+        auto& raw_counters = decoded_results.metrics.raw_counters;
+        auto stop_time = std::chrono::steady_clock::now();
+
+        raw_counters.generate_durations.emplace_back(PerfMetrics::get_duration_ms(stop_time - start_time));
+        raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_duration_ms(encode_stop_time - start_time));
+        raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_duration_ms(decode_stop_time - decode_start_time));
+
+        decoded_results.metrics.evaluate_statistics(start_time);
         return decoded_results;
     }
 
@@ -267,13 +270,11 @@ public:
             m_is_cache_empty = false;
         }
 
-
-
+        // If is called without tokenization then that stat will not be reported.
         auto& metrics = result.metrics;
-        // metrics.batch_size = batch_size;
-        // metrics.num_generated_tokens = (metrics.m_durations.size() + 1) * batch_size;
-        metrics.num_input_tokens = batch_size * input_ids.get_shape().at(0);
-        result.metrics = std::move(metrics);
+        metrics.num_input_tokens = batch_size * input_ids.get_shape().at(1);
+        metrics.load_time = this->m_load_time_ms;
+        metrics.evaluate_statistics(start_time);
         return result;
     }
 
@@ -390,7 +391,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = make_unique<StatefulLLMPipeline>(std::filesystem::path(path), device, config);
     }
     auto stop_time = std::chrono::steady_clock::now();
-    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+    m_pimpl->m_load_time_ms = PerfMetrics::get_duration_ms(stop_time - start_time);
 }
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {

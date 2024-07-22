@@ -366,11 +366,6 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
     auto batch_size = input_ids.get_shape().at(0);
     auto sequence_length = input_ids.get_shape().at(1);
     
-    // Initialize time metric counters.
-    // ov::genai::TimePoints tok_times;
-    // tok_times.reserve(config.get_max_new_tokens(sequence_length));
-    // tok_times.emplace_back(std::chrono::steady_clock::now());
-
     // Initialize beam search.
     const int64_t* prompt_data = input_ids.data<const int64_t>();
     std::vector<std::vector<int64_t>> prompts;
@@ -407,12 +402,19 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
 
     std::vector<int64_t> next_tokens;
     std::vector<int32_t> next_beams;
-    
+
+    // Reserve for performance counters.
+    std::vector<std::chrono::steady_clock::time_point> new_token_times;
+    std::vector<size_t> batch_sizes;
+    new_token_times.reserve(parameters.max_new_tokens);
+    batch_sizes.reserve(parameters.max_new_tokens);
+
     for (size_t length_count = 0; ; ++length_count) {
         lm.infer();
 
         std::tie(next_tokens, next_beams) = group_beam_searcher.select_next_tokens(lm.get_tensor("logits"));
-        // tok_times.emplace_back(std::chrono::steady_clock::now());
+        new_token_times.emplace_back(std::chrono::steady_clock::now());
+        batch_sizes.emplace_back(batch_size);
 
         if (next_tokens.empty() || length_count == parameters.max_new_tokens - 1) {
             // Break the cycle before masks are extended in update_attention_mask_with_beams.
@@ -442,6 +444,9 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
     int32_t res_selected_beam_idx = 0;
     results.scores.reserve(config.num_return_sequences * result.size());
     results.tokens.reserve(config.num_return_sequences * result.size());
+    auto& raw_perf_counters = results.metrics.raw_counters;
+    raw_perf_counters.m_new_token_times = new_token_times;
+    raw_perf_counters.m_batch_sizes = batch_sizes;
     
     // align output with HF
     for (size_t prompt_id = 0; prompt_id < result.size(); prompt_id++) {
@@ -471,7 +476,6 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
         }
     }
     
-    // results.metrics = PerfCounters(tok_times);
     return {results, res_selected_beam_idx};
 }
 

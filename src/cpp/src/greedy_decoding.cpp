@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/perf_metrics.hpp"
-#include "perf_counters.hpp"
+// #include "perf_counters.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -23,7 +23,7 @@ EncodedResults greedy_decoding(
     size_t max_new_tokens = generation_config.get_max_new_tokens(prompt_len);
 
     EncodedResults results;
-    auto& perf_counters = results.metrics.m_counters;
+    auto& raw_perf_counters = results.metrics.raw_counters;
     
     results.scores.resize(running_batch_size);
     results.tokens.resize(running_batch_size);
@@ -54,7 +54,8 @@ EncodedResults greedy_decoding(
         eos_met[batch] = (out_token == generation_config.eos_token_id);
         m_model_runner.get_tensor("input_ids").data<int64_t>()[batch] = out_token;
     }
-    perf_counters->add_timestamp(running_batch_size);
+    raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+    raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
         
     if (streamer && streamer->put(token_iter_results[0])) {
         return results;
@@ -86,7 +87,8 @@ EncodedResults greedy_decoding(
             
             m_model_runner.get_tensor("input_ids").data<int64_t>()[batch] = out_token;
         }
-        perf_counters->add_timestamp(running_batch_size);
+        raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+        raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
         if (streamer && streamer->put(token_iter_results[0]))
             return results;

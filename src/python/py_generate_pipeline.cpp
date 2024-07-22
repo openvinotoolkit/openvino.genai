@@ -22,6 +22,7 @@ using ov::genai::GenerationResult;
 using ov::genai::LLMPipeline;
 using ov::genai::OptionalGenerationConfig;
 using ov::genai::PerfMetrics;
+using ov::genai::RawPerfMetrics;
 using ov::genai::SchedulerConfig;
 using ov::genai::StopCriteria;
 using ov::genai::StreamerBase;
@@ -535,13 +536,30 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init<>())
         .def_property_readonly("texts", [](const DecodedResults &dr) { return handle_utf8_results(dr); })
         .def_readonly("scores", &DecodedResults::scores)
+        .def_readonly("metrics", &DecodedResults::metrics)
         .def("__str__", &DecodedResults::operator std::string);;
+
+    py::class_<RawPerfMetrics>(m, "RawPerfMetrics")
+        .def(py::init<>())
+        .def_readonly("generate_durations", &RawPerfMetrics::generate_durations)
+        .def_readonly("tokenization_durations", &RawPerfMetrics::tokenization_durations)
+        .def_readonly("detokenization_durations", &RawPerfMetrics::detokenization_durations)
+        .def_readonly("m_times_to_first_token", &RawPerfMetrics::m_times_to_first_token)
+        .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes)
+        .def_readonly("m_durations", &RawPerfMetrics::m_durations)
+        .def_readonly("num_generated_tokens", &RawPerfMetrics::num_generated_tokens)
+        .def_readonly("num_input_tokens", &RawPerfMetrics::num_input_tokens);
 
     py::class_<PerfMetrics>(m, "PerfMetrics")
         .def(py::init<>())
         .def_readonly("mean_generate_duration", &PerfMetrics::mean_generate_duration)
-        .def_readonly("mean_decoding_duration", &PerfMetrics::mean_decoding_duration)
-        .def_readonly("mean_encoding_duration", &PerfMetrics::mean_encoding_duration)
+        .def_readonly("std_generate_duration", &PerfMetrics::std_generate_duration)
+        .def_readonly("mean_tokenization_duration", &PerfMetrics::mean_tokenization_duration)
+        .def_readonly("std_tokenization_duration", &PerfMetrics::std_tokenization_duration)
+        .def_readonly("mean_detokenization_duration", &PerfMetrics::mean_detokenization_duration)
+        .def_readonly("std_detokenization_duration", &PerfMetrics::std_detokenization_duration)
+        .def_readonly("mean_throughput", &PerfMetrics::mean_throughput)
+        .def_readonly("std_throughput", &PerfMetrics::std_throughput)
         .def_readonly("mean_tpot", &PerfMetrics::mean_tpot)
         .def_readonly("mean_ttft", &PerfMetrics::mean_ttft)
         .def_readonly("std_tpot", &PerfMetrics::std_tpot)
@@ -557,7 +575,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
     py::class_<EncodedResults>(m, "EncodedResults")
         .def_readonly("tokens", &EncodedResults::tokens)
-        .def_readonly("scores", &EncodedResults::scores);
+        .def_readonly("scores", &EncodedResults::scores)
+        .def_readonly("metrics", &EncodedResults::metrics);
 
     py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase")  // Change the holder form unique_ptr to shared_ptr
         .def(py::init<>())
