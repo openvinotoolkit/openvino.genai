@@ -98,8 +98,11 @@ public:
                                                    device).create_infer_request();
 
         // Get special token ids by inference if they are not defined.
-        // todo: do not call until CVS-143410 is resolved
-        // infer_special_tokens_if_necessary();
+        infer_special_tokens_if_necessary();
+        // Initialize tokenizer's cache to save time later.
+        // infer_special_tokens_if_necessary() already could do that
+        // but it didn't run decode() for sure.
+        decode(encode("").input_ids);
     }
 
     // load special tokens ids from config.json
