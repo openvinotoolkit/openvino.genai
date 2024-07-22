@@ -76,7 +76,7 @@ public:
 
     TokenizerImpl() = default;
 
-    TokenizerImpl(std::filesystem::path tokenizer_path)
+    TokenizerImpl(std::filesystem::path tokenizer_path, const ov::AnyMap& plugin_config)
         : m_chat_template{chat_template_from_tokenizer_json_if_exists(tokenizer_path)} {
         ov::Core core;
         
@@ -96,7 +96,7 @@ public:
         // Try to read tokenizer_config if some token ids or token str are not defined.
         read_tokenizer_config_if_necessary(tokenizer_path); 
 
-        std::map<std::string, ov::Any> plugin_config{{"PERFORMANCE_HINT", "THROUGHPUT"}};
+        //std::map<std::string, ov::Any> plugin_config{{"PERFORMANCE_HINT", "THROUGHPUT"}};
         auto device = "CPU"; // currently openvino_tokenizer supports only CPU
     
         m_tokenizer = core.compile_model(tokenizer_path / "openvino_tokenizer.xml",
@@ -431,9 +431,9 @@ public:
     
 };
 
-Tokenizer::Tokenizer(const std::string& tokenizer_path) {
+Tokenizer::Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& plugin_config) {
     ScopedVar env_manager(tokenizers_relative_to_genai().string());
-    m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path);
+    m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path, plugin_config);
 }
 
 TokenizedInputs Tokenizer::encode(const std::string prompt) {
