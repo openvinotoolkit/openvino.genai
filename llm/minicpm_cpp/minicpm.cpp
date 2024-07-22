@@ -386,7 +386,8 @@ int main(int argc, char* argv[]) try {
     else {
         convert_model = 0;
     }
-	
+    
+    size_t group_size = 32;	
     ov::AnyMap device_config = {};
     if (device.find("CPU") != std::string::npos) {
         device_config[ov::cache_dir.name()] = "llm-cache";
@@ -394,6 +395,8 @@ int main(int argc, char* argv[]) try {
         device_config[ov::hint::enable_hyper_threading.name()] = false;
         device_config[ov::hint::enable_cpu_pinning.name()] = true;
         device_config[ov::enable_profiling.name()] = false;
+	//Add Dynamic Quant
+	device_config[ov::hint::dynamic_quantization_group_size.name()] = group_size;
     }
 
     if (device.find("GPU") != std::string::npos) {
@@ -403,7 +406,8 @@ int main(int argc, char* argv[]) try {
         device_config[ov::intel_gpu::hint::host_task_priority.name()] = ov::hint::Priority::HIGH;
         device_config[ov::hint::enable_cpu_pinning.name()] = true;
         device_config[ov::enable_profiling.name()] = false;
-        device_config[ov::intel_gpu::hint::enable_sdpa_optimization.name()] = true;
+	//Add Dynamic Quant
+        device_config[ov::hint::dynamic_quantization_group_size.name()] = group_size;
     }
 
     double total_time = 0;
