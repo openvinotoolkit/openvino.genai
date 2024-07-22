@@ -103,7 +103,7 @@ public:
                                                    device, plugin_config);
 
         
-        const size_t INFER_REQUEST_QUEUE_SIZE = m_tokenizer.get_property(ov::num_streams);
+        const size_t INFER_REQUEST_QUEUE_SIZE = m_tokenizer.get_property(ov::optimal_number_of_infer_requests);
         m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
             INFER_REQUEST_QUEUE_SIZE,
             [this]() -> ov::InferRequest {
