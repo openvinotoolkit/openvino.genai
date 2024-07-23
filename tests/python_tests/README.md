@@ -41,7 +41,7 @@ python -m pytest tests/python_tests/ -m precommit -k "not test_beam_search"
 
 Argument `--model_ids` can be used to run tests selectively only for specific models. HF model ids should be separated by space, e.g:
 ```sh
-python -m pytest ~/devel/openvino.genai/tests/python_tests/ -m nightly -k "test_multibatch" --model_ids "TinyLlama/TinyLlama-1.1B-Chat-v1.0 Qwen/Qwen2-0.5B-Instruct"
+python -m pytest tests/python_tests/ -m nightly -k "test_multibatch" --model_ids "TinyLlama/TinyLlama-1.1B-Chat-v1.0 Qwen/Qwen2-0.5B-Instruct"
 ```
 
 List of currently supported `nightly` and `precommit` models can be found in tests/python_tests/ov_genai_test_utils.py:get_models_list
