@@ -505,7 +505,7 @@ public:
                     if (m_enable_prefix_caching) {
                         // update hash of block
                         // TODO: Caching time can probably be improved here if we store
-                        // cache of tokens instead of cache of block.
+                        // hash of token -> KV block map instead of hash of block -> KV block map
                         auto prev_hash = last_block->get_hash();
                         auto hash = sequence->get_hash(seq_group->get_context_len(), seq_group->get_prompt_ids());
                         last_block->set_hash(hash, seq_group->get_context_len());
@@ -536,7 +536,7 @@ public:
             if (content_len > prompt_ids.size()) {
                 content_len = prompt_ids.size();
             }
-            // resore fully filled blocks
+            // restore fully filled blocks
             auto hash = sequence->get_hash(content_len, prompt_ids);
             auto block = m_allocator.get_cashed_block(hash, cached_blocks);
             if (block != nullptr) {
@@ -547,7 +547,7 @@ public:
             else {
                 size_t tokens_len_in_last_block = content_len % block_size;
                 if (tokens_len_in_last_block != 0) {
-                    // resore partially filled block
+                    // restore partially filled block
                     for (size_t i = 1; i < block_size; i++) {
                         if (prev_iteration_content_len + i > prompt_ids.size()) {
                             break;
