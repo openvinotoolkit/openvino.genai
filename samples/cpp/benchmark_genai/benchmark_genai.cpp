@@ -38,8 +38,6 @@ int main(int argc, char* argv[]) try {
   
     ov::genai::GenerationConfig config;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
-    config.num_beam_groups = 3;
-    config.num_beams = 15;
 
     ov::genai::LLMPipeline pipe(model_path, device);
     
@@ -54,12 +52,12 @@ int main(int argc, char* argv[]) try {
     }
 
     std::cout << "Load time: " << metrics.load_time << " ms" << std::endl;
-    std::cout << "Generate time: " << metrics.mean_generate_duration << " ± " << metrics.std_generate_duration << " ms" << std::endl;
-    std::cout << "Tokenization time: " << metrics.mean_tokenization_duration << " ± " << metrics.std_tokenization_duration << " ms" << std::endl;
-    std::cout << "Detokenization time: " << metrics.mean_detokenization_duration << " ± " << metrics.std_detokenization_duration << " ms" << std::endl;
-    std::cout << "ttft: " << metrics.mean_ttft << " ± " << metrics.std_ttft << " ms" << std::endl;
-    std::cout << "tpot: " << metrics.mean_tpot << " ± " << metrics.std_tpot << " ms " << std::endl;
-    std::cout << "Tokens/s: " << metrics.mean_throughput << " ± " << metrics.std_throughput << std::endl;
+    std::cout << "Generate time: " << metrics.generate_duration.mean << " ± " << metrics.generate_duration.std << " ms" << std::endl;
+    std::cout << "Tokenization time: " << metrics.tokenization_duration.mean << " ± " << metrics.tokenization_duration.std << " ms" << std::endl;
+    std::cout << "Detokenization time: " << metrics.detokenization_duration.mean << " ± " << metrics.detokenization_duration.std << " ms" << std::endl;
+    std::cout << "ttft: " << metrics.ttft.mean  << " ± " << metrics.ttft.std << " ms" << std::endl;
+    std::cout << "tpot: " << metrics.tpot.mean  << " ± " << metrics.tpot.std << " ms " << std::endl;
+    std::cout << "Tokens/s: " << metrics.throughput.mean  << " ± " << metrics.throughput.std << std::endl;
 
     return 0;
 } catch (const std::exception& error) {

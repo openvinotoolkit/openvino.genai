@@ -20,6 +20,7 @@ using ov::genai::EncodedResults;
 using ov::genai::GenerationConfig;
 using ov::genai::GenerationResult;
 using ov::genai::LLMPipeline;
+using ov::genai::MeanStdPair;
 using ov::genai::OptionalGenerationConfig;
 using ov::genai::PerfMetrics;
 using ov::genai::RawPerfMetrics;
@@ -569,25 +570,23 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readonly("num_generated_tokens", &RawPerfMetrics::num_generated_tokens)
         .def_readonly("num_input_tokens", &RawPerfMetrics::num_input_tokens);
 
+    py::class_<MeanStdPair>(m, "MeanStdPair")
+        .def(py::init<>())
+        .def_readonly("mean", &MeanStdPair::mean)
+        .def_readonly("std", &MeanStdPair::std);
+
     py::class_<PerfMetrics>(m, "PerfMetrics")
         .def(py::init<>())
-        .def_readonly("mean_generate_duration", &PerfMetrics::mean_generate_duration)
-        .def_readonly("std_generate_duration", &PerfMetrics::std_generate_duration)
-        .def_readonly("mean_tokenization_duration", &PerfMetrics::mean_tokenization_duration)
-        .def_readonly("std_tokenization_duration", &PerfMetrics::std_tokenization_duration)
-        .def_readonly("mean_detokenization_duration", &PerfMetrics::mean_detokenization_duration)
-        .def_readonly("std_detokenization_duration", &PerfMetrics::std_detokenization_duration)
-        .def_readonly("mean_throughput", &PerfMetrics::mean_throughput)
-        .def_readonly("std_throughput", &PerfMetrics::std_throughput)
-        .def_readonly("mean_tpot", &PerfMetrics::mean_tpot)
-        .def_readonly("mean_ttft", &PerfMetrics::mean_ttft)
-        .def_readonly("std_tpot", &PerfMetrics::std_tpot)
-        .def_readonly("std_ttft", &PerfMetrics::std_ttft)
+        .def_readonly("generate_duration", &PerfMetrics::generate_duration)
+        .def_readonly("tokenization_duration", &PerfMetrics::tokenization_duration)
+        .def_readonly("detokenization_duration", &PerfMetrics::detokenization_duration)
+        .def_readonly("throughput", &PerfMetrics::throughput)
+        .def_readonly("tpot", &PerfMetrics::tpot)
+        .def_readonly("ttft", &PerfMetrics::ttft)
         .def_readonly("load_time", &PerfMetrics::load_time)
         .def("__add__", &PerfMetrics::operator+)
         .def("__iadd__", &PerfMetrics::operator+=)
-        .def_readonly("raw_metrics", &PerfMetrics::raw_metrics)
-        ;
+        .def_readonly("raw_metrics", &PerfMetrics::raw_metrics);
 
     py::class_<TokenizedInputs>(m, "TokenizedInputs")
         .def(py::init<ov::Tensor, ov::Tensor>())

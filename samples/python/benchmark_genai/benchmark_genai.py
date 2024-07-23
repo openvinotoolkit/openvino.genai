@@ -25,8 +25,6 @@ def main():
     
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = args.max_new_tokens
-    config.num_beam_groups = 3
-    config.num_beams = 15
 
     pipe = ov_genai.LLMPipeline(model_path, device)
     
@@ -40,12 +38,12 @@ def main():
         perf_metrics += res.perf_metrics
     
     print(f"Load time: {perf_metrics.load_time:.2f} ms")
-    print(f"Generate time: {perf_metrics.mean_generate_duration:.2f} ± {perf_metrics.std_generate_duration:.2f} ms")
-    print(f"Tokenization time: {perf_metrics.mean_tokenization_duration:.2f} ± {perf_metrics.std_tokenization_duration:.2f} ms")
-    print(f"Detokenization time: {perf_metrics.mean_detokenization_duration:.2f} ± {perf_metrics.std_detokenization_duration:.2f} ms")
-    print(f"TTFT: {perf_metrics.mean_ttft:.2f} ± {perf_metrics.std_ttft:.2f} ms")
-    print(f"TPOT: {perf_metrics.mean_tpot:.2f} ± {perf_metrics.std_tpot:.2f} ms")
-    print(f"Throughput tokens/s: {perf_metrics.mean_throughput:.2f} ± {perf_metrics.std_throughput:.2f}")
+    print(f"Generate time: {perf_metrics.generate_duration.mean:.2f} ± {perf_metrics.generate_duration.std:.2f} ms")
+    print(f"Tokenization time: {perf_metrics.tokenization_duration.mean:.2f} ± {perf_metrics.tokenization_duration.std:.2f} ms")
+    print(f"Detokenization time: {perf_metrics.detokenization_duration.mean:.2f} ± {perf_metrics.detokenization_duration.std:.2f} ms")
+    print(f"TTFT: {perf_metrics.ttft.mean:.2f} ± {perf_metrics.ttft.std:.2f} ms")
+    print(f"TPOT: {perf_metrics.tpot.mean:.2f} ± {perf_metrics.tpot.std:.2f} ms")
+    print(f"Throughput tokens/s: {perf_metrics.throughput.mean:.2f} ± {perf_metrics.throughput.std:.2f}")
 
 if __name__ == "__main__":
     main()

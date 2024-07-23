@@ -9,7 +9,7 @@
 
 namespace {
 
-std::pair<float, float> calc_mean_and_std(const std::vector<ov::genai::MicroSeconds>& durations) {
+ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSeconds>& durations) {
     // Accepts time durations in microseconds and returns standard deviation and mean in milliseconds.
     float mean = std::accumulate(durations.begin(), durations.end(), 0.0f, 
         [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
@@ -59,15 +59,17 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     }
     
     // calc_mean_and_std will convert microsecond to milliseconds.
-    std::tie(mean_tpot, std_tpot) = calc_mean_and_std(raw_metrics.m_durations);
-    std::tie(mean_ttft, std_ttft) = calc_mean_and_std(raw_metrics.m_times_to_first_token);
+    tpot = calc_mean_and_std(raw_metrics.m_durations);
+    ttft = calc_mean_and_std(raw_metrics.m_times_to_first_token);
 
-    std::tie(mean_generate_duration, std_generate_duration) = calc_mean_and_std(raw_metrics.generate_durations);
-    std::tie(mean_tokenization_duration, std_tokenization_duration) = calc_mean_and_std(raw_metrics.tokenization_durations);
-    std::tie(mean_detokenization_duration, std_detokenization_duration) = calc_mean_and_std(raw_metrics.detokenization_durations);    
+    generate_duration = calc_mean_and_std(raw_metrics.generate_durations);
+    generate_duration = calc_mean_and_std(raw_metrics.generate_durations);
+
+    tokenization_duration = calc_mean_and_std(raw_metrics.tokenization_durations);
+    detokenization_duration = calc_mean_and_std(raw_metrics.detokenization_durations);    
     
-    mean_throughput = 1000.0f / mean_tpot;  // tokens per second
-    std_throughput = (std_tpot * 1000.0f) / (mean_tpot * mean_tpot);
+    // tokens per second
+    throughput = {1000.0f / tpot.mean, (tpot.std * 1000.0f) / (tpot.mean * tpot.mean)};
 }
 
 PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
