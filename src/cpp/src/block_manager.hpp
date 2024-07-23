@@ -6,7 +6,7 @@
 #include <memory>
 #include <list>
 #include <map>
-#include <time.h>
+#include <chrono>
 
 #include "sequence_group.hpp"
 
@@ -16,7 +16,7 @@ class KVCacheBlock {
     int m_index;
     size_t m_hash;
     size_t m_num_hashed_tokens;
-    time_t m_timestamp;
+    std::chrono::time_point<std::chrono::system_clock> m_timestamp;
 public:
     using Ptr = std::shared_ptr<KVCacheBlock>;
     using CPtr = std::shared_ptr<const KVCacheBlock>;
@@ -24,7 +24,7 @@ public:
     explicit KVCacheBlock(int index)
         : m_ref_count(0),
           m_index(index),
-          m_timestamp(time(NULL)) { }
+          m_timestamp(std::chrono::system_clock::now()) { }
 
     int get_index() const {
         return m_index;
@@ -64,11 +64,11 @@ public:
         m_num_hashed_tokens = num_hashed_tokens;
     }
 
-    void set_timestamp(const time_t& timestamp) {
+    void set_timestamp(const std::chrono::time_point<std::chrono::system_clock>& timestamp) {
         m_timestamp = timestamp;
     }
 
-    time_t get_timestamp() {
+    std::chrono::time_point<std::chrono::system_clock> get_timestamp() {
         return m_timestamp;
     }
 };
@@ -82,7 +82,7 @@ public:
     }
 
     static bool block_is_less(const std::pair<size_t, KVCacheBlock::Ptr>& lhs, const std::pair<size_t, KVCacheBlock::Ptr>& rhs) {
-        return difftime(lhs.second->get_timestamp(), rhs.second->get_timestamp()) > 0.0 ? false : true; 
+        return lhs.second->get_timestamp() < rhs.second->get_timestamp();
     }
 
     KVCacheBlock::Ptr get_block(size_t hash) {
@@ -91,7 +91,7 @@ public:
             return nullptr;
         }
         KVCacheBlock::Ptr block = blocks[hash];
-        block->set_timestamp(time(NULL));
+        block->set_timestamp(std::chrono::system_clock::now());
         block->increment();
         blocks.erase(hash);
         return block;
@@ -103,7 +103,7 @@ public:
         }
         auto hash_block = std::min_element(std::begin(blocks), std::end(blocks), block_is_less);
         auto block = hash_block->second;
-        block->set_timestamp(time(NULL));
+        block->set_timestamp(std::chrono::system_clock::now());
         block->increment();
         blocks.erase(hash_block->first);
         return block;
@@ -214,6 +214,7 @@ public:
         }
         if (cached_blocks.find(hash) != cached_blocks.end()) {
             // use cashed block from cached_blocks
+            // TODO: add tokens validation in case of hash collision
             block = cached_blocks[hash];
             cached_blocks[hash]->increment();
             return block;
@@ -540,7 +541,7 @@ public:
             auto hash = sequence->get_hash(content_len, prompt_ids);
             auto block = m_allocator.get_cashed_block(hash, cached_blocks);
             if (block != nullptr) {
-                block->set_timestamp(time(NULL));
+                block->set_timestamp(std::chrono::system_clock::now());
                 m_block_table[seq_id].push_back(block);
                 group->update_processed_tokens_num(content_len);
             }
@@ -555,7 +556,7 @@ public:
                         auto hash = sequence->get_hash(prev_iteration_content_len + i, prompt_ids);
                         auto block = m_allocator.get_cashed_block(hash, cached_blocks);
                         if (block != nullptr) {
-                            block->set_timestamp(time(NULL));
+                            block->set_timestamp(std::chrono::system_clock::now());
                             m_block_table[seq_id].push_back(block);
                             group->update_processed_tokens_num(prev_iteration_content_len + i);
                             break;
