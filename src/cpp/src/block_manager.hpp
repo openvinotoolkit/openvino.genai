@@ -174,7 +174,7 @@ public:
         }
         // TODO: Currently we cache all allocated blocks which might be redundant for beam search,
         // where blocks of non-used candidates are not needed in cache.
-        // This part can be probably improved if we cache only blocks for resulting finished sequences.
+        // This part can be probably improved if we cache only blocks for prompt.
         if (cached_blocks.find(hash) != cached_blocks.end()) {
             // use cashed block from cached_blocks
             block = cached_blocks[hash];
@@ -205,7 +205,7 @@ public:
         return nullptr;
     }
 
-    KVCacheBlock::Ptr get_cashed_block(size_t hash, std::map<uint64_t, KVCacheBlock::Ptr>& cached_blocks) {
+    KVCacheBlock::Ptr get_cached_block(size_t hash, std::map<uint64_t, KVCacheBlock::Ptr>& cached_blocks) {
         auto block = m_evictor.get_block(hash);
         if (block != nullptr) {
             // use cashed block from evictor
@@ -231,6 +231,7 @@ class BlockManager {
     BlockAllocator m_allocator;
     bool m_enable_prefix_caching;
     size_t m_block_size;
+    // TODO: caching time can probably be improved if we use the prefix tree
     std::map<uint64_t, KVCacheBlock::Ptr> cached_blocks;
 
     // stores blocks for each sequence (not sequence group)
@@ -539,7 +540,7 @@ public:
             }
             // restore fully filled blocks
             auto hash = sequence->get_hash(content_len, prompt_ids);
-            auto block = m_allocator.get_cashed_block(hash, cached_blocks);
+            auto block = m_allocator.get_cached_block(hash, cached_blocks);
             if (block != nullptr) {
                 block->set_timestamp(std::chrono::system_clock::now());
                 m_block_table[seq_id].push_back(block);
@@ -554,7 +555,7 @@ public:
                             break;
                         }
                         auto hash = sequence->get_hash(prev_iteration_content_len + i, prompt_ids);
-                        auto block = m_allocator.get_cashed_block(hash, cached_blocks);
+                        auto block = m_allocator.get_cached_block(hash, cached_blocks);
                         if (block != nullptr) {
                             block->set_timestamp(std::chrono::system_clock::now());
                             m_block_table[seq_id].push_back(block);
