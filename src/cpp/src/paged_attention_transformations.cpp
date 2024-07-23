@@ -25,25 +25,41 @@ void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, Dev
 
     const ov::ParameterVector& parameters = model->get_parameters();
 
-    size_t num_layers = std::count_if(parameters.begin(), parameters.end(), [](std::shared_ptr<ov::op::v0::Parameter> parameter) {
-        return parameter->get_friendly_name().find("key_cache.") == 0;
-    });
+    std::map<std::string, std::shared_ptr<ov::op::v0::Parameter>> key_cache_params;
+    std::map<std::string, std::shared_ptr<ov::op::v0::Parameter>> value_cache_params;
+    for (const auto& param_ptr : parameters) {
+        const auto& name = param_ptr->get_friendly_name();
+        if (name.find("key_cache.") == 0) {
+            key_cache_params[name] = param_ptr;
+        }
+        else if (name.find("value_cache") == 0) {
+            value_cache_params[name] = param_ptr;
+        }
+    }
 
+    OPENVINO_ASSERT(key_cache_params.size() == value_cache_params.size());
+    OPENVINO_ASSERT(key_cache_params.size() > 0);
+
+    size_t num_layers = key_cache_params.size();
     // extract num_kv_heads and head_size
-    ov::PartialShape k_shape = parameters[KV_CACHES_INPUTS_OFFSET]->get_partial_shape();
+    std::string key_cache_param_name = "key_cache.0";
+    OPENVINO_ASSERT(key_cache_params.count(key_cache_param_name) != 0, "key_cache.0 tensor not found among model parameters");
+    ov::PartialShape k_shape = key_cache_params[key_cache_param_name]->get_partial_shape();
     OPENVINO_ASSERT(k_shape.rank().get_length() == 3, "KV cache shape is expected to have rank 3, while shape is ", k_shape);
     size_t num_kv_heads = k_shape[1].get_length(), head_size = k_shape[2].get_length();
 
     device_config.set_model_params(num_kv_heads, head_size, num_layers);
 
-    for (size_t decoder_layer_id = 0; decoder_layer_id < num_layers; ++decoder_layer_id) {
-        auto key_cache_id = get_key_cache_tensor_id_for_decoder_layer(decoder_layer_id);
-        auto value_cache_id = get_value_cache_tensor_id_for_decoder_layer(decoder_layer_id);
-        parameters[key_cache_id]->set_element_type(device_config.get_cache_precision());
-        parameters[value_cache_id]->set_element_type(device_config.get_cache_precision());
+    for (auto it_k = key_cache_params.begin(), it_v = value_cache_params.begin(); it_k != key_cache_params.end(); ) {
+        it_k->second->set_element_type(device_config.get_cache_precision());
+        it_v->second->set_element_type(device_config.get_cache_precision());
         // TODO: CVS-145270
-        parameters[key_cache_id]->set_partial_shape(to_partial_with_dyn_0_dim(device_config.get_key_cache_shape()));
-        parameters[value_cache_id]->set_partial_shape(to_partial_with_dyn_0_dim(device_config.get_value_cache_shape()));
+        it_k->second->set_partial_shape(to_partial_with_dyn_0_dim(device_config.get_key_cache_shape()));
+        it_v->second->set_partial_shape(to_partial_with_dyn_0_dim(device_config.get_value_cache_shape()));
+
+        ++it_k;
+        ++it_v;
     }
+
     model->validate_nodes_and_infer_types();
 }

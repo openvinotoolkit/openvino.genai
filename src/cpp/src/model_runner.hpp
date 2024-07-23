@@ -141,7 +141,10 @@ public:
         // PA specific parameters
         m_request.set_tensor("past_lens", past_lens);
         m_request.set_tensor("subsequence_begins", subsequence_begins);
-        m_request.set_tensor("block_indices", block_indices);
+        for (size_t layer_idx = 0; layer_idx < m_num_decoder_layers; layer_idx++) {
+            // TODO (vshampor): actually set distinct tensor contents for each layer
+            m_request.set_tensor(std::string("block_indices.") + std::to_string(layer_idx), block_indices);
+        }
         m_request.set_tensor("block_indices_begins", block_indices_begins);
         m_request.set_tensor("max_context_len", max_context_len);
 
