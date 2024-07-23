@@ -62,6 +62,7 @@ jobs:
     runs-on: windows-latest
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: null
+      PYTHONIOENCODING: "utf8"
     defaults:
       run:
         shell: cmd

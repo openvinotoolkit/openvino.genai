@@ -81,6 +81,10 @@ def get_chat_templates():
     # but skips some models that currently are not processed correctly.
 
     skipped_models = {
+        # TODO: openchat/openchat_3.5 and berkeley-nest/Starling-LM-7B-alpha have the same template.
+        # Need to enable and unskip, since it's preset in continious batching and has >100 000 downloads.
+        "openchat/openchat-3.5-0106",
+        
         # These models fail even on HF so no need to check if applying chat matches.
         "vibhorag101/llama-2-13b-chat-hf-phr_mental_therapy",
         "codellama/CodeLlama-34b-Instruct-hf",
@@ -101,7 +105,6 @@ def get_chat_templates():
         "deepseek-ai/deepseek-coder-6.7b-instruct",
         "maldv/winter-garden-7b-alpha",
         "ishorn5/RTLCoder-Deepseek-v1.1",
-        "openchat/openchat-3.5-0106",
         "casperhansen/llama-3-70b-instruct-awq",
         "TheBloke/deepseek-coder-33B-instruct-GPTQ",
         "AI-Sweden-Models/gpt-sw3-356m-instruct",
