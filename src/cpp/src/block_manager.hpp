@@ -74,7 +74,7 @@ public:
 };
 
 
-class Evicor {
+class Evictor {
     std::map<size_t, KVCacheBlock::Ptr> blocks;
 public:
     void add(size_t hash, KVCacheBlock::Ptr block) {
@@ -117,7 +117,7 @@ public:
 
 class BlockAllocator {
     std::list<KVCacheBlock::Ptr> m_free_blocks;
-    ov::genai::Evicor m_evictor;
+    ov::genai::Evictor m_evictor;
     int m_total_num_blocks;
     bool m_enable_prefix_caching;
 public:
@@ -545,21 +545,26 @@ public:
                 group->update_processed_tokens_num(content_len);
             }
             else {
-                size_t tokens_len_in_last_block = content_len % block_size;
-                if (tokens_len_in_last_block != 0) {
-                    // restore partially filled block
-                    for (size_t i = 1; i < block_size; i++) {
-                        if (prev_iteration_content_len + i > prompt_ids.size()) {
-                            break;
+                // restore partially filled block
+                for (size_t i = 1; i < block_size; i++) {
+                    if (prev_iteration_content_len + i > prompt_ids.size()) {
+                        break;
+                    }
+                    auto hash = sequence->get_hash(prev_iteration_content_len + i, prompt_ids);
+                    auto block = m_allocator.get_cached_block(hash, cached_blocks);
+                    if (block != nullptr) {
+                        block->set_timestamp(std::chrono::system_clock::now());
+                        m_block_table[seq_id].push_back(block);
+                        group->update_processed_tokens_num(prev_iteration_content_len + i);
+                        
+                        size_t new_tokens_count_in_block = std::min(content_len, prev_iteration_content_len + block_size);
+                        if (new_tokens_count_in_block > prev_iteration_content_len + i) {
+                            cached_blocks.erase(hash);
+                            auto new_hash = sequence->get_hash(new_tokens_count_in_block, prompt_ids);
+                            cached_blocks[new_hash] = block;
                         }
-                        auto hash = sequence->get_hash(prev_iteration_content_len + i, prompt_ids);
-                        auto block = m_allocator.get_cached_block(hash, cached_blocks);
-                        if (block != nullptr) {
-                            block->set_timestamp(std::chrono::system_clock::now());
-                            m_block_table[seq_id].push_back(block);
-                            group->update_processed_tokens_num(prev_iteration_content_len + i);
-                            break;
-                        }
+
+                        break;
                     }
                 }
                 break;                

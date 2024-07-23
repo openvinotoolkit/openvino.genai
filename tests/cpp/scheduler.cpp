@@ -394,12 +394,15 @@ TEST(TestScheduler, prefix_caching_test) {
         for (size_t chat_iteration = 0; chat_iteration < chat_iterations; chat_iteration++) {
             std::vector<uint64_t> tokens = histrory_tokens;
             tokens.insert(tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
-
             SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
                                                                                     ov::genai::greedy(), scheduler_config.block_size);
             std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
-            auto out = scheduler.schedule(requests);
+            auto out1 = scheduler.schedule(requests);
+            if (chat_iteration == 0)
+                EXPECT_EQ(out1.m_total_num_scheduled_tokens, prompt_tokens.size());
+            else 
+                EXPECT_EQ(out1.m_total_num_scheduled_tokens, prompt_tokens.size() + 1);
             for (auto seq: requests) {
                 std::vector<Sequence::Ptr> running_sequences = seq->get_running_sequences();
                 running_sequences[0]->append_token(23, 0.7);
@@ -409,7 +412,8 @@ TEST(TestScheduler, prefix_caching_test) {
             // schedule generate
             size_t num_generate_tokens = 10;
             for (size_t i = 0; i < num_generate_tokens; i++) {
-                auto out3 = scheduler.schedule(requests);
+                auto out2 = scheduler.schedule(requests);
+                EXPECT_EQ(out2.m_total_num_scheduled_tokens, 1);
                 for (auto seq: requests) {
                     std::vector<Sequence::Ptr> running_sequences = seq->get_running_sequences();
                     running_sequences[0]->append_token(16, 0.9);
