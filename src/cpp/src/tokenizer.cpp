@@ -353,7 +353,7 @@ public:
         if (slice_pos != std::string::npos) {
             chat_tpl.replace(slice_pos, slice_string.length(), replacement_slice_string);
         }
-        jinja2::UserCallable sliceCallable = jinja2::MakeCallable(
+        jinja2::UserCallable slice_callable = jinja2::MakeCallable(
             [](const jinja2::ValuesList& list, const int64_t start) {
                 if (list.empty())
                     return jinja2::Value();
@@ -389,7 +389,7 @@ public:
             {"eos_token", m_eos_token},
             {"pad_token", m_pad_token},
             {"add_generation_prompt", add_generation_prompt},
-            {"slice", sliceCallable},
+            {"slice", slice_callable},
         };
 
         try {
