@@ -17,7 +17,7 @@ pip install -r tests/python_tests/requirements.txt
 python -m pytest tests/python_tests/ -m precommit
 ```
 
-During the test downloaded models will be saved into the current directory. If you wish to place them somewhere else you can specify `GENAI_MODELS_PATH_PREFIX` environenment variable, e.g.
+During the test downloaded HuggingFace (HF) models will be saved into the current directory. If you wish to place them somewhere else you can specify `GENAI_MODELS_PATH_PREFIX` environenment variable, e.g.
 ```sh
 GENAI_MODELS_PATH_PREFIX=$HOME/test_models python -m pytest tests/python_tests/ -m precommit
 ```
@@ -37,6 +37,11 @@ python -m pytest tests/python_tests/ -m nightly -k "test_multibatch and test_cha
 If you wish to run all tests except beam search do the following:
 ```sh
 python -m pytest tests/python_tests/ -m precommit -k "not test_beam_search"
+```
+
+Argument `--model_ids` can be used to run tests selectively only for specific models. HF model ids should be separated by space, e.g:
+```sh
+python -m pytest ~/devel/openvino.genai/tests/python_tests/ -m nightly -k "test_multibatch" --model_ids "TinyLlama/TinyLlama-1.1B-Chat-v1.0 Qwen/Qwen2-0.5B-Instruct"
 ```
 
 List of currently supported `nightly` and `precommit` models can be found in tests/python_tests/ov_genai_test_utils.py:get_models_list
