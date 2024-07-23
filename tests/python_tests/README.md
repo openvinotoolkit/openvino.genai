@@ -1,6 +1,6 @@
 # OpenVINO™ GenAI Tests
 
-This tests aim to validate support for vanilla  and continuous batching GenAI APIs.
+This tests aim to validate support for vanilla and continuous batching GenAI APIs.
 
 ## Setup environemnt
 
