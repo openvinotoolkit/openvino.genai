@@ -366,11 +366,15 @@ private:
                     Sequence::Ptr sequence = (*sequence_group)[0];
                     uint64_t seq_id = sequence->get_id();
 
-                    // allocate KV blocks
-                    m_block_manager.allocate(sequence, sequence_group->get_prompt_ids(), num_required_blocks);
                     // and schedule tokens
                     sequence_group->schedule_tokens(sequence_len);
 
+                    // allocate KV blocks
+                    if (sequence_group->get_num_processed_tokens() == 0)
+                        m_block_manager.allocate(sequence, sequence_group->get_prompt_ids(), num_required_blocks);
+                    else 
+                        m_block_manager.append_slots(sequence_group);
+                    
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);

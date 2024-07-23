@@ -155,6 +155,7 @@ public:
     }
 
     KVCacheBlock::Ptr allocate_block() {
+        OPENVINO_ASSERT(!m_enable_prefix_caching);
         OPENVINO_ASSERT(can_allocate_blocks(1));
         KVCacheBlock::Ptr allocated_block = m_free_blocks.front();
         allocated_block->increment();
@@ -171,6 +172,9 @@ public:
             cached_blocks[hash] = block;
             return block;
         }
+        // TODO: Currently we cache all allocated blocks which might be redundant for beam search,
+        // where blocks of non-used candidates are not needed in cache.
+        // This part can be probably improved if we cache only blocks for resulting finished sequences.
         if (cached_blocks.find(hash) != cached_blocks.end()) {
             // use cashed block from cached_blocks
             block = cached_blocks[hash];
@@ -334,18 +338,16 @@ public:
         auto sequence_id = sequence->get_id();
         auto block_table = m_block_table[sequence_id];
         auto content_length = sequence->get_generated_len() + prompt_ids.size();
-        size_t num_hashed_tokens_in_last_block = content_length % m_block_size;
-        size_t allocated_content = block_table.size() * m_block_size;
+        size_t num_hashed_tokens = block_table.size() * m_block_size;
 
         for (size_t i = 0; i < num_blocks; ++i) {
 
             ov::genai::KVCacheBlock::Ptr block = nullptr; 
             if (m_enable_prefix_caching) {
-                // allocated_content += m_block_size;
-                // if (allocated_content > content_length) {
-                //     allocated_content = content_length;
-                // }
-                size_t num_hashed_tokens = (i + 1) * m_block_size + allocated_content <= content_length ? (i + 1) * m_block_size + allocated_content: num_hashed_tokens_in_last_block + allocated_content;
+                num_hashed_tokens += m_block_size;
+                if (num_hashed_tokens > content_length) {
+                    num_hashed_tokens = content_length;
+                }
                 auto hash = sequence->get_hash(num_hashed_tokens, prompt_ids);
                 block = m_allocator.allocate_block(hash, num_hashed_tokens, cached_blocks);
             }
@@ -483,7 +485,6 @@ public:
                 OPENVINO_ASSERT(num_logical_blocks == num_physical_blocks, "A number of physical and logic blocks must be the same in this code path");
                 KVCacheBlock::Ptr last_block = block_table.back();
                 if (last_block->copy_on_write()) {
-                    // TODO: Update hash of block
                     // we need to fork current block, because reference counter is more than 1
                     KVCacheBlock::Ptr new_block = nullptr;
                     if (m_enable_prefix_caching) {
@@ -503,6 +504,8 @@ public:
                     // we are the only users of this block
                     if (m_enable_prefix_caching) {
                         // update hash of block
+                        // TODO: Caching time can probably be improved here if we store
+                        // cache of tokens instead of cache of block.
                         auto prev_hash = last_block->get_hash();
                         auto hash = sequence->get_hash(seq_group->get_context_len(), seq_group->get_prompt_ids());
                         last_block->set_hash(hash, seq_group->get_context_len());
@@ -528,10 +531,12 @@ public:
 
         size_t content_len = 0;       
         while (content_len < prompt_ids.size()) {
+            size_t prev_iteration_content_len = content_len; 
             content_len += block_size;
             if (content_len > prompt_ids.size()) {
                 content_len = prompt_ids.size();
             }
+            // resore fully filled blocks
             auto hash = sequence->get_hash(content_len, prompt_ids);
             auto block = m_allocator.get_cashed_block(hash, cached_blocks);
             if (block != nullptr) {
@@ -540,6 +545,23 @@ public:
                 group->update_processed_tokens_num(content_len);
             }
             else {
+                size_t tokens_len_in_last_block = content_len % block_size;
+                if (tokens_len_in_last_block != 0) {
+                    // resore partially filled block
+                    for (size_t i = 1; i < block_size; i++) {
+                        if (prev_iteration_content_len + i > prompt_ids.size()) {
+                            break;
+                        }
+                        auto hash = sequence->get_hash(prev_iteration_content_len + i, prompt_ids);
+                        auto block = m_allocator.get_cashed_block(hash, cached_blocks);
+                        if (block != nullptr) {
+                            block->set_timestamp(time(NULL));
+                            m_block_table[seq_id].push_back(block);
+                            group->update_processed_tokens_num(prev_iteration_content_len + i);
+                            break;
+                        }
+                    }
+                }
                 break;                
             }
         }
