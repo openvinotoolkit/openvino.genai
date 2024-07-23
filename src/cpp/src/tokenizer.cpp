@@ -7,7 +7,6 @@
 #include <jinja2cpp/template.h>
 #include <jinja2cpp/template_env.h>
 #include "tokenizers_path.hpp"
-#include "timer.hpp"
 #include "circular_buffer_queue.hpp"
 #include <fstream>
 #include <memory>
