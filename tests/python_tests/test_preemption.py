@@ -93,3 +93,85 @@ def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
 
     scheduler_config = get_scheduler_config({"num_kv_blocks": 3, "block_size": 32, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare_with_reference_text(model_path, multinomial_params.prompts, multinomial_params.ref_texts, generation_configs, scheduler_config)
+
+
+multinomial_params_n_seq = RandomSamplingTestStruct(
+    generation_config=[
+        get_multinomial_temperature(),
+        get_multinomial_temperature_and_num_return_sequence(),
+        get_multinomial_all_parameters(),
+    ],
+    prompts=[
+        "Artificial intelligence ",
+        "What is the current",
+        "Tell me something about UAE?",
+    ],
+    ref_texts=get_current_plarform_ref_texts({
+        "linux": [
+            [
+                "\nI've seen this expression used too many times without making sense.\nAs an AI engineer, and as a scientist, we should make everything easier"
+            ],
+            [
+                " position of the Z-shaped groove?\n0.41\nWhat is the current position of the Z-shaped groove?\n0.11\n",
+                " status of all of this? I can't stop thinking about it.\nIt's been a while since I've seen it. I found it a",
+                " status of your blog? Do you accept feedback?\nYes, I’m happy to accept feedback at this time (I’m a"
+            ],
+            [
+                "\nIt's in the middle of nowhere if you haven’t seen one yet! It might be more convenient there than anywhere else.. maybe take",
+                "\nUAE is a country with some great culture that has been living under Islamic oppression for almost 60 years now (including 20 years as part of Arab",
+                "\nNope, just wanted to say how awesome and beautiful it was when my brother came back from an adventure trip across Asia - our 2nd year",
+                "\nI don't know anything.  I'm not sure what kind this sub wants though... but apparently they are pretty bad at making videos/photos",
+            ],
+        ],
+        "win32": [
+            [
+                "\nI've had a friend with the capacity to test this in his own words.\nThe big problem with real-world results is the economics of"
+            ],
+            [
+                " position of the patent application number of the present invention?\n\nIn the present invention, the present invention relates to an improved method for manufacturing a semic",
+                " status of your town? How many houses do you have?\nThere are about three houses in our town. The closest place to us is about 25",
+                " status of all the other passengers?\nWe're the only ones left, so no...\nI don't think they'll really leave.\nThey"
+            ],
+            [
+                "\nI don't have any knowledge on them. We are based out near Dubai so hopefully they will take care of us soon enough :) thanks though :",
+                "\nUAE is not one of the richest countries in Asia but definitely among those most corrupt nations because this corruption (and its own endemic practices) still",
+                "\nNope, I'm just going through my first semester there right now and it was nice to see some people who were doing well haha - we",
+                "\nIt's a country where your parents can never give you anything at all!  It also has an extremely low education system for many years... You",
+            ],
+        ],
+        "darwin": [
+            [
+                "\nI've had a friend with the capacity to test this in his own words.\nThe big problem with real-world results is the rigidity"
+            ],
+            [
+               " position of the patent application number of the present invention?\n\nIn the present invention, the present invention relates to an improved method for manufacturing a semic",
+               " status of your town? How many houses do you have?\nThere are about three houses in our town. The closest place to us is about 25",
+               " status of all the other passengers?\nWe're the only ones left, so no...\nI don't think they'll really leave.\nThey"
+            ],
+            [
+                "\nI don't have any knowledge on them. We are based out near Dubai so hopefully they will take care of us soon enough :) thanks though :",
+                "\nUAE is not one of the richest countries in Asia but definitely among those most corrupt nations because this corruption (and its own endemic practices) still",
+                "\nNope, I'm just going through my first semester there right now and it was nice to see some people who were doing well haha - we",
+                "\nIt's a country where your parents can never give you anything at all!  It also has an extremely low education system for many years... You",
+            ],
+        ],
+    }),
+)
+
+
+@pytest.mark.parametrize("dynamic_split_fuse", [True, False])
+@pytest.mark.precommit
+@pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
+def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
+    generation_configs = multinomial_params_n_seq.generation_config
+    for config in generation_configs:
+        config.rng_seed = 0
+    model_id : str = "facebook/opt-125m"
+    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
+
+    model_path : Path = tmp_path / model_id
+    save_ov_model_from_optimum(model, hf_tokenizer, model_path)
+
+    # needed kv_blocks - 16 (2 blocks per sequence (30 tokens to generated text + prompt (> 2 tokens)) * (1 + 3 + 4) seq )
+    scheduler_config = get_scheduler_config({"num_kv_blocks": 8, "block_size": 32, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
+    generate_and_compare_with_reference_text(model_path, multinomial_params_n_seq.prompts, multinomial_params_n_seq.ref_texts, generation_configs, scheduler_config)
