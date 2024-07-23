@@ -6,6 +6,7 @@
 #include "utils.hpp"
 #include <jinja2cpp/template.h>
 #include <jinja2cpp/template_env.h>
+#include <jinja2cpp/user_callable.h>
 #include "tokenizers_path.hpp"
 #include <fstream>
 
@@ -342,47 +343,32 @@ public:
                                     bool add_generation_prompt, 
                                     const std::string& chat_template) const {
         auto chat_tpl = chat_template.empty() ? m_chat_template : chat_template;
-        // Jinja2Cpp does not support slicing, e.g. [1:].
-        // In templates slicing is used typically in the header to find system prompt.
-        // If header containts that typical expression we update template and 
-        // extract system message manually from ChatHistory.
-        std::string header_with_slice = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}";
-        std::string replacement_string = "{% if false %}{% set placeholder = false %}";
-        
-        std::string system_message = "";
-        // size_t pos = chat_tpl.find(header_with_slice);
-        // if (pos != std::string::npos) {
-        //     chat_tpl.replace(pos, header_with_slice.length(), replacement_string);
 
-        //     if (!history.empty() && history[0].at("role") == "system") {
-        //         system_message = history[0].at("content");
-        //         history.erase(history.begin());
-        //     }
-        // }
-
+        // Jinja2Cpp does not support Python-style slicing, e.g. [1:].
+        // If chat template contains such slicing, we replace it with custom function `slice()` (user-defined callable) 
+        // that is defined below and does the same list slicing logic.
         std::string slice_string = "messages[1:]";
-        std::string replacement_slice_string = "messages.slice(1)";
+        std::string replacement_slice_string = "slice(messages, 1)";
         size_t slice_pos = chat_tpl.find(slice_string);
         if (slice_pos != std::string::npos) {
             chat_tpl.replace(slice_pos, slice_string.length(), replacement_slice_string);
         }
-        
-        // Jinja2Cpp accepts system_message only as a string and incorrectly handles it as a bool.
-        // Both this patters are found frequently in chat templates, replace so that jinja2cpp 
-        // will not stumble on them.
-        std::pair<std::string, std::string> replace_str_map[] = {
-            {"{% set system_message = false %}", ""},
-            {"system_message != false", "true"},
-        };
-        if (!system_message.empty()) {
-            for (const auto& [from, to] : replace_str_map) {
-                size_t pos = 0;
-                while ((pos = chat_tpl.find(from, pos)) != std::string::npos) {
-                    chat_tpl.replace(pos, from.size(), to);
-                    pos += to.size();
+        jinja2::UserCallable sliceCallable = jinja2::MakeCallable(
+            [](const jinja2::ValuesList& list, const int64_t start) {
+                if (list.empty())
+                    return jinja2::Value();
+                jinja2::ValuesList result;
+                int64_t stop = list.size();
+                int64_t step = 1;
+                for (int64_t i = start; i < stop && i < list.size(); i += step)
+                {
+                    result.push_back(list.at(i));
                 }
-            }
-        }
+
+                return jinja2::Value(result);
+            },
+            jinja2::ArgInfo{"list"}, jinja2::ArgInfo{"start"}
+        );
 
         jinja2::TemplateEnv env;
         env.GetSettings().lstripBlocks = true;
@@ -402,10 +388,10 @@ public:
             {"bos_token",  m_bos_token},
             {"eos_token", m_eos_token},
             {"pad_token", m_pad_token},
-            {"system_message", system_message.empty() ? jinja2::EmptyValue() : jinja2::Value{system_message}},
             {"add_generation_prompt", add_generation_prompt},
+            {"slice", sliceCallable},
         };
-        
+
         try {
             return tpl.RenderAsString(params).value();
         } catch (const std::exception& error) {
