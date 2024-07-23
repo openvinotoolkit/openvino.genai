@@ -306,7 +306,7 @@ def test_post_oom_health(tmp_path):
     model_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, model_path)
 
-    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix(), {}), scheduler_config, "CPU", {}, {})
+    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
     # First run should return incomplete response
     output = pipe.generate(["What is OpenVINO?"], generation_configs)
     assert(len(output))
