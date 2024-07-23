@@ -8,11 +8,11 @@ int main(int argc, char* argv[]) try {
     cxxopts::Options options("benchmark_vanilla_genai", "Help command");
 
     options.add_options()
-    ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value("The Sky is blue because"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
+    ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value("The Sky is blue because"))
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
-    ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(20)))
-    ("mt,max_new_tokens", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(20)))
+    ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
+    ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
     ("h,help", "Print usage");
 
@@ -38,6 +38,8 @@ int main(int argc, char* argv[]) try {
   
     ov::genai::GenerationConfig config;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
+    config.num_beam_groups = 3;
+    config.num_beams = 15;
 
     ov::genai::LLMPipeline pipe(model_path, device);
     
@@ -45,10 +47,10 @@ int main(int argc, char* argv[]) try {
         pipe.generate(prompt, config);
     
     ov::genai::DecodedResults res = pipe.generate(prompt, config);
-    ov::genai::PerfMetrics metrics = res.metrics;
+    ov::genai::PerfMetrics metrics = res.perf_metrics;
     for (size_t i = 0; i < num_iter - 1; i++) {
         res = pipe.generate(prompt, config);
-        metrics = metrics + res.metrics;
+        metrics = metrics + res.perf_metrics;
     }
 
     std::cout << "Load time: " << metrics.load_time << " ms" << std::endl;

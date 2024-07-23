@@ -37,7 +37,7 @@ class EncodedResults {
 public:
     std::vector<std::vector<int64_t>> tokens;
     std::vector<float> scores;
-    PerfMetrics metrics;
+    PerfMetrics perf_metrics;
 };
 
 /**
@@ -52,7 +52,7 @@ class DecodedResults {
 public:
     std::vector<std::string> texts;
     std::vector<float> scores;
-    PerfMetrics metrics;
+    PerfMetrics perf_metrics;
 
     // @brief Convert DecodedResults to a string.
     operator std::string() const {

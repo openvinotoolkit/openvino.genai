@@ -164,7 +164,7 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
 
     // Initialize results and performance metrics.
     EncodedResults results;
-    auto& raw_perf_counters = results.metrics.raw_counters;
+    auto& raw_perf_counters = results.perf_metrics.raw_metrics;
     results.scores.resize(batch_size, 0);
     results.tokens.resize(batch_size);
 

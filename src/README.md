@@ -196,6 +196,55 @@ int main(int argc, char* argv[]) {
 }
 ```
 
+### Performance Metrics
+
+`ov.genai.PerfMetrics` (referred to as `PerfMetrics` for simplicity) is a structure that holds performance metrics for each generate call. `PerfMetrics` hold fields with mean and standard deviations for the following metrics:
+- `ttft`
+- `tpot`
+- `load_time`
+- `generate_duration`
+- `tokenization_duration`
+- `detokenization_duration`
+- `throughput`
+
+and:
+- `num_generated_tokens`
+- `num_input_tokens`
+
+Performance metrics are stored either in the `DecodedResults` or `EncodedResults` `perf_metric` field. Additionally to the fields mentioned above, `PerfMetrics` has a member `raw_metrics` of type `ov.genai.RawPerfMetrics` (referred to as `RawPerfMetrics` for simplicity) that contains raw values for the durations of each batch of new token generation, tokenization durations, detokenization durations, and more. These raw metrics are accessible if you wish to calculate your own statistical values such as median or percentiles. However, since mean and standard deviation values are usually sufficient, we will focus on `PerfMetrics`.
+
+```python
+import openvino_genai as ov_genai
+pipe = ov_genai.LLMPipeline(model_path, "CPU")
+res = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
+perf_metrics = res.perf_metrics
+print(f'generate_duration: {perf_metrics.mean_generate_duration:.2f}')
+print(f'ttft: {perf_metrics.mean_ttft:.2f}')
+print(f'tpot: {perf_metrics.mean_tpot:.2f}')
+```
+output:
+```sh
+mean_generate_duration: 76.28
+mean_ttft: 42.58
+mean_tpot 3.80
+```
+
+>**Note**: If the input prompt is just a string, the generate function will return only a string without perf_metrics. To obtain perf_metrics, provide the prompt as a list with at least one element or call generate with encoded inputs.
+
+Several `perf_metrics` can be added with each other. In that case `raw_metrics` will be concatenated and mean/std values will be recalculated. This enhances benchmarking and accumulating statistics from several calls.
+
+```python
+import openvino_genai as ov_genai
+pipe = ov_genai.LLMPipeline(model_path, "CPU")
+res_1 = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
+res_2 = pipe.generate(["Why Sky is blue because"], max_new_tokens=20)
+perf_metrics = res_1.perf_metrics + res_2.perf_metrics
+
+print(f'generate_duration: {perf_metrics.mean_generate_duration:.2f}')
+print(f'ttft: {perf_metrics.mean_ttft:.2f}')
+print(f'tpot: {perf_metrics.mean_tpot:.2f}')
+```
+
 ## How It Works
 
 For information on how OpenVINO™ GenAI works, refer to the [How It Works Section](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/HOW_IT_WORKS.md).

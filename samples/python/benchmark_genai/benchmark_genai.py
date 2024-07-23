@@ -3,7 +3,6 @@
 
 import argparse
 import openvino_genai as ov_genai
-import pdb
 
 def main():
     parser = argparse.ArgumentParser(description="Help command")
@@ -16,6 +15,8 @@ def main():
     
     args = parser.parse_args()
 
+    # Perf metrics is stored in DecodedResults. 
+    # In order to get DecodedResults instead of a string input should be a list.
     prompt = [args.prompt]
     model_path = args.model
     device = args.device
@@ -24,6 +25,8 @@ def main():
     
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = args.max_new_tokens
+    config.num_beam_groups = 3
+    config.num_beams = 15
 
     pipe = ov_genai.LLMPipeline(model_path, device)
     
@@ -31,19 +34,18 @@ def main():
         pipe.generate(prompt, config)
     
     res = pipe.generate(prompt, config)
-    metrics = res.metrics
+    perf_metrics = res.perf_metrics
     for _ in range(num_iter - 1):
-        # pdb.set_trace()
         res = pipe.generate(prompt, config)
-        metrics += res.metrics
+        perf_metrics += res.perf_metrics
     
-    print(f"Load time: {metrics.load_time:.2f} ms")
-    print(f"Generate time: {metrics.mean_generate_duration:.2f} ± {metrics.std_generate_duration:.2f} ms")
-    print(f"Tokenization time: {metrics.mean_tokenization_duration:.2f} ± {metrics.std_tokenization_duration:.2f} ms")
-    print(f"Detokenization time: {metrics.mean_detokenization_duration:.2f} ± {metrics.std_detokenization_duration:.2f} ms")
-    print(f"TTFT: {metrics.mean_ttft:.2f} ± {metrics.std_ttft:.2f} ms")
-    print(f"TPOT: {metrics.mean_tpot:.2f} ± {metrics.std_tpot:.2f} ms")
-    print(f"Throughput tokens/s: {metrics.mean_throughput:.2f} ± {metrics.std_throughput:.2f}")
+    print(f"Load time: {perf_metrics.load_time:.2f} ms")
+    print(f"Generate time: {perf_metrics.mean_generate_duration:.2f} ± {perf_metrics.std_generate_duration:.2f} ms")
+    print(f"Tokenization time: {perf_metrics.mean_tokenization_duration:.2f} ± {perf_metrics.std_tokenization_duration:.2f} ms")
+    print(f"Detokenization time: {perf_metrics.mean_detokenization_duration:.2f} ± {perf_metrics.std_detokenization_duration:.2f} ms")
+    print(f"TTFT: {perf_metrics.mean_ttft:.2f} ± {perf_metrics.std_ttft:.2f} ms")
+    print(f"TPOT: {perf_metrics.mean_tpot:.2f} ± {perf_metrics.std_tpot:.2f} ms")
+    print(f"Throughput tokens/s: {perf_metrics.mean_throughput:.2f} ± {perf_metrics.std_throughput:.2f}")
 
 if __name__ == "__main__":
     main()

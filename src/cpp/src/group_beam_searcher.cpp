@@ -444,7 +444,7 @@ std::pair<EncodedResults, int32_t> beam_search(ov::InferRequest& lm,
     int32_t res_selected_beam_idx = 0;
     results.scores.reserve(config.num_return_sequences * result.size());
     results.tokens.reserve(config.num_return_sequences * result.size());
-    auto& raw_perf_counters = results.metrics.raw_counters;
+    auto& raw_perf_counters = results.perf_metrics.raw_metrics;
     raw_perf_counters.m_new_token_times = new_token_times;
     raw_perf_counters.m_batch_sizes = batch_sizes;
     

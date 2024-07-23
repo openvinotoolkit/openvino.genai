@@ -37,23 +37,25 @@ struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
 *
 */
 struct OPENVINO_GENAI_EXPORTS PerfMetrics {
-    // First token time.
+    // Load time in ms.
+    float load_time;
+
+    // First token time (in ms).
     float mean_ttft;
     float std_ttft;
 
-    // Time per output token.
+    // Time (in ms) per output token.
     float mean_tpot;
     float std_tpot;
     
-    float load_time;
-
     float mean_generate_duration;
     float std_generate_duration;
-    float mean_tokenization_duration;
-    float std_tokenization_duration;
-    float mean_detokenization_duration;
-    float std_detokenization_duration;
-    
+    float mean_tokenization_duration = -1;
+    float std_tokenization_duration = -1;
+    float mean_detokenization_duration = -1;
+    float std_detokenization_duration = -1;
+     
+    // Tokens per second.
     float mean_throughput;
     float std_throughput;
 
@@ -61,11 +63,11 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     size_t num_input_tokens;
 
     void evaluate_statistics(std::optional<TimePoint> start_time = std::nullopt);
-    static float get_duration_ms(std::chrono::steady_clock::duration duration);
+    static float get_microsec(std::chrono::steady_clock::duration duration);
     PerfMetrics operator+(const PerfMetrics& metrics) const;
     PerfMetrics& operator+=(const PerfMetrics& right);
 
-    RawPerfMetrics raw_counters;
+    RawPerfMetrics raw_metrics;
 };
 
 } // namespace genai

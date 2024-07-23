@@ -24,7 +24,7 @@ EncodedResults greedy_decoding(
 
     // Initialize results and performance metrics.
     EncodedResults results;
-    auto& raw_perf_counters = results.metrics.raw_counters;
+    auto& raw_perf_counters = results.perf_metrics.raw_metrics;
     
     results.scores.resize(running_batch_size);
     results.tokens.resize(running_batch_size);

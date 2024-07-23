@@ -12,14 +12,14 @@ FetchContent_Declare(cxxopts
     URL_HASH SHA256=523175f792eb0ff04f9e653c90746c12655f10cb70f1d5e6d6d9491420298a08)
 FetchContent_MakeAvailable(cxxopts)
 
-add_executable(benchmark_vanilla_genai benchmark_vanilla_genai.cpp)
-target_link_libraries(benchmark_vanilla_genai PRIVATE openvino::genai cxxopts::cxxopts)
-set_target_properties(benchmark_vanilla_genai PROPERTIES
-    COMPILE_PDB_NAME benchmark_vanilla_genai
+add_executable(benchmark_genai benchmark_genai.cpp)
+target_link_libraries(benchmark_genai PRIVATE openvino::genai cxxopts::cxxopts)
+set_target_properties(benchmark_genai PROPERTIES
+    COMPILE_PDB_NAME benchmark_genai
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
-# target_compile_features(benchmark_vanilla_genai PRIVATE cxx_std_11)
-install(TARGETS benchmark_vanilla_genai
+# target_compile_features(benchmark_genai PRIVATE cxx_std_11)
+install(TARGETS benchmark_genai
     RUNTIME DESTINATION samples_bin/
     COMPONENT samples_bin
     EXCLUDE_FROM_ALL)

@@ -38,6 +38,17 @@ using PyBindStreamerVariant = std::variant<std::function<bool(py::str)>, std::sh
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
+template <typename T, typename U>
+std::vector<float> get_ms(const T& instance, U T::*member) {
+    // Converts c++ duration to float so that it can be used in Python.
+    std::vector<float> res;
+    const auto& durations = instance.*member;
+    res.reserve(durations.size());
+    std::transform(durations.begin(), durations.end(), std::back_inserter(res),
+                   [](const auto& duration) { return duration.count(); });
+    return res;
+}
+
 namespace {
 
 auto generate_docstring = R"(
@@ -536,17 +547,25 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init<>())
         .def_property_readonly("texts", [](const DecodedResults &dr) { return handle_utf8_results(dr); })
         .def_readonly("scores", &DecodedResults::scores)
-        .def_readonly("metrics", &DecodedResults::metrics)
+        .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
         .def("__str__", &DecodedResults::operator std::string);
 
     py::class_<RawPerfMetrics>(m, "RawPerfMetrics")
         .def(py::init<>())
         .def_readonly("generate_durations", &RawPerfMetrics::generate_durations)
-        .def_readonly("tokenization_durations", &RawPerfMetrics::tokenization_durations)
-        .def_readonly("detokenization_durations", &RawPerfMetrics::detokenization_durations)
-        .def_readonly("m_times_to_first_token", &RawPerfMetrics::m_times_to_first_token)
+        .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) { 
+            return get_ms(rw, &RawPerfMetrics::tokenization_durations);
+         })
+        .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) { 
+            return get_ms(rw, &RawPerfMetrics::detokenization_durations); 
+        })
+        .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) { 
+            return get_ms(rw, &RawPerfMetrics::m_times_to_first_token); 
+        })
+        .def_property_readonly("m_durations", [](const RawPerfMetrics &rw) { 
+            return get_ms(rw, &RawPerfMetrics::m_durations); 
+        })
         .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes)
-        .def_readonly("m_durations", &RawPerfMetrics::m_durations)
         .def_readonly("num_generated_tokens", &RawPerfMetrics::num_generated_tokens)
         .def_readonly("num_input_tokens", &RawPerfMetrics::num_input_tokens);
 
@@ -567,7 +586,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readonly("load_time", &PerfMetrics::load_time)
         .def("__add__", &PerfMetrics::operator+)
         .def("__iadd__", &PerfMetrics::operator+=)
-        .def_readonly("raw_counters", &PerfMetrics::raw_counters)
+        .def_readonly("raw_metrics", &PerfMetrics::raw_metrics)
         ;
 
     py::class_<TokenizedInputs>(m, "TokenizedInputs")
@@ -578,7 +597,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
     py::class_<EncodedResults>(m, "EncodedResults")
         .def_readonly("tokens", &EncodedResults::tokens)
         .def_readonly("scores", &EncodedResults::scores)
-        .def_readonly("metrics", &EncodedResults::metrics);
+        .def_readonly("perf_metrics", &EncodedResults::perf_metrics);
 
     py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase")  // Change the holder form unique_ptr to shared_ptr
         .def(py::init<>())
