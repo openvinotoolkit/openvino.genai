@@ -151,6 +151,7 @@ test_cases = [
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
 @pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_decoding(model_descr, generation_config, prompt):
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
@@ -168,6 +169,7 @@ input_tensors_list = [
     condition=sys.platform in ["linux", "win32"]
 )
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_ov_tensors(model_descr, inputs):
     hf_ov_genai_tensors_comparison(read_model(model_descr), dict(max_new_tokens=20), *inputs)
 
@@ -182,6 +184,7 @@ prompts = [
 @pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.xfail(
     raises=TypeError, 
     reason="pybind was unable to find ov::Tensor from openvino yet",
@@ -217,6 +220,7 @@ encoded_prompts = [
 @pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.parametrize("encoded_prompt", encoded_prompts)
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.xfail(
     raises=TypeError, 
     reason="pybind was unable to find ov::Tensor from openvino yet",
@@ -252,6 +256,7 @@ batched_prompts = [
 @pytest.mark.parametrize("prompts", batched_prompts)
 @pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_multibatch(model_descr, generation_config, prompts):
     run_hf_ov_genai_comparison_batched(read_model(model_descr), generation_config, prompts)
 
@@ -264,6 +269,7 @@ prompts = ['The Sun is yellow because', 'Difference between Jupiter and Mars is 
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
                               max_new_tokens, diversity_penalty, prompt):
     generation_config = dict(
@@ -281,6 +287,7 @@ def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
 @pytest.mark.parametrize("max_new_tokens", [10, 80])
 @pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
     # todo: with EARLY stop_criteria looks like HF return unvalid out with sentence<eos><unk><unk>
     # while genai ends sentence with <eos>
@@ -323,6 +330,7 @@ def user_defined_callback(subword):
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_callback_one_string(callback):
     pipe = read_model(get_models_list()[0])[4]
     generation_config = pipe.get_generation_config()
@@ -332,6 +340,7 @@ def test_callback_one_string(callback):
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_callback_batch_fail(callback):
     pipe = read_model(get_models_list()[0])[4]
     with pytest.raises(RuntimeError):
@@ -340,12 +349,14 @@ def test_callback_batch_fail(callback):
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_callback_kwargs_one_string(callback):
     pipe = read_model(get_models_list()[0])[4]
     pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.parametrize("model_descr", get_models_list())
 def test_callback_decoding_metallama(model_descr, callback):
     # On metallam this prompt generates output which can shorten after adding new tokens.
@@ -359,6 +370,7 @@ def test_callback_decoding_metallama(model_descr, callback):
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_callback_kwargs_batch_fail(callback):
     pipe = read_model(get_models_list()[0])[4]
     with pytest.raises(RuntimeError):
@@ -380,6 +392,7 @@ class Printer(ov_genai.StreamerBase):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_streamer_one_string():
     pipe = read_model(get_models_list()[0])[4]
     generation_config = pipe.get_generation_config()
@@ -389,6 +402,7 @@ def test_streamer_one_string():
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_streamer_batch_fail():
     pipe = read_model(get_models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
@@ -397,6 +411,7 @@ def test_streamer_batch_fail():
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_streamer_kwargs_one_string():
     pipe = read_model(get_models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
@@ -404,6 +419,7 @@ def test_streamer_kwargs_one_string():
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_streamer_kwargs_batch_fail():
     pipe = read_model(get_models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
@@ -412,6 +428,7 @@ def test_streamer_kwargs_batch_fail():
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 def test_operator_with_callback_one_string(callback):
     pipe = read_model(get_models_list()[0])[4]
@@ -421,6 +438,7 @@ def test_operator_with_callback_one_string(callback):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 def test_operator_with_callback_batch_fail(callback):
     pipe = read_model(get_models_list()[0])[4]
@@ -429,6 +447,7 @@ def test_operator_with_callback_batch_fail(callback):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_operator_with_streamer_kwargs_one_string():
     pipe = read_model(get_models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
@@ -436,6 +455,7 @@ def test_operator_with_streamer_kwargs_one_string():
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_operator_with_streamer_kwargs_batch_fail():
     pipe = read_model(get_models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
@@ -444,6 +464,7 @@ def test_operator_with_streamer_kwargs_batch_fail():
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_load_special_tokens_ids_1(model_tmp_path):
     # test when there is an available config.json
     config_json = { 
@@ -458,6 +479,7 @@ def test_load_special_tokens_ids_1(model_tmp_path):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_load_special_tokens_str_2(model_tmp_path):
     # test with special_tokens_map
     special_tokens_map_json = { 
@@ -472,6 +494,7 @@ def test_load_special_tokens_str_2(model_tmp_path):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_load_special_tokens_3_(model_tmp_path):
     # special_tokens_map is not available 
     # but tokenize_config.json exists
@@ -498,6 +521,7 @@ def test_load_special_tokens_3_(model_tmp_path):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_load_special_tokens_3(model_tmp_path):
     # both config.json is availabel and tokenizer_config.json available
     # check that it does not read int values from tokenizer_config.json if they are in config.json
@@ -532,6 +556,7 @@ def test_load_special_tokens_3(model_tmp_path):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.xfail(
     raises=AssertionError, 
     reason="CVS-143410 ov tokenizer should be aligned with hf",
@@ -575,6 +600,7 @@ invalid_configs = [
 ]
 @pytest.mark.parametrize("generation_config", invalid_configs)
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_invalid_configs(model_tmp_path, generation_config):
     model_id, temp_path = model_tmp_path
     config_json = {}
@@ -584,6 +610,7 @@ def test_invalid_configs(model_tmp_path, generation_config):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_valid_configs(model_tmp_path):
     model_id, temp_path = model_tmp_path
     pipe = load_pipe([({"eos_token_id": 37}, "config.json")], temp_path)
@@ -602,6 +629,7 @@ invalid_py_configs = [
     dict(top_k=0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid top_k
 ]
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.parametrize("generation_config", invalid_py_configs)
 def test_python_generation_config_validation(model_tmp_path, generation_config):
     model_id, temp_path = model_tmp_path
@@ -615,6 +643,7 @@ def test_python_generation_config_validation(model_tmp_path, generation_config):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_unicode_pybind_decoding_1():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
@@ -626,6 +655,7 @@ def test_unicode_pybind_decoding_1():
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_unicode_pybind_decoding_2():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
@@ -636,6 +666,7 @@ def test_unicode_pybind_decoding_2():
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_unicode_pybind_decoding_3():
     # On this model this prompt generates unfinished utf-8 string
     # and streams it. Test that pybind will not fail while we pass string to python.
@@ -648,6 +679,7 @@ def test_unicode_pybind_decoding_3():
 
 @pytest.mark.skip(reason="probably both models ov + hf doesn't fit to memory")
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="not enough space for this model on Win")
 def test_left_pad():
     # test left pad tokenizer post processing implementation
