@@ -40,6 +40,7 @@
 - Microsoft Visual Studio 2019 or higher, version 16.3 or later
 - Python 3.8 or higher
 - Git for Windows
+- [NSIS](https://sourceforge.net/projects/nsis/)
 
 ### Build Instructions
 
