@@ -103,7 +103,8 @@ install(TARGETS ${TARGET_NAME} EXPORT OpenVINOGenAITargets
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
         DESTINATION runtime/include COMPONENT core_genai_dev)
 install(EXPORT OpenVINOGenAITargets FILE OpenVINOGenAITargets.cmake
-        NAMESPACE openvino:: DESTINATION runtime/cmake)
+        NAMESPACE openvino:: DESTINATION runtime/cmake
+        COMPONENT core_genai_dev)
 
 include(CMakePackageConfigHelpers)
 configure_package_config_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/OpenVINOGenAIConfig.cmake.in"
