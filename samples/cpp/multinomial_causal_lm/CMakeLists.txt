@@ -11,7 +11,7 @@ set_target_properties(multinomial_causal_lm PROPERTIES
     COMPILE_PDB_NAME multinomial_causal_lm
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
-target_compile_features(greedy_causal_lm PRIVATE cxx_std_11)
+target_compile_features(multinomial_causal_lm PRIVATE cxx_std_11)
 install(TARGETS multinomial_causal_lm
     RUNTIME DESTINATION samples_bin/
     COMPONENT samples_bin

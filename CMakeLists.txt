@@ -23,6 +23,9 @@ project(OpenVINOGenAI
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX)
 
+option(INSTALL_GTEST "Enable installation of googletest. (Projects embedding googletest may want to turn this OFF.)" OFF)
+option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
+
 # Find OpenVINODeveloperPackage first to compile with SDL flags
 find_package(OpenVINODeveloperPackage QUIET
              PATHS "${OpenVINO_DIR}")
@@ -40,13 +43,48 @@ find_file(spda_to_pa_header sdpa_to_paged_attention.hpp
 
 include(cmake/features.cmake)
 
+if(ENABLE_PYTHON)
+    # the following two calls are required for cross-compilation
+    if(OpenVINODeveloperPackage_DIR)
+        ov_find_python3(REQUIRED)
+        ov_detect_python_module_extension()
+    else()
+        if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
+            find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
+        else()
+            find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+        endif()
+    endif()
+endif()
+
+if(ENABLE_PYTHON)
+    # the following two calls are required for cross-compilation
+    if(OpenVINODeveloperPackage_DIR)
+        ov_find_python3(REQUIRED)
+        ov_detect_python_module_extension()
+    else()
+        if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
+            find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
+        else()
+            find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+        endif()
+    endif()
+endif()
+
 add_subdirectory(thirdparty)
 add_subdirectory(src)
 add_subdirectory(samples)
 add_subdirectory(tests/cpp)
 
-install(FILES LICENSE DESTINATION licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
-install(FILES third-party-programs.txt DESTINATION licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
+install(FILES LICENSE DESTINATION docs/licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
+install(FILES third-party-programs.txt DESTINATION docs/licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
+install(FILES LICENSE DESTINATION docs/licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
+install(FILES third-party-programs.txt DESTINATION docs/licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
 set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+# Workaround https://gitlab.kitware.com/cmake/cmake/-/issues/2614
+set(CPACK_COMPONENTS_ALL core_genai core_genai_dev cpp_samples_genai licensing_genai openvino_tokenizers openvino_tokenizers_licenses)
+if(ENABLE_PYTHON)
+    list(APPEND CPACK_COMPONENTS_ALL pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
+endif() 
 include(CPack)
