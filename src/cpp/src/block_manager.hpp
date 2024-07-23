@@ -174,7 +174,7 @@ public:
         }
         // TODO: Currently we cache all allocated blocks which might be redundant for beam search,
         // where blocks of non-used candidates are not needed in cache.
-        // This part can be probably improved if we cache only blocks for prompt.
+        // This part can be improved if we cache only blocks for prompt.
         if (cached_blocks.find(hash) != cached_blocks.end()) {
             // use cashed block from cached_blocks
             block = cached_blocks[hash];
@@ -506,8 +506,6 @@ public:
                     // we are the only users of this block
                     if (m_enable_prefix_caching) {
                         // update hash of block
-                        // TODO: Caching time can probably be improved here if we store
-                        // hash of token -> KV block map instead of hash of block -> KV block map
                         auto prev_hash = last_block->get_hash();
                         auto hash = sequence->get_hash(seq_group->get_context_len(), seq_group->get_prompt_ids());
                         last_block->set_hash(hash, seq_group->get_context_len());
