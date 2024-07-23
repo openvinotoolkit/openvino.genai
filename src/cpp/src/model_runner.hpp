@@ -22,7 +22,7 @@ using AttentionScoresForEachSubsequence = std::map<size_t, AttentionScoresForEac
 
 std::string get_paged_attention_score_output_for_decoder_layer(size_t decoder_layer_id) {
     std::stringstream ss;
-    ss << "paged_attn." << decoder_layer_id << "/score";
+    ss << "scores." << decoder_layer_id;
     return ss.str();
 }
 
@@ -31,11 +31,13 @@ class ModelRunner {
     SchedulerConfig m_scheduler_config;
     AttentionScoresForEachSubsequence m_last_attention_scores;
     size_t m_num_decoder_layers;
+    bool m_collect_attention_scores;
 public:
-    ModelRunner(ov::InferRequest request, const SchedulerConfig& scheduler_config, size_t num_decoder_layers) :
+    ModelRunner(ov::InferRequest request, const SchedulerConfig& scheduler_config, size_t num_decoder_layers, bool collect_attention_scores = false) :
         m_request(std::move(request)),
         m_scheduler_config(scheduler_config),
-        m_num_decoder_layers(num_decoder_layers) { }
+        m_num_decoder_layers(num_decoder_layers),
+        m_collect_attention_scores(collect_attention_scores) { }
 
     ov::InferRequest get_infer_request() const {
         return m_request;
@@ -159,7 +161,18 @@ public:
             timer.end();
         }
 
+        if (m_collect_attention_scores) {
+            collect_attention_scores(sequence_groups, scheduler_output);
+        }
+
+        // return logits
+        return m_request.get_tensor("logits");
+    }
+
+private:
+    void collect_attention_scores(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
         m_last_attention_scores.clear();
+        size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
         using IndexSpan = std::pair<size_t, size_t>;
         std::list<std::pair<size_t, IndexSpan>> running_sequence_group_ids_and_kvcache_spans;
         size_t offset = 0;
@@ -203,9 +216,6 @@ public:
             }
             m_last_attention_scores[global_sequence_id] = attention_scores_across_decoder_layers_for_current_sequence;
         }
-
-        // return logits
-        return m_request.get_tensor("logits");
     }
 };
 }

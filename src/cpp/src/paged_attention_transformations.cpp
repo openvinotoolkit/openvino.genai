@@ -17,11 +17,11 @@ inline ov::PartialShape to_partial_with_dyn_0_dim(const ov::Shape& static_shape)
     return partial_shape;
 }
 
-void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config) {
+void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config, bool per_layer_cache_control = false) {
     const ov::op::util::VariableVector& variables = model->get_variables();
     OPENVINO_ASSERT(!variables.empty(), "Model is supposed to be stateful");
 
-    ov::pass::SDPAToPagedAttention().run_on_model(model);
+    ov::pass::SDPAToPagedAttention(per_layer_cache_control, per_layer_cache_control).run_on_model(model);
 
     const ov::ParameterVector& parameters = model->get_parameters();
 

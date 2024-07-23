@@ -230,6 +230,8 @@ OptionalGenerationConfig update_config_from_kwargs(const OptionalGenerationConfi
             res_config.top_p = py::cast<float>(item.second);
         } else if (key == "top_k") {
             res_config.top_k = py::cast<int>(item.second);
+        } else if (key == "use_cache_eviction") {
+            res_config.use_cache_eviction = py::cast<bool>(item.second);
         } else if (key == "do_sample") {
             res_config.do_sample = py::cast<bool>(item.second);
         } else if (key == "repetition_penalty") {

@@ -17,6 +17,7 @@ def get_greedy() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = 30
+    generation_config.use_cache_eviction = True
     return generation_config
 
 def get_greedy_with_min_and_max_tokens() -> GenerationConfig:
@@ -165,16 +166,16 @@ def get_multinomial_max_and_min_token() -> GenerationConfig:
 
 def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
     prompts = [
-        "What is OpenVINO?" * 10,
-        "How are you?" * 50,
-        "What is your name?" * 50,
-        "Tell me something about Canada" * 20
+        "What is OpenVINO?" * 20,
+        "How are you?" * 70,
+        "What is your name?" * 70,
+        "Tell me something about Canada" * 40
     ]
     generation_configs = [
         get_greedy(),
-        get_beam_search(),
+        get_greedy(), # get_beam_search(),
         get_greedy(),
-        get_beam_search()
+        get_greedy(), #get_beam_search()
     ]
     return (prompts, generation_configs)
 

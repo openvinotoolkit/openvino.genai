@@ -22,7 +22,7 @@ using namespace ov::genai;
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
+void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config, bool per_layer_cache_control);
 
 class ContinuousBatchingPipeline::Impl {
     ov::genai::Tokenizer m_tokenizer;
@@ -100,7 +100,7 @@ public:
 
         DeviceConfig device_config(core, scheduler_config, device, plugin_config);
 
-        apply_paged_attention_transformations(model, device_config);
+        apply_paged_attention_transformations(model, device_config, true);
 
         ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
 
@@ -120,7 +120,7 @@ public:
 
         m_scheduler = std::make_shared<Scheduler>(updated_config);
         // and finally create model runner
-        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers());
+        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers(), true);
         m_sampler = std::make_shared<Sampler>();
         m_sampler->set_seed(m_generation_config.rng_seed);
 
@@ -224,8 +224,7 @@ public:
         dumper.dump_cache_state(*m_scheduler, m_requests);
 
         // evict unimportant blocks from KV cache, if requested
-        if (true) {
-        // if (m_generation_config.use_cache_eviction) {
+        if (m_generation_config.use_cache_eviction) {
             auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
             for (const auto& seq_id_and_attention_scores : sequence_attention_scores) {
                 auto seq_id = seq_id_and_attention_scores.first;
