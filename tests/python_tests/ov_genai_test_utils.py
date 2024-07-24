@@ -208,7 +208,7 @@ def load_tok(configs: List[Tuple], temp_path):
     for config_json, config_name in configs:
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
-    return ov_genai.Tokenizer(str(temp_path))
+    return ov_genai.Tokenizer(str(temp_path), {})
 
 
 def load_pipe(configs: List[Tuple], temp_path):

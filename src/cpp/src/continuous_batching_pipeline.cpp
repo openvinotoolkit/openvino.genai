@@ -105,8 +105,8 @@ public:
         // read default generation config
     }
 
-    Impl(const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& plugin_config)
-        : Impl{models_path, Tokenizer(models_path), scheduler_config, device, plugin_config} {}
+    Impl(const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& llm_plugin_config, const ov::AnyMap& tokenizer_plugin_config)
+        : Impl{models_path, Tokenizer(models_path, tokenizer_plugin_config), scheduler_config, device, llm_plugin_config} {}
 
     ov::genai::GenerationConfig get_config() const {
         return m_generation_config;
@@ -282,8 +282,9 @@ public:
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::string& models_path,
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
-                                                        const ov::AnyMap& plugin_config ) {
-    m_impl = std::make_shared<Impl>(models_path, scheduler_config, device, plugin_config);
+                                                        const ov::AnyMap& llm_plugin_config,
+                                                        const ov::AnyMap& tokenizer_plugin_config) {
+    m_impl = std::make_shared<Impl>(models_path, scheduler_config, device, llm_plugin_config, tokenizer_plugin_config);
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline(
