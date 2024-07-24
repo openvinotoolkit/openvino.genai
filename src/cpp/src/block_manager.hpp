@@ -335,8 +335,11 @@ public:
         return m_allocator.can_allocate_blocks(num_blocks);
     }
 
-    void allocate(ov::genai::Sequence::CPtr sequence, const ov::genai::TokenIds& prompt_ids, size_t num_blocks) {
+    void allocate(ov::genai::Sequence::CPtr sequence, size_t num_blocks, const ov::genai::TokenIds& prompt_ids = {}) {
         OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
+        if (m_enable_prefix_caching) {
+            OPENVINO_ASSERT(prompt_ids.size() > 0, "prompt_ids should be set for hash calculation.");
+        }
         auto sequence_id = sequence->get_id();
         auto block_table = m_block_table[sequence_id];
         auto content_length = sequence->get_generated_len() + prompt_ids.size();
@@ -482,7 +485,7 @@ public:
 
             if (num_logical_blocks > num_physical_blocks) {
                 OPENVINO_ASSERT(can_allocate_blocks(num_logical_blocks - num_physical_blocks));
-                allocate(sequence, seq_group->get_prompt_ids(), num_logical_blocks - num_physical_blocks);
+                allocate(sequence, num_logical_blocks - num_physical_blocks, seq_group->get_prompt_ids());
             } else {
                 OPENVINO_ASSERT(num_logical_blocks == num_physical_blocks, "A number of physical and logic blocks must be the same in this code path");
                 KVCacheBlock::Ptr last_block = block_table.back();

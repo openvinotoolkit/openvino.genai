@@ -20,7 +20,7 @@ TEST(TestBlockManager, general_test) {
         ov::genai::beam_search(),
         4);
     auto sequence = sequence_group->get_not_finished_sequences()[0];
-    bm.allocate(sequence, prompt_ids, 6);
+    bm.allocate(sequence, 6);
     auto seq_id = sequence->get_id();
     EXPECT_TRUE(bm.has_block_table(seq_id));
     EXPECT_EQ(bm.get_block_table(seq_id).size(), 6);
@@ -34,7 +34,7 @@ TEST(TestBlockManager, general_test) {
     EXPECT_FALSE(bm.has_block_table(seq_id));
     EXPECT_EQ(bm.num_free_blocks(), 6);
 
-    bm.allocate(sequence, prompt_ids, 2);
+    bm.allocate(sequence, 2);
     bm.fork_sequence(seq_id, 1);
     EXPECT_TRUE(bm.has_block_table(1));
     EXPECT_EQ(bm.get_block_table(1).back()->get_references_count(), 2);

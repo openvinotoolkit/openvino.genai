@@ -232,7 +232,7 @@ private:
                 if (num_scheduled_tokens > 0) {
                     // allocate KV blocks if required
                     if (num_scheduled_blocks > 0)
-                        m_block_manager.allocate(sequence, sequence_group->get_prompt_ids(), num_scheduled_blocks);
+                        m_block_manager.allocate(sequence, num_scheduled_blocks, sequence_group->get_prompt_ids());
                     // and schedule tokens
                     sequence_group->schedule_tokens(num_scheduled_tokens);
 
@@ -371,7 +371,7 @@ private:
 
                     // allocate KV blocks
                     if (sequence_group->get_num_processed_tokens() == 0)
-                        m_block_manager.allocate(sequence, sequence_group->get_prompt_ids(), num_required_blocks);
+                        m_block_manager.allocate(sequence, num_required_blocks, sequence_group->get_prompt_ids());
                     else 
                         m_block_manager.append_slots(sequence_group);
                     
