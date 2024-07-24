@@ -218,3 +218,8 @@ def load_pipe(configs: List[Tuple], temp_path):
         with (temp_path / config_name).open('w') as f:
             json.dump(config_json, f)
     return ov_genai.LLMPipeline(str(temp_path))
+
+
+@functools.lru_cache(1)
+def get_continuous_batching(path):
+    return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), 'CB')

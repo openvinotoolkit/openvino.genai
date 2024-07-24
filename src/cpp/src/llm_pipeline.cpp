@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 #include <openvino/openvino.hpp>
+#include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "llm_pipeline_base.hpp"
@@ -114,6 +115,7 @@ public:
         EncodedInputs encoded_input;
 
         if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
+            OPENVINO_ASSERT(!is_chat_conversation, "Can't chat with multiple prompts");
             encoded_input = m_tokenizer.encode(*input_vector);
         } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
             std::string& prompt = *input_prompt;
@@ -334,7 +336,151 @@ std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
 }  // namespace genai
 }  // namespace ov
 
-using namespace std;
+namespace {
+using namespace ov::genai;
+
+template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
+Tokenizer dont_construct() {
+    OPENVINO_THROW("Continuous Batching backend can't be constructed"
+        "from ireq because the model must be transformed");
+}
+
+class ContinuousBatchingAdapter final : public LLMPipelineImplBase {
+public:
+    ContinuousBatchingPipeline m_impl;
+
+    ContinuousBatchingAdapter(
+        const ov::InferRequest& request,
+        const Tokenizer& tokenizer,
+        OptionalGenerationConfig generation_config
+    ): LLMPipelineImplBase{dont_construct()}, m_impl{"", {}} {}
+
+    ContinuousBatchingAdapter(
+        const std::filesystem::path& model_path,
+        const Tokenizer& tokenizer,
+        const std::string& device,
+        const ov::AnyMap& plugin_config
+    ): LLMPipelineImplBase{tokenizer}, m_impl{
+        model_path.string(),
+        tokenizer,
+        SchedulerConfig{},
+        device,
+        plugin_config
+    } {}
+
+    ContinuousBatchingAdapter(
+        const std::filesystem::path& model_path,
+        const std::string& device,
+        const ov::AnyMap& plugin_config
+    ): LLMPipelineImplBase{Tokenizer(model_path.string())}, m_impl{
+        model_path.string(),
+        m_tokenizer,
+        SchedulerConfig{},
+        device,
+        plugin_config
+    } {}
+
+    DecodedResults generate(
+        StringInputs inputs,
+        OptionalGenerationConfig generation_config,
+        StreamerVariant streamer
+    ) override {
+        std::vector<std::string> prompts = std::visit(overloaded{
+            [](const std::string& prompt) {
+                return std::vector{prompt};
+            },
+            [](std::vector<std::string>& prompts) {
+                return prompts;
+            }
+        }, inputs);
+        const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
+        // -1 == config.eos_token_id and config.validate() are handled in m_impl.
+        std::vector<GenerationResult> generated = m_impl.generate(
+            prompts,
+            std::vector<GenerationConfig>{prompts.size(), config},
+            streamer
+        );
+        std::vector<std::string> plain_replies;
+        std::vector<float> plain_scores;
+        for (GenerationResult& res : generated) {
+            if (GenerationStatus::FINISHED != res.m_status) {
+                OPENVINO_THROW("Got unfinished GenerationStatus");
+            }
+            std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
+            std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
+        }
+        return {std::move(plain_replies), std::move(plain_scores)};
+    }
+
+    EncodedResults generate(
+        const EncodedInputs& inputs,
+        OptionalGenerationConfig generation_config,
+        StreamerVariant streamer
+    ) override {
+        std::vector<ov::Tensor> input_ids = std::visit(overloaded{
+            [](const ov::Tensor& inp) {
+                size_t batch_size = inp.get_shape().at(0);
+                if (1 == batch_size) {
+                    return std::vector{inp};
+                }
+                std::vector<ov::Tensor> input_ids;
+                input_ids.reserve(batch_size);
+                size_t max_len = inp.get_shape().at(1);
+                const int64_t* const source = inp.data<const int64_t>();
+                for (size_t batch_id = 0; batch_id < batch_size; ++batch_id) {
+                    input_ids.emplace_back(ov::element::i64, ov::Shape(1, max_len));
+                    int64_t* destination = input_ids.back().data<int64_t>();
+                    std::copy_n(source + batch_id * max_len, max_len, destination);
+                }
+                return input_ids;
+            },
+            [](const TokenizedInputs& inp) {
+                size_t batch_size = inp.input_ids.get_shape().at(0);
+                std::vector<ov::Tensor> input_ids;
+                input_ids.reserve(batch_size);
+                size_t max_len = inp.input_ids.get_shape().at(1);
+                const int64_t* const source = inp.input_ids.data<const int64_t>();
+                const int64_t* const attention_mask = inp.attention_mask.data<const int64_t>();
+                for (size_t batch_id = 0; batch_id < batch_size; ++batch_id) {
+                    input_ids.emplace_back(ov::element::i64, ov::Shape(1, max_len));
+                    int64_t* destination = input_ids.back().data<int64_t>();
+                    size_t copy_count = 0;
+                    for (size_t idx = 0; idx < max_len; ++idx) {
+                        if (1 == attention_mask[batch_id * max_len + idx]) {
+                            destination[copy_count++] = source[batch_id * max_len + idx];
+                        }
+                    }
+                    input_ids.back().set_shape({1, copy_count});
+                }
+                return input_ids;
+            }
+        }, inputs);
+        const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
+        // -1 == config.eos_token_id and config.validate() are handled in m_impl.
+        std::vector<EncodedGenerationResult> generated = m_impl.generate(input_ids, std::vector<GenerationConfig>{input_ids.size(), config}, streamer);
+        std::vector<std::vector<int64_t>> plain_tokens;
+        std::vector<float> plain_scores;
+        for (EncodedGenerationResult& res : generated) {
+            if (GenerationStatus::FINISHED != res.m_status) {
+                OPENVINO_THROW("Got unfinished GenerationStatus");
+            }
+            std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_tokens));
+            std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
+        }
+        return {std::move(plain_tokens), std::move(plain_scores)};
+    }
+
+    void start_chat(const std::string& system_message) override {
+        m_impl.start_chat();
+    };
+
+    void finish_chat() override {
+        m_impl.finish_chat();
+    };
+};
+}
 
 ov::genai::LLMPipeline::LLMPipeline(
     const ov::InferRequest& request,
@@ -349,25 +495,27 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& plugin_config
-) {
-    if (device == "NPU") {
-        m_pimpl = make_unique<StaticLLMPipeline>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
-    } else {
-        m_pimpl = make_unique<StatefulLLMPipeline>(std::filesystem::path(model_path), tokenizer, device, plugin_config);
+): m_pimpl{[&]() -> std::unique_ptr<LLMPipelineImplBase> {
+    if ("CB" == device) {
+        return std::make_unique<ContinuousBatchingAdapter>(model_path, tokenizer, "CPU", plugin_config);
+    } if ("NPU" == device) {
+        return std::make_unique<StaticLLMPipeline>(model_path, tokenizer, device, plugin_config);
     }
-}
+    return std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, plugin_config);
+}()} {}
 
 ov::genai::LLMPipeline::LLMPipeline(
     const std::string& path,
     const std::string& device,
     const ov::AnyMap& config
-) {
-    if (device == "NPU") {
-        m_pimpl = make_unique<StaticLLMPipeline>(std::filesystem::path(path), device, config);
-    } else {
-        m_pimpl = make_unique<StatefulLLMPipeline>(std::filesystem::path(path), device, config);
+): m_pimpl{[&]() -> std::unique_ptr<LLMPipelineImplBase> {
+    if ("CB" == device) {
+        return std::make_unique<ContinuousBatchingAdapter>(path, "CPU", config);
+    } if ("NPU" == device) {
+        return std::make_unique<StaticLLMPipeline>(path, device, config);
     }
-}
+    return std::make_unique<StatefulLLMPipeline>(path, device, config);
+}()} {}
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
     return m_pimpl->m_generation_config;
@@ -386,7 +534,7 @@ void ov::genai::LLMPipeline::finish_chat() {
 }
 
 void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& config) {
-    int64_t default_eos_token_id = m_pimpl->m_generation_config.eos_token_id;;
+    int64_t default_eos_token_id = m_pimpl->m_generation_config.eos_token_id;
     m_pimpl->m_generation_config = config;
     // if eos_token_id was not provided in config forward from default config
     if (config.eos_token_id == -1)
