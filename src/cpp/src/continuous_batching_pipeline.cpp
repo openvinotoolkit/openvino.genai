@@ -29,6 +29,7 @@ class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
+    std::vector<std::string> m_model_config_namevalues;
 
     // TODO (mzegla): GenerationConfig is request specific object
     // and pipeline only uses default rng_seed. 
@@ -97,7 +98,12 @@ public:
 
         apply_paged_attention_transformations(model, device_config);
 
-        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
+        auto compiled_model = core.compile_model(model, device_config.get_device(), plugin_config);
+        /*read_properties([compiled_model](const std::string& key) {
+            return compiled_model.get_property(key); },
+            m_model_config_namevalues);
+*/
+        ov::InferRequest infer_request = compiled_model.create_infer_request();
 
         // setup KV caches
         m_cache_manager = std::make_shared<CacheManager>(device_config);
@@ -130,6 +136,17 @@ public:
 
     PipelineMetrics get_metrics() const {
         return m_pipeline_metrics;
+    }
+
+    std::vector<std::string> get_model_configuration() {
+        return m_model_config_namevalues;
+    }
+
+    void print_model_configuration() {
+        std::cout << "Loaded model configuration:" << std::endl;
+        for( auto prop : m_model_config_namevalues) {
+            std::cout << "\t" << prop << std::endl;
+        }
     }
 
     ov::genai::Tokenizer get_tokenizer() {
@@ -412,7 +429,15 @@ PipelineMetrics ContinuousBatchingPipeline::get_metrics() const{
     return m_impl->get_metrics();
 }
 
-GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params) {
+std::vector<std::string> ContinuousBatchingPipeline::get_model_configuration() {
+    return m_impl->get_model_configuration();
+}
+
+void ContinuousBatchingPipeline::print_model_configuration() {
+    return m_impl->print_model_configuration();
+}
+
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params) {
     return m_impl->add_request(request_id, prompt, sampling_params);
 }
 
