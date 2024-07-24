@@ -291,8 +291,9 @@ def test_individual_generation_configs_random(tmp_path, test_struct: RandomSampl
 
 
 @pytest.mark.precommit
-def test_post_oom_health(tmp_path):
-    generation_config = get_greedy()
+@pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()])
+def test_post_oom_health(tmp_path, sampling_config):
+    generation_config = sampling_config
     generation_config.ignore_eos = True
     generation_config.max_new_tokens = 1000000
 
@@ -309,9 +310,11 @@ def test_post_oom_health(tmp_path):
     pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
     # First run should return incomplete response
     output = pipe.generate(["What is OpenVINO?"], generation_configs)
-    assert(len(output))
+    assert (len(output))
+    assert(len(output[0].m_generation_ids))
     # Same for the second run, here we want to make sure the cleanup works and we have free blocks after recent OOM
     output = pipe.generate(["What is OpenVINO?"], generation_configs)
-    assert(len(output))
+    assert (len(output))
+    assert(len(output[0].m_generation_ids))
     del pipe
     shutil.rmtree(model_path)

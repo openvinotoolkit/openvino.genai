@@ -425,59 +425,46 @@ public:
         return m_generation_stream->get_status() == GenerationStatus::DROPPED_BY_HANDLE;
     }
 
-    void notify_handle() {
+    void push_outputs() {
+        GenerationOutputs outputs;
+        for (auto& sequence: m_sequences) {
+            GenerationOutput output;
+            output.generated_token_ids = sequence->get_generated_ids();
+            output.score = sequence->get_beam_search_score(m_sampling_params);
+            outputs.emplace(sequence->get_grouped_id(), output);
+        }
+        m_generation_stream->push(outputs);
+    }
 
+    void push_partial_outputs() {
+        GenerationOutputs outputs;
+        // TODO: support streamimg for n seqs
+        for (auto& sequence : m_sequences) {
+            // todo: check seq.is_finished() to generate without several </s>
+            // or is it ok to use padding?
+            const auto last_gen_token = sequence->get_last_generation_output();
+            outputs.emplace(sequence->get_grouped_id(), last_gen_token);
+        }
+        m_generation_stream->push(outputs);
+    }
+
+    void notify_handle() {
         if (out_of_memory()) {
             set_generation_status(GenerationStatus::IGNORED);
         } else if (has_finished()) {
             set_generation_status(GenerationStatus::FINISHED);
         }
-
-        GenerationOutputs outputs;
-
         // For beam search streaming is not available, so we notify only upon finishing
         if(m_sampling_params.is_beam_search()) {
-            if (has_finished()) {
-                std::vector<Sequence::CPtr> finished_sequences = get_finished_sequences();
-
-                OPENVINO_ASSERT(finished_sequences.size() == num_total_seqs() && has_finished());
-                for (auto& sequence: finished_sequences) {
-                    GenerationOutput output;
-                    output.generated_token_ids = sequence->get_generated_ids();
-                    output.score = sequence->get_beam_search_score(m_sampling_params);
-                    outputs.emplace(sequence->get_grouped_id(), output);
-                }
-
-                if (outputs.size()) {
-                    m_generation_stream->push(outputs);
-                }
+            if (has_finished() || out_of_memory()) {
+                push_outputs();
             }
-        // For greedy or multinomial sampling we decide whever to stream partial results depending on the user parameter
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
             // TO DO: Now we always stream for greedy search for the sake of benchmarking 
-            if (num_total_seqs() == 1 /* m_sampling_params.stream */) {
-                // TODO: support streamimg for n seqs
-                for (auto& sequence : m_sequences) {
-                    // todo: check seq.is_finished() to generate without several </s>
-                    // or is it ok to use padding?
-                    const auto last_gen_token = sequence->get_last_generation_output();
-                    outputs.emplace(sequence->get_grouped_id(), last_gen_token);
-                }
-                m_generation_stream->push(outputs);
-            } else if (has_finished()) {
-                std::vector<Sequence::CPtr> finished_sequences = get_finished_sequences();
-
-                OPENVINO_ASSERT(finished_sequences.size() == num_total_seqs() && has_finished());
-                for (auto& sequence: finished_sequences) {
-                    GenerationOutput output;
-                    output.generated_token_ids = sequence->get_generated_ids();
-                    output.score = sequence->get_cumulative_log_probs();
-                    outputs.emplace(sequence->get_grouped_id(), output);
-                }
-
-                if (outputs.size()) {
-                    m_generation_stream->push(outputs);
-                }
+            if (num_total_seqs() == 1) {
+                push_partial_outputs();
+            } else if (has_finished() || out_of_memory()) {
+                push_outputs();
             }
         }
     } 
