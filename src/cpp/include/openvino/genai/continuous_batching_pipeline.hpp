@@ -30,7 +30,8 @@ public:
     ContinuousBatchingPipeline(const std::string& models_path,
                                const SchedulerConfig& scheduler_config,
                                const std::string& device = "CPU",
-                               const ov::AnyMap& plugin_config = {});
+                               const ov::AnyMap& llm_plugin_config = {},
+                               const ov::AnyMap& tokenizer_plugin_config = {});
 
     /**
     * @brief Constructs a ContinuousBatchingPipeline when ov::genai::Tokenizer is initialized manually using file from the different dirs.

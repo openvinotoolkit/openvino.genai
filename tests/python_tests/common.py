@@ -273,7 +273,7 @@ def run_continuous_batching(
     prompts: List[str],
     generation_configs : List[GenerationConfig]
 ) -> List[GenerationResult]:
-    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config, "CPU", {})
+    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config, "CPU", {}, {})
     output = pipe.generate(prompts, generation_configs)
     del pipe
     shutil.rmtree(model_path)
