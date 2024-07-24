@@ -168,6 +168,7 @@ private:
 
         return std::numeric_limits<size_t>::max();
     }
+
     void _restore_cached_blocks(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
