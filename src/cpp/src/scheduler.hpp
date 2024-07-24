@@ -10,7 +10,6 @@
 #include "openvino/genai/scheduler_config.hpp"
 #include "block_manager.hpp"
 #include "sequence_group.hpp"
-#include "block_manager.hpp"
 
 namespace ov::genai {
 class Scheduler {
