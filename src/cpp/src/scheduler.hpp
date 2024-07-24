@@ -336,8 +336,7 @@ private:
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
                 // here we also assume that sequence must be scheduler in a single shot and has no already generated context
-                bool enable_prefix_cashing = true;
-                if (!enable_prefix_cashing)
+                if (!m_config.enable_prefix_caching)
                     OPENVINO_ASSERT(sequence_group->get_context_len() == 0);
 
                 size_t num_available_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
