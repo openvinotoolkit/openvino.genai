@@ -99,10 +99,10 @@ public:
         apply_paged_attention_transformations(model, device_config);
 
         auto compiled_model = core.compile_model(model, device_config.get_device(), plugin_config);
-        /*read_properties([compiled_model](const std::string& key) {
+        read_properties([compiled_model](const std::string& key) {
             return compiled_model.get_property(key); },
             m_model_config_namevalues);
-*/
+
         ov::InferRequest infer_request = compiled_model.create_infer_request();
 
         // setup KV caches
