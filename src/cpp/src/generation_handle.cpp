@@ -46,8 +46,11 @@ std::vector<GenerationOutput> GenerationHandleImpl::read_all() {
         add_partial_result(partial_results, iteration_results);
     }
 
-    for (auto& partial_result: partial_results) {
+    for (auto& partial_result : partial_results) {
         results.push_back(partial_result.second);
+        if (results.size() == m_sampling_params.num_return_sequences) {
+            break;
+        }
     }
     return results;
 }
