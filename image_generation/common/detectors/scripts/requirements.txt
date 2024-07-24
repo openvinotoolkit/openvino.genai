@@ -1,8 +1,8 @@
 controlnet_aux==0.0.7
 diffusers==0.27.2
-numpy==2.0.0
+numpy==1.26.4
 opencv_python==4.9.0.80
-openvino==2024.1.0
+openvino==2024.2.0
 Pillow==10.4.0
 scipy==1.14.0
 torch==2.3.0
