@@ -13,8 +13,8 @@ from nncf import compress_weights
 from nncf import Dataset
 from openvino import save_model
 import nncf
-from ..nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION
-from optimum.intel.openvino.configuration import _check_default_4bit_configs
+from ..nncf_utils import COMPRESSION_OPTIONS
+from optimum.intel.openvino.configuration import _check_default_4bit_configs, _DEFAULT_4BIT_CONFIG, OVQuantizationMethod
 import warnings
 
 
@@ -157,7 +157,7 @@ def get_data_aware_args(ov_model, tokenizer, config, compression_args, args):
         dataset_args = compression_args['dataset']
         dataset_params = dataset_args['name']
         if 'sensitivity_metric' in dataset_args:
-            res['mode'] = dataset_args['sensitivity_metric']
+            res['sensitivity_metric'] = dataset_args['sensitivity_metric']
         if 'awq' in dataset_args:
             res['awq'] = dataset_args['awq']
         if 'scale_estimation' in dataset_args:
@@ -172,7 +172,7 @@ def get_data_aware_args(ov_model, tokenizer, config, compression_args, args):
     if dataset_params is not None:
         # for example "wikitext,wikitext-2-v1,train[:1000],text"
         path, name, split, item_name = dataset_params.split(',')
-        dataset = load_dataset(path, name, split=split)
+        dataset = load_dataset(path, name, split=split, streaming="allenai/c4" in path)
 
         if path == 'wikitext':
             # filter short sentences
@@ -194,16 +194,36 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
             compression_args = _check_default_4bit_configs(config)
         except TypeError:
             compression_args = _check_default_4bit_configs(config.name_or_path)
-        if compression_args:
-            sym = compression_args.pop("sym", False)
-            compression_args.pop("bits", 4)
-            compression_args["mode"] = nncf.CompressWeightsMode.INT4_SYM if sym else nncf.CompressWeightsMode.INT4_ASYM
-        if compression_args is None:
-            model_id = out_path.parents[3].name
-            if model_id in INT4_MODEL_CONFIGURATION:
-                compression_args = INT4_MODEL_CONFIGURATION[model_id]
+        compression_args.pop("bits")
+
+        sym = compression_args.pop("sym", _DEFAULT_4BIT_CONFIG["sym"])
+        compression_args["mode"] = nncf.CompressWeightsMode.INT4_SYM if sym else nncf.CompressWeightsMode.INT4_ASYM
+
+        quant_method = compression_args.pop("quant_method", None)
+        scale_estimation = compression_args.pop("scale_estimation", False)
+        sensitivity_metric = compression_args.pop("sensitivity_metric", None)
+        num_samples = compression_args.pop("num_samples", None)
+        if num_samples:
+            compression_args["subset_size"] = num_samples
+        dataset = compression_args.pop("dataset", None)
+        if dataset:
+            if dataset == "wikitext2":
+                dataset_name = "wikitext,wikitext-2-v1,train[:1000],text"
+            elif dataset == "c4" or dataset == "c4-new":
+                dataset_name = "allenai/c4,en,train,text"
             else:
-                compression_args = COMPRESSION_OPTIONS["INT4_ASYM"]
+                raise ValueError(f"Unrecognized dataset: {dataset}")
+
+            dataset_args = {"name": dataset_name}
+            if quant_method == OVQuantizationMethod.AWQ:
+                dataset_args["awq"] = True
+            elif quant_method is not None:
+                raise ValueError(f"Unrecognised quant_method: {quant_method}")
+            if scale_estimation:
+                dataset_args["scale_estimation"] = True
+            if sensitivity_metric:
+                dataset_args["sensitivity_metric"] = sensitivity_metric
+            compression_args["dataset"] = dataset_args
 
     if compression_args is None:
         compression_args = COMPRESSION_OPTIONS[compress_weights_format]
