@@ -35,13 +35,8 @@ public:
         StreamerVariant streamer
     ) override;
 
-    void start_chat() override {
-        OPENVINO_THROW("Currently chat conversation mode isn't supported");
-    };
-    void finish_chat() override {
-        OPENVINO_THROW("Currently chat conversation mode isn't supported");
-    };
-
+    void start_chat(const std::string& system_message) override;
+    void finish_chat() override;
 private:
     void prepare_for_new_conversation();
 
@@ -54,6 +49,9 @@ private:
     KVCacheDesc m_kvcache_desc;
     ov::InferRequest m_kvcache_request;
     ov::InferRequest m_prefill_request;
+
+    bool m_is_chat_conversation = false;
+    ChatHistory m_history;
 };
 
 }  // namespace genai

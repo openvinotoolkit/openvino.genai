@@ -26,10 +26,10 @@ struct TokenizedInputs {
 class OPENVINO_GENAI_EXPORTS Tokenizer {
 public:
     /**
-    * @brief ov::Tokenizer constructor.
+    * @brief ov::genai::Tokenizer constructor.
     * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
     */
-    Tokenizer(const std::string& tokenizer_path);
+    Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& plugin_config = {});
 
     /**
     * @brief encode a single prompt
@@ -79,7 +79,7 @@ public:
      * @return A string with the transformed and concatenated prompts from the chat history.
      * @throws Exception if the chat template was unable to parse the input history.
      */
-    std::string apply_chat_template(const ChatHistory& history, 
+    std::string apply_chat_template(ChatHistory history, 
                                     bool add_generation_prompt, 
                                     const std::string& chat_template="") const;
 

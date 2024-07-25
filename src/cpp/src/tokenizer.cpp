@@ -7,7 +7,9 @@
 #include <jinja2cpp/template.h>
 #include <jinja2cpp/template_env.h>
 #include "tokenizers_path.hpp"
+#include "circular_buffer_queue.hpp"
 #include <fstream>
+#include <memory>
 
 namespace {
 
@@ -55,8 +57,12 @@ namespace genai {
 
 class Tokenizer::TokenizerImpl {
 public:
-    ov::InferRequest m_tokenize_request;
-    ov::InferRequest m_detokenizer_request;
+    ov::CompiledModel m_tokenizer;
+    ov::CompiledModel m_detokenizer;
+
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_tokenizer;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_detokenizer;
+
     int64_t m_pad_token_id = -1;
     int64_t m_bos_token_id = -1;
     int64_t m_eos_token_id = -1;
@@ -69,7 +75,7 @@ public:
 
     TokenizerImpl() = default;
 
-    TokenizerImpl(std::filesystem::path tokenizer_path)
+    TokenizerImpl(std::filesystem::path tokenizer_path, const ov::AnyMap& plugin_config)
         : m_chat_template{chat_template_from_tokenizer_json_if_exists(tokenizer_path)} {
         ov::Core core;
         
@@ -90,14 +96,30 @@ public:
         read_tokenizer_config_if_necessary(tokenizer_path); 
 
         auto device = "CPU"; // currently openvino_tokenizer supports only CPU
-        m_tokenize_request = core.compile_model(tokenizer_path / "openvino_tokenizer.xml", 
-                                                device).create_infer_request();
-        m_detokenizer_request = core.compile_model(tokenizer_path / "openvino_detokenizer.xml", 
-                                                   device).create_infer_request();
+        m_tokenizer = core.compile_model(tokenizer_path / "openvino_tokenizer.xml",
+                                                device, plugin_config);
+        m_detokenizer = core.compile_model(tokenizer_path / "openvino_detokenizer.xml", 
+                                                   device, plugin_config);
+
+        
+        const size_t INFER_REQUEST_QUEUE_SIZE = m_tokenizer.get_property(ov::optimal_number_of_infer_requests);
+        m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            INFER_REQUEST_QUEUE_SIZE,
+            [this]() -> ov::InferRequest {
+                return std::move(this->m_tokenizer.create_infer_request());
+            });
+        m_ireq_queue_detokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            INFER_REQUEST_QUEUE_SIZE,
+            [this]() -> ov::InferRequest {
+                return std::move(this->m_detokenizer.create_infer_request());
+            });
 
         // Get special token ids by inference if they are not defined.
-        // todo: do not call until CVS-143410 is resolved
-        // infer_special_tokens_if_necessary();
+        infer_special_tokens_if_necessary();
+        // Initialize tokenizer's cache to save time later.
+        // infer_special_tokens_if_necessary() already could do that
+        // but it didn't run decode() for sure.
+        decode(encode("").input_ids);
     }
 
     // load special tokens ids from config.json
@@ -138,9 +160,9 @@ public:
         read_token_content_str(eos_token_key_name, m_eos_token);
     }
 
-    // Read string representation of special tokens if they exists.
+    // Read string representation of special tokens if they exist.
     // Also tries to load special token ids from added_tokens_decoder if they exist.
-    // Will not override special token strings or ids if they already exist
+    // Will not override special token strings or ids if they already exist.
     void read_tokenizer_config_if_necessary(const std::filesystem::path& tokenizer_path) {
         if (m_pad_token_id != -1 && m_bos_token_id != -1 && m_eos_token_id != -1 && 
             !m_pad_token.empty() && !m_bos_token.empty() && !m_eos_token.empty()) {
@@ -226,25 +248,35 @@ public:
     }
 
     TokenizedInputs encode(std::string prompt) {
+        CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
         size_t batch_size = 1;
-        m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
-        m_tokenize_request.infer();
-        return get_copied_results();
+        infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
+        infer_request_guard.get().start_async();
+        infer_request_guard.get().wait();
+        return get_copied_results(
+            infer_request_guard.get().get_tensor("input_ids"),
+            infer_request_guard.get().get_tensor("attention_mask")
+        );
     }
 
     TokenizedInputs encode(std::vector<std::string>& prompts) {
-        m_tokenize_request.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
-        auto size_ = m_tokenize_request.get_input_tensor().get_shape();
-        m_tokenize_request.infer();
-       
-        auto res = get_copied_results();
-        pad_left(res.input_ids, res.attention_mask);
-        return {res.input_ids, res.attention_mask};
+        TokenizedInputs unpadded;
+        {
+            CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
+            infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
+            auto size_ = infer_request_guard.get().get_input_tensor().get_shape();
+            infer_request_guard.get().start_async();
+            infer_request_guard.get().wait();
+
+            unpadded = get_copied_results(
+                infer_request_guard.get().get_tensor("input_ids"),
+                infer_request_guard.get().get_tensor("attention_mask")
+            );
+        }
+        return pad_left(unpadded.input_ids, unpadded.attention_mask);
     }
 
-    TokenizedInputs get_copied_results() {
-        auto input_ids = m_tokenize_request.get_tensor("input_ids");
-        auto attention_mask = m_tokenize_request.get_tensor("attention_mask");
+    TokenizedInputs get_copied_results(ov::Tensor input_ids, ov::Tensor attention_mask) {
         ov::Tensor input_ids_ = ov::Tensor(input_ids.get_element_type(), input_ids.get_shape());
         ov::Tensor attention_mask_ = ov::Tensor(attention_mask.get_element_type(), attention_mask.get_shape());
         input_ids.copy_to(input_ids_);
@@ -254,20 +286,24 @@ public:
     }
 
     std::string decode(std::vector<int64_t> tokens) {
+        CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
         size_t batch_size = 1;
-        m_detokenizer_request.set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
-        m_detokenizer_request.infer();
-        return m_detokenizer_request.get_output_tensor().data<std::string>()[0];
+        infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
+        infer_request_guard.get().start_async();
+        infer_request_guard.get().wait();
+        return infer_request_guard.get().get_output_tensor().data<std::string>()[0];
     }
 
     std::vector<std::string> decode(ov::Tensor tokens) {
         OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64, "tokens tensor element type should be an i64");
         OPENVINO_ASSERT(tokens.get_shape().size() == 2, "tokens tensor should of rank 2 with shape [batch_size, seq_len]");
 
-        m_detokenizer_request.set_input_tensor(tokens);
-        m_detokenizer_request.infer();
+        CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
+        infer_request_guard.get().set_input_tensor(tokens);
+        infer_request_guard.get().start_async();
+        infer_request_guard.get().wait();
         
-        auto res = m_detokenizer_request.get_output_tensor();
+        auto res = infer_request_guard.get().get_output_tensor();
         auto res_data = res.data<std::string>();
         return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
     }
@@ -288,9 +324,11 @@ public:
             std::fill(tokens_data + i * max_len + line_len, tokens_data + (i + 1) * max_len, m_pad_token_id);
         }
 
-        m_detokenizer_request.set_input_tensor(tokens);
-        m_detokenizer_request.infer();
-        auto res = m_detokenizer_request.get_output_tensor();
+        CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
+        infer_request_guard.get().set_input_tensor(tokens);
+        infer_request_guard.get().start_async();
+        infer_request_guard.get().wait();
+        auto res = infer_request_guard.get().get_output_tensor();
         auto res_data = res.data<std::string>();
         return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
     }
@@ -306,32 +344,70 @@ public:
         
         std::string res = "";
         ov::genai::utils::read_json_param(nlohmann::json::parse(file), "chat_template", res);
-
+        if (res.empty())
+            return res;
+        
         // Replace what jinja2cpp doesn't support
         std::pair<std::string, std::string> replace_str_map[] = {
-            {"\n'}", "\n' }"},
-            {".strip()", "\"\""}
+            {"'}", "' }"},
+            {"{'", "{ '"},
+            {".strip()", ""}
         };
-        if (!res.empty()) {
+
+        for (const auto& [from, to] : replace_str_map) {
+            size_t pos = 0;
+            while ((pos = res.find(from, pos)) != std::string::npos) {
+                res.replace(pos, from.size(), to);
+                pos += to.size();
+            }
+        }
+        return res;
+    }
+
+    std::string apply_chat_template(ChatHistory history, 
+                                    bool add_generation_prompt, 
+                                    const std::string& chat_template) const {
+        auto chat_tpl = chat_template.empty() ? m_chat_template : chat_template;
+        // Jinja2Cpp does not support slicing, e.g. [1:].
+        // In templates slicing is used typically in the header to find system prompt.
+        // If header containts that typical expression we update template and 
+        // extract system message manually from ChatHistory.
+        std::string header_with_slice = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}";
+        std::string replacement_string = "{% if false %}{% set placeholder = false %}";
+        
+        std::string system_message = "";
+        size_t pos = chat_tpl.find(header_with_slice);
+        if (pos != std::string::npos) {
+            chat_tpl.replace(pos, header_with_slice.length(), replacement_string);
+
+            if (!history.empty() && history[0].at("role") == "system") {
+                system_message = history[0].at("content");
+                history.erase(history.begin());
+            }
+        }
+        
+        // Jinja2Cpp accepts system_message only as a string and incorrectly handles it as a bool.
+        // Both this patters are found frequently in chat templates, replace so that jinja2cpp 
+        // will not stumble on them.
+        std::pair<std::string, std::string> replace_str_map[] = {
+            {"{% set system_message = false %}", ""},
+            {"system_message != false", "true"},
+        };
+        if (!system_message.empty()) {
             for (const auto& [from, to] : replace_str_map) {
                 size_t pos = 0;
-                while ((pos = res.find(from, pos)) != std::string::npos) {
-                    res.replace(pos, from.size(), to);
+                while ((pos = chat_tpl.find(from, pos)) != std::string::npos) {
+                    chat_tpl.replace(pos, from.size(), to);
                     pos += to.size();
                 }
             }
         }
-        return res;
-    }    
 
-    std::string apply_chat_template(const ChatHistory& history, 
-                                    bool add_generation_prompt, 
-                                    const std::string& chat_template) const {
         jinja2::TemplateEnv env;
         env.GetSettings().lstripBlocks = true;
         env.GetSettings().trimBlocks = true;
         jinja2::Template tpl(&env);
-        tpl.Load(chat_template.empty() ? m_chat_template : chat_template);
+        tpl.Load(chat_tpl);
         
         jinja2::ValuesList jinja_messages;
         jinja2::ValuesMap jinja_message;
@@ -345,17 +421,25 @@ public:
             {"bos_token",  m_bos_token},
             {"eos_token", m_eos_token},
             {"pad_token", m_pad_token},
+            {"system_message", system_message.empty() ? jinja2::EmptyValue() : jinja2::Value{system_message}},
             {"add_generation_prompt", add_generation_prompt},
         };
-        return tpl.RenderAsString(params).value();
+        
+        try {
+            return tpl.RenderAsString(params).value();
+        } catch (const std::bad_alloc& error) {
+            OPENVINO_THROW("Chat template for the current model is not supported by Jinja2Cpp. "
+                           "Please apply template manually to your prompt before calling generate. "
+                           "For exmaple: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
+        }
     }
 
     
 };
 
-Tokenizer::Tokenizer(const std::string& tokenizer_path) {
+Tokenizer::Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& plugin_config) {
     ScopedVar env_manager(tokenizers_relative_to_genai().string());
-    m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path);
+    m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path, plugin_config);
 }
 
 TokenizedInputs Tokenizer::encode(const std::string prompt) {
@@ -410,7 +494,7 @@ std::string Tokenizer::get_eos_token() const {
     return m_pimpl->m_eos_token;
 }
 
-std::string Tokenizer::apply_chat_template(const ChatHistory& history,
+std::string Tokenizer::apply_chat_template(ChatHistory history,
                                            bool add_generation_prompt,
                                            const std::string& chat_template) const {
     return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template);

@@ -12,6 +12,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.3.0rc1/linux/l_openvino_toolkit_ubuntu20_2024.3.0.dev20240711_x86_64.tgz
+  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.3.0rc1/macos/m_openvino_toolkit_macos_12_6_2024.3.0.dev20240711_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.3.0rc1/windows/w_openvino_toolkit_windows_2024.3.0.dev20240711_x86_64.zip
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -25,7 +29,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -68,7 +72,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -187,6 +191,8 @@ jobs:
 
   cpp-greedy_causal_lm-windows:
     runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: "utf8"
     defaults:
       run:
         shell: cmd
@@ -197,12 +203,10 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.8
-      - name: Install OpenVINO
+      - run: curl --output ov.zip ${{ env.w_ov_link }}
+      - run: unzip -d ov ov.zip
+      - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
         shell: bash
-        run: |
-          curl --output ov.zip https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/windows/w_openvino_toolkit_windows_2024.2.0.dev20240529_x86_64.zip
-          unzip ov.zip
-      - run: mklink /D ov w_openvino_toolkit_windows_2024.2.0.dev20240529_x86_64
       - name: Download, convert and build
         run: |
           call .\ov\setupvars.bat
@@ -246,7 +250,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -273,7 +277,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -301,7 +305,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -329,7 +333,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -357,7 +361,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -394,7 +398,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -438,7 +442,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -486,7 +490,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.2.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.2.0.dev20240529_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Download, convert and build
         run: |
@@ -523,3 +527,182 @@ jobs:
           && export PYTHONPATH=./build/:$PYTHONPATH
           && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./redpajama-3b-chat/ "Alan Turing was a"
           | diff ./pred_greedy.txt -
+
+  cpp-chat_sample-ubuntu:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Compare
+        run: |
+          source ./ov/setupvars.sh
+          printf 'What is 2 + 2?\nWhat is the previous answer?\nAdd 1 to it.\nSubtract 5 from it.\nWhy is the sun yellow?\nWhat was my first question?\nStop!\n' > ./input.txt
+          timeout 30s ./build/samples/cpp/chat_sample/chat_sample ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred.txt
+          python -c "
+          from transformers import LlamaTokenizer, AutoModelForCausalLM
+          model_id = 'TinyLlama/TinyLlama-1.1B-Chat-v1.0'
+          tokenizer = LlamaTokenizer.from_pretrained(model_id)
+          model = AutoModelForCausalLM.from_pretrained(model_id)
+          prompts = ['What is 2 + 2?', 'What is the previous answer?', 'Add 1 to it.', 'Subtract 5 from it.', 'Why is the sun yellow?', 'What was my first question?']
+          def gen_prompt(prompt):
+              return {'role': 'user', 'content': prompt}
+          def gen_answer(answer):
+              return {'role': 'assistant', 'content': answer}
+          chat_history = []
+          chat_prompt = ''
+          output = open('ref.txt', 'w')
+          for prompt in prompts:
+              output.write('question:\n')
+              chat_history.append(gen_prompt(prompt))
+              chat_prompt = tokenizer.apply_chat_template(chat_history, tokenize=False, add_generation_prompt=True)
+              tokenized = tokenizer(chat_prompt, return_tensors='pt')
+              answer = model.generate(**tokenized, max_length=1000, do_sample=False)
+              answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
+              chat_history.append(gen_answer(answer_str))
+              output.write(answer_str)
+              output.write('\n----------\n')
+          output.write('question:\n')
+          output.close()
+          "
+          diff pred.txt ref.txt
+          echo "Chat sample cpp" passed
+          export PYTHONPATH=./build/:$PYTHONPATH
+          timeout 30s ./samples/python/chat_sample/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
+          diff pred2.txt ref.txt
+          echo "Chat sample python" passed
+
+  cpp-continuous-batching-ubuntu:
+    runs-on: ubuntu-20.04-8-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Run gtests
+        run: |
+          source ./ov/setupvars.sh
+          ./build/tests/cpp/tests_continuous_batching
+      - name: Run accuracy_sample
+        run: |
+          source ./ov/setupvars.sh
+          timeout 50s ./build/samples/cpp/continuous_batching_accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
+      - name: Run throughput_benchmark
+        run: |
+          wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
+          source ./ov/setupvars.sh
+          timeout 200s ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 10 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
+          timeout 200s ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 10 --dynamic_split_fuse --max_batch_size 256 --max_input_len 256 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
+          
+
+  cpp-continuous-batching-windows:
+    runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: "utf8"
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          curl --output ov.zip ${{ env.w_ov_link }}
+          unzip -d ov ov.zip
+          dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
+        shell: bash
+      - name: Install dependencies and build
+        run: |
+          call .\ov\setupvars.bat
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Run gtests
+        run: |
+          set PATH=.\build\openvino_genai\;%PATH%
+          call .\ov\setupvars.bat
+          .\build\tests\cpp\Release\tests_continuous_batching.exe
+      - name: Run accuracy_sample
+        run: |
+          set PATH=.\build\openvino_genai\;%PATH%
+          call .\ov\setupvars.bat
+          .\build\samples\cpp\continuous_batching_accuracy\Release\continuous_batching_accuracy.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 5
+      - name: Run throughput_benchmark
+        run: |
+          curl -o .\ShareGPT_V3_unfiltered_cleaned_split.json -s -L "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json"
+          set PATH=.\build\openvino_genai\;%PATH%
+          call .\ov\setupvars.bat
+          .\build\samples\cpp\continuous_batching_benchmark\Release\continuous_batching_benchmark.exe -n 2 -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
+
+  cpp-continuous-batching-macos:
+    runs-on: macos-12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.m_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          brew install coreutils scons
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Run gtests
+        run: |
+          source ./ov/setupvars.sh
+          ./build/tests/cpp/tests_continuous_batching
+      - name: Run accuracy_sample
+        run: |
+          source ./ov/setupvars.sh
+          timeout 120s ./build/samples/cpp/continuous_batching_accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
+      - name: Run throughput_benchmark
+        run: |
+          wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
+          source ./ov/setupvars.sh
+          ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 5 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1

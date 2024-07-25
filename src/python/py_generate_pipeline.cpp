@@ -6,18 +6,22 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 #include <pybind11/functional.h>
+#include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include <openvino/runtime/auto/properties.hpp>
 #include "../cpp/src/tokenizers_path.hpp"
 
 namespace py = pybind11;
 using ov::genai::ChatHistory;
+using ov::genai::ContinuousBatchingPipeline;
 using ov::genai::DecodedResults;
 using ov::genai::EncodedInputs;
 using ov::genai::EncodedResults;
 using ov::genai::GenerationConfig;
+using ov::genai::GenerationResult;
 using ov::genai::LLMPipeline;
 using ov::genai::OptionalGenerationConfig;
+using ov::genai::SchedulerConfig;
 using ov::genai::StopCriteria;
 using ov::genai::StreamerBase;
 using ov::genai::StreamerVariant;
@@ -85,10 +89,13 @@ auto generation_config_docstring = R"(
 )";
 
 
-GenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& config_, const py::kwargs& kwargs) {
-    GenerationConfig config;
-    if(config_.has_value())
-        config = *config_;
+OptionalGenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& config, const py::kwargs& kwargs) {
+    if(!config.has_value() && kwargs.empty())
+        return std::nullopt;
+
+    GenerationConfig res_config;
+    if(config.has_value())
+        res_config = *config;
  
     for (const auto& item : kwargs) {
         std::string key = py::cast<std::string>(item.first);
@@ -100,48 +107,48 @@ GenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& confi
             // Some HF configs can have parameters for methods currenly unsupported in ov_genai
             // but if their values are not set / None, then this should not block 
             // us from reading such configs, e.g. {"typical_p": None, 'top_p': 1.0,...}
-            return config;
+            return res_config;
         }
         
         if (key == "max_new_tokens") {
-            config.max_new_tokens = py::cast<int>(item.second);
+            res_config.max_new_tokens = py::cast<int>(item.second);
         } else if (key == "max_length") {
-            config.max_length = py::cast<int>(item.second);
+            res_config.max_length = py::cast<int>(item.second);
         } else if (key == "ignore_eos") {
-            config.ignore_eos = py::cast<bool>(item.second);
+            res_config.ignore_eos = py::cast<bool>(item.second);
         } else if (key == "num_beam_groups") {
-            config.num_beam_groups = py::cast<int>(item.second);
+            res_config.num_beam_groups = py::cast<int>(item.second);
         } else if (key == "num_beams") {
-            config.num_beams = py::cast<int>(item.second);
+            res_config.num_beams = py::cast<int>(item.second);
         } else if (key == "diversity_penalty") {
-            config.diversity_penalty = py::cast<float>(item.second);
+            res_config.diversity_penalty = py::cast<float>(item.second);
         } else if (key == "length_penalty") {
-            config.length_penalty = py::cast<float>(item.second);
+            res_config.length_penalty = py::cast<float>(item.second);
         } else if (key == "num_return_sequences") {
-            config.num_return_sequences = py::cast<int>(item.second);
+            res_config.num_return_sequences = py::cast<int>(item.second);
         } else if (key == "no_repeat_ngram_size") {
-            config.no_repeat_ngram_size = py::cast<int>(item.second);
+            res_config.no_repeat_ngram_size = py::cast<int>(item.second);
         } else if (key == "stop_criteria") {
-            config.stop_criteria = py::cast<StopCriteria>(item.second);
+            res_config.stop_criteria = py::cast<StopCriteria>(item.second);
         } else if (key == "temperature") {
-            config.temperature = py::cast<float>(item.second);
+            res_config.temperature = py::cast<float>(item.second);
         } else if (key == "top_p") {
-            config.top_p = py::cast<float>(item.second);
+            res_config.top_p = py::cast<float>(item.second);
         } else if (key == "top_k") {
-            config.top_k = py::cast<int>(item.second);
+            res_config.top_k = py::cast<int>(item.second);
         } else if (key == "do_sample") {
-            config.do_sample = py::cast<bool>(item.second);
+            res_config.do_sample = py::cast<bool>(item.second);
         } else if (key == "repetition_penalty") {
-            config.repetition_penalty = py::cast<float>(item.second);
+            res_config.repetition_penalty = py::cast<float>(item.second);
         } else if (key == "eos_token_id") {
-            config.eos_token_id = py::cast<int>(item.second);
+            res_config.set_eos_token_id(py::cast<int>(item.second));
         } else {
             throw(std::invalid_argument("'" + key + "' is incorrect GenerationConfig parameter name. "
                                         "Use help(openvino_genai.GenerationConfig) to get list of acceptable parameters."));
         }
     }
 
-    return config;
+    return res_config;
 }
 
 ov::Any py_object_to_any(const py::object& py_obj) {
@@ -302,7 +309,7 @@ py::object call_common_generate(
     [&](std::string string_input) {
         DecodedResults res = pipe.generate(string_input, updated_config, streamer);
         // If input was a string return a single string otherwise return DecodedResults.
-        if (updated_config.num_return_sequences == 1) {
+        if (updated_config.has_value() && (*updated_config).num_return_sequences == 1) {
             results = py::cast<py::object>(handle_utf8_results(res.texts)[0]);
         } else {
             results = py::cast(res);
@@ -340,6 +347,17 @@ class ConstructableStreamer: public StreamerBase {
     }
 };
 
+std::ostream& operator << (std::ostream& stream, const GenerationResult& generation_result) {
+    stream << generation_result.m_request_id << std::endl;
+    const bool has_scores = !generation_result.m_scores.empty();
+    for (size_t i = 0; i < generation_result.m_generation_ids.size(); ++i) {
+        stream << "{ ";
+        if (has_scores)
+            stream << generation_result.m_scores[i] << ", ";
+        stream << generation_result.m_generation_ids[i] << " }" << std::endl;
+    }
+    return stream << std::endl;
+}
 } // namespace
 
 
@@ -408,20 +426,20 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         )
 
         .def("get_tokenizer", &LLMPipeline::get_tokenizer)
-        .def("start_chat", &LLMPipeline::start_chat)
+        .def("start_chat", &LLMPipeline::start_chat, py::arg("system_message") = "")
         .def("finish_chat", &LLMPipeline::finish_chat)
         .def("get_generation_config", &LLMPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &LLMPipeline::set_generation_config);
 
      // Binding for Tokenizer
-    py::class_<Tokenizer>(m, "Tokenizer",
+    py::class_<ov::genai::Tokenizer>(m, "Tokenizer",
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer 
            if it's located in a different path than the main model.)")
         
-        .def(py::init([](const std::string& tokenizer_path) {
+        .def(py::init([](const std::string& tokenizer_path, const std::map<std::string, py::object>& plugin_config) {
             ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<Tokenizer>(tokenizer_path);
-        }), py::arg("tokenizer_path"))
+            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, properties_to_any_map(plugin_config));
+        }), py::arg("tokenizer_path"), py::arg("plugin_config") = ov::AnyMap({}))
         
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts) { return tok.encode(prompts); },
             py::arg("prompts"),
@@ -457,7 +475,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             R"(Decode a batch of tokens into a list of string prompt.)")
         
         .def("apply_chat_template", [](Tokenizer& tok,
-                                        const ChatHistory& history,
+                                        ChatHistory history,
                                         bool add_generation_prompt,
                                         const std::string& chat_template) {
             return tok.apply_chat_template(history, add_generation_prompt, chat_template);
@@ -488,10 +506,11 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
      // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
         .def(py::init<std::string>(), py::arg("json_path"), "path where generation_config.json is stored")
-        .def(py::init([](py::kwargs kwargs) { return update_config_from_kwargs(GenerationConfig(), kwargs); }))
+        .def(py::init([](py::kwargs kwargs) { return *update_config_from_kwargs(GenerationConfig(), kwargs); }))
         .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
         .def_readwrite("max_length", &GenerationConfig::max_length)
         .def_readwrite("ignore_eos", &GenerationConfig::ignore_eos)
+        .def_readwrite("min_new_tokens", &GenerationConfig::min_new_tokens)
         .def_readwrite("num_beam_groups", &GenerationConfig::num_beam_groups)
         .def_readwrite("num_beams", &GenerationConfig::num_beams)
         .def_readwrite("diversity_penalty", &GenerationConfig::diversity_penalty)
@@ -504,7 +523,12 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("top_k", &GenerationConfig::top_k)
         .def_readwrite("do_sample", &GenerationConfig::do_sample)
         .def_readwrite("repetition_penalty", &GenerationConfig::repetition_penalty)
-        .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id);
+        .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id)
+        .def_readwrite("presence_penalty", &GenerationConfig::presence_penalty)
+        .def_readwrite("frequency_penalty", &GenerationConfig::frequency_penalty)
+        .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
+        .def("set_eos_token_id", &GenerationConfig::set_eos_token_id)
+        .def("is_beam_search", &GenerationConfig::is_beam_search);
 
     py::class_<DecodedResults>(m, "DecodedResults")
         .def(py::init<>())
@@ -525,4 +549,65 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init<>())
         .def("put", &StreamerBase::put)
         .def("end", &StreamerBase::end);
+
+    py::class_<GenerationResult>(m, "GenerationResult")
+        .def(py::init<>())
+        .def_readonly("m_request_id", &GenerationResult::m_request_id)
+        .def_property("m_generation_ids",
+            [](GenerationResult &r) -> py::list {
+                py::list res;
+                for (auto s: r.m_generation_ids) {
+                    PyObject* py_s = PyUnicode_DecodeUTF8(s.data(), s.length(), "replace");
+                    res.append(py_s);
+                }
+                return res;
+            },
+            [](GenerationResult &r, std::vector<std::string> &generation_ids) {
+                r.m_generation_ids = generation_ids;
+            })
+        .def_readwrite("m_scores", &GenerationResult::m_scores)
+        .def("__repr__",
+            [](const GenerationResult &r) -> py::str{
+                std::stringstream stream;
+                stream << "<py_continuous_batching.GenerationResult " << r << ">";
+                std::string str = stream.str();
+                PyObject* py_s = PyUnicode_DecodeUTF8(str.data(), str.length(), "replace");
+                return py::reinterpret_steal<py::str>(py_s);
+            }
+        )
+        .def("get_generation_ids",
+        [](GenerationResult &r) -> py::list {
+            py::list res;
+            for (auto s: r.m_generation_ids) {
+                PyObject* py_s = PyUnicode_DecodeUTF8(s.data(), s.length(), "replace");
+                res.append(py_s);
+            }
+            return res;
+        });
+
+    py::class_<SchedulerConfig>(m, "SchedulerConfig")
+        .def(py::init<>())
+        .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
+        .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
+        .def_readwrite("cache_size", &SchedulerConfig::cache_size)
+        .def_readwrite("block_size", &SchedulerConfig::block_size)
+        .def_readwrite("cache_size", &SchedulerConfig::cache_size)
+        .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
+        .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs);
+
+    py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline")
+        .def(py::init([](const std::string& model_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
+            ScopedVar env_manager(ov_tokenizers_module_path());
+            return std::make_unique<ContinuousBatchingPipeline>(model_path, scheduler_config, device, properties_to_any_map(llm_plugin_config), properties_to_any_map(tokenizer_plugin_config));
+        }), py::arg("model_path"), py::arg("scheduler_config"), py::arg("device") = "CPU", py::arg("llm_plugin_config") = ov::AnyMap({}), py::arg("tokenizer_plugin_config") = ov::AnyMap({}))
+        .def(py::init([](const std::string& model_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& plugin_config) {
+            ScopedVar env_manager(ov_tokenizers_module_path());
+            return std::make_unique<ContinuousBatchingPipeline>(model_path, tokenizer, scheduler_config, device, properties_to_any_map(plugin_config));
+        }), py::arg("model_path"), py::arg("tokenizer"), py::arg("scheduler_config"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap({}))
+        .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
+        .def("get_config", &ContinuousBatchingPipeline::get_config)
+        .def("add_request", &ContinuousBatchingPipeline::add_request)
+        .def("step", &ContinuousBatchingPipeline::step)
+        .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
+        .def("generate", &ContinuousBatchingPipeline::generate);
 }

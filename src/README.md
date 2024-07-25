@@ -50,7 +50,7 @@ Calling generate with custom generation config parameters, e.g. config for group
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path, "CPU")
 
-result = pipe.generate("The Sun is yellow because", max_new_tokens=30, num_groups=3, group_size=5, diversity_penalty=1.5)
+result = pipe.generate("The Sun is yellow because", max_new_tokens=30, num_beam_groups=3, num_beams=15, diversity_penalty=1.5)
 print(result)
 ```
 
@@ -64,7 +64,7 @@ A simple chat in Python:
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path)
 
-config = {'max_new_tokens': 100, 'num_groups': 3, 'group_size': 5, 'diversity_penalty': 1.5}
+config = {'max_new_tokens': 100, 'num_beam_groups': 3, 'num_beams': 15, 'diversity_penalty': 1.5}
 pipe.set_generation_config(config)
 
 pipe.start_chat()
@@ -104,8 +104,8 @@ int main(int argc, char* argv[]) {
 
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 256;
-    config.num_groups = 3;
-    config.group_size = 5;
+    config.num_beam_groups = 3;
+    config.num_beams = 15;
     config.diversity_penalty = 1.0f;
 
     std::cout << pipe.generate("The Sun is yellow because", config);
@@ -125,8 +125,8 @@ int main(int argc, char* argv[]) {
     
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
-    config.num_groups = 3;
-    config.group_size = 5;
+    config.num_beam_groups = 3;
+    config.num_beams = 15;
     config.diversity_penalty = 1.0f;
     
     pipe.start_chat();
@@ -155,11 +155,11 @@ int main(int argc, char* argv[]) {
         
     auto streamer = [](std::string word) { 
         std::cout << word << std::flush; 
-        // Return flag correspods whether generation should be stopped.
+        // Return flag corresponds whether generation should be stopped.
         // false means continue generation.
         return false;
     };
-    std::cout << pipe.generate("The Sun is yellow bacause", streamer);
+    std::cout << pipe.generate("The Sun is yellow bacause", ov::genai::streamer(streamer));
 }
 ```
 
@@ -192,7 +192,7 @@ int main(int argc, char* argv[]) {
 
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
-    std::cout << pipe.generate("The Sun is yellow because", custom_streamer);
+    std::cout << pipe.generate("The Sun is yellow because", ov::genai::streamer(custom_streamer));
 }
 ```
 

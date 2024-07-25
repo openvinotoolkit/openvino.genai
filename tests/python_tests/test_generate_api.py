@@ -1,59 +1,24 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import functools
-import openvino
-import openvino_tokenizers
-import optimum.intel
-from openvino_genai import StopCriteria
 import openvino_genai as ov_genai
+from openvino_genai import StopCriteria
 import pytest
 import transformers
-from list_test_models import models_list, chat_models_list
-from typing import Union, List, Dict, Tuple, Optional
+from typing import Union, List, Dict, Optional
 import numpy as np
 import openvino as ov
 import sys
 from pathlib import Path
-import shutil
-import json
 import torch
-
-
-@functools.lru_cache(1)
-def read_model(params):
-    model_id, path = params
-    
-    from optimum.intel.openvino import OVModelForCausalLM
-    from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-
-    if path.exists():
-        opt_model = OVModelForCausalLM.from_pretrained(path, trust_remote_code=True, 
-                                                       compile=False, device='CPU')
-    else:
-        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, 
-                                                                             add_special_tokens=True, 
-                                                                             with_detokenizer=True)
-        openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
-        openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
-        
-        # to store tokenizer config jsons with special tokens
-        tokenizer.save_pretrained(path)
-        
-        opt_model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True, 
-                                                       compile=False, device='CPU', load_in_8bit=False)
-        opt_model.generation_config.save_pretrained(path)
-        opt_model.config.save_pretrained(path)
-        opt_model.save_pretrained(path)
-    
-    return (
-        model_id,
-        path,
-        tokenizer,
-        opt_model,
-        ov_genai.LLMPipeline(str(path), device='CPU', config={"ENABLE_MMAP": False}),
-    )
+from ov_genai_test_utils import (
+    get_models_list, 
+    read_model, 
+    load_pipe,
+    load_tok, 
+    model_tmp_path, 
+    STOP_CRITERIA_MAP, 
+)
 
 
 def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, prompts: Union[str, List[str]]):
@@ -76,7 +41,7 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
     
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
-        generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
+        generation_config_hf['early_stopping'] = STOP_CRITERIA_MAP[generation_config_hf.pop('stop_criteria')]
     generation_config_hf.pop('ignore_eos', None)
 
     # Encode the batch of prompts
@@ -117,7 +82,7 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt: str
 
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
-        generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
+        generation_config_hf['early_stopping'] = STOP_CRITERIA_MAP[generation_config_hf.pop('stop_criteria')]
     generation_config_hf.pop('ignore_eos', None)
 
     encoded_prompt = tokenizer.encode(prompt, return_tensors='pt', add_special_tokens=True)
@@ -155,7 +120,7 @@ def hf_ov_genai_tensors_comparison(
     
     generation_config_hf = config.copy()
     if generation_config_hf.get('stop_criteria'):
-        generation_config_hf['early_stopping'] = stop_criteria_map()[generation_config_hf.pop('stop_criteria')]
+        generation_config_hf['early_stopping'] = STOP_CRITERIA_MAP[generation_config_hf.pop('stop_criteria')]
     generation_config_hf.pop('ignore_eos', None)
     
     if attention_mask is not None:
@@ -175,17 +140,6 @@ def hf_ov_genai_tensors_comparison(
     assert np.all(ov_res == hf_res)
 
 
-def stop_criteria_map():
-    # in OpenVINO GenAI this parameter is called stop_criteria,
-    # while in HF it's called early_stopping. 
-    # HF values True, False and "never" correspond to OV GenAI values "EARLY", "HEURISTIC" and "NEVER"
-    return {
-        StopCriteria.NEVER: "never", 
-        StopCriteria.EARLY: True, 
-        StopCriteria.HEURISTIC: False
-    }
-
-
 test_cases = [
     (dict(max_new_tokens=20), 'table is made of'),
     (dict(max_new_tokens=20), '你好！ 你好嗎？'),
@@ -195,8 +149,9 @@ test_cases = [
     (dict(num_beam_groups=2, num_beams=8, num_return_sequences=8, max_new_tokens=20, diversity_penalty=1.5), 'The Sun is yellow because'),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
-@pytest.mark.parametrize("model_descr", models_list())
+@pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_decoding(model_descr, generation_config, prompt):
     run_hf_ov_genai_comparison(read_model(model_descr), generation_config, prompt)
 
@@ -206,14 +161,15 @@ input_tensors_list = [
     (np.array([[1, 4, 42]], dtype=np.int64), np.array([[1, 1, 1]], dtype=np.int64)),
 ]
 @pytest.mark.parametrize("inputs", input_tensors_list)
-@pytest.mark.parametrize("model_descr", models_list())
+@pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.xfail(
     raises=TypeError, 
-    reason="pybind was unable to find overloads with tensor inputs on Linux",
+    reason="pybind was unable to find ov::Tensor from openvino yet",
     strict=False,
-    condition=sys.platform == "linux"
+    condition=sys.platform in ["linux", "win32"]
 )
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_ov_tensors(model_descr, inputs):
     hf_ov_genai_tensors_comparison(read_model(model_descr), dict(max_new_tokens=20), *inputs)
 
@@ -225,9 +181,10 @@ prompts = [
     'The Sun is yellow because',
     ['The Sun is yellow because', 'Alan Turing was a', 'Alan Turing was a']
 ]
-@pytest.mark.parametrize("model_descr", models_list())
+@pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.xfail(
     raises=TypeError, 
     reason="pybind was unable to find ov::Tensor from openvino yet",
@@ -260,9 +217,10 @@ encoded_prompts = [
     # batched tokens
     [[1, 1591, 338, 1754, 310], [1, 1591, 338, 1754, 310], [1, 17102,   323,  3864,   471,   263]]
 ]
-@pytest.mark.parametrize("model_descr", models_list())
+@pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.parametrize("encoded_prompt", encoded_prompts)
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.xfail(
     raises=TypeError, 
     reason="pybind was unable to find ov::Tensor from openvino yet",
@@ -296,8 +254,9 @@ batched_prompts = [
 ]
 @pytest.mark.parametrize("generation_config", test_configs)
 @pytest.mark.parametrize("prompts", batched_prompts)
-@pytest.mark.parametrize("model_descr", models_list())
+@pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_multibatch(model_descr, generation_config, prompts):
     run_hf_ov_genai_comparison_batched(read_model(model_descr), generation_config, prompts)
 
@@ -308,8 +267,9 @@ prompts = ['The Sun is yellow because', 'Difference between Jupiter and Mars is 
 @pytest.mark.parametrize("max_new_tokens", [20, 15])
 @pytest.mark.parametrize("diversity_penalty", [1.0 , 1.5])
 @pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.parametrize("model_descr", models_list())
+@pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
                               max_new_tokens, diversity_penalty, prompt):
     generation_config = dict(
@@ -325,8 +285,9 @@ def test_beam_search_decoding(model_descr, num_beam_groups, group_size,
 @pytest.mark.parametrize("stop_criteria", [StopCriteria.NEVER, StopCriteria.EARLY, StopCriteria.HEURISTIC])
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize("max_new_tokens", [10, 80])
-@pytest.mark.parametrize("model_descr", models_list())
+@pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
     # todo: with EARLY stop_criteria looks like HF return unvalid out with sentence<eos><unk><unk>
     # while genai ends sentence with <eos>
@@ -348,7 +309,7 @@ def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
 @pytest.mark.parametrize("group_size", [5])
 @pytest.mark.parametrize("max_new_tokens", [800, 2000])
 @pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.parametrize("model_descr", models_list())
+@pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.skip(reason="Will be enabled in nightly since the test are computationally expensive")
 @pytest.mark.nightly
 def test_beam_search_long_sentences(model_descr, num_beam_groups, group_size,
@@ -369,8 +330,9 @@ def user_defined_callback(subword):
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_callback_one_string(callback):
-    pipe = read_model(models_list()[0])[4]
+    pipe = read_model(get_models_list()[0])[4]
     generation_config = pipe.get_generation_config()
     generation_config.max_new_tokens = 10
     pipe.generate('table is made of', generation_config, callback)
@@ -378,21 +340,24 @@ def test_callback_one_string(callback):
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_callback_batch_fail(callback):
-    pipe = read_model(models_list()[0])[4]
+    pipe = read_model(get_models_list()[0])[4]
     with pytest.raises(RuntimeError):
         pipe.generate(['1', '2'], ov_genai.GenerationConfig(), callback)
 
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_callback_kwargs_one_string(callback):
-    pipe = read_model(models_list()[0])[4]
+    pipe = read_model(get_models_list()[0])[4]
     pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_descr", models_list())
+@pytest.mark.nightly
+@pytest.mark.parametrize("model_descr", get_models_list())
 def test_callback_decoding_metallama(model_descr, callback):
     # On metallam this prompt generates output which can shorten after adding new tokens.
     # Test that streamer correctly handles such cases.
@@ -405,8 +370,9 @@ def test_callback_decoding_metallama(model_descr, callback):
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_callback_kwargs_batch_fail(callback):
-    pipe = read_model(models_list()[0])[4]
+    pipe = read_model(get_models_list()[0])[4]
     with pytest.raises(RuntimeError):
         pipe.generate(['1', '2'], max_new_tokens=10, streamer=callback)
 
@@ -426,8 +392,9 @@ class Printer(ov_genai.StreamerBase):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_streamer_one_string():
-    pipe = read_model(models_list()[0])[4]
+    pipe = read_model(get_models_list()[0])[4]
     generation_config = pipe.get_generation_config()
     generation_config.max_new_tokens = 10
     printer = Printer(pipe.get_tokenizer())
@@ -435,97 +402,69 @@ def test_streamer_one_string():
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_streamer_batch_fail():
-    pipe = read_model(models_list()[0])[4]
+    pipe = read_model(get_models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         pipe.generate(['1', '2'], ov_genai.GenerationConfig(), printer)
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_streamer_kwargs_one_string():
-    pipe = read_model(models_list()[0])[4]
+    pipe = read_model(get_models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
     pipe.generate('table is made of', max_new_tokens=10, do_sample=False, streamer=printer)
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_streamer_kwargs_batch_fail():
-    pipe = read_model(models_list()[0])[4]
+    pipe = read_model(get_models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         pipe.generate('', num_beams=2, streamer=printer)
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 def test_operator_with_callback_one_string(callback):
-    pipe = read_model(models_list()[0])[4]
+    pipe = read_model(get_models_list()[0])[4]
     ten_tokens = pipe.get_generation_config()
     ten_tokens.max_new_tokens = 10
     pipe('talbe is made of', ten_tokens, callback)
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.parametrize("callback", [print, user_defined_callback, lambda subword: print(subword)])
 def test_operator_with_callback_batch_fail(callback):
-    pipe = read_model(models_list()[0])[4]
+    pipe = read_model(get_models_list()[0])[4]
     with pytest.raises(RuntimeError):
         pipe(['1', '2'], ov_genai.GenerationConfig(), callback)
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_operator_with_streamer_kwargs_one_string():
-    pipe = read_model(models_list()[0])[4]
+    pipe = read_model(get_models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
     pipe('hi', max_new_tokens=10, do_sample=True, streamer=printer)
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_operator_with_streamer_kwargs_batch_fail():
-    pipe = read_model(models_list()[0])[4]
+    pipe = read_model(get_models_list()[0])[4]
     printer = Printer(pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         pipe('', num_beams=2, streamer=printer)
 
 
-@pytest.fixture(scope="module")
-def model_tmp_path(tmpdir_factory):
-    model_id, path, _, _, _ = read_model(models_list()[0])
-    temp_path = tmpdir_factory.mktemp(model_id.replace('/', '_'))
-
-    # copy openvino converted model and tokenizers
-    for pattern in ['*.xml', '*.bin']:
-        for src_file in path.glob(pattern):
-            if src_file.is_file():
-                shutil.copy(src_file, temp_path / src_file.name)    
-    yield model_id, Path(temp_path)
-
-
-# load Tokenizer where all configs are cleared
-def load_tok(configs: List[Tuple], temp_path):
-    # remove existing jsons from previous tests
-    for json_file in temp_path.glob("*.json"):
-        json_file.unlink()
-
-    for config_json, config_name in configs:
-        with (temp_path / config_name).open('w') as f:
-            json.dump(config_json, f)
-    return ov_genai.Tokenizer(str(temp_path))
-
-
-# load LLMPipline where all configs are cleared
-def load_pipe(configs: List[Tuple], temp_path):
-    # remove existing jsons from previous tests
-    for json_file in temp_path.glob("*.json"):
-        json_file.unlink()
-
-    for config_json, config_name in configs:
-        with (temp_path / config_name).open('w') as f:
-            json.dump(config_json, f)
-    return ov_genai.LLMPipeline(str(temp_path))
-
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_load_special_tokens_ids_1(model_tmp_path):
     # test when there is an available config.json
     config_json = { 
@@ -540,6 +479,7 @@ def test_load_special_tokens_ids_1(model_tmp_path):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_load_special_tokens_str_2(model_tmp_path):
     # test with special_tokens_map
     special_tokens_map_json = { 
@@ -554,6 +494,7 @@ def test_load_special_tokens_str_2(model_tmp_path):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_load_special_tokens_3_(model_tmp_path):
     # special_tokens_map is not available 
     # but tokenize_config.json exists
@@ -580,6 +521,7 @@ def test_load_special_tokens_3_(model_tmp_path):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_load_special_tokens_3(model_tmp_path):
     # both config.json is availabel and tokenizer_config.json available
     # check that it does not read int values from tokenizer_config.json if they are in config.json
@@ -614,6 +556,7 @@ def test_load_special_tokens_3(model_tmp_path):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.xfail(
     raises=AssertionError, 
     reason="CVS-143410 ov tokenizer should be aligned with hf",
@@ -657,6 +600,7 @@ invalid_configs = [
 ]
 @pytest.mark.parametrize("generation_config", invalid_configs)
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_invalid_configs(model_tmp_path, generation_config):
     model_id, temp_path = model_tmp_path
     config_json = {}
@@ -666,6 +610,7 @@ def test_invalid_configs(model_tmp_path, generation_config):
 
 
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_valid_configs(model_tmp_path):
     model_id, temp_path = model_tmp_path
     pipe = load_pipe([({"eos_token_id": 37}, "config.json")], temp_path)
@@ -684,6 +629,7 @@ invalid_py_configs = [
     dict(top_k=0, do_sample=True, eos_token_id=42, max_new_tokens=20), # invalid top_k
 ]
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.parametrize("generation_config", invalid_py_configs)
 def test_python_generation_config_validation(model_tmp_path, generation_config):
     model_id, temp_path = model_tmp_path
@@ -697,106 +643,44 @@ def test_python_generation_config_validation(model_tmp_path, generation_config):
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
+@pytest.mark.nightly
 def test_unicode_pybind_decoding_1():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
-    model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
+    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     pipe = read_model((model_id, path))[4]
-    res_str = pipe.generate('你好！ 你好嗎？', max_new_tokens=20)
-    assert isinstance(res_str, str)
-    assert len(res_str) > 0
+    res_str = pipe.generate(',', max_new_tokens=4)
+    assert '�' == res_str[-1]
+
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
+@pytest.mark.nightly
 def test_unicode_pybind_decoding_2():
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
-    model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
+    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     pipe = read_model((model_id, path))[4]
-    decoded_results = pipe.generate(['你好！ 你好嗎？'], max_new_tokens=20)
-    assert isinstance(decoded_results, ov_genai.DecodedResults)
-    assert len(decoded_results.texts[0]) > 0
+    res_str = pipe.generate([","], max_new_tokens=4)
+    assert '�' == res_str.texts[0][-1]
 
 
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
+@pytest.mark.nightly
 def test_unicode_pybind_decoding_3():
     # On this model this prompt generates unfinished utf-8 string
     # and streams it. Test that pybind will not fail while we pass string to python.
-    model_id, path = ("microsoft/phi-1_5", Path("phi-1_5/"))
+    model_id, path = 'katuni4ka/tiny-random-phi3', Path('tiny-random-phi3')
     pipe = read_model((model_id, path))[4]
-    pipe.generate('你好！ 你好嗎？', max_new_tokens=20, streamer=lambda x: print(x))
-
-
-quenstions = [
-    '1+1=',
-    'What is the previous answer?',
-    'Why is the sun yellow?',
-    'What was my first question?'
-]
-
-configs = [
-    dict(max_new_tokens=500),
-    # dict(num_beam_groups=3, num_beams=15, num_return_sequences=15, max_new_tokens=20, diversity_penalty=1.0)
-]
-@pytest.mark.parametrize("generation_config", configs)
-@pytest.mark.parametrize("model_descr", chat_models_list())
-@pytest.mark.precommit
-@pytest.mark.skipif(sys.platform == "linux", reason="no space left on linux device for chat models")
-def test_chat_1(model_descr, generation_config):
-    config = generation_config.copy()  # to avoid side effects
-    
-    if 'do_sample' not in config:
-        # Some HF models have default do_sample = True, and if we set beam search generation config 
-        # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
-        # Need to set exlicitly to False, but only if test arguments omitted this arg.
-        # Do not apply 'repetition_penalty' if sampling is not used.
-        config['do_sample'] = False
-        config['repetition_penalty'] = None
-    
-    config_hf = config.copy()
-    if config_hf.get('stop_criteria'):
-        config_hf['early_stopping'] = stop_criteria_map()[config_hf.pop('stop_criteria')]
-    config_hf.pop('ignore_eos', None)
-
-    chat_history_hf = []
-    chat_history_ov = []
-    chat_prompt = ''
-    model_id, path, tokenizer, model_opt, pipe = read_model(model_descr)
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, add_special_tokens=False, with_detokenizer=True)
-    openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
-    openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
-    ov_genai.LLMPipeline(str(path), device='CPU', config={"ENABLE_MMAP": False})
-
-    pipe.start_chat()    
-    for prompt in quenstions:
-        chat_history_hf.append({'role': 'user', 'content': prompt})
-        chat_history_ov.append({'role': 'user', 'content': prompt})
-        
-        chat_prompt = tokenizer.apply_chat_template(chat_history_hf, tokenize=False, add_generation_prompt=True)
-        tokenized = tokenizer(chat_prompt, return_tensors='pt', add_special_tokens=False)
-        
-        answer = model_opt.generate(**tokenized, **config_hf)
-        answer_str = tokenizer.decode(answer[0, tokenized['input_ids'].numel():], skip_special_tokens=True)
-        chat_history_hf.append({'role': 'assistant', 'content': answer_str})
-
-        answer_ov = pipe.generate(prompt, **config)
-        chat_history_ov.append({'role': 'assistant', 'content': answer_ov})
-
-    pipe.finish_chat()
-    
-    if chat_history_ov != chat_history_hf:
-        print(f'hf_output: {chat_history_hf}')
-        print(f'ov_output: {chat_history_ov}')
-    assert chat_history_ov == chat_history_hf
-    pipe.generate('你好！ 你好嗎？', max_new_tokens=20)
+    res_str = []
+    pipe.generate(",", max_new_tokens=4, streamer=lambda x: res_str.append(x))
+    assert '�' == res_str[-1]
 
 
 @pytest.mark.skip(reason="probably both models ov + hf doesn't fit to memory")
 @pytest.mark.precommit
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="probably not enough space for this model on Win")
+@pytest.mark.nightly
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="not enough space for this model on Win")
 def test_left_pad():
     # test left pad tokenizer post processing implementation
     prompts = [
