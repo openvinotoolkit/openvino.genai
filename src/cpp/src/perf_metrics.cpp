@@ -63,8 +63,6 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     ttft = calc_mean_and_std(raw_metrics.m_times_to_first_token);
 
     generate_duration = calc_mean_and_std(raw_metrics.generate_durations);
-    generate_duration = calc_mean_and_std(raw_metrics.generate_durations);
-
     tokenization_duration = calc_mean_and_std(raw_metrics.tokenization_durations);
     detokenization_duration = calc_mean_and_std(raw_metrics.detokenization_durations);    
     

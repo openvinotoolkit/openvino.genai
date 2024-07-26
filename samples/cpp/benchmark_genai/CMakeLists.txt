@@ -18,7 +18,6 @@ set_target_properties(benchmark_genai PROPERTIES
     COMPILE_PDB_NAME benchmark_genai
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
-# target_compile_features(benchmark_genai PRIVATE cxx_std_11)
 install(TARGETS benchmark_genai
     RUNTIME DESTINATION samples_bin/
     COMPONENT samples_bin

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/perf_metrics.hpp"
-// #include "perf_counters.hpp"
 #include "utils.hpp"
 
 namespace ov {

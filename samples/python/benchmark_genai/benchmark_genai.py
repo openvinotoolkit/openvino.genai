@@ -43,7 +43,7 @@ def main():
     print(f"Detokenization time: {perf_metrics.detokenization_duration.mean:.2f} ± {perf_metrics.detokenization_duration.std:.2f} ms")
     print(f"TTFT: {perf_metrics.ttft.mean:.2f} ± {perf_metrics.ttft.std:.2f} ms")
     print(f"TPOT: {perf_metrics.tpot.mean:.2f} ± {perf_metrics.tpot.std:.2f} ms")
-    print(f"Throughput tokens/s: {perf_metrics.throughput.mean:.2f} ± {perf_metrics.throughput.std:.2f}")
+    print(f"Throughput : {perf_metrics.throughput.mean:.2f} ± {perf_metrics.throughput.std:.2f} tokens/s")
 
 if __name__ == "__main__":
     main()

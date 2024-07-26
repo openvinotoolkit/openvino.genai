@@ -198,29 +198,49 @@ int main(int argc, char* argv[]) {
 
 ### Performance Metrics
 
-`ov.genai.PerfMetrics` (referred to as `PerfMetrics` for simplicity) is a structure that holds performance metrics for each generate call. `PerfMetrics` hold fields with mean and standard deviations for the following metrics:
-- `ttft`
-- `tpot`
-- `load_time`
-- `generate_duration`
-- `tokenization_duration`
-- `detokenization_duration`
-- `throughput`
+`openvino_genai.PerfMetrics` (referred as `PerfMetrics` for simplicity) is a structure that holds performance metrics for each generate call. `PerfMetrics` holds fields with mean and standard deviations for the following metrics:
+- Time To the First Token (TTFT), ms
+- Time per Output Token (TPOT), ms/token
+- Generate total duration, ms
+- Tokenization duration, ms
+- Detokenization duration, ms
+- Throughput, tokens/s
 
 and:
-- `num_generated_tokens`
-- `num_input_tokens`
+- Load time, ms
+- Number of generated tokens
+- Number of tokens in the input prompt
 
-Performance metrics are stored either in the `DecodedResults` or `EncodedResults` `perf_metric` field. Additionally to the fields mentioned above, `PerfMetrics` has a member `raw_metrics` of type `ov.genai.RawPerfMetrics` (referred to as `RawPerfMetrics` for simplicity) that contains raw values for the durations of each batch of new token generation, tokenization durations, detokenization durations, and more. These raw metrics are accessible if you wish to calculate your own statistical values such as median or percentiles. However, since mean and standard deviation values are usually sufficient, we will focus on `PerfMetrics`.
+Performance metrics are stored either in the `DecodedResults` or `EncodedResults` `perf_metric` field. Additionally to the fields mentioned above, `PerfMetrics` has a member `raw_metrics` of type `openvino_genai.RawPerfMetrics` (referred to as `RawPerfMetrics` for simplicity) that contains raw values for the durations of each batch of new token generation, tokenization durations, detokenization durations, and more. These raw metrics are accessible if you wish to calculate your own statistical values such as median or percentiles. However, since mean and standard deviation values are usually sufficient, we will focus on `PerfMetrics`.
 
 ```python
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path, "CPU")
-res = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
-perf_metrics = res.perf_metrics
-print(f'generate_duration: {perf_metrics.mean_generate_duration:.2f}')
-print(f'ttft: {perf_metrics.mean_ttft:.2f}')
-print(f'tpot: {perf_metrics.mean_tpot:.2f}')
+result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
+perf_metrics = result.perf_metrics
+
+print(f'Generate duration: {perf_metrics.generate_duration.mean:.2f}')
+print(f'TTFT: {perf_metrics.ttft.mean:.2f} ms')
+print(f'TPOT: {perf_metrics.tpot.mean:.2f} ms/token')
+print(f'Throughput: {perf_metrics.throughput.mean:.2f} tokens/s')
+```
+
+```cpp
+#include "openvino/genai/llm_pipeline.hpp"
+#include <iostream>
+
+int main(int argc, char* argv[]) {
+    std::string model_path = argv[1];
+    ov::genai::LLMPipeline pipe(model_path, "CPU");
+    auto result = pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(20));
+    auto perf_metrics = result.perf_metrics;
+    
+    std::cout << std::fixed << std::setprecision(2);
+    std::cout << "Generate duration: " << perf_metrics.generate_duration.mean << " ms" << std::endl;
+    std::cout << "TTFT: " << metrics.ttft.mean  << " ms" << std::endl;
+    std::cout << "TPOT: " << metrics.tpot.mean  << " ms/token " << std::endl;
+    std::cout << "Throughput: " << metrics.throughput.mean  << " tokens/s" << std::endl;
+}
 ```
 output:
 ```sh
@@ -229,9 +249,28 @@ mean_ttft: 42.58
 mean_tpot 3.80
 ```
 
->**Note**: If the input prompt is just a string, the generate function will return only a string without perf_metrics. To obtain perf_metrics, provide the prompt as a list with at least one element or call generate with encoded inputs.
+>**Note**: If the input prompt is just a string, the generate function returns only a string without perf_metrics. To obtain perf_metrics, provide the prompt as a list with at least one element or call generate with encoded inputs.
 
-Several `perf_metrics` can be added with each other. In that case `raw_metrics` will be concatenated and mean/std values will be recalculated. This enhances benchmarking and accumulating statistics from several calls.
+Several `perf_metrics` can be added to each other. In that case `raw_metrics` are concatenated and mean/std values are recalculated. This accumulates statistics from several `generate()` calls
+
+```cpp
+#include "openvino/genai/llm_pipeline.hpp"
+#include <iostream>
+
+int main(int argc, char* argv[]) {
+    std::string model_path = argv[1];
+    ov::genai::LLMPipeline pipe(model_path, "CPU");
+    auto result_1 = pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(20));
+    auto result_2 = pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(20));
+    auto perf_metrics = result_1.perf_metrics + result_2.perf_metrics
+    
+    std::cout << std::fixed << std::setprecision(2);
+    std::cout << "Generate duration: " << perf_metrics.generate_duration.mean << " ms" << std::endl;
+    std::cout << "TTFT: " << metrics.ttft.mean  << " ms" << std::endl;
+    std::cout << "TPOT: " << metrics.tpot.mean  << " ms/token " << std::endl;
+    std::cout << "Throughput: " << metrics.throughput.mean  << " tokens/s" << std::endl;
+}
+```
 
 ```python
 import openvino_genai as ov_genai
@@ -240,9 +279,10 @@ res_1 = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
 res_2 = pipe.generate(["Why Sky is blue because"], max_new_tokens=20)
 perf_metrics = res_1.perf_metrics + res_2.perf_metrics
 
-print(f'generate_duration: {perf_metrics.mean_generate_duration:.2f}')
-print(f'ttft: {perf_metrics.mean_ttft:.2f}')
-print(f'tpot: {perf_metrics.mean_tpot:.2f}')
+print(f'Generate duration: {perf_metrics.generate_duration.mean:.2f}')
+print(f'TTFT: {perf_metrics.ttft.mean:.2f} ms')
+print(f'TPOT: {perf_metrics.tpot.mean:.2f} ms/token')
+print(f'Throughput: {perf_metrics.throughput.mean:.2f} tokens/s')
 ```
 
 ## How It Works
