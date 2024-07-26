@@ -19,7 +19,6 @@ using namespace ov::genai;
 void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
 
 class ContinuousBatchingPipeline::Impl {
-    ov::genai::Tokenizer m_tokenizer;
     std::shared_ptr<Scheduler> m_scheduler;
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
@@ -27,7 +26,7 @@ class ContinuousBatchingPipeline::Impl {
 
     // TODO (mzegla): GenerationConfig is request specific object
     // and pipeline only uses default rng_seed. 
-    ov::genai::GenerationConfig m_generation_config;
+    // ov::genai::GenerationConfig m_generation_config;
 
     PipelineMetrics m_pipeline_metrics;
 
@@ -70,8 +69,11 @@ class ContinuousBatchingPipeline::Impl {
     }
 
 public:
-    Impl(const std::string& models_path, const Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& plugin_config) :
-            m_tokenizer{tokenizer} {
+    Impl(const std::string& models_path,
+         const Tokenizer& tokenizer,
+         const SchedulerConfig& scheduler_config,
+         const std::string& device,
+         const ov::AnyMap& plugin_config) {
         ov::Core core;
 
         // The model can be compiled for GPU as well
@@ -100,7 +102,9 @@ public:
         // and finally create model runner
         m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
         m_sampler = std::make_shared<Sampler>();
-        m_sampler->set_seed(m_generation_config.rng_seed);
+        // todo:iefode
+        // m_sampler->set_seed(m_generation_config.rng_seed);
+        m_sampler->set_seed(0);
 
         // read default generation config
     }
@@ -108,29 +112,13 @@ public:
     Impl(const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& plugin_config)
         : Impl{models_path, Tokenizer(models_path), scheduler_config, device, plugin_config} {}
 
-    ov::genai::GenerationConfig get_config() const {
-        return m_generation_config;
-    }
 
     PipelineMetrics get_metrics() const {
         return m_pipeline_metrics;
     }
 
-    ov::genai::Tokenizer get_tokenizer() {
-        return m_tokenizer;
-    }
-
-    GenerationHandle add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params) {
-        sampling_params.set_eos_token_id(m_tokenizer.get_eos_token_id());
+    GenerationHandle add_request(uint64_t request_id, ov::Tensor input_ids, ov::genai::GenerationConfig sampling_params) {
         sampling_params.validate();
-
-        ov::Tensor input_ids;
-        {
-            static ManualTimer timer("tokenize");
-            timer.start();
-            input_ids = m_tokenizer.encode(prompt).input_ids;
-            timer.end();
-        }
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
                                                                             sampling_params, m_scheduler->get_config().block_size);
@@ -238,7 +226,7 @@ public:
         return !m_awaiting_requests.empty() || !m_requests.empty();
     }
 
-    std::vector<GenerationResult> generate(const std::vector<std::string> prompts, std::vector<ov::genai::GenerationConfig> sampling_params) {
+    std::vector<GenerationHandle> generate(const std::vector<ov::Tensor> prompts, std::vector<ov::genai::GenerationConfig> sampling_params) {
         OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
         OPENVINO_ASSERT(prompts.size() == sampling_params.size());
 
@@ -247,35 +235,12 @@ public:
             generations.push_back(add_request(request_id, prompts[request_id], sampling_params[request_id]));
         }
 
-        std::vector<GenerationResult> results;
-        results.reserve(m_awaiting_requests.size());
-
         while (has_non_finished_requests()) {
             step();
         }
 
-        for (size_t generation_idx = 0; generation_idx < generations.size(); ++generation_idx) {
-            const auto& generation = generations[generation_idx];
-            GenerationResult result;
-            result.m_request_id = 1;
-            std::vector<GenerationOutput> generation_outputs = generation->read_all();
-            std::sort(generation_outputs.begin(), generation_outputs.end(), [=] (GenerationOutput& r1, GenerationOutput& r2) {
-                return r1.score > r2.score;
-            });
+        return generations;
 
-            auto num_outputs = std::min(sampling_params[generation_idx].num_return_sequences, generation_outputs.size());
-            for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
-                const auto& generation_output = generation_outputs[generation_output_idx];
-                std::string output_text = m_tokenizer.decode(generation_output.generated_token_ids);
-                result.m_generation_ids.push_back(output_text);
-                result.m_scores.push_back(generation_output.score);
-            }
-            result.m_status = generation->get_status();
-            results.push_back(result);
-        }
-
-        OPENVINO_ASSERT(results.size() == prompts.size());
-        return results;
     }
 };
 
@@ -292,22 +257,16 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const SchedulerConfig& scheduler_config,
     const std::string& device,
     const ov::AnyMap& plugin_config
-) : m_impl{std::make_shared<Impl>(model_path, tokenizer, scheduler_config, device, plugin_config)} {}
-
-ov::genai::Tokenizer ContinuousBatchingPipeline::get_tokenizer() {
-    return m_impl->get_tokenizer();
+) : m_impl{std::make_shared<Impl>(model_path, scheduler_config, device, plugin_config)} {
+    m_tokenizer = tokenizer;
 }
 
-ov::genai::GenerationConfig ContinuousBatchingPipeline::get_config() const{
-    return m_impl->get_config();
-}
-
-PipelineMetrics ContinuousBatchingPipeline::get_metrics() const{
+ov::genai::PipelineMetrics ContinuousBatchingPipeline::get_metrics() const {
     return m_impl->get_metrics();
 }
 
-GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params) {
-    return m_impl->add_request(request_id, prompt, sampling_params);
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, ov::Tensor tokenized_prompt, ov::genai::GenerationConfig sampling_params) {
+    return m_impl->add_request(request_id, tokenized_prompt, sampling_params);
 }
 
 void ContinuousBatchingPipeline::step() {
@@ -318,6 +277,9 @@ bool ContinuousBatchingPipeline::has_non_finished_requests() {
     return m_impl->has_non_finished_requests();
 }
 
-std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, std::vector<ov::genai::GenerationConfig> sampling_params) {
-    return m_impl->generate(prompts, sampling_params);
+std::vector<ov::genai::GenerationHandle>
+ContinuousBatchingPipeline::generate_sequences(
+    const std::vector<ov::Tensor> tokenized_prompts,
+    std::vector<ov::genai::GenerationConfig> sampling_params) {
+    return m_impl->generate(tokenized_prompts, sampling_params);
 }
