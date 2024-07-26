@@ -50,15 +50,15 @@ int main(int argc, char* argv[]) try {
         res = pipe.generate(prompt, config);
         metrics = metrics + res.perf_metrics;
     }
-        
+
     std::cout << std::fixed << std::setprecision(2);
-    std::cout << "Load time: " << metrics.load_time << " ms" << std::endl;
-    std::cout << "Generate time: " << metrics.generate_duration.mean << " ± " << metrics.generate_duration.std << " ms" << std::endl;
-    std::cout << "Tokenization time: " << metrics.tokenization_duration.mean << " ± " << metrics.tokenization_duration.std << " ms" << std::endl;
-    std::cout << "Detokenization time: " << metrics.detokenization_duration.mean << " ± " << metrics.detokenization_duration.std << " ms" << std::endl;
-    std::cout << "TTFT: " << metrics.ttft.mean  << " ± " << metrics.ttft.std << " ms" << std::endl;
-    std::cout << "TPOT: " << metrics.tpot.mean  << " ± " << metrics.tpot.std << " ms/token " << std::endl;
-    std::cout << "Throughput: " << metrics.throughput.mean  << " ± " << metrics.throughput.std << " tokens/s" << std::endl;
+    std::cout << "Load time: " << metrics.get_load_time() << " ms" << std::endl;
+    std::cout << "Generate time: " << metrics.get_generate_duration().mean << " ± " << metrics.get_generate_duration().std << " ms" << std::endl;
+    std::cout << "Tokenization time: " << metrics.get_tokenization_duration().mean << " ± " << metrics.get_tokenization_duration().std << " ms" << std::endl;
+    std::cout << "Detokenization time: " << metrics.get_detokenization_duration().mean << " ± " << metrics.get_detokenization_duration().std << " ms" << std::endl;
+    std::cout << "TTFT: " << metrics.get_ttft().mean  << " ± " << metrics.get_ttft().std << " ms" << std::endl;
+    std::cout << "TPOT: " << metrics.get_tpot().mean  << " ± " << metrics.get_tpot().std << " ms/token " << std::endl;
+    std::cout << "Throughput: " << metrics.get_throughput().mean  << " ± " << metrics.get_throughput().std << " tokens/s" << std::endl;
 
     return 0;
 } catch (const std::exception& error) {

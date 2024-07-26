@@ -32,11 +32,58 @@ ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSecon
 namespace ov {
 namespace genai {
 
+float PerfMetrics::get_load_time() {
+    return load_time;
+}
+
+float PerfMetrics::get_num_generated_tokens() {
+    evaluate_statistics();
+    return num_generated_tokens;
+}
+
+float PerfMetrics::get_num_input_tokens() {
+    evaluate_statistics();
+    return num_generated_tokens;
+}
+
+MeanStdPair PerfMetrics::get_ttft() {
+    evaluate_statistics();
+    return ttft;
+}
+
+MeanStdPair PerfMetrics::get_tpot() {
+    evaluate_statistics();
+    return tpot;
+}
+
+MeanStdPair PerfMetrics::get_throughput() {
+    evaluate_statistics();
+    return throughput;
+}
+
+MeanStdPair PerfMetrics::get_generate_duration() {
+    evaluate_statistics();
+    return generate_duration;
+}
+
+MeanStdPair PerfMetrics::get_tokenization_duration() {
+    evaluate_statistics();
+    return tokenization_duration;
+}
+
+MeanStdPair PerfMetrics::get_detokenization_duration() {
+    evaluate_statistics();
+    return detokenization_duration;
+}
+
 float PerfMetrics::get_microsec(std::chrono::steady_clock::duration duration) {
     return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
 }
-    
+
 void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
+    if (m_evaluated){
+        return;
+    }
     // If start_tiem is specified then recalcualte durations according to start times and calculate statistics only after that.
     if (start_time.has_value()) {
         auto start_time_val = *start_time;
@@ -68,6 +115,7 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     
     // tokens per second
     throughput = {1000.0f / tpot.mean, (tpot.std * 1000.0f) / (tpot.mean * tpot.mean)};
+    m_evaluated = true;
 }
 
 PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
@@ -103,7 +151,7 @@ PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
     res.num_generated_tokens = num_generated_tokens + right.num_generated_tokens;
     res.num_input_tokens = num_generated_tokens + right.num_input_tokens;
     res.load_time = load_time;
-    res.evaluate_statistics();
+    res.m_evaluated = false;
     return res;
 }
 

@@ -219,10 +219,10 @@ pipe = ov_genai.LLMPipeline(model_path, "CPU")
 result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
 perf_metrics = result.perf_metrics
 
-print(f'Generate duration: {perf_metrics.generate_duration.mean:.2f}')
-print(f'TTFT: {perf_metrics.ttft.mean:.2f} ms')
-print(f'TPOT: {perf_metrics.tpot.mean:.2f} ms/token')
-print(f'Throughput: {perf_metrics.throughput.mean:.2f} tokens/s')
+print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
+print(f'TTFT: {perf_metrics.get_ttft().mean:.2f} ms')
+print(f'TPOT: {perf_metrics.get_tpot().mean:.2f} ms/token')
+print(f'Throughput: {perf_metrics.get_throughput()get_.mean():.2f} tokens/s')
 ```
 
 ```cpp
@@ -236,10 +236,10 @@ int main(int argc, char* argv[]) {
     auto perf_metrics = result.perf_metrics;
     
     std::cout << std::fixed << std::setprecision(2);
-    std::cout << "Generate duration: " << perf_metrics.generate_duration.mean << " ms" << std::endl;
-    std::cout << "TTFT: " << metrics.ttft.mean  << " ms" << std::endl;
-    std::cout << "TPOT: " << metrics.tpot.mean  << " ms/token " << std::endl;
-    std::cout << "Throughput: " << metrics.throughput.mean  << " tokens/s" << std::endl;
+    std::cout << "Generate duration: " << perf_metrics.get_generate_duration().mean << " ms" << std::endl;
+    std::cout << "TTFT: " << metrics.get_ttft().mean  << " ms" << std::endl;
+    std::cout << "TPOT: " << metrics.get_tpot().mean  << " ms/token " << std::endl;
+    std::cout << "Throughput: " << metrics.get_throughput().mean  << " tokens/s" << std::endl;
 }
 ```
 output:
@@ -265,10 +265,10 @@ int main(int argc, char* argv[]) {
     auto perf_metrics = result_1.perf_metrics + result_2.perf_metrics
     
     std::cout << std::fixed << std::setprecision(2);
-    std::cout << "Generate duration: " << perf_metrics.generate_duration.mean << " ms" << std::endl;
-    std::cout << "TTFT: " << metrics.ttft.mean  << " ms" << std::endl;
-    std::cout << "TPOT: " << metrics.tpot.mean  << " ms/token " << std::endl;
-    std::cout << "Throughput: " << metrics.throughput.mean  << " tokens/s" << std::endl;
+    std::cout << "Generate duration: " << perf_metrics.get_generate_duration().mean << " ms" << std::endl;
+    std::cout << "TTFT: " << metrics.get_ttft().mean  << " ms" << std::endl;
+    std::cout << "TPOT: " << metrics.get_tpot().mean  << " ms/token " << std::endl;
+    std::cout << "Throughput: " << metrics.get_throughput().mean  << " tokens/s" << std::endl;
 }
 ```
 
@@ -279,10 +279,10 @@ res_1 = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
 res_2 = pipe.generate(["Why Sky is blue because"], max_new_tokens=20)
 perf_metrics = res_1.perf_metrics + res_2.perf_metrics
 
-print(f'Generate duration: {perf_metrics.generate_duration.mean:.2f}')
-print(f'TTFT: {perf_metrics.ttft.mean:.2f} ms')
-print(f'TPOT: {perf_metrics.tpot.mean:.2f} ms/token')
-print(f'Throughput: {perf_metrics.throughput.mean:.2f} tokens/s')
+print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
+print(f'TTFT: {perf_metrics.get_ttft().mean:.2f} ms')
+print(f'TPOT: {perf_metrics.get_tpot().mean:.2f} ms/token')
+print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
 ```
 
 ## How It Works

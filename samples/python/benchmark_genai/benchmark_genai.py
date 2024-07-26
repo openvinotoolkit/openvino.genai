@@ -37,13 +37,13 @@ def main():
         res = pipe.generate(prompt, config)
         perf_metrics += res.perf_metrics
     
-    print(f"Load time: {perf_metrics.load_time:.2f} ms")
-    print(f"Generate time: {perf_metrics.generate_duration.mean:.2f} ± {perf_metrics.generate_duration.std:.2f} ms")
-    print(f"Tokenization time: {perf_metrics.tokenization_duration.mean:.2f} ± {perf_metrics.tokenization_duration.std:.2f} ms")
-    print(f"Detokenization time: {perf_metrics.detokenization_duration.mean:.2f} ± {perf_metrics.detokenization_duration.std:.2f} ms")
-    print(f"TTFT: {perf_metrics.ttft.mean:.2f} ± {perf_metrics.ttft.std:.2f} ms")
-    print(f"TPOT: {perf_metrics.tpot.mean:.2f} ± {perf_metrics.tpot.std:.2f} ms")
-    print(f"Throughput : {perf_metrics.throughput.mean:.2f} ± {perf_metrics.throughput.std:.2f} tokens/s")
+    print(f"Load time: {perf_metrics.get_load_time():.2f} ms")
+    print(f"Generate time: {perf_metrics.get_generate_duration().mean:.2f} ± {perf_metrics.get_generate_duration().std:.2f} ms")
+    print(f"Tokenization time: {perf_metrics.get_tokenization_duration().mean:.2f} ± {perf_metrics.get_tokenization_duration().std:.2f} ms")
+    print(f"Detokenization time: {perf_metrics.get_detokenization_duration().mean:.2f} ± {perf_metrics.get_detokenization_duration().std:.2f} ms")
+    print(f"TTFT: {perf_metrics.get_ttft().mean:.2f} ± {perf_metrics.get_ttft().std:.2f} ms")
+    print(f"TPOT: {perf_metrics.get_tpot().mean:.2f} ± {perf_metrics.get_tpot().std:.2f} ms")
+    print(f"Throughput : {perf_metrics.get_throughput().mean:.2f} ± {perf_metrics.get_throughput().std:.2f} tokens/s")
 
 if __name__ == "__main__":
     main()
