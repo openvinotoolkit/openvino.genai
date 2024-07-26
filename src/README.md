@@ -5,10 +5,25 @@ It hides the complexity of the generation process and minimizes the amount of co
 
 ## Install OpenVINO™ GenAI
 
+> **NOTE**: Please make sure that you are following the versions compatibility rules, refer to the [OpenVINO™ GenAI Dependencies](#openvino-genai-dependencies) for more information.
+
 The OpenVINO™ GenAI flavor is available for installation via Archive and PyPI distributions.
 To install OpenVINO™ GenAI, refer to the [Install Guide](https://docs.openvino.ai/2024/get-started/install-openvino.html).
 
 To build OpenVINO™ GenAI library from source, refer to the [Build Instructions](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/BUILD.md).
+
+### OpenVINO™ GenAI Dependencies
+
+OpenVINO™ GenAI depends on [OpenVINO](https://github.com/openvinotoolkit/openvino) and [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers).
+
+When installing OpenVINO™ GenAI from PyPi, the same versions of OpenVINO and OpenVINO Tokenizers are used (e.g. for `openvino-genai==2024.3.0` will be used `openvino==2024.3.0` and `openvino-tokenizers==2024.3.0.0`).
+If you update one of the dependency packages (e.g. install `openvino-nightly`), versions might be incompatible due to different ABI and running OpenVINO GenAI can result to errors (e.g. `ImportError: libopenvino.so.2420: cannot open shared object file: No such file or directory`).
+
+For example, `openvino::runtime` exports `_GLIBCXX_USE_CXX11_ABI=0` on CentOS7. It needs to be propagated to every library openvino_tokenizers links with. That prohibits linkage with prebuilt libraries because they aren't compiled with `_GLIBCXX_USE_CXX11_ABI=0`.
+
+Having packages version in format `<MAJOR>.<MINOR>.<PATCH>.<REVISION>`, only `<REVISION>` part of the full version can be changed to ensure ABI compatibility, while changing `<MAJOR>`, `<MINOR>` or `<PATCH>` parts of the version might break ABI.
+
+If you want to try OpenVINO GenAI with different dependencies versions (e.g. nightly or pre-release versions), build OpenVINO GenAI library from source.
 
 ## Usage
 
