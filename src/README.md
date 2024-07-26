@@ -285,6 +285,8 @@ print(f'TPOT: {perf_metrics.get_tpot().mean:.2f} ms/token')
 print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
 ```
 
+For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/samples/python/benchmark_genai/README.md) and C++ [benchmark_genai](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/samples/cpp/benchmark_genai/README.md) samples.
+
 ## How It Works
 
 For information on how OpenVINO™ GenAI works, refer to the [How It Works Section](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/HOW_IT_WORKS.md).

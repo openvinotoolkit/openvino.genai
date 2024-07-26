@@ -1,6 +1,6 @@
-# Benchmarking Vanilla GenAI
+# LLMs benchmarking sample
 
-This sample script demonstrates how to benchmark an LLMModel in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
+This sample script demonstrates how to benchmark an LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
 
 ## Download and convert the model and tokenizers
 
