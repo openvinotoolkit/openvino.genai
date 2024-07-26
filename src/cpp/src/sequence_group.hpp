@@ -6,6 +6,7 @@
 #include <vector>
 #include <set>
 #include <cstdlib>
+#include <string_view>
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
@@ -120,6 +121,21 @@ public:
         float cumulative_log_prob = get_cumulative_log_probs(), current_length = get_generated_len();
         float score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
         return score;
+    }
+
+    // Each KV block can be uniquely identified by 
+    // the tokens within the block and the tokens in the prefix before the block.
+    // hash(prefix tokens + block tokens) <--> KV Block
+    size_t get_hash(size_t content_length, const ov::genai::TokenIds& prompt_ids) const {
+        std::vector<int64_t> content;
+        OPENVINO_ASSERT(content_length <= prompt_ids.size() + m_generated_ids.size());
+        content.insert( content.end(), prompt_ids.begin(), prompt_ids.begin() + std::min(prompt_ids.size(), content_length));
+        if (content_length > prompt_ids.size()) {
+            content.insert(content.end(), m_generated_ids.begin(), m_generated_ids.begin() + content_length - prompt_ids.size());
+        }
+        const char* data = reinterpret_cast<const char*>(content.data());
+        std::size_t size = content.size() * sizeof(content[0]);
+        return std::hash<std::string_view>{}(std::string_view(data, size));
     }
 };
 
@@ -343,6 +359,11 @@ public:
         // if some processed tokens were evicted, max content len is greater than number of processed tokens
         m_max_content_len = std::max(m_max_content_len, m_num_processed_tokens);
         clear_scheduled_tokens();
+    }
+
+    void update_processed_tokens_num(size_t processed_tokens) {
+        m_num_processed_tokens = processed_tokens;
+        m_max_content_len = processed_tokens;
     }
 
     void clear_waiting_sequences() {
