@@ -28,6 +28,7 @@ SpeculativeDecodingPipeline::SpeculativeDecodingPipeline(const std::string& mode
         model_scheduler_config.cache_size = cache_size;
         assisting_scheduler_config.cache_size = assisted_cache_size;
     }
+    // todo: iefode: tokenizer is not needed for CB
     model_pipeline = ov::genai::ContinuousBatchingPipeline(models_path, m_tokenizer, model_scheduler_config, device, plugin_config);
     assisting_pipeline = ov::genai::ContinuousBatchingPipeline(assisting_model_path, m_tokenizer, assisting_scheduler_config, device, plugin_config);
 }
