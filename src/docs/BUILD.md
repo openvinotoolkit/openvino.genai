@@ -34,8 +34,10 @@ The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources
 
 ## Build Instructions
 
+### Build OpenVINO and OpenVINO GenAI from sources
+
 1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build).  
-The path to the OpenVINO install directory is referred as `<OpenVINO_DIR>` throughout the document.
+The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throughout the document.
 2. Clone OpenVINO GenAI repository and init submodules:
     ```sh
     git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
@@ -43,9 +45,30 @@ The path to the OpenVINO install directory is referred as `<OpenVINO_DIR>` throu
     ```
 3. Build the project:
     ```sh
-    source <OpenVINO_DIR>/setupvars.sh
+    source <INSTALL_DIR>/setupvars.sh
     cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
     cmake --build ./build/ --config Release --target package -j
-    cmake --install ./build/ --config Release --prefix <OpenVINO_DIR>
+    cmake --install ./build/ --config Release --prefix <INSTALL_DIR>
     ```
-    > **NOTE**: For running setupvars script on Windows, use command `call <OpenVINO_DIR>\setupvars.bat`
+    > **NOTE**: For running setupvars script on Windows, use command `call <INSTALL_DIR>\setupvars.bat`
+
+### Build OpenVINO GenAI only
+
+Assuming that you have OpenVINO installed at `<INSTALL_DIR>`:
+
+1. Clone OpenVINO GenAI repository and init submodules:
+    ```sh
+    git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
+    cd openvino.genai
+    ```
+2. Build the project:
+    ```sh
+    export OpenVINO_DIR=<INSTALL_DIR>/runtime
+    cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+    cmake --build ./build/ --config Release --target package -j
+    ```
+3. Set environment variables:
+    ```sh
+    export PYTHONPATH=<INSTALL_DIR>/python:./build/:${PYTHONPATH}
+    export LD_LIBRARY_PATH=<INSTALL_DIR>/runtime/lib/intel64:${LD_LIBRARY_PATH}
+    ```
