@@ -38,7 +38,6 @@ jobs:
         if: ${{ 'Release' != matrix.build-type }}
       - run: source ./ov/setupvars.sh && timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
       - run: source ./ov/setupvars.sh && timeout 25s ./ov/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
-        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
 
   macos_genai_package:
     strategy:
@@ -71,7 +70,6 @@ jobs:
         if: ${{ 'Release' != matrix.build-type }}
       - run: source ./ov/setupvars.sh && timeout 30s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
       - run: source ./ov/setupvars.sh && timeout 25s ./ov/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
-        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
 
   windows_genai_package:
     strategy:
@@ -114,4 +112,3 @@ jobs:
         if: ${{ 'Release' != matrix.build-type }}
       - run: call ov\setupvars.bat && "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm" .\TinyLlama-1.1B-Chat-v1.0\ ""
       - run: call ov\setupvars.bat && python .\ov\samples\python\multinomial_causal_lm\multinomial_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 0
-        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
