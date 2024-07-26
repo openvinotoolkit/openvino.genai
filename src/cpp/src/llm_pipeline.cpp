@@ -510,7 +510,10 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     OptionalGenerationConfig generation_config
 ) {
+    auto start_time = std::chrono::steady_clock::now();
     m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
+    auto stop_time = std::chrono::steady_clock::now();
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();   
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
@@ -518,27 +521,35 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& plugin_config
-): m_pimpl{[&]() -> std::unique_ptr<LLMPipelineImplBase> {
+){
+    auto start_time = std::chrono::steady_clock::now();    
     if ("CB" == device) {
-        return std::make_unique<ContinuousBatchingAdapter>(model_path, tokenizer, "CPU", plugin_config);
-    } if ("NPU" == device) {
-        return std::make_unique<StaticLLMPipeline>(model_path, tokenizer, device, plugin_config);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_path, tokenizer, "CPU", plugin_config);
+    } else if ("NPU" == device) {
+        m_pimpl = std::make_unique<StaticLLMPipeline>(model_path, tokenizer, device, plugin_config);
+    } else {
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, plugin_config);
     }
-    return std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, plugin_config);
-}()} {}
+    auto stop_time = std::chrono::steady_clock::now();
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();    
+}
 
 ov::genai::LLMPipeline::LLMPipeline(
     const std::string& path,
     const std::string& device,
     const ov::AnyMap& config
-): m_pimpl{[&]() -> std::unique_ptr<LLMPipelineImplBase> {
+){ 
+    auto start_time = std::chrono::steady_clock::now();
     if ("CB" == device) {
-        return std::make_unique<ContinuousBatchingAdapter>(path, "CPU", config);
-    } if ("NPU" == device) {
-        return std::make_unique<StaticLLMPipeline>(path, device, config);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(path, "CPU", config);
+    } else if ("NPU" == device) {
+        m_pimpl = std::make_unique<StaticLLMPipeline>(path, device, config);
+    } else {
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(path, device, config);
     }
-    return std::make_unique<StatefulLLMPipeline>(path, device, config);
-}()} {}
+    auto stop_time = std::chrono::steady_clock::now();
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+}
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
     return m_pimpl->m_generation_config;
