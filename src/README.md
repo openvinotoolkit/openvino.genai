@@ -42,7 +42,7 @@ A simple example:
 ```python
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path, "CPU")
-print(pipe.generate("The Sun is yellow because"))
+print(pipe.generate("The Sun is yellow because", max_new_tokens=100))
 ```
 
 Calling generate with custom generation config parameters, e.g. config for grouped beam search:
@@ -50,7 +50,7 @@ Calling generate with custom generation config parameters, e.g. config for group
 import openvino_genai as ov_genai
 pipe = ov_genai.LLMPipeline(model_path, "CPU")
 
-result = pipe.generate("The Sun is yellow because", max_new_tokens=30, num_beam_groups=3, num_beams=15, diversity_penalty=1.5)
+result = pipe.generate("The Sun is yellow because", max_new_tokens=100, num_beam_groups=3, num_beams=15, diversity_penalty=1.5)
 print(result)
 ```
 
@@ -73,7 +73,7 @@ while True:
     prompt = input()
     if prompt == 'Stop!':
         break
-    print(pipe(prompt))
+    print(pipe(prompt, max_new_tokens=200))
 pipe.finish_chat()
 ```
 
@@ -89,7 +89,7 @@ A simple example:
 int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
-    std::cout << pipe.generate("The Sun is yellow because");
+    std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(256));
 }
 ```
 
@@ -159,7 +159,7 @@ int main(int argc, char* argv[]) {
         // false means continue generation.
         return false;
     };
-    std::cout << pipe.generate("The Sun is yellow bacause", ov::genai::streamer(streamer));
+    std::cout << pipe.generate("The Sun is yellow bacause", ov::genai::streamer(streamer), ov::genai::max_new_tokens(200));
 }
 ```
 
@@ -192,7 +192,7 @@ int main(int argc, char* argv[]) {
 
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
-    std::cout << pipe.generate("The Sun is yellow because", ov::genai::streamer(custom_streamer));
+    std::cout << pipe.generate("The Sun is yellow because", ov::genai::streamer(custom_streamer), ov::genai::max_new_tokens(200));
 }
 ```
 

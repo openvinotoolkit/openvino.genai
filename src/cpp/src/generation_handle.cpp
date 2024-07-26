@@ -20,6 +20,10 @@ bool GenerationHandleImpl::can_read() {
     return m_generation_stream->can_read();
 }
 
+std::unordered_map<uint64_t, GenerationOutput> GenerationHandleImpl::back() {
+    return m_generation_stream->back();
+}
+
 std::unordered_map<uint64_t, GenerationOutput> GenerationHandleImpl::read() {
     return m_generation_stream->read();
 }

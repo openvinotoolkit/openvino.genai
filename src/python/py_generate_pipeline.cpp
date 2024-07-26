@@ -165,6 +165,33 @@ OptionalGenerationConfig update_config_from_kwargs(const OptionalGenerationConfi
     return res_config;
 }
 
+ov::Any py_object_to_any(const py::object& py_obj);
+
+bool py_object_is_any_map(const py::object& py_obj) {
+    if (!py::isinstance<py::dict>(py_obj)) {
+        return false;
+    }
+    auto dict = py::cast<py::dict>(py_obj);
+    return std::all_of(dict.begin(), dict.end(), [&](const std::pair<py::object::handle, py::object::handle>& elem) {
+        return py::isinstance<py::str>(elem.first);
+    });
+}
+
+ov::AnyMap py_object_to_any_map(const py::object& py_obj) {
+    OPENVINO_ASSERT(py_object_is_any_map(py_obj), "Unsupported attribute type.");
+    ov::AnyMap return_value = {};
+    for (auto& item : py::cast<py::dict>(py_obj)) {
+        std::string key = py::cast<std::string>(item.first);
+        py::object value = py::cast<py::object>(item.second);
+        if (py_object_is_any_map(value)) {
+            return_value[key] = py_object_to_any_map(value);
+        } else {
+            return_value[key] = py_object_to_any(value);
+        }
+    }
+    return return_value;
+}
+
 ov::Any py_object_to_any(const py::object& py_obj) {
     // Python types
     py::object float_32_type = py::module_::import("numpy").attr("float32");
@@ -227,6 +254,8 @@ ov::Any py_object_to_any(const py::object& py_obj) {
         }
     
     // OV types
+    } else if (py_object_is_any_map(py_obj)) {
+        return py_object_to_any_map(py_obj);
     } else if (py::isinstance<ov::Any>(py_obj)) {
         return py::cast<ov::Any>(py_obj);
     } else if (py::isinstance<ov::element::Type>(py_obj)) {
@@ -450,10 +479,10 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer 
            if it's located in a different path than the main model.)")
         
-        .def(py::init([](const std::string& tokenizer_path) {
+        .def(py::init([](const std::string& tokenizer_path, const std::map<std::string, py::object>& plugin_config) {
             ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path);
-        }), py::arg("tokenizer_path"))
+            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, properties_to_any_map(plugin_config));
+        }), py::arg("tokenizer_path"), py::arg("plugin_config") = ov::AnyMap({}))
         
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts) { return tok.encode(prompts); },
             py::arg("prompts"),
@@ -649,18 +678,32 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline")
-        .def(py::init([](const std::string& model_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& plugin_config) {
+        .def(py::init([](const std::string& model_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
             ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<ContinuousBatchingPipeline>(model_path, scheduler_config, device, properties_to_any_map(plugin_config));
-        }), py::arg("model_path"), py::arg("scheduler_config"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap({}))
+            return std::make_unique<ContinuousBatchingPipeline>(model_path, scheduler_config, device, properties_to_any_map(llm_plugin_config), properties_to_any_map(tokenizer_plugin_config));
+        }), py::arg("model_path"), py::arg("scheduler_config"), py::arg("device") = "CPU", py::arg("llm_plugin_config") = ov::AnyMap({}), py::arg("tokenizer_plugin_config") = ov::AnyMap({}))
         .def(py::init([](const std::string& model_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& plugin_config) {
             ScopedVar env_manager(ov_tokenizers_module_path());
             return std::make_unique<ContinuousBatchingPipeline>(model_path, tokenizer, scheduler_config, device, properties_to_any_map(plugin_config));
         }), py::arg("model_path"), py::arg("tokenizer"), py::arg("scheduler_config"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap({}))
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
-        .def("add_request", &ContinuousBatchingPipeline::add_request)
+        .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request))
+        .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request))
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
-        .def("generate", &ContinuousBatchingPipeline::generate);
+        .def(
+            "generate",
+            py::overload_cast<const std::vector<ov::Tensor>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
+            py::arg("input_ids"),
+            py::arg("sampling_params"),
+            py::arg("streamer") = std::monostate{}
+        )
+        .def(
+            "generate",
+            py::overload_cast<const std::vector<std::string>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
+            py::arg("prompts"),
+            py::arg("sampling_params"),
+            py::arg("streamer") = std::monostate{}
+        );
 }

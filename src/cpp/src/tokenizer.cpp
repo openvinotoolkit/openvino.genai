@@ -6,8 +6,11 @@
 #include "utils.hpp"
 #include <jinja2cpp/template.h>
 #include <jinja2cpp/template_env.h>
+#include <jinja2cpp/user_callable.h>
 #include "tokenizers_path.hpp"
+#include "circular_buffer_queue.hpp"
 #include <fstream>
+#include <memory>
 
 namespace {
 
@@ -55,10 +58,12 @@ namespace genai {
 
 class Tokenizer::TokenizerImpl {
 public:
-    ov::InferRequest m_tokenizer_request;
-    ov::InferRequest m_detokenizer_request;
-    std::mutex m_tokenizer_mutex;
-    std::mutex m_detokenizer_mutex;
+    ov::CompiledModel m_tokenizer;
+    ov::CompiledModel m_detokenizer;
+
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_tokenizer;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_detokenizer;
+
     int64_t m_pad_token_id = -1;
     int64_t m_bos_token_id = -1;
     int64_t m_eos_token_id = -1;
@@ -71,7 +76,7 @@ public:
 
     TokenizerImpl() = default;
 
-    TokenizerImpl(std::filesystem::path tokenizer_path)
+    TokenizerImpl(std::filesystem::path tokenizer_path, const ov::AnyMap& plugin_config)
         : m_chat_template{chat_template_from_tokenizer_json_if_exists(tokenizer_path)} {
         ov::Core core;
         
@@ -92,10 +97,23 @@ public:
         read_tokenizer_config_if_necessary(tokenizer_path); 
 
         auto device = "CPU"; // currently openvino_tokenizer supports only CPU
-        m_tokenizer_request = core.compile_model(tokenizer_path / "openvino_tokenizer.xml",
-                                                device).create_infer_request();
-        m_detokenizer_request = core.compile_model(tokenizer_path / "openvino_detokenizer.xml", 
-                                                   device).create_infer_request();
+        m_tokenizer = core.compile_model(tokenizer_path / "openvino_tokenizer.xml",
+                                                device, plugin_config);
+        m_detokenizer = core.compile_model(tokenizer_path / "openvino_detokenizer.xml", 
+                                                   device, plugin_config);
+
+        
+        const size_t INFER_REQUEST_QUEUE_SIZE = m_tokenizer.get_property(ov::optimal_number_of_infer_requests);
+        m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            INFER_REQUEST_QUEUE_SIZE,
+            [this]() -> ov::InferRequest {
+                return std::move(this->m_tokenizer.create_infer_request());
+            });
+        m_ireq_queue_detokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            INFER_REQUEST_QUEUE_SIZE,
+            [this]() -> ov::InferRequest {
+                return std::move(this->m_detokenizer.create_infer_request());
+            });
 
         // Get special token ids by inference if they are not defined.
         infer_special_tokens_if_necessary();
@@ -231,29 +249,35 @@ public:
     }
 
     TokenizedInputs encode(std::string prompt) {
+        CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
         size_t batch_size = 1;
-        std::unique_lock<std::mutex> lock(m_tokenizer_mutex);
-        m_tokenizer_request.set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
-        m_tokenizer_request.infer();
-        return get_copied_results();
+        infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
+        infer_request_guard.get().start_async();
+        infer_request_guard.get().wait();
+        return get_copied_results(
+            infer_request_guard.get().get_tensor("input_ids"),
+            infer_request_guard.get().get_tensor("attention_mask")
+        );
     }
 
     TokenizedInputs encode(std::vector<std::string>& prompts) {
         TokenizedInputs unpadded;
         {
-            std::unique_lock<std::mutex> lock(m_tokenizer_mutex);
-            m_tokenizer_request.set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
-            auto size_ = m_tokenizer_request.get_input_tensor().get_shape();
-            m_tokenizer_request.infer();
+            CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
+            infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
+            auto size_ = infer_request_guard.get().get_input_tensor().get_shape();
+            infer_request_guard.get().start_async();
+            infer_request_guard.get().wait();
 
-            unpadded = get_copied_results();
+            unpadded = get_copied_results(
+                infer_request_guard.get().get_tensor("input_ids"),
+                infer_request_guard.get().get_tensor("attention_mask")
+            );
         }
         return pad_left(unpadded.input_ids, unpadded.attention_mask);
     }
 
-    TokenizedInputs get_copied_results() {
-        auto input_ids = m_tokenizer_request.get_tensor("input_ids");
-        auto attention_mask = m_tokenizer_request.get_tensor("attention_mask");
+    TokenizedInputs get_copied_results(ov::Tensor input_ids, ov::Tensor attention_mask) {
         ov::Tensor input_ids_ = ov::Tensor(input_ids.get_element_type(), input_ids.get_shape());
         ov::Tensor attention_mask_ = ov::Tensor(attention_mask.get_element_type(), attention_mask.get_shape());
         input_ids.copy_to(input_ids_);
@@ -263,22 +287,24 @@ public:
     }
 
     std::string decode(std::vector<int64_t> tokens) {
+        CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
         size_t batch_size = 1;
-        std::unique_lock<std::mutex> lock(m_detokenizer_mutex);
-        m_detokenizer_request.set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
-        m_detokenizer_request.infer();
-        return m_detokenizer_request.get_output_tensor().data<std::string>()[0];
+        infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::i64, {batch_size, tokens.size()}, tokens.data()});
+        infer_request_guard.get().start_async();
+        infer_request_guard.get().wait();
+        return infer_request_guard.get().get_output_tensor().data<std::string>()[0];
     }
 
     std::vector<std::string> decode(ov::Tensor tokens) {
         OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64, "tokens tensor element type should be an i64");
         OPENVINO_ASSERT(tokens.get_shape().size() == 2, "tokens tensor should of rank 2 with shape [batch_size, seq_len]");
 
-        std::unique_lock<std::mutex> lock(m_detokenizer_mutex);
-        m_detokenizer_request.set_input_tensor(tokens);
-        m_detokenizer_request.infer();
+        CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
+        infer_request_guard.get().set_input_tensor(tokens);
+        infer_request_guard.get().start_async();
+        infer_request_guard.get().wait();
         
-        auto res = m_detokenizer_request.get_output_tensor();
+        auto res = infer_request_guard.get().get_output_tensor();
         auto res_data = res.data<std::string>();
         return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
     }
@@ -299,10 +325,11 @@ public:
             std::fill(tokens_data + i * max_len + line_len, tokens_data + (i + 1) * max_len, m_pad_token_id);
         }
 
-        std::unique_lock<std::mutex> lock(m_detokenizer_mutex);
-        m_detokenizer_request.set_input_tensor(tokens);
-        m_detokenizer_request.infer();
-        auto res = m_detokenizer_request.get_output_tensor();
+        CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_detokenizer.get());
+        infer_request_guard.get().set_input_tensor(tokens);
+        infer_request_guard.get().start_async();
+        infer_request_guard.get().wait();
+        auto res = infer_request_guard.get().get_output_tensor();
         auto res_data = res.data<std::string>();
         return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
     }
@@ -342,40 +369,32 @@ public:
                                     bool add_generation_prompt, 
                                     const std::string& chat_template) const {
         auto chat_tpl = chat_template.empty() ? m_chat_template : chat_template;
-        // Jinja2Cpp does not support slicing, e.g. [1:].
-        // In templates slicing is used typically in the header to find system prompt.
-        // If header containts that typical expression we update template and 
-        // extract system message manually from ChatHistory.
-        std::string header_with_slice = "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}{% set system_message = messages[0]['content'] %}";
-        std::string replacement_string = "{% if false %}{% set placeholder = false %}";
-        
-        std::string system_message = "";
-        size_t pos = chat_tpl.find(header_with_slice);
-        if (pos != std::string::npos) {
-            chat_tpl.replace(pos, header_with_slice.length(), replacement_string);
 
-            if (!history.empty() && history[0].at("role") == "system") {
-                system_message = history[0].at("content");
-                history.erase(history.begin());
-            }
+        // Jinja2Cpp does not support Python-style slicing, e.g. [1:].
+        // If chat template contains such slicing, we replace it with custom function `slice()` (user-defined callable) 
+        // that is defined below and does the same list slicing logic.
+        std::string slice_string = "messages[1:]";
+        std::string replacement_slice_string = "slice(messages, 1)";
+        size_t slice_pos = chat_tpl.find(slice_string);
+        if (slice_pos != std::string::npos) {
+            chat_tpl.replace(slice_pos, slice_string.length(), replacement_slice_string);
         }
-        
-        // Jinja2Cpp accepts system_message only as a string and incorrectly handles it as a bool.
-        // Both this patters are found frequently in chat templates, replace so that jinja2cpp 
-        // will not stumble on them.
-        std::pair<std::string, std::string> replace_str_map[] = {
-            {"{% set system_message = false %}", ""},
-            {"system_message != false", "true"},
-        };
-        if (!system_message.empty()) {
-            for (const auto& [from, to] : replace_str_map) {
-                size_t pos = 0;
-                while ((pos = chat_tpl.find(from, pos)) != std::string::npos) {
-                    chat_tpl.replace(pos, from.size(), to);
-                    pos += to.size();
+        jinja2::UserCallable slice_callable = jinja2::MakeCallable(
+            [](const jinja2::ValuesList& list, const int64_t start) {
+                if (list.empty())
+                    return jinja2::Value();
+                jinja2::ValuesList result;
+                int64_t stop = list.size();
+                int64_t step = 1;
+                for (int64_t i = start; i < stop && i < list.size(); i += step)
+                {
+                    result.push_back(list.at(i));
                 }
-            }
-        }
+
+                return jinja2::Value(result);
+            },
+            jinja2::ArgInfo{"list"}, jinja2::ArgInfo{"start"}
+        );
 
         jinja2::TemplateEnv env;
         env.GetSettings().lstripBlocks = true;
@@ -395,13 +414,13 @@ public:
             {"bos_token",  m_bos_token},
             {"eos_token", m_eos_token},
             {"pad_token", m_pad_token},
-            {"system_message", system_message.empty() ? jinja2::EmptyValue() : jinja2::Value{system_message}},
             {"add_generation_prompt", add_generation_prompt},
+            {"slice", slice_callable},
         };
-        
+
         try {
             return tpl.RenderAsString(params).value();
-        } catch (const std::bad_alloc& error) {
+        } catch (const std::exception& error) {
             OPENVINO_THROW("Chat template for the current model is not supported by Jinja2Cpp. "
                            "Please apply template manually to your prompt before calling generate. "
                            "For exmaple: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
@@ -411,9 +430,9 @@ public:
     
 };
 
-Tokenizer::Tokenizer(const std::string& tokenizer_path) {
+Tokenizer::Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& plugin_config) {
     ScopedVar env_manager(tokenizers_relative_to_genai().string());
-    m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path);
+    m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path, plugin_config);
 }
 
 TokenizedInputs Tokenizer::encode(const std::string prompt) {

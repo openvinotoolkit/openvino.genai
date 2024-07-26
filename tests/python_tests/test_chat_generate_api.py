@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import math
 import openvino
 import openvino_tokenizers
 import openvino_genai as ov_genai
@@ -12,7 +13,8 @@ from ov_genai_test_utils import (
     read_model,
     load_tok,
     model_tmp_path,
-    get_chat_templates
+    get_chat_templates,
+    get_continuous_batching,
 )
 
 
@@ -33,6 +35,7 @@ quenstions = [
 @pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_chat_compare_with_HF(model_descr, generation_config: Dict):
     device = 'CPU'
     chat_history_hf = []
@@ -69,6 +72,7 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
 @pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_chat_compare_text_history_with_HF(model_descr, generation_config: Dict):
     # compares with HF when history in ov_genai is save as a text
     device = 'CPU'
@@ -104,6 +108,7 @@ def test_chat_compare_text_history_with_HF(model_descr, generation_config: Dict)
 @pytest.mark.parametrize("generation_config", configs)
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
+@pytest.mark.nightly
 def test_chat_compare_statefull_vs_text_history(model_descr, generation_config: Dict):
     # Check that when history is stored in KV cache results are the same as when history stored in a text.
     device ='CPU'
@@ -144,6 +149,7 @@ conversation = [
     {'role': 'user', 'content': 'What was my first question?'},
 ]
 @pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.parametrize('chat_config', get_chat_templates())
 def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
     tokenizer_config = chat_config[1]
@@ -163,3 +169,19 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
         print(f'hf reference: {full_history_str_hf}')
         print(f'ov_genai out: {full_history_str}')
     assert full_history_str == full_history_str_hf
+
+
+@pytest.mark.parametrize("generation_config", configs[1:])
+@pytest.mark.parametrize("model_descr", get_chat_models_list())
+@pytest.mark.precommit
+def test_chat_continuous_batching_vs_stateful(model_descr, generation_config: Dict):
+    model_id, path, tokenizer, model, stateful = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    cb = get_continuous_batching(path)
+    stateful.start_chat()
+    cb.start_chat()
+    for question in quenstions:
+        generated = cb.generate(question, **generation_config)
+        reference = stateful.generate(question, **generation_config)
+        assert generated == reference
+    # Test that finish_chat() doesn't fail just in case.
+    cb.finish_chat()
