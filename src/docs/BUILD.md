@@ -14,7 +14,7 @@ The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources
 ### Build Instructions
 
 1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build).  
-The path to the openvino install directory is referred as <INSTALL_DIR> throughout the document.
+The path to the openvino install directory is referred as `<OpenVINO_DIR>` throughout the document.
 2. Clone OpenVINO GenAI repository and init submodules:
     ```sh
     git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
@@ -22,10 +22,10 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
     ```
 3. Build the project:
     ```sh
-    source <INSTALL_DIR>/setupvars.sh
+    source <OpenVINO_DIR>/setupvars.sh
     cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
     cmake --build ./build/ --config Release --target package -j
-    cmake --install ./build/ --config Release --prefix ov
+    cmake --install ./build/ --config Release --prefix <OpenVINO_DIR>
     ```
 
 ## Build for Windows Systems
@@ -40,7 +40,7 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
 ### Build Instructions
 
 1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build)  
-The path to the openvino install directory is referred as <INSTALL_DIR> throughout the document.
+The path to the openvino install directory is referred as <OpenVINO_DIR> throughout the document.
 2. Clone OpenVINO GenAI repository and init submodules:
     ```sh
     git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
@@ -48,10 +48,10 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
     ```
 3. Build the project:
     ```sh
-    call <INSTALL_DIR>\setupvars.bat
+    call <OpenVINO_DIR>\setupvars.bat
     cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
     cmake --build ./build/ --config Release --target package -j
-    cmake --install ./build/ --config Release --prefix ov
+    cmake --install ./build/ --config Release --prefix <OpenVINO_DIR>
     ```
 
 ## Build for macOS Systems
@@ -72,7 +72,7 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
 ### Build Instructions
 
 1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build)  
-The path to the openvino install directory is referred as <INSTALL_DIR> throughout the document.
+The path to the openvino install directory is referred as <OpenVINO_DIR> throughout the document.
 2. Clone OpenVINO GenAI repository and init submodules:
     ```sh
     git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
@@ -80,8 +80,8 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
     ```
 3. Build the project:
     ```sh
-    source <INSTALL_DIR>/setupvars.sh
+    source <OpenVINO_DIR>/setupvars.sh
     cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
     cmake --build ./build/ --config Release --target package -j
-    cmake --install ./build/ --config Release --prefix ov
+    cmake --install ./build/ --config Release --prefix <OpenVINO_DIR>
     ```
