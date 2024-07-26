@@ -21,5 +21,5 @@ find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 # end of dependencies
 
 set(TARGET_NAME continuous_batching_speculative_decoding)
-add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp)
+add_executable(${TARGET_NAME} ${TARGET_NAME}.cpp "speculative_decoding_pipeline.hpp" "speculative_decoding_pipeline.cpp")
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai cxxopts::cxxopts)

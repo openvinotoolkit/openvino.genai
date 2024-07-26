@@ -20,7 +20,7 @@ protected:
     class Impl;
     std::shared_ptr<Impl> m_impl;
 
-    GenerationHandle add_request(uint64_t request_id, ov::Tensor tokenized_prompt, ov::genai::GenerationConfig sampling_params) override;
+    // GenerationHandle add_request(uint64_t request_id, ov::Tensor tokenized_prompt, ov::genai::GenerationConfig sampling_params) override;
 
     std::vector<GenerationHandle> generate_sequences(
         const std::vector<ov::Tensor> prompts, std::vector<ov::genai::GenerationConfig> sampling_params) override;
@@ -48,10 +48,17 @@ public:
         const ov::AnyMap& plugin_config={}
     );
 
+    // todo: iefode
+    ContinuousBatchingPipeline() = default;
+
     PipelineMetrics get_metrics() const override;
 
     void step() override;
 
     bool has_non_finished_requests() override;
+
+    GenerationHandle add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params);
+    GenerationHandle add_request(uint64_t request_id, ov::Tensor prompt, ov::genai::GenerationConfig sampling_params);
+
 };
 }

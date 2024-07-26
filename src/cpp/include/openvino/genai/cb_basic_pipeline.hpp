@@ -33,7 +33,6 @@ protected:
     process_generated_sequences(const std::vector<GenerationHandle>& generations,
                                 std::vector<ov::genai::GenerationConfig> sampling_params);
 
-    virtual GenerationHandle add_request(uint64_t request_id, ov::Tensor tokenized_prompt, ov::genai::GenerationConfig sampling_params) = 0;
     virtual std::vector<GenerationHandle> generate_sequences(
         const std::vector<ov::Tensor> prompts, std::vector<ov::genai::GenerationConfig> sampling_params) = 0;
 
@@ -44,8 +43,6 @@ public:
         const std::vector<std::string>& prompts, std::vector<ov::genai::GenerationConfig> sampling_params);
 
     ov::genai::Tokenizer get_tokenizer();
-
-    GenerationHandle add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params);
 
     virtual PipelineMetrics get_metrics() const = 0;
 

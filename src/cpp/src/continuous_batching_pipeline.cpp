@@ -269,6 +269,16 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, ov
     return m_impl->add_request(request_id, tokenized_prompt, sampling_params);
 }
 
+GenerationHandle
+ContinuousBatchingPipeline::add_request(
+    uint64_t request_id,
+    std::string prompt,
+    ov::genai::GenerationConfig sampling_params) {
+    sampling_params.validate();
+    ov::Tensor encoded_prompt = encode(prompt);
+    return add_request(request_id, encoded_prompt, sampling_params);
+}
+
 void ContinuousBatchingPipeline::step() {
     m_impl->step();
 }
