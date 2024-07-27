@@ -106,8 +106,9 @@ public:
         for (size_t i = 0; i < k; ++i) {
             m_cumulative_log_prob -= m_generated_probs[generated_token_len - 1 - i];
         }
-        m_generated_ids.resize(k);
-        m_generated_probs.resize(k);
+        size_t new_length = generated_token_len - k;
+        m_generated_ids.resize(new_length);
+        m_generated_probs.resize(new_length);
     }
 
     GenerationOutput get_last_generation_output() {
@@ -124,6 +125,10 @@ public:
 
     const TokenIds & get_generated_ids() const {
         return m_generated_ids;
+    }
+
+    const Probs & get_log_probs() const {
+        return m_generated_probs;
     }
 
     float get_cumulative_log_probs() const {

@@ -63,6 +63,10 @@ public:
         return scheduler_output;
     }
 
+    void clean_empty_blocks(const SequenceGroup::CPtr& seq_group) {
+        m_block_manager.free_empty_physical_blocks(seq_group);
+    }
+
     const std::vector<KVCacheBlock::Ptr>& get_block_table(const Sequence& seq) {
         return m_block_manager.get_block_table(seq.get_id());
     }

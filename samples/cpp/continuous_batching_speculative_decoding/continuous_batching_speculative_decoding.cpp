@@ -8,7 +8,7 @@
 
 #include "speculative_decoding_pipeline.hpp"
 
-void print_generation_result(const GenerationResult& generation_result) {
+void print_generation_result(const ov::genai::GenerationResult& generation_result) {
     for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
         std::cout << "Answer " << output_id << " (" << generation_result.m_scores[output_id] << ") : " << generation_result.m_generation_ids[output_id] << std::endl;
     }
@@ -43,12 +43,12 @@ int main(int argc, char* argv[]) try {
     const size_t num_prompts = result["num_prompts"].as<size_t>();
     const bool dynamic_split_fuse = result["dynamic_split_fuse"].as<bool>();
     const std::string models_path = result["model"].as<std::string>();
-    const std::string as_models_path = result["assisting_model"].as<std::string>();
+    const std::string assisting_models_path = result["assisting_model"].as<std::string>();
 
     // create dataset
 
     std::vector<std::string> prompt_examples = {
-        // "What is OpenVINO?",
+        "What is OpenVINO?",
         "How are you?",
         "What is your name?",
         "Tell me something about Canada",
@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) try {
     std::vector<ov::genai::GenerationConfig> sampling_params_examples {
         // ov::genai::beam_search(),
         ov::genai::greedy(),
-        ov::genai::multinomial(),
+        // ov::genai::multinomial(),
     };
 
     std::vector<std::string> prompts(num_prompts);
@@ -70,39 +70,40 @@ int main(int argc, char* argv[]) try {
     }
 
     // Perform the inference
+    
+    ov::genai::SchedulerConfig scheduler_config;
+    // batch size
+    scheduler_config.max_num_batched_tokens = 32;
+    // cache params
+    scheduler_config.num_kv_blocks = 364;
+    scheduler_config.block_size = 32;
+    // mode - vLLM or dynamic_split_fuse
+    scheduler_config.dynamic_split_fuse = dynamic_split_fuse;
+    // vLLM specific params
+    scheduler_config.max_num_seqs = 2;
 
-    SchedulerConfig scheduler_config {
-        // batch size
-        .max_num_batched_tokens = 32,
-        // cache params
-        .num_kv_blocks = 364,
-        .block_size = 32,
-        // mode - vLLM or dynamic_split_fuse
-        .dynamic_split_fuse = dynamic_split_fuse,
-        // vLLM specific params
-        .max_num_seqs = 2,
-    };
-
-    SpeculativeDecodingPipeline pipe(models_path, as_models_path, scheduler_config);
+    // It's possible to construct a Tokenizer from a different path.
+    // If the Tokenizer isn't specified, it's loaded from the same folder.
+    SpeculativeDecodingPipeline pipe(models_path, assisting_models_path, ov::genai::Tokenizer{models_path}, scheduler_config);
     pipe.set_k(3);
-    std::vector<GenerationResult> generation_results = pipe.generate(prompts, sampling_params);
+    std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, sampling_params);
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
-        const GenerationResult & generation_result = generation_results[request_id];
+        const ov::genai::GenerationResult & generation_result = generation_results[request_id];
         std::cout << "Question: " << prompts[request_id] << std::endl;
         switch (generation_result.m_status)
         {
-        case GenerationStatus::FINISHED:
+        case ov::genai::GenerationStatus::FINISHED:
             print_generation_result(generation_result);
             break;
-        case GenerationStatus::IGNORED:
+        case ov::genai::GenerationStatus::IGNORED:
             std::cout << "Request was ignored due to lack of memory." <<std::endl;
             if (generation_result.m_generation_ids.size() > 0) {
                 std::cout << "Partial result:" << std::endl;
                 print_generation_result(generation_result);
             }
             break;
-        case GenerationStatus::DROPPED_BY_PIPELINE:
+        case ov::genai::GenerationStatus::DROPPED_BY_PIPELINE:
             std::cout << "Request was aborted." <<std::endl;
             if (generation_result.m_generation_ids.size() > 0) {
                 std::cout << "Partial result:" << std::endl;

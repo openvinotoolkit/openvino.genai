@@ -286,6 +286,7 @@ Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
 
+        int decrease_len = 0;
         if (sequence_group->requires_sampling()) {
             int token_id = actual_seq_len;
             // prompt phase
@@ -340,10 +341,9 @@ Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                             std::advance(it, token_id_per_seq - 1);
                             if (*it != sampled_token_id.m_index) {
                                 // todo: iefode::
-                                // multiple sequence? 
-                                // decrease len
-                                // running_sequences[running_sequence_id]->remove_last_n_tokens(validation_len);
-                                // decrease_len = std::max(decrease_len, validation_len);
+                                // multiple sequence?
+                                running_sequences[running_sequence_id]->remove_last_n_tokens(token_id_per_seq);
+                                decrease_len = std::max(decrease_len, token_id_per_seq);
                                 token_id_per_seq = 0;
                             }
                         }
@@ -386,6 +386,9 @@ Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         // NOTE: it should be before 'get_num_scheduled_tokens' is used
         // update internal state of sequence group to reset scheduler tokens and update currently processed ones
         sequence_group->finish_iteration();
+        if (decrease_len) {
+            sequence_group->decrease_processed_tokens(decrease_len);
+        }
 
         // accumulate a number of processed tokens
         currently_processed_tokens += padded_amount_of_processed_tokens * num_running_sequences;

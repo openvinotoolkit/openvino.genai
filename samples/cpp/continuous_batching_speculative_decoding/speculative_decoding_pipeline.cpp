@@ -30,6 +30,7 @@ SpeculativeDecodingPipeline::SpeculativeDecodingPipeline(const std::string& mode
     }
     // todo: iefode: tokenizer is not needed for CB
     model_pipeline = ov::genai::ContinuousBatchingPipeline(models_path, m_tokenizer, model_scheduler_config, device, plugin_config);
+    model_pipeline.enable_validation_mode();
     assisting_pipeline = ov::genai::ContinuousBatchingPipeline(assisting_model_path, m_tokenizer, assisting_scheduler_config, device, plugin_config);
 }
 
@@ -38,8 +39,7 @@ ov::genai::PipelineMetrics SpeculativeDecodingPipeline::get_metrics() const {
 }
 
 void SpeculativeDecodingPipeline::step() {
-    ContinuousBatchingPipeline::GeneratedTokensMap candidate_sequences;
-    std::cout << "K: " << k << std::endl;
+    std::vector<ov::genai::ContinuousBatchingPipeline::GeneratedSequence> candidate_sequences;
     if (is_speculative_mode) {
         // generate candidates using small model
         for (size_t i = 0; i < k; ++i) {
@@ -51,11 +51,8 @@ void SpeculativeDecodingPipeline::step() {
 
         // put candidates to model cache
         candidate_sequences = assisting_pipeline.get_generated_sequences();
-        for (const auto& request : candidate_sequences) {
-            const auto& request_id = request.first;
-            for (const auto& sequence : request.second) {
-                model_pipeline.update_generated_sequence(sequence.second.first, sequence.second.second, request_id, sequence.first);
-            }
+        for (const auto& candidate : candidate_sequences) {
+            model_pipeline.update_generated_sequence(candidate);
         }
     }
 
@@ -63,27 +60,23 @@ void SpeculativeDecodingPipeline::step() {
     model_pipeline.step();
 
     if (is_speculative_mode) {
-        size_t max_removed_token_cnt = 0;
+        // todo: iefode: remove debug prints
         auto checked_sequences = model_pipeline.get_generated_sequences();
-        for (const auto& request : checked_sequences) {
-            auto& request_id = request.first;
-            for (const auto& sequence : request.second) {
-                const auto& sequence_id = sequence.first;
-                const auto& generated_sequence = sequence.second;
-                const auto& candidate_sequence = candidate_sequences[request_id].at(sequence_id);
-                const auto generated_sequence_size = generated_sequence.first.size();
-                const auto candidate_sequence_size = candidate_sequence.first.size();
-                if (generated_sequence_size <= candidate_sequence_size) {
-                    const auto dist = candidate_sequence_size - generated_sequence_size + 1;
-                    assisting_pipeline.remove_tokens_from_sequences(dist, request_id, sequence_id);
-                    max_removed_token_cnt = std::max(max_removed_token_cnt, dist);
-                }
-                assisting_pipeline.update_generated_sequence(generated_sequence.first, generated_sequence.second, request_id, sequence_id);
+        for (const auto& s : checked_sequences) {
+            std::cout << std::endl;
+            for (const auto& d : s.token_ids) {
+                std::cout << d << " ";
             }
+            std::cout << decode(s.token_ids) << std::endl;
         }
 
-        if (max_removed_token_cnt > 0) {
-            k = k > max_removed_token_cnt ? k - max_removed_token_cnt : 1;
+        ov::genai::ContinuousBatchingPipeline::UpdateSeqResult update_result;
+        for (const auto& checked_sequence : checked_sequences) {
+            update_result = assisting_pipeline.update_generated_sequence(checked_sequence);
+        }
+
+        if (update_result.to_remove > 0) {
+            k = k > update_result.to_remove ? k - update_result.to_remove : 1;
         } else {
             k = default_k;
         }

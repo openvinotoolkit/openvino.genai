@@ -23,6 +23,7 @@ class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
+    bool is_validation_mode_enabled = false;
 
     // TODO (mzegla): GenerationConfig is request specific object
     // and pipeline only uses default rng_seed. 
@@ -187,7 +188,7 @@ public:
         {
             static ManualTimer timer("sample");
             timer.start();
-            sampler_output = m_sampler->sample(m_requests, logits);
+            sampler_output = m_sampler->sample(m_requests, logits, is_validation_mode_enabled);
             timer.end();
         }
 
@@ -242,6 +243,98 @@ public:
         return generations;
 
     }
+
+    std::vector<ContinuousBatchingPipeline::GeneratedSequence> get_generated_sequences() {
+        std::vector<ContinuousBatchingPipeline::GeneratedSequence> result;
+        for (const auto& request : m_requests) {
+            const auto request_id = request->get_request_id();
+            for (const auto& sequence : request->get_sequences()) {
+                auto generated_ids = sequence->get_generated_ids();
+                auto log_probs = sequence->get_log_probs();
+                result.emplace_back(request_id, sequence->get_grouped_id(), generated_ids, log_probs);
+            }
+        }
+        return result;
+
+    }
+
+    ContinuousBatchingPipeline::UpdateSeqResult
+    update_generated_sequence(const ContinuousBatchingPipeline::GeneratedSequence& candidate_sequence) {
+        // Pull awaiting requests
+        if (!m_awaiting_requests.empty()) {
+            std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+            m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
+            m_awaiting_requests.clear();
+        }
+        for (auto& request : m_requests) {
+            if (candidate_sequence.request_id == request->get_request_id()) {
+                bool is_seq_exists = false;
+                size_t to_remove_tokens = 0, to_insert_tokens = 0;
+                for (auto& sequence : request->get_sequences()) {
+                    if (candidate_sequence.sequence_id == sequence->get_grouped_id()) {
+                        is_seq_exists = true;
+                        auto present_ids = sequence->get_generated_ids();
+                        const auto& candidate_ids = candidate_sequence.token_ids;
+
+                        // remove extra tokens from sequence
+                        {
+                            auto token_idx = std::min(present_ids.size(), candidate_ids.size());
+                            if (token_idx) {
+                                while (token_idx-- > 0) {
+                                    if (present_ids[token_idx] == candidate_ids[token_idx]) {
+                                        break;
+                                    }
+                                }
+                                to_remove_tokens = present_ids.size() - (token_idx + 1);
+                                if (to_remove_tokens > 0) {
+                                    sequence->remove_last_n_tokens(to_remove_tokens);
+                                    present_ids = sequence->get_generated_ids();
+                                }
+                            }
+                        }
+                        // insert new tokens to sequence
+                        {
+                            OPENVINO_ASSERT(candidate_ids.size() >= present_ids.size());
+                            const auto& candidate_log_probs = candidate_sequence.log_probs;
+                            const size_t start_id = std::min(present_ids.size(), candidate_ids.size()),
+                                         stop_id = std::max(present_ids.size(), candidate_ids.size());
+                            to_insert_tokens = stop_id - start_id;
+                            for (size_t i = start_id; i < stop_id; ++i) {
+                                sequence->append_token(candidate_ids[i], candidate_log_probs[i]);
+                            }
+                        }
+                    }
+                    break;
+                }
+                if (!is_seq_exists) {
+                    Sequence::Ptr new_sequence(new Sequence(candidate_sequence.sequence_id));
+                    const auto& generated_tokens = candidate_sequence.token_ids;
+                    const auto& generated_log_probs = candidate_sequence.log_probs;
+                    for (size_t i = 0; i < generated_tokens.size(); ++i) {
+                        new_sequence->append_token(generated_tokens[i], generated_log_probs[i]);
+                    }
+                    request->add_sequence(new_sequence);
+                }
+                request->decrease_processed_tokens(to_remove_tokens);
+                if (is_validation_mode_enabled) {
+                    // to validate tokens before generation
+                    if (request->get_num_processed_tokens() > 0) {
+                        // in case of non-prompt we need to take prev tokens + token to validate
+                        ++to_insert_tokens;
+                    }
+                    request->set_validation_len(to_insert_tokens);
+                } else {
+                    // move context pointer
+                    request->increase_processed_tokens(to_insert_tokens);
+                }
+                return ContinuousBatchingPipeline::UpdateSeqResult(to_insert_tokens, to_remove_tokens);
+            }
+        }
+    }
+
+    void enable_validation_mode() {
+        is_validation_mode_enabled = true;
+    }
 };
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::string& models_path,
@@ -292,4 +385,17 @@ ContinuousBatchingPipeline::generate_sequences(
     const std::vector<ov::Tensor> tokenized_prompts,
     std::vector<ov::genai::GenerationConfig> sampling_params) {
     return m_impl->generate(tokenized_prompts, sampling_params);
+}
+
+std::vector<ContinuousBatchingPipeline::GeneratedSequence> ContinuousBatchingPipeline::get_generated_sequences() {
+    return m_impl->get_generated_sequences();
+}
+
+ContinuousBatchingPipeline::UpdateSeqResult
+ContinuousBatchingPipeline::update_generated_sequence(const ContinuousBatchingPipeline::GeneratedSequence& new_sequence) {
+    return m_impl->update_generated_sequence(new_sequence);
+}
+
+void ContinuousBatchingPipeline::enable_validation_mode() {
+    m_impl->enable_validation_mode();
 }
