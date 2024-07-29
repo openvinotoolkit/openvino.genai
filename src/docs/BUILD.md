@@ -72,3 +72,62 @@ Assuming that you have OpenVINO installed at `<INSTALL_DIR>`:
     export PYTHONPATH=<INSTALL_DIR>/python:./build/:${PYTHONPATH}
     export LD_LIBRARY_PATH=<INSTALL_DIR>/runtime/lib/intel64:${LD_LIBRARY_PATH}
     ```
+
+### Build OpenVINO GenAI Wheel
+
+1. Clone OpenVINO GenAI repository and init submodules:
+    ```sh
+    git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
+    cd openvino.genai
+    ```
+2. Set up the environment:
+    - Option 1 - using OpenVINO `setupvars.sh` script:
+        ```sh
+        source <INSTALL_DIR>/setupvars.sh
+        ```
+    - Option 2 - setting environment variable manually:
+        ```sh
+        export OpenVINO_DIR=<INSTALL_DIR>/runtime
+        export PYTHONPATH=<INSTALL_DIR>/python:./build/:${PYTHONPATH}
+        export LD_LIBRARY_PATH=<INSTALL_DIR>/runtime/lib/intel64:${LD_LIBRARY_PATH}
+        ```
+3. Upgrade pip to ensure you have the latest version:
+    ```sh
+    python -m pip install --upgrade pip
+    ```
+4. Build the wheel in the `dist` directory:
+    ```sh
+    python -m pip wheel . -w dist/ --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+    ```
+
+### Install OpenVINO GenAI From Source
+
+1. Clone OpenVINO GenAI repository and init submodules:
+    ```sh
+    git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
+    cd openvino.genai
+    ```
+2. Set up the environment:
+    - Option 1 - using OpenVINO `setupvars.sh` script:
+        ```sh
+        source <INSTALL_DIR>/setupvars.sh
+        ```
+    - Option 2 - setting environment variable manually:
+        ```sh
+        export OpenVINO_DIR=<INSTALL_DIR>/runtime
+        export PYTHONPATH=<INSTALL_DIR>/python:./build/:${PYTHONPATH}
+        export LD_LIBRARY_PATH=<INSTALL_DIR>/runtime/lib/intel64:${LD_LIBRARY_PATH}
+        ```
+3. Upgrade pip to ensure you have the latest version:
+    ```sh
+    python -m pip install --upgrade pip
+    ```
+4. Install the package directly from source:
+    ```sh
+    python -m pip install .
+    ```
+5. To verify the installation, run a simple Python script:
+    ```python
+    import openvino_genai
+    print(openvino_genai.__version__)
+    ```
