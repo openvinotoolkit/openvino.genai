@@ -34,3 +34,11 @@ UnicodeEncodeError: 'charmap' codec can't encode character '\u25aa' in position 
 If you encounter the error described in the example when sample is printing output to the Windows console, it is likely due to the default Windows encoding not supporting certain Unicode characters. To resolve this:
 1. Enable Unicode characters for Windows cmd - open `Region` settings from `Control panel`. `Administrative`->`Change system locale`->`Beta: Use Unicode UTF-8 for worldwide language support`->`OK`. Reboot.
 2. Enable UTF-8 mode by setting environment variable `PYTHONIOENCODING="utf8"`.
+
+#### Missing chat template
+
+If you encounter an exception indicating a missing "chat template" when launching the `ov::genai::LLMPipeline` in chat mode, it likely means the model was not tuned for chat functionality. To resolve this, manually add the chat template to tokenizer_config.json of your model.
+The following template can be used as a default, but it may not work properly with every model:
+```
+"chat_template": "{% for message in messages %}{% if (message['role'] == 'user') %}{{'<|im_start|>user\n' + message['content'] + '<|im_end|>\n<|im_start|>assistant\n'}}{% elif (message['role'] == 'assistant') %}{{message['content'] + '<|im_end|>\n'}}{% endif %}{% endfor %}",
+```

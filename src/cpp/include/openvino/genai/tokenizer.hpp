@@ -83,12 +83,6 @@ public:
                                     bool add_generation_prompt, 
                                     const std::string& chat_template="") const;
 
-    /**
-     * @brief Returns true if chat tempate exists and is ready to be applied; false otherwise
-     * @return is chat tempate ready
-     */
-    bool is_chat_template_ready() const;
-
     // information about <bos>, <eos> tokens should be public,
     // they are used at least in StreamerBase descendants
     int64_t get_bos_token_id() const;
