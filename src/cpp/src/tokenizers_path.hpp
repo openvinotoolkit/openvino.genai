@@ -61,13 +61,12 @@ std::string get_ov_genai_library_path() {
 
 std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
 #ifdef _WIN32
-    constexpr char tokenizers[] = "openvino_tokenizers.dll";
+    return "openvino_tokenizers.dll";
 #elif __linux__
-    constexpr char tokenizers[] = "libopenvino_tokenizers.so";
+    return "libopenvino_tokenizers.so";
 #elif __APPLE__
-    constexpr char tokenizers[] = "libopenvino_tokenizers.dylib";
+    return "libopenvino_tokenizers.dylib";
 #endif
-    return path.parent_path() / tokenizers;
 }
 
 // Returns an absolute path. The path is this library's directory
