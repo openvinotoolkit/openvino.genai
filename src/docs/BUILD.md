@@ -52,6 +52,9 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     ```
     > **NOTE**: For running setupvars script on Windows, use command `call <INSTALL_DIR>\setupvars.bat`
 
+To optimize the package size, you can reduce the ICU (International Components for Unicode) data size when building OpenVINO Tokenizers.
+For more information please refer to the [OpenVINO Tokenizers instructions](https://github.com/openvinotoolkit/openvino_tokenizers?tab=readme-ov-file#reducing-the-icu-data-size).
+
 ### Build OpenVINO GenAI only
 
 Assuming that you have OpenVINO installed at `<INSTALL_DIR>`:
