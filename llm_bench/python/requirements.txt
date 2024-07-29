@@ -20,3 +20,4 @@ onnx
 einops
 transformers_stream_generator
 bitsandbytes
+deepspeed
