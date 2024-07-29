@@ -266,11 +266,16 @@ public:
             m_history = {};
             m_templated_chat_history = "";
         }
+        OPENVINO_ASSERT(m_tokenizer.is_chat_template_ready(),
+                        "There is no existing chat template for actual model. LLMPipeline cannot work in chat mode."
+                        " Please add chat template to tokenizer_config.json or use another model.");
+
         if (system_message.empty())
             return;
 
         m_history.push_back({{"role", "system"}, {"content", system_message}});
         constexpr bool add_generation_prompt = false;
+
         m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
     }
 

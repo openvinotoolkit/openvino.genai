@@ -434,7 +434,9 @@ public:
         }
     }
 
-    
+    bool is_chat_template_ready() {
+        return !m_chat_template.empty();
+    }
 };
 
 Tokenizer::Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& plugin_config) {
@@ -499,6 +501,11 @@ std::string Tokenizer::apply_chat_template(ChatHistory history,
                                            const std::string& chat_template) const {
     return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template);
 }
+
+bool Tokenizer::is_chat_template_ready() const {
+    return m_pimpl->is_chat_template_ready();
+};
+
 
 Tokenizer::~Tokenizer() = default;
 }  // namespace genai
