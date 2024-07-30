@@ -50,8 +50,8 @@ jobs:
         working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_lcm_cpp
-          python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install -r ../../requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightlye
+          python -m pip install -r ../../requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightlye
           
       - name: Download and convert model and tokenizer
         working-directory: ${{ env.working_directory }}
@@ -95,8 +95,8 @@ jobs:
         working-directory: ${{ env.working_directory }}
         run: |
           conda activate openvino_lcm_cpp
-          python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-          python -m pip install -r ../../requirements.txt --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
+          python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightlye
+          python -m pip install -r ../../requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightlye
 
       - name: Download and convert model and tokenizer
         working-directory: ${{ env.working_directory }}
