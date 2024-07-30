@@ -36,7 +36,7 @@ The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources
 
 ## Build Instructions
 
-### Build OpenVINO, OpenVINO Tokenizers, and OpenVINO GenAI from sources
+### Build OpenVINO, OpenVINO Tokenizers, and OpenVINO GenAI From Source
 
 1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build).  
 The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throughout the document.
@@ -45,38 +45,102 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
     cd openvino.genai
     ```
-3. Build the project:
+3. Set up the environment:
+
+    #### Option 1 - using OpenVINO `setupvars` script:
+
+    Linux and macOS:
     ```sh
     source <INSTALL_DIR>/setupvars.sh
+    ```
+
+    Windows Command Prompt:
+    ```cmd
+    call <INSTALL_DIR>\setupvars.bat
+    ```
+
+    Windows PowerShell:
+    ```cmd
+    . <INSTALL_DIR>/setupvars.ps1
+    ```
+
+    #### Option 2 - setting environment variables manually:
+
+    Linux:
+    ```sh
+    export OpenVINO_DIR=<INSTALL_DIR>/runtime
+    export PYTHONPATH=<INSTALL_DIR>/python:./build/:$PYTHONPATH
+    export LD_LIBRARY_PATH=<INSTALL_DIR>/runtime/lib/intel64:$LD_LIBRARY_PATH
+    ```
+
+    macOS:
+    ```sh
+    export OpenVINO_DIR=<INSTALL_DIR>/runtime
+    export PYTHONPATH=<INSTALL_DIR>/python:./build/:$PYTHONPATH
+    export DYLD_LIBRARY_PATH=<INSTALL_DIR>/runtime/lib/intel64:$LD_LIBRARY_PATH
+    ```
+
+    Windows Command Prompt:
+    ```cmd
+    set OpenVINO_DIR=<INSTALL_DIR>\runtime
+    set PYTHONPATH=<INSTALL_DIR>\python;%CD%\build;%PYTHONPATH%
+    set PATH=<INSTALL_DIR>\runtime\lib\intel64;%PATH%
+    ```
+    
+    Windows PowerShell:
+    ```sh
+    $env:OpenVINO_DIR = "<INSTALL_DIR>\runtime"
+    $env:PYTHONPATH = "<INSTALL_DIR>\python;$PWD\build;$env:PYTHONPATH"
+    $env:PATH = "<INSTALL_DIR>\runtime\lib\intel64;$env:PATH"
+    ```
+
+4. Build the project:
+    ```sh
     cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
     cmake --build ./build/ --config Release -j
+    ```
+
+5. Install OpenVINO GenAI:
+
+    #### Option 1 - using cmake:
+    
+    The following command will store built OpenVINO GenAI artifacts along with OpenVINO in `<INSTALL_DIR>`:
+
+    ```sh
     cmake --install ./build/ --config Release --prefix <INSTALL_DIR>
     ```
-    > **NOTE**: For running setupvars script on Windows, use command `call <INSTALL_DIR>\setupvars.bat` for Windows Command Prompt or `. <INSTALL_DIR>/setupvars.ps1` for Windows PowerShell.
+
+    #### Option 2 - setting paths to built OpenVINO GenAI artifacts manually:
+
+    The path to the OpenVINO GenAI root directory is referred as `<GENAI_ROOT_DIR>` throughout the document.
+
+    Linux:
+    ```sh
+    export PYTHONPATH=<GENAI_ROOT_DIR>/build/:$PYTHONPATH
+    export LD_LIBRARY_PATH=<GENAI_ROOT_DIR>/build/openvino_genai/:$LD_LIBRARY_PATH
+    ```
+
+    macOS:
+    ```sh
+    export PYTHONPATH=<GENAI_ROOT_DIR>/build:$PYTHONPATH
+    export DYLD_LIBRARY_PATH=<GENAI_ROOT_DIR>/build/openvino_genai:$DYLD_LIBRARY_PATH
+    ```
+
+    Windows Command Prompt:
+    ```cmd
+    set PYTHONPATH=<GENAI_ROOT_DIR>\build;%PYTHONPATH%
+    set PATH=<GENAI_ROOT_DIR>\build\openvino_genai;%PATH%
+    ```
+
+    Windows PowerShell:
+    ```sh
+    $env:PYTHONPATH = "<GENAI_ROOT_DIR>\build;$env:PYTHONPATH"
+    $env:PATH = "<GENAI_ROOT_DIR>\build\openvino_genai;$env:PATH"
+    ```
 
 To optimize the package size, you can reduce the ICU (International Components for Unicode) data size when building OpenVINO Tokenizers.
 For more information please refer to the [OpenVINO Tokenizers instructions](https://github.com/openvinotoolkit/openvino_tokenizers?tab=readme-ov-file#reducing-the-icu-data-size).
 
-### Build OpenVINO GenAI only
-
-Assuming that you have OpenVINO installed at `<INSTALL_DIR>`:
-
-1. Clone OpenVINO GenAI repository and init submodules:
-    ```sh
-    git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
-    cd openvino.genai
-    ```
-2. Build the project:
-    ```sh
-    export OpenVINO_DIR=<INSTALL_DIR>/runtime
-    cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-    cmake --build ./build/ --config Release --target package -j
-    ```
-3. Set environment variables:
-    ```sh
-    export PYTHONPATH=<INSTALL_DIR>/python:./build/:${PYTHONPATH}
-    export LD_LIBRARY_PATH=<INSTALL_DIR>/runtime/lib/intel64:${LD_LIBRARY_PATH}
-    ```
 
 ### Build OpenVINO GenAI Wheel
 
@@ -90,11 +154,11 @@ Assuming that you have OpenVINO installed at `<INSTALL_DIR>`:
         ```sh
         source <INSTALL_DIR>/setupvars.sh
         ```
-    - Option 2 - setting environment variable manually:
+    - Option 2 - setting environment variables manually:
         ```sh
         export OpenVINO_DIR=<INSTALL_DIR>/runtime
-        export PYTHONPATH=<INSTALL_DIR>/python:./build/:${PYTHONPATH}
-        export LD_LIBRARY_PATH=<INSTALL_DIR>/runtime/lib/intel64:${LD_LIBRARY_PATH}
+        export PYTHONPATH=<INSTALL_DIR>/python:./build/:$PYTHONPATH
+        export LD_LIBRARY_PATH=<INSTALL_DIR>/runtime/lib/intel64:$LD_LIBRARY_PATH
         ```
 3. Upgrade pip to ensure you have the latest version:
     ```sh
@@ -117,11 +181,11 @@ Assuming that you have OpenVINO installed at `<INSTALL_DIR>`:
         ```sh
         source <INSTALL_DIR>/setupvars.sh
         ```
-    - Option 2 - setting environment variable manually:
+    - Option 2 - setting environment variables manually:
         ```sh
         export OpenVINO_DIR=<INSTALL_DIR>/runtime
-        export PYTHONPATH=<INSTALL_DIR>/python:./build/:${PYTHONPATH}
-        export LD_LIBRARY_PATH=<INSTALL_DIR>/runtime/lib/intel64:${LD_LIBRARY_PATH}
+        export PYTHONPATH=<INSTALL_DIR>/python:./build/:$PYTHONPATH
+        export LD_LIBRARY_PATH=<INSTALL_DIR>/runtime/lib/intel64:$LD_LIBRARY_PATH
         ```
 3. Upgrade pip to ensure you have the latest version:
     ```sh
