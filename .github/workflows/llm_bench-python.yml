@@ -55,6 +55,14 @@ jobs:
       with:
         name: llm.bench_diff
         path: llm.bench_diff.diff
+    - name: Check model pattern changes
+      run: |
+        pip install pytest
+        git clone --depth 1 --filter=blob:none --no-checkout https://github.com/openvinotoolkit/openvino
+        cd openvino
+        git checkout master tests/model_hub_tests/transformation_tests tests/model_hub_tests/models_hub_common
+        cd tests/model_hub_tests
+        python3 -m pytest transformation_tests/test_pa_transformation.py -m precommit -v
     - name: Test bloomz-560m on Linux
       run: |
         python ./llm_bench/python/convert.py --model_id bigscience/bloomz-560m --output_dir ./ov_models/bloomz-560m --precision FP16
