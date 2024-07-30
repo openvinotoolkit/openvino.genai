@@ -10,6 +10,7 @@ The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - GCC 7.5 or higher
 - Python 3.8 or higher
+- Git
 
 ### Windows
 
@@ -30,6 +31,7 @@ The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources
     xcode-select --install
     ```
 - Python 3.8 or higher
+- Git
 
 
 ## Build Instructions
