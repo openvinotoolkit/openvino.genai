@@ -277,7 +277,6 @@ public:
             }
             phisical_blocks_released += released_count;
         }
-        phisical_blocks_released = phisical_blocks_released;
         return num_required_blocks <= phisical_blocks_released;
     }
 
