@@ -10,6 +10,7 @@
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 #include "llm_pipeline_base.hpp"
 #include "llm_pipeline_static.hpp"
 #include "utils.hpp"
@@ -111,8 +112,9 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
+        auto start_time = std::chrono::steady_clock::now();
         GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-        EncodedInputs encoded_input;
+        TokenizedInputs encoded_input;
 
         if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
             OPENVINO_ASSERT(!is_chat_conversation, "Can't chat with multiple prompts");
@@ -145,9 +147,12 @@ public:
                 encoded_input = m_tokenizer.encode(prompt);
             }
         }
+        auto encode_stop_time =  std::chrono::steady_clock::now();
+        auto encoded_results = generate(encoded_input, config, streamer);
 
-        auto encoded_results  = generate(encoded_input, config, streamer);
+        auto decode_start_time =  std::chrono::steady_clock::now();
         DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+        auto decode_stop_time =  std::chrono::steady_clock::now();
         
         if (is_chat_conversation) {
             // Tail of chat template is missing in KV cache.
@@ -157,6 +162,17 @@ public:
             m_history.push_back({{"role", "assistant"}, {"content", answer}});
         }
         
+        // generate_durations
+        decoded_results.perf_metrics = encoded_results.perf_metrics;
+
+        auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
+        auto stop_time = std::chrono::steady_clock::now();
+        raw_counters.generate_durations = std::vector<MicroSeconds>();
+        raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+        raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+        raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
+
+        decoded_results.perf_metrics.evaluate_statistics(start_time);
         return decoded_results;
     }
 
@@ -165,9 +181,9 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
+        auto start_time = std::chrono::steady_clock::now();
         ov::Tensor input_ids;
         ov::Tensor attention_mask;
-
         if (auto data = std::get_if<ov::Tensor>(&inputs)) {
             input_ids = *data;
             attention_mask = ov::genai::utils::init_attention_mask(input_ids);
@@ -255,7 +271,14 @@ public:
         } else {
             m_is_cache_empty = false;
         }
+        auto stop_time = std::chrono::steady_clock::now();
 
+        // If is called without tokenization then that stat will not be reported.
+        auto& metrics = result.perf_metrics;
+        metrics.num_input_tokens = batch_size * input_ids.get_shape().at(1);
+        metrics.load_time = this->m_load_time_ms;
+        metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+        metrics.evaluate_statistics(start_time);
         return result;
     }
 
@@ -487,7 +510,10 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     OptionalGenerationConfig generation_config
 ) {
+    auto start_time = std::chrono::steady_clock::now();
     m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
+    auto stop_time = std::chrono::steady_clock::now();
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();   
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
@@ -495,27 +521,35 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& plugin_config
-): m_pimpl{[&]() -> std::unique_ptr<LLMPipelineImplBase> {
+){
+    auto start_time = std::chrono::steady_clock::now();    
     if ("CB" == device) {
-        return std::make_unique<ContinuousBatchingAdapter>(model_path, tokenizer, "CPU", plugin_config);
-    } if ("NPU" == device) {
-        return std::make_unique<StaticLLMPipeline>(model_path, tokenizer, device, plugin_config);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_path, tokenizer, "CPU", plugin_config);
+    } else if ("NPU" == device) {
+        m_pimpl = std::make_unique<StaticLLMPipeline>(model_path, tokenizer, device, plugin_config);
+    } else {
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, plugin_config);
     }
-    return std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, plugin_config);
-}()} {}
+    auto stop_time = std::chrono::steady_clock::now();
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();    
+}
 
 ov::genai::LLMPipeline::LLMPipeline(
     const std::string& path,
     const std::string& device,
     const ov::AnyMap& config
-): m_pimpl{[&]() -> std::unique_ptr<LLMPipelineImplBase> {
+){ 
+    auto start_time = std::chrono::steady_clock::now();
     if ("CB" == device) {
-        return std::make_unique<ContinuousBatchingAdapter>(path, "CPU", config);
-    } if ("NPU" == device) {
-        return std::make_unique<StaticLLMPipeline>(path, device, config);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(path, "CPU", config);
+    } else if ("NPU" == device) {
+        m_pimpl = std::make_unique<StaticLLMPipeline>(path, device, config);
+    } else {
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(path, device, config);
     }
-    return std::make_unique<StatefulLLMPipeline>(path, device, config);
-}()} {}
+    auto stop_time = std::chrono::steady_clock::now();
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+}
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
     return m_pimpl->m_generation_config;
