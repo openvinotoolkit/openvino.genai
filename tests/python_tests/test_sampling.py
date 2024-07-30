@@ -7,8 +7,8 @@ import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from openvino_genai import ContinuousBatchingPipeline, GenerationConfig
-from typing import List
+from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, Tokenizer
+from typing import List, TypedDict
 
 from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, save_ov_model_from_optimum, \
     generate_and_compare_with_reference_text, get_greedy, get_beam_search, get_multinomial_temperature, \
@@ -93,70 +93,171 @@ def test_individual_generation_configs_deterministic(tmp_path, generation_config
     generate_and_compare_with_hf(model_id, prompts, generation_configs, DEFAULT_SCHEDULER_CONFIG, tmp_path)
 
 
+class PlatformsRefTexts(TypedDict, total=False):
+    linux: List[List[str]]
+    win32: List[List[str]]
+    darwin: List[List[str]]
+
+
+def get_current_plarform_ref_texts(ref_texts: PlatformsRefTexts) -> List[List[str]]:
+    # mac and win often have identical results
+    # to avoid duplication, use win32 ref_text if no mac ref_texts were found
+    if sys.platform == "darwin":
+        result = ref_texts.get("darwin") or ref_texts.get("win32")
+    else:
+        result = ref_texts.get(sys.platform)
+    if not result:
+        raise RuntimeError("No ref_texts were provided")
+    return result
+
+
 @dataclass
 class RandomSamplingTestStruct:
     generation_config: GenerationConfig
     prompts: List[str]
     ref_texts: List[List[str]]
 
+
 RANDOM_SAMPLING_TEST_CASES = [
-    RandomSamplingTestStruct(generation_config=get_multinomial_temperature(),
-                             prompts=["What is OpenVINO?"],
-                             ref_texts=[ ["\n\nOpenVINO is a software development platform developed by OpenVINO, a set of technology companies and startups that enables developers to use the most"] ]),
-    pytest.param(RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_top_p(),
-                             prompts=["What is OpenVINO?"],
-                             ref_texts=[ ["\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"] ]),
-                             marks=[pytest.mark.xfail(reason="assert ref_text == ov_text fails in CI.", strict=True, condition=sys.platform in ["darwin", "win32"])]),
-    RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_top_k(),
-                             prompts=["What is OpenVINO?"],
-                             ref_texts=[ ["\n\nOpenVINO is a software that allows users to create a virtual machine with the ability to create a virtual machine in a virtual environment. Open"] ]),
-    pytest.param(RandomSamplingTestStruct(generation_config=get_multinomial_temperature_top_p_and_top_k(),
-                             prompts=["What is OpenVINO?"],
-                             ref_texts=[ ["\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"] ]),
-                             marks=[pytest.mark.xfail(reason="assert ref_text == ov_text fails in CI.", strict=True, condition=sys.platform in ["darwin", "win32"])]),
-    RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_repetition_penalty(),
-                             prompts=["What is OpenVINO?"],
-                             ref_texts=[ ["\nOpen Vino's are a new and improved way to find cheap, fast-investment frozen vegetables that have no waste or calories. They're"] ]),
-    pytest.param(RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_num_return_sequence(),
-                             prompts=["What is location of"],
-                             ref_texts=[
-                                [
-                                    ' your instruments?  Are they in an armpit?  Is it warm?  Are your instruments clear?  Are there any cuts and scratches',
-                                    ' map and where does the game player base base?    I tend to like to do all draws on a specific spot (sometimes wide area,',
-                                    ' them?\nJust the Mario Maker App, the location is they'
-                                ]
-                             ]), 
-                             marks=[pytest.mark.xfail(reason="assert ref_text == ov_text fails in CI.", strict=True)]),
-    pytest.param(RandomSamplingTestStruct(generation_config=get_multinomial_all_parameters(),
-                             prompts=["Tell me something about UAE"],
-                             ref_texts=[
-                                [
-                                    " and how it's not like we're all in the same boat right now lol (or even close) 😂😁! Just curious :) If",
-                                    "?  You are my country... so what does our military do here?? What am i missing out on?? And why don't u tell us?",
-                                    '?\nThe U.S government has been doing quite well with foreign-made aircraft for many years under US administration....and they have very good reasons',
-                                    '? I think that is a bit of an anomaly, but you might want to ask yourself this question: Where can some young people from Dubai or Bahrain'
-                                ]
-                             ]),
-                             marks=[pytest.mark.xfail(reason="assert ref_text == ov_text fails in CI.", strict=True, condition=sys.platform in ["darwin", "win32"])]),
-    RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_presence_penalty(),
-                             prompts=["What is OpenVINO?"],
-                             ref_texts=[ ["\n\nOpenVINO is a software development platform developed by OpenVINO, Inc., which uses a RESTful API for server-side web applications"] ]),
-    RandomSamplingTestStruct(generation_config=get_multinomial_temperature_and_frequence_penalty(),
-                             prompts=["What is OpenVINO?"],
-                             ref_texts=[ ["\n\nOpenVINO is a software development platform developed by OpenVINO, Inc., which offers the Linux-based platform. OpenVINO's"] ]),
-    RandomSamplingTestStruct(generation_config=get_greedy_with_penalties(),
-                             prompts=["What is OpenVINO?"],
-                             ref_texts=[ ["\nOpenVINO is a software that allows users to create and manage their own virtual machines. It's designed for use with Windows, Mac OS X"] ]),
-    pytest.param(RandomSamplingTestStruct(generation_config=get_multinomial_max_and_min_token(),
-                             prompts=["What is OpenVINO?"],
-                             ref_texts=[
-                                [
-                                    "\nOpenVINO is a Linux distro. It's not as simple as using the Linux distro itself. OpenVINO is essentially a dist",
-                                    '\nOpenVINO is an open-source open-source software that allows anyone to work with a virtual machine, from a smartphone to an iPhone,',
-                                    '\n\nOpenVINO is a social networking tool. OpenVINO is a free virtualization service that works at scale. The tool provides the ability'
-                                ]
-                            ]),
-                            marks=[pytest.mark.xfail(reason="assert ref_text == ov_text fails in CI.", strict=True, condition=sys.platform in ["darwin", "win32"])]),
+    RandomSamplingTestStruct(
+        generation_config=get_multinomial_temperature(),
+        prompts=["What is OpenVINO?"],
+        ref_texts=[
+            [
+                "\n\nOpenVINO is a software development platform developed by OpenVINO, a set of technology companies and startups that enables developers to use the most"
+            ]
+        ],
+    ),
+    RandomSamplingTestStruct(
+        generation_config=get_multinomial_temperature_and_top_p(),
+        prompts=["What is OpenVINO?"],
+        ref_texts=get_current_plarform_ref_texts({
+            "linux": [
+                [
+                    "\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"
+                ]
+            ],
+            "win32": [
+                [
+                    "\n\nOpenVINO is a software development platform designed to allow developers to develop and commercialize the most important software products on the web. OpenV"
+                ]
+            ],
+        })
+    ),
+    RandomSamplingTestStruct(
+        generation_config=get_multinomial_temperature_and_top_k(),
+        prompts=["What is OpenVINO?"],
+        ref_texts=[
+            [
+                "\n\nOpenVINO is a software that allows users to create a virtual machine with the ability to create a virtual machine in a virtual environment. Open"
+            ]
+        ],
+    ),
+    RandomSamplingTestStruct(
+        generation_config=get_multinomial_temperature_top_p_and_top_k(),
+        prompts=["What is OpenVINO?"],
+        ref_texts=get_current_plarform_ref_texts({
+            "linux": [
+                [
+                    "\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"
+                ]
+            ],
+            "win32": [
+                [
+                    "\n\nOpenVINO is a software that allows users to create a virtual machine with the ability to create a virtual machine in a virtual environment. Open"
+                ]
+            ],
+        }),
+    ),
+    RandomSamplingTestStruct(
+        generation_config=get_multinomial_temperature_and_repetition_penalty(),
+        prompts=["What is OpenVINO?"],
+        ref_texts=[
+            [
+                "\nOpen Vino's are a new and improved way to find cheap, fast-investment frozen vegetables that have no waste or calories. They're"
+            ]
+        ],
+    ),
+    RandomSamplingTestStruct(
+        generation_config=get_multinomial_temperature_and_num_return_sequence(),
+        prompts=["What is location of"],
+        ref_texts=[
+            [
+                " the exact same image?\nI've tried multiple times to find it, but I'm still not sure. I am sure it's the exact same",
+                " your new house?\nAnywhere that has a GPS. It will be up to you.",
+                " your cat?  He is more likely to be on the floor with him.\nTalduck"
+            ]
+        ],
+    ),
+    RandomSamplingTestStruct(
+        generation_config=get_multinomial_all_parameters(),
+        prompts=["Tell me something about UAE"],
+        ref_texts=get_current_plarform_ref_texts({
+            "linux": [
+                [
+                    " and how it's not like we're all in the same boat right now lol (or even close) 😂😁! Just curious :) If",
+                    "?  You are my country... so what does our military do here?? What am i missing out on?? And why don't u tell us?",
+                    "?\nThe U.S government has been doing quite well with foreign-made aircraft for many years under US administration....and they have very good reasons",
+                    "? I think that is a bit of an anomaly, but you might want to ask yourself this question: Where can some young people from Dubai or Bahrain",
+                ]
+            ],
+            "win32": [
+                [
+                    "? I think that is a bit of an anomaly, especially since there aren't many Americans living here (like us). What makes you say they've",
+                    "?  You are my country... so what does our future have to do with your problems?? \U0001f609\U0001f608\U0001f495 \U0001f5a4\ufffd",
+                    "?\nThe U.S government has been doing quite well for decades now when compared strictly directly or indirectly as regards security issues.. They even made some",
+                    " and how it's not like we're all in the same boat either! We had such fun meeting each other at different times this past summer :) It",
+                ]
+            ],
+        }),
+    ),
+    RandomSamplingTestStruct(
+        generation_config=get_multinomial_temperature_and_presence_penalty(),
+        prompts=["What is OpenVINO?"],
+        ref_texts=[
+            [
+                "\n\nOpenVINO is a software development platform developed by OpenVINO, Inc., which uses a RESTful API for server-side web applications"
+            ]
+        ],
+    ),
+    RandomSamplingTestStruct(
+        generation_config=get_multinomial_temperature_and_frequence_penalty(),
+        prompts=["What is OpenVINO?"],
+        ref_texts=[
+            [
+                "\n\nOpenVINO is a software development platform developed by OpenVINO, Inc., which offers the Linux-based platform. OpenVINO's"
+            ]
+        ],
+    ),
+    RandomSamplingTestStruct(
+        generation_config=get_greedy_with_penalties(),
+        prompts=["What is OpenVINO?"],
+        ref_texts=[
+            [
+                "\nOpenVINO is a software that allows users to create and manage their own virtual machines. It's designed for use with Windows, Mac OS X"
+            ]
+        ],
+    ),
+    RandomSamplingTestStruct(
+        generation_config=get_multinomial_max_and_min_token(),
+        prompts=["What is OpenVINO?"],
+        ref_texts=get_current_plarform_ref_texts({
+            "linux": [
+                [
+                    "\nOpenVINO is a Linux distro. It's not as simple as using the Linux distro itself. OpenVINO is essentially a dist",
+                    "\nOpenVINO is an open-source open-source software that allows anyone to work with a virtual machine, from a smartphone to an iPhone,",
+                    "\n\nOpenVINO is a social networking tool. OpenVINO is a free virtualization service that works at scale. The tool provides the ability",
+                ]
+            ],
+            "win32": [
+                [
+                    "\nOpenVINO is the latest addition to the OpenVINO series of platforms. OpenVINO is an open source software development framework for all platforms",
+                    "\nOpenVINO is a browser-based virtual assistant that enables developers and developers to quickly communicate with their own virtual machines. Using this virtual assistant,",
+                    "\n\nOpenVINO is a program designed to help you find the best open source open source software. The program, which is a lightweight package and",
+                ]
+            ],
+        }),
+    ),
 ]
 
 
@@ -190,8 +291,9 @@ def test_individual_generation_configs_random(tmp_path, test_struct: RandomSampl
 
 
 @pytest.mark.precommit
-def test_post_oom_health(tmp_path):
-    generation_config = get_greedy()
+@pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()])
+def test_post_oom_health(tmp_path, sampling_config):
+    generation_config = sampling_config
     generation_config.ignore_eos = True
     generation_config.max_new_tokens = 1000000
 
@@ -205,12 +307,14 @@ def test_post_oom_health(tmp_path):
     model_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, model_path)
 
-    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config)
+    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
     # First run should return incomplete response
     output = pipe.generate(["What is OpenVINO?"], generation_configs)
-    assert(len(output))
+    assert (len(output))
+    assert(len(output[0].m_generation_ids))
     # Same for the second run, here we want to make sure the cleanup works and we have free blocks after recent OOM
     output = pipe.generate(["What is OpenVINO?"], generation_configs)
-    assert(len(output))
+    assert (len(output))
+    assert(len(output[0].m_generation_ids))
     del pipe
     shutil.rmtree(model_path)

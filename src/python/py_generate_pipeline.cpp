@@ -436,10 +436,10 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         R"(openvino_genai.Tokenizer object is used to initialize Tokenizer 
            if it's located in a different path than the main model.)")
         
-        .def(py::init([](const std::string& tokenizer_path) {
+        .def(py::init([](const std::string& tokenizer_path, const std::map<std::string, py::object>& plugin_config) {
             ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path);
-        }), py::arg("tokenizer_path"))
+            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, properties_to_any_map(plugin_config));
+        }), py::arg("tokenizer_path"), py::arg("plugin_config") = ov::AnyMap({}))
         
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts) { return tok.encode(prompts); },
             py::arg("prompts"),
@@ -591,15 +591,20 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
         .def_readwrite("cache_size", &SchedulerConfig::cache_size)
         .def_readwrite("block_size", &SchedulerConfig::block_size)
-        .def_readwrite("cache_size", &SchedulerConfig::cache_size)
         .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
-        .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs);
+        .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
+        .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching);
+         
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline")
-        .def(py::init([](const std::string& model_path, const SchedulerConfig& config) {
+        .def(py::init([](const std::string& model_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
             ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<ContinuousBatchingPipeline>(model_path, config);
-        }))
+            return std::make_unique<ContinuousBatchingPipeline>(model_path, scheduler_config, device, properties_to_any_map(llm_plugin_config), properties_to_any_map(tokenizer_plugin_config));
+        }), py::arg("model_path"), py::arg("scheduler_config"), py::arg("device") = "CPU", py::arg("llm_plugin_config") = ov::AnyMap({}), py::arg("tokenizer_plugin_config") = ov::AnyMap({}))
+        .def(py::init([](const std::string& model_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& plugin_config) {
+            ScopedVar env_manager(ov_tokenizers_module_path());
+            return std::make_unique<ContinuousBatchingPipeline>(model_path, tokenizer, scheduler_config, device, properties_to_any_map(plugin_config));
+        }), py::arg("model_path"), py::arg("tokenizer"), py::arg("scheduler_config"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap({}))
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
         .def("add_request", &ContinuousBatchingPipeline::add_request)

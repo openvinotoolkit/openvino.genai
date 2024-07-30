@@ -30,9 +30,27 @@ public:
     ContinuousBatchingPipeline(const std::string& models_path,
                                const SchedulerConfig& scheduler_config,
                                const std::string& device = "CPU",
-                               const ov::AnyMap& plugin_config = {});
+                               const ov::AnyMap& llm_plugin_config = {},
+                               const ov::AnyMap& tokenizer_plugin_config = {});
 
-    std::shared_ptr<ov::genai::Tokenizer> get_tokenizer();
+    /**
+    * @brief Constructs a ContinuousBatchingPipeline when ov::genai::Tokenizer is initialized manually using file from the different dirs.
+    *
+    * @param model_path Path to the dir with model, tokenizer .xml/.bin files, and generation_configs.json
+    * @param scheduler_config
+    * @param tokenizer manually initialized ov::genai::Tokenizer
+    * @param device optional device
+    * @param plugin_config optional plugin_config
+    */
+    ContinuousBatchingPipeline(
+        const std::string& model_path,
+        const ov::genai::Tokenizer& tokenizer,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device="CPU",
+        const ov::AnyMap& plugin_config={}
+    );
+
+    ov::genai::Tokenizer get_tokenizer();
 
     ov::genai::GenerationConfig get_config() const;
 

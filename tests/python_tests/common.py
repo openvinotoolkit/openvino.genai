@@ -79,7 +79,7 @@ def get_multinomial_temperature() -> GenerationConfig:
 def get_multinomial_temperature_and_num_return_sequence() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.do_sample = True
-    generation_config.temperature = 0.9
+    generation_config.temperature = 0.7
     generation_config.num_return_sequences = 3
     generation_config.max_new_tokens = 30
     return generation_config
@@ -273,7 +273,7 @@ def run_continuous_batching(
     prompts: List[str],
     generation_configs : List[GenerationConfig]
 ) -> List[GenerationResult]:
-    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config)
+    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config, "CPU", {}, {})
     output = pipe.generate(prompts, generation_configs)
     del pipe
     shutil.rmtree(model_path)
