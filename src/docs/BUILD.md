@@ -52,7 +52,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     cmake --build ./build/ --config Release -j
     cmake --install ./build/ --config Release --prefix <INSTALL_DIR>
     ```
-    > **NOTE**: For running setupvars script on Windows cmd, use command `call <INSTALL_DIR>\setupvars.bat`
+    > **NOTE**: For running setupvars script on Windows, use command `call <INSTALL_DIR>\setupvars.bat` for Windows Command Prompt or `. <INSTALL_DIR>/setupvars.ps1` for Windows PowerShell.
 
 To optimize the package size, you can reduce the ICU (International Components for Unicode) data size when building OpenVINO Tokenizers.
 For more information please refer to the [OpenVINO Tokenizers instructions](https://github.com/openvinotoolkit/openvino_tokenizers?tab=readme-ov-file#reducing-the-icu-data-size).
