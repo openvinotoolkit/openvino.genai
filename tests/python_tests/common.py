@@ -17,7 +17,6 @@ def get_greedy() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = 30
-    generation_config.use_cache_eviction = True
     return generation_config
 
 def get_greedy_with_min_and_max_tokens() -> GenerationConfig:

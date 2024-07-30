@@ -24,6 +24,8 @@ struct SchedulerConfig {
     // whether to split prompt / generate to different scheduling phases
     bool dynamic_split_fuse = true;
 
+    bool use_cache_eviction = false;
+
     //
     // vLLM-like settings
     //

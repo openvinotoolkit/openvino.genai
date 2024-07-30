@@ -224,7 +224,7 @@ public:
         dumper.dump_cache_state(*m_scheduler, m_requests);
 
         // evict unimportant blocks from KV cache, if requested
-        if (m_generation_config.use_cache_eviction) {
+        if (m_scheduler->get_config().use_cache_eviction) {
             auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
             for (const auto& seq_id_and_attention_scores : sequence_attention_scores) {
                 auto seq_id = seq_id_and_attention_scores.first;

@@ -33,7 +33,6 @@ GenerationConfig::GenerationConfig(const std::string& json_path) {
     read_json_param(data, "temperature", temperature);
     read_json_param(data, "top_p", top_p);
     read_json_param(data, "top_k", top_k);
-    read_json_param(data, "use_cache_eviction", use_cache_eviction);
     read_json_param(data, "do_sample", do_sample);
     read_json_param(data, "repetition_penalty", repetition_penalty);
     read_json_param(data, "eos_token_id", eos_token_id);
@@ -76,7 +75,6 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     read_anymap_param(config_map, "temperature", temperature);
     read_anymap_param(config_map, "top_p", top_p);
     read_anymap_param(config_map, "top_k", top_k);
-    read_anymap_param(config_map, "use_cache_eviction", use_cache_eviction);
     read_anymap_param(config_map, "do_sample", do_sample);
     read_anymap_param(config_map, "repetition_penalty", repetition_penalty);
     read_anymap_param(config_map, "eos_token_id", eos_token_id);

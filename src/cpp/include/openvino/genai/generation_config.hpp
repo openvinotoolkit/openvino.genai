@@ -71,7 +71,6 @@ public:
     size_t max_length = SIZE_MAX;
     bool ignore_eos = false;
     size_t min_new_tokens = 0;
-    bool use_cache_eviction = false;
 
     // Beam search specific
     size_t num_beam_groups = 1;
@@ -136,7 +135,6 @@ static constexpr ov::Property<StopCriteria> stop_criteria{"stop_criteria"};
 static constexpr ov::Property<float> temperature{"temperature"};
 static constexpr ov::Property<float> top_p{"top_p"};
 static constexpr ov::Property<int> top_k{"top_k"};
-static constexpr ov::Property<bool> use_cache_eviction{"use_cache_eviction"};
 static constexpr ov::Property<bool> do_sample{"do_sample"};
 static constexpr ov::Property<float> repetition_penalty{"repetition_penalty"};
 static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};
