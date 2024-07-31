@@ -5,10 +5,24 @@ It hides the complexity of the generation process and minimizes the amount of co
 
 ## Install OpenVINO™ GenAI
 
+> **NOTE**: Please make sure that you are following the versions compatibility rules, refer to the [OpenVINO™ GenAI Dependencies](#openvino-genai-dependencies) for more information.
+
 The OpenVINO™ GenAI flavor is available for installation via Archive and PyPI distributions.
 To install OpenVINO™ GenAI, refer to the [Install Guide](https://docs.openvino.ai/2024/get-started/install-openvino.html).
 
-To build OpenVINO™ GenAI library from source, refer to the [Build Instructions](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/BUILD.md).
+To build OpenVINO™ GenAI library from source, refer to the [Build Instructions](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/src/docs/BUILD.md).
+
+### OpenVINO™ GenAI Dependencies
+
+OpenVINO™ GenAI depends on [OpenVINO](https://github.com/openvinotoolkit/openvino) and [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers).
+
+When installing OpenVINO™ GenAI from PyPi, the same versions of OpenVINO and OpenVINO Tokenizers are used (e.g. `openvino==2024.3.0` and `openvino-tokenizers==2024.3.0.0` are installed for `openvino-genai==2024.3.0`).
+If you update one of the dependency packages (e.g. install `openvino-nightly`), versions might be incompatible due to different ABI and running OpenVINO GenAI can result in errors (e.g. `ImportError: libopenvino.so.2440: cannot open shared object file: No such file or directory`).
+Having packages version in format `<MAJOR>.<MINOR>.<PATCH>.<REVISION>`, only `<REVISION>` part of the full version can be varied to ensure ABI compatibility, while changing `<MAJOR>`, `<MINOR>` or `<PATCH>` parts of the version might break ABI.
+
+GenAI, Tokenizers, and OpenVINO wheels for Linux on PyPI are compiled with `_GLIBCXX_USE_CXX11_ABI=0` to cover a wider range of platforms. In contrast, C++ archive distributions for Ubuntu are compiled with `_GLIBCXX_USE_CXX11_ABI=1`. It is not possible to mix different Application Binary Interfaces (ABIs) because doing so results in a link error. This incompatibility prevents the use of, for example, OpenVINO from C++ archive distributions alongside GenAI from PyPI.
+
+If you want to try OpenVINO GenAI with different dependencies versions (**not** prebuilt packages as archives or python wheels), build OpenVINO GenAI library from source.
 
 ## Usage
 
@@ -16,16 +30,16 @@ To build OpenVINO™ GenAI library from source, refer to the [Build Instructions
 
 1. Installed OpenVINO™ GenAI
 
-    > If OpenVINO GenAI is installed via archive distribution or built from source, you will need to install additional python dependencies (e.g. `optimum-cli` for simplified model downloading and exporting, it's not required to install [./samples/requirements.txt](./samples/requirements.txt) for deployment if the model has already been exported):
-    > 
-    > ```sh
-    > # (Optional) Clone OpenVINO GenAI repository if it does not exist
-    > git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
-    > cd openvino.genai
-    > # Install python dependencies
-    > python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-    > python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-    > ```
+    > To use OpenVINO GenAI with models that are already in OpenVINO format, no additional python dependencies are needed. To
+    > convert models with optimum-cli and to run the examples, install the dependencies in [./samples/requirements.txt](./samples/requirements.txt):
+    ```sh
+    # (Optional) Clone OpenVINO GenAI repository if it does not exist
+    git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
+    cd openvino.genai
+    # Install python dependencies
+    python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+    python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+    ```
 
 2. A model in OpenVINO IR format
 
@@ -289,8 +303,8 @@ For more examples of how metrics are used, please refer to the Python [benchmark
 
 ## How It Works
 
-For information on how OpenVINO™ GenAI works, refer to the [How It Works Section](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/HOW_IT_WORKS.md).
+For information on how OpenVINO™ GenAI works, refer to the [How It Works Section](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/src/docs/HOW_IT_WORKS.md).
 
 ## Supported Models
 
-For a list of supported models, refer to the [Supported Models Section](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/2/src/docs/SUPPORTED_MODELS.md).
+For a list of supported models, refer to the [Supported Models Section](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/src/docs/SUPPORTED_MODELS.md).
