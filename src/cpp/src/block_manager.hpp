@@ -470,8 +470,19 @@ public:
         return blocks_count;
     }
 
-    std::map<size_t, std::list<size_t>> append_slots(SequenceGroup::CPtr seq_group) {
+    void free_empty_physical_blocks(SequenceGroup::Ptr seq_group) {
+        size_t num_logical_blocks = seq_group->get_num_logical_blocks();
+        for (const auto& sequence : seq_group->get_running_sequences()) {
+            auto seq_id = sequence->get_id();
+            auto& block_table = m_block_table[seq_id];
+            size_t num_physical_blocks = block_table.size();
+            if (num_physical_blocks > num_logical_blocks) {
+                free_sequence_partially_single_runnning_sequence(seq_id, num_physical_blocks - num_logical_blocks);
+            }
+        }
+    }
 
+    std::map<size_t, std::list<size_t>> append_slots(SequenceGroup::CPtr seq_group) {
         size_t num_logical_blocks = seq_group->get_num_logical_blocks();
         std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
 

@@ -3,28 +3,22 @@
 
 #pragma once
 
-#include <memory>
-#include <openvino/openvino.hpp>
-
 #include "openvino/genai/scheduler_config.hpp"
-#include "openvino/genai/tokenizer.hpp"
-#include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/visibility.hpp"
 
-namespace ov::genai {
-struct PipelineMetrics { 
-    // All requests as viewed by the pipeline
-    size_t requests = 0;
-    // Requests scheduled for processing
-    size_t scheduled_requests = 0;
-    // Percentage of KV cache usage
-    float cache_usage = 0.0;
-};
+#include "openvino/genai/cb_basic_pipeline.hpp"
 
-class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {
+namespace ov::genai {
+class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline : public ov::genai::BasicPipeline {
+protected:
     class Impl;
     std::shared_ptr<Impl> m_impl;
+
+    // GenerationHandle add_request(uint64_t request_id, ov::Tensor tokenized_prompt, ov::genai::GenerationConfig sampling_params) override;
+
+    std::vector<GenerationHandle> generate_sequences(
+        const std::vector<ov::Tensor> prompts, std::vector<ov::genai::GenerationConfig> sampling_params) override;
 
 public:
     ContinuousBatchingPipeline(const std::string& models_path,
@@ -50,19 +44,36 @@ public:
         const ov::AnyMap& plugin_config={}
     );
 
-    ov::genai::Tokenizer get_tokenizer();
+    ContinuousBatchingPipeline() = default;
 
-    ov::genai::GenerationConfig get_config() const;
+    PipelineMetrics get_metrics() const override;
 
-    PipelineMetrics get_metrics() const;
+    void step() override;
+
+    bool has_non_finished_requests() override;
 
     GenerationHandle add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params);
+    GenerationHandle add_request(uint64_t request_id, ov::Tensor prompt, ov::genai::GenerationConfig sampling_params);
 
-    void step();
+    struct GeneratedSequence {
+        uint64_t request_id, sequence_id;
+        std::vector<int64_t> token_ids;
+        std::vector<float> log_probs;
 
-    bool has_non_finished_requests();
+        GeneratedSequence(uint64_t req_id, uint64_t seq_id, const  std::vector<int64_t>& generated_token_ids, const std::vector<float>& generated_log_probs) :
+            request_id(req_id),
+            sequence_id(seq_id),
+            token_ids(generated_token_ids),
+            log_probs(generated_log_probs) {};
+    };
 
-    // more high level interface, which can process multiple prompts in continuous batching manner
-    std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, std::vector<ov::genai::GenerationConfig> sampling_params);
+    struct UpdateSeqResult {
+        size_t to_insert, to_remove;
+        UpdateSeqResult(size_t _to_insert = 0, size_t _to_remove = 0) : to_insert(_to_insert), to_remove(_to_remove) {};
+    };
+
+    std::vector<GeneratedSequence> get_generated_sequences();
+    UpdateSeqResult update_generated_sequence(const GeneratedSequence& new_sequence);
+    void enable_validation_mode();
 };
 }
