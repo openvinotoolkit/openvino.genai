@@ -56,6 +56,10 @@ public:
 
     PipelineMetrics get_metrics() const;
 
+    std::vector<std::string> get_model_configuration();
+
+    void print_model_configuration();
+
     GenerationHandle add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params);
 
     void step();
