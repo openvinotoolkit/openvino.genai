@@ -294,7 +294,6 @@ public:
             auto num_outputs = std::min(sampling_params[generation_idx].num_return_sequences, generation_outputs.size());
             for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
                 const auto& generation_output = generation_outputs[generation_output_idx];
-                result.m_generation_ids.push_back(output_text);
                 result.m_generation_ids.push_back(std::move(generation_output.generated_token_ids));
                 result.m_scores.push_back(generation_output.score);
             }
