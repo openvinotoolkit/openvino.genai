@@ -12,6 +12,23 @@
 
 namespace {
 
+void align_u4_zp_constants(const std::shared_ptr<ov::Model>& model) {
+    for (auto op : model->get_ops()) {
+        if (ov::op::util::is_constant(op)) {
+            auto cst_op = std::dynamic_pointer_cast<ov::op::v0::Constant>(op);
+            const auto cst_op_out = cst_op->output(0);
+            if (cst_op_out.get_element_type() == ov::element::u4 && ov::shape_size(cst_op_out.get_shape()) == 1u) {
+                ov::Tensor cst_tensor(ov::element::u4, cst_op_out.get_shape());
+                *static_cast<uint8_t*>(cst_tensor.data()) = cst_op->get_vector<uint8_t>()[0] & 0x0f;
+                auto new_cst_op = std::make_shared<ov::op::v0::Constant>(cst_tensor);
+                for (auto target_input : cst_op_out.get_target_inputs()) {
+                    target_input.replace_source_output(new_cst_op);
+                }
+            }
+        }
+    }
+}
+
 std::shared_ptr<ov::Model> add_slices_to_kvcache_inputs(const std::shared_ptr<ov::Model>& model) {
     const auto kvcache_name_pattern = "past_key_values";
     std::vector<std::shared_ptr<ov::opset13::Parameter>> new_params;
@@ -147,6 +164,7 @@ StaticLLMPipeline::StaticLLMPipeline(
     m_kvcache_model = core.read_model(path / "openvino_model.xml");
     // (2) Expose KV-cache input and output layers from kvcache model
     ov::pass::StatefulToStateless().run_on_model(m_kvcache_model);
+    align_u4_zp_constants(m_kvcache_model);
     // (3) Clone the model - this will be prefill
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
