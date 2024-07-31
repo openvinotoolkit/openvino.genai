@@ -11,6 +11,7 @@ import openvino as ov
 import sys
 from pathlib import Path
 import torch
+import math
 from ov_genai_test_utils import (
     get_models_list, 
     read_model, 
@@ -18,11 +19,11 @@ from ov_genai_test_utils import (
     load_tok, 
     model_tmp_path, 
     STOP_CRITERIA_MAP, 
+    get_continuous_batching,
 )
 
 
 def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, prompts: Union[str, List[str]]):
-    device = 'CPU'
     model_id, path, tokenizer, model, pipe = model_descr
     config = generation_config.copy()  # to avoid side effects
     num_beams = config['num_beams'] if 'num_beams' in config else 1
@@ -67,7 +68,6 @@ def run_hf_ov_genai_comparison_batched(model_descr, generation_config: Dict, pro
         assert hf_output == ov_output
 
 def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt: str):
-    device = 'CPU'
     model_id, path, tokenizer, model, pipe = model_descr
 
     config = generation_config.copy()  # to avoid side effects
@@ -75,7 +75,7 @@ def run_hf_ov_genai_comparison(model_descr, generation_config: Dict, prompt: str
     if 'do_sample' not in config:
         # Some HF models have default do_sample = True, and if we set beam search generation config 
         # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
-        # Need to set exlicitly to False, but only if test arguments omitted this arg.
+        # Need to set explicitly to False, but only if test arguments omitted this arg.
         # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
         config['repetition_penalty'] = None
@@ -705,3 +705,39 @@ def test_left_pad():
 
     models[2].pad_token = models[2].eos_token
     run_hf_ov_genai_comparison_batched(models, config, prompts)
+
+
+@pytest.mark.parametrize("generation_config", test_configs)
+@pytest.mark.parametrize("prompt", batched_prompts)
+@pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.precommit
+def test_continuous_batching_vs_stateful(model_descr, prompt, generation_config):
+    model_id, path, tokenizer, model, stateful = read_model((
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        Path("TinyLlama-1.1B-Chat-v1.0")
+    ))
+    config = ov_genai.GenerationConfig()
+    config.max_new_tokens = 100
+    cb = get_continuous_batching(path)
+    generated = cb.generate(prompt, **generation_config)
+    reference = stateful.generate(prompt, **generation_config)
+    assert generated.texts == reference.texts
+    if 1 != generation_config.get("num_return_sequences", 1):
+        # Stateful puts zeroes to generated.scores. Don't compare them.
+        for gen, ref in zip(generated.scores, reference.scores):
+            assert math.isclose(gen, ref, abs_tol=0.0003)
+
+@pytest.mark.parametrize("prompt", prompts)
+@pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.precommit
+def test_cb_streamer_vs_return_vs_stateful(model_descr, prompt):
+    model_id, path, tokenizer, model, stateful = read_model((
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        Path("TinyLlama-1.1B-Chat-v1.0")
+    ))
+    cb = get_continuous_batching(path)
+    streamed = []
+    generated = cb.generate(prompt, max_new_tokens=20, streamer=lambda subword: streamed.append(subword))
+    reference = stateful.generate(prompt, max_new_tokens=20)
+    assert generated == "".join(streamed)
+    assert "".join(streamed) == reference

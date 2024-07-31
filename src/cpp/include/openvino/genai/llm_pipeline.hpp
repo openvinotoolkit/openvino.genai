@@ -5,16 +5,18 @@
 
 #include <optional>
 #include <variant>
+#include <chrono>
 
 #include "openvino/core/any.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/streamer_base.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 
 namespace ov {
 namespace genai {
 
-// Return flag corresponds whether generation should be stopped: false means continue generation, true means stop.
+// Return flag correspods whether generation should be stopped: false means continue generation, true means stop.
 using StreamerVariant = std::variant<std::function<bool(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
@@ -29,11 +31,13 @@ using StringInputs = std::variant<std::string, std::vector<std::string>>;
 *
 * @param tokens sequence of resulting tokens
 * @param scores sum of logarithmic probabilities of all tokens in the sequence
+* @param metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
 */
 class EncodedResults {
 public:
     std::vector<std::vector<int64_t>> tokens;
     std::vector<float> scores;
+    PerfMetrics perf_metrics;
 };
 
 /**
@@ -42,11 +46,13 @@ public:
 *
 * @param texts vector of resulting sequences
 * @param scores scores for each sequence
+* @param metrics performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics
 */
 class DecodedResults {
 public:
     std::vector<std::string> texts;
     std::vector<float> scores;
+    PerfMetrics perf_metrics;
 
     // @brief Convert DecodedResults to a string.
     operator std::string() const {

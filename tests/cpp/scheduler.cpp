@@ -367,8 +367,11 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
     }
 }
 
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> releases/2024/3
 TEST(TestScheduler, prefix_caching_test) {
     std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).max_num_batched_tokens = 32;
