@@ -7,11 +7,10 @@ openvino_genai
 auto-gptq>=0.5.1 # for gptq
 pillow
 torch
-torchvision<0.19.0
 transformers>=4.40.0
 diffusers>=0.22.0
 #optimum is in dependency list of optimum-intel 
-git+https://github.com/huggingface/optimum-intel.git@a863f4dd946545bfa5caec43e470bd6ffccf589e#egg=optimum-intel
+git+https://github.com/eaidova/optimum-intel.git@ea/remove_bf16_rotary_emb_patching#egg=optimum-intel
 git+https://github.com/openvinotoolkit/nncf.git@develop#egg=nncf
 packaging
 psutil
