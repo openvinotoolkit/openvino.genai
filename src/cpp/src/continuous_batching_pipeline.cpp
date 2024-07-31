@@ -146,6 +146,8 @@ public:
         {
             static ManualTimer timer("scheduling");
             timer.start();
+            // todo: iefode: to move to other place?
+            m_scheduler->clean_empty_blocks(m_requests);
             scheduler_output = m_scheduler->schedule(m_requests);
             m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
             m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
@@ -269,6 +271,7 @@ public:
         for (auto& request : m_requests) {
             if (candidate_sequence.request_id == request->get_request_id()) {
                 bool is_seq_exists = false;
+                // todo: iefode: multiseq
                 size_t to_remove_tokens = 0, to_insert_tokens = 0;
                 for (auto& sequence : request->get_sequences()) {
                     if (candidate_sequence.sequence_id == sequence->get_grouped_id()) {
@@ -315,18 +318,14 @@ public:
                     }
                     request->add_sequence(new_sequence);
                 }
-                request->decrease_processed_tokens(to_remove_tokens);
-                if (is_validation_mode_enabled) {
-                    // to validate tokens before generation
-                    if (request->get_num_processed_tokens() > 0) {
-                        // in case of non-prompt we need to take prev tokens + token to validate
-                        ++to_insert_tokens;
-                    }
-                    request->set_validation_len(to_insert_tokens);
-                } else {
-                    // move context pointer
-                    request->increase_processed_tokens(to_insert_tokens);
+                if (to_remove_tokens > 0)
+                    request->decrease_processed_tokens(to_remove_tokens);
+                // to validate tokens/extend kv-cache before generation
+                if (request->get_num_processed_tokens() > 0) {
+                    // in case of non-prompt we need to take prev tokens + token to validate
+                    ++to_insert_tokens;
                 }
+                request->set_validation_len(to_insert_tokens);
                 return ContinuousBatchingPipeline::UpdateSeqResult(to_insert_tokens, to_remove_tokens);
             }
         }

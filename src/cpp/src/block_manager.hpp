@@ -310,7 +310,7 @@ public:
         return blocks_count;
     }
 
-    void free_empty_physical_blocks(SequenceGroup::CPtr seq_group) {
+    void free_empty_physical_blocks(SequenceGroup::Ptr seq_group) {
         size_t num_logical_blocks = seq_group->get_num_logical_blocks();
         for (const auto& sequence : seq_group->get_running_sequences()) {
             auto seq_id = sequence->get_id();
@@ -323,7 +323,6 @@ public:
     }
 
     std::map<size_t, std::list<size_t>> append_slots(SequenceGroup::CPtr seq_group) {
-
         size_t num_logical_blocks = seq_group->get_num_logical_blocks();
         std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
 

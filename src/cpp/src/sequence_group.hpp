@@ -111,11 +111,14 @@ public:
         m_generated_probs.resize(new_length);
     }
 
-    GenerationOutput get_last_generation_output() {
+    GenerationOutput get_last_generation_output(size_t k = 1) {
         GenerationOutput output;
         OPENVINO_ASSERT(m_generated_ids.size());
         output.score = get_cumulative_log_probs();
-        output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};
+        OPENVINO_ASSERT(k <= m_generated_ids.size());
+        auto it_rbegin = m_generated_ids.rbegin(), it_rback = m_generated_ids.rbegin();
+        std::advance(it_rback, k);
+        output.generated_token_ids.insert(output.generated_token_ids.end(), it_rbegin, it_rback);
         return output;
     }
 
@@ -366,11 +369,6 @@ public:
         return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u);
     }
 
-    void increase_processed_tokens(size_t token_cnt) {
-        m_num_processed_tokens += token_cnt;
-        m_max_content_len += token_cnt;
-    }
-
     void decrease_processed_tokens(size_t token_cnt) {
         OPENVINO_ASSERT(m_num_processed_tokens >= token_cnt);
         m_num_processed_tokens -= token_cnt;
@@ -496,8 +494,9 @@ public:
             }
         // For greedy or multinomial sampling we decide whever to stream partial results depending on the user parameter
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
-            // TO DO: Now we always stream for greedy search for the sake of benchmarking 
-            if (num_total_seqs() == 1 /* m_sampling_params.stream */) {
+            // TO DO: Now we always stream for greedy search for the sake of benchmarking
+            // streaming is enabled only in case 1 iteration == 1 generated token
+            if (num_total_seqs() == 1  && m_validation_len == 0 /* m_sampling_params.stream */) {
                 // TODO: support streamimg for n seqs
                 for (auto& sequence : m_sequences) {
                     // todo: check seq.is_finished() to generate without several </s>

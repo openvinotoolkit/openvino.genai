@@ -85,7 +85,8 @@ int main(int argc, char* argv[]) try {
     // It's possible to construct a Tokenizer from a different path.
     // If the Tokenizer isn't specified, it's loaded from the same folder.
     SpeculativeDecodingPipeline pipe(models_path, assisting_models_path, ov::genai::Tokenizer{models_path}, scheduler_config);
-    pipe.set_k(3);
+    pipe.set_k(5);
+    auto start_time = std::chrono::system_clock::now();
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, sampling_params);
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
@@ -115,6 +116,9 @@ int main(int argc, char* argv[]) try {
         }
         std::cout << std::endl;
     }
+    auto end_time = std::chrono::system_clock::now();
+    std::chrono::duration<double> duration = end_time - start_time;
+    std::cout << "DURATION: " << duration.count() << std::endl;
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return EXIT_FAILURE;

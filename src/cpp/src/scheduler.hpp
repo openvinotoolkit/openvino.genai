@@ -63,8 +63,9 @@ public:
         return scheduler_output;
     }
 
-    void clean_empty_blocks(const SequenceGroup::CPtr& seq_group) {
-        m_block_manager.free_empty_physical_blocks(seq_group);
+    void clean_empty_blocks(std::vector<SequenceGroup::Ptr>& seq_groups) {
+        for (const auto& seq_group : seq_groups)
+            m_block_manager.free_empty_physical_blocks(seq_group);
     }
 
     const std::vector<KVCacheBlock::Ptr>& get_block_table(const Sequence& seq) {
@@ -277,7 +278,8 @@ private:
                     sequence_group->clear_scheduled_tokens();
                     continue;
                 }
-                
+
+                m_block_manager.free_empty_physical_blocks(sequence_group);
                 // allocate new slots
                 std::map<size_t, std::list<size_t>> copy_blocks_map = m_block_manager.append_slots(sequence_group);
 

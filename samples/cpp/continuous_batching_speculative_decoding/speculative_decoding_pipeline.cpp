@@ -28,7 +28,6 @@ SpeculativeDecodingPipeline::SpeculativeDecodingPipeline(const std::string& mode
         model_scheduler_config.cache_size = cache_size;
         assisting_scheduler_config.cache_size = assisted_cache_size;
     }
-    // todo: iefode: tokenizer is not needed for CB
     model_pipeline = ov::genai::ContinuousBatchingPipeline(models_path, m_tokenizer, model_scheduler_config, device, plugin_config);
     model_pipeline.enable_validation_mode();
     assisting_pipeline = ov::genai::ContinuousBatchingPipeline(assisting_model_path, m_tokenizer, assisting_scheduler_config, device, plugin_config);
@@ -42,12 +41,28 @@ void SpeculativeDecodingPipeline::step() {
     std::vector<ov::genai::ContinuousBatchingPipeline::GeneratedSequence> candidate_sequences;
     if (is_speculative_mode) {
         // generate candidates using small model
+        // std::cout << "K: " << k << std::endl;
         for (size_t i = 0; i < k; ++i) {
             if (!assisting_pipeline.has_non_finished_requests()) {
                 break;
             }
             assisting_pipeline.step();
         }
+
+        // todo: remove debug code
+        auto checked_sequences = assisting_pipeline.get_generated_sequences();
+        // for (const auto& s : checked_sequences) {
+        //     std::cout << "ASSISTANT: " << std::endl;
+        //     for (const auto& d : s.token_ids) {
+        //         std::cout << d << " ";
+        //     }
+        //     std::cout << std::endl;
+        //     for (const auto& d : s.log_probs) {
+        //         std::cout << d << " ";
+        //     }
+        //     std::cout << std::endl;
+        //     std::cout << decode(s.token_ids) << std::endl;
+        // }
 
         // put candidates to model cache
         candidate_sequences = assisting_pipeline.get_generated_sequences();
@@ -62,13 +77,20 @@ void SpeculativeDecodingPipeline::step() {
     if (is_speculative_mode) {
         // todo: iefode: remove debug prints
         auto checked_sequences = model_pipeline.get_generated_sequences();
-        for (const auto& s : checked_sequences) {
-            std::cout << std::endl;
-            for (const auto& d : s.token_ids) {
-                std::cout << d << " ";
-            }
-            std::cout << decode(s.token_ids) << std::endl;
-        }
+        // todo: remove debug code
+        // for (const auto& s : checked_sequences) {
+        //     std::cout << "MODEL: " << std::endl;
+        //     for (const auto& d : s.token_ids) {
+        //         std::cout << d << " ";
+        //     }
+        //     std::cout << std::endl;
+        //     for (const auto& d : s.log_probs) {
+        //         std::cout << d << " ";
+        //     }
+        //     std::cout << std::endl;
+        //     std::cout << decode(s.token_ids) << std::endl;
+        //     std::cout << std::endl;
+        // }
 
         ov::genai::ContinuousBatchingPipeline::UpdateSeqResult update_result;
         for (const auto& checked_sequence : checked_sequences) {
