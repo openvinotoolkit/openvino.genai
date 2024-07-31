@@ -187,6 +187,7 @@ jobs:
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
 
     steps:
       - name: Clone openvino.genai
