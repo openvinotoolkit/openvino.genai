@@ -127,24 +127,9 @@ public:
         return m_tokenizer;
     }
 
-<<<<<<< HEAD
-    GenerationHandle add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params) {
-        sampling_params.set_eos_token_id(m_tokenizer.get_eos_token_id());
-        sampling_params.validate();
-
-        ov::Tensor input_ids;
-        {
-            static ManualTimer timer("tokenize");
-            timer.start();
-            input_ids = m_tokenizer.encode(prompt).input_ids;
-            timer.end();
-        }
-
-=======
     GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids, ov::genai::GenerationConfig sampling_params) {
         sampling_params.set_eos_token_id(m_tokenizer.get_eos_token_id());
         sampling_params.validate();
->>>>>>> releases/2024/3
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
                                                                             sampling_params, m_scheduler->get_config().block_size);
         {
@@ -309,12 +294,8 @@ public:
             auto num_outputs = std::min(sampling_params[generation_idx].num_return_sequences, generation_outputs.size());
             for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
                 const auto& generation_output = generation_outputs[generation_output_idx];
-<<<<<<< HEAD
-                std::string output_text = m_tokenizer.decode(generation_output.generated_token_ids);
                 result.m_generation_ids.push_back(output_text);
-=======
                 result.m_generation_ids.push_back(std::move(generation_output.generated_token_ids));
->>>>>>> releases/2024/3
                 result.m_scores.push_back(generation_output.score);
             }
             result.m_status = generation->get_status();

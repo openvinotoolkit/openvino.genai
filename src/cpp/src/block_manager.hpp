@@ -222,10 +222,6 @@ public:
         return nullptr;
     }
 
-<<<<<<< HEAD
-=======
-
->>>>>>> releases/2024/3
     float get_used_percentage() const {
         return static_cast<float>(m_total_num_blocks - num_free_blocks()) / m_total_num_blocks;
     }
