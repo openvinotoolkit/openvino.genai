@@ -15,7 +15,7 @@ from transformers.generation.stopping_criteria import (
 from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
-import utils.hook_sample as hook_sample
+import llm_bench_utils.hook_sample as hook_sample
 
 
 logger = log.getLogger(__name__)
