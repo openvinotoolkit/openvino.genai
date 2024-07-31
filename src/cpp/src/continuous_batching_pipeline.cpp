@@ -27,7 +27,7 @@ class ContinuousBatchingPipeline::Impl {
 
     // TODO (mzegla): GenerationConfig is request specific object
     // and pipeline only uses default rng_seed. 
-    // ov::genai::GenerationConfig m_generation_config;
+    ov::genai::GenerationConfig m_generation_config;
 
     PipelineMetrics m_pipeline_metrics;
 
@@ -103,8 +103,7 @@ public:
         // and finally create model runner
         m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
         m_sampler = std::make_shared<Sampler>();
-        // todo:iefode
-        // m_sampler->set_seed(m_generation_config.rng_seed);
+        m_sampler->set_seed(m_generation_config.rng_seed);
         m_sampler->set_seed(0);
 
         // read default generation config

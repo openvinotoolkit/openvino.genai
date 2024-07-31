@@ -3,12 +3,7 @@
 
 #pragma once
 
-// #include <memory>
-// #include <openvino/openvino.hpp>
-
 #include "openvino/genai/scheduler_config.hpp"
-// #include "openvino/genai/tokenizer.hpp"
-// #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/visibility.hpp"
 
@@ -48,7 +43,6 @@ public:
         const ov::AnyMap& plugin_config={}
     );
 
-    // todo: iefode
     ContinuousBatchingPipeline() = default;
 
     PipelineMetrics get_metrics() const override;

@@ -54,17 +54,6 @@ ov::genai::Tokenizer ov::genai::BasicPipeline::get_tokenizer() {
     return m_tokenizer;
 };
 
-// ov::genai::GenerationConfig ov::genai::BasicPipeline::get_config() const {
-//     return m_generation_config;
-// };
-
-// ov::genai::GenerationHandle
-// ov::genai::BasicPipeline::add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params) {
-//     sampling_params.validate();
-//     ov::Tensor encoded_prompt = encode(prompt);
-//     return add_request(request_id, encoded_prompt, sampling_params);
-// };
-
 std::vector<ov::genai::GenerationResult>
 ov::genai::BasicPipeline::generate(
     const std::vector<std::string>& prompts,
