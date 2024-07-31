@@ -189,7 +189,11 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
     if "INT8" in compress_weights_format and "INT8_ASYM" in COMPRESSION_OPTIONS:
         warnings.warn("Usage INT8 mode is deprecated and will be removed soon. Please use INT8_ASYM instead", DeprecationWarning)
     if "4BIT_DEFAULT" in compress_weights_format:
-        compression_args = _check_default_4bit_configs(config)
+        try:
+            # TODO: remove this path when support of an older version optimum-intel is deprecated
+            compression_args = _check_default_4bit_configs(config)
+        except TypeError:
+            compression_args = _check_default_4bit_configs(config.name_or_path)
         if compression_args:
             sym = compression_args.pop("sym", False)
             compression_args.pop("bits", 4)

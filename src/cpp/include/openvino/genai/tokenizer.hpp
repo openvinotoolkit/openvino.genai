@@ -29,7 +29,7 @@ public:
     * @brief ov::genai::Tokenizer constructor.
     * @param tokenizer_path openvino_tokenizer.xml and openvino_detokenizer.xml should be located in the tokenizer_path
     */
-    Tokenizer(const std::string& tokenizer_path);
+    Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& plugin_config = {});
 
     /**
     * @brief encode a single prompt

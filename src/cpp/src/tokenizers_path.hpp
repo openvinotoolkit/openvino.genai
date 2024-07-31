@@ -86,7 +86,7 @@ std::filesystem::path tokenizers_relative_to_genai() {
 // was already defined.
 class ScopedVar {
 public:
-    bool was_already_set;
+    bool was_already_set{false};
     static constexpr char ENVIRONMENT_VARIABLE_NAME[] = "OPENVINO_TOKENIZERS_PATH_GENAI";
     explicit ScopedVar(const std::string& environment_variable_value) {
 #ifdef _WIN32
