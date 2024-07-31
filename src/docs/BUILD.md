@@ -84,14 +84,16 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     ```cmd
     set OpenVINO_DIR=<INSTALL_DIR>\runtime
     set PYTHONPATH=<INSTALL_DIR>\python;%CD%\build;%PYTHONPATH%
-    set PATH=<INSTALL_DIR>\runtime\lib\intel64;%PATH%
+    set OPENVINO_LIB_PATHS=<INSTALL_DIR>\bin\intel64\Release;%OPENVINO_LIB_PATHS%
+    set PATH=%OPENVINO_LIB_PATHS%;%PATH%
     ```
     
     Windows PowerShell:
     ```sh
     $env:OpenVINO_DIR = "<INSTALL_DIR>\runtime"
     $env:PYTHONPATH = "<INSTALL_DIR>\python;$PWD\build;$env:PYTHONPATH"
-    $env:PATH = "<INSTALL_DIR>\runtime\lib\intel64;$env:PATH"
+    $env:OPENVINO_LIB_PATHS = "<INSTALL_DIR>\bin\intel64\Release;$env:OPENVINO_LIB_PATHS"
+    $env:PATH = "$env:OPENVINO_LIB_PATHS;$env:PATH"
     ```
 
 4. Build the project:
