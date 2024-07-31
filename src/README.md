@@ -30,16 +30,16 @@ If you want to try OpenVINO GenAI with different dependencies versions (**not** 
 
 1. Installed OpenVINO™ GenAI
 
-    > If OpenVINO GenAI is installed via archive distribution or built from source, you will need to install additional python dependencies (e.g. `optimum-cli` for simplified model downloading and exporting, it's not required to install [./samples/requirements.txt](./samples/requirements.txt) for deployment if the model has already been exported):
-    > 
-    > ```sh
-    > # (Optional) Clone OpenVINO GenAI repository if it does not exist
-    > git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
-    > cd openvino.genai
-    > # Install python dependencies
-    > python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-    > python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
-    > ```
+    > To use OpenVINO GenAI with models that are already in OpenVINO format, no additional python dependencies are needed. To
+    > convert models with optimum-cli and to run the examples, install the dependencies in [./samples/requirements.txt](./samples/requirements.txt):
+    ```sh
+    # (Optional) Clone OpenVINO GenAI repository if it does not exist
+    git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
+    cd openvino.genai
+    # Install python dependencies
+    python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+    python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
+    ```
 
 2. A model in OpenVINO IR format
 
