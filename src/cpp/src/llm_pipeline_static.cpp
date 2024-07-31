@@ -176,7 +176,7 @@ StaticLLMPipeline::StaticLLMPipeline(
     m_kvcache_model = add_slices_to_kvcache_inputs(m_kvcache_model);
     // (6) Compile both model
     m_prefill_request = core.compile_model(
-        prefill_model, device, extract_config_or_empty(config, "PREFILL_CONFIG")
+        m_prefill_model, device, extract_config_or_empty(config, "PREFILL_CONFIG")
     ).create_infer_request();
     m_kvcache_request = core.compile_model(
         kvcache_model, device, extract_config_or_empty(config, "GENERATE_CONFIG")
