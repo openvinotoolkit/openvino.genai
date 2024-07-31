@@ -138,7 +138,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     $env:PATH = "<GENAI_ROOT_DIR>\build\openvino_genai;$env:PATH"
     ```
 
-To optimize the package size, you can reduce the ICU (International Components for Unicode) data size when building OpenVINO Tokenizers.
+To optimize the package size, you can reduce the ICU (International Components for Unicode) data size when OpenVINO Tokenizers are built as a submodule of OpenVINO GenAI.
 For more information please refer to the [OpenVINO Tokenizers instructions](https://github.com/openvinotoolkit/openvino_tokenizers?tab=readme-ov-file#reducing-the-icu-data-size).
 
 
