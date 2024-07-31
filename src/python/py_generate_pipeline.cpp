@@ -102,6 +102,86 @@ auto generation_config_docstring = R"(
     repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.    
 )";
 
+auto raw_perf_metrics_docstring = R"(
+    Structure with raw performance metrics for each generation before any statistics are calculated.
+
+    :param generate_durations: Durations for each generate call in microseconds.
+    :type generate_durations: List[MicroSeconds]
+
+    :param tokenization_durations: Durations for the tokenization process in microseconds.
+    :type tokenization_durations: List[MicroSeconds]
+
+    :param detokenization_durations: Durations for the detokenization process in microseconds.
+    :type detokenization_durations: List[MicroSeconds]
+
+    :param m_times_to_first_token: Times to the first token for each call in microseconds.
+    :type m_times_to_first_token: List[MicroSeconds]
+
+    :param m_new_token_times: Time points for each new token generated.
+    :type m_new_token_times: List[TimePoint]
+
+    :param m_batch_sizes: Batch sizes for each generate call.
+    :type m_batch_sizes: List[int]
+
+    :param m_durations: Total durations for each generate call in microseconds.
+    :type m_durations: List[MicroSeconds]
+
+    :param num_generated_tokens: Total number of tokens generated.
+    :type num_generated_tokens: int
+
+    :param num_input_tokens: Total number of tokens in the input prompt.
+    :type num_input_tokens: int
+)";
+
+auto perf_metrics_docstring = R"(
+    Holds performance metrics for each generate call.
+    
+    PerfMetrics holds fields with mean and standard deviations for the following metrics:
+    - Time To the First Token (TTFT), ms
+    - Time per Output Token (TPOT), ms/token
+    - Generate total duration, ms
+    - Tokenization duration, ms
+    - Detokenization duration, ms
+    - Throughput, tokens/s
+
+    Additional fields include:
+    - Load time, ms
+    - Number of generated tokens
+    - Number of tokens in the input prompt
+
+    Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+    If mean and std were already calculated, getters return cached values.
+
+    :param get_load_time: Returns the load time in milliseconds.
+    :type get_load_time: float
+
+    :param get_num_generated_tokens: Returns the number of generated tokens.
+    :type get_num_generated_tokens: int
+
+    :param get_num_input_tokens: Returns the number of tokens in the input prompt.
+    :type get_num_input_tokens: int
+
+    :param get_ttft: Returns the mean and standard deviation of TTFT.
+    :type get_ttft: MeanStdPair
+
+    :param get_tpot: Returns the mean and standard deviation of TPOT.
+    :type get_tpot: MeanStdPair
+
+    :param get_throughput: Returns the mean and standard deviation of throughput.
+    :type get_throughput: MeanStdPair
+
+    :param get_generate_duration: Returns the mean and standard deviation of generate duration.
+    :type get_generate_duration: MeanStdPair
+
+    :param get_tokenization_duration: Returns the mean and standard deviation of tokenization duration.
+    :type get_tokenization_duration: MeanStdPair
+
+    :param get_detokenization_duration: Returns the mean and standard deviation of detokenization duration.
+    :type get_detokenization_duration: MeanStdPair
+
+    :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
+    :type raw_metrics: RawPerfMetrics
+)";
 
 OptionalGenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& config, const py::kwargs& kwargs) {
     if(!config.has_value() && kwargs.empty())
@@ -580,7 +660,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
         .def("__str__", &DecodedResults::operator std::string);
 
-    py::class_<RawPerfMetrics>(m, "RawPerfMetrics")
+    py::class_<RawPerfMetrics>(m, "RawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())
         .def_readonly("generate_durations", &RawPerfMetrics::generate_durations)
         .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) { 
@@ -604,7 +684,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readonly("mean", &MeanStdPair::mean)
         .def_readonly("std", &MeanStdPair::std);
 
-    py::class_<PerfMetrics>(m, "PerfMetrics")
+    py::class_<PerfMetrics>(m, "PerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
         .def("get_generate_duration", &PerfMetrics::get_generate_duration)
         .def("get_tokenization_duration", &PerfMetrics::get_tokenization_duration)
