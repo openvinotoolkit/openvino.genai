@@ -368,6 +368,11 @@ public:
                                     bool add_generation_prompt, 
                                     const std::string& chat_template) const {
         auto chat_tpl = chat_template.empty() ? m_chat_template : chat_template;
+        OPENVINO_ASSERT(!chat_tpl.empty(),
+                        "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
+                        " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
+                        " For more information see the section Troubleshooting in README.md");
+
         // Jinja2Cpp does not support slicing, e.g. [1:].
         // In templates slicing is used typically in the header to find system prompt.
         // If header containts that typical expression we update template and 
@@ -433,8 +438,6 @@ public:
                            "For exmaple: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
         }
     }
-
-    
 };
 
 Tokenizer::Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& plugin_config) {

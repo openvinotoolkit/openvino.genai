@@ -271,6 +271,7 @@ public:
 
         m_history.push_back({{"role", "system"}, {"content", system_message}});
         constexpr bool add_generation_prompt = false;
+
         m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
     }
 
