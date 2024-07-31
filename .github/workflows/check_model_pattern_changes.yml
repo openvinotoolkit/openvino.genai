@@ -11,9 +11,6 @@ on:
     branches: [ "master" ]
     paths:
       - llm_bench/python/requirements.txt
-  pull_request:
-    paths:
-      - llm_bench/python/requirements.txt
       - .github/workflows/check_model_pattern_changes.yml
 
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
