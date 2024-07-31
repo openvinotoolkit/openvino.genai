@@ -99,7 +99,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
 
 4. Build the project:
     ```sh
-    cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+    cmake -DCMAKE_BUILD_TYPE=Release -DGENAI_CPACK_ARCHIVE_COMPONENT_INSTALL=OFF -S ./ -B ./build/
     cmake --build ./build/ --config Release -j
     ```
 
@@ -113,7 +113,15 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     cmake --install ./build/ --config Release --prefix <INSTALL_DIR>
     ```
 
-    #### Option 2 - setting paths to built OpenVINO GenAI artifacts manually:
+    #### Option 2 - generate an archive
+
+    The following command will generate an archive containing OpenVINO Tokenizers and OpenVINO GenAI. The archive won't include OpenVINO itself, run the command for OpenVINO to generate an OpenVINO only archive. Generation of an archive containig all the components isn't implemented.
+
+    ```sh
+    cmake --build build --config Debug --target package
+    ```
+
+    #### Option 3 - setting paths to built OpenVINO GenAI artifacts manually:
 
     The path to the OpenVINO GenAI root directory is referred as `<GENAI_ROOT_DIR>` throughout the document.
 

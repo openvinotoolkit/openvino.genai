@@ -23,6 +23,7 @@ project(OpenVINOGenAI
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX)
 
+option(GENAI_CPACK_ARCHIVE_COMPONENT_INSTALL "If enabled (ON) multiple packages are generated." ON)
 option(INSTALL_GTEST "Enable installation of googletest. (Projects embedding googletest may want to turn this OFF.)" OFF)
 option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
 
@@ -64,7 +65,7 @@ add_subdirectory(tests/cpp)
 
 install(FILES LICENSE DESTINATION docs/licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
 install(FILES third-party-programs.txt DESTINATION docs/licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
-set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+set(CPACK_ARCHIVE_COMPONENT_INSTALL ${GENAI_CPACK_ARCHIVE_COMPONENT_INSTALL})
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 # Workaround https://gitlab.kitware.com/cmake/cmake/-/issues/2614
 set(CPACK_COMPONENTS_ALL core_genai core_genai_dev cpp_samples_genai licensing_genai openvino_tokenizers openvino_tokenizers_docs)
