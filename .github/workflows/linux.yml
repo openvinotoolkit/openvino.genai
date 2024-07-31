@@ -268,7 +268,6 @@ jobs:
 
       - name: test bindings (wheel)
         run: |
-          source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
           python -m pytest ./tests/python_tests
 
@@ -344,7 +343,7 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
           cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
 
-      - name: Test bindings
+      - name: Build and Install dependencies
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/tools
