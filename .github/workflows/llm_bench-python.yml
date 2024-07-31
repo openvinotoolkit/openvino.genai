@@ -55,16 +55,6 @@ jobs:
       with:
         name: llm.bench_diff
         path: llm.bench_diff.diff
-    - name: PagedAttention Test
-      run: |
-        git clone --depth 1 --filter=blob:none --no-checkout https://github.com/openvinotoolkit/openvino
-        cd openvino
-        git checkout master tests/model_hub_tests/
-        cd tests/model_hub_tests
-        python3 -m pytest transformation_tests/test_pa_transformation.py -m precommit -v --tb=short -Wignore
-      env:
-          TEST_DEVICE: CPU
-          USE_SYSTEM_CACHE: False
     - name: Test bloomz-560m on Linux
       run: |
         python ./llm_bench/python/convert.py --model_id bigscience/bloomz-560m --output_dir ./ov_models/bloomz-560m --precision FP16

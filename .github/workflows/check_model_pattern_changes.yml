@@ -1,0 +1,49 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: check model pattern changes
+
+env:
+  LLM_BENCH_PYPATH: llm_bench/python
+
+on:
+  push:
+    branches: [ "master" ]
+    paths:
+      - llm_bench/python/requirements.txt
+
+permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9"]
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install pytest
+        GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt
+        pip install openvino-nightly
+
+    - name: PagedAttention Test
+      run: |
+        git clone --depth 1 --filter=blob:none --no-checkout https://github.com/openvinotoolkit/openvino
+        cd openvino
+        git checkout master tests/model_hub_tests/
+        cd tests/model_hub_tests
+        python3 -m pytest transformation_tests/test_pa_transformation.py -m precommit -v --tb=short -Wignore
+      env:
+          TEST_DEVICE: CPU
+          USE_SYSTEM_CACHE: False
