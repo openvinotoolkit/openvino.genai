@@ -118,7 +118,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
     The following command will generate an archive containing OpenVINO Tokenizers and OpenVINO GenAI. The archive won't include OpenVINO itself, run the command for OpenVINO to generate an OpenVINO only archive. Generation of an archive containig all the components isn't implemented.
 
     ```sh
-    cmake --build build --config Debug --target package
+    cmake --install ./build/ --config Release --target package
     ```
 
     #### Option 3 - setting paths to built OpenVINO GenAI artifacts manually:
