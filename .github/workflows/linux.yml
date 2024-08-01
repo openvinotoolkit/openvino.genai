@@ -22,6 +22,7 @@ permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8
 
 jobs:
   openvino_download:
+    name: Download OpenVINO package
     outputs:
       status: ${{ steps.openvino_download.outcome }}
     timeout-minutes: 10
@@ -51,6 +52,7 @@ jobs:
           if-no-files-found: 'error'
 
   openvino_build:
+    name: Build OpenVINO package
     needs: [openvino_download]
     if: needs.openvino_download.outputs.status != 'success'
     timeout-minutes: 150
@@ -187,7 +189,7 @@ jobs:
           if-no-files-found: 'error'
 
   genai_python_lib:
-    name: OpenVINO genai extension
+    name: OpenVINO genai extension (cmake + wheel)
     needs: [ openvino_download, openvino_build ]
     if: |
       always() &&
@@ -272,6 +274,7 @@ jobs:
           python -m pytest ./tests/python_tests
 
   genai_package:
+    name: OpenVINO genai extension (install to OpenVINO package)
     strategy:
       matrix:
         build-type: [Release, Debug]
@@ -359,7 +362,6 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
         run: |
           ${OV_INSTALL_DIR}/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
-
 
       - name: Build samples (Debug)
         if: ${{ 'Release' != matrix.build-type }}

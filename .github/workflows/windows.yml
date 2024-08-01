@@ -22,6 +22,7 @@ permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8
 
 jobs:
   openvino_download:
+    name: Download OpenVINO package
     outputs:
       status: ${{ steps.openvino_download.outcome }}
     timeout-minutes: 10
@@ -51,6 +52,7 @@ jobs:
           if-no-files-found: 'error'
 
   openvino_build:
+    name: Build OpenVINO package
     needs: [openvino_download]
     if: needs.openvino_download.outputs.status != 'success'
     timeout-minutes: 150
@@ -183,6 +185,7 @@ jobs:
           if-no-files-found: 'error'
 
   genai_python_lib:
+    name: OpenVINO genai extension (cmake + wheel)
     needs: [ openvino_download, openvino_build ]
     if: |
       always() &&
@@ -225,13 +228,13 @@ jobs:
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
 
-      - name: build gen_ai
+      - name: Build genai libs
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
 
-      - name: test bindings
+      - name: Test bindings
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/tools --upgrade-strategy eager
@@ -239,13 +242,14 @@ jobs:
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
 
-      - name: test bindings from weel
+      - name: Test bindings from weel
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose
           python -m pytest ./tests/python_tests/
 
   genai_package:
+    name: OpenVINO genai extension (install to OpenVINO package)
     strategy:
       matrix:
         build-type: [Release, Debug]
@@ -291,13 +295,13 @@ jobs:
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
 
-      - name: Build gen_ai
+      - name: Build genai libs
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
           cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
 
-      - name: Test bindings
+      - name: Build and Install dependencies
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${env:OV_INSTALL_DIR}/tools

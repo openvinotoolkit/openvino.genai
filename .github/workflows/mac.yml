@@ -22,6 +22,7 @@ permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8
 
 jobs:
   openvino_download:
+    name: Download OpenVINO package
     outputs:
       status: ${{ steps.openvino_download.outcome }}
     timeout-minutes: 10
@@ -51,6 +52,7 @@ jobs:
           if-no-files-found: 'error'
 
   openvino_build:
+    name: Build OpenVINO package
     needs: [openvino_download]
     if: needs.openvino_download.outputs.status != 'success'
     timeout-minutes: 150
@@ -174,7 +176,7 @@ jobs:
           if-no-files-found: 'error'
 
   genai_python_lib:
-    name: OpenVINO genai extension
+    name: OpenVINO genai extension (cmake + wheel)
     needs: [ openvino_download, openvino_build ]
     if: |
       always() &&
@@ -238,6 +240,7 @@ jobs:
           python -m pytest ./tests/python_tests/
 
   genai_package:
+    name: OpenVINO genai extension (install to OpenVINO package)
     strategy:
       matrix:
         build-type: [Release, Debug]
@@ -286,7 +289,7 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
           cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
 
-      - name: Test bindings
+      - name: Build and Install dependencies
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/tools
