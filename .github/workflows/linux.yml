@@ -69,6 +69,8 @@ jobs:
       OPENVINO_REPO: ${{ github.workspace }}/openvino
       INSTALL_DIR: ${{ github.workspace }}/openvino/install
       BUILD_DIR: ${{ github.workspace }}/openvino/build
+      CCACHE_DIR: ${{ github.workspace }}/ccache
+      CCACHE_MAXSIZE: 2000Mi
 
     steps:
       - name: Set apt
@@ -98,6 +100,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo -E ${OPENVINO_REPO}/install_build_dependencies.sh
+          sudo apt-get install ccache
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
@@ -115,16 +118,15 @@ jobs:
       #
 
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: actions/cache@v4
         with:
-          max-size: "2000M"
           # Should save cache only if run in the master branch of the base repo
           # github.ref_name is 'ref/PR_#' in case of the PR, and 'branch_name' when executed on push
-          save: ${{ github.ref_name == 'master' && 'true' || 'false'  }}
-          verbose: 2
-          key: linux-ubuntu
+          save-always: ${{ github.ref_name == 'master' && 'true' || 'false'  }}
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-ov-${{ github.sha }}
           restore-keys: |
-            linux-ubuntu
+            ${{ runner.os }}-${{ runner.arch }}-ccache-ov
 
       - name: CMake configure - OpenVINO
         run: |
@@ -247,11 +249,13 @@ jobs:
       - name: Setup ccache
         uses: actions/cache@v4
         with:
-          save-always: true
+          # Should save cache only if run in the master branch of the base repo
+          # github.ref_name is 'ref/PR_#' in case of the PR, and 'branch_name' when executed on push
+          save-always: ${{ github.ref_name == 'master' && 'true' || 'false'  }}
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-${{ runner.arch }}-ccache-genai-Release-${{ github.sha }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-genai-release-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-ccache-genai-Release
+            ${{ runner.os }}-${{ runner.arch }}-ccache-genai-release
 
       - name: Build genai
         run: |
