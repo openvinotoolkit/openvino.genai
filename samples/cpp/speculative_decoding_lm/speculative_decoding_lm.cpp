@@ -2,17 +2,47 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cmath>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include <openvino/core/parallel.hpp>
 #include <openvino/openvino.hpp>
 #include <random>
 
+namespace {
+
 constexpr size_t BATCH_SIZE = 1;
 
-// sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
-// threfore usually SEQ_LEN_AXIS = 2
-constexpr size_t SEQ_LEN_AXIS = 2;
+size_t get_seq_len_axis_from_config(const std::string model_dir) {
+    // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
+    // threfore usually DEFAILT_SEQ_LEN_AXIS = 2
+    constexpr size_t DEFAILT_SEQ_LEN_AXIS = 2;
 
-namespace {
+    std::ifstream f(model_dir + "/config.json");
+
+    if (!f.is_open()) {
+        return DEFAILT_SEQ_LEN_AXIS;
+    }
+
+    nlohmann::json data = nlohmann::json::parse(f);
+
+    if (!data.contains("model_type")) {
+        return DEFAILT_SEQ_LEN_AXIS;
+    }
+
+    const std::string model_type = data["model_type"].get<std::string>();
+
+    const std::map<std::string, size_t> model_type_to_seq_len_axis{
+        {"chatglm", 0},
+        {"llama", 2},
+    };
+
+    if (!model_type_to_seq_len_axis.count(model_type)) {
+        return DEFAILT_SEQ_LEN_AXIS;
+    }
+
+    return model_type_to_seq_len_axis.at(model_type);
+}
+
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
     tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
     tokenizer.infer();
@@ -58,7 +88,7 @@ struct TextStreamer {
     void end() {
         std::string text = detokenize(detokenizer, token_cache);
         if (text.size() <= print_len)
-            return ;
+            return;
         std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
         token_cache.clear();
         print_len = 0;
@@ -75,10 +105,7 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
 
     auto old_tensor_data = tensor.data<float>();
     auto shape = tensor.get_shape();
-    size_t batch_size = shape[0];
-    size_t num_kv_heads = shape[1];
-    size_t old_seq_len = shape[2];
-    size_t head_size = shape[3];
+    size_t old_seq_len = shape[seq_len_axis];
 
     OPENVINO_ASSERT(new_seq_len <= old_seq_len);
 
@@ -86,14 +113,16 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
     if (old_seq_len == new_seq_len)
         return tensor;
 
+    shape[seq_len_axis] = new_seq_len;
+
     if (seq_len_axis == 0) {
-        shape[0] = new_seq_len;
         tensor.set_shape(shape);
         return tensor;
     }
 
     ov::Coordinate new_shape_begin{0, 0, 0, 0};
-    ov::Coordinate new_shape_end{batch_size, num_kv_heads, new_seq_len, head_size};
+    ov::Coordinate new_shape_end{shape};
+
     auto new_tensor = ov::Tensor(tensor, new_shape_begin, new_shape_end);
 
     return new_tensor;
@@ -114,14 +143,19 @@ private:
     size_t max_seq_length;
     size_t num_pred_tokens = 5;
     const size_t max_pred_tokens = 10;
+    const size_t seq_len_axis;
     int64_t out_of_kv_cache_token = -1;
     size_t draft_model_seq_length = 0;
 
 public:
-    AssistedCandidateGenerator(ov::InferRequest draft_model, const size_t max_seq_length, const size_t num_pred_tokens)
+    AssistedCandidateGenerator(ov::InferRequest draft_model,
+                               const size_t max_seq_length,
+                               const size_t num_pred_tokens,
+                               const size_t seq_len_axis)
         : draft_model{draft_model},
           max_seq_length{max_seq_length},
-          num_pred_tokens{num_pred_tokens} {};
+          num_pred_tokens{num_pred_tokens},
+          seq_len_axis{seq_len_axis} {};
 
     int64_t generate_next_token(const std::vector<int64_t> tokens) {
         size_t tokens_size = tokens.size();
@@ -199,7 +233,7 @@ public:
         }
 
         out_of_kv_cache_token = -1;
-        ::update_kv_cache(draft_model, SEQ_LEN_AXIS, seq_length);
+        ::update_kv_cache(draft_model, seq_len_axis, seq_length);
         draft_model_seq_length = seq_length;
     }
 };
@@ -224,27 +258,32 @@ int main(int argc, char* argv[]) try {
     // tokenizer model
     ov::Core core;
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
-    auto tokenizer_model = core.read_model(std::string{argv[1]} + "/openvino_tokenizer.xml");
+
+    const std::string draft_model_dir = std::string{argv[1]};
+
+    auto tokenizer_model = core.read_model(draft_model_dir + "/openvino_tokenizer.xml");
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(tokenizer_model, "CPU").create_infer_request();
     auto [input_ids, attention_mask] = tokenize(tokenizer, argv[3]);
     ov::InferRequest detokenizer =
-        core.compile_model(std::string{argv[1]} + "/openvino_detokenizer.xml", "CPU").create_infer_request();
+        core.compile_model(draft_model_dir + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     TextStreamer text_streamer{std::move(detokenizer)};
 
     // draft model (which is smaller, less accurate but faster)
     ov::InferRequest draft_model =
-        core.compile_model(std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
+        core.compile_model(draft_model_dir + "/openvino_model.xml", "CPU").create_infer_request();
 
     uint64_t seq_len = input_ids.get_shape()[1];
 
+    const std::string main_model_dir = std::string{argv[2]};
     // main model (which is bigger, more accurate but slower)
     ov::InferRequest main_model =
-        core.compile_model(std::string{argv[2]} + "/openvino_model.xml", "CPU").create_infer_request();
+        core.compile_model(main_model_dir + "/openvino_model.xml", "CPU").create_infer_request();
 
     size_t max_sequence_length = 100;
 
-    AssistedCandidateGenerator candidateGenerator{draft_model, max_sequence_length, 5};
+    const size_t draft_model_seq_len_axis = get_seq_len_axis_from_config(draft_model_dir);
+    AssistedCandidateGenerator candidateGenerator{draft_model, max_sequence_length, 5, draft_model_seq_len_axis};
 
     main_model.set_tensor("input_ids", input_ids);
     main_model.set_tensor("attention_mask", attention_mask);
@@ -275,6 +314,7 @@ int main(int argc, char* argv[]) try {
     text_streamer.put(out_token);
 
     const int64_t EOS_TOKEN = get_eos_token(tokenizer_model);
+    const size_t main_model_seq_len_axis = get_seq_len_axis_from_config(main_model_dir);
 
     /* Speculative decoding works the following way. The draft model predicts the next K
        tokens one by one in an autoregressive manner, while the main model validates these
@@ -347,7 +387,7 @@ int main(int argc, char* argv[]) try {
         }
 
         candidateGenerator.update_kv_cache(seq_len);
-        update_kv_cache(main_model, SEQ_LEN_AXIS, seq_len);
+        update_kv_cache(main_model, main_model_seq_len_axis, seq_len);
 
         candidates.clear();
     }

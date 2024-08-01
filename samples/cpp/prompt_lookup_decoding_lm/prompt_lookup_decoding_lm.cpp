@@ -1,17 +1,47 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <string_view>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include <openvino/core/parallel.hpp>
 #include <openvino/openvino.hpp>
+#include <string_view>
 
 namespace {
 
 // only batch_size = 1 currently supported
 constexpr size_t BATCH_SIZE = 1;
-// sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
-// threfore usually SEQ_LEN_AXIS = 2
-constexpr size_t SEQ_LEN_AXIS = 2;
+
+size_t get_seq_len_axis_from_config(const std::string model_dir) {
+    // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
+    // threfore usually DEFAILT_SEQ_LEN_AXIS = 2
+    constexpr size_t DEFAILT_SEQ_LEN_AXIS = 2;
+
+    std::ifstream f(model_dir + "/config.json");
+
+    if (!f.is_open()) {
+        return DEFAILT_SEQ_LEN_AXIS;
+    }
+
+    nlohmann::json data = nlohmann::json::parse(f);
+
+    if (!data.contains("model_type")) {
+        return DEFAILT_SEQ_LEN_AXIS;
+    }
+
+    const std::string model_type = data["model_type"].get<std::string>();
+
+    const std::map<std::string, size_t> model_type_to_seq_len_axis{
+        {"chatglm", 0},
+        {"llama", 2},
+    };
+
+    if (!model_type_to_seq_len_axis.count(model_type)) {
+        return DEFAILT_SEQ_LEN_AXIS;
+    }
+
+    return model_type_to_seq_len_axis.at(model_type);
+}
 
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
     tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
@@ -58,7 +88,7 @@ struct TextStreamer {
     void end() {
         std::string text = detokenize(detokenizer, token_cache);
         if (text.size() <= print_len)
-            return ;
+            return;
         std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
         token_cache.clear();
         print_len = 0;
@@ -75,10 +105,7 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
 
     auto old_tensor_data = tensor.data<float>();
     auto shape = tensor.get_shape();
-    size_t batch_size = shape[0];
-    size_t num_kv_heads = shape[1];
-    size_t old_seq_len = shape[2];
-    size_t head_size = shape[3];
+    size_t old_seq_len = shape[seq_len_axis];
 
     OPENVINO_ASSERT(new_seq_len <= old_seq_len);
 
@@ -86,14 +113,16 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
     if (old_seq_len == new_seq_len)
         return tensor;
 
+    shape[seq_len_axis] = new_seq_len;
+
     if (seq_len_axis == 0) {
-        shape[0] = new_seq_len;
         tensor.set_shape(shape);
         return tensor;
     }
 
     ov::Coordinate new_shape_begin{0, 0, 0, 0};
-    ov::Coordinate new_shape_end{batch_size, num_kv_heads, new_seq_len, head_size};
+    ov::Coordinate new_shape_end{shape};
+
     auto new_tensor = ov::Tensor(tensor, new_shape_begin, new_shape_end);
 
     return new_tensor;
@@ -228,6 +257,8 @@ int main(int argc, char* argv[]) try {
 
     const int64_t EOS_TOKEN = get_eos_token(tokenizer_model);
 
+    const size_t seq_len_axis = get_seq_len_axis_from_config(model_dir);
+
     // Prompt lookup decoding is a speculative decoding technic where the draft model replaced
     // with string matching in the prompt to generate candidate token sequences.
     int max_sequence_length = 100;
@@ -288,7 +319,7 @@ int main(int argc, char* argv[]) try {
         // Increment the sequence length by the number of matched tokens, and
         // trim the KV cache to match the new sequence length.
         seq_len += accepted_tokens_number;
-        update_kv_cache(model, SEQ_LEN_AXIS, seq_len);
+        update_kv_cache(model, seq_len_axis, seq_len);
 
         first_token = out_token;
     }
