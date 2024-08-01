@@ -12,7 +12,10 @@ namespace {
 
 constexpr size_t BATCH_SIZE = 1;
 
-size_t get_seq_len_axis_from_config(const std::string model_dir) {
+size_t get_seq_len_axis(const std::string model_dir) {
+    // get sequence length axis based on config.json model_type
+    // return DEFAILT_SEQ_LEN_AXIS if no model_type found or if there is no predefined seq len axis for this model type
+
     // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
     // threfore usually DEFAILT_SEQ_LEN_AXIS = 2
     constexpr size_t DEFAILT_SEQ_LEN_AXIS = 2;
@@ -282,7 +285,7 @@ int main(int argc, char* argv[]) try {
 
     size_t max_sequence_length = 100;
 
-    const size_t draft_model_seq_len_axis = get_seq_len_axis_from_config(draft_model_dir);
+    const size_t draft_model_seq_len_axis = get_seq_len_axis(draft_model_dir);
     AssistedCandidateGenerator candidateGenerator{draft_model, max_sequence_length, 5, draft_model_seq_len_axis};
 
     main_model.set_tensor("input_ids", input_ids);
@@ -314,7 +317,7 @@ int main(int argc, char* argv[]) try {
     text_streamer.put(out_token);
 
     const int64_t EOS_TOKEN = get_eos_token(tokenizer_model);
-    const size_t main_model_seq_len_axis = get_seq_len_axis_from_config(main_model_dir);
+    const size_t main_model_seq_len_axis = get_seq_len_axis(main_model_dir);
 
     /* Speculative decoding works the following way. The draft model predicts the next K
        tokens one by one in an autoregressive manner, while the main model validates these

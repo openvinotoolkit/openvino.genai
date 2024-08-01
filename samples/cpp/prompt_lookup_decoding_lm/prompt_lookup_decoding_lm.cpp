@@ -12,7 +12,10 @@ namespace {
 // only batch_size = 1 currently supported
 constexpr size_t BATCH_SIZE = 1;
 
-size_t get_seq_len_axis_from_config(const std::string model_dir) {
+size_t get_seq_len_axis(const std::string model_dir) {
+    // get sequence length axis based on config.json model_type
+    // return DEFAILT_SEQ_LEN_AXIS if no model_type found or if there is no predefined seq len axis for this model type
+
     // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
     // threfore usually DEFAILT_SEQ_LEN_AXIS = 2
     constexpr size_t DEFAILT_SEQ_LEN_AXIS = 2;
@@ -257,7 +260,7 @@ int main(int argc, char* argv[]) try {
 
     const int64_t EOS_TOKEN = get_eos_token(tokenizer_model);
 
-    const size_t seq_len_axis = get_seq_len_axis_from_config(model_dir);
+    const size_t seq_len_axis = get_seq_len_axis(model_dir);
 
     // Prompt lookup decoding is a speculative decoding technic where the draft model replaced
     // with string matching in the prompt to generate candidate token sequences.
