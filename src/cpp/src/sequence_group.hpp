@@ -111,6 +111,7 @@ public:
         OPENVINO_ASSERT(m_generated_ids.size());
         output.score = get_cumulative_log_probs();
         output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};
+        output.finish_reason = get_finish_reason();
         return output;
     }
 
@@ -215,10 +216,11 @@ public:
                 // stop sequence by max_new_tokens or EOS token
                 running_sequence->set_status(SequenceStatus::FINISHED);
 
-                if (running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos)
+                if (running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
                     running_sequence->set_finish_reason(GenerationFinishReason::STOP);
-                else if (m_sampling_params.max_new_tokens == generated_len)
+                } else if (m_sampling_params.max_new_tokens == generated_len) {
                     running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
+                }
                 
                 dropped_seq_ids.push_back(running_sequence->get_id());
             }
