@@ -57,7 +57,9 @@ jobs:
         path: llm.bench_diff.diff
     - name: Test tiny-random-qwen of pytorch model on Linux
       run: |
-        python ./llm_bench/python/benchmark.py --model_id katuni4ka/tiny-random-qwen -d cpu -n 1 -f pt
+        export GIT_LFS_SKIP_SMUDGE=0
+        git clone https://huggingface.co/katuni4ka/tiny-random-qwen
+        python ./llm_bench/python/benchmark.py -m tiny-random-qwen -d cpu -n 1 -f pt
     - name: Test bloomz-560m on Linux
       run: |
         python ./llm_bench/python/convert.py --model_id bigscience/bloomz-560m --output_dir ./ov_models/bloomz-560m --precision FP16
