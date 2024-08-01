@@ -10,7 +10,7 @@ torch
 transformers>=4.40.0
 diffusers>=0.22.0
 #optimum is in dependency list of optimum-intel 
-git+https://github.com/jane-intel/optimum-intel.git@724ef6b435976eb882196e244710bb8a62582166#egg=optimum-intel
+git+https://github.com/jane-intel/optimum-intel.git@releases/2024/3#egg=optimum-intel
 git+https://github.com/openvinotoolkit/nncf.git@develop#egg=nncf
 packaging
 psutil
