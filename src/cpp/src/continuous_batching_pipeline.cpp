@@ -284,8 +284,15 @@ public:
                                 }
                                 to_remove_tokens = present_ids.size() - (token_idx + 1);
                                 if (to_remove_tokens > 0) {
+                                    const auto gen_ids_before = sequence->get_generated_ids();
                                     sequence->remove_last_n_tokens(to_remove_tokens);
                                     present_ids = sequence->get_generated_ids();
+                                    const size_t gen_len_before = gen_ids_before.size(),
+                                                 gen_len_after = present_ids.size();
+                                    OPENVINO_ASSERT(gen_len_after < gen_len_before);
+                                    for (size_t i = gen_len_after; i < gen_len_before; ++i) {
+                                        m_sampler->update_logit_processor(request->get_request_id(), gen_ids_before[i]);
+                                    }
                                 }
                             }
                         }
@@ -315,7 +322,7 @@ public:
                 if (to_remove_tokens > 0)
                     request->decrease_processed_tokens(to_remove_tokens);
                 // to validate tokens/extend kv-cache before generation
-                if (request->get_num_processed_tokens() > 0) {
+                if (request->get_num_processed_tokens() > request->get_prompt_len()) {
                     // in case of non-prompt we need to take prev tokens + token to validate
                     ++to_insert_tokens;
                 }

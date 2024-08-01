@@ -23,7 +23,7 @@ SpeculativeDecodingPipeline::SpeculativeDecodingPipeline(const std::string& mode
     ov::genai::SchedulerConfig assisting_scheduler_config = scheduler_config;
     {
         auto cache_size = scheduler_config.cache_size;
-        auto assisted_cache_size = cache_size * 0.25;
+        auto assisted_cache_size = cache_size * 0.45;
         cache_size -= assisted_cache_size;
         model_scheduler_config.cache_size = cache_size;
         assisting_scheduler_config.cache_size = assisted_cache_size;
@@ -50,7 +50,7 @@ void SpeculativeDecodingPipeline::step() {
         }
 
         // todo: remove debug code
-        auto checked_sequences = assisting_pipeline.get_generated_sequences();
+        // auto checked_sequences = assisting_pipeline.get_generated_sequences();
         // for (const auto& s : checked_sequences) {
         //     std::cout << "ASSISTANT: " << std::endl;
         //     for (const auto& d : s.token_ids) {

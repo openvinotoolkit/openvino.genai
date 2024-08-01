@@ -52,9 +52,9 @@ int main(int argc, char* argv[]) try {
     };
 
     std::vector<ov::genai::GenerationConfig> sampling_params_examples {
-        ov::genai::beam_search(),
+        // ov::genai::beam_search(),
         ov::genai::greedy(),
-        ov::genai::multinomial(),
+        // ov::genai::multinomial(),
     };
 
     std::vector<std::string> prompts(num_prompts);
@@ -81,7 +81,11 @@ int main(int argc, char* argv[]) try {
     // It's possible to construct a Tokenizer from a different path.
     // If the Tokenizer isn't specified, it's loaded from the same folder.
     ov::genai::ContinuousBatchingPipeline pipe(models_path, ov::genai::Tokenizer{models_path}, scheduler_config);
+    auto start_time = std::chrono::system_clock::now();
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, sampling_params);
+    auto end_time = std::chrono::system_clock::now();
+    std::chrono::duration<double> duration = end_time - start_time;
+    std::cout << "DURATION: " << duration.count() << std::endl;
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
         const ov::genai::GenerationResult & generation_result = generation_results[request_id];

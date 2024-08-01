@@ -112,14 +112,11 @@ public:
         m_generated_probs.resize(new_length);
     }
 
-    GenerationOutput get_last_generation_output(size_t k = 1) {
+    GenerationOutput get_last_generation_output() {
         GenerationOutput output;
         OPENVINO_ASSERT(m_generated_ids.size());
         output.score = get_cumulative_log_probs();
-        OPENVINO_ASSERT(k <= m_generated_ids.size());
-        auto it_rbegin = m_generated_ids.rbegin(), it_rback = m_generated_ids.rbegin();
-        std::advance(it_rback, k);
-        output.generated_token_ids.insert(output.generated_token_ids.end(), it_rbegin, it_rback);
+        output.generated_token_ids = { m_generated_ids.back() };
         return output;
     }
 
@@ -377,12 +374,21 @@ public:
         m_validation_len = k;
     }
 
+    size_t get_validation_len() {
+        return m_validation_len;
+    }
+
     size_t get_num_available_tokens_for_batching() const {
         OPENVINO_ASSERT(!has_finished(), "Internal error: this function cannot be called on finished sequence group");
         OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");
         // if sequence group has not finished, it has at least one token to process
-        size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len) + m_validation_len;
+        size_t num_available_tokens = (m_max_content_len == 0 ? get_prompt_len() : m_max_content_len) + m_validation_len;
         return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u);
+    }
+
+    void increase_processed_tokens(size_t token_cnt) {
+        m_num_processed_tokens += token_cnt;
+        m_max_content_len += token_cnt;
     }
 
     void decrease_processed_tokens(size_t token_cnt) {
@@ -521,10 +527,12 @@ public:
                 push_outputs();
             }
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
-            // TO DO: Now we always stream for greedy search for the sake of benchmarking 
-            if (num_total_seqs() == 1 && m_validation_len == 0) {
-                push_partial_outputs();
-            } else if (has_finished() || out_of_memory()) {
+            // TO DO: Now we always stream for greedy search for the sake of benchmarking
+            // todo: iefode: to uncomment
+            // if (num_total_seqs() == 1) {
+            //     push_partial_outputs();
+            // } else 
+            if (has_finished() || out_of_memory()) {
                 push_outputs();
             }
         }

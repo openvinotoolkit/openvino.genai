@@ -305,12 +305,13 @@ public:
         ++m_generated_tokens;
     }
 
-    size_t get_gen_token_len() {
-        return m_generated_tokens;
+    void decrement_gen_tokens() {
+        OPENVINO_ASSERT(m_generated_tokens > 0);
+        --m_generated_tokens;
     }
 
-    void set_gen_token_len(size_t new_token_len) {
-        m_generated_tokens = new_token_len;
+    size_t get_gen_token_len() {
+        return m_generated_tokens;
     }
 
     void register_new_generated_token(int64_t new_token_id) {

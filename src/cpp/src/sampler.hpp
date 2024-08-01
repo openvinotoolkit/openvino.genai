@@ -254,6 +254,13 @@ public:
     void set_seed(size_t seed) { rng_engine.seed(seed); }
 
     void clear_beam_search_info(uint64_t request_id);
+
+    void update_logit_processor(uint64_t request_id, uint64_t token_id) {
+        OPENVINO_ASSERT(m_logit_processors.count(request_id));
+        auto& logit_processor = m_logit_processors.at(request_id);
+        logit_processor.decrease_generated_token_occurance(token_id);
+        logit_processor.decrement_gen_tokens();
+    }
 };
 
 SamplerOutput
@@ -311,17 +318,6 @@ Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 };
                 for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
                     const auto running_seq_token_ids = running_sequences[running_sequence_id]->get_generated_ids();
-                    // remove extra tokens from logit processor
-                    {
-                        const auto logit_processor_token_len = logit_processor.get_gen_token_len();
-                        const auto running_seq_token_len = running_seq_token_ids.size();
-                        if (logit_processor_token_len > running_seq_token_len) {
-                            for (size_t i = running_seq_token_len; i < logit_processor_token_len; ++i) {
-                                logit_processor.decrease_generated_token_occurance(running_seq_token_ids[i]);
-                            }
-                            logit_processor.set_gen_token_len(running_seq_token_ids.size());
-                        }
-                    }
                     int token_id_per_seq = token_id;
                     while (--token_id_per_seq >= 0) {
                         std::vector<Token> logit_vector;
@@ -363,6 +359,7 @@ Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                                 running_sequences[running_sequence_id]->remove_last_n_tokens(token_id_per_seq);
                                 decrease_len = std::max(decrease_len, token_id_per_seq);
                                 is_extend_sequence = true;
+                                token_id_per_seq = 0;
                             } else {
                                 sampled_token_id.m_index = *it;
                             }
