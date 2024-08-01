@@ -146,6 +146,7 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DENABLE_PYTHON=ON \
             -DENABLE_WHEEL=ON \
+            -DENABLE_FASTER_BUILD=ON \
             -S ${OPENVINO_REPO} \
             -B ${BUILD_DIR}
 
