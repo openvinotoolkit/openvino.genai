@@ -242,7 +242,7 @@ jobs:
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
 
-      - name: Test bindings from weel
+      - name: Test bindings (wheel)
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose

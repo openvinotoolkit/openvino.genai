@@ -260,7 +260,7 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
 
-      - name: test bindings
+      - name: Test bindings
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/tools --upgrade-strategy eager
@@ -268,7 +268,7 @@ jobs:
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
 
-      - name: test bindings (wheel)
+      - name: Test bindings (wheel)
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
