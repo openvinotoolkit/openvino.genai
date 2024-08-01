@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "openvino_tokenizers~=2024.3.0.0"
+    "openvino_tokenizers~=2024.3.0.0.dev"
 ]
 
 [tool.py-build-cmake.module]
