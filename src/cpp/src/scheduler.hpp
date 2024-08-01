@@ -374,7 +374,7 @@ private:
                         m_block_manager.allocate(sequence, num_required_blocks, sequence_group->get_prompt_ids());
                     else 
                         m_block_manager.append_slots(sequence_group);
-                    
+
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);

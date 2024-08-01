@@ -558,7 +558,7 @@ public:
                         block->set_timestamp(std::chrono::system_clock::now());
                         m_block_table[seq_id].push_back(block);
                         group->update_processed_tokens_num(prev_iteration_content_len + i);
-                        
+
                         size_t new_tokens_count_in_block = std::min(content_len, prev_iteration_content_len + block_size);
                         if (new_tokens_count_in_block > prev_iteration_content_len + i) {
                             cached_blocks.erase(hash);
