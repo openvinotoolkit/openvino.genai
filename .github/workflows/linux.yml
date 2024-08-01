@@ -270,6 +270,7 @@ jobs:
 
       - name: test bindings (wheel)
         run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
           python -m pytest ./tests/python_tests
 
