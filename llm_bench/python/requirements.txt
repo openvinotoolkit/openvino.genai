@@ -7,7 +7,7 @@ openvino_genai
 auto-gptq>=0.5.1 # for gptq
 pillow
 torch
-transformers>=4.40.0
+transformers>=4.41.0
 diffusers>=0.22.0
 #optimum is in dependency list of optimum-intel 
 git+https://github.com/eaidova/optimum-intel.git@ea/remove_bf16_rotary_emb_patching#egg=optimum-intel
