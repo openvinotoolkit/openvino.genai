@@ -762,7 +762,7 @@ def main():
                     model_precision,
                 )
     except Exception:
-        log.error('An exception occurred')
+        log.error('An exception occurred now ....')
         log.info(traceback.format_exc())
         exit(1)
     finally:
