@@ -17,6 +17,12 @@ public:
     SynchronizedQueue(const SynchronizedQueue&&) = delete;
     SynchronizedQueue& operator=(const SynchronizedQueue&) = delete;
 
+    T back() {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        m_cv.wait(lock, [this]{return !m_queue.empty();});
+        return m_queue.back();
+    }
+
     T pull() {
         std::unique_lock<std::mutex> lock(m_mutex);
         m_cv.wait(lock, [this]{return !m_queue.empty();});

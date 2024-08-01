@@ -31,6 +31,9 @@ public:
     }
 
     // Retriving vector of pairs <sequence_id, token_id> as we can generate multiple outputs for a single prompt
+    GenerationOutputs back() {
+        return m_output_queue.back();
+    }
     GenerationOutputs read() {
         return m_output_queue.pull();
     }

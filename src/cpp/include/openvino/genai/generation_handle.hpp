@@ -18,6 +18,20 @@ enum class GenerationStatus {
     DROPPED_BY_HANDLE = 4 // Status set when generation handle is dropped
 };
 
+struct EncodedGenerationResult {
+    // request ID - obsolete when handle API is approved as handle will connect results with prompts.
+    uint64_t m_request_id;
+
+    // in a generic case we have multiple generation results per initial prompt
+    // depending on sampling parameters (e.g. beam search or parallel sampling)
+    std::vector<std::vector<int64_t>> m_generation_ids;
+    // scores
+    std::vector<float> m_scores;
+
+    // Status of generation
+    GenerationStatus m_status = GenerationStatus::RUNNING;
+};
+
 struct GenerationResult {
     // request ID - obsolete when handle API is approved as handle will connect results with prompts.
     uint64_t m_request_id;
@@ -60,6 +74,7 @@ public:
 
     bool can_read();
 
+    GenerationOutputs back();
     // Reads result of a generation for single iteration
     GenerationOutputs read();
     // Reads all generated tokens for all sequences
