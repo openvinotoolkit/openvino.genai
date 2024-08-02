@@ -251,7 +251,7 @@ public:
         return m_block_table[seq_id];
     }
 
-    const bool free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
+    const size_t free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
         size_t blocks_num = std::ceil(num_required_blocks / sequence_group->get_not_finished_sequences().size());
         auto running_sequences = sequence_group->get_not_finished_sequences();
         std::set<size_t> blocks_released_indices;
