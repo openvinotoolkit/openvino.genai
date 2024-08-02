@@ -357,7 +357,7 @@ Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                             // to validate candidates from assisting model and remove incorrect ones from generated sequence
                             if (is_validation_mode_enabled && *it != sampled_token_id.m_index) {
                                 running_sequences[running_sequence_id]->remove_last_n_tokens(token_id_per_seq);
-                                decrease_len = std::max(decrease_len, token_id_per_seq);
+                                decrease_len = std::max(decrease_len - 1, token_id_per_seq);
                                 is_extend_sequence = true;
                                 token_id_per_seq = 0;
                             } else {

@@ -122,8 +122,8 @@ public:
         m_request.set_tensor("block_indices_begins", block_indices_begins);
         m_request.set_tensor("max_context_len", max_context_len);
 
-        // print_tensor("input_ids", input_ids);
-        // print_tensor("position_ids", position_ids);
+        print_tensor("input_ids", input_ids);
+        print_tensor("position_ids", position_ids);
 
         // print_tensor("past_lens", past_lens);
         // print_tensor("subsequence_begins", subsequence_begins);

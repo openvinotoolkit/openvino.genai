@@ -382,7 +382,7 @@ public:
         OPENVINO_ASSERT(!has_finished(), "Internal error: this function cannot be called on finished sequence group");
         OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");
         // if sequence group has not finished, it has at least one token to process
-        size_t num_available_tokens = (m_max_content_len == 0 ? get_prompt_len() : m_max_content_len) + m_validation_len;
+        size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len) + m_validation_len;
         return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u);
     }
 

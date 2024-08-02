@@ -262,6 +262,7 @@ public:
             m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
             m_awaiting_requests.clear();
         }
+        bool is_empty_generated_tokens = false;
         for (auto& request : m_requests) {
             if (candidate_sequence.request_id == request->get_request_id()) {
                 bool is_seq_exists = false;
@@ -289,6 +290,9 @@ public:
                                     present_ids = sequence->get_generated_ids();
                                     const size_t gen_len_before = gen_ids_before.size(),
                                                  gen_len_after = present_ids.size();
+                                    if (gen_len_after == 0) {
+                                        is_empty_generated_tokens = true;
+                                    }
                                     OPENVINO_ASSERT(gen_len_after < gen_len_before);
                                     for (size_t i = gen_len_after; i < gen_len_before; ++i) {
                                         m_sampler->update_logit_processor(request->get_request_id(), gen_ids_before[i]);
@@ -319,14 +323,18 @@ public:
                     }
                     request->add_sequence(new_sequence);
                 }
-                if (to_remove_tokens > 0)
-                    request->decrease_processed_tokens(to_remove_tokens);
-                // to validate tokens/extend kv-cache before generation
-                if (request->get_num_processed_tokens() > request->get_prompt_len()) {
+                if (!is_empty_generated_tokens) {
                     // in case of non-prompt we need to take prev tokens + token to validate
-                    ++to_insert_tokens;
+                    if (request->get_num_processed_tokens())
+                        ++to_insert_tokens;
+                    if (to_remove_tokens > 0) {
+                        request->decrease_processed_tokens(to_remove_tokens);
+                    }
+                    // to validate tokens/extend kv-cache before generation
+                    request->set_validation_len(to_insert_tokens);
+                } else if (to_remove_tokens > 0) {
+                    request->update_processed_tokens_num(request->get_prompt_len());
                 }
-                request->set_validation_len(to_insert_tokens);
                 return ContinuousBatchingPipeline::UpdateSeqResult(to_insert_tokens, to_remove_tokens);
             }
         }
