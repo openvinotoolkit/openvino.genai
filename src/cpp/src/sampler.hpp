@@ -434,7 +434,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
             Sequence::Ptr forked_sequence = m_sequence_group->fork_sequence(candidate.m_sequence);
             // and finish immidiately
             forked_sequence->set_status(SequenceStatus::FINISHED);
-            // Setting length since this function is used when sequence generated eos token
+            // Setting stop since this function is used when sequence generated eos token
             forked_sequence->set_finish_reason(GenerationFinishReason::STOP);
 
             // TODO: make it more simplier
