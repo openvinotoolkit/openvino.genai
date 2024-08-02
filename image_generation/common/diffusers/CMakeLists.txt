@@ -21,6 +21,10 @@ target_link_libraries(diffusers PUBLIC openvino::runtime)
 
 include(FetchContent)
 
+if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 OLD)
+endif()
+
 FetchContent_Declare(eigen3)
 FetchContent_GetProperties(eigen3)
 if(NOT eigen3_POPULATED)

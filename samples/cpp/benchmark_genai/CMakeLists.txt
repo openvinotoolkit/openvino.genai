@@ -1,11 +1,16 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-
 find_package(OpenVINOGenAI REQUIRED PATHS
     "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
     ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
 )
+
+include(FetchContent)
+
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
 
 FetchContent_Declare(cxxopts
     URL https://github.com/jarro2783/cxxopts/archive/refs/tags/v3.1.1.tar.gz
@@ -18,6 +23,7 @@ set_target_properties(benchmark_genai PROPERTIES
     COMPILE_PDB_NAME benchmark_genai
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
+
 install(TARGETS benchmark_genai
     RUNTIME DESTINATION samples_bin/
     COMPONENT samples_bin
