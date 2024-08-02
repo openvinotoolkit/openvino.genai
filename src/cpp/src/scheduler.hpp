@@ -117,31 +117,14 @@ private:
             return m_block_manager.num_free_blocks() > prev_blocks_count;
         }
 
-        if (num_running_sequences > 1) {
-            size_t phisycal_blocks_released;
-            size_t logical_blocks_released;
-            m_block_manager.free_group_partially_multiple_runnning_sequence(sequence_group, blocks_needed, phisycal_blocks_released, logical_blocks_released);
+        size_t logical_blocks_released = m_block_manager.free_group_partially(sequence_group, blocks_needed);
 
-            // calculate the number of preempted tokens
-            auto tokens_in_last_block = processed_tokens % block_size;
-            if (tokens_in_last_block == 0) {    
-                tokens_in_last_block = block_size;
-            }
-            preempted_tokens = tokens_in_last_block + std::max<size_t>((int)logical_blocks_released - 1, 0) * block_size;
-
+        // calculate the number of preempted tokens
+        auto tokens_in_last_block = processed_tokens % block_size;
+        if (tokens_in_last_block == 0) {    
+            tokens_in_last_block = block_size;
         }
-        else {
-            OPENVINO_ASSERT(num_running_sequences == 1);
-            size_t phisycal_blocks_released;
-            m_block_manager.free_group_partially_single_runnning_sequence(sequence_group, blocks_needed, phisycal_blocks_released);
-
-            // calculate the number of preempted tokens
-            auto tokens_in_last_block = processed_tokens % block_size;
-            if (tokens_in_last_block == 0) {    
-                tokens_in_last_block = block_size;
-            }
-            preempted_tokens = tokens_in_last_block + std::max<size_t>((int)phisycal_blocks_released - 1, 0) * block_size;
-        }
+        preempted_tokens = tokens_in_last_block + std::max<size_t>((int)logical_blocks_released - 1, 0) * block_size;
 
         // case when preemption requires preempt prompt tokens
         if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
