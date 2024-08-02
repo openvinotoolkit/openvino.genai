@@ -146,7 +146,6 @@ For more information please refer to the [OpenVINO Tokenizers instructions](http
 
 
 ### Build OpenVINO GenAI Wheel
-<<<<<<< HEAD
 
 1. Build and install OpenVINO from sources following the [instructions](https://github.com/openvinotoolkit/openvino/wiki#how-to-build)  
 The path to the openvino install directory is referred as <INSTALL_DIR> throughout the document.
@@ -176,39 +175,6 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
     ```
 
 ### Install OpenVINO GenAI From Source
-=======
->>>>>>> releases/2024/3
-
-1. Clone OpenVINO GenAI repository and init submodules:
-    ```sh
-    git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
-    cd openvino.genai
-    ```
-2. Set up the environment:
-    - Option 1 - using OpenVINO `setupvars.sh` script:
-        ```sh
-        source <INSTALL_DIR>/setupvars.sh
-        ```
-    - Option 2 - setting environment variables manually:
-        ```sh
-        export OpenVINO_DIR=<INSTALL_DIR>/runtime
-        export PYTHONPATH=<INSTALL_DIR>/python:./build/:$PYTHONPATH
-        export LD_LIBRARY_PATH=<INSTALL_DIR>/runtime/lib/intel64:$LD_LIBRARY_PATH
-        ```
-3. Upgrade pip to ensure you have the latest version:
-    ```sh
-    python -m pip install --upgrade pip
-    ```
-<<<<<<< HEAD
-4. Install the package directly from source:
-    ```sh
-=======
-4. Build the wheel in the `dist` directory:
-    ```sh
-    python -m pip wheel . -w dist/ --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
-    ```
-
-### Install OpenVINO GenAI From Source
 
 1. Clone OpenVINO GenAI repository and init submodules:
     ```sh
@@ -232,7 +198,6 @@ The path to the openvino install directory is referred as <INSTALL_DIR> througho
     ```
 4. Install the package directly from source:
     ```sh
->>>>>>> releases/2024/3
     python -m pip install .
     ```
 5. To verify the installation, run a simple Python script:

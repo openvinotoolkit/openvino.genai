@@ -731,10 +731,7 @@ def test_continuous_batching_vs_stateful(model_descr, prompt, generation_config)
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
-<<<<<<< HEAD
 @pytest.mark.skip("continuous_batching seg faults with nightly ov. Ticket 147793")
-=======
->>>>>>> releases/2024/3
 def test_cb_streamer_vs_return_vs_stateful(model_descr, prompt):
     model_id, path, tokenizer, model, stateful = read_model((
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
