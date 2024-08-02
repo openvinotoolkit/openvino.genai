@@ -26,7 +26,7 @@ TEST(TestBlockManager, general_test) {
     EXPECT_EQ(bm.get_block_table(seq_id).size(), 6);
     EXPECT_EQ(bm.num_free_blocks(), 0);
 
-    bm.free_sequence_partially_single_runnning_sequence(seq_id, 4);
+    bm.free_sequence_partially(seq_id, 4);
     EXPECT_EQ(bm.get_block_table(seq_id).size(), 2);
     EXPECT_EQ(bm.num_free_blocks(), 4);
 
