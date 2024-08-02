@@ -6,35 +6,16 @@ if(TARGET openvino_tokenizers)
 else()
     message(FATAL_ERROR "multinomial_causal_lm must be compiled as part of OpenVIINOGenAI to have the path to openvino_tokenizers hardcoded.")
 endif()
-
-include(FetchContent)
-
-if(POLICY CMP0135)
-    cmake_policy(SET CMP0135 NEW)
-endif()
-
-if(NOT TARGET nlohmann_json)
-    FetchContent_Declare(nlohmann_json
-        URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
-        URL_HASH SHA256=0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406)
-    FetchContent_MakeAvailable(nlohmann_json)
-endif()
-
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 find_package(TBB REQUIRED COMPONENTS tbb)
-
 add_executable(prompt_lookup_decoding_lm prompt_lookup_decoding_lm.cpp)
-
-target_link_libraries(prompt_lookup_decoding_lm PRIVATE openvino::runtime TBB::tbb nlohmann_json::nlohmann_json)
-
+target_link_libraries(prompt_lookup_decoding_lm PRIVATE openvino::runtime TBB::tbb)
 set_target_properties(prompt_lookup_decoding_lm PROPERTIES
     COMPILE_PDB_NAME prompt_lookup_decoding_lm
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
-
 target_compile_definitions(prompt_lookup_decoding_lm PRIVATE OPENVINO_TOKENIZERS_PATH="${OPENVINO_TOKENIZERS_PATH}")
 target_compile_features(prompt_lookup_decoding_lm PRIVATE cxx_std_17)
-
 install(TARGETS prompt_lookup_decoding_lm
     RUNTIME DESTINATION samples_bin/
     COMPONENT samples_bin

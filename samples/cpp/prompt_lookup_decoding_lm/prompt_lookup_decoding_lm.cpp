@@ -1,8 +1,6 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <fstream>
-#include <nlohmann/json.hpp>
 #include <openvino/core/parallel.hpp>
 #include <openvino/openvino.hpp>
 #include <string_view>
@@ -11,40 +9,9 @@ namespace {
 
 // only batch_size = 1 currently supported
 constexpr size_t BATCH_SIZE = 1;
-
-size_t get_seq_len_axis(const std::string model_dir) {
-    // get sequence length axis based on config.json model_type
-    // return DEFAILT_SEQ_LEN_AXIS if no model_type found or if there is no predefined seq len axis for this model type
-
-    // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
-    // threfore usually DEFAILT_SEQ_LEN_AXIS = 2
-    constexpr size_t DEFAILT_SEQ_LEN_AXIS = 2;
-
-    std::ifstream f(model_dir + "/config.json");
-
-    if (!f.is_open()) {
-        return DEFAILT_SEQ_LEN_AXIS;
-    }
-
-    nlohmann::json data = nlohmann::json::parse(f);
-
-    if (!data.contains("model_type")) {
-        return DEFAILT_SEQ_LEN_AXIS;
-    }
-
-    const std::string model_type = data["model_type"].get<std::string>();
-
-    const std::map<std::string, size_t> model_type_to_seq_len_axis{
-        {"chatglm", 0},
-        {"llama", 2},
-    };
-
-    if (!model_type_to_seq_len_axis.count(model_type)) {
-        return DEFAILT_SEQ_LEN_AXIS;
-    }
-
-    return model_type_to_seq_len_axis.at(model_type);
-}
+// sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
+// threfore usually SEQ_LEN_AXIS = 2
+constexpr size_t SEQ_LEN_AXIS = 2;
 
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
     tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
@@ -260,8 +227,6 @@ int main(int argc, char* argv[]) try {
 
     const int64_t EOS_TOKEN = get_eos_token(tokenizer_model);
 
-    const size_t seq_len_axis = get_seq_len_axis(model_dir);
-
     // Prompt lookup decoding is a speculative decoding technic where the draft model replaced
     // with string matching in the prompt to generate candidate token sequences.
     int max_sequence_length = 100;
@@ -322,7 +287,7 @@ int main(int argc, char* argv[]) try {
         // Increment the sequence length by the number of matched tokens, and
         // trim the KV cache to match the new sequence length.
         seq_len += accepted_tokens_number;
-        update_kv_cache(model, seq_len_axis, seq_len);
+        update_kv_cache(model, SEQ_LEN_AXIS, seq_len);
 
         first_token = out_token;
     }
