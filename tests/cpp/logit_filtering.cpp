@@ -152,22 +152,22 @@ TEST_P(RepetitionPenaltyTransformTest, TransformResultEqualToReference) {
 
 
 const std::vector<RepetitionPenaltyTransformTestStruct> REPETITION_PENALTY_TRANSFORM_TEST_CASES = {
-    { // basic case, indices are applied, order is left as-is
+    RepetitionPenaltyTransformTestStruct{ // basic case, indices are applied, order is left as-is
         1.2f,
         { 1.0f, 2.0f, 3.0f },
-        { 2, 0 },
+        TokenIds{ 2, 0 },
         { 0.8333333f, 2.0f, 2.5f }
     },
-    { // negative scores case
+    RepetitionPenaltyTransformTestStruct{ // negative scores case
         2.0f,
         { -1.0f, 2.0f, 3.0f },
-        { 0, 1 },
+        TokenIds{ 0, 1 },
         { -2.0f, 1.0f, 3.0f }
     },
-    { // repeated tokens in prompt, check that the penalty is only applied once
+    RepetitionPenaltyTransformTestStruct{ // repeated tokens in prompt, check that the penalty is only applied once
         0.5f,
         { -1.0f, 2.0f, 3.0f },
-        { 1, 1 },
+        TokenIds{ 1, 1 },
         { -1.0f, 4.0f, 3.0f }
     },
 };
@@ -211,22 +211,22 @@ TEST_P(FrequencyPenaltyTransformTest, TransformResultEqualToReference) {
 
 
 const std::vector<FrequencyPenaltyTransformTestStruct> FREQUENCY_PENALTY_TRANSFORM_TEST_CASES = {
-    { // basic case, indices are applied, order is left as-is
+    FrequencyPenaltyTransformTestStruct{ // basic case, indices are applied, order is left as-is
         0.5f,
         { -1.0f, 2.0f, 3.0f },
-        { 1, 0 },
+        TokenIds{ 1, 0 },
         { -0.5f, 1.5f, 3.0f }
     },
-    { // negative scores case
+    FrequencyPenaltyTransformTestStruct{ // negative scores case
         -0.6f,
         { -1.0f, 2.0f, 3.0f },
-        { 0, 1, 1 },
+        TokenIds{ 0, 1, 1 },
         { -1.6f, 3.2f, 3.0f }
     },
-    { // repeated tokens in prompt, check that the penalty is only applied once
+    FrequencyPenaltyTransformTestStruct{ // repeated tokens in prompt, check that the penalty is only applied once
         0.2f,
         { 1.0f, 2.0f, 3.0f },
-        { 2, 0, 2 },
+        TokenIds{ 2, 0, 2 },
         { 0.8f, 2.0f, 2.6f }
     },
 };
@@ -270,22 +270,22 @@ TEST_P(PresencePenaltyTransformTest, TransformResultEqualToReference) {
 
 
 const std::vector<PresencePenaltyTransformTestStruct> PRESENCE_PENALTY_TRANSFORM_TEST_CASES = {
-    { // basic case, indices are applied, order is left as-is
+    PresencePenaltyTransformTestStruct{ // basic case, indices are applied, order is left as-is
         0.5f,
         { -1.0f, 2.0f, 3.0f },
-        { 1, 0 },
+        TokenIds{ 1, 0 },
         { -0.5f, 1.5f, 3.0f }
     },
-    { // negative scores case
+    PresencePenaltyTransformTestStruct{ // negative scores case
         -0.6f,
         { -1.0f, 2.0f, 3.0f },
-        { 0, 1, 1 },
+        TokenIds{ 0, 1, 1 },
         { -1.6f, 2.6f, 3.0f }
     },
-    { // repeated tokens in prompt, check that the penalty is only applied once
+    PresencePenaltyTransformTestStruct{ // repeated tokens in prompt, check that the penalty is only applied once
         0.2f,
         { 1.0f, 2.0f, 3.0f },
-        { 2, 0, 2 },
+        TokenIds{ 2, 0, 2 },
         { 0.8f, 2.0f, 2.8f }
     },
 };
@@ -327,7 +327,7 @@ TEST_P(EOSPenaltyTransformTest, TransformResultEqualToReference) {
 
 
 const std::vector<EOSPenaltyTransformTestStruct> EOS_PENALTY_TRANSFORM_TEST_CASES = {
-    { // basic case, indices are applied, order is left as-is
+    EOSPenaltyTransformTestStruct{ // basic case, indices are applied, order is left as-is
         1,
         { 1.0f, 2.0f, 3.0f },
         { 1.0f, 0.0f, 3.0f },
