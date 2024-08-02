@@ -232,12 +232,36 @@ class Sampler {
         std::vector<float> multinomial_weights(logit_vector.size());
         for (size_t i = 0; i < logit_vector.size(); i++) multinomial_weights[i] = logit_vector[i].m_log_prob;
 
+        std::cout << "Stats: " << std::endl;
+
+        for (size_t i = 0; i < std::min(size_t(25), multinomial_weights.size()); i++) {
+            std::cout << multinomial_weights[i] << ", ";
+        }
+
+        std::cout << std::endl;
+
         auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
         std::vector<Token> out_tokens;
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
             size_t element_to_pick = dist(rng_engine);
+
+            auto r_n = rng_engine2();
+
+            if (r_n == 2439732824) {
+                for (size_t i = 0; i < std::min(size_t(25), multinomial_weights.size()); i++) {
+                    std::cout << logit_vector[i].m_index << ", ";
+                }
+            }
+
+            std::cout << std::endl;
+
+            std::cout << r_n << ":" << element_to_pick << ":" << logit_vector[element_to_pick].m_index << ", ";
+
             out_tokens.push_back(logit_vector[element_to_pick]);
         }
+
+        std::cout << std::endl;
+        std::cout << std::endl;
         return out_tokens;
     }
 
@@ -245,14 +269,17 @@ class Sampler {
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
 
     std::mt19937 rng_engine;
+    std::mt19937 rng_engine2;
     // { request_id, logit_processor }
     std::map<uint64_t, LogitProcessor> m_logit_processors;
 
 public:
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits);
 
-    void set_seed(size_t seed) { rng_engine.seed(seed); }
-
+    void set_seed(size_t seed) { 
+        rng_engine.seed(seed);
+        rng_engine2.seed(seed);
+    }
     void clear_beam_search_info(uint64_t request_id);
 };
 
