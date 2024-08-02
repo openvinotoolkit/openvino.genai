@@ -27,7 +27,7 @@ public:
     }
 
     void push(GenerationOutputs outputs) {
-        m_output_queue.push(outputs);
+        m_output_queue.push(std::move(outputs));
     }
 
     // Retriving vector of pairs <sequence_id, token_id> as we can generate multiple outputs for a single prompt
