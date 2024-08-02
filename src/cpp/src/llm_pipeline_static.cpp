@@ -181,7 +181,7 @@ StaticLLMPipeline::StaticLLMPipeline(
         m_prefill_model, device, extract_config_or_default(config, "PREFILL_CONFIG")
     ).create_infer_request();
     m_kvcache_request = core.compile_model(
-        kvcache_model, device, extract_config_or_default(config, "GENERATE_CONFIG")
+        m_kvcache_model, device, extract_config_or_default(config, "GENERATE_CONFIG")
     ).create_infer_request();
     // (7) Initialize tensors
     prepare_for_new_conversation();
