@@ -16,7 +16,7 @@ optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B
 ## Usage
 
 ```sh
-benchmark_vanilla_genai [OPTIONS]
+benchmark_genai [OPTIONS]
 ```
 
 ### Options
@@ -31,7 +31,7 @@ benchmark_vanilla_genai [OPTIONS]
 ### Output:
 
 ```
-benchmark_vanilla_genai -m TinyLlama-1.1B-Chat-v1.0 -n 10
+benchmark_genai -m TinyLlama-1.1B-Chat-v1.0 -n 10
 ```
 
 ```
