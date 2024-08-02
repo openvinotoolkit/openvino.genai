@@ -5,6 +5,8 @@
 
 #include <filesystem>
 
+#include "openvino/genai/visibility.hpp"
+
 // Returns an absolute path. The path is this library's directory
 // concatenated with openvino_tokenizers OS specific
 // * name (.so, .dll, .dylib, lib prefix). This is part of the interface
@@ -12,6 +14,7 @@
 // tokenizers_relative_to_genai() and ScopedVar allow passing a path to
 // openvino_tokenizers through env var removing one argument from
 // Tokenizer's constructor.
+OPENVINO_GENAI_EXPORTS
 std::filesystem::path tokenizers_relative_to_genai();
 
 namespace {
