@@ -223,7 +223,6 @@ int main(int argc, char* argv[]) try {
     // tokenizer model
     ov::Core core;
     core.add_extension(OPENVINO_TOKENIZERS_PATH);  // OPENVINO_TOKENIZERS_PATH is defined in CMakeLists.txt
-
     auto tokenizer_model = core.read_model(std::string{argv[1]} + "/openvino_tokenizer.xml");
     // tokenizer and detokenizer work on CPU only
     ov::InferRequest tokenizer = core.compile_model(tokenizer_model, "CPU").create_infer_request();
@@ -242,7 +241,7 @@ int main(int argc, char* argv[]) try {
     ov::InferRequest main_model =
         core.compile_model(std::string{argv[2]} + "/openvino_model.xml", "CPU").create_infer_request();
 
-    size_t max_sequence_length = 100 + seq_len;
+    size_t max_sequence_length = 100;
 
     AssistedCandidateGenerator candidateGenerator{draft_model, max_sequence_length, 5};
 
