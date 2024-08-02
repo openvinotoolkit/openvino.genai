@@ -83,6 +83,10 @@ public:
                                     bool add_generation_prompt, 
                                     const std::string& chat_template="") const;
 
+    /// @brief Override a chat_template read from tokenizer_config.json.
+    /// @param chat_template The new template to override with.
+    void set_chat_template(const std::string& chat_template);
+
     // information about <bos>, <eos> tokens should be public,
     // they are used at least in StreamerBase descendants
     int64_t get_bos_token_id() const;

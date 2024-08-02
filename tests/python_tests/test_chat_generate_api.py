@@ -186,3 +186,15 @@ def test_chat_continuous_batching_vs_stateful(model_descr, generation_config: Di
         assert generated == reference
     # Test that finish_chat() doesn't fail just in case.
     cb.finish_chat()
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_set_chat_template():
+    model_descr = get_chat_models_list()[0]
+    model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    pipe.set_chat_template("")
+    pipe.start_chat()
+    generated = pipe.generate("", max_new_tokens=1)
+    pipe.finish_chat()
+    reference = pipe.generate("", max_new_tokens=1)
+    assert generated == reference
