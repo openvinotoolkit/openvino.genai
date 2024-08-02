@@ -65,6 +65,9 @@ class ContinuousBatchingPipeline::Impl {
         while (requests_iterator != m_requests.end()) {
             const auto& request = *requests_iterator;
             if(request->has_finished() || request->out_of_memory() || request->handle_dropped()) {
+                // Notify the last time even if there will be no results
+                // This causes read_all() to unblock in all situations
+                request->notify_handle();
                 for (const auto& sequence: request->get_sequences()) {
                     m_scheduler->free_sequence(sequence->get_id());
                 }
@@ -136,7 +139,7 @@ public:
             std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
             m_awaiting_requests.push_back(sequence_group);
         }
-        return std::make_unique<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
+        return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
     }
 
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, ov::genai::GenerationConfig sampling_params) {

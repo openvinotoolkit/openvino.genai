@@ -477,7 +477,7 @@ public:
         }
         // For beam search streaming is not available, so we notify only upon finishing
         if(m_sampling_params.is_beam_search()) {
-            if (has_finished() || out_of_memory()) {
+            if (has_finished() || out_of_memory() || handle_dropped()) {
                 push_outputs();
             }
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {

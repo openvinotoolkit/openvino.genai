@@ -9,7 +9,7 @@
 using namespace ov::genai;
 
 GenerationHandleImpl::~GenerationHandleImpl() {
-    m_generation_stream->drop();
+    drop();
 }
 
 GenerationStatus GenerationHandleImpl::get_status() {
@@ -18,6 +18,10 @@ GenerationStatus GenerationHandleImpl::get_status() {
 
 bool GenerationHandleImpl::can_read() {
     return m_generation_stream->can_read();
+}
+
+void GenerationHandleImpl::drop() {
+    m_generation_stream->drop();
 }
 
 std::unordered_map<uint64_t, GenerationOutput> GenerationHandleImpl::back() {

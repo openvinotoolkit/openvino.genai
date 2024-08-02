@@ -74,6 +74,8 @@ public:
 
     bool can_read();
 
+    void drop();
+
     GenerationOutputs back();
     // Reads result of a generation for single iteration
     GenerationOutputs read();
@@ -81,5 +83,5 @@ public:
     std::vector<GenerationOutput> read_all();
 };
 
-using GenerationHandle = std::unique_ptr<GenerationHandleImpl>;
+using GenerationHandle = std::shared_ptr<GenerationHandleImpl>;
 }
