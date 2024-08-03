@@ -142,6 +142,15 @@
         </ul>
       </td>
     </tr>
+    <tr>
+      <td><code>MiniCPMForCausalLM</code></td>
+      <td>MiniCPM</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/openbmb/MiniCPM-2B-dpo-fp16"><code>openbmb/MiniCPM-2B-dpo-fp16</code></a></li>
+        </ul>
+      </td>
+    </tr>
   </tbody>
 </table>
 
