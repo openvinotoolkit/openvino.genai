@@ -349,6 +349,55 @@ jobs:
           && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./notus-7b-v1/ 69
           | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./notus-7b-v1/ 69) -
 
+  cpp-beam_search_causal_lm-MiniCPM-2B-dpo:
+    runs-on: ubuntu-20.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openbmb/MiniCPM-2B-dpo-fp16
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Run Generation CPP
+        run: |
+          source ./ov/setupvars.sh
+          timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./MiniCPM-2B-dpo-fp16/ "你好！ 你好嗎？" > ./pred.txt
+      - name: Run Generation PY
+        run: >
+          . ./ov/setupvars.sh
+          && export PYTHONPATH=./build/:$PYTHONPATH
+          && timeout 50s samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./MiniCPM-2B-dpo-fp16/ "你好！ 你好嗎？"
+          | diff ./pred.txt -
+      - name: Compare
+        run: |
+          python -c "
+          import transformers
+          with open('pred.txt', 'r') as file:
+              predictions = file.read()
+          tokenizer = transformers.AutoTokenizer.from_pretrained('openbmb/MiniCPM-2B-dpo-fp16')
+          tokenized = tokenizer('你好！ 你好嗎？', return_tensors='pt')
+          for beam in transformers.AutoModelForCausalLM.from_pretrained('openbmb/MiniCPM-2B-dpo-fp16').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
+              ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
+              idx = predictions.find(ref)
+              if -1 == idx:
+                  raise RuntimeError(f'Missing "{ref=}" from predictions')
+              predictions = predictions[:idx] + predictions[idx + len(ref):]
+          "
+          echo "你好！ 你好嗎？" passed
+
   cpp-speculative_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
     steps:
