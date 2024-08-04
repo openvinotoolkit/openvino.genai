@@ -147,11 +147,21 @@ StableDiffusionModels compile_models(const std::string& model_path,
 
     core.add_extension(TOKENIZERS_LIBRARY_PATH);
 
+    #define NEW_LORA_ADAPTERS 1
+
     // read LoRA weights
+    #if NEW_LORA_ADAPTERS
+    std::map<std::string, AdapterMap> lora_adapter;
+    #else
     std::map<std::string, InsertLoRA::LoRAMap> lora_weights;
+    #endif
     if (!lora_path.empty()) {
         Timer t("Loading and multiplying LoRA weights");
+    #if NEW_LORA_ADAPTERS
+        lora_adapter = load_lora_adapter(lora_path, alpha, {{"lora_te", "text_encoder"}, {"lora_unet", "unet"}});
+    #else
         lora_weights = read_lora_adapters(lora_path, alpha);
+    #endif
     }
 
     // Text encoder
@@ -161,7 +171,11 @@ StableDiffusionModels compile_models(const std::string& model_path,
         if (!use_dynamic_shapes) {
             reshape_text_encoder(text_encoder_model, batch_size, TOKENIZER_MODEL_MAX_LENGTH);
         }
+        #if NEW_LORA_ADAPTERS
+        apply_lora_adapter(text_encoder_model, lora_adapter["text_encoder"]);
+        #else
         apply_lora(text_encoder_model, lora_weights["text_encoder"]);
+        #endif
         models.text_encoder = core.compile_model(text_encoder_model, device);
     }
 
@@ -172,7 +186,11 @@ StableDiffusionModels compile_models(const std::string& model_path,
         if (!use_dynamic_shapes) {
             reshape_unet(unet_model, batch_size, height, width, TOKENIZER_MODEL_MAX_LENGTH);
         }
+        #if NEW_LORA_ADAPTERS
+        apply_lora_adapter(unet_model, lora_adapter["unet"]);
+        #else
         apply_lora(unet_model, lora_weights["unet"]);
+        #endif
         models.unet = core.compile_model(unet_model, device);
     }
 
