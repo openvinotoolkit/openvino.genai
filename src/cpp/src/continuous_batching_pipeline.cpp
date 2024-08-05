@@ -84,7 +84,7 @@ public:
         // The model can be compiled for GPU as well
         std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
 
-        DeviceConfig device_config(core, scheduler_config, device);
+        DeviceConfig device_config(core, scheduler_config, device, plugin_config);
 
         apply_paged_attention_transformations(model, device_config);
 
