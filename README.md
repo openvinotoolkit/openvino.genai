@@ -20,11 +20,13 @@ It includes the following pipelines:
 2. Text generation samples that support most popular models like LLaMA 2:
    - Python:
      1. [beam_search_causal_lm](./samples/python/beam_search_causal_lm/README.md)
+     1. [benchmark_genai](./samples/python/benchmark_genai/README.md)
      2. [chat_sample](./samples/python/chat_sample/README.md)
      3. [greedy_causal_lm](./samples/python/greedy_causal_lm/README.md)
      4. [multinomial_causal_lm](./samples/python/multinomial_causal_lm/README.md)
    - C++:
      1. [beam_search_causal_lm](./samples/cpp/beam_search_causal_lm/README.md)
+     1. [benchmark_genai](./samples/cpp/benchmark_genai/README.md)
      2. [chat_sample](./samples/cpp/chat_sample/README.md)
      3. [continuous_batching_accuracy](./samples/cpp/continuous_batching_accuracy)
      4. [continuous_batching_benchmark](./samples/cpp/continuous_batching_benchmark)

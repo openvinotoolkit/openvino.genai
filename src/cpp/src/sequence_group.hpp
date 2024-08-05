@@ -6,6 +6,7 @@
 #include <vector>
 #include <set>
 #include <cstdlib>
+#include <string_view>
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
@@ -120,6 +121,21 @@ public:
         float cumulative_log_prob = get_cumulative_log_probs(), current_length = get_generated_len();
         float score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
         return score;
+    }
+
+    // Each KV block can be uniquely identified by 
+    // the tokens within the block and the tokens in the prefix before the block.
+    // hash(prefix tokens + block tokens) <--> KV Block
+    size_t get_hash(size_t content_length, const ov::genai::TokenIds& prompt_ids) const {
+        std::vector<int64_t> content;
+        OPENVINO_ASSERT(content_length <= prompt_ids.size() + m_generated_ids.size());
+        content.insert( content.end(), prompt_ids.begin(), prompt_ids.begin() + std::min(prompt_ids.size(), content_length));
+        if (content_length > prompt_ids.size()) {
+            content.insert(content.end(), m_generated_ids.begin(), m_generated_ids.begin() + content_length - prompt_ids.size());
+        }
+        const char* data = reinterpret_cast<const char*>(content.data());
+        std::size_t size = content.size() * sizeof(content[0]);
+        return std::hash<std::string_view>{}(std::string_view(data, size));
     }
 };
 
@@ -345,6 +361,11 @@ public:
         clear_scheduled_tokens();
     }
 
+    void update_processed_tokens_num(size_t processed_tokens) {
+        m_num_processed_tokens = processed_tokens;
+        m_max_content_len = processed_tokens;
+    }
+
     void clear_waiting_sequences() {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_waiting()) {
@@ -371,7 +392,7 @@ public:
     }
 
     Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
-        m_sequences.emplace_back(Sequence::fork(sequence, m_next_sequence_id++));
+        m_sequences.emplace_back(Sequence::fork(std::move(sequence), m_next_sequence_id++));
         return m_sequences.back();
     }
 
@@ -433,7 +454,7 @@ public:
             output.score = sequence->get_beam_search_score(m_sampling_params);
             outputs.emplace(sequence->get_grouped_id(), output);
         }
-        m_generation_stream->push(outputs);
+        m_generation_stream->push(std::move(outputs));
     }
 
     void push_partial_outputs() {
@@ -445,7 +466,7 @@ public:
             const auto last_gen_token = sequence->get_last_generation_output();
             outputs.emplace(sequence->get_grouped_id(), last_gen_token);
         }
-        m_generation_stream->push(outputs);
+        m_generation_stream->push(std::move(outputs));
     }
 
     void notify_handle() {

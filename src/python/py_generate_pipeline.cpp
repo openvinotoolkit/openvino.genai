@@ -20,7 +20,10 @@ using ov::genai::EncodedResults;
 using ov::genai::GenerationConfig;
 using ov::genai::GenerationResult;
 using ov::genai::LLMPipeline;
+using ov::genai::MeanStdPair;
 using ov::genai::OptionalGenerationConfig;
+using ov::genai::PerfMetrics;
+using ov::genai::RawPerfMetrics;
 using ov::genai::SchedulerConfig;
 using ov::genai::StopCriteria;
 using ov::genai::StreamerBase;
@@ -35,6 +38,17 @@ using PyBindStreamerVariant = std::variant<std::function<bool(py::str)>, std::sh
 
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
+template <typename T, typename U>
+std::vector<float> get_ms(const T& instance, U T::*member) {
+    // Converts c++ duration to float so that it can be used in Python.
+    std::vector<float> res;
+    const auto& durations = instance.*member;
+    res.reserve(durations.size());
+    std::transform(durations.begin(), durations.end(), std::back_inserter(res),
+                   [](const auto& duration) { return duration.count(); });
+    return res;
+}
 
 namespace {
 
@@ -88,6 +102,86 @@ auto generation_config_docstring = R"(
     repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.    
 )";
 
+auto raw_perf_metrics_docstring = R"(
+    Structure with raw performance metrics for each generation before any statistics are calculated.
+
+    :param generate_durations: Durations for each generate call in microseconds.
+    :type generate_durations: List[MicroSeconds]
+
+    :param tokenization_durations: Durations for the tokenization process in microseconds.
+    :type tokenization_durations: List[MicroSeconds]
+
+    :param detokenization_durations: Durations for the detokenization process in microseconds.
+    :type detokenization_durations: List[MicroSeconds]
+
+    :param m_times_to_first_token: Times to the first token for each call in microseconds.
+    :type m_times_to_first_token: List[MicroSeconds]
+
+    :param m_new_token_times: Time points for each new token generated.
+    :type m_new_token_times: List[TimePoint]
+
+    :param m_batch_sizes: Batch sizes for each generate call.
+    :type m_batch_sizes: List[int]
+
+    :param m_durations: Total durations for each generate call in microseconds.
+    :type m_durations: List[MicroSeconds]
+
+    :param num_generated_tokens: Total number of tokens generated.
+    :type num_generated_tokens: int
+
+    :param num_input_tokens: Total number of tokens in the input prompt.
+    :type num_input_tokens: int
+)";
+
+auto perf_metrics_docstring = R"(
+    Holds performance metrics for each generate call.
+    
+    PerfMetrics holds fields with mean and standard deviations for the following metrics:
+    - Time To the First Token (TTFT), ms
+    - Time per Output Token (TPOT), ms/token
+    - Generate total duration, ms
+    - Tokenization duration, ms
+    - Detokenization duration, ms
+    - Throughput, tokens/s
+
+    Additional fields include:
+    - Load time, ms
+    - Number of generated tokens
+    - Number of tokens in the input prompt
+
+    Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+    If mean and std were already calculated, getters return cached values.
+
+    :param get_load_time: Returns the load time in milliseconds.
+    :type get_load_time: float
+
+    :param get_num_generated_tokens: Returns the number of generated tokens.
+    :type get_num_generated_tokens: int
+
+    :param get_num_input_tokens: Returns the number of tokens in the input prompt.
+    :type get_num_input_tokens: int
+
+    :param get_ttft: Returns the mean and standard deviation of TTFT.
+    :type get_ttft: MeanStdPair
+
+    :param get_tpot: Returns the mean and standard deviation of TPOT.
+    :type get_tpot: MeanStdPair
+
+    :param get_throughput: Returns the mean and standard deviation of throughput.
+    :type get_throughput: MeanStdPair
+
+    :param get_generate_duration: Returns the mean and standard deviation of generate duration.
+    :type get_generate_duration: MeanStdPair
+
+    :param get_tokenization_duration: Returns the mean and standard deviation of tokenization duration.
+    :type get_tokenization_duration: MeanStdPair
+
+    :param get_detokenization_duration: Returns the mean and standard deviation of detokenization duration.
+    :type get_detokenization_duration: MeanStdPair
+
+    :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
+    :type raw_metrics: RawPerfMetrics
+)";
 
 OptionalGenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& config, const py::kwargs& kwargs) {
     if(!config.has_value() && kwargs.empty())
@@ -149,6 +243,33 @@ OptionalGenerationConfig update_config_from_kwargs(const OptionalGenerationConfi
     }
 
     return res_config;
+}
+
+ov::Any py_object_to_any(const py::object& py_obj);
+
+bool py_object_is_any_map(const py::object& py_obj) {
+    if (!py::isinstance<py::dict>(py_obj)) {
+        return false;
+    }
+    auto dict = py::cast<py::dict>(py_obj);
+    return std::all_of(dict.begin(), dict.end(), [&](const std::pair<py::object::handle, py::object::handle>& elem) {
+        return py::isinstance<py::str>(elem.first);
+    });
+}
+
+ov::AnyMap py_object_to_any_map(const py::object& py_obj) {
+    OPENVINO_ASSERT(py_object_is_any_map(py_obj), "Unsupported attribute type.");
+    ov::AnyMap return_value = {};
+    for (auto& item : py::cast<py::dict>(py_obj)) {
+        std::string key = py::cast<std::string>(item.first);
+        py::object value = py::cast<py::object>(item.second);
+        if (py_object_is_any_map(value)) {
+            return_value[key] = py_object_to_any_map(value);
+        } else {
+            return_value[key] = py_object_to_any(value);
+        }
+    }
+    return return_value;
 }
 
 ov::Any py_object_to_any(const py::object& py_obj) {
@@ -213,6 +334,8 @@ ov::Any py_object_to_any(const py::object& py_obj) {
         }
     
     // OV types
+    } else if (py_object_is_any_map(py_obj)) {
+        return py_object_to_any_map(py_obj);
     } else if (py::isinstance<ov::Any>(py_obj)) {
         return py::cast<ov::Any>(py_obj);
     } else if (py::isinstance<ov::element::Type>(py_obj)) {
@@ -534,7 +657,45 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def(py::init<>())
         .def_property_readonly("texts", [](const DecodedResults &dr) { return handle_utf8_results(dr); })
         .def_readonly("scores", &DecodedResults::scores)
-        .def("__str__", &DecodedResults::operator std::string);;
+        .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
+        .def("__str__", &DecodedResults::operator std::string);
+
+    py::class_<RawPerfMetrics>(m, "RawPerfMetrics", raw_perf_metrics_docstring)
+        .def(py::init<>())
+        .def_readonly("generate_durations", &RawPerfMetrics::generate_durations)
+        .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) { 
+            return get_ms(rw, &RawPerfMetrics::tokenization_durations);
+         })
+        .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) { 
+            return get_ms(rw, &RawPerfMetrics::detokenization_durations); 
+        })
+        .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) { 
+            return get_ms(rw, &RawPerfMetrics::m_times_to_first_token); 
+        })
+        .def_property_readonly("m_durations", [](const RawPerfMetrics &rw) { 
+            return get_ms(rw, &RawPerfMetrics::m_durations); 
+        })
+        .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes)
+        .def_readonly("num_generated_tokens", &RawPerfMetrics::num_generated_tokens)
+        .def_readonly("num_input_tokens", &RawPerfMetrics::num_input_tokens);
+
+    py::class_<MeanStdPair>(m, "MeanStdPair")
+        .def(py::init<>())
+        .def_readonly("mean", &MeanStdPair::mean)
+        .def_readonly("std", &MeanStdPair::std);
+
+    py::class_<PerfMetrics>(m, "PerfMetrics", perf_metrics_docstring)
+        .def(py::init<>())
+        .def("get_generate_duration", &PerfMetrics::get_generate_duration)
+        .def("get_tokenization_duration", &PerfMetrics::get_tokenization_duration)
+        .def("get_detokenization_duration", &PerfMetrics::get_detokenization_duration)
+        .def("get_throughput", &PerfMetrics::get_throughput)
+        .def("get_tpot", &PerfMetrics::get_tpot)
+        .def("get_ttft", &PerfMetrics::get_ttft)
+        .def("get_load_time", &PerfMetrics::get_load_time)
+        .def("__add__", &PerfMetrics::operator+)
+        .def("__iadd__", &PerfMetrics::operator+=)
+        .def_readonly("raw_metrics", &PerfMetrics::raw_metrics);
 
     py::class_<TokenizedInputs>(m, "TokenizedInputs")
         .def(py::init<ov::Tensor, ov::Tensor>())
@@ -543,7 +704,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
     py::class_<EncodedResults>(m, "EncodedResults")
         .def_readonly("tokens", &EncodedResults::tokens)
-        .def_readonly("scores", &EncodedResults::scores);
+        .def_readonly("scores", &EncodedResults::scores)
+        .def_readonly("perf_metrics", &EncodedResults::perf_metrics);
 
     py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase")  // Change the holder form unique_ptr to shared_ptr
         .def(py::init<>())
@@ -591,9 +753,9 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
         .def_readwrite("cache_size", &SchedulerConfig::cache_size)
         .def_readwrite("block_size", &SchedulerConfig::block_size)
-        .def_readwrite("cache_size", &SchedulerConfig::cache_size)
         .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
-        .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs);
+        .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
+        .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline")
         .def(py::init([](const std::string& model_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
@@ -606,8 +768,22 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         }), py::arg("model_path"), py::arg("tokenizer"), py::arg("scheduler_config"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap({}))
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
-        .def("add_request", &ContinuousBatchingPipeline::add_request)
+        .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request))
+        .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request))
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
-        .def("generate", &ContinuousBatchingPipeline::generate);
+        .def(
+            "generate",
+            py::overload_cast<const std::vector<ov::Tensor>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
+            py::arg("input_ids"),
+            py::arg("sampling_params"),
+            py::arg("streamer") = std::monostate{}
+        )
+        .def(
+            "generate",
+            py::overload_cast<const std::vector<std::string>&, const std::vector<ov::genai::GenerationConfig>&, const ov::genai::StreamerVariant&>(&ContinuousBatchingPipeline::generate),
+            py::arg("prompts"),
+            py::arg("sampling_params"),
+            py::arg("streamer") = std::monostate{}
+        );
 }
