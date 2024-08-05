@@ -16,6 +16,7 @@ set_target_properties(prompt_lookup_decoding_lm PROPERTIES
     INSTALL_RPATH_USE_LINK_PATH ON)
 target_compile_definitions(prompt_lookup_decoding_lm PRIVATE OPENVINO_TOKENIZERS_PATH="${OPENVINO_TOKENIZERS_PATH}")
 target_compile_features(prompt_lookup_decoding_lm PRIVATE cxx_std_17)
+
 install(TARGETS prompt_lookup_decoding_lm
     RUNTIME DESTINATION samples_bin/
     COMPONENT samples_bin
