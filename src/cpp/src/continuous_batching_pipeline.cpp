@@ -178,7 +178,7 @@ public:
             for (size_t i = 0; i < m_requests.size(); ++i) {
                 SequenceGroup::Ptr sequence_group = m_requests[i];
                 sequence_group->set_out_of_memory();
-                sequence_group->notify_handle();
+                //sequence_group->notify_handle();  we notify anyway in _free_non_running_requests
             }
             _free_non_running_requests();
             return;

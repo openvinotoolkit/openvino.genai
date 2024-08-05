@@ -446,6 +446,10 @@ public:
         return m_generation_stream->get_status() == GenerationStatus::DROPPED_BY_HANDLE;
     }
 
+    void push_empty() {
+        m_generation_stream->push({});
+    }
+
     void push_outputs() {
         GenerationOutputs outputs;
         for (auto& sequence: m_sequences) {
@@ -475,9 +479,12 @@ public:
         } else if (has_finished()) {
             set_generation_status(GenerationStatus::FINISHED);
         }
+        if (handle_dropped()) {
+            push_empty();
+        }
         // For beam search streaming is not available, so we notify only upon finishing
-        if(m_sampling_params.is_beam_search()) {
-            if (has_finished() || out_of_memory() || handle_dropped()) {
+        else if(m_sampling_params.is_beam_search()) {
+            if (has_finished() || out_of_memory()) {
                 push_outputs();
             }
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
