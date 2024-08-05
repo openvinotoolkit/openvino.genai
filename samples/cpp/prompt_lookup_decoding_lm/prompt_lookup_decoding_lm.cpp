@@ -9,9 +9,32 @@ namespace {
 
 // only batch_size = 1 currently supported
 constexpr size_t BATCH_SIZE = 1;
-// sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
-// threfore usually SEQ_LEN_AXIS = 2
-constexpr size_t SEQ_LEN_AXIS = 2;
+
+size_t get_seq_len_axis(std::shared_ptr<ov::Model> model) {
+    // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
+    // threfore usually seq_length_axis = 2
+    size_t seq_length_axis = 2;
+
+    for (const auto op : model->get_ordered_ops()) {
+        // "ReadValue" node is a KV cache representation is stateful model
+        if (std::string("ReadValue") != op->get_type_name()) {
+            continue;
+        }
+
+        // Shape example: [-1,4,0,64]
+        auto shape = op->get_input_partial_shape(0);
+
+        for (size_t i = 0; i < shape.rank().get_length(); i++) {
+            // Find axis = 0. This would be sequence length axis.
+            if (shape[i] == 0) {
+                seq_length_axis = i;
+            }
+        }
+        break;
+    }
+
+    return seq_length_axis;
+}
 
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
     tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
@@ -197,8 +220,12 @@ int main(int argc, char* argv[]) try {
     ov::InferRequest detokenizer =
         core.compile_model(model_dir + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     TextStreamer text_streamer{std::move(detokenizer)};
+    
+    std::shared_ptr<ov::Model> ov_model = core.read_model(model_dir + "/openvino_model.xml");
 
-    ov::InferRequest model = core.compile_model(model_dir + "/openvino_model.xml", "CPU").create_infer_request();
+    size_t seq_len_axis = get_seq_len_axis(ov_model);
+
+    ov::InferRequest model = core.compile_model(ov_model, "CPU").create_infer_request();
 
     model.set_tensor("input_ids", input_ids);
     model.set_tensor("attention_mask", attention_mask);
@@ -288,7 +315,7 @@ int main(int argc, char* argv[]) try {
         // Increment the sequence length by the number of matched tokens, and
         // trim the KV cache to match the new sequence length.
         seq_len += accepted_tokens_number;
-        update_kv_cache(model, SEQ_LEN_AXIS, seq_len);
+        update_kv_cache(model, seq_len_axis, seq_len);
 
         first_token = out_token;
     }
