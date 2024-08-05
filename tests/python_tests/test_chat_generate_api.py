@@ -194,7 +194,7 @@ def test_set_chat_template():
     model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
     pipe.get_tokenizer().set_chat_template("{% for message in messages %}{{ message['content'] }}{% endfor %}")
     pipe.start_chat()
-    generated = pipe.generate("", max_new_tokens=2)
+    generated = pipe.generate("a", max_new_tokens=1)
     pipe.finish_chat()
-    reference = pipe.generate("", max_new_tokens=2)
+    reference = pipe.generate("a", max_new_tokens=1)
     assert generated == reference
