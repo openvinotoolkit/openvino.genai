@@ -187,7 +187,7 @@ public:
         } else {
             num_pred_tokens = std::max(int64_t(num_pred_tokens) - 1, int64_t(1));
         }
-        // std::cout << std::endl << "num_matches: " << num_matches << std::endl;
+        std::cout << std::endl << "num_matches: " << num_matches << std::endl;
         // std::cout << std::endl << "candidates_to_generate: " << num_pred_tokens << std::endl;
     }
 

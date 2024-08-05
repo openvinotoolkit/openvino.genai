@@ -8,7 +8,7 @@
 
 class SpeculativeDecodingPipeline : public ov::genai::BasicPipeline {
     ov::genai::ContinuousBatchingPipeline model_pipeline, assisting_pipeline;
-    size_t k = 0, default_k = 0;
+    size_t candidates_number = 0, max_candidates_number = 0;
     bool is_speculative_mode = false;
 
     std::vector<ov::genai::GenerationHandle> generate_sequences(
@@ -36,4 +36,6 @@ public:
     bool has_non_finished_requests() override;
     
     void set_k(size_t new_default_k);
+
+    void update_strategy(size_t num_matches);
 };

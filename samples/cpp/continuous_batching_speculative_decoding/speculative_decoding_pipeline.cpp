@@ -41,31 +41,27 @@ void SpeculativeDecodingPipeline::step() {
     std::vector<ov::genai::ContinuousBatchingPipeline::GeneratedSequence> candidate_sequences;
     if (is_speculative_mode) {
         // generate candidates using small model
-        std::cout << "K: " << k << std::endl;
-        for (size_t i = 0; i < k; ++i) {
-            if (!assisting_pipeline.has_non_finished_requests()) {
-                break;
-            }
+        // std::cout << "num_candidates: " << candidates_number << std::endl;
+        for (size_t i = 0; i < candidates_number; ++i) {
             assisting_pipeline.step();
-        }
-
-        // todo: remove debug code
-        auto checked_sequences = assisting_pipeline.get_generated_sequences();
-        for (const auto& s : checked_sequences) {
-            std::cout << "ASSISTANT: " << std::endl;
-            for (const auto& d : s.token_ids) {
-                std::cout << d << " ";
-            }
-            std::cout << std::endl;
-            for (const auto& d : s.log_probs) {
-                std::cout << d << " ";
-            }
-            std::cout << std::endl;
-            std::cout << decode(s.token_ids) << std::endl;
         }
 
         // put candidates to model cache
         candidate_sequences = assisting_pipeline.get_generated_sequences();
+        // todo: remove debug code
+        // for (const auto& s : candidate_sequences) {
+        //     std::cout << "ASSISTANT: ";
+        //     for (const auto& d : s.token_ids) {
+        //         std::cout << d << " ";
+        //     }
+        //     std::cout << std::endl;
+        //     for (const auto& d : s.log_probs) {
+        //         std::cout << d << " ";
+        //     }
+        //     std::cout << std::endl;
+        //     std::cout << decode(s.token_ids) << std::endl;
+        // }
+
         for (const auto& candidate : candidate_sequences) {
             model_pipeline.update_generated_sequence(candidate);
         }
@@ -78,37 +74,47 @@ void SpeculativeDecodingPipeline::step() {
         // todo: iefode: remove debug prints
         auto checked_sequences = model_pipeline.get_generated_sequences();
         // todo: remove debug code
-        for (const auto& s : checked_sequences) {
-            std::cout << "MODEL: " << std::endl;
-            for (const auto& d : s.token_ids) {
-                std::cout << d << " ";
-            }
-            std::cout << std::endl;
-            for (const auto& d : s.log_probs) {
-                std::cout << d << " ";
-            }
-            std::cout << std::endl;
-            std::cout << decode(s.token_ids) << std::endl;
-            std::cout << std::endl;
-        }
+        // for (const auto& s : checked_sequences) {
+        //     std::cout << "MODEL:     ";
+        //     for (const auto& d : s.token_ids) {
+        //         std::cout << d << " ";
+        //     }
+        //     std::cout << std::endl;
+        //     for (const auto& d : s.log_probs) {
+        //         std::cout << d << " ";
+        //     }
+        //     std::cout << std::endl;
+        //     std::cout << decode(s.token_ids) << std::endl;
+        //     std::cout << std::endl;
+        // }
 
         ov::genai::ContinuousBatchingPipeline::UpdateSeqResult update_result;
         for (const auto& checked_sequence : checked_sequences) {
             update_result = assisting_pipeline.update_generated_sequence(checked_sequence);
         }
 
-        if (update_result.to_remove > 0) {
-            k = k > update_result.to_remove ? k - update_result.to_remove : 1;
-        } else {
-            k = default_k;
-        }
+        if (candidates_number < update_result.to_remove)
+            auto a = 0;
+
+        OPENVINO_ASSERT(candidates_number >= update_result.to_remove);
+        update_strategy(candidates_number - update_result.to_remove);
     }
 }
 
+void SpeculativeDecodingPipeline::update_strategy(size_t num_matches) {
+    // std::cout << "num_matches: " << num_matches << std::endl;
+    if (num_matches == candidates_number) {
+        candidates_number = std::min(candidates_number + 2, max_candidates_number);
+    } else {
+        candidates_number = std::max(int64_t(candidates_number) - 1, int64_t(1));
+    }
+}
+
+
 void SpeculativeDecodingPipeline::set_k(size_t new_default_k) {
-    default_k = new_default_k;
-    k = default_k;
-    is_speculative_mode = k > 0;
+    candidates_number = new_default_k;
+    max_candidates_number = new_default_k * 2;
+    is_speculative_mode = candidates_number > 0;
 }
 
 bool SpeculativeDecodingPipeline::has_non_finished_requests() {
@@ -126,12 +132,17 @@ SpeculativeDecodingPipeline::generate_sequences(
     std::vector<ov::genai::GenerationHandle> generations, assisting_generations;
     for (size_t request_id = 0; request_id < prompts.size(); ++request_id) {
         generations.push_back(model_pipeline.add_request(request_id, prompts[request_id], sampling_params[request_id]));
-        assisting_generations.push_back(assisting_pipeline.add_request(request_id, prompts[request_id], sampling_params[request_id]));
+        auto assisting_sampling_params = sampling_params[request_id];
+        assisting_sampling_params.max_new_tokens += max_candidates_number;
+        assisting_sampling_params.min_new_tokens += max_candidates_number;
+        assisting_generations.push_back(assisting_pipeline.add_request(request_id, prompts[request_id], assisting_sampling_params));
+        // assisting_generations.push_back(assisting_pipeline.add_request(request_id, prompts[request_id], sampling_params[request_id]));
     }
 
     while (has_non_finished_requests()) {
         step();
     }
+    assisting_pipeline.finish_all_requests();
 
     return generations;
 }

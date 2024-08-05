@@ -293,9 +293,9 @@ Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
 
-        int decrease_len = 0;
+        size_t decrease_len = 0;
         if (sequence_group->requires_sampling()) {
-            int token_id = actual_seq_len;
+            auto token_id = actual_seq_len;
             // prompt phase
             if (sequence_group->get_num_processed_tokens() == 0) {
                 token_id -= (sequence_group->get_prompt_len() - 1);
@@ -318,8 +318,16 @@ Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 };
                 for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
                     const auto running_seq_token_ids = running_sequences[running_sequence_id]->get_generated_ids();
-                    int token_id_per_seq = token_id;
-                    while (--token_id_per_seq >= 0) {
+                    // max lenght of new added tokens
+                    auto max_new_tokens_cnt = sampling_params.max_new_tokens - running_seq_token_ids.size() + token_id;
+                    // token offset in case of multiple token infer
+                    auto token_id_per_seq = token_id;
+                    while (--token_id_per_seq >= 0 && --max_new_tokens_cnt >= 0) {
+                        if (max_new_tokens_cnt == 0) {
+                            running_sequences[running_sequence_id]->remove_last_n_tokens(token_id_per_seq);
+                            decrease_len = std::max(decrease_len, token_id_per_seq);
+                            break;
+                        }
                         std::vector<Token> logit_vector;
                         Token sampled_token_id;
                         // get logit processors only for validation or generation, not for cases of extending KV cache
@@ -357,7 +365,7 @@ Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                             // to validate candidates from assisting model and remove incorrect ones from generated sequence
                             if (is_validation_mode_enabled && *it != sampled_token_id.m_index) {
                                 running_sequences[running_sequence_id]->remove_last_n_tokens(token_id_per_seq);
-                                decrease_len = std::max(decrease_len - 1, token_id_per_seq);
+                                decrease_len = std::max(decrease_len, token_id_per_seq);
                                 is_extend_sequence = true;
                                 token_id_per_seq = 0;
                             } else {
@@ -366,6 +374,9 @@ Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         }
                         
                         register_new_token(sampled_token_id, running_sequence_id, is_extend_sequence);
+                        if (token_id_per_seq == 0) {
+                            break;
+                        }
                     };
                 }
                 for (const auto& dropped_seq_id : sequence_group->try_finish_generation()) {

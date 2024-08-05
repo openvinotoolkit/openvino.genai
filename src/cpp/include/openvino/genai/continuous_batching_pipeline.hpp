@@ -55,6 +55,8 @@ public:
     GenerationHandle add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params);
     GenerationHandle add_request(uint64_t request_id, ov::Tensor prompt, ov::genai::GenerationConfig sampling_params);
 
+    void finish_all_requests();
+
     struct GeneratedSequence {
         uint64_t request_id, sequence_id;
         std::vector<int64_t> token_ids;

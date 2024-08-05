@@ -223,6 +223,17 @@ public:
         return !m_awaiting_requests.empty() || !m_requests.empty();
     }
 
+    void finish_all_requests() {
+        while (!m_requests.empty()) {
+            const auto& request = *m_requests.rbegin();
+            for (const auto& sequence : request->get_sequences()) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+            m_sampler->clear_beam_search_info(request->get_request_id());
+            m_requests.pop_back();
+        }
+    }
+
     std::vector<GenerationHandle> generate(const std::vector<ov::Tensor> prompts, std::vector<ov::genai::GenerationConfig> sampling_params) {
         OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
         OPENVINO_ASSERT(prompts.size() == sampling_params.size());
@@ -408,4 +419,8 @@ ContinuousBatchingPipeline::update_generated_sequence(const ContinuousBatchingPi
 
 void ContinuousBatchingPipeline::enable_validation_mode() {
     m_impl->enable_validation_mode();
+}
+
+void ContinuousBatchingPipeline::finish_all_requests() {
+    m_impl->finish_all_requests();
 }
