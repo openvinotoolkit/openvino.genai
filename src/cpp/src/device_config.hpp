@@ -31,12 +31,12 @@ public:
             m_kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
             // if user sets precision hint, kv cache type should be changed
             if (plugin_config.find(ov::hint::inference_precision.name()) != plugin_config.end()) {
-                const auto& type_name = plugin_config.at(ov::hint::inference_precision.name()).as<std::string>();
-                if (type_name == "f32") {
+                const auto precision = plugin_config.at(ov::hint::inference_precision.name()).as<ov::element::Type>();
+                if (precision == ov::element::f32) {
                     m_kv_cache_type = ov::element::f32;
-                } else if (type_name == "f16") {
+                } else if (precision == ov::element::f16) {
                     m_kv_cache_type = ov::element::f16;
-                } else if (type_name == "bf16") {
+                } else if (precision == ov::element::bf16) {
                     m_kv_cache_type = ov::element::bf16;
                 } else {
                     // use default f32
