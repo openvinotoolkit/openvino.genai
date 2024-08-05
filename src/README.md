@@ -188,18 +188,14 @@ C++ template for a stremer.
 class CustomStreamer: public ov::genai::StreamerBase {
 public:
     bool put(int64_t token) {
-        bool stop_flag = false; 
-        /* 
-        custom decoding/tokens processing code
-        tokens_cache.push_back(token);
-        std::string text = m_tokenizer.decode(tokens_cache);
-        ...
-        */
-        return stop_flag;  // flag whether generation should be stoped, if true generation stops.
+        // Custom decoding/tokens processing logic.
+        
+        // Returns a flag whether generation should be stoped, if true generation stops.
+        return false;  
     };
 
     void end() {
-        /* custom finalization */
+        // Custom finalization logic.
     };
 };
 
@@ -208,7 +204,7 @@ int main(int argc, char* argv[]) {
 
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
-    std::cout << pipe.generate("The Sun is yellow because", ov::genai::streamer(custom_streamer), ov::genai::max_new_tokens(200));
+    std::cout << pipe.generate("The Sun is yellow because", , ov::genai::max_new_tokens(15), ov::genai::streamer(custom_streamer));
 }
 ```
 
@@ -217,37 +213,21 @@ Python template for a streamer.
 import openvino_genai as ov_genai
 
 class CustomStreamer(ov_genai.StreamerBase):
-    def __init__(self, tokenizer):
+    def __init__(self):
         super().__init__()
-        self.tokenizer = tokenizer
-         # Initialize a cache to store tokens
-        self.tokens_cache = []
+        # Initialization logic.
 
     def put(self, token_id) -> bool:
-        # Process a token ID and determine if the generation should stop. 
-        # Rerturn a boolean flag indicating whether the generation should stop.
-        stop_flag = False
-
-        # Add the token to the cache and decode the tokens to get the text
-        self.tokens_cache.append(token_id)
-        text = self.tokenizer.decode(self.tokens_cache)
-
-        # Custom processing logic (if any)
-        # For example, you might want to stop generation if a certain condition is met
-        if some_condition:
-            stop_flag = True
-
-        return stop_flag
+        # Custom decoding/tokens processing logic.
+        
+        # Returns a flag whether generation should be stoped, if true generation stops.
+        return False
 
     def end(self):
-        # Custom finalization logic (if any)
-        # For example, you might want to process the final text or clear the cache
-        final_text = self.tokenizer.decode(self.tokens_cache)
-        self.tokens_cache = []
-
+        # Custom finalization logic.
 
 pipe = ov_genai.LLMPipeline(model_path, "CPU")
-custom_streamer = TextPrintStreamer(pipe.get_tokenizer())
+custom_streamer = CustomStreamer()
 
 pipe.generate("The Sun is yellow because", max_new_tokens=15, streamer=custom_streamer)
 ```
