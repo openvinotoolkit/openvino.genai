@@ -5,6 +5,7 @@
 #pragma once
 
 #include <list>
+#include <cassert>
 #include <cstdlib>
 #include <limits>
 #include <map>
