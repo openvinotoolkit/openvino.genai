@@ -69,6 +69,7 @@ struct StableDiffusionModels {
     ov::CompiledModel tokenizer;
 };
 
+#if !GENAI_NEW_LORA
 void apply_lora(std::shared_ptr<ov::Model> model, InsertLoRA::LoRAMap& lora_map) {
     if (!lora_map.empty()) {
         ov::pass::Manager manager;
@@ -76,6 +77,7 @@ void apply_lora(std::shared_ptr<ov::Model> model, InsertLoRA::LoRAMap& lora_map)
         manager.run_passes(model);
     }
 }
+#endif
 
 void reshape_text_encoder(std::shared_ptr<ov::Model> model, size_t batch_size, size_t tokenizer_model_max_length) {
     ov::PartialShape input_shape = model->input(0).get_partial_shape();
@@ -147,17 +149,15 @@ StableDiffusionModels compile_models(const std::string& model_path,
 
     core.add_extension(TOKENIZERS_LIBRARY_PATH);
 
-    #define NEW_LORA_ADAPTERS 1
-
     // read LoRA weights
-    #if NEW_LORA_ADAPTERS
+    #if GENAI_NEW_LORA
     std::map<std::string, AdapterMap> lora_adapter;
     #else
     std::map<std::string, InsertLoRA::LoRAMap> lora_weights;
     #endif
     if (!lora_path.empty()) {
         Timer t("Loading and multiplying LoRA weights");
-    #if NEW_LORA_ADAPTERS
+    #if GENAI_NEW_LORA
         lora_adapter = load_lora_adapter(lora_path, alpha, {{"lora_te", "text_encoder"}, {"lora_unet", "unet"}});
     #else
         lora_weights = read_lora_adapters(lora_path, alpha);
@@ -171,7 +171,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
         if (!use_dynamic_shapes) {
             reshape_text_encoder(text_encoder_model, batch_size, TOKENIZER_MODEL_MAX_LENGTH);
         }
-        #if NEW_LORA_ADAPTERS
+        #if GENAI_NEW_LORA
         apply_lora_adapter(text_encoder_model, lora_adapter["text_encoder"]);
         #else
         apply_lora(text_encoder_model, lora_weights["text_encoder"]);
@@ -186,7 +186,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
         if (!use_dynamic_shapes) {
             reshape_unet(unet_model, batch_size, height, width, TOKENIZER_MODEL_MAX_LENGTH);
         }
-        #if NEW_LORA_ADAPTERS
+        #if GENAI_NEW_LORA
         apply_lora_adapter(unet_model, lora_adapter["unet"]);
         #else
         apply_lora(unet_model, lora_weights["unet"]);

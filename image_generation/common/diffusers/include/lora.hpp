@@ -1,6 +1,14 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#define GENAI_NEW_LORA 1
+
+#if GENAI_NEW_LORA
+
+#include  "../../../../src/cpp/src/lora.hpp"
+
+#else
+
 #include <map>
 #include <memory>
 #include <string>
@@ -38,3 +46,5 @@ using LoRAPrefixes = std::map<std::string, std::string>;
 
 std::map<std::string, AdapterMap> load_lora_adapter(const std::string& adapter_file_path, const float alpha, const LoRAPrefixes& prefixes);
 void apply_lora_adapter(std::shared_ptr<ov::Model> model, const AdapterMap& adapter_map);
+
+#endif

@@ -15,6 +15,7 @@
 #include "llm_pipeline_static.hpp"
 #include "utils.hpp"
 #include "text_callback_streamer.hpp"
+#include "lora.hpp"
 
 namespace {
 
@@ -56,9 +57,9 @@ ov::genai::EncodedResults multinominal_decoding(
 );
 
 std::pair<EncodedResults, int32_t> beam_search(
-    ov::InferRequest& lm, 
-    ov::Tensor prompts, 
-    ov::Tensor attention_mask, 
+    ov::InferRequest& lm,
+    ov::Tensor prompts,
+    ov::Tensor attention_mask,
     GenerationConfig config,
     std::optional<ov::Tensor> position_ids,
     std::optional<int32_t> selected_beam_idx
@@ -67,7 +68,7 @@ std::pair<EncodedResults, int32_t> beam_search(
 class StatefulLLMPipeline final : public LLMPipelineImplBase {
 public:
     ov::InferRequest m_model_runner;
-    
+
     bool is_chat_conversation = false;
     bool m_is_cache_empty = true;
     std::optional<int32_t> m_selected_beam = std::nullopt;
@@ -89,12 +90,21 @@ public:
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): 
+    ):
         LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(model_path))
     {
         ov::Core core;
         core.set_property(device, plugin_config);
-        m_model_runner = core.compile_model(model_path / "openvino_model.xml", device).create_infer_request();
+        auto model = core.read_model(model_path / "openvino_model.xml");
+        #if 1
+        DEBUG_PRINT("Applying LoRA here");
+        auto adapter = load_lora_adapter(
+            "/home/developer/notebook/models_converted/tinyllama_sql_lora.safetensors",
+            1,
+            {{"base_model.model.mode", ""}});
+        apply_lora_adapter(model, adapter[""]);
+        #endif
+        m_model_runner = core.compile_model(model, device).create_infer_request();
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1)
@@ -102,11 +112,11 @@ public:
     }
 
     StatefulLLMPipeline(
-        const std::filesystem::path& model_path, 
-        const std::string& device, 
+        const std::filesystem::path& model_path,
+        const std::string& device,
         const ov::AnyMap& plugin_config
     ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
-    
+
     DecodedResults generate(
         StringInputs inputs,
         OptionalGenerationConfig generation_config,
@@ -121,7 +131,7 @@ public:
             encoded_input = m_tokenizer.encode(*input_vector);
         } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
             std::string& prompt = *input_prompt;
-            
+
             if (is_chat_conversation) {
                 // KV cache in model already contains prompts and answers from previous iterations.
                 // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
@@ -153,7 +163,7 @@ public:
         auto decode_start_time =  std::chrono::steady_clock::now();
         DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
         auto decode_stop_time =  std::chrono::steady_clock::now();
-        
+
         if (is_chat_conversation) {
             // Tail of chat template is missing in KV cache.
             // Find the tail to concatenate it with the next input prompt.
@@ -161,7 +171,7 @@ public:
             m_templated_chat_history.append(answer);
             m_history.push_back({{"role", "assistant"}, {"content", answer}});
         }
-        
+
         // generate_durations
         decoded_results.perf_metrics = encoded_results.perf_metrics;
 
@@ -220,7 +230,7 @@ public:
                         "(input_ids, attention_mask, position_ids, beam_idx) "
                         "but you have '" + std::to_string(num_inputs) + "' inputs");
 
-        
+
         size_t kv_cache_len = 0;
         ov::Tensor concatenated_attention_mask;
         if (is_chat_conversation && !m_is_cache_empty) {
@@ -251,14 +261,14 @@ public:
 
         ov::genai::EncodedResults result;
         if (config.is_greedy_decoding()) {
-            result = ov::genai::greedy_decoding(m_model_runner, input_ids, concatenated_attention_mask, 
+            result = ov::genai::greedy_decoding(m_model_runner, input_ids, concatenated_attention_mask,
                                                 config, streamer_ptr, position_ids);
             m_selected_beam = 0;
         } else if (config.is_beam_search()) {
-            std::tie(result, m_selected_beam) = beam_search(m_model_runner, input_ids, concatenated_attention_mask, 
+            std::tie(result, m_selected_beam) = beam_search(m_model_runner, input_ids, concatenated_attention_mask,
                                                             config, position_ids, m_selected_beam);
         } else if (config.is_multinomial()) {
-            result = multinominal_decoding(m_model_runner, input_ids, concatenated_attention_mask, 
+            result = multinominal_decoding(m_model_runner, input_ids, concatenated_attention_mask,
                                            config, streamer_ptr, position_ids);
             m_selected_beam = 0;
         } else {
@@ -279,6 +289,7 @@ public:
         metrics.load_time = this->m_load_time_ms;
         metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
         metrics.evaluate_statistics(start_time);
+        DEBUG_PRINT("Generate time:" << metrics.get_generate_duration().mean);
         return result;
     }
 
@@ -514,7 +525,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
     m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
     auto stop_time = std::chrono::steady_clock::now();
-    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();   
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
@@ -523,7 +534,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& plugin_config
 ){
-    auto start_time = std::chrono::steady_clock::now();    
+    auto start_time = std::chrono::steady_clock::now();
     if ("CB" == device) {
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_path, tokenizer, "CPU", plugin_config);
     } else if ("NPU" == device) {
@@ -532,14 +543,14 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, plugin_config);
     }
     auto stop_time = std::chrono::steady_clock::now();
-    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();    
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
     const std::string& path,
     const std::string& device,
     const ov::AnyMap& config
-){ 
+){
     auto start_time = std::chrono::steady_clock::now();
     if ("CB" == device) {
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(path, "CPU", config);
