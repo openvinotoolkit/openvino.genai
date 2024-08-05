@@ -95,7 +95,7 @@ struct Beam {
     float m_score = -std::numeric_limits<float>::infinity();
 
     Beam(Sequence::Ptr sequence)
-        : m_sequence(sequence) { }
+        : m_sequence(std::move(sequence)) { }
 
     size_t get_generated_len() const {
         return m_sequence->get_generated_len();
@@ -203,40 +203,49 @@ public:
 
 class Sampler {
 
-    std::vector<Token> _get_logit_vector(ov::Tensor logits, size_t batch_idx = 1) {
+    Logits _get_logit_vector(ov::Tensor logits, size_t batch_idx = 1) {
         ov::Shape logits_shape = logits.get_shape();
         size_t batch_size = logits_shape[0], seq_len = logits_shape[1], vocab_size = logits_shape[2];
         OPENVINO_ASSERT(batch_idx <= batch_size);
         size_t batch_offset = batch_idx * seq_len * vocab_size;
         size_t sequence_offset = (seq_len - 1) * vocab_size;
-        const float* logits_data = logits.data<const float>() + batch_offset + sequence_offset;
+        float* logits_data = logits.data<float>() + batch_offset + sequence_offset;
 
-        std::vector<Token> logit_vector(vocab_size);
-        for (size_t i = 0; i < logit_vector.size(); i++) {
-            logit_vector[i] = Token(logits_data[i], i);
-        }
-        return logit_vector;
+        return Logits{logits_data, vocab_size};
     }
 
-    Token _greedy_sample(const std::vector<Token>& logit_vector) const {
-        Token max_token{-std::numeric_limits<float>::infinity() , 0};
-        for (const auto& logit : logit_vector) {
-            if (logit.m_log_prob > max_token.m_log_prob) {
-                max_token = logit;
+    Token _greedy_sample(const Logits& logits) const {
+        // For greedy sampling we do not expect sorting or shrinking considered tokens
+        // so we can operate directly on the data buffer
+        float max_value = -std::numeric_limits<float>::infinity();
+        size_t max_index = 0;
+        for (size_t i = 0; i < logits.m_size; ++i) {
+            if (logits.m_data[i] > max_value) {
+                max_value = logits.m_data[i];
+                max_index = i;
             }
         }
-        return max_token;
+        return Token(logits.m_data[max_index], max_index);
     }
 
-    std::vector<Token> _multinomial_sample(const std::vector<Token>& logit_vector, size_t num_tokens_per_sequence) {
-        std::vector<float> multinomial_weights(logit_vector.size());
-        for (size_t i = 0; i < logit_vector.size(); i++) multinomial_weights[i] = logit_vector[i].m_log_prob;
+    std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence) {
+        // If top_p or top_k was applied we use sorted vector, if not we go with original buffer.
+        std::vector<float> multinomial_weights;
+        multinomial_weights.reserve(logits.m_size);
+        if (logits.is_vector_initialized())
+            for (auto& logit: logits.m_vector) multinomial_weights.emplace_back(logit.m_log_prob);
+        else
+            multinomial_weights.assign(logits.m_data, logits.m_data + logits.m_size);
 
         auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
+        
         std::vector<Token> out_tokens;
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
             size_t element_to_pick = dist(rng_engine);
-            out_tokens.push_back(logit_vector[element_to_pick]);
+            if (logits.is_vector_initialized())
+                out_tokens.push_back(logits.m_vector[element_to_pick]);
+            else
+                out_tokens.emplace_back(logits.m_data[element_to_pick], element_to_pick);
         }
         return out_tokens;
     }
@@ -296,7 +305,6 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
                     auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id);
                     logit_processor.apply(logit_vector);
-
                     Token sampled_token_id;
                     if (sampling_params.is_greedy_decoding()) {
                         sampled_token_id = _greedy_sample(logit_vector);

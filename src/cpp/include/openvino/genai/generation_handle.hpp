@@ -61,7 +61,7 @@ class OPENVINO_GENAI_EXPORTS GenerationHandleImpl {
  
 public:
     GenerationHandleImpl(std::shared_ptr<GenerationStream> generation_stream, const ov::genai::GenerationConfig& sampling_params) :
-    m_generation_stream(generation_stream),
+    m_generation_stream(std::move(generation_stream)),
     m_sampling_params(sampling_params) {};
 
     ~GenerationHandleImpl();
