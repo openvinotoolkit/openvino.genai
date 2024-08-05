@@ -178,6 +178,8 @@ int main(int argc, char* argv[]) {
 ```
 
 Streaming with a custom class:
+
+C++ template for a stremer.
 ```cpp
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -210,69 +212,46 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-This Python example demonstrates custom detokenization with buferisation. The streamer receives 
-integer tokens corresponding to each word or subword, one by one. If tokens are decoded individually, 
-subwords will not be concatenated correctly, and the resulting text will lack appropriate spaces. 
-To address this, we accumulate tokens in a tokens_cache buffer and decode multiple tokens together, 
-returning the text only when a complete decoded chunk is ready.
-
+Python template for a streamer.
 ```py
 import openvino_genai as ov_genai
 
-class TextPrintStreamer(ov_genai.StreamerBase):
+class CustomStreamer(ov_genai.StreamerBase):
     def __init__(self, tokenizer):
         super().__init__()
         self.tokenizer = tokenizer
+         # Initialize a cache to store tokens
         self.tokens_cache = []
-        self.print_len = 0
-    
-    def get_stop_flag(self):
-        return False
-    
-    def process_word(self, word: str):
-        print(word, end='', flush=True)
 
-    def put(self, token_id):
+    def put(self, token_id) -> bool:
+        # Process a token ID and determine if the generation should stop. 
+        # Rerturn a boolean flag indicating whether the generation should stop.
+        stop_flag = False
+
+        # Add the token to the cache and decode the tokens to get the text
         self.tokens_cache.append(token_id)
         text = self.tokenizer.decode(self.tokens_cache)
 
-        word = ''
-        if len(text) > self.print_len and '\n' == text[-1]:
-            # Flush the cache after the new line symbol.
-            word = text[self.print_len:]            
-            self.tokens_cache = []
-            self.print_len = 0
-        elif len(text) >= 3 and text[-3:] == "�":
-            # Don't print incomplete text.
-            pass
-        elif len(text) > self.print_len:
-            # It is possible to have a shorter text after adding new token.
-            # Print to output only if text lengh is increaesed.
-            word = text[self.print_len:]
-            self.print_len = len(text)
-        self.process_word(word)        
-        
-        if self.get_stop_flag():
-            # When generation is stopped from streamer then end is not called, need to call it here manually.
-            self.end()
-            return True  # True means stop  generation
-        else:
-            return False  # False means continue generation
+        # Custom processing logic (if any)
+        # For example, you might want to stop generation if a certain condition is met
+        if some_condition:
+            stop_flag = True
+
+        return stop_flag
 
     def end(self):
-        # Flush residual tokens from the buffer.
-        text = self.tokenizer.decode(self.tokens_cache)
-        if len(text) > self.print_len:
-            word = text[self.print_len:]
-            self.process_word(word)
-            self.tokens_cache = []
-            self.print_len = 0
+        # Custom finalization logic (if any)
+        # For example, you might want to process the final text or clear the cache
+        final_text = self.tokenizer.decode(self.tokens_cache)
+        self.tokens_cache = []
+
 
 pipe = ov_genai.LLMPipeline(model_path, "CPU")
-text_print_streamer = TextPrintStreamer(pipe.get_tokenizer())
+custom_streamer = TextPrintStreamer(pipe.get_tokenizer())
 
-pipe.generate("The Sun is yellow because", max_new_tokens=15, streamer=text_print_streamer)
+pipe.generate("The Sun is yellow because", max_new_tokens=15, streamer=custom_streamer)
 ```
+For fully implemented iterable CustomStreamer please refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/samples/python/multinomial_causal_lm/README.md) sample.
 
 ### Performance Metrics
 
