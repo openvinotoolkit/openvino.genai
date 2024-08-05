@@ -91,14 +91,9 @@ def get_image_param_from_prompt_file(args):
 
 
 def set_default_param_for_ov_config(ov_config):
-    if 'PERFORMANCE_HINT' not in ov_config:
-        ov_config['PERFORMANCE_HINT'] = 'LATENCY'
     # With this PR https://github.com/huggingface/optimum-intel/pull/362, we are able to disable model cache
     if 'CACHE_DIR' not in ov_config:
         ov_config['CACHE_DIR'] = ''
-    # OpenVINO self have default value 2 for nstreams on machine with 2 nodes. Reducing memory consumed via changing nstreams to 1.
-    if 'NUM_STREAMS' not in ov_config:
-        ov_config['NUM_STREAMS'] = '1'
 
 
 def add_stateful_model_arguments(parser: argparse.ArgumentParser):
@@ -132,9 +127,19 @@ def analyze_args(args):
     model_args['save_prepared_model'] = args.save_prepared_model
     model_args['num_beams'] = args.num_beams
     model_args['torch_compile_backend'] = args.torch_compile_backend
+    model_args['torch_compile_dynamic'] = args.torch_compile_dynamic
+    model_args['torch_compile_options'] = args.torch_compile_options
+    model_args['torch_compile_input_module'] = args.torch_compile_input_module
     model_args['convert_tokenizer'] = args.convert_tokenizer
     model_args['subsequent'] = args.subsequent
     model_args['output_dir'] = args.output_dir
+    model_args['genai'] = args.genai
+    model_args['devices'] = args.device
+    model_args['prompt_index'] = [] if args.prompt_index is not None else None
+    if model_args['prompt_index'] is not None:
+        # Deduplication
+        [model_args['prompt_index'].append(i) for i in args.prompt_index if i not in model_args['prompt_index']]
+    model_args['end_token_stopping'] = args.end_token_stopping
 
     model_framework = args.framework
     model_path = Path(args.model)

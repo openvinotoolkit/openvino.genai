@@ -16,8 +16,7 @@ on:
       - llm_bench/python/**
       - .github/workflows/llm_bench-python.yml
 
-permissions:
-  contents: read
+permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
 jobs:
   build:
@@ -39,7 +38,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest black
-        pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt
+        GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt
         pip install openvino-nightly
 
     - name: Lint with flake8
@@ -73,7 +72,7 @@ jobs:
           python-version: 3.8
       - name: Test stateful
         run: |
-          python -m pip install -r llm_bench/python/requirements.txt
+          GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r llm_bench/python/requirements.txt
           python -m pip uninstall --yes openvino
           python -m pip install openvino-nightly
           python llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir . --stateful

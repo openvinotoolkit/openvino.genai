@@ -1,0 +1,76 @@
+# Copyright (C) 2018-2024 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
+
+cmake_minimum_required(VERSION 3.23.0)  # The requirement comes from Jinja2Cpp
+
+# Multi config generators such as Visual Studio ignore CMAKE_BUILD_TYPE. Multi config generators are configured with
+# CMAKE_CONFIGURATION_TYPES, but limiting options in it completely removes such build options
+get_property(GENERATOR_IS_MULTI_CONFIG_VAR GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(CMAKE_GENERATOR STREQUAL "Ninja Multi-Config")
+    # 'Ninja Multi-Config' specific, see:
+    # https://cmake.org/cmake/help/latest/variable/CMAKE_DEFAULT_BUILD_TYPE.html
+    set(CMAKE_DEFAULT_BUILD_TYPE "Release" CACHE STRING "CMake default build type")
+elseif(NOT GENERATOR_IS_MULTI_CONFIG_VAR AND NOT DEFINED CMAKE_BUILD_TYPE)
+    message(STATUS "CMAKE_BUILD_TYPE is not defined, 'Release' will be used")
+    # Setting CMAKE_BUILD_TYPE as CACHE must go before project(). Otherwise project() sets its value and set() doesn't take an effect
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel ...")
+endif()
+
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
+
+if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 OLD)
+endif()
+
+project(OpenVINOGenAI
+        VERSION 2024.4.0.0
+        DESCRIPTION "OpenVINO GenAI"
+        HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
+        LANGUAGES CXX)
+
+option(INSTALL_GTEST "Enable installation of googletest. (Projects embedding googletest may want to turn this OFF.)" OFF)
+option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
+
+# Find OpenVINODeveloperPackage first to compile with SDL flags
+find_package(OpenVINODeveloperPackage QUIET
+             PATHS "${OpenVINO_DIR}")
+if(NOT OpenVINODeveloperPackage_FOUND)
+    find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+endif()
+
+include(cmake/features.cmake)
+
+if(ENABLE_PYTHON)
+    # the following two calls are required for cross-compilation
+    if(OpenVINODeveloperPackage_DIR)
+        ov_find_python3(REQUIRED)
+        ov_detect_python_module_extension()
+    else()
+        if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
+            find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
+        else()
+            find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+        endif()
+    endif()
+endif()
+
+add_subdirectory(thirdparty)
+add_subdirectory(src)
+add_subdirectory(samples)
+add_subdirectory(tests/cpp)
+
+install(FILES LICENSE DESTINATION docs/licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
+install(FILES third-party-programs.txt DESTINATION docs/licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
+if(NOT DEFINED CPACK_ARCHIVE_COMPONENT_INSTALL)
+    set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+endif()
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+# Workaround https://gitlab.kitware.com/cmake/cmake/-/issues/2614
+set(CPACK_COMPONENTS_ALL core_genai core_genai_dev cpp_samples_genai licensing_genai openvino_tokenizers openvino_tokenizers_docs)
+if(ENABLE_PYTHON)
+    list(APPEND CPACK_COMPONENTS_ALL pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
+endif() 
+include(CPack)

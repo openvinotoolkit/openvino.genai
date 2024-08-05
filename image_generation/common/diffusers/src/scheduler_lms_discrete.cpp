@@ -161,6 +161,10 @@ std::vector<int64_t> LMSDiscreteScheduler::get_timesteps() const {
 }
 
 std::map<std::string, ov::Tensor> LMSDiscreteScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) {
+    if (inference_step == 0) {
+        m_derivative_list.clear();
+    }
+
     // LMS step function:
     std::vector<float> derivative;
     derivative.reserve(latents.get_size());

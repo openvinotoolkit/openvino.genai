@@ -1,0 +1,325 @@
+name: macOS (12, Python 3.8)
+on:
+  workflow_dispatch:
+  pull_request:
+  merge_group:
+  push:
+    branches:
+      - master
+      - 'releases/**'
+
+concurrency:
+  # github.ref is not unique in post-commit
+  group: ${{ github.event_name == 'push' && github.run_id || github.ref }}-mac
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.8'
+  OV_BRANCH: ''
+  OV_TARBALL: ''
+
+permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
+
+jobs:
+  openvino_download:
+    name: Download OpenVINO package
+    outputs:
+      status: ${{ steps.openvino_download.outcome }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Download OpenVINO build
+        id: openvino_download
+        run: |
+          wget ${{ env.OV_TARBALL}} --progress=bar:force:noscroll -O openvino_package.tar.gz
+          tar -tvf openvino_package.tar.gz
+        continue-on-error: true
+
+      #
+      # Upload to artifacts
+      #
+
+      - name: Upload openvino package
+        if: steps.openvino_download.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openvino_package
+          path: openvino_package.tar.gz
+          if-no-files-found: 'error'
+
+  openvino_build:
+    name: Build OpenVINO package
+    needs: [openvino_download]
+    if: needs.openvino_download.outputs.status != 'success'
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    runs-on: 'macos-12-large'
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '10.12'
+      CMAKE_BUILD_TYPE: 'Release'
+      CMAKE_GENERATOR: 'Ninja Multi-Config'
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      OPENVINO_REPO: ${{ github.workspace }}/openvino
+      INSTALL_DIR: ${{ github.workspace }}/openvino/install
+      BUILD_DIR: ${{ github.workspace }}/openvino/build
+
+    steps:
+      - name: Clone OpenVINO
+        uses: actions/checkout@v4
+        with:
+          repository: 'openvinotoolkit/openvino'
+          path: ${{ env.OPENVINO_REPO }}
+          submodules: 'true'
+          ref: ${{ env.OV_BRANCH }}
+
+      #
+      # Dependencies
+      #
+
+      - name: Install build dependencies
+        run: brew install coreutils ninja
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install python dependencies
+        run: |
+          # For Python API: build and wheel packaging
+          python3 -m pip install -r ${OPENVINO_REPO}/src/bindings/python/wheel/requirements-dev.txt
+
+      #
+      # Build
+      #
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          max-size: "2000M"
+          # Should save cache only if run in the master branch of the base repo
+          # github.ref_name is 'ref/PR_#' in case of the PR, and 'branch_name' when executed on push
+          save: ${{ github.ref_name == 'master' && 'true' || 'false'  }}
+          verbose: 2
+          key: ccache-mac
+          restore-keys: |
+            ccache-mac
+
+      - name: CMake configure - OpenVINO
+        run: |
+          cmake \
+            -G "${{ env.CMAKE_GENERATOR }}" \
+            -DENABLE_CPPLINT=OFF \
+            -DENABLE_NCC_STYLE=OFF \
+            -DENABLE_TESTS=OFF \
+            -DENABLE_STRICT_DEPENDENCIES=OFF \
+            -DENABLE_SYSTEM_OPENCL=ON \
+            -DCMAKE_VERBOSE_MAKEFILE=ON \
+            -DCPACK_GENERATOR=TGZ \
+            -DENABLE_JS=OFF \
+            -DENABLE_SAMPLES=ON \
+            -DENABLE_INTEL_NPU=OFF \
+            -DENABLE_OV_ONNX_FRONTEND=OFF \
+            -DENABLE_OV_PADDLE_FRONTEND=OFF \
+            -DENABLE_OV_PYTORCH_FRONTEND=ON \
+            -DENABLE_OV_TF_FRONTEND=ON \
+            -DENABLE_OV_TF_LITE_FRONTEND=OFF \
+            -DENABLE_INTEL_GPU=OFF \
+            -DENABLE_INTEL_NPU=OFF \
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=ON \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DENABLE_PYTHON=ON \
+            -DENABLE_WHEEL=ON \
+            -S ${OPENVINO_REPO} \
+            -B ${BUILD_DIR}
+
+      - name: Clean ccache stats
+        run: ccache --zero-stats --show-config
+
+      - name: Cmake build - OpenVINO
+        run: cmake --build ${BUILD_DIR} --parallel --config ${{ env.CMAKE_BUILD_TYPE }}
+
+      - name: Show ccache stats
+        run: ccache --show-stats
+
+      - name: Cmake install - OpenVINO
+        run: |
+          cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}/openvino_package -P ${BUILD_DIR}/cmake_install.cmake
+          cmake -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}/openvino_package -DCOMPONENT=python_wheels -P ${BUILD_DIR}/cmake_install.cmake
+
+      - name: Pack Artifacts
+        run: |
+          pushd ${INSTALL_DIR}
+            tar -czvf ${BUILD_DIR}/openvino_package.tar.gz *
+          popd
+
+      #
+      # Upload build artifacts and logs
+      #
+
+      - name: Upload openvino package
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: openvino_package
+          path: ${{ env.BUILD_DIR }}/openvino_package.tar.gz
+          if-no-files-found: 'error'
+
+  genai_python_lib:
+    name: OpenVINO genai extension (cmake + wheel)
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    runs-on: macos-13
+
+    env:
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@v4
+        with:
+          name: openvino_package
+          path: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${OV_INSTALL_DIR}
+            tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
+          popd
+
+      - name: Install build dependencies
+        run: brew install coreutils ninja scons
+
+      - name: Build genai
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+
+      - name: Test bindings
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/tools --upgrade-strategy eager
+          python -m pytest ./tests/python_tests/
+        env:
+          PYTHONPATH: "./build/:$PYTHONPATH"
+
+      - name: Test bindings (wheel)
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
+          python -c "from openvino_genai import LLMPipeline"
+          python -m pytest ./tests/python_tests/
+
+  genai_package:
+    name: OpenVINO genai extension (install to OpenVINO package)
+    strategy:
+      matrix:
+        build-type: [Release, Debug]
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    runs-on: macos-13
+    env:
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@v4
+        with:
+          name: openvino_package
+          path: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${OV_INSTALL_DIR}
+            tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
+          popd
+
+      - name: Install build dependencies
+        run: brew install coreutils scons
+
+      - name: Build genai
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
+          cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+
+      - name: Build and Install dependencies
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/tools
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/tools
+          optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+
+      - name: Install samples
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ${OV_INSTALL_DIR}
+
+      - name: Build samples (Release)
+        if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
+        run: |
+          ${OV_INSTALL_DIR}/samples/cpp/build_samples.sh -i ${{ github.workspace }}/s\ pace
+
+      - name: Build samples (Debug)
+        if: ${{ 'Release' != matrix.build-type }}
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${OV_INSTALL_DIR}/samples/cpp/ -B ./samples\ build/
+          cmake --build ./samples\ build/ --config ${{ matrix.build-type }} -j
+          cmake --install ./samples\ build/ --config ${{ matrix.build-type }} --component samples_bin --prefix s\ pace
+
+      - name: Test C++ samples (greedy_causal_lm)
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          timeout 25s ${{ github.workspace }}/s\ pace/samples_bin/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ ""
+
+      - name: Test python samples (multinomial_causal_lm)
+        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0

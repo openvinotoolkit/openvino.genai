@@ -1,6 +1,10 @@
 version: 2
 updates:
   - package-ecosystem: "pip"
+    directory: "./"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
     directory: "image_generation/stable_diffusion_1_5/cpp/scripts/"
     schedule:
       interval: "weekly"
@@ -9,6 +13,10 @@ updates:
     schedule:
       interval: "weekly"
   - package-ecosystem: "pip"
-    directory: "text_generation/causal_lm/cpp/"
+    directory: "./tests/python_tests/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "samples/"
     schedule:
       interval: "weekly"
