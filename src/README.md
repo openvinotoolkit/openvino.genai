@@ -204,7 +204,7 @@ int main(int argc, char* argv[]) {
 
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
-    std::cout << pipe.generate("The Sun is yellow because", , ov::genai::max_new_tokens(15), ov::genai::streamer(custom_streamer));
+    std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(15), ov::genai::streamer(custom_streamer));
 }
 ```
 
