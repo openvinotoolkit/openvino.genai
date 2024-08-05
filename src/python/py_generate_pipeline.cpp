@@ -612,7 +612,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             "set_chat_template", &Tokenizer::set_chat_template,
             py::arg("chat_template"), "The new template to override with.",
             "Override a chat_template read from tokenizer_config.json."
-        ),
+        )
 
         .def("get_pad_token_id", &Tokenizer::get_pad_token_id)
         .def("get_bos_token_id", &Tokenizer::get_bos_token_id)
