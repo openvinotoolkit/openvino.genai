@@ -20,6 +20,10 @@ bool GenerationHandleImpl::can_read() {
     return m_generation_stream->can_read();
 }
 
+bool GenerationHandleImpl::is_dropped() {
+    return m_generation_stream->get_status() == GenerationStatus::DROPPED_BY_HANDLE;
+}
+
 void GenerationHandleImpl::drop() {
     m_generation_stream->drop();
 }
@@ -29,6 +33,8 @@ std::unordered_map<uint64_t, GenerationOutput> GenerationHandleImpl::back() {
 }
 
 std::unordered_map<uint64_t, GenerationOutput> GenerationHandleImpl::read() {
+    if (!is_dropped())
+        OPENVINO_THROW("Handle is dropped");
     return m_generation_stream->read();
 }
 

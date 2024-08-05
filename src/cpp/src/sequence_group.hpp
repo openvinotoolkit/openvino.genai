@@ -480,10 +480,11 @@ public:
             set_generation_status(GenerationStatus::FINISHED);
         }
         if (handle_dropped()) {
+            // Push anything to the queue to unblock cancelled read_all() calls
+            // When handle is dropped we do not care about any remaining data
             push_empty();
-        }
-        // For beam search streaming is not available, so we notify only upon finishing
-        else if(m_sampling_params.is_beam_search()) {
+        } else if(m_sampling_params.is_beam_search()) {
+            // For beam search streaming is not available, so we notify only upon finishing
             if (has_finished() || out_of_memory()) {
                 push_outputs();
             }
