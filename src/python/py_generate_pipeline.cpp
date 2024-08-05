@@ -609,7 +609,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             R"(Embeds input prompts with special tags for a chat scenario.)")
         
         .def(
-            "set_chat_template", &Tokenizer::chat_template,
+            "set_chat_template", &Tokenizer::set_chat_template,
             py::arg("chat_template"), "The new template to override with.",
             "Override a chat_template read from tokenizer_config.json."
         ),
