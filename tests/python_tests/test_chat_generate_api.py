@@ -192,9 +192,9 @@ def test_chat_continuous_batching_vs_stateful(model_descr, generation_config: Di
 def test_set_chat_template():
     model_descr = get_chat_models_list()[0]
     model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
-    pipe.set_chat_template("")
+    pipe.get_tokenizer().set_chat_template("{% for message in messages %}{{ message['content'] }}{% endfor %}")
     pipe.start_chat()
-    generated = pipe.generate("", max_new_tokens=1)
+    generated = pipe.generate("", max_new_tokens=2)
     pipe.finish_chat()
-    reference = pipe.generate("", max_new_tokens=1)
+    reference = pipe.generate("", max_new_tokens=2)
     assert generated == reference
