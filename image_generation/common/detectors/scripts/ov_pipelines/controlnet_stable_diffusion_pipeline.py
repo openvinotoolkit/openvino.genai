@@ -348,6 +348,7 @@ class OVContrlNetStableDiffusionPipeline(DiffusionPipeline):
         latents_tmp = latents_copy.reshape(-1, latents_copy.shape[1])
 
         np.savetxt("np_latents_512x512.txt", latents_tmp, fmt='%.8e')
+        self.init_latent = latents_tmp
         # scale the initial noise by the standard deviation required by the scheduler
         # latents = latents * self.scheduler.init_noise_sigma
         latents = latents * self.scheduler.init_noise_sigma.item()

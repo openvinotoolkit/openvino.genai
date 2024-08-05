@@ -1,1 +1,2 @@
 openvino-tokenizers==2024.2.0.0
+matplotlib
