@@ -66,7 +66,7 @@ class ContinuousBatchingPipeline::Impl {
             const auto& request = *requests_iterator;
             if(request->has_finished() || request->out_of_memory() || request->handle_dropped()) {
                 // Notify the last time even if there will be no results
-                // This causes read_all() to unblock in all situations
+                // This causes read_all() to unblock
                 request->notify_handle();
                 for (const auto& sequence: request->get_sequences()) {
                     m_scheduler->free_sequence(sequence->get_id());
