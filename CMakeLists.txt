@@ -31,14 +31,11 @@ project(OpenVINOGenAI
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX)
 
-option(INSTALL_GTEST "Enable installation of googletest. (Projects embedding googletest may want to turn this OFF.)" OFF)
-option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
-
 # Find OpenVINODeveloperPackage first to compile with SDL flags
-find_package(OpenVINODeveloperPackage QUIET
+find_package(OpenVINODeveloperPackage ${OpenVINOGenAI_VERSION} QUIET
              PATHS "${OpenVINO_DIR}")
 if(NOT OpenVINODeveloperPackage_FOUND)
-    find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+    find_package(OpenVINO ${OpenVINOGenAI_VERSION} REQUIRED COMPONENTS Runtime)
 endif()
 
 include(cmake/features.cmake)
