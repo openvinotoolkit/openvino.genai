@@ -9,7 +9,23 @@ import threading
 
 
 class IterableStreamer(openvino_genai.StreamerBase):
+    """
+    A custom streamer class for handling token streaming and detokenization with buffering.
+    
+    Attributes:
+        tokenizer (Tokenizer): The tokenizer used for encoding and decoding tokens.
+        tokens_cache (list): A buffer to accumulate tokens for detokenization.
+        text_queue (Queue): A synchronized queue for storing decoded text chunks.
+        print_len (int): The length of the printed text to manage incremental decoding.
+    """
+    
     def __init__(self, tokenizer):
+        """
+        Initializes the IterableStreamer with the given tokenizer.
+        
+        Args:
+            tokenizer (Tokenizer): The tokenizer to use for encoding and decoding tokens.
+        """
         super().__init__()
         self.tokenizer = tokenizer
         self.tokens_cache = []
@@ -17,22 +33,54 @@ class IterableStreamer(openvino_genai.StreamerBase):
         self.print_len = 0
 
     def __iter__(self):
+        """
+        Returns the iterator object itself.
+        """
         return self
     
     def __next__(self):
-        # get() will be blocked until a token is available.
-        value = self.text_queue.get()
+        """
+        Returns the next value from the text queue.
+        
+        Returns:
+            str: The next decoded text chunk.
+        
+        Raises:
+            StopIteration: If there are no more elements in the queue.
+        """
+        value = self.text_queue.get()  # get() will be blocked until a token is available.
         if value is None:
             raise StopIteration
         return value
     
     def get_stop_flag(self):
+        """
+        Checks whether the generation process should be stopped.
+        
+        Returns:
+            bool: Always returns False in this implementation.
+        """
         return False
     
     def put_word(self, word: str):
+        """
+        Puts a word into the text queue.
+        
+        Args:
+            word (str): The word to put into the queue.
+        """
         self.text_queue.put(word)
 
     def put(self, token_id: int) -> bool:
+        """
+        Processes a token and manages the decoding buffer. Adds decoded text to the queue.
+        
+        Args:
+            token_id (int): The token_id to process.
+        
+        Returns:
+            bool: True if generation should be stopped, False otherwise.
+        """        
         self.tokens_cache.append(token_id)
         text = self.tokenizer.decode(self.tokens_cache)
 
@@ -60,7 +108,9 @@ class IterableStreamer(openvino_genai.StreamerBase):
             return False  # False means continue generation
 
     def end(self):
-        # Flush residual tokens from the buffer.
+        """
+        Flushes residual tokens from the buffer and puts a None value in the queue to signal the end.
+        """
         text = self.tokenizer.decode(self.tokens_cache)
         if len(text) > self.print_len:
             word = text[self.print_len:]
