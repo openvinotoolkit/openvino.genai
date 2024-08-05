@@ -4,11 +4,70 @@
 
 import argparse
 import openvino_genai
+import queue
+import threading
 
 
-def streamer(subword):
-    print(subword, end='', flush=True)
-    return False
+class IterableStreamer(openvino_genai.StreamerBase):
+    def __init__(self, tokenizer):
+        super().__init__()
+        self.tokenizer = tokenizer
+        self.tokens_cache = []
+        self.text_queue = queue.Queue()
+        self.print_len = 0
+
+    def __iter__(self):
+        return self
+    
+    def __next__(self):
+        # get() will be blocked until a token is available.
+        value = self.text_queue.get()
+        if value is None:
+            raise StopIteration
+        return value
+    
+    def get_stop_flag(self):
+        return False
+    
+    def put_word(self, word: str):
+        self.text_queue.put(word)
+
+    def put(self, token_id: int) -> bool:
+        self.tokens_cache.append(token_id)
+        text = self.tokenizer.decode(self.tokens_cache)
+
+        word = ''
+        if len(text) > self.print_len and '\n' == text[-1]:
+            # Flush the cache after the new line symbol.
+            word = text[self.print_len:]            
+            self.tokens_cache = []
+            self.print_len = 0
+        elif len(text) >= 3 and text[-3:] == "�":
+            # Don't print incomplete text.
+            pass
+        elif len(text) > self.print_len:
+            # It is possible to have a shorter text after adding new token.
+            # Print to output only if text lengh is increaesed.
+            word = text[self.print_len:]
+            self.print_len = len(text)
+        self.put_word(word)        
+        
+        if self.get_stop_flag():
+            # When generation is stopped from streamer then end is not called, need to call it here manually.
+            self.end()
+            return True  # True means stop  generation
+        else:
+            return False  # False means continue generation
+
+    def end(self):
+        # Flush residual tokens from the buffer.
+        text = self.tokenizer.decode(self.tokens_cache)
+        if len(text) > self.print_len:
+            word = text[self.print_len:]
+            self.put_word(word)
+            self.tokens_cache = []
+            self.print_len = 0
+        self.put_word(None)
 
 
 def main():
@@ -19,17 +78,25 @@ def main():
 
     device = 'CPU'  # GPU can be used as well
     pipe = openvino_genai.LLMPipeline(args.model_dir, device)
-
+    
+    text_print_streamer = IterableStreamer(pipe.get_tokenizer())
+    def token_printer():
+        # Getting next elements from iterable will be blocked until a new token is available.
+        for word in text_print_streamer:
+            print(word, end='', flush=True)
+    printer_thread = threading.Thread(target=token_printer, daemon=True)
+    printer_thread.start()
+    
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
     config.do_sample = True
     config.top_p = 0.9
     config.top_k = 30
 
-    # Since the streamer is set, the results will
-    # be printed each time a new token is generated.
-    pipe.generate(args.prompt, config, streamer)
-
+    # Since the streamer is set, the results will be printed 
+    # every time a new token is generated and put into the streamer queue.
+    pipe.generate(args.prompt, config, text_print_streamer)
+    printer_thread.join()
 
 if '__main__' == __name__:
     main()
