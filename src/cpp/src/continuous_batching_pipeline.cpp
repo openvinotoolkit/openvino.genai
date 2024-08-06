@@ -60,16 +60,20 @@ class ContinuousBatchingPipeline::Impl {
     ChatHistory m_history;
 
 
+    void _notify_requests_dropped_by_handle() {
+        // Notify the last time by pushing empty output
+        // This causes read_all() to unblock by adding anything to the queue
+        for (SequenceGroup::Ptr& request : m_requests) {
+            if (request->handle_dropped())
+                request->push_empty_outputs();
+        }
+    }
+
     void _free_non_running_requests() {
         std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
         while (requests_iterator != m_requests.end()) {
             const auto& request = *requests_iterator;
             if(request->has_finished() || request->out_of_memory() || request->handle_dropped()) {
-                // Notify the last time even if there will be no results
-                // This causes read_all() to unblock
-                // Avoid notifying again once finished
-                if (request->out_of_memory() || request->handle_dropped())
-                    request->notify_handle();
                 for (const auto& sequence: request->get_sequences()) {
                     m_scheduler->free_sequence(sequence->get_id());
                 }
@@ -180,6 +184,7 @@ public:
             for (size_t i = 0; i < m_requests.size(); ++i) {
                 SequenceGroup::Ptr sequence_group = m_requests[i];
                 sequence_group->set_out_of_memory();
+                sequence_group->notify_handle();
             }
             _free_non_running_requests();
             return;
@@ -228,6 +233,15 @@ public:
             for (auto seq_id : sampler_output.m_dropped_sequences)
                 m_scheduler->free_sequence(seq_id);
 
+            timer.end();
+        }
+
+        // notify requests dropped by handle
+
+        {
+            static ManualTimer timer("notify requests dropped by handle");
+            timer.start();
+            _notify_requests_dropped_by_handle();
             timer.end();
         }
 

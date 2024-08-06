@@ -474,20 +474,13 @@ public:
     }
 
     void notify_handle() {
-        if (handle_dropped()) {
-            // Push anything to the queue to unblock cancelled read_all() calls
-            // When handle is dropped we do not care about any remaining data
-            push_empty_outputs();
-            return;
-        }
-
         if (out_of_memory()) {
             set_generation_status(GenerationStatus::IGNORED);
         } else if (has_finished()) {
             set_generation_status(GenerationStatus::FINISHED);
         }
-        if (m_sampling_params.is_beam_search()) {
-            // For beam search streaming is not available, so we notify only upon finishing
+        // For beam search streaming is not available, so we notify only upon finishing
+        if(m_sampling_params.is_beam_search()) {
             if (has_finished() || out_of_memory()) {
                 push_outputs();
             }
