@@ -29,11 +29,12 @@ void GenerationHandleImpl::drop() {
 }
 
 std::unordered_map<uint64_t, GenerationOutput> GenerationHandleImpl::back() {
+    OPENVINO_ASSERT(!is_dropped(), "GenerationHandle cannot be used after it is dropped.");
     return m_generation_stream->back();
 }
 
 std::unordered_map<uint64_t, GenerationOutput> GenerationHandleImpl::read() {
-    OPENVINO_ASSERT(!is_dropped(), "Read cannot be called while underlying GenerationStream is already in dropped by handle state.");
+    OPENVINO_ASSERT(!is_dropped(), "GenerationHandle cannot be used after it is dropped.");
     return m_generation_stream->read();
 }
 
@@ -50,6 +51,7 @@ void add_partial_result(std::unordered_map<uint64_t, GenerationOutput>& partial_
 }
 
 std::vector<GenerationOutput> GenerationHandleImpl::read_all() {
+    OPENVINO_ASSERT(!is_dropped(), "GenerationHandle cannot be used after it is dropped.");
     std::vector<GenerationOutput> results;
     std::unordered_map<uint64_t, GenerationOutput> partial_results;
     // We iterate until generation is running or there are tokens we haven't read yet

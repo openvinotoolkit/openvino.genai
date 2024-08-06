@@ -62,7 +62,7 @@ class ContinuousBatchingPipeline::Impl {
 
     void _notify_requests_dropped_by_handle() {
         // Notify the last time by pushing empty output
-        // This causes read_all() to unblock by adding anything to the queue
+        // This causes read() to unblock by adding anything to the queue
         for (SequenceGroup::Ptr& request : m_requests) {
             if (request->handle_dropped())
                 request->push_empty_outputs();
