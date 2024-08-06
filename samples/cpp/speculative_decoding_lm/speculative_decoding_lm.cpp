@@ -16,7 +16,7 @@ size_t get_seq_len_axis(std::shared_ptr<ov::Model> model) {
     size_t seq_length_axis = 2;
 
     for (const auto op : model->get_ordered_ops()) {
-        // "ReadValue" node is a KV cache representation is stateful model
+        // "ReadValue" node is KV cache representation in stateful model
         if (std::string("ReadValue") != op->get_type_name()) {
             continue;
         }
@@ -270,11 +270,11 @@ int main(int argc, char* argv[]) try {
     uint64_t seq_len = input_ids.get_shape()[1];
 
     // main model (which is bigger, more accurate but slower)
-    std::shared_ptr<ov::Model> ov_model = core.read_model(std::string{argv[2]} + "/openvino_model.xml");
+    std::shared_ptr<ov::Model> ov_main_model = core.read_model(std::string{argv[2]} + "/openvino_model.xml");
 
-    size_t main_model_seq_len_axis = get_seq_len_axis(ov_model);
+    size_t main_model_seq_len_axis = get_seq_len_axis(ov_main_model);
 
-    ov::InferRequest main_model = core.compile_model(ov_model, "CPU").create_infer_request();
+    ov::InferRequest main_model = core.compile_model(ov_main_model, "CPU").create_infer_request();
 
     size_t max_sequence_length = 100;
 
