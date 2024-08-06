@@ -98,10 +98,7 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
 
     auto old_tensor_data = tensor.data<float>();
     auto shape = tensor.get_shape();
-    size_t batch_size = shape[0];
-    size_t num_kv_heads = shape[1];
-    size_t old_seq_len = shape[2];
-    size_t head_size = shape[3];
+    size_t old_seq_len = shape[seq_len_axis];
 
     OPENVINO_ASSERT(new_seq_len <= old_seq_len);
 
@@ -109,14 +106,16 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
     if (old_seq_len == new_seq_len)
         return tensor;
 
+    shape[seq_len_axis] = new_seq_len;
+
     if (seq_len_axis == 0) {
-        shape[0] = new_seq_len;
         tensor.set_shape(shape);
         return tensor;
     }
 
     ov::Coordinate new_shape_begin{0, 0, 0, 0};
-    ov::Coordinate new_shape_end{batch_size, num_kv_heads, new_seq_len, head_size};
+    ov::Coordinate new_shape_end{shape};
+
     auto new_tensor = ov::Tensor(tensor, new_shape_begin, new_shape_end);
 
     return new_tensor;
