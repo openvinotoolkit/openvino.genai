@@ -90,11 +90,9 @@ struct TextStreamer {
 
 ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_seq_len) {
     // Copy elements from the old to a new tensor and return it.
-    // It's assumed that key/values tensor has a shape [BATCH_SIZE, num_kv_heads, seq_len, head_size] or [seq_len, ...],
-    // It that's not the case for your model please implement your own trim method.
-    OPENVINO_ASSERT(seq_len_axis == 2 || seq_len_axis == 0,
-                    "Cannot trim key/values with sequence length axis = ",
-                    seq_len_axis);
+    // Trim kv tensor on sequence length axis
+    // key/values tensor shape example: [BATCH_SIZE, num_kv_heads, seq_len, head_size]
+    // Sequense length axis position may vary from one model to another
 
     auto old_tensor_data = tensor.data<float>();
     auto shape = tensor.get_shape();
