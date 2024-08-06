@@ -94,8 +94,14 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
     // key/values tensor shape example: [BATCH_SIZE, num_kv_heads, seq_len, head_size]
     // Sequense length axis position may vary from one model to another
 
-    auto old_tensor_data = tensor.data<float>();
     auto shape = tensor.get_shape();
+
+    OPENVINO_ASSERT(seq_len_axis < shape.size(),
+                    "Sequence length axis: ",
+                    seq_len_axis,
+                    " should be less than shape size: ",
+                    shape.size());
+
     size_t old_seq_len = shape[seq_len_axis];
 
     OPENVINO_ASSERT(new_seq_len <= old_seq_len);
