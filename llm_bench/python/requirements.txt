@@ -11,7 +11,7 @@ torchvision<0.20.0
 transformers>=4.40.0,<4.43.0
 diffusers>=0.22.0
 #optimum is in dependency list of optimum-intel
-git+https://github.com/huggingface/optimum-intel.git@6388aeb8738b63e28fc594af84df94590e77cb9a#egg=optimum-intel
+git+https://github.com/jane-intel/optimum-intel.git@releases/2024/3#egg=optimum-intel
 nncf~=2.12.0
 packaging
 psutil
