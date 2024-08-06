@@ -31,6 +31,9 @@ function(ov_genai_build_jinja2cpp)
         set(JINJA2CPP_STRICT_WARNINGS OFF CACHE BOOL "")
         set(JINJA2CPP_PIC ON CACHE BOOL "")
 
+        # options for Jinja2Cpp dependencies
+        option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
+
         add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
     endif()
 endfunction()
