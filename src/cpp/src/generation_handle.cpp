@@ -53,7 +53,7 @@ std::vector<GenerationOutput> GenerationHandleImpl::read_all() {
     std::vector<GenerationOutput> results;
     std::unordered_map<uint64_t, GenerationOutput> partial_results;
     // We iterate until generation is running or there are tokens we haven't read yet
-    while (get_status() == GenerationStatus::RUNNING || can_read()) {
+    while (!is_dropped() && (get_status() == GenerationStatus::RUNNING || can_read())) {
         // For unary case there's only one iteration and we get all results in a single read() call
         std::unordered_map<uint64_t, GenerationOutput> iteration_results = read();
         add_partial_result(partial_results, iteration_results);
