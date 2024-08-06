@@ -390,9 +390,9 @@ jobs:
       - name: run and compare (model with seq_length_axis = 0)
         run: |
           source ./ov/setupvars.sh
-          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm chatglm2-6b chatglm3-6b "Alan Turing was a" > predictions_speculative.txt
-          sleep 5
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm chatglm3-6b "Alan Turing was a" > predictions_greedy.txt
+          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm chatglm2-6b chatglm3-6b "Alan Turing was a" > predictions_speculative.txt      
+    
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -457,9 +457,9 @@ jobs:
           Question: Can you please add 2 and 3
           A:' > ./prompt.txt
 
-          ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./chatglm2-6b/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
-          sleep 5
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm2-6b/ "$(<prompt.txt)" > predictions_greedy.txt
+          ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./chatglm2-6b/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
+          
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()

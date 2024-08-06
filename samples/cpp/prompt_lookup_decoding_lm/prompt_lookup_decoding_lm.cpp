@@ -15,9 +15,11 @@ size_t get_seq_len_axis(std::shared_ptr<ov::Model> model) {
     // threfore usually seq_length_axis = 2
     size_t seq_length_axis = 2;
 
-    for (const auto op : model->get_ordered_ops()) {
-        // "ReadValue" node is KV cache representation in stateful model
-        if (std::string("ReadValue") != op->get_type_name()) {
+    // "ReadValue" node is KV cache representation in stateful model
+    std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
+
+    for (const auto op : model->get_ops()) {
+        if (op->get_type_name() != kv_node_type_name) {
             continue;
         }
 
