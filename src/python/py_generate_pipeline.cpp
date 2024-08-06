@@ -257,6 +257,27 @@ bool py_object_is_any_map(const py::object& py_obj) {
     });
 }
 
+bool py_object_is_map_str_str(const py::object& py_obj) {
+    if (!py::isinstance<py::dict>(py_obj)) {
+        return false;
+    }
+    auto dict = py::cast<py::dict>(py_obj);
+    return std::all_of(dict.begin(), dict.end(), [&](const std::pair<py::object::handle, py::object::handle>& elem) {
+        return py::isinstance<py::str>(elem.first) && py::isinstance<py::str>(elem.second);
+    });
+}
+
+std::map<std::string, std::string> py_object_to_map_str_str(const py::object& py_obj) {
+    OPENVINO_ASSERT(py_object_is_map_str_str(py_obj), "Unsupported attribute type.");
+    std::map<std::string, std::string> return_value = {};
+    for (auto& item : py::cast<py::dict>(py_obj)) {
+        std::string key = py::cast<std::string>(item.first);
+        std::string value = py::cast<std::string>(item.second);
+        return_value[key] = value;
+    }
+    return return_value;    
+}
+
 ov::AnyMap py_object_to_any_map(const py::object& py_obj) {
     OPENVINO_ASSERT(py_object_is_any_map(py_obj), "Unsupported attribute type.");
     ov::AnyMap return_value = {};
@@ -332,7 +353,9 @@ ov::Any py_object_to_any(const py::object& py_obj) {
         default:
             OPENVINO_ASSERT(false, "Unsupported attribute type.");
         }
-    
+    // W/A For NPU
+    } else if (py_object_is_map_str_str(py_obj)) {
+        return py_object_to_map_str_str(py_obj);
     // OV types
     } else if (py_object_is_any_map(py_obj)) {
         return py_object_to_any_map(py_obj);
