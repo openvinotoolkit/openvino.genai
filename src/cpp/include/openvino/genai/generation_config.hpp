@@ -81,7 +81,7 @@ public:
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
     StopCriteria stop_criteria = StopCriteria::HEURISTIC;
     
-    // Multinomial
+    // Multinomial/
     float temperature = 1.0f;
     float top_p = 1.0f;
     size_t top_k = std::numeric_limits<size_t>::max();
