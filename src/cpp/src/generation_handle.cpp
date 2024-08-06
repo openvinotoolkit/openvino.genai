@@ -9,7 +9,7 @@
 using namespace ov::genai;
 
 GenerationHandleImpl::~GenerationHandleImpl() {
-    m_generation_stream->drop();
+    drop();
 }
 
 GenerationStatus GenerationHandleImpl::get_status() {
@@ -17,14 +17,24 @@ GenerationStatus GenerationHandleImpl::get_status() {
 }
 
 bool GenerationHandleImpl::can_read() {
-    return m_generation_stream->can_read();
+    return !is_dropped() &&  m_generation_stream->can_read();
+}
+
+bool GenerationHandleImpl::is_dropped() {
+    return get_status() == GenerationStatus::DROPPED_BY_HANDLE;
+}
+
+void GenerationHandleImpl::drop() {
+    m_generation_stream->drop();
 }
 
 std::unordered_map<uint64_t, GenerationOutput> GenerationHandleImpl::back() {
+    OPENVINO_ASSERT(!is_dropped(), "GenerationHandle cannot be used after it is dropped.");
     return m_generation_stream->back();
 }
 
 std::unordered_map<uint64_t, GenerationOutput> GenerationHandleImpl::read() {
+    OPENVINO_ASSERT(!is_dropped(), "GenerationHandle cannot be used after it is dropped.");
     return m_generation_stream->read();
 }
 
@@ -42,6 +52,7 @@ void add_partial_result(std::unordered_map<uint64_t, GenerationOutput>& partial_
 }
 
 std::vector<GenerationOutput> GenerationHandleImpl::read_all() {
+    OPENVINO_ASSERT(!is_dropped(), "GenerationHandle cannot be used after it is dropped.");
     std::vector<GenerationOutput> results;
     std::unordered_map<uint64_t, GenerationOutput> partial_results;
     // We iterate until generation is running or there are tokens we haven't read yet

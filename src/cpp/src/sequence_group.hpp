@@ -463,6 +463,10 @@ public:
         return m_generation_stream->get_status() == GenerationStatus::DROPPED_BY_HANDLE;
     }
 
+    void push_empty_outputs() {
+        m_generation_stream->push({});
+    }
+
     void push_outputs() {
         GenerationOutputs outputs;
         for (auto& sequence: m_sequences) {

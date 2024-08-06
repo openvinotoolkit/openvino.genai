@@ -60,6 +60,15 @@ class ContinuousBatchingPipeline::Impl {
     ChatHistory m_history;
 
 
+    void _notify_requests_dropped_by_handle() {
+        // Notify the last time by pushing empty output
+        // This causes read() to unblock by adding anything to the queue
+        for (SequenceGroup::Ptr& request : m_requests) {
+            if (request->handle_dropped())
+                request->push_empty_outputs();
+        }
+    }
+
     void _free_non_running_requests() {
         std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
         while (requests_iterator != m_requests.end()) {
@@ -136,7 +145,7 @@ public:
             std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
             m_awaiting_requests.push_back(sequence_group);
         }
-        return std::make_unique<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
+        return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
     }
 
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, ov::genai::GenerationConfig sampling_params) {
@@ -224,6 +233,15 @@ public:
             for (auto seq_id : sampler_output.m_dropped_sequences)
                 m_scheduler->free_sequence(seq_id);
 
+            timer.end();
+        }
+
+        // notify requests dropped by handle
+
+        {
+            static ManualTimer timer("notify requests dropped by handle");
+            timer.start();
+            _notify_requests_dropped_by_handle();
             timer.end();
         }
 
