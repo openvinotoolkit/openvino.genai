@@ -21,6 +21,10 @@ from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, 
     get_multinomial_temperature_and_frequence_penalty, get_multinomial_temperature_and_presence_penalty, \
     generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty, get_scheduler_config
 
+
+pytest.skip("continuous_batching fails with nightly ov", allow_module_level=True)
+
+
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
 @pytest.mark.xfail(
@@ -262,6 +266,7 @@ RANDOM_SAMPLING_TEST_CASES = [
 
 
 @pytest.mark.precommit
+@pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
 @pytest.mark.parametrize("test_struct", RANDOM_SAMPLING_TEST_CASES,
         ids=["multinomial_temperature",
              "multinomial_temperature_and_top_p",

@@ -36,6 +36,8 @@ public:
 
     Tokenizer m_tokenizer;
     GenerationConfig m_generation_config;
+
+    float m_load_time_ms  = 0;
 };
 
 }  // namespace genai
