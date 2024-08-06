@@ -59,10 +59,12 @@ std::string get_ov_genai_library_path() {
 std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
 #ifdef _WIN32
     constexpr char tokenizers[] = "openvino_tokenizers.dll";
-#elif __linux__
+#elif defined(__linux__)
     constexpr char tokenizers[] = "libopenvino_tokenizers.so";
-#elif __APPLE__
+#elif defined(__APPLE__)
     constexpr char tokenizers[] = "libopenvino_tokenizers.dylib";
+#else
+#    error "Unsupported OS"
 #endif
     return path.parent_path() / tokenizers;
 }
