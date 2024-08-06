@@ -67,7 +67,9 @@ class ContinuousBatchingPipeline::Impl {
             if(request->has_finished() || request->out_of_memory() || request->handle_dropped()) {
                 // Notify the last time even if there will be no results
                 // This causes read_all() to unblock
-                request->notify_handle();
+                // Avoid notifying again once finished
+                if (request->out_of_memory() || request->handle_dropped())
+                    request->notify_handle();
                 for (const auto& sequence: request->get_sequences()) {
                     m_scheduler->free_sequence(sequence->get_id());
                 }
@@ -178,7 +180,6 @@ public:
             for (size_t i = 0; i < m_requests.size(); ++i) {
                 SequenceGroup::Ptr sequence_group = m_requests[i];
                 sequence_group->set_out_of_memory();
-                //sequence_group->notify_handle();  we notify anyway in _free_non_running_requests
             }
             _free_non_running_requests();
             return;
