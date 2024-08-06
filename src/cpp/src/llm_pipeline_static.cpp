@@ -161,8 +161,10 @@ StaticLLMPipeline::StaticLLMPipeline(
     */
     ov::Core core;
     // (1) Read the template model - this will be kvcache model
-    auto kvcache_model = core.read_model(path / "openvino_model.xml");
-    // (2) TODO: Expose KV-cache input and output layers from kvcache model
+    m_kvcache_model = core.read_model(path / "openvino_model.xml");
+    // (2) Expose KV-cache input and output layers from kvcache model
+    ov::pass::StatefulToStateless().run_on_model(m_kvcache_model);
+    align_u4_zp_constants(m_kvcache_model);
     // (3) Clone the model - this will be prefill
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
@@ -179,7 +181,7 @@ StaticLLMPipeline::StaticLLMPipeline(
         m_prefill_model, device, extract_config_or_default(config, "PREFILL_CONFIG")
     ).create_infer_request();
     m_kvcache_request = core.compile_model(
-        kvcache_model, device, extract_config_or_default(config, "GENERATE_CONFIG")
+        m_kvcache_model, device, extract_config_or_default(config, "GENERATE_CONFIG")
     ).create_infer_request();
     // (7) Initialize tensors
     prepare_for_new_conversation();
