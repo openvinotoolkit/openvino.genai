@@ -32,6 +32,12 @@ struct EncodedGenerationResult {
     GenerationStatus m_status = GenerationStatus::RUNNING;
 };
 
+enum class GenerationFinishReason {
+    NONE = 0, // Default value, when generation is not yet finished
+    STOP = 1, // Generation finished naturally, by reaching end of sequence token
+    LENGTH = 2 // Generation finished by reaching max_new_tokens limit
+};
+
 struct GenerationResult {
     // request ID - obsolete when handle API is approved as handle will connect results with prompts.
     uint64_t m_request_id;
@@ -49,6 +55,7 @@ struct GenerationResult {
 struct GenerationOutput {
     std::vector<int64_t> generated_token_ids;
     float score;
+    GenerationFinishReason finish_reason;
 };
 
 using GenerationOutputs = std::unordered_map<uint64_t, GenerationOutput>;

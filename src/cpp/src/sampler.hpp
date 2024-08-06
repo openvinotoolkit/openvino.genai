@@ -194,6 +194,8 @@ public:
 
                     // mark current sequence as finished
                     beam.m_sequence->set_status(SequenceStatus::FINISHED);
+                    // Setting length since this function is used when sequence generated tokens number reaches max_new_tokens 
+                    beam.m_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
                     // we also need to drop add ongoing / forked sequences from scheduler
                     sampler_output.m_dropped_sequences.push_back(sequence_id);
                 }
@@ -441,6 +443,8 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
             Sequence::Ptr forked_sequence = m_sequence_group->fork_sequence(candidate.m_sequence);
             // and finish immidiately
             forked_sequence->set_status(SequenceStatus::FINISHED);
+            // Setting stop since this function is used when sequence generated eos token
+            forked_sequence->set_finish_reason(GenerationFinishReason::STOP);
 
             // TODO: make it more simplier
             // currently, we finish sequence and then fork it in current code

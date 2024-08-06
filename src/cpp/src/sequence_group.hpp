@@ -33,6 +33,7 @@ class Sequence {
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     SequenceStatus m_status = SequenceStatus::RUNNING;
+    GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
 
 public:
@@ -91,6 +92,14 @@ public:
         m_status = status;
     }
 
+    GenerationFinishReason get_finish_reason() const {
+        return m_finish_reason;
+    }
+
+    void set_finish_reason(GenerationFinishReason finish_reason) {
+        m_finish_reason = finish_reason;
+    }
+
     // appends new tokens to a generated part
     void append_token(int64_t token_id, float log_prob) {
         m_cumulative_log_prob += log_prob;
@@ -102,6 +111,7 @@ public:
         OPENVINO_ASSERT(m_generated_ids.size());
         output.score = get_cumulative_log_probs();
         output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};
+        output.finish_reason = get_finish_reason();
         return output;
     }
 
@@ -205,6 +215,13 @@ public:
                 running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
                 // stop sequence by max_new_tokens or EOS token
                 running_sequence->set_status(SequenceStatus::FINISHED);
+
+                if (running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
+                    running_sequence->set_finish_reason(GenerationFinishReason::STOP);
+                } else if (m_sampling_params.max_new_tokens == generated_len) {
+                    running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
+                }
+                
                 dropped_seq_ids.push_back(running_sequence->get_id());
             }
         }
@@ -451,7 +468,8 @@ public:
         for (auto& sequence: m_sequences) {
             GenerationOutput output;
             output.generated_token_ids = sequence->get_generated_ids();
-            output.score = sequence->get_beam_search_score(m_sampling_params);
+            output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_probs();
+            output.finish_reason = sequence->get_finish_reason();
             outputs.emplace(sequence->get_grouped_id(), output);
         }
         m_generation_stream->push(std::move(outputs));
@@ -459,7 +477,6 @@ public:
 
     void push_partial_outputs() {
         GenerationOutputs outputs;
-        // TODO: support streamimg for n seqs
         for (auto& sequence : m_sequences) {
             // todo: check seq.is_finished() to generate without several </s>
             // or is it ok to use padding?
