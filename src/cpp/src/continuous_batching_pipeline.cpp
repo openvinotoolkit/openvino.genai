@@ -5,6 +5,8 @@
 #include <mutex>
 #include <memory>
 
+#include "openvino/pass/sdpa_to_paged_attention.hpp"
+
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "cache_manager.hpp"
@@ -16,7 +18,8 @@
 
 using namespace ov::genai;
 
-void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
+void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model);
+void set_type_and_shape_to_kv_cache(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
 
 class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<Scheduler> m_scheduler;
@@ -69,20 +72,15 @@ class ContinuousBatchingPipeline::Impl {
         }
     }
 
-public:
-    Impl(const std::string& models_path,
-         const SchedulerConfig& scheduler_config,
-         const std::string& device,
-         const ov::AnyMap& plugin_config) {
-        ov::Core core;
-
-        // The model can be compiled for GPU as well
-        std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
-
+    inline void
+    compile_model(const std::shared_ptr<ov::Model> model,
+                  const SchedulerConfig& scheduler_config,
+                  const ov::AnyMap& plugin_config,
+                  const std::string& device,
+                  ov::Core& core) {
         DeviceConfig device_config(core, scheduler_config, device);
-
-        apply_paged_attention_transformations(model, device_config);
-
+        set_type_and_shape_to_kv_cache(model, device_config);
+        
         ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
 
         // setup KV caches
@@ -106,6 +104,33 @@ public:
         m_sampler->set_seed(0);
 
         // read default generation config
+    }
+
+public:
+    std::shared_ptr<ov::Model>
+    read_model_and_apply_paged_attention(const std::string& models_path, ov::Core& core) {
+        // The model can be compiled for GPU as well
+        auto model = core.read_model(models_path + "/openvino_model.xml");
+        apply_paged_attention_transformations(model);
+        return model;
+    }
+
+    // todo: this constructor was separated to 2 steps: read_model + compile_model for speculative decoding 
+    Impl(const std::string& models_path,
+         const SchedulerConfig& scheduler_config,
+         const std::string& device,
+         const ov::AnyMap& plugin_config) {
+        ov::Core core;
+        auto model = read_model_and_apply_paged_attention(models_path, core);
+        compile_model(model, scheduler_config, plugin_config, device, core);
+    }
+
+    Impl(std::shared_ptr<ov::Model>& model,
+         const SchedulerConfig& scheduler_config,
+         const std::string& device,
+         const ov::AnyMap& plugin_config,
+         ov::Core& core) {
+        compile_model(model, scheduler_config, plugin_config, device, core);
     }
 
     PipelineMetrics get_metrics() const {
@@ -375,6 +400,16 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     m_tokenizer = tokenizer;
 }
 
+ContinuousBatchingPipeline::ContinuousBatchingPipeline(std::shared_ptr<ov::Model>& model,
+                                                       const ov::genai::Tokenizer& tokenizer,
+                                                       const SchedulerConfig& scheduler_config,
+                                                       const std::string& device,
+                                                       const ov::AnyMap& plugin_config,
+                                                       ov::Core& core) {
+    m_impl = std::make_shared<Impl>(model, scheduler_config, device, plugin_config, core);
+    m_tokenizer = tokenizer;
+}
+
 ov::genai::PipelineMetrics ContinuousBatchingPipeline::get_metrics() const {
     return m_impl->get_metrics();
 }
@@ -423,4 +458,9 @@ void ContinuousBatchingPipeline::enable_validation_mode() {
 
 void ContinuousBatchingPipeline::finish_all_requests() {
     m_impl->finish_all_requests();
+}
+
+std::shared_ptr<ov::Model>
+ContinuousBatchingPipeline::read_model_and_apply_paged_attention(const std::string& models_path, ov::Core& core) {
+    return m_impl->read_model_and_apply_paged_attention(models_path, core);
 }

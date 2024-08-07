@@ -38,10 +38,8 @@ public:
         OPENVINO_ASSERT(scheduling_config.num_kv_blocks > 0 || scheduling_config.cache_size > 0, "num_kv_blocks or cache_size should be more than zero.");
         if (scheduling_config.num_kv_blocks > 0) {
             m_num_kv_blocks = scheduling_config.num_kv_blocks;
-        }
-        else {
+        } else {
             m_cache_size = scheduling_config.cache_size;
-
         }
     }
 

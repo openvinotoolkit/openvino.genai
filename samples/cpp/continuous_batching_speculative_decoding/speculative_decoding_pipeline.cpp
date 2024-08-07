@@ -12,6 +12,16 @@ SpeculativeDecodingPipeline::SpeculativeDecodingPipeline(const std::string& mode
     SpeculativeDecodingPipeline(models_path, assisting_model_path, tokenizer, scheduler_config, device, plugin_config);
 };
 
+inline size_t get_kv_cache_size(const std::shared_ptr<ov::Model>& model) {
+    const auto& parameters = model->get_parameters();
+    // extract num_kv_heads and head_size
+    size_t kv_caches_inputs_offset = 2;
+    ov::PartialShape k_shape = parameters[kv_caches_inputs_offset]->get_partial_shape();
+    OPENVINO_ASSERT(k_shape.rank().get_length() == 3, "KV cache shape is expected to have rank 3, while shape is ", k_shape);
+    size_t num_kv_heads = k_shape[1].get_length(), head_size = k_shape[2].get_length();
+    return num_kv_heads * head_size;
+}
+
 SpeculativeDecodingPipeline::SpeculativeDecodingPipeline(const std::string& models_path,
                                 const std::string& assisting_model_path,
                                 const ov::genai::Tokenizer& tokenizer,
@@ -19,18 +29,28 @@ SpeculativeDecodingPipeline::SpeculativeDecodingPipeline(const std::string& mode
                                 const std::string& device,
                                 const ov::AnyMap& plugin_config) {
     m_tokenizer = tokenizer;
+
+    ov::Core core;
+    std::shared_ptr<ov::Model> model = model_pipeline.read_model_and_apply_paged_attention(models_path, core),
+                               assisting_model = assisting_pipeline.read_model_and_apply_paged_attention(assisting_model_path, core);
+
     ov::genai::SchedulerConfig model_scheduler_config = scheduler_config;
     ov::genai::SchedulerConfig assisting_scheduler_config = scheduler_config;
     {
-        auto cache_size = scheduler_config.cache_size;
-        auto assisted_cache_size = cache_size * 0.45;
+        size_t model_cache_size = get_kv_cache_size(model),
+               assisting_cache_size = get_kv_cache_size(assisting_model);
+        auto k = float(assisting_cache_size) / (model_cache_size + assisting_cache_size);
+        auto cache_size = scheduler_config.num_kv_blocks;
+        auto assisted_cache_size = cache_size * k;
         cache_size -= assisted_cache_size;
-        model_scheduler_config.cache_size = cache_size;
-        assisting_scheduler_config.cache_size = assisted_cache_size;
+        model_scheduler_config.num_kv_blocks = cache_size;
+        assisting_scheduler_config.num_kv_blocks = assisted_cache_size;
     }
-    model_pipeline = ov::genai::ContinuousBatchingPipeline(models_path, m_tokenizer, model_scheduler_config, device, plugin_config);
+
+    model_pipeline = ov::genai::ContinuousBatchingPipeline(model, m_tokenizer, model_scheduler_config, device, plugin_config, core);
+    assisting_pipeline = ov::genai::ContinuousBatchingPipeline(assisting_model, m_tokenizer, assisting_scheduler_config, device, plugin_config, core);
+    
     model_pipeline.enable_validation_mode();
-    assisting_pipeline = ov::genai::ContinuousBatchingPipeline(assisting_model_path, m_tokenizer, assisting_scheduler_config, device, plugin_config);
 }
 
 ov::genai::PipelineMetrics SpeculativeDecodingPipeline::get_metrics() const {

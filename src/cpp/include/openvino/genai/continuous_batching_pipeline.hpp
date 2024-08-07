@@ -27,6 +27,13 @@ public:
                                const ov::AnyMap& llm_plugin_config = {},
                                const ov::AnyMap& tokenizer_plugin_config = {});
 
+    ContinuousBatchingPipeline(std::shared_ptr<ov::Model>& model,
+                               const ov::genai::Tokenizer& tokenizer,
+                               const SchedulerConfig& scheduler_config,
+                               const std::string& device,
+                               const ov::AnyMap& plugin_config,
+                               ov::Core& core);
+
     /**
     * @brief Constructs a ContinuousBatchingPipeline when ov::genai::Tokenizer is initialized manually using file from the different dirs.
     *
@@ -77,5 +84,9 @@ public:
     std::vector<GeneratedSequence> get_generated_sequences();
     UpdateSeqResult update_generated_sequence(const GeneratedSequence& new_sequence);
     void enable_validation_mode();
+
+    // todo: iefode: not good place to store this method
+    std::shared_ptr<ov::Model>
+    read_model_and_apply_paged_attention(const std::string& models_path, ov::Core& core);
 };
 }
