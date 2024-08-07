@@ -473,7 +473,7 @@ public:
             }
             layer_block_table.resize(layer_block_table.size() - block_num);
 
-            if (layer_block_table.empty() == 0) {
+            if (layer_block_table.empty()) {
                 sequence_freed_completely = true;
             }
 
@@ -518,7 +518,7 @@ public:
                                 "cannot free logical block ", logical_block_idx,
                                 "from sequence ", seq_id, " since it only has ", block_table_size, "logical blocks");
                 auto block = per_layer_block_table[logical_block_idx];
-                m_allocator.free(block);
+                m_allocator.free(block, layer_idx);
             }
             std::vector<KVCacheBlock::Ptr> new_sequence_blocks;
             OPENVINO_ASSERT(per_layer_block_indiced_to_free.size() <= block_table_size, "too many blocks to free");
@@ -597,40 +597,41 @@ public:
         std::map<size_t, std::list<size_t>> copy_blocks_map;
         for (auto& sequence : running_sequences) {
             auto seq_id = sequence->get_id();
-            auto& block_table = m_block_table[seq_id][0];
-            size_t num_physical_blocks = block_table.size();
+            size_t num_physical_blocks = m_block_table[seq_id][0].size();
 
             if (num_logical_blocks > num_physical_blocks) {
                 OPENVINO_ASSERT(can_allocate_blocks(num_logical_blocks - num_physical_blocks));
                 allocate(sequence, num_logical_blocks - num_physical_blocks, seq_group->get_prompt_ids());
             } else {
                 OPENVINO_ASSERT(num_logical_blocks == num_physical_blocks, "A number of physical and logic blocks must be the same in this code path");
-                KVCacheBlock::Ptr last_block = block_table.back();
-                if (last_block->copy_on_write()) {
-                    // we need to fork current block, because reference counter is more than 1
-                    KVCacheBlock::Ptr new_block = nullptr;
-                    if (m_enable_prefix_caching) {
-                        auto hash = sequence->get_hash(seq_group->get_context_len(), seq_group->get_prompt_ids());
-                        new_block = m_allocator.allocate_block(hash, seq_group->get_context_len(), cached_blocks);
-                        cached_blocks[hash] = new_block;
-                    }
-                    else {
-                        new_block = m_allocator.allocate_block();
-                    }
-                    block_table[num_physical_blocks - 1] = new_block;
-                    // write information about block forking for later usage in CacheManager
-                    copy_blocks_map[last_block->get_index()].push_back(new_block->get_index());
-                    // release `last_block` usage
-                    m_allocator.free(std::move(last_block));
-                } else {
-                    // we are the only users of this block
-                    if (m_enable_prefix_caching) {
-                        // update hash of block
-                        auto prev_hash = last_block->get_hash();
-                        auto hash = sequence->get_hash(seq_group->get_context_len(), seq_group->get_prompt_ids());
-                        last_block->set_hash(hash, seq_group->get_context_len());
-                        cached_blocks.erase(prev_hash);
-                        cached_blocks[hash] = last_block;
+                for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
+                    auto &block_table = m_block_table[seq_id][layer_idx];
+                    KVCacheBlock::Ptr last_block = block_table.back();
+                    if (last_block->copy_on_write()) {
+                        // we need to fork current block, because reference counter is more than 1
+                        KVCacheBlock::Ptr new_block = nullptr;
+                        if (m_enable_prefix_caching) {
+                            auto hash = sequence->get_hash(seq_group->get_context_len(), seq_group->get_prompt_ids());
+                            new_block = m_allocator.allocate_block(hash, seq_group->get_context_len(), cached_blocks);
+                            cached_blocks[hash] = new_block;
+                        } else {
+                            new_block = m_allocator.allocate_block();
+                        }
+                        block_table[num_physical_blocks - 1] = new_block;
+                        // write information about block forking for later usage in CacheManager
+                        copy_blocks_map[last_block->get_index()].push_back(new_block->get_index());
+                        // release `last_block` usage
+                        m_allocator.free(std::move(last_block), layer_idx);
+                    } else {
+                        // we are the only users of this block
+                        if (m_enable_prefix_caching) {
+                            // update hash of block
+                            auto prev_hash = last_block->get_hash();
+                            auto hash = sequence->get_hash(seq_group->get_context_len(), seq_group->get_prompt_ids());
+                            last_block->set_hash(hash, seq_group->get_context_len());
+                            cached_blocks.erase(prev_hash);
+                            cached_blocks[hash] = last_block;
+                        }
                     }
                 }
             }

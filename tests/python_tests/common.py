@@ -182,6 +182,7 @@ def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
 def get_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
     scheduler_config.cache_size = 1
+    scheduler_config.use_cache_eviction = 1
     if scheduler_params is None:
         scheduler_config.dynamic_split_fuse = True
         # vLLM specific
