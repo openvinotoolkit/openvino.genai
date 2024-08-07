@@ -236,7 +236,7 @@ def test_genai_tokenizer_decode(model_descr, encoded_prompt):
 
 test_configs = [
     dict(max_new_tokens=20),
-    dict(max_new_tokens=200, ignore_eos=True),
+    dict(max_new_tokens=150, ignore_eos=True),
     dict(max_new_tokens=20, num_beam_groups=3, num_beams=15, diversity_penalty=1.0)
 ]
 batched_prompts = [
