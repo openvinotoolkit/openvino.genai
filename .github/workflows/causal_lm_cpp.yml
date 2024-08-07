@@ -390,7 +390,7 @@ jobs:
       - name: run and compare (modelQwen-7B-Chat with seq_length_axis = 1, Qwen1.5-7B-Chat with seq_length_axis = 2)
         run: |
           source ./ov/setupvars.sh
-          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm Qwen-7B-Chat Qwen1.5-7B-Chat "Alan Turing was a" > predictions_speculative.txt      
+          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm Qwen-7B-Chat Qwen1.5-7B-Chat "Alan Turing was a" > predictions_speculative.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm Qwen1.5-7B-Chat "Alan Turing was a" > predictions_greedy.txt
     
           python -c "
