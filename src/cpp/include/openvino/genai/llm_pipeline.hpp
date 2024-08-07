@@ -22,6 +22,8 @@ using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
 
+static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_config"};
+
 /**
 * @brief Structure to store resulting batched tokens and scores for each batch sequence.
 * The first num_return_sequences elements correspond to the first batch element.

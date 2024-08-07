@@ -13,7 +13,6 @@ from pathlib import Path
 import shutil
 import json
 
-
 def get_models_list():
     precommit_models = [
         "katuni4ka/tiny-random-phi3",
@@ -223,4 +222,5 @@ def load_pipe(configs: List[Tuple], temp_path):
 
 @functools.lru_cache(1)
 def get_continuous_batching(path):
-    return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), 'CB')
+    default_scheduler_config = ov_genai.SchedulerConfig
+    return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), 'CPU', config={"SchedulerConfig": default_scheduler_config})
