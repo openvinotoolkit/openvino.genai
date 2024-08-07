@@ -196,7 +196,7 @@ jobs:
         shell: bash
     runs-on: ubuntu-20.04
     env:
-      CMAKE_GENERATOR: 'Ninja Multi-Config'
+      CMAKE_GENERATOR: Unix Makefiles
       CMAKE_BUILD_PARALLEL_LEVEL: null
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       CCACHE_DIR: ${{ github.workspace }}/ccache
