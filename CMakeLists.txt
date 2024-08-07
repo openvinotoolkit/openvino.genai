@@ -34,6 +34,8 @@ project(OpenVINOGenAI
 option(INSTALL_GTEST "Enable installation of googletest. (Projects embedding googletest may want to turn this OFF.)" OFF)
 option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
 
+set(OpenVINO_DIR "D:/My_Work_progress/0_AI_framework/AI_source_code/w_openvino_toolkit_windows_2024.3.0.16041.1e3b88e4e3f_x86_64/runtime/cmake")
+
 # Find OpenVINODeveloperPackage first to compile with SDL flags
 find_package(OpenVINODeveloperPackage QUIET
              PATHS "${OpenVINO_DIR}")
@@ -74,3 +76,23 @@ if(ENABLE_PYTHON)
     list(APPEND CPACK_COMPONENTS_ALL pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
 endif() 
 include(CPack)
+
+# add_subdirectory(llm/cpp)
+# target_compile_definitions(llm PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
+# target_compile_definitions(llm PRIVATE USER_OV_EXTENSIONS_PATH="user_ov_extensions.dll")
+# target_link_libraries(llm PRIVATE user_ov_extensions)
+
+# add_subdirectory(llm/chatglm_cpp)
+# target_compile_definitions(chatglm PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
+# target_compile_definitions(chatglm PRIVATE USER_OV_EXTENSIONS_PATH="user_ov_extensions.dll")
+# target_link_libraries(chatglm PRIVATE user_ov_extensions)
+
+add_subdirectory(llm/llama_cpp)
+# target_compile_definitions(llama PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
+# target_compile_definitions(llama PRIVATE USER_OV_EXTENSIONS_PATH="user_ov_extensions.dll")
+# target_link_libraries(llama PRIVATE user_ov_extensions)
+
+add_subdirectory(llm/minicpm_cpp)
+# target_compile_definitions(minicpm PRIVATE USER_OV_EXTENSIONS_PATH="user_ov_extensions.dll")
+# target_compile_definitions(minicpm PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
+# target_link_libraries(minicpm PRIVATE user_ov_extensions)
