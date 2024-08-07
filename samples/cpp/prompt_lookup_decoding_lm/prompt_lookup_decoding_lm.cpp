@@ -9,9 +9,34 @@ namespace {
 
 // only batch_size = 1 currently supported
 constexpr size_t BATCH_SIZE = 1;
-// sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
-// threfore usually SEQ_LEN_AXIS = 2
-constexpr size_t SEQ_LEN_AXIS = 2;
+
+size_t get_seq_len_axis(std::shared_ptr<ov::Model> model) {
+    // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
+    // threfore usually seq_length_axis = 2
+    size_t seq_length_axis = 2;
+
+    // "ReadValue" node is KV cache representation in stateful model
+    std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
+
+    for (const auto op : model->get_ops()) {
+        if (op->get_type_name() != kv_node_type_name) {
+            continue;
+        }
+
+        // Shape example: [-1,4,0,64]
+        auto shape = op->get_input_partial_shape(0);
+
+        for (size_t i = 0; i < shape.rank().get_length(); i++) {
+            // Find axis = 0. This would be sequence length axis.
+            if (shape[i] == 0) {
+                seq_length_axis = i;
+            }
+        }
+        break;
+    }
+
+    return seq_length_axis;
+}
 
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
     tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
@@ -67,14 +92,18 @@ struct TextStreamer {
 
 ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_seq_len) {
     // Copy elements from the old to a new tensor and return it.
-    // It's assumed that key/values tensor has a shape [BATCH_SIZE, num_kv_heads, seq_len, head_size] or [seq_len, ...],
-    // It that's not the case for your model please implement your own trim method.
-    OPENVINO_ASSERT(seq_len_axis == 2 || seq_len_axis == 0,
-                    "Cannot trim key/values with sequence length axis = ",
-                    seq_len_axis);
+    // Trim kv tensor on sequence length axis
+    // key/values tensor shape example: [BATCH_SIZE, num_kv_heads, seq_len, head_size]
+    // Sequense length axis position may vary from one model to another
 
-    auto old_tensor_data = tensor.data<float>();
     auto shape = tensor.get_shape();
+
+    OPENVINO_ASSERT(seq_len_axis < shape.size(),
+                    "Sequence length axis: ",
+                    seq_len_axis,
+                    " should be less than shape size: ",
+                    shape.size());
+
     size_t old_seq_len = shape[seq_len_axis];
 
     OPENVINO_ASSERT(new_seq_len <= old_seq_len);
@@ -197,7 +226,11 @@ int main(int argc, char* argv[]) try {
         core.compile_model(model_dir + "/openvino_detokenizer.xml", "CPU").create_infer_request();
     TextStreamer text_streamer{std::move(detokenizer)};
 
-    ov::InferRequest model = core.compile_model(model_dir + "/openvino_model.xml", "CPU").create_infer_request();
+    std::shared_ptr<ov::Model> ov_model = core.read_model(model_dir + "/openvino_model.xml");
+
+    size_t seq_len_axis = get_seq_len_axis(ov_model);
+
+    ov::InferRequest model = core.compile_model(ov_model, "CPU").create_infer_request();
 
     model.set_tensor("input_ids", input_ids);
     model.set_tensor("attention_mask", attention_mask);
@@ -287,7 +320,7 @@ int main(int argc, char* argv[]) try {
         // Increment the sequence length by the number of matched tokens, and
         // trim the KV cache to match the new sequence length.
         seq_len += accepted_tokens_number;
-        update_kv_cache(model, SEQ_LEN_AXIS, seq_len);
+        update_kv_cache(model, seq_len_axis, seq_len);
 
         first_token = out_token;
     }
