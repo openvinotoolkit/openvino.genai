@@ -706,7 +706,7 @@ def test_left_pad():
 @pytest.mark.precommit
 def test_continuous_batching_vs_stateful(model_descr, prompt, generation_config):
     model_id, path, tokenizer, model, stateful = read_model((
-        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "Qwen/Qwen2-0.5B-Instruct",
         Path("TinyLlama-1.1B-Chat-v1.0")
     ))
     config = ov_genai.GenerationConfig()
@@ -725,7 +725,7 @@ def test_continuous_batching_vs_stateful(model_descr, prompt, generation_config)
 @pytest.mark.precommit
 def test_cb_streamer_vs_return_vs_stateful(model_descr, prompt):
     model_id, path, tokenizer, model, stateful = read_model((
-        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "Qwen/Qwen2-0.5B-Instruct",
         Path("TinyLlama-1.1B-Chat-v1.0")
     ))
     cb = get_continuous_batching(path)

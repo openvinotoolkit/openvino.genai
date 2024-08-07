@@ -36,7 +36,7 @@ scheduler_params_list = [({"num_kv_blocks": 2, "block_size": 32, "dynamic_split_
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
 def test_preemption(tmp_path, params):
-    run_test_pipeline(tmp_path, "TinyLlama/TinyLlama-1.1B-Chat-v1.0", params[0], params[1])
+    run_test_pipeline(tmp_path, "Qwen/Qwen2-0.5B-Instruct", params[0], params[1])
 
 
 multinomial_params = RandomSamplingTestStruct(
@@ -86,7 +86,7 @@ def test_preemption_with_multinomial(tmp_path, dynamic_split_fuse):
     for config in generation_configs:
         config.rng_seed = 0
         config.max_new_tokens = 30
-    model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    model_id : str = "Qwen/Qwen2-0.5B-Instruct"
     model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
 
     model_path : Path = tmp_path / model_id
@@ -167,7 +167,7 @@ def test_preemption_with_multinomial_n_seq(tmp_path, dynamic_split_fuse):
     generation_configs = multinomial_params_n_seq.generation_config
     for config in generation_configs:
         config.rng_seed = 0
-    model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    model_id : str = "Qwen/Qwen2-0.5B-Instruct"
     model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
 
     model_path : Path = tmp_path / model_id
