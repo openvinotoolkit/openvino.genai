@@ -15,7 +15,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.8'
-  OV_BRANCH: ''
+  OV_BRANCH: 'master'
   OV_TARBALL: ''
 
 permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
