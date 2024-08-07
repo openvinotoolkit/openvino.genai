@@ -430,6 +430,10 @@ public:
                            "For exmaple: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
         }
     }
+
+    void set_chat_template(const std::string& chat_template) {
+        m_chat_template = chat_template;
+    }
 };
 
 Tokenizer::Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& plugin_config) {
@@ -493,6 +497,10 @@ std::string Tokenizer::apply_chat_template(ChatHistory history,
                                            bool add_generation_prompt,
                                            const std::string& chat_template) const {
     return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template);
+}
+
+void Tokenizer::set_chat_template(const std::string& chat_template) {
+    m_pimpl->set_chat_template(chat_template);
 }
 
 Tokenizer::~Tokenizer() = default;

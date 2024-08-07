@@ -5,6 +5,7 @@
 #pragma once
 
 #include <list>
+#include <cassert>
 #include <cstdlib>
 #include <limits>
 #include <map>
@@ -118,7 +119,7 @@ struct Group {
 
         min_heap.push_back(beam);
         std::push_heap(min_heap.begin(), min_heap.end(), greater);
-        OPENVINO_ASSERT(sampling_params.num_beams % sampling_params.num_beam_groups == 0,
+        assert(sampling_params.num_beams % sampling_params.num_beam_groups == 0 &&
             "number of beams should be divisible by number of groups");
         size_t group_size = sampling_params.num_beams / sampling_params.num_beam_groups;
         if (min_heap.size() > group_size) {
@@ -131,7 +132,7 @@ struct Group {
     }
 
     void is_done(const ov::genai::GenerationConfig& sampling_params) {
-        OPENVINO_ASSERT(sampling_params.num_beams % sampling_params.num_beam_groups == 0,
+        assert(sampling_params.num_beams % sampling_params.num_beam_groups == 0 &&
             "number of beams should be divisible by number of groups");
         size_t group_size = sampling_params.num_beams / sampling_params.num_beam_groups;
         if (min_heap.size() < group_size)
@@ -193,6 +194,8 @@ public:
 
                     // mark current sequence as finished
                     beam.m_sequence->set_status(SequenceStatus::FINISHED);
+                    // Setting length since this function is used when sequence generated tokens number reaches max_new_tokens 
+                    beam.m_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
                     // we also need to drop add ongoing / forked sequences from scheduler
                     sampler_output.m_dropped_sequences.push_back(sequence_id);
                 }
@@ -375,7 +378,7 @@ GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group)
         m_parameters{m_sequence_group->get_sampling_parameters()},
         m_groups{m_parameters.num_beam_groups} {
     OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1);
-    OPENVINO_ASSERT(m_parameters.num_beams % m_parameters.num_beam_groups == 0,
+    assert(m_parameters.num_beams % m_parameters.num_beam_groups == 0 &&
         "number of beams should be divisible by number of groups");
     size_t group_size = m_parameters.num_beams / m_parameters.num_beam_groups;
 
@@ -391,7 +394,7 @@ GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group)
 }
 
 void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output) {
-    OPENVINO_ASSERT(m_parameters.num_beams % m_parameters.num_beam_groups == 0,
+    assert(m_parameters.num_beams % m_parameters.num_beam_groups == 0 &&
         "number of beams should be divisible by number of groups");
     size_t group_size = m_parameters.num_beams / m_parameters.num_beam_groups;
     std::vector<int64_t> next_tokens;
@@ -440,6 +443,8 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
             Sequence::Ptr forked_sequence = m_sequence_group->fork_sequence(candidate.m_sequence);
             // and finish immidiately
             forked_sequence->set_status(SequenceStatus::FINISHED);
+            // Setting stop since this function is used when sequence generated eos token
+            forked_sequence->set_finish_reason(GenerationFinishReason::STOP);
 
             // TODO: make it more simplier
             // currently, we finish sequence and then fork it in current code
