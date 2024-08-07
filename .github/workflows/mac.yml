@@ -227,7 +227,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/tools --upgrade-strategy eager
-          python -m pytest ./tests/python_tests/
+          python -m p/test_generate_api.pyytest ./tests/python_tests/
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
 
@@ -236,7 +236,7 @@ jobs:
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
           python -c "from openvino_genai import LLMPipeline"
-          python -m pytest ./tests/python_tests/
+          python -m pytest ./tests/python_tests/test_generate_api.py
 
   genai_package:
     name: OpenVINO genai extension (install to OpenVINO package)

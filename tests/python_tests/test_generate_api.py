@@ -303,7 +303,6 @@ def test_stop_criteria(model_descr, stop_criteria, prompt, max_new_tokens):
 @pytest.mark.parametrize("max_new_tokens", [800, 2000])
 @pytest.mark.parametrize("prompt", prompts)
 @pytest.mark.parametrize("model_descr", get_models_list())
-@pytest.mark.skip(reason="Will be enabled in nightly since the test are computationally expensive")
 @pytest.mark.nightly
 def test_beam_search_long_sentences(model_descr, num_beam_groups, group_size,
                                     max_new_tokens, prompt):
