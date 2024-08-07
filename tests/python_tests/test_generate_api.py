@@ -236,7 +236,7 @@ def test_genai_tokenizer_decode(model_descr, encoded_prompt):
 
 test_configs = [
     dict(max_new_tokens=20),
-    dict(max_new_tokens=150, ignore_eos=True),
+    dict(max_new_tokens=200, ignore_eos=True),
     dict(max_new_tokens=20, num_beam_groups=3, num_beams=15, diversity_penalty=1.0)
 ]
 batched_prompts = [
@@ -704,11 +704,9 @@ def test_left_pad():
 @pytest.mark.precommit
 def test_continuous_batching_vs_stateful(prompt, generation_config):
     model_id, path, tokenizer, model, stateful = read_model((
-        "Qwen/Qwen2-0.5B-Instruct",
-        Path("Qwen2-0.5B-Instruct")
+        "facebook/opt-125m",
+        Path("opt-125m")
     ))
-    config = ov_genai.GenerationConfig()
-    config.max_new_tokens = 100
     cb = get_continuous_batching(path)
     generated = cb.generate(prompt, **generation_config)
     reference = stateful.generate(prompt, **generation_config)
@@ -722,8 +720,8 @@ def test_continuous_batching_vs_stateful(prompt, generation_config):
 @pytest.mark.precommit
 def test_cb_streamer_vs_return_vs_stateful(prompt):
     model_id, path, tokenizer, model, stateful = read_model((
-        "Qwen/Qwen2-0.5B-Instruct",
-        Path("Qwen2-0.5B-Instruct")
+        "facebook/opt-125m",
+        Path("opt-125m")
     ))
     cb = get_continuous_batching(path)
     streamed = []

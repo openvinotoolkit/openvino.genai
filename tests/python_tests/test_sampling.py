@@ -54,7 +54,7 @@ def test_eos_beam_search(tmp_path):
     { -1.23264,  that I don't know about.
     I don't know what you're talking about, but I'm pretty sure it's a Canadian thing.</s> }
     '''
-    model_id = "Qwen/Qwen2-0.5B-Instruct"
+    model_id = "facebook/opt-125m"
     prompts = ["Tell me something about Canada"]
     generation_configs = [get_beam_search()]
     scheduler_config = get_scheduler_config()
@@ -90,7 +90,7 @@ def test_individual_generation_configs_deterministic(tmp_path, generation_config
             "What is OpenVINO?",
             ]
     generation_configs = [generation_config]
-    model_id : str = "Qwen/Qwen2-0.5B-Instruct"
+    model_id : str = "facebook/opt-125m"
     generate_and_compare_with_hf(model_id, prompts, generation_configs, DEFAULT_SCHEDULER_CONFIG, tmp_path)
 
 
@@ -282,7 +282,7 @@ def test_individual_generation_configs_random(tmp_path, test_struct: RandomSampl
     prompts = test_struct.prompts
     generation_config.rng_seed = 0
     generation_configs = [generation_config]
-    model_id : str = "Qwen/Qwen2-0.5B-Instruct"
+    model_id : str = "facebook/opt-125m"
     model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
 
     model_path : Path = tmp_path / model_id
@@ -303,7 +303,7 @@ def test_post_oom_health(tmp_path, sampling_config):
     # Low cache size to trigger OOM quickly
     scheduler_config.num_kv_blocks = 10
     generation_configs = [generation_config]
-    model_id : str = "Qwen/Qwen2-0.5B-Instruct"
+    model_id : str = "facebook/opt-125m"
     model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
 
     model_path : Path = tmp_path / model_id
