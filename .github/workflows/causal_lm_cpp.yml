@@ -73,7 +73,7 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model THUDM/chatglm3-6b chatglm3-6b
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model THUDM/chatglm3-6b chatglm3-6b --task text-generation-with-past
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
       - run: |
