@@ -20,7 +20,7 @@ class DeviceConfig {
     std::string m_device;
 
 public:
-    DeviceConfig(ov::Core& core, const SchedulerConfig& scheduling_config, const std::string& device) {
+    DeviceConfig(ov::Core& core, const SchedulerConfig& scheduling_config, const std::string& device, const ov::AnyMap& plugin_config = {}) {
         m_device = device;
 
         // keep information about blocsk
@@ -29,6 +29,20 @@ public:
         if (m_device == "CPU") {
             auto inference_precision = core.get_property(device, ov::hint::inference_precision);
             m_kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
+            // if user sets precision hint, kv cache type should be changed
+            if (plugin_config.find(ov::hint::inference_precision.name()) != plugin_config.end()) {
+                const auto precision = plugin_config.at(ov::hint::inference_precision.name()).as<ov::element::Type>();
+                if (precision == ov::element::f32) {
+                    m_kv_cache_type = ov::element::f32;
+                } else if (precision == ov::element::f16) {
+                    m_kv_cache_type = ov::element::f16;
+                } else if (precision == ov::element::bf16) {
+                    m_kv_cache_type = ov::element::bf16;
+                } else {
+                    // use default f32
+                    m_kv_cache_type = ov::element::f32;
+                }
+            }
         } else if (m_device == "GPU") {
             OPENVINO_ASSERT("GPU is not currently supported. Please, remove this assert and fill configuration");
         } else {

@@ -236,7 +236,7 @@ perf_metrics = result.perf_metrics
 print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
 print(f'TTFT: {perf_metrics.get_ttft().mean:.2f} ms')
 print(f'TPOT: {perf_metrics.get_tpot().mean:.2f} ms/token')
-print(f'Throughput: {perf_metrics.get_throughput()get_.mean():.2f} tokens/s')
+print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
 ```
 
 ```cpp

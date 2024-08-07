@@ -109,6 +109,10 @@ void GenerationConfig::validate() const {
     OPENVINO_ASSERT(num_return_sequences > 0, "num_return_sequences must be greater than 0");
     OPENVINO_ASSERT(max_new_tokens > 0, "'max_new_tokens' must be greater than 0");
     OPENVINO_ASSERT(min_new_tokens <= max_new_tokens, "min_new_tokens must be less or equal max_new_tokens");
+    OPENVINO_ASSERT(
+        num_beams % num_beam_groups == 0,
+        "number of beams should be divisible by number of groups"
+    );
     
     // max_new_tokens has priority over max_length
     // if max_new_tokens is defined no need to check max_length
