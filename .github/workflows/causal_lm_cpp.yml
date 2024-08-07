@@ -107,6 +107,33 @@ jobs:
       - run: |
           . ./ov/setupvars.sh
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./bloom-560m/ "Alan Turing was a" > predictions_greedy.txt
+          
+
+  cpp--greedy_causal_lm-bloomz-560m-ubuntu:
+    runs-on: ubuntu-20.04-8-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Download, convert and build
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model bigscience/bloomz-560m bloomz-560m
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - run: |
+          . ./ov/setupvars.sh
+          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./bloomz-560m/ "Alan Turing was a" > predictions_greedy.txt
 
   cpp-beam_search_causal_lm-ubuntu:
     strategy:
