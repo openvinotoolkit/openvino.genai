@@ -15,7 +15,6 @@ class KVCacheBlock {
     int m_ref_count;
     int m_index;
     size_t m_hash;
-    size_t m_num_hashed_tokens;
     std::chrono::time_point<std::chrono::system_clock> m_timestamp;
 public:
     using Ptr = std::shared_ptr<KVCacheBlock>;
@@ -55,13 +54,8 @@ public:
         return m_hash;
     }
 
-    size_t get_num_hashed_tokens() const {
-        return m_num_hashed_tokens;
-    }
-
-    void set_hash(size_t hash, size_t num_hashed_tokens) {
+    void set_hash(size_t hash) {
         m_hash = hash;
-        m_num_hashed_tokens = num_hashed_tokens;
     }
 
     void set_timestamp(const std::chrono::time_point<std::chrono::system_clock>& timestamp) {
@@ -75,45 +69,40 @@ public:
 
 
 class Evictor {
-    std::map<size_t, KVCacheBlock::Ptr> blocks;
+    std::map<size_t, KVCacheBlock::Ptr> m_blocks;
 public:
-    void add(size_t hash, KVCacheBlock::Ptr block) {
-        blocks[hash] = block;
-    }
-
-    static bool block_is_less(const std::pair<size_t, KVCacheBlock::Ptr>& lhs, const std::pair<size_t, KVCacheBlock::Ptr>& rhs) {
-        return lhs.second->get_timestamp() < rhs.second->get_timestamp();
+    void add(KVCacheBlock::Ptr block) {
+        m_blocks[block->get_hash()] = block;
     }
 
     KVCacheBlock::Ptr get_block(size_t hash) {
-        if (blocks.find(hash)== blocks.end())
+        if (m_blocks.find(hash)== m_blocks.end())
         {
             return nullptr;
         }
-        KVCacheBlock::Ptr block = blocks[hash];
+        KVCacheBlock::Ptr block = m_blocks[hash];
         block->set_timestamp(std::chrono::system_clock::now());
         block->increment();
-        blocks.erase(hash);
+        m_blocks.erase(hash);
         return block;
     }
 
     KVCacheBlock::Ptr get_lru_block() {
-        if (!blocks.size()) {
+        if (!m_blocks.size()) {
             return nullptr;
         }
-        auto hash_block = std::min_element(std::begin(blocks), std::end(blocks), block_is_less);
+        auto hash_block = std::min_element(std::begin(m_blocks), std::end(m_blocks), [](const auto& lhs, const auto& rhs) -> bool { return lhs.second->get_timestamp() < rhs.second->get_timestamp(); });
         auto block = hash_block->second;
         block->set_timestamp(std::chrono::system_clock::now());
         block->increment();
-        blocks.erase(hash_block->first);
+        m_blocks.erase(hash_block->first);
         return block;
     }
 
     size_t num_blocks() const {
-        return blocks.size();
+        return m_blocks.size();
     }
 };
-
 
 class BlockAllocator {
     std::list<KVCacheBlock::Ptr> m_free_blocks;
@@ -146,7 +135,7 @@ public:
         if (block->is_free()) {
             if (m_enable_prefix_caching)
             {
-                m_evictor.add(block->get_hash(), block);
+                m_evictor.add(block);
             }
             else {
                 m_free_blocks.push_back(block);
@@ -167,25 +156,24 @@ public:
         OPENVINO_ASSERT(m_enable_prefix_caching);
         OPENVINO_ASSERT(can_allocate_blocks(1));
         auto block = m_evictor.get_block(hash);
+        auto it = cached_blocks.find(hash);
         if (block != nullptr) {
             // use cached block from evictor
-            cached_blocks[hash] = block;
             return block;
         }
         // TODO: Currently we cache all allocated blocks which might be redundant for beam search,
         // where blocks of non-used candidates are not needed in cache.
         // This part can be improved if we cache only blocks for prompt.
-        if (cached_blocks.find(hash) != cached_blocks.end()) {
+        if (it != cached_blocks.end()) {
             // use cashed block from cached_blocks
-            block = cached_blocks[hash];
-            cached_blocks[hash]->increment();
-            return block;
+            it->second->increment();
+            return it->second;
         }
         if (m_free_blocks.size() > 0) {
             // allocate new empty block
             KVCacheBlock::Ptr allocated_block = m_free_blocks.front();
             allocated_block->increment();
-            allocated_block->set_hash(hash, num_hashed_tokens);
+            allocated_block->set_hash(hash);
             cached_blocks[hash] = allocated_block;
 
             m_free_blocks.pop_front();
@@ -197,7 +185,7 @@ public:
             cached_blocks.erase(block->get_hash());
 
             // update block with new hash
-            block->set_hash(hash, num_hashed_tokens);
+            block->set_hash(hash);
             cached_blocks[hash] = block;
             return block;
         }
@@ -209,15 +197,14 @@ public:
         auto block = m_evictor.get_block(hash);
         if (block != nullptr) {
             // use cashed block from evictor
-            cached_blocks[hash] = block;
             return block;
         }
-        if (cached_blocks.find(hash) != cached_blocks.end()) {
+        auto it = cached_blocks.find(hash);
+        if (it != cached_blocks.end()) {
             // use cashed block from cached_blocks
             // TODO: add tokens validation in case of hash collision
-            block = cached_blocks[hash];
-            cached_blocks[hash]->increment();
-            return block;
+            it->second->increment();
+            return it->second;
         }
         return nullptr;
     }
@@ -301,9 +288,8 @@ public:
 
     void allocate(ov::genai::Sequence::CPtr sequence, size_t num_blocks, const ov::genai::TokenIds& prompt_ids = {}) {
         OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
-        if (m_enable_prefix_caching) {
-            OPENVINO_ASSERT(prompt_ids.size() > 0, "prompt_ids should be set for hash calculation.");
-        }
+        OPENVINO_ASSERT(!m_enable_prefix_caching || prompt_ids.size() > 0, "prompt_ids should be set for hash calculation.");
+
         auto sequence_id = sequence->get_id();
         auto block_table = m_block_table[sequence_id];
         auto content_length = sequence->get_generated_len() + prompt_ids.size();
@@ -473,7 +459,7 @@ public:
                         // update hash of block
                         auto prev_hash = last_block->get_hash();
                         auto hash = sequence->get_hash(seq_group->get_context_len(), seq_group->get_prompt_ids());
-                        last_block->set_hash(hash, seq_group->get_context_len());
+                        last_block->set_hash(hash);
                         cached_blocks.erase(prev_hash);
                         cached_blocks[hash] = last_block;
                     }

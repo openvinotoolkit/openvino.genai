@@ -155,7 +155,7 @@ private:
     void _restore_cached_blocks(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
-            if (sequence_group->can_generate_tokens() || sequence_group->num_running_seqs() != 1)
+            if (sequence_group->can_generate_tokens())
                 continue;
             m_block_manager._restore_cached_blocks(sequence_group, m_config.block_size);
         }
@@ -353,10 +353,7 @@ private:
                     sequence_group->schedule_tokens(sequence_len);
 
                     // allocate KV blocks
-                    if (sequence_group->get_num_processed_tokens() == 0)
-                        m_block_manager.allocate(sequence, num_required_blocks, sequence_group->get_prompt_ids());
-                    else 
-                        m_block_manager.append_slots(sequence_group);
+                    m_block_manager.append_slots(sequence_group);
 
                     // add information to scheduler_output
                     {
