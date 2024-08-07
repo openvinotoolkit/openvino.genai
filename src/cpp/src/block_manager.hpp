@@ -70,20 +70,21 @@ public:
 
 class Evictor {
     std::map<size_t, KVCacheBlock::Ptr> m_blocks;
-public:
+    public:
     void add(KVCacheBlock::Ptr block) {
         m_blocks[block->get_hash()] = block;
     }
 
     KVCacheBlock::Ptr get_block(size_t hash) {
-        if (m_blocks.find(hash)== m_blocks.end())
+        auto it = m_blocks.find(hash);
+        if (it == m_blocks.end())
         {
             return nullptr;
         }
-        KVCacheBlock::Ptr block = m_blocks[hash];
+        KVCacheBlock::Ptr block = it->second;
         block->set_timestamp(std::chrono::system_clock::now());
         block->increment();
-        m_blocks.erase(hash);
+        m_blocks.erase(it);
         return block;
     }
 
