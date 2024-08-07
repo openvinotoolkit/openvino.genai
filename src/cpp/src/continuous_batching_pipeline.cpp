@@ -118,7 +118,7 @@ public:
             updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
         }
 
-        m_scheduler = std::make_shared<Scheduler>(updated_config);
+        m_scheduler = std::make_shared<Scheduler>(updated_config, device_config.get_num_layers());
         // and finally create model runner
         m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers(), true);
         m_sampler = std::make_shared<Sampler>();
@@ -220,7 +220,7 @@ public:
 
         static size_t step_count = 0;
 
-        CacheStateDumper dumper(CacheStateDumper::get_cache_dump_filename_for_generation_step(step_count, "before_eviction"));
+        CacheStateDumper dumper(CacheStateDumper::get_run_id_for_generation_step(step_count, "before_eviction"));
         dumper.dump_cache_state(*m_scheduler, m_requests);
 
         // evict unimportant blocks from KV cache, if requested
@@ -240,9 +240,7 @@ public:
                 std::cout << "VSHAMPOR: for decoder layer 0, evicting logical blocks ";
                 for (auto idx : logical_blocks_to_evict[0]) std::cout << idx << " ";
                 std::cout << "\n" << std::endl;
-                // FIXME (vshampor): rewrite to utilize per-decoder layer eviction when this is made possible in the rest of
-                //   the library
-                m_scheduler->free_blocks_from_sequence(seq_id, logical_blocks_to_evict[0]);
+                m_scheduler->free_blocks_from_sequence(seq_id, logical_blocks_to_evict);
 
 //                auto seq_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_group_id](const SequenceGroup::Ptr& val) { return val->get_request_id() == seq_group_id; });
 //                OPENVINO_ASSERT(seq_it != m_requests.end(), "could not find sequence group ", seq_group_id);
@@ -258,7 +256,7 @@ public:
             }
         }
 
-        CacheStateDumper dumper_after(CacheStateDumper::get_cache_dump_filename_for_generation_step(step_count, "eviction"));
+        CacheStateDumper dumper_after(CacheStateDumper::get_run_id_for_generation_step(step_count, "eviction"));
         dumper_after.dump_cache_state(*m_scheduler, m_requests);
         step_count++;
 

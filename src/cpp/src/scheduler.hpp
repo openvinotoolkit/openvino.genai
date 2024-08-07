@@ -15,6 +15,7 @@ namespace ov::genai {
 class Scheduler {
     SchedulerConfig m_config;
     BlockManager m_block_manager;
+    size_t m_num_layers;
     friend class CacheStateDumper;
 
 public:
@@ -23,8 +24,8 @@ public:
         std::vector<uint64_t> m_scheduled_sequence_groups_ids;
         // map of src -> dst blocks copies, which need to be performed by CacheManager
         std::map<size_t, std::list<size_t>> m_block_copy_map;
-        // block tables for scheduled sequences
-        std::map<uint64_t, std::vector<KVCacheBlock::Ptr>> m_block_tables;
+        // block tables for scheduled sequences per each attention layer in the model
+        std::map<uint64_t, std::vector<std::vector<KVCacheBlock::Ptr>>> m_block_tables;
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
         // dedicated prompt phase
@@ -33,8 +34,8 @@ public:
         float m_cache_usage = 0.0;
     };
 
-    explicit Scheduler(const SchedulerConfig & config = {}) :
-        m_config(config), m_block_manager(m_config.num_kv_blocks, m_config.enable_prefix_caching, m_config.block_size) { }
+    explicit Scheduler(const SchedulerConfig & config = {}, size_t num_layers = 0) :
+        m_config(config), m_block_manager(m_config.num_kv_blocks, m_config.enable_prefix_caching, m_config.block_size, num_layers), m_num_layers(num_layers) { }
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
         Output scheduler_output;
@@ -87,7 +88,12 @@ public:
     }
 
     void free_blocks_from_sequence(size_t seq_id, const std::set<size_t>& logical_block_indices_to_free) {
+        OPENVINO_ASSERT(m_num_layers == 0, "this overload may only be used if num_layers == 0");
         m_block_manager.free_blocks_from_sequence(seq_id, logical_block_indices_to_free);
+    }
+
+    void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free) {
+        m_block_manager.free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free);
     }
 
 private:
@@ -229,7 +235,7 @@ private:
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
-                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_table(seq_id);
+                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
                     }
                 }
@@ -286,7 +292,7 @@ private:
                     // block tables for each running sequence within a group
                     std::vector<Sequence::Ptr> running_seqs = sequence_group->get_running_sequences();
                     for (const auto & seq : sequence_group->get_running_sequences()) {
-                        scheduler_output.m_block_tables[seq->get_id()] = m_block_manager.get_block_table(seq->get_id());
+                        scheduler_output.m_block_tables[seq->get_id()] = m_block_manager.get_block_tables(seq->get_id());
                     }
 
                     // merge copy_blocks
@@ -367,7 +373,7 @@ private:
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
-                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_table(seq_id);
+                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens = max_sequence_len * scheduler_output.m_scheduled_sequence_groups_ids.size();
                     }
 
@@ -394,46 +400,50 @@ private:
 
     class CacheStateDumper {
     public:
-        CacheStateDumper(const std::string& fname) : m_file_path(fname) {
-            const auto folder = m_file_path.parent_path();
-            std::filesystem::create_directory(folder);
-            m_out_stream.open(m_file_path.string(), std::ios::out);
-            OPENVINO_ASSERT(m_out_stream.is_open());
-        }
+        CacheStateDumper(const std::string& run_id) : m_run_id(run_id) { }
         void dump_cache_state(const BlockManager& block_mgr, const std::vector<SequenceGroup::Ptr>& sequence_groups) {
-            m_out_stream << block_mgr.m_allocator.m_total_num_blocks << std::endl;
-            m_out_stream << sequence_groups.size() << std::endl;
-            for (const auto& seq_group_ptr: sequence_groups) {
-                m_out_stream << seq_group_ptr->get_request_id() << ' ';
-                for (const auto& seq_ptr : seq_group_ptr->get_sequences()) {
-                    m_out_stream << seq_ptr->get_id() << ' ';
+            for (size_t layer_idx = 0; layer_idx < block_mgr.m_num_layers; layer_idx++) {
+                auto per_layer_folder = std::filesystem::path("debug") / "cache_dump";
+                per_layer_folder /= std::to_string(layer_idx);
+                std::filesystem::create_directories(per_layer_folder);
+                auto file_path = (per_layer_folder / (m_run_id + ".txt")).string();
+                std::ofstream out_stream(file_path, std::ios::out);
+                OPENVINO_ASSERT(out_stream.is_open());
+
+                out_stream << block_mgr.m_allocator.m_total_num_blocks << std::endl;
+                out_stream << sequence_groups.size() << std::endl;
+                for (const auto &seq_group_ptr: sequence_groups) {
+                    out_stream << seq_group_ptr->get_request_id() << ' ';
+                    for (const auto &seq_ptr: seq_group_ptr->get_sequences()) {
+                        out_stream << seq_ptr->get_id() << ' ';
+                    }
+                    out_stream << std::endl;
                 }
-                m_out_stream << std::endl;
-            }
-            for (const auto& seq_id_and_blocks : block_mgr.m_block_table) {
-                for (const auto& block : seq_id_and_blocks.second) {
-                    const size_t seq_id = seq_id_and_blocks.first;
-                    m_out_stream << seq_id << " " << block->get_index() << " " << block->get_references_count() << std::endl;
+                for (const auto &seq_id_and_blocks: block_mgr.m_block_table) {
+                    for (const auto &block: seq_id_and_blocks.second[layer_idx]) {
+                        const size_t seq_id = seq_id_and_blocks.first;
+                        out_stream << seq_id << " " << block->get_index() << " " << block->get_references_count()
+                                     << std::endl;
+                    }
                 }
+                out_stream.flush();
             }
-            m_out_stream.flush();
         }
         void dump_cache_state(const Scheduler& schdl, const std::vector<SequenceGroup::Ptr>& sequence_groups) {
             dump_cache_state(schdl.m_block_manager, sequence_groups);
 
         }
 
-        static std::string get_cache_dump_filename_for_generation_step(size_t step, const std::string& postfix = DEFAULT_POSTFIX) {
+        static std::string get_run_id_for_generation_step(size_t step, const std::string& postfix = DEFAULT_POSTFIX) {
             std::stringstream ss;
-            ss << "debug/cache_dump";
+            ss << "cache_dump";
             if (!postfix.empty()) {
                 ss << "_" << postfix;
             }
-            ss << "_step_" << step << ".txt";
+            ss << "_step_" << step;
             return ss.str();
         }
     private:
-        std::filesystem::path m_file_path;
-        std::ofstream m_out_stream;
+        std::string m_run_id;
     };
 }

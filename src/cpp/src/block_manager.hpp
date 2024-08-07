@@ -120,16 +120,25 @@ public:
 class CacheStateDumper;
 
 class BlockAllocator {
-    std::list<KVCacheBlock::Ptr> m_free_blocks;
+    std::vector<std::list<KVCacheBlock::Ptr>> m_free_blocks;
     ov::genai::Evictor m_evictor;
     int m_total_num_blocks;
     friend class CacheStateDumper;
     bool m_enable_prefix_caching;
+    size_t m_num_layers;
 public:
-    BlockAllocator(int num_blocks, bool enable_prefix_caching) :
-        m_total_num_blocks(num_blocks), m_enable_prefix_caching(enable_prefix_caching) {
-        for (int block_id = 0; block_id < m_total_num_blocks; ++block_id) {
-            m_free_blocks.push_back(std::make_shared<KVCacheBlock>(block_id));
+    BlockAllocator(int num_blocks, bool enable_prefix_caching, size_t num_layers = 0) :
+        m_total_num_blocks(num_blocks), m_enable_prefix_caching(enable_prefix_caching), m_num_layers(num_layers) {
+        if (m_num_layers == 0) {
+             m_free_blocks.resize(1);
+        }
+        else {
+            m_free_blocks.resize(m_num_layers);
+        }
+        for (auto& per_layer_block_list : m_free_blocks) {
+            for (int block_id = 0; block_id < m_total_num_blocks; ++block_id) {
+                per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+            }
         }
     }
 
@@ -139,14 +148,29 @@ public:
     }
 
     size_t num_free_blocks() const {
-        return m_free_blocks.size() + m_evictor.num_blocks();
+        OPENVINO_ASSERT(m_num_layers == 0, "this overload may only be used when num_layers == 0");
+        return num_free_blocks(0);
+    }
+
+    size_t num_free_blocks(size_t layer_idx) const {
+        return m_free_blocks[layer_idx].size() + m_evictor.num_blocks();
     }
 
     bool can_allocate_blocks(size_t num_blocks) const {
-        return num_blocks <= num_free_blocks();
+        OPENVINO_ASSERT(m_num_layers == 0, "this overload may only be used when num_layers == 0");
+        return can_allocate_blocks(num_blocks, 0);
+    }
+
+    bool can_allocate_blocks(size_t num_blocks, size_t layer_idx) const {
+        return num_blocks <= num_free_blocks(layer_idx);
     }
 
     void free(KVCacheBlock::Ptr block) {
+        OPENVINO_ASSERT(m_num_layers == 0, "this overload may only be used when num_layers == 0");
+        return free(block, 0);
+    }
+
+    void free(KVCacheBlock::Ptr block, size_t layer_idx) {
         block->release();
         if (block->is_free()) {
             if (m_enable_prefix_caching)
@@ -154,21 +178,32 @@ public:
                 m_evictor.add(block->get_hash(), block);
             }
             else {
-                m_free_blocks.push_back(block);
+                m_free_blocks[layer_idx].push_back(block);
             }
         }
     }
 
+
     KVCacheBlock::Ptr allocate_block() {
+        OPENVINO_ASSERT(m_num_layers == 0, "this overload may only be used when num_layers == 0");
+       return allocate_block(0);
+    }
+
+    KVCacheBlock::Ptr allocate_block(size_t layer_idx) {
         OPENVINO_ASSERT(!m_enable_prefix_caching);
-        OPENVINO_ASSERT(can_allocate_blocks(1));
-        KVCacheBlock::Ptr allocated_block = m_free_blocks.front();
+        OPENVINO_ASSERT(can_allocate_blocks(1, layer_idx));
+        KVCacheBlock::Ptr allocated_block = m_free_blocks[layer_idx].front();
         allocated_block->increment();
-        m_free_blocks.pop_front();
+        m_free_blocks[layer_idx].pop_front();
         return allocated_block;
     }
 
     KVCacheBlock::Ptr allocate_block(size_t hash, size_t num_hashed_tokens, std::map<uint64_t, KVCacheBlock::Ptr>& cached_blocks) {
+        OPENVINO_ASSERT(m_num_layers == 0, "this overload may only be used when num_layers == 0");
+        return allocate_block(0, hash, num_hashed_tokens, cached_blocks);
+    }
+
+    KVCacheBlock::Ptr allocate_block(size_t layer_idx, size_t hash, size_t num_hashed_tokens, std::map<uint64_t, KVCacheBlock::Ptr>& cached_blocks) {
         OPENVINO_ASSERT(m_enable_prefix_caching);
         OPENVINO_ASSERT(can_allocate_blocks(1));
         auto block = m_evictor.get_block(hash);
@@ -186,14 +221,14 @@ public:
             cached_blocks[hash]->increment();
             return block;
         }
-        if (m_free_blocks.size() > 0) {
+        if (m_free_blocks[layer_idx].size() > 0) {
             // allocate new empty block
-            KVCacheBlock::Ptr allocated_block = m_free_blocks.front();
+            KVCacheBlock::Ptr allocated_block = m_free_blocks[layer_idx].front();
             allocated_block->increment();
             allocated_block->set_hash(hash, num_hashed_tokens);
             cached_blocks[hash] = allocated_block;
 
-            m_free_blocks.pop_front();
+            m_free_blocks[layer_idx].pop_front();
             return allocated_block;
         }
         if (m_evictor.num_blocks() > 0) {
@@ -211,6 +246,11 @@ public:
     }
 
     KVCacheBlock::Ptr get_cached_block(size_t hash, std::map<uint64_t, KVCacheBlock::Ptr>& cached_blocks) {
+        OPENVINO_ASSERT(m_num_layers == 0, "this overload may only be used when num_layers == 0");
+        return get_cached_block(0, hash, cached_blocks);
+    }
+
+    KVCacheBlock::Ptr get_cached_block(size_t layer_idx, size_t hash, std::map<uint64_t, KVCacheBlock::Ptr>& cached_blocks) {
         auto block = m_evictor.get_block(hash);
         if (block != nullptr) {
             // use cashed block from evictor
@@ -229,7 +269,14 @@ public:
 
     float get_used_percentage() const {
         std::cout << "VSHAMPOR: m_total_num_blocks " << m_total_num_blocks << std::endl;
-        return static_cast<float>(m_total_num_blocks - num_free_blocks()) / m_total_num_blocks;
+        if (m_num_layers == 0) {
+            return static_cast<float>(m_total_num_blocks - num_free_blocks()) / m_total_num_blocks;
+        }
+        else {
+            size_t sum = 0;
+            for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) sum += num_free_blocks(layer_idx);
+            return static_cast<float>(m_num_layers * m_total_num_blocks - sum) / m_total_num_blocks;
+        }
     }
 };
 
@@ -238,15 +285,17 @@ class BlockManager {
     BlockAllocator m_allocator;
     bool m_enable_prefix_caching;
     size_t m_block_size;
+    size_t m_num_layers;
     // TODO: caching time can probably be improved if we use the prefix tree
     std::map<uint64_t, KVCacheBlock::Ptr> cached_blocks;
 
     // stores blocks for each sequence (not sequence group)
     // the same block can be seen in multiple block_tables for different sequences
-    std::map<uint64_t, std::vector<KVCacheBlock::Ptr>> m_block_table;
+    std::map<uint64_t, std::vector<std::vector<KVCacheBlock::Ptr>>> m_block_table;
 public:
-    BlockManager(int num_blocks, bool enable_prefix_caching, size_t block_size)
-        : m_allocator(num_blocks, enable_prefix_caching), m_enable_prefix_caching(enable_prefix_caching), m_block_size(block_size) { }
+    BlockManager(int num_blocks, bool enable_prefix_caching, size_t block_size, size_t num_layers = 0)
+        : m_allocator(num_blocks, enable_prefix_caching, num_layers), m_enable_prefix_caching(enable_prefix_caching), m_block_size(block_size),
+        m_num_layers(num_layers) { }
 
     ~BlockManager() {
         // sanity check that all sequences are freed
@@ -254,8 +303,17 @@ public:
     }
 
     const std::vector<KVCacheBlock::Ptr>& get_block_table(uint64_t seq_id) {
-        OPENVINO_ASSERT(m_block_table.count(seq_id) == 1);
+        OPENVINO_ASSERT(m_num_layers == 0, "this overload may only be used when num_layers == 0");
+        return get_block_table(seq_id, 0);
+    }
+
+    const std::vector<std::vector<KVCacheBlock::Ptr>>& get_block_tables(uint64_t seq_id) {
         return m_block_table[seq_id];
+    }
+
+    const std::vector<KVCacheBlock::Ptr>& get_block_table(uint64_t seq_id, size_t layer_idx) {
+        OPENVINO_ASSERT(m_block_table.count(seq_id) == 1);
+        return m_block_table[seq_id][layer_idx];
     }
 
     const size_t free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
@@ -265,7 +323,6 @@ public:
         for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
             auto seq_id = running_sequences[idx]->get_id();
             OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
-            auto block_table = m_block_table[seq_id];
             free_sequence_partially(seq_id, blocks_num);
         }
         return blocks_num;
@@ -281,7 +338,7 @@ public:
                 continue;
             }
            // OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
-            auto block_table = m_block_table[seq_id];
+            auto block_table = m_block_table[seq_id][0];  // assuming all layers always have equal number of blocks
             size_t last_idx = block_table.back()->get_index();
             if (indices.find(last_idx) != indices.end()) {
                 continue;
@@ -299,12 +356,21 @@ public:
     }
 
     size_t num_free_blocks() const {
-        return m_allocator.num_free_blocks();
+        return m_allocator.num_free_blocks(0); // relying on the invariant that all layers have identical number of blocks
     }
 
     bool can_allocate_blocks(size_t num_blocks) const {
-        return m_allocator.can_allocate_blocks(num_blocks);
+        if (m_num_layers == 0) {
+            return m_allocator.can_allocate_blocks(num_blocks);
+        }
+        else {
+            for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
+                if (!m_allocator.can_allocate_blocks(num_blocks, layer_idx)) return false;
+            }
+            return true;
+        }
     }
+
 
     void allocate(ov::genai::Sequence::CPtr sequence, size_t num_blocks, const ov::genai::TokenIds& prompt_ids = {}) {
         OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
@@ -312,26 +378,30 @@ public:
             OPENVINO_ASSERT(prompt_ids.size() > 0, "prompt_ids should be set for hash calculation.");
         }
         auto sequence_id = sequence->get_id();
-        auto block_table = m_block_table[sequence_id];
-        auto content_length = sequence->get_generated_len() + prompt_ids.size();
-        size_t num_hashed_tokens = block_table.size() * m_block_size;
+        if (m_block_table.find(sequence_id) == m_block_table.end()) {
+            m_block_table[sequence_id].resize(m_num_layers);
+        }
+        for (size_t layer_idx = 0; layer_idx < m_block_table[sequence_id].size(); layer_idx++) {
+            auto block_table = m_block_table[sequence_id][layer_idx];
+            auto content_length = sequence->get_generated_len() + prompt_ids.size();
+            size_t num_hashed_tokens = block_table.size() * m_block_size;
 
-        for (size_t i = 0; i < num_blocks; ++i) {
+            for (size_t i = 0; i < num_blocks; ++i) {
 
-            ov::genai::KVCacheBlock::Ptr block = nullptr;
-            if (m_enable_prefix_caching) {
-                num_hashed_tokens += m_block_size;
-                if (num_hashed_tokens > content_length) {
-                    num_hashed_tokens = content_length;
+                ov::genai::KVCacheBlock::Ptr block = nullptr;
+                if (m_enable_prefix_caching) {
+                    num_hashed_tokens += m_block_size;
+                    if (num_hashed_tokens > content_length) {
+                        num_hashed_tokens = content_length;
+                    }
+                    auto hash = sequence->get_hash(num_hashed_tokens, prompt_ids);
+                    block = m_allocator.allocate_block(layer_idx, hash, num_hashed_tokens, cached_blocks);
+                } else {
+                    block = m_allocator.allocate_block(layer_idx);
                 }
-                auto hash = sequence->get_hash(num_hashed_tokens, prompt_ids);
-                block = m_allocator.allocate_block(hash, num_hashed_tokens, cached_blocks);
+                OPENVINO_ASSERT(block != nullptr);
+                m_block_table[sequence_id][layer_idx].push_back(block);
             }
-            else {
-                block = m_allocator.allocate_block();
-            }
-            OPENVINO_ASSERT(block != nullptr);
-            m_block_table[sequence_id].push_back(block);
         }
     }
 
@@ -341,86 +411,136 @@ public:
 
     void fork_sequence(uint64_t parent_id, uint64_t child_id) {
         OPENVINO_ASSERT(m_block_table.count(child_id) == 0);
-        m_block_table[child_id].reserve(m_block_table[parent_id].size());
-        for (KVCacheBlock::Ptr & block : m_block_table[parent_id]) {
-            block->increment();
-            m_block_table[child_id].push_back(block);
+        m_block_table[child_id].resize(m_num_layers);
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) {
+            m_block_table[child_id][layer_idx].reserve(m_block_table[parent_id].size());
+            for (KVCacheBlock::Ptr &block: m_block_table[parent_id][layer_idx]) {
+                block->increment();
+                m_block_table[child_id][layer_idx].push_back(block);
+            }
         }
     }
 
     void free_sequence(size_t seq_id) {
-        auto block_table = m_block_table[seq_id];
+        for (size_t layer_idx = 0; layer_idx < m_block_table[seq_id].size(); layer_idx++) {
+            auto block_table = m_block_table[seq_id][layer_idx];
 
-        for (KVCacheBlock::Ptr& block : block_table) {
-            m_allocator.free(block);
+            for (KVCacheBlock::Ptr& block : block_table) {
+                m_allocator.free(block, layer_idx);
+            }
         }
 
         OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
     }
 
     bool free_last_block(size_t seq_id) {
-        auto block_table = m_block_table[seq_id];
-        OPENVINO_ASSERT(block_table.size() >= 1);
-        size_t block_idx = m_block_table[seq_id].size() - 1;
-        m_allocator.free(block_table[block_idx]);
-        m_block_table[seq_id].resize(m_block_table[seq_id].size() - 1);
+        bool sequence_freed = false;
+        for (size_t layer_idx = 0; layer_idx < m_block_table[seq_id].size(); layer_idx++) {
+            auto block_table = m_block_table[seq_id][layer_idx];
+            OPENVINO_ASSERT(block_table.size() >= 1);
+            size_t block_idx = block_table.size() - 1;
+            m_allocator.free(block_table[block_idx], layer_idx);
+            block_table.resize(block_table.size() - 1);
 
-        if (m_block_table[seq_id].size() == 0) {
+            if (block_table.empty()) {
+                sequence_freed = true;
+            }
+
+            if (sequence_freed) {
+                // All layers must have the same block count as an invariant.
+                OPENVINO_ASSERT(block_table.empty(), "internal error");
+            }
+
+        }
+        if (sequence_freed) {
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
         }
-        return block_table[block_idx]->is_free();
+
+        return false;  // TODO (vshampor): doesn't look right if sequence is freed
     }
 
     void free_sequence_partially(size_t seq_id, size_t block_num) {
+        size_t effective_num_layers = m_block_table[seq_id].size();
+        bool sequence_freed_completely = false;
 
-        auto block_table = m_block_table[seq_id];
-        OPENVINO_ASSERT(block_table.size() >= block_num);
-        for (size_t idx = 0; idx < block_num; idx++) {
-            size_t block_idx = m_block_table[seq_id].size() - idx - 1;
-            m_allocator.free(block_table[block_idx]);
+        for (size_t layer_idx = 0; layer_idx < effective_num_layers; layer_idx++) {
+            auto& layer_block_table = m_block_table[seq_id][layer_idx];
+            OPENVINO_ASSERT(layer_block_table.size() >= block_num);
+            for (size_t idx = 0; idx < block_num; idx++) {
+                size_t block_idx = layer_block_table.size() - idx - 1;
+                m_allocator.free(layer_block_table[block_idx], layer_idx);
+
+            }
+            layer_block_table.resize(layer_block_table.size() - block_num);
+
+            if (layer_block_table.empty() == 0) {
+                sequence_freed_completely = true;
+            }
+
+            if (sequence_freed_completely) {
+                // The invariant must hold at BlockManager level that all per-layer block tables
+                // must have the same size
+                OPENVINO_ASSERT(layer_block_table.empty(), "internal error");
+            }
         }
-        m_block_table[seq_id].resize(m_block_table[seq_id].size() - block_num);
 
-        if (m_block_table[seq_id].size() == 0) {
+        if (sequence_freed_completely) {
             OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
         }
     }
 
+
     void free_blocks_from_sequence(size_t seq_id, const std::set<size_t>& logical_block_indices_to_free) {
-        if (logical_block_indices_to_free.empty()) {
+        OPENVINO_ASSERT(m_num_layers == 0, "this overload may only be called if num_layers == 0");
+        std::vector<std::set<size_t>> expanded_input = { logical_block_indices_to_free };
+        return free_blocks_from_sequence(seq_id, expanded_input);
+    }
+
+
+    void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& logical_block_indices_to_free) {
+        size_t presumed_num_layers = logical_block_indices_to_free.size();
+        OPENVINO_ASSERT(m_num_layers == presumed_num_layers || (m_num_layers == 0 && presumed_num_layers == 1));
+        for (size_t i = 0; i < presumed_num_layers; i++) {
+            OPENVINO_ASSERT(logical_block_indices_to_free[i].size() == logical_block_indices_to_free[0].size(), "must free the same amount of blocks per each layer at once");
+        }
+
+        if (logical_block_indices_to_free[0].empty()) {
             return;
         }
 
-        auto& sequence_blocks = m_block_table[seq_id];
-        size_t block_table_size = sequence_blocks.size();
+        for (size_t layer_idx = 0; layer_idx < presumed_num_layers; layer_idx++) {
+            auto& per_layer_block_table = m_block_table[seq_id][layer_idx];
+            const auto& per_layer_block_indiced_to_free = logical_block_indices_to_free[layer_idx];
+            size_t block_table_size = per_layer_block_table.size();
 
-        for (size_t logical_block_idx : logical_block_indices_to_free) {
-            OPENVINO_ASSERT(logical_block_idx <= block_table_size,
-                            "cannot free logical block ", logical_block_idx,
-                            "from sequence ", seq_id, " since it only has ", block_table_size, "logical blocks");
-            auto block = sequence_blocks[logical_block_idx];
-            m_allocator.free(block);
-        }
-        std::vector<KVCacheBlock::Ptr> new_sequence_blocks;
-        OPENVINO_ASSERT(logical_block_indices_to_free.size() <= block_table_size, "too many blocks to free");
-        new_sequence_blocks.reserve(block_table_size - logical_block_indices_to_free.size());
-        for (size_t logical_block_idx = 0; logical_block_idx < block_table_size; logical_block_idx++) {
-            if (logical_block_indices_to_free.find(logical_block_idx) == logical_block_indices_to_free.end()) {
-                // idx NOT in the requested set to free, need to keep this block
-                new_sequence_blocks.push_back(sequence_blocks[logical_block_idx]);
+            for (size_t logical_block_idx: per_layer_block_indiced_to_free) {
+                OPENVINO_ASSERT(logical_block_idx <= block_table_size,
+                                "cannot free logical block ", logical_block_idx,
+                                "from sequence ", seq_id, " since it only has ", block_table_size, "logical blocks");
+                auto block = per_layer_block_table[logical_block_idx];
+                m_allocator.free(block);
             }
-        }
+            std::vector<KVCacheBlock::Ptr> new_sequence_blocks;
+            OPENVINO_ASSERT(per_layer_block_indiced_to_free.size() <= block_table_size, "too many blocks to free");
+            new_sequence_blocks.reserve(block_table_size - per_layer_block_indiced_to_free.size());
+            for (size_t logical_block_idx = 0; logical_block_idx < block_table_size; logical_block_idx++) {
+                if (per_layer_block_indiced_to_free.find(logical_block_idx) == per_layer_block_indiced_to_free.end()) {
+                    // idx NOT in the requested set to free, need to keep this block
+                    new_sequence_blocks.push_back(per_layer_block_table[logical_block_idx]);
+                }
+            }
 
-        sequence_blocks = new_sequence_blocks;
+            per_layer_block_table = new_sequence_blocks;
+        }
     }
 
     bool can_append_slots(SequenceGroup::CPtr seq_group) {
-        return required_blocks_count(std::move(seq_group)) <= m_allocator.num_free_blocks();
+        return required_blocks_count(std::move(seq_group)) <= m_allocator.num_free_blocks(0);
     }
 
     size_t required_blocks_count(SequenceGroup::CPtr seq_group) {
         std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
-        size_t blocks_count= 0; // totat number of needed blocks for sequence group
+        size_t blocks_count= 0; // total number of needed blocks for sequence group
         std::set<size_t> last_block_ids; // unique last block indices
 
         for (auto seq: running_sequences) {
@@ -430,7 +550,7 @@ public:
                 blocks_count += seq_group->get_num_logical_blocks();
                 continue;
             }
-            auto& block_table = m_block_table[seq_id];
+            auto& block_table = m_block_table[seq_id][0];
             size_t num_physical_blocks = block_table.size();
             OPENVINO_ASSERT(num_physical_blocks > 0);
 
@@ -469,15 +589,15 @@ public:
     }
 
     std::map<size_t, std::list<size_t>> append_slots(SequenceGroup::CPtr seq_group) {
-
+        // Will always allocate the identical number of new blocks (if any) to each of the "layers" to keep the
+        // number of blocks occupied by each "layer" identical at all times.
         size_t num_logical_blocks = seq_group->get_num_logical_blocks();
         std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
 
         std::map<size_t, std::list<size_t>> copy_blocks_map;
-        for (size_t i = 0; i < running_sequences.size(); ++i) {
-            Sequence::CPtr sequence = running_sequences[i];
+        for (auto& sequence : running_sequences) {
             auto seq_id = sequence->get_id();
-            auto& block_table = m_block_table[seq_id];
+            auto& block_table = m_block_table[seq_id][0];
             size_t num_physical_blocks = block_table.size();
 
             if (num_logical_blocks > num_physical_blocks) {
@@ -538,36 +658,38 @@ public:
             }
             // restore fully filled blocks
             auto hash = sequence->get_hash(content_len, prompt_ids);
-            auto block = m_allocator.get_cached_block(hash, cached_blocks);
-            if (block != nullptr) {
-                block->set_timestamp(std::chrono::system_clock::now());
-                m_block_table[seq_id].push_back(block);
-                group->update_processed_tokens_num(content_len);
-            }
-            else {
-                // restore partially filled block
-                for (size_t i = 1; i < block_size; i++) {
-                    if (prev_iteration_content_len + i > prompt_ids.size()) {
-                        break;
-                    }
-                    auto hash = sequence->get_hash(prev_iteration_content_len + i, prompt_ids);
-                    auto block = m_allocator.get_cached_block(hash, cached_blocks);
-                    if (block != nullptr) {
-                        block->set_timestamp(std::chrono::system_clock::now());
-                        m_block_table[seq_id].push_back(block);
-                        group->update_processed_tokens_num(prev_iteration_content_len + i);
-
-                        size_t new_tokens_count_in_block = std::min(content_len, prev_iteration_content_len + block_size);
-                        if (new_tokens_count_in_block > prev_iteration_content_len + i) {
-                            cached_blocks.erase(hash);
-                            auto new_hash = sequence->get_hash(new_tokens_count_in_block, prompt_ids);
-                            cached_blocks[new_hash] = block;
+            for (size_t layer_idx = 0; layer_idx < m_block_table[seq_id].size(); layer_idx++) {
+                auto block = m_allocator.get_cached_block(hash, cached_blocks);
+                if (block != nullptr) {
+                    block->set_timestamp(std::chrono::system_clock::now());
+                    m_block_table[seq_id][layer_idx].push_back(block);
+                    group->update_processed_tokens_num(content_len);
+                } else {
+                    // restore partially filled block
+                    for (size_t i = 1; i < block_size; i++) {
+                        if (prev_iteration_content_len + i > prompt_ids.size()) {
+                            break;
                         }
+                        auto hash = sequence->get_hash(prev_iteration_content_len + i, prompt_ids);
+                        auto block = m_allocator.get_cached_block(hash, cached_blocks);
+                        if (block != nullptr) {
+                            block->set_timestamp(std::chrono::system_clock::now());
+                            m_block_table[seq_id][layer_idx].push_back(block);
+                            group->update_processed_tokens_num(prev_iteration_content_len + i);
 
-                        break;
+                            size_t new_tokens_count_in_block = std::min(content_len,
+                                                                        prev_iteration_content_len + block_size);
+                            if (new_tokens_count_in_block > prev_iteration_content_len + i) {
+                                cached_blocks.erase(hash);
+                                auto new_hash = sequence->get_hash(new_tokens_count_in_block, prompt_ids);
+                                cached_blocks[new_hash] = block;
+                            }
+
+                            break;
+                        }
                     }
+                    break;
                 }
-                break;
             }
         }
     }

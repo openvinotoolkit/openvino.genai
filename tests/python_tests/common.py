@@ -16,7 +16,7 @@ from typing import List, Tuple
 def get_greedy() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_return_sequences = 1
-    generation_config.max_new_tokens = 30
+    generation_config.max_new_tokens = 300
     return generation_config
 
 def get_greedy_with_min_and_max_tokens() -> GenerationConfig:
@@ -365,4 +365,4 @@ def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = Non
     generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
 
 
-DEFAULT_SCHEDULER_CONFIG = get_scheduler_config({"num_kv_blocks": 300, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256})
+DEFAULT_SCHEDULER_CONFIG = get_scheduler_config({"num_kv_blocks": 300, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256, "use_cache_eviction": True})
