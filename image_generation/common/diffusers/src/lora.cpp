@@ -48,7 +48,7 @@ InsertLoRA::InsertLoRA(LoRAMap& lora_map) :
         }
         std::string root_name = root->get_friendly_name();
         std::replace(root_name.begin(), root_name.end(), '.', '_');
-        DEBUG_PRINT(root->get_type_info().name);
+        //DEBUG_PRINT(root->get_type_info().name);
 
         auto it = m_lora_map->begin();
         while (it != m_lora_map->end()) {
@@ -133,7 +133,7 @@ ConstantMap read_safetensors(const std::string& filename) {
         ov::Tensor wrapper(type, shape, ptr);  // wraps existing memory, no ownership
         auto constant = std::make_shared<ov::op::v0::Constant>(wrapper);    // wraps existing memory, no ownership
         constant->get_rt_info()["__safetensors_buffer_holder"] = buffer;    // to automatically deallocate underlying memory buffer when last constant holding it is destoyed
-        DEBUG_PRINT("Tensor with name " << name << ", shape " << shape << " and type " << type << " was allocated.");
+        //DEBUG_PRINT("Tensor with name " << name << ", shape " << shape << " and type " << type << " was allocated.");
         tensors[name] = constant;
     }
     free(safe_tensors_file.tensors);
@@ -245,7 +245,7 @@ public:
         );
     }
 
-    ~ApplyLoRA () {
+    ~ApplyLoRA () { 
         DEBUG_PRINT("LoRA Applied: " << applied);
     }
 
@@ -264,7 +264,7 @@ std::map<std::string, AdapterMap> load_lora_adapter(const std::string& adapter_f
     auto alpha_const = ov::op::v0::Constant::create(ov::element::f32, ov::Shape(), {alpha});
     for(const auto& named_tensor: adapter_tensors) {
         if(named_tensor.first.find(".alpha") != std::string::npos) {
-            DEBUG_PRINT("Alpha tensor was ignored: " << named_tensor.first);
+            //DEBUG_PRINT("Alpha tensor was ignored: " << named_tensor.first);
             continue;
         }
 
@@ -301,7 +301,7 @@ std::map<std::string, AdapterMap> load_lora_adapter(const std::string& adapter_f
             default:
                 OPENVINO_THROW("More than two adapter tensors appers for the same layer: ", layer_name, ", started with tensor: ", named_tensor.first);
         }
-        DEBUG_PRINT("Size for tensor layer " << layer_name << ": " << adapter.size());
+        //DEBUG_PRINT("Size for tensor layer " << layer_name << ": " << adapter.size());
     }
     return result;
 }
@@ -315,7 +315,7 @@ void apply_lora_adapter(std::shared_ptr<ov::Model> model, const AdapterMap& adap
 
 std::map<std::string, InsertLoRA::LoRAMap>
 read_lora_adapters(const std::string& filename, const float alpha) {
-    read_safetensors(filename);
+    //read_safetensors(filename);
     std::vector<std::uint8_t> file_buffer = read_file(filename);
     void* buffer_ptr = file_buffer.data();
 
@@ -343,7 +343,7 @@ read_lora_adapters(const std::string& filename, const float alpha) {
         // alpha tensors are overriden by users' alpha
         bool alpha_tensor = tensor_name.find(".alpha") != std::string::npos;
         if (alpha_tensor || tensor_visited) {
-            DEBUG_PRINT((alpha_tensor ? "Alpha tensor was ignored: " : "Tensor was visited: ") << tensor_name);
+            //DEBUG_PRINT((alpha_tensor ? "Alpha tensor was ignored: " : "Tensor was visited: ") << tensor_name);
             continue;
         }
 

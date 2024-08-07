@@ -96,15 +96,19 @@ public:
         ov::Core core;
         core.set_property(device, plugin_config);
         auto model = core.read_model(model_path / "openvino_model.xml");
-        #if 1
+        auto lora_flag = getenv(("OV_GENAI_LORA"));
+        if(lora_flag && lora_flag == std::string("1")) {
         DEBUG_PRINT("Applying LoRA here");
-        auto adapter = load_lora_adapter(
-            "/home/developer/notebook/models_converted/tinyllama_sql_lora.safetensors",
-            1,
-            {{"base_model.model.mode", ""}});
-        apply_lora_adapter(model, adapter[""]);
-        #endif
+            auto adapter = load_lora_adapter(
+                "/home/developer/persistent/models/adapter_model.safetensors",
+                1,
+                {{"base_model.model.mode", ""}});
+            apply_lora_adapter(model, adapter[""]);
+        }
+        const auto start{std::chrono::steady_clock::now()};
         m_model_runner = core.compile_model(model, device).create_infer_request();
+        const auto end{std::chrono::steady_clock::now()};
+        DEBUG_PRINT("compile_model().create_infer_request(): " << std::chrono::duration<float>(end - start).count());
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1)

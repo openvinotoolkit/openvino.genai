@@ -82,7 +82,7 @@ ConstantMap read_safetensors(const std::string& filename) {
         ov::Tensor wrapper(type, shape, ptr);  // wraps existing memory, no ownership
         auto constant = std::make_shared<v0::Constant>(wrapper);    // wraps existing memory, no ownership
         constant->get_rt_info()["__safetensors_buffer_holder"] = buffer;    // to automatically deallocate underlying memory buffer when last constant holding it is destoyed
-        DEBUG_PRINT("Tensor with name " << name << ", shape " << shape << " and type " << type << " was allocated.");
+        //DEBUG_PRINT("Tensor with name " << name << ", shape " << shape << " and type " << type << " was allocated.");
         tensors[name] = constant;
     }
     free(safe_tensors_file.tensors);
@@ -122,8 +122,8 @@ AdapterMap::const_iterator find_adapter(const std::string& name, const AdapterMa
     });
 }
 
-#define FAST_WEIGHTS_FUSE 1
-#define SEPARATE_TERM 0
+#define FAST_WEIGHTS_FUSE 0
+#define SEPARATE_TERM 1
 
 
 class ApplyLoRA : public ov::pass::MatcherPass {
@@ -347,7 +347,7 @@ std::map<std::string, AdapterMap> load_lora_adapter(const std::string& adapter_f
     const std::regex name_pattern = std::regex(R"((.*)\.(lora_(A|B|up|down)\.weight))");
     for(const auto& named_tensor: adapter_tensors) {
         if(named_tensor.first.find(".alpha") != std::string::npos) {
-            DEBUG_PRINT("Alpha tensor was ignored: " << named_tensor.first);
+            //DEBUG_PRINT("Alpha tensor was ignored: " << named_tensor.first);
             continue;
         }
 
@@ -363,7 +363,7 @@ std::map<std::string, AdapterMap> load_lora_adapter(const std::string& adapter_f
 
         auto name = named_tensor.first.substr(named_tensor.first.find(prefix_it->first) + prefix_it->first.length() + 1);
         //auto delimiter = name.find('.');
-        DEBUG_PRINT("Tensor name before patching " << name);
+        //DEBUG_PRINT("Tensor name before patching " << name);
         std::smatch match;
         if(!std::regex_match(name, match, name_pattern)) {
             DEBUG_PRINT("Skipping lora tensor: " << name << " because it does't match the expected pattern");
@@ -371,8 +371,8 @@ std::map<std::string, AdapterMap> load_lora_adapter(const std::string& adapter_f
         }
         auto layer_name = match[1].str(); // name.substr(0, delimiter);
         auto suffix = match[2].str(); //name.substr(delimiter);
-        DEBUG_PRINT("layer_name " << layer_name);
-        DEBUG_PRINT("suffix " << suffix);
+        //DEBUG_PRINT("layer_name " << layer_name);
+        //DEBUG_PRINT("suffix " << suffix);
 
         auto& adapter = result[prefix_it->second][layer_name];
         if(adapter.empty()) {
@@ -392,7 +392,7 @@ std::map<std::string, AdapterMap> load_lora_adapter(const std::string& adapter_f
             default:
                 OPENVINO_THROW("More than two adapter tensors appers for the same layer: ", layer_name, ", started with tensor: ", named_tensor.first);
         }
-        DEBUG_PRINT("Size for tensor layer " << layer_name << ": " << adapter.size());
+        //DEBUG_PRINT("Size for tensor layer " << layer_name << ": " << adapter.size());
     }
     return result;
 }
