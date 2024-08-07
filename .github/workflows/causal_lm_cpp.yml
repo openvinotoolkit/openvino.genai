@@ -82,7 +82,7 @@ jobs:
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "Alan Turing was a" > predictions_greedy.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./chatglm3-6b/ "Alan Turing was a" > predictions_greedy.txt
 
-  cpp--greedy_causal_lm-chatglm-ubuntu:
+  cpp--greedy_causal_lm-bloom-560m-ubuntu:
     runs-on: ubuntu-20.04-8-cores
     steps:
       - uses: actions/checkout@v4
