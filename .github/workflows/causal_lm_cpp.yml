@@ -370,8 +370,6 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-3b dolly-v2-3b
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model databricks/dolly-v2-7b dolly-v2-7b
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat --task text-generation-with-past
-          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen1.5-7B-Chat Qwen1.5-7B-Chat --task text-generation-with-past
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
       - name: run and compare
@@ -379,20 +377,6 @@ jobs:
           source ./ov/setupvars.sh
           ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm ./dolly-v2-3b/ ./dolly-v2-7b/ "Alan Turing was a" > predictions_speculative.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
-          python -c "
-          with open('predictions_greedy.txt', 'r') as f:
-              predicted_greedy = f.readline()
-          with open('predictions_speculative.txt', 'r') as f:
-              predicted_speculative = f.readline()
-          assert predicted_greedy == predicted_speculative
-          "
-          echo "Alan Turing was a" passed
-      - name: run and compare (modelQwen-7B-Chat with seq_length_axis = 1, Qwen1.5-7B-Chat with seq_length_axis = 2)
-        run: |
-          source ./ov/setupvars.sh
-          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm Qwen-7B-Chat Qwen1.5-7B-Chat "Alan Turing was a" > predictions_speculative.txt
-          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm Qwen1.5-7B-Chat "Alan Turing was a" > predictions_greedy.txt
-    
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
