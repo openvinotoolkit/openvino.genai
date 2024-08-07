@@ -702,12 +702,11 @@ def test_left_pad():
 
 @pytest.mark.parametrize("generation_config", test_configs)
 @pytest.mark.parametrize("prompt", batched_prompts)
-@pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
-def test_continuous_batching_vs_stateful(model_descr, prompt, generation_config):
+def test_continuous_batching_vs_stateful(prompt, generation_config):
     model_id, path, tokenizer, model, stateful = read_model((
         "Qwen/Qwen2-0.5B-Instruct",
-        Path("TinyLlama-1.1B-Chat-v1.0")
+        Path("Qwen2-0.5B-Instruct")
     ))
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = 100
@@ -721,12 +720,11 @@ def test_continuous_batching_vs_stateful(model_descr, prompt, generation_config)
             assert math.isclose(gen, ref, abs_tol=0.0003)
 
 @pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.parametrize("model_descr", get_models_list())
 @pytest.mark.precommit
-def test_cb_streamer_vs_return_vs_stateful(model_descr, prompt):
+def test_cb_streamer_vs_return_vs_stateful(prompt):
     model_id, path, tokenizer, model, stateful = read_model((
         "Qwen/Qwen2-0.5B-Instruct",
-        Path("TinyLlama-1.1B-Chat-v1.0")
+        Path("Qwen2-0.5B-Instruct")
     ))
     cb = get_continuous_batching(path)
     streamed = []
