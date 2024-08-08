@@ -18,6 +18,9 @@
 #include "openvino/op/convolution.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/reshape.hpp"
+#include "openvino/op/read_value.hpp"
+#include "openvino/op/assign.hpp"
+#include "openvino/op/util/variable.hpp"
 #include "openvino/pass/pattern/matcher.hpp"
 #include "openvino/pass/pattern/op/wrap_type.hpp"
 #include "openvino/pass/manager.hpp"
@@ -124,12 +127,16 @@ AdapterMap::const_iterator find_adapter(const std::string& name, const AdapterMa
 
 #define FAST_WEIGHTS_FUSE 0
 #define SEPARATE_TERM 1
+#define SEPARATE_TERM_STATE 1  
 
 
 class ApplyLoRA : public ov::pass::MatcherPass {
     using Signature = std::string;
     std::map<Signature, ov::InferRequest> compiled_weight_models;
     ov::Core core;
+    std::shared_ptr<ov::Model> model;
+    //ov::SinkVector& assigns;
+    //ov::op::util::VariableVector& variables;
 
     void signature_push_back(Signature& signature, ov::Output<ov::Node> input) const {
         // FIXME: Define hash function on vector<tuple<element_type, PartialShape>> to make it C++ish
@@ -181,7 +188,11 @@ class ApplyLoRA : public ov::pass::MatcherPass {
 
 public:
     OPENVINO_RTTI("ApplyLoRA");
-    ApplyLoRA(const AdapterMap& adapter_map) {
+        ApplyLoRA(
+            const AdapterMap& adapter_map,
+            std::shared_ptr<ov::Model> model
+            /*ov::SinkVector& assigns, ov::op::util::VariableVector& variables*/) :
+            /*assigns(assigns), variables(variables),*/ model(model) {
         OPENVINO_REGISTER_MATCHER(
             (ov::pass::pattern::wrap_type<v0::MatMul, v1::Convolution>()),
             ([&, this](ov::pass::pattern::Matcher& m) {
@@ -252,10 +263,33 @@ public:
                     auto target = weights_input;
                     #endif
 
-                    auto target_rank = target.get_partial_shape().rank();
+                    auto target_rank = target.get_partial_shape().rank().get_length();
                     auto consumers = target.get_target_inputs();
 
+                    #if 0
+                    // FIXME: This is hack for missing transposes for tensors that cannot be directly multiplied (UNET: CONV)
+                    if(target_rank == 4 && target.get_partial_shape()[target_rank - 3].get_length() > 1) {
+                        DEBUG_PRINT("Skipping unspported model tensor with shape: " << target.get_partial_shape());
+                        return false;
+                    }
+                    #endif
+
+                    #if SEPARATE_TERM_STATE
+                    NodeVector input_constants;
+                    for(size_t i = 0; i < adapter.size(); ++i) {
+                        std::string variable_id = "lora_state_" + std::to_string(model->get_sinks().size());
+                        auto variable = std::make_shared<ov::op::util::Variable>(ov::op::util::VariableInfo{
+                            adapter[i]->get_output_partial_shape(0),
+                            adapter[i]->get_output_element_type(0),
+                            variable_id});
+                        /*variables.push_back*/model->add_variables({variable});
+                        auto read_value = register_new_node<v6::ReadValue>(adapter[i], variable);
+                        input_constants.push_back(read_value);
+                        /*assigns.push_back*/model->add_sinks({register_new_node<v6::Assign>(read_value, variable)});
+                    }
+                    #else
                     NodeVector input_constants{adapter.begin(), adapter.end()};
+                    #endif
                     replacement = lora_multiplication(
                         #if SEPARATE_TERM
                         activations.get_node_shared_ptr()
@@ -402,8 +436,13 @@ void apply_lora_adapter(std::shared_ptr<ov::Model> model, const AdapterMap& adap
     //std::cout.flush();
     const auto start{std::chrono::steady_clock::now()};
     ov::pass::Manager pm;
-    pm.register_pass<ApplyLoRA>(adapter_map);
+    //ov::op::util::VariableVector variables;
+    //ov::SinkVector assigns; // new assigns will be collected in a certain mode of LoRA fusion
+    pm.register_pass<ApplyLoRA>(adapter_map, model);
     pm.run_passes(model);
+    //ov::serialize(model, "after_lora.xml");
+    //model->add_variables(variables);
+    //model->add_sinks(assigns);
     const auto end{std::chrono::steady_clock::now()};
     DEBUG_PRINT("Fusing LoRA adapter: " << std::chrono::duration<float>(end - start).count());
     //std::cout.flush();
