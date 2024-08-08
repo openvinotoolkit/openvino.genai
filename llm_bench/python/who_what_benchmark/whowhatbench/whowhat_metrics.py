@@ -30,10 +30,10 @@ def evaluate_divergency(tokenizer, data_gold, data_prediction):
 
     DEBUG = False
     # NOTE: a - reference answers, b - answers to evaluate
-    fdt_list = [] # each value = the position of first divergent (different) token.
-    sdt_list = [] # each value = number of tokens to correct in the prediction.
-    sdtn_list = [] # each value = share of tokens to correct in the prediction
-    fdt_max = [] # each value = total number of tokens in the reference
+    fdt_list = []  # each value = the position of first divergent (different) token.
+    sdt_list = []  # each value = number of tokens to correct in the prediction.
+    sdtn_list = []  # each value = share of tokens to correct in the prediction
+    fdt_max = []  # each value = total number of tokens in the reference
     for a_answer, b_answer in zip(answers_gold, answers_prediction):
         a_indexes = tokenizer.encode(a_answer, return_tensors="pt").squeeze().tolist()
         b_indexes = tokenizer.encode(b_answer, return_tensors="pt").squeeze().tolist()
