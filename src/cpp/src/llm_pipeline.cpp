@@ -97,16 +97,22 @@ public:
         core.set_property(device, plugin_config);
         auto model = core.read_model(model_path / "openvino_model.xml");
         auto lora_flag = getenv(("OV_GENAI_LORA"));
+        ConstantMap variables;
         if(lora_flag && lora_flag == std::string("1")) {
-        DEBUG_PRINT("Applying LoRA here");
+            DEBUG_PRINT("Applying LoRA here");
             auto adapter = load_lora_adapter(
                 "/home/developer/persistent/models/adapter_model.safetensors",
                 1,
                 {{"base_model.model.mode", ""}});
-            apply_lora_adapter(model, adapter[""]);
+            apply_lora_adapter(model, adapter[""], variables);
         }
         const auto start{std::chrono::steady_clock::now()};
-        m_model_runner = core.compile_model(model, device).create_infer_request();
+        auto compiled_model = core.compile_model(model, device);
+        //ov::serialize(compiled_model.get_runtime_model(), "alfter_lora.compiled.xml");
+        m_model_runner = compiled_model.create_infer_request();
+        if(lora_flag && lora_flag == std::string("1")) {
+            connect_lora_adapter(m_model_runner, variables);
+        }
         const auto end{std::chrono::steady_clock::now()};
         DEBUG_PRINT("compile_model().create_infer_request(): " << std::chrono::duration<float>(end - start).count());
 

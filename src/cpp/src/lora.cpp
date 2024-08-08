@@ -67,7 +67,6 @@ ov::element::Type safetensors_to_ov_element_type (int dtype) {
     }
 }
 
-using ConstantMap = std::map<std::string, std::shared_ptr<v0::Constant>>;
 ConstantMap read_safetensors(const std::string& filename) {
     ConstantMap tensors;
     auto buffer = read_file_helper(filename);
@@ -135,6 +134,7 @@ class ApplyLoRA : public ov::pass::MatcherPass {
     std::map<Signature, ov::InferRequest> compiled_weight_models;
     ov::Core core;
     std::shared_ptr<ov::Model> model;
+    ConstantMap variable_map;
     //ov::SinkVector& assigns;
     //ov::op::util::VariableVector& variables;
 
@@ -190,9 +190,10 @@ public:
     OPENVINO_RTTI("ApplyLoRA");
         ApplyLoRA(
             const AdapterMap& adapter_map,
-            std::shared_ptr<ov::Model> model
+            std::shared_ptr<ov::Model> model,
+            ConstantMap& variable_map
             /*ov::SinkVector& assigns, ov::op::util::VariableVector& variables*/) :
-            /*assigns(assigns), variables(variables),*/ model(model) {
+            /*assigns(assigns), variables(variables),*/ model(model), variable_map(variable_map) {
         OPENVINO_REGISTER_MATCHER(
             (ov::pass::pattern::wrap_type<v0::MatMul, v1::Convolution>()),
             ([&, this](ov::pass::pattern::Matcher& m) {
@@ -283,8 +284,10 @@ public:
                             adapter[i]->get_output_element_type(0),
                             variable_id});
                         /*variables.push_back*/model->add_variables({variable});
-                        auto read_value = register_new_node<v6::ReadValue>(adapter[i], variable);
+                        variable_map[variable_id] = adapter[i];
+                        auto read_value = register_new_node<v6::ReadValue>(variable);
                         input_constants.push_back(read_value);
+                        //input_constants.push_back(adapter[i]);
                         /*assigns.push_back*/model->add_sinks({register_new_node<v6::Assign>(read_value, variable)});
                     }
                     #else
@@ -431,14 +434,14 @@ std::map<std::string, AdapterMap> load_lora_adapter(const std::string& adapter_f
     return result;
 }
 
-void apply_lora_adapter(std::shared_ptr<ov::Model> model, const AdapterMap& adapter_map) {
+void apply_lora_adapter(std::shared_ptr<ov::Model> model, const AdapterMap& adapter_map, ConstantMap& variables) {
     //ov::save_model(model, "before_lora.xml", false);
     //std::cout.flush();
     const auto start{std::chrono::steady_clock::now()};
     ov::pass::Manager pm;
     //ov::op::util::VariableVector variables;
     //ov::SinkVector assigns; // new assigns will be collected in a certain mode of LoRA fusion
-    pm.register_pass<ApplyLoRA>(adapter_map, model);
+    pm.register_pass<ApplyLoRA>(adapter_map, model, variables);
     pm.run_passes(model);
     //ov::serialize(model, "after_lora.xml");
     //model->add_variables(variables);
@@ -447,4 +450,15 @@ void apply_lora_adapter(std::shared_ptr<ov::Model> model, const AdapterMap& adap
     DEBUG_PRINT("Fusing LoRA adapter: " << std::chrono::duration<float>(end - start).count());
     //std::cout.flush();
     //ov::save_model(model, "after_lora.xml", false);
+}
+
+
+void connect_lora_adapter(ov::InferRequest infer_request, const ConstantMap& variables) {
+    for(auto& state: infer_request.query_state()) {
+        auto name = state.get_name();
+        auto it = variables.find(name);
+        if(it != variables.end()) {
+            state.set_state(it->second->get_tensor_view());
+        }
+    }
 }
