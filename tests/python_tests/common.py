@@ -182,7 +182,8 @@ def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
 def get_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
     scheduler_config.cache_size = 1
-    scheduler_config.use_cache_eviction = 1
+    # scheduler_config.enable_prefix_caching = True
+    scheduler_config.use_cache_eviction = True
     if scheduler_params is None:
         scheduler_config.dynamic_split_fuse = True
         # vLLM specific
@@ -366,4 +367,4 @@ def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = Non
     generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
 
 
-DEFAULT_SCHEDULER_CONFIG = get_scheduler_config({"num_kv_blocks": 300, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256, "use_cache_eviction": True})
+DEFAULT_SCHEDULER_CONFIG = get_scheduler_config({"num_kv_blocks": 300, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256})

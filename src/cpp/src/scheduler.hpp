@@ -173,7 +173,6 @@ private:
     }
 
     void _apply_preemption(size_t sequence_group_id, const std::vector<SequenceGroup::Ptr>& sequence_groups) {
-        std::cout << "VSHAMPOR: preempting sequence " << sequence_group_id << std::endl;
         SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
 
         // check whether current sequence requires a new slot / block
