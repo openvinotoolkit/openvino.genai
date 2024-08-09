@@ -1,0 +1,5 @@
+*.xml
+*.bin
+models/
+images/
+*.bmp

@@ -1,0 +1,8 @@
+model
+*.png
+*.bmp
+*.txt
+*.jpg
+*.xml
+*.bin
+!requirements.txt
