@@ -128,10 +128,7 @@ jobs:
           cmake \
             -G "${{ env.CMAKE_GENERATOR }}" \
             -DENABLE_CPPLINT=OFF \
-            -DENABLE_COVERAGE=OFF \
             -DENABLE_NCC_STYLE=OFF \
-            -DENABLE_SANITIZER=OFF \
-            -DENABLE_THREAD_SANITIZER=OFF \
             -DENABLE_TESTS=OFF \
             -DENABLE_STRICT_DEPENDENCIES=OFF \
             -DENABLE_SYSTEM_OPENCL=ON \
@@ -140,16 +137,10 @@ jobs:
             -DENABLE_JS=OFF \
             -DENABLE_SAMPLES=ON \
             -DENABLE_INTEL_NPU=OFF \
-            -DENABLE_HETERO=OFF \
-            -DENABLE_AUTO=OFF \
-            -DENABLE_AUTO_BATCH=OFF \
-            -DENABLE_MULTI=OFF \
-            -DENABLE_PROXY=OFF \
-            -DENABLE_OV_JAX_FRONTEND=OFF \
             -DENABLE_OV_ONNX_FRONTEND=OFF \
             -DENABLE_OV_PADDLE_FRONTEND=OFF \
             -DENABLE_OV_PYTORCH_FRONTEND=ON \
-            -DENABLE_OV_TF_FRONTEND=OFF \
+            -DENABLE_OV_TF_FRONTEND=ON \
             -DENABLE_OV_TF_LITE_FRONTEND=OFF \
             -DENABLE_INTEL_GPU=OFF \
             -DENABLE_INTEL_NPU=OFF \
