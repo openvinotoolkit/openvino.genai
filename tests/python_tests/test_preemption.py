@@ -11,9 +11,6 @@ from common import get_model_and_tokenizer, save_ov_model_from_optimum, generate
 from test_sampling import RandomSamplingTestStruct, get_current_plarform_ref_texts
 
 
-pytest.skip("continuous_batching fails with nightly ov", allow_module_level=True)
-
-
 def get_greedy_seq_len_300() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_return_sequences = 3

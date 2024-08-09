@@ -25,6 +25,6 @@ set_target_properties(benchmark_genai PROPERTIES
     INSTALL_RPATH_USE_LINK_PATH ON)
 
 install(TARGETS benchmark_genai
-    RUNTIME DESTINATION samples_bin/
-    COMPONENT samples_bin
-    EXCLUDE_FROM_ALL)
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
