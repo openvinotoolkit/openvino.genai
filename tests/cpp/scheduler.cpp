@@ -394,6 +394,7 @@ TEST(TestScheduler, prefix_caching_test) {
             tokens.insert(tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
             SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
                                                                                     ov::genai::greedy(), scheduler_config.block_size);
+            scheduler.restore_cached_blocks(sequence_group);
             std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 
             auto out1 = scheduler.schedule(requests);
