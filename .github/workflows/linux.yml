@@ -148,7 +148,6 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DENABLE_PYTHON=ON \
             -DENABLE_WHEEL=ON \
-            -DENABLE_FASTER_BUILD=ON \
             -S ${OPENVINO_REPO} \
             -B ${BUILD_DIR}
 
@@ -190,13 +189,12 @@ jobs:
     if: |
       always() &&
       (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
     runs-on: ubuntu-20.04
     env:
-      # A tokenizers' dependency fails to compile with Ninja in CenOS7 env.
       CMAKE_GENERATOR: Unix Makefiles
       CMAKE_BUILD_PARALLEL_LEVEL: null
       OV_INSTALL_DIR: ${{ github.workspace }}/ov

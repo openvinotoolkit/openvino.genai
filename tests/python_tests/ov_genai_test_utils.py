@@ -146,7 +146,7 @@ def read_model(params, **tokenizer_kwargs):
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
-    if path.exists():
+    if (path / "openvino_model.xml").exists():
         opt_model = OVModelForCausalLM.from_pretrained(path, trust_remote_code=True, 
                                                        compile=False, device='CPU')
     else:
