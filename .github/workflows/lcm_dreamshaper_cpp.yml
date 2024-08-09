@@ -39,6 +39,7 @@ jobs:
         id: openvino_download
         run: |
           wget ${{ env.LINUX_OV_ARCHIVE_URL}} --progress=bar:force:noscroll -O openvino_package.tar.gz
+          mkdir ${OV_INSTALL_DIR}
           tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
