@@ -493,7 +493,7 @@ public:
     }
 
 
-    void _restore_cached_blocks(SequenceGroup::Ptr group, size_t block_size) {
+    void restore_cached_blocks(SequenceGroup::Ptr group, size_t block_size) {
         auto prompt_ids = group->get_prompt_ids(); 
         auto sequences = group->get_not_finished_sequences();
         OPENVINO_ASSERT(sequences.size() == 1);
