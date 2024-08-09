@@ -96,8 +96,8 @@ def save_tokenizer(tokenizer, out_dir):
 
 def transform_fn(item, item_name, input_shapes, tokenizer, config, max_tokens=127):
     tokenized_text = tokenizer(item[item_name], return_tensors="np")
-    input_ids = tokenized_text["input_ids"][:max_tokens]
-    attention_mask = tokenized_text["attention_mask"][:max_tokens]
+    input_ids = tokenized_text["input_ids"][:, :max_tokens]
+    attention_mask = tokenized_text["attention_mask"][:, :max_tokens]
 
     inputs = {}
     inputs["input_ids"] = input_ids
