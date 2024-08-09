@@ -1,5 +1,6 @@
 from typing import Any, Union
 
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
@@ -49,6 +50,8 @@ class Evaluator:
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
         max_new_tokens=128,
         crop_question=True,
+        generation_config=None,
+        seqs_per_request=None
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -59,6 +62,10 @@ class Evaluator:
         self.max_new_tokens = max_new_tokens
         self.tokenizer = tokenizer
         self._crop_question = crop_question
+        self.generation_config = generation_config
+        self.seqs_per_request = seqs_per_request
+        if self.generation_config is not None:
+            assert(self.seqs_per_request is not None)
 
         if base_model:
             self.gt_data = self._generate_data(base_model)
@@ -79,7 +86,7 @@ class Evaluator:
         self.gt_data.to_csv(csv_name)
 
     def score(self, model, gen_answer_fn=None):
-        predictions = self._generate_data(model, gen_answer_fn)
+        predictions = self._generate_data(model, gen_answer_fn, self.generation_config is not None)
 
         all_metrics_per_question = {}
         all_metrics = {}
@@ -119,9 +126,10 @@ class Evaluator:
 
         return res
 
-    def _generate_data(self, model, gen_answer_fn=None):
+    def _generate_data(self, model, gen_answer_fn=None, continuous_batching_mode=False):
         def default_gen_answer(model, tokenizer, question, max_new_tokens, crop_question):
             inputs = self.tokenizer(question, return_tensors="pt")
+
             tokens = model.generate(**inputs, max_new_tokens=max_new_tokens)
             out = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
             return out[len(question) :] if crop_question else out
@@ -145,8 +153,21 @@ class Evaluator:
 
         answers = []
 
-        for q in tqdm(questions.values, desc="Evaluate pipeline"):
-            answers.append(gen_answer_fn(model, self.tokenizer, q, self.max_new_tokens, self._crop_question))
+        if not continuous_batching_mode:
+            for q in tqdm(questions.values, desc="Evaluate pipeline"):
+                answers.append(gen_answer_fn(model, self.tokenizer, q, self.max_new_tokens, self._crop_question))
+        else:
+            with tqdm(total=len(questions.values)) as progress_bar:
+                batch = []
+                for q_idx, q in enumerate(questions.values):
+                    progress_bar.update(1)
+                    batch.append(q)
+                    if len(batch) == self.seqs_per_request or q_idx == len(questions.values) - 1:
+                        ans_batch = model.generate(batch, [self.generation_config] * len(batch))
+                        for ans in ans_batch:
+                            answers.append(ans.m_generation_ids[0])
+
+                        batch.clear()
 
         res_data = {"questions": list(questions.values), "answers": answers}
         df = pd.DataFrame(res_data)

@@ -16,7 +16,7 @@ from typing import List, Tuple
 def get_greedy() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_return_sequences = 1
-    generation_config.max_new_tokens = 30
+    generation_config.max_new_tokens = 300
     return generation_config
 
 def get_greedy_with_min_and_max_tokens() -> GenerationConfig:
@@ -165,16 +165,16 @@ def get_multinomial_max_and_min_token() -> GenerationConfig:
 
 def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
     prompts = [
-        "What is OpenVINO?",
-        "How are you?",
-        "What is your name?",
-        "Tell me something about Canada"
+        "What is OpenVINO?" * 20,
+        "How are you?" * 70,
+        "What is your name?" * 70,
+        "Tell me something about Canada" * 40
     ]
     generation_configs = [
         get_greedy(),
-        get_beam_search(),
+        get_greedy(), # get_beam_search(),
         get_greedy(),
-        get_beam_search()
+        get_greedy(), #get_beam_search()
     ]
     return (prompts, generation_configs)
 
@@ -182,6 +182,8 @@ def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
 def get_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
     scheduler_config.cache_size = 1
+    # scheduler_config.enable_prefix_caching = True
+    scheduler_config.use_cache_eviction = True
     if scheduler_params is None:
         scheduler_config.dynamic_split_fuse = True
         # vLLM specific

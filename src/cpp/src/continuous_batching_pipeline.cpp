@@ -11,6 +11,7 @@
 #include "cache_manager.hpp"
 #include "sampler.hpp"
 #include "model_runner.hpp"
+#include "cache_eviction.hpp"
 #include "scheduler.hpp"
 #include "text_callback_streamer.hpp"
 #include "timer.hpp"
@@ -21,7 +22,7 @@ using namespace ov::genai;
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
+void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config, bool per_layer_cache_control);
 
 class ContinuousBatchingPipeline::Impl {
     ov::genai::Tokenizer m_tokenizer;
@@ -29,6 +30,8 @@ class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
+
+
 
     // TODO (mzegla): GenerationConfig is request specific object
     // and pipeline only uses default rng_seed. 
@@ -52,12 +55,14 @@ class ContinuousBatchingPipeline::Impl {
 
     // current requests to process
     std::vector<SequenceGroup::Ptr> m_requests;
-    // requests added to the pipeline that will be added to m_requests in the next iteration
+    /// requests added to the pipeline that will be added to m_requests in the next iteration
     std::vector<SequenceGroup::Ptr> m_awaiting_requests;
     // Mutex protecting access to m_awaiting_requests, so add_request and step methods can be called from different threads
     std::mutex m_awaiting_requests_mutex;
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
+
+    std::map<size_t, CacheEvictionAlgorithm> m_seq_group_id_to_cache_eviction_algo_map;
 
 
     void _notify_requests_dropped_by_handle() {
@@ -95,16 +100,17 @@ public:
 
         DeviceConfig device_config(core, scheduler_config, device, plugin_config);
 
-        apply_paged_attention_transformations(model, device_config);
+        apply_paged_attention_transformations(model, device_config, true);
 
         ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
 
         // setup KV caches
         m_cache_manager = std::make_shared<CacheManager>(device_config);
         for (size_t decoder_layer_id = 0; decoder_layer_id < device_config.get_num_layers(); ++decoder_layer_id) {
-            infer_request.set_input_tensor(2 + decoder_layer_id * 2, m_cache_manager->get_key_cache(decoder_layer_id));
-            infer_request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager->get_value_cache(decoder_layer_id));
+            infer_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_key_cache(decoder_layer_id));
+            infer_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_value_cache(decoder_layer_id));
         }
+
 
         SchedulerConfig updated_config = scheduler_config;
         // update KV number in scheduler config
@@ -112,11 +118,12 @@ public:
             updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
         }
 
-        m_scheduler = std::make_shared<Scheduler>(updated_config);
+        m_scheduler = std::make_shared<Scheduler>(updated_config, device_config.get_num_layers());
         // and finally create model runner
-        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
+        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers(), true);
         m_sampler = std::make_shared<Sampler>();
         m_sampler->set_seed(m_generation_config.rng_seed);
+
 
         // read default generation config
     }
@@ -175,6 +182,7 @@ public:
             scheduler_output = m_scheduler->schedule(m_requests);
             m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
             m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
+            std::cout << "VSHAMPOR: cache usage " << m_pipeline_metrics.cache_usage << std::endl;
             m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
             timer.end();
         }
@@ -209,6 +217,48 @@ public:
                 m_perf.m_infer_total_ms += current_time;
             }
         }
+
+        static size_t step_count = 0;
+
+        CacheStateDumper dumper(CacheStateDumper::get_run_id_for_generation_step(step_count, "before_eviction"));
+        dumper.dump_cache_state(*m_scheduler, m_requests);
+
+        // evict unimportant blocks from KV cache, if requested
+        if (m_scheduler->get_config().use_cache_eviction) {
+            auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
+            for (const auto& seq_id_and_attention_scores : sequence_attention_scores) {
+                auto seq_id = seq_id_and_attention_scores.first;
+                const auto& attention_scores_for_all_decoder_layers = seq_id_and_attention_scores.second;
+                std::cout << "VSHAMPOR: starting eviction for seq_id " << seq_id << std::endl;
+                if (m_seq_group_id_to_cache_eviction_algo_map.find(seq_id) == m_seq_group_id_to_cache_eviction_algo_map.end()) {
+                    auto num_decoder_layers = attention_scores_for_all_decoder_layers.size();
+                    auto cache_eviction_config = CacheEvictionConfig();
+                    m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(cache_eviction_config, num_decoder_layers);
+                }
+                auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
+                auto logical_blocks_to_evict = cache_eviction_algo.get_logical_block_indices_to_evict(attention_scores_for_all_decoder_layers);
+                std::cout << "VSHAMPOR: for decoder layer 0, evicting logical blocks ";
+                for (auto idx : logical_blocks_to_evict[0]) std::cout << idx << " ";
+                std::cout << "\n" << std::endl;
+                m_scheduler->free_blocks_from_sequence(seq_id, logical_blocks_to_evict);
+
+//                auto seq_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_group_id](const SequenceGroup::Ptr& val) { return val->get_request_id() == seq_group_id; });
+//                OPENVINO_ASSERT(seq_it != m_requests.end(), "could not find sequence group ", seq_group_id);
+//                auto sequence_group_ptr = *seq_it;
+
+                auto seq_group_ptr_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_id](const SequenceGroup::Ptr& val) { return val->has_sequence_with_id(seq_id); });
+                OPENVINO_ASSERT(seq_group_ptr_it != m_requests.end(), "could not find sequence group with sequence ", seq_id);
+                auto seq_group_ptr = *(seq_group_ptr_it);
+                auto sequence = seq_group_ptr->get_sequence_by_id(seq_id);
+
+                // Assuming that the evicted blocks are always full (since they by design are only selected from intermediate-age blocks)
+                sequence->register_token_eviction(logical_blocks_to_evict[0].size() * m_scheduler->get_config().block_size);
+            }
+        }
+
+        CacheStateDumper dumper_after(CacheStateDumper::get_run_id_for_generation_step(step_count, "eviction"));
+        dumper_after.dump_cache_state(*m_scheduler, m_requests);
+        step_count++;
 
         SamplerOutput sampler_output;
         {

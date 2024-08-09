@@ -9,7 +9,7 @@
 #include <thread>
 
 TEST(TestEvictor, general_test) {
-    ov::genai::Evictor evictor;
+    ov::genai::Evictor evictor(0);
     auto block0 = std::make_shared<ov::genai::KVCacheBlock>(0);
     block0->set_hash(77, 1);
     std::this_thread::sleep_until(std::chrono::system_clock::now() + std::chrono::seconds(1));
@@ -24,16 +24,16 @@ TEST(TestEvictor, general_test) {
     evictor.add(block2->get_hash(), block2);
     EXPECT_EQ(evictor.num_blocks(), 3);
 
-    auto block = evictor.get_block(56);
+    auto block = evictor.get_block(56)[0];
     EXPECT_EQ(block->get_index(), 1);
     EXPECT_EQ(block->get_hash(), 56);
     EXPECT_EQ(block->get_references_count(), 1);
     EXPECT_EQ(evictor.num_blocks(), 2);
 
-    EXPECT_EQ(evictor.get_block(44), nullptr);
+    EXPECT_TRUE(evictor.get_block(44).empty());
     EXPECT_EQ(evictor.num_blocks(), 2);
 
-    EXPECT_EQ(evictor.get_lru_block()->get_index(), 0);
+    EXPECT_EQ(evictor.get_lru_block()[0]->get_index(), 0);
     EXPECT_EQ(evictor.num_blocks(), 1);
 
     auto block3 = std::make_shared<ov::genai::KVCacheBlock>(7);
@@ -46,9 +46,9 @@ TEST(TestEvictor, general_test) {
     evictor.add(block4->get_hash(), block4);
     block2->set_timestamp(std::chrono::system_clock::now());
 
-    EXPECT_EQ(evictor.get_lru_block()->get_index(), 7);
-    EXPECT_EQ(evictor.get_lru_block()->get_index(), 10);
-    EXPECT_EQ(evictor.get_lru_block()->get_index(), 2);
-    EXPECT_EQ(evictor.get_lru_block(), nullptr);
+    EXPECT_EQ(evictor.get_lru_block()[0]->get_index(), 7);
+    EXPECT_EQ(evictor.get_lru_block()[0]->get_index(), 10);
+    EXPECT_EQ(evictor.get_lru_block()[0]->get_index(), 2);
+    EXPECT_TRUE(evictor.get_lru_block().empty());
     EXPECT_EQ(evictor.num_blocks(), 0);
 }

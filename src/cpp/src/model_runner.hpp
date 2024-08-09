@@ -13,17 +13,38 @@
 #include "scheduler.hpp"
 #include "timer.hpp"
 
+#include "attention_output.hpp"
+
 namespace ov::genai {
+using AttentionScoresForCacheOfSubsequence = ov::Tensor;
+using AttentionScoresForEachDecoderLayer = std::vector<AttentionScoresForCacheOfSubsequence>;
+using AttentionScoresForEachSubsequence = std::map<size_t, AttentionScoresForEachDecoderLayer>;
+
+std::string get_paged_attention_score_output_for_decoder_layer(size_t decoder_layer_id) {
+    std::stringstream ss;
+    ss << "scores." << decoder_layer_id;
+    return ss.str();
+}
+
 class ModelRunner {
     ov::InferRequest m_request;
     SchedulerConfig m_scheduler_config;
+    AttentionScoresForEachSubsequence m_last_attention_scores;
+    size_t m_num_decoder_layers;
+    bool m_collect_attention_scores;
 public:
-    ModelRunner(ov::InferRequest request, const SchedulerConfig& scheduler_config) :
+    ModelRunner(ov::InferRequest request, const SchedulerConfig& scheduler_config, size_t num_decoder_layers, bool collect_attention_scores = false) :
         m_request(std::move(request)),
-        m_scheduler_config(scheduler_config) { }
+        m_scheduler_config(scheduler_config),
+        m_num_decoder_layers(num_decoder_layers),
+        m_collect_attention_scores(collect_attention_scores) { }
 
     ov::InferRequest get_infer_request() const {
         return m_request;
+    }
+
+    const AttentionScoresForEachSubsequence& get_last_attention_scores() const {
+        return m_last_attention_scores;
     }
 
     ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
@@ -49,7 +70,7 @@ public:
             // PA specific parameters
             past_lens(ov::element::i32, {batch_size_in_sequences}),
             subsequence_begins(ov::element::i32, {batch_size_in_sequences + 1}),
-            block_indices(ov::element::i32, {total_num_blocks}),
+            // block_indices are handled in a special fashion below
             block_indices_begins(ov::element::i32, {batch_size_in_sequences + 1}),
             max_context_len(ov::element::i32, {});
 
@@ -62,7 +83,6 @@ public:
         int32_t 
             * past_lens_data = past_lens.data<int32_t>(),
             * subsequence_begins_data = subsequence_begins.data<int32_t>(),
-            * block_indices_data = block_indices.data<int32_t>(),
             * block_indices_begins_data = block_indices_begins.data<int32_t>();
 
         // sub-sequence data starts with 0
@@ -75,7 +95,6 @@ public:
             std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
             size_t num_running_sequences = running_sequences.size();
             size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
-            size_t num_blocks = sequence_group->get_num_blocks();
             size_t group_position_id = sequence_group->get_num_processed_tokens(),
                 // spec: In case of multiple input tokens for current sequence (prompt_len > 1), context_len corresponds to first token within subgroup of scheduled tokens
                 group_context_len = group_position_id;
@@ -92,24 +111,24 @@ public:
                     position_ids_data[token_id] = position_id;
                 }
 
-                past_lens_data[0] = group_context_len;
+                size_t expected_kv_cache_size = sequence_group->get_num_processed_tokens() - sequence->get_num_evicted_tokens();
+                past_lens_data[0] = expected_kv_cache_size;
 
                 subsequence_begins_data[1] = subsequence_begins_data[0] + num_scheduled_tokens;
-                block_indices_begins_data[1] = block_indices_begins_data[0] + num_blocks;
 
-                const std::vector<KVCacheBlock::Ptr> & kv_blocks = scheduler_output.m_block_tables.at(sequence->get_id());
-                for (size_t block_id = 0; block_id < num_blocks; ++block_id)
-                    block_indices_data[block_id] = kv_blocks[block_id]->get_index();
+                size_t num_blocks = (sequence_group->get_context_len()  - sequence->get_num_evicted_tokens() +  m_scheduler_config.block_size - 1) / m_scheduler_config.block_size;
+                block_indices_begins_data[1] = block_indices_begins_data[0] + num_blocks;
 
                 // apply strides to shift to a next sequence
                 input_ids_data += num_scheduled_tokens;
                 position_ids_data += num_scheduled_tokens;
                 past_lens_data += 1;
                 subsequence_begins_data += 1;
-                block_indices_data += num_blocks;
                 block_indices_begins_data += 1;
             }
         }
+
+
 
         // typical LLM parameters
         m_request.set_tensor("input_ids", input_ids);
@@ -118,7 +137,9 @@ public:
         // PA specific parameters
         m_request.set_tensor("past_lens", past_lens);
         m_request.set_tensor("subsequence_begins", subsequence_begins);
-        m_request.set_tensor("block_indices", block_indices);
+
+        m_request = _set_block_indices(m_request, sequence_groups, scheduler_output, total_num_blocks);
+
         m_request.set_tensor("block_indices_begins", block_indices_begins);
         m_request.set_tensor("max_context_len", max_context_len);
 
@@ -138,8 +159,111 @@ public:
             timer.end();
         }
 
+        if (m_collect_attention_scores) {
+            collect_attention_scores(sequence_groups, scheduler_output);
+        }
+
         // return logits
-        return m_request.get_output_tensor();
+        return m_request.get_tensor("logits");
+    }
+
+private:
+    ov::InferRequest& _set_block_indices(ov::InferRequest& infer_request, const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output,
+                            size_t total_num_blocks) {
+        size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+        std::vector<std::string> tensor_names = {"block_indices"};
+        if (m_num_decoder_layers != 0) {
+            tensor_names.resize(m_num_decoder_layers);
+            for (size_t i = 0; i < tensor_names.size(); i++) {
+                tensor_names[i] = std::string("block_indices.") + std::to_string(i);
+            }
+        }
+
+        for (auto& name : tensor_names) {
+            m_request.get_tensor(name).set_shape({total_num_blocks});
+        }
+
+        size_t block_offset = 0;
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+            size_t num_running_sequences = running_sequences.size();
+
+            for (size_t seq_id = 0; seq_id < num_running_sequences; ++seq_id) {
+                Sequence::CPtr sequence = running_sequences[seq_id];
+
+                size_t num_blocks = (sequence_group->get_context_len()  - sequence->get_num_evicted_tokens() +  m_scheduler_config.block_size - 1) / m_scheduler_config.block_size;
+                const auto & kv_blocks = scheduler_output.m_block_tables.at(sequence->get_id());
+
+                for (size_t layer_idx = 0; layer_idx < tensor_names.size(); layer_idx++) {
+                    auto input_tensor = infer_request.get_tensor(tensor_names[layer_idx]);
+                    auto block_indices_data = input_tensor.data<int32_t>() + block_offset;
+                    for (size_t block_id = 0; block_id < num_blocks; ++block_id)
+                        block_indices_data[block_id] = kv_blocks[layer_idx][block_id]->get_index();
+                }
+
+                block_offset += num_blocks;
+            }
+        }
+//
+//        if (m_scheduler_config.num_layers == 0) {
+//            infer_request.set_tensor("block_indices", tensors[0]);
+//        }
+//        else {
+//            for (size_t layer_idx = 0; layer_idx < tensors.size(); layer_idx++) {
+//                infer_request.set_tensor(std::string("block_indices.") + std::to_string(layer_idx), tensors[layer_idx]);
+//            }
+//        }
+        return infer_request;
+    }
+
+    void collect_attention_scores(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
+        m_last_attention_scores.clear();
+        size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+        using IndexSpan = std::pair<size_t, size_t>;
+        std::list<std::pair<size_t, IndexSpan>> running_sequence_group_ids_and_kvcache_spans;
+        size_t offset = 0;
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+
+            for (size_t seq_id = 0; seq_id < running_sequences.size(); ++seq_id) {
+                Sequence::CPtr sequence = running_sequences[seq_id];
+                size_t subsequence_length = sequence_group->get_context_len() - sequence->get_num_evicted_tokens();
+                IndexSpan span = {offset, offset + subsequence_length - 1};
+                size_t global_sequence_id = sequence->get_id();
+                running_sequence_group_ids_and_kvcache_spans.emplace_back(global_sequence_id, span);
+                offset += subsequence_length;
+            }
+        }
+
+
+        auto attn_tensor = m_request.get_tensor(get_paged_attention_score_output_for_decoder_layer(0));
+        std::cout << "VSHAMPOR: attn shape for each decoder layer is " << attn_tensor.get_shape() << '\n';
+
+        for (const auto& seq_id_and_score_span : running_sequence_group_ids_and_kvcache_spans) {
+            auto attention_scores_across_decoder_layers_for_current_sequence = AttentionScoresForEachDecoderLayer(m_num_decoder_layers);
+            size_t global_sequence_id = seq_id_and_score_span.first;
+            IndexSpan span = seq_id_and_score_span.second;
+            std::cout << "VSHAMPOR: global sequence id and index spans: " << '\n';
+            std::cout << "VSHAMPOR: " << seq_id_and_score_span.first << ": [" << seq_id_and_score_span.second.first << ", " << seq_id_and_score_span.second.second << "]\n";
+            for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; decoder_layer_id++) {
+                auto attention_score = m_request.get_tensor(get_paged_attention_score_output_for_decoder_layer(decoder_layer_id));
+                // std::cout << "VSHAMPOR: attention score shape for decoder layer " << decoder_layer_id << " is " << attention_score.get_shape() << '\n';
+                auto scores_for_cache_of_current_sequence_group = ov::Tensor(attention_score, ov::Coordinate{span.first}, ov::Coordinate{span.second});
+                auto copied_tensor = ov::Tensor(scores_for_cache_of_current_sequence_group.get_element_type(), ov::Shape{span.second - span.first});
+                scores_for_cache_of_current_sequence_group.copy_to(copied_tensor);
+                //std::cout << "VSHAMPOR: attention scores for decoder layer " << decoder_layer_id << " are ";
+                //for (size_t j = 0; j < scores_for_cache_of_current_sequence_group.get_size(); j++) {
+                //    std::cout << scores_for_cache_of_current_sequence_group.data<float>()[j] << " ";
+                //}
+                //std::cout << "\n";
+                attention_scores_across_decoder_layers_for_current_sequence[decoder_layer_id] = scores_for_cache_of_current_sequence_group;
+            }
+            m_last_attention_scores[global_sequence_id] = attention_scores_across_decoder_layers_for_current_sequence;
+        }
     }
 };
 }

@@ -135,7 +135,7 @@ auto raw_perf_metrics_docstring = R"(
 
 auto perf_metrics_docstring = R"(
     Holds performance metrics for each generate call.
-    
+
     PerfMetrics holds fields with mean and standard deviations for the following metrics:
     - Time To the First Token (TTFT), ms
     - Time per Output Token (TPOT), ms/token
@@ -669,17 +669,17 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
     py::class_<RawPerfMetrics>(m, "RawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())
         .def_readonly("generate_durations", &RawPerfMetrics::generate_durations)
-        .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) { 
+        .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) {
             return get_ms(rw, &RawPerfMetrics::tokenization_durations);
          })
-        .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) { 
-            return get_ms(rw, &RawPerfMetrics::detokenization_durations); 
+        .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) {
+            return get_ms(rw, &RawPerfMetrics::detokenization_durations);
         })
-        .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) { 
-            return get_ms(rw, &RawPerfMetrics::m_times_to_first_token); 
+        .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) {
+            return get_ms(rw, &RawPerfMetrics::m_times_to_first_token);
         })
-        .def_property_readonly("m_durations", [](const RawPerfMetrics &rw) { 
-            return get_ms(rw, &RawPerfMetrics::m_durations); 
+        .def_property_readonly("m_durations", [](const RawPerfMetrics &rw) {
+            return get_ms(rw, &RawPerfMetrics::m_durations);
         })
         .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes)
         .def_readonly("num_generated_tokens", &RawPerfMetrics::num_generated_tokens)
@@ -761,7 +761,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("block_size", &SchedulerConfig::block_size)
         .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
         .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
-        .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching);
+        .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching)
+        .def_readwrite("use_cache_eviction", &SchedulerConfig::use_cache_eviction);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline")
         .def(py::init([](const std::string& model_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
