@@ -194,7 +194,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest-8-cores
     env:
       CMAKE_GENERATOR: Unix Makefiles
       CMAKE_BUILD_PARALLEL_LEVEL: null
