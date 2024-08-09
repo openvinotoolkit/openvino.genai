@@ -126,12 +126,26 @@ public:
     // Each KV block can be uniquely identified by 
     // the tokens within the block and the tokens in the prefix before the block.
     // hash(prefix tokens + block tokens) <--> KV Block
-    size_t get_hash(size_t content_length, const ov::genai::TokenIds& prompt_ids) const {
-        std::vector<int64_t> content;
+    size_t get_hash(const std::vector<size_t>& prefix_hashes, size_t block_size, size_t content_length, const ov::genai::TokenIds& prompt_ids) const {
         OPENVINO_ASSERT(content_length <= prompt_ids.size() + m_generated_ids.size());
-        content.insert( content.end(), prompt_ids.begin(), prompt_ids.begin() + std::min(prompt_ids.size(), content_length));
+        size_t block_start_idx = content_length - (content_length % block_size);
+        if (block_start_idx == content_length) {
+            block_start_idx -= block_size;
+        }
+
+        // hash of current block depends on prefix hashes
+        std::vector<int64_t> content;
+        for (auto hash : prefix_hashes) {
+            content.push_back(hash);
+        }
+
+        // get tokens corresponding to current block
+        if (block_start_idx < prompt_ids.size()) {
+            content.insert(content.end(), prompt_ids.begin() + block_start_idx, prompt_ids.begin() + std::min(prompt_ids.size(), content_length));
+        }
         if (content_length > prompt_ids.size()) {
-            content.insert(content.end(), m_generated_ids.begin(), m_generated_ids.begin() + content_length - prompt_ids.size());
+            size_t start = block_start_idx < prompt_ids.size() ? 0 : block_start_idx - prompt_ids.size();
+            content.insert(content.end(), m_generated_ids.begin() + start, m_generated_ids.begin() + content_length - prompt_ids.size());
         }
         const char* data = reinterpret_cast<const char*>(content.data());
         std::size_t size = content.size() * sizeof(content[0]);
