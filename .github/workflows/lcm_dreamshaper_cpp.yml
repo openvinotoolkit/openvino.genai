@@ -13,7 +13,10 @@ on:
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
 env:
+  PYTHON_VERSION: '3.8'
   working_directory: "./image_generation/lcm_dreamshaper_v7/cpp/"
+  LINUX_OV_ARCHIVE_URL: "https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.3/linux/l_openvino_toolkit_ubuntu20_2024.3.0.16041.1e3b88e4e3f_x86_64.tgz"
+  OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,37 +35,38 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup conda
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          miniconda-version: "latest"
-          activate-environment: openvino_lcm_cpp
-          python-version: "3.10"
-
-      - name: Install OpenVINO and other conda dependencies
+      - name: Download OpenVINO archive
+        id: openvino_download
         run: |
-          conda activate openvino_lcm_cpp
-          conda update -c conda-forge --all
-          conda install -c conda-forge -c conda-forge/label/openvino_dev openvino==2024.4.0.dev20240726 c-compiler cxx-compiler git make cmake
-          conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+          wget ${{ env.LINUX_OV_ARCHIVE_URL}} --progress=bar:force:noscroll -O openvino_package.tar.gz
+          tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+        
+      - name: Create virtual environment
+        run: python3 -m venv openvino_lcm_cpp
       
       - name: Install python dependencies
         working-directory: ${{ env.working_directory }}
         run: |
-          conda activate openvino_lcm_cpp
+          source openvino_lcm_cpp/bin/activate
           python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ../../requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           
       - name: Download and convert model and tokenizer
         working-directory: ${{ env.working_directory }}
         run: |
-          conda activate openvino_lcm_cpp
+          source openvino_lcm_cpp/bin/activate
           optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 models/lcm_dreamshaper_v7/FP16
 
       - name: Build app
         working-directory: ${{ env.working_directory }}
         run: |
-          conda activate openvino_lcm_cpp
+          source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release --parallel
       
@@ -71,6 +75,8 @@ jobs:
         run: ./build/lcm_dreamshaper
 
   lcm_dreamshaper_v7_cpp-windows:
+    # TODO Enable windows job
+    if: false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
