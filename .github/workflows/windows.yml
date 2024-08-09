@@ -189,11 +189,11 @@ jobs:
     if: |
       always() &&
       (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-latest-8-cores
+    runs-on: windows-2019
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
