@@ -391,7 +391,7 @@ void get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> ima
     embedding.set_input_tensor(input_tensor);
     embedding.infer();
 
-    ov::Tensor& embed_output_tensor = embedding.get_output_tensor();
+    const ov::Tensor& embed_output_tensor = embedding.get_output_tensor();
 
     ov::Shape out_shape = embed_output_tensor.get_shape();
     float* data = embed_output_tensor.data<float>();
@@ -442,11 +442,11 @@ void get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> ima
     embedding.set_input_tensor(input_tensor);
     embedding.infer();
 
-    embed_output_tensor = embedding.get_output_tensor();
-    data = embed_output_tensor.data<float>();
+    const ov::Tensor& embed_spec_tensor = embedding.get_output_tensor();
+    data = embed_spec_tensor.data<float>();
 
     //input ids embed * config.scale_emb(12)
-    for (idx = embedding_dim; idx < embed_output_tensor.get_size(); idx++) {
+    for (idx = embedding_dim; idx < embed_spec_tensor.get_size(); idx++) {
         data[idx] = data[idx] * scale_emb;
     }
 
@@ -520,7 +520,7 @@ ov::Tensor process_prompt(ov::InferRequest& tokenizer, ov::InferRequest& embeddi
     embedding.set_input_tensor(input_tensor);
     embedding.infer();
 
-    ov::Tensor& embed_output_tensor = embedding.get_output_tensor();
+    const ov::Tensor& embed_output_tensor = embedding.get_output_tensor();
 
     ov::Shape out_shape = embed_output_tensor.get_shape();
     float* data = embed_output_tensor.data<float>();
@@ -570,15 +570,6 @@ int main(int argc, char* argv[]) try {
     ov::InferRequest detokenizer = core.compile_model(args.detoken_model_path, "CPU").create_infer_request();
     auto duration_ms = get_duration_ms_until_now(startTime);
     std::cout << "Load minicpm tokenizer took " << duration_ms << " ms" << std::endl;
-
-
-    std::string user_prompt = "\n<image></image><slice></slice>";
-    tokenize(tokenizer, (user_prompt).c_str());
-
-    auto kinput_ids = tokenizer.get_tensor("input_ids");
-    auto kinput_len = kinput_ids.get_size();
-    auto kk_data = kinput_ids.data<const int64_t>();
-
 
     unsigned char* image_bytes;
     long image_bytes_length;
