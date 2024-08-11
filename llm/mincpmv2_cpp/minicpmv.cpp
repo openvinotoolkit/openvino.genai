@@ -7,12 +7,6 @@
 
 #include "minicpmv.h"
 
-#ifdef _WIN32
-//#include <codecvt>
-//#include <fcntl.h>
-//#include <io.h>
-//#include <windows.h>
-#endif
 
 typedef std::chrono::high_resolution_clock Time;
 typedef std::chrono::nanoseconds ns;
@@ -50,13 +44,11 @@ std::pair<int, int> get_refine_size(std::pair<int, int> original_size, std::pair
     int grid_width = refine_width / grid_x;
     int grid_height = refine_height / grid_y;
 
-    // auto best_grid_size = find_best_resize(std::make_tuple(grid_width, grid_height), scale_resolution, patch_size, allow_upscale); (old line)
-    auto best_grid_size = find_best_resize(std::make_pair(grid_width, grid_height), scale_resolution, patch_size, allow_upscale); // (new line) => fixes conversion for make_tuple to make_pair
+    auto best_grid_size = find_best_resize(std::make_pair(grid_width, grid_height), scale_resolution, patch_size, allow_upscale);
     int best_grid_width, best_grid_height;
     std::tie(best_grid_width, best_grid_height) = best_grid_size;
 
-    //  std::pair<int, int> refine_size = std::make_tuple(best_grid_width * grid_x, best_grid_height * grid_y); (old line)
-    std::pair<int, int> refine_size = std::make_pair(best_grid_width * grid_x, best_grid_height * grid_y); // (new line)
+    std::pair<int, int> refine_size = std::make_pair(best_grid_width * grid_x, best_grid_height * grid_y);
     return refine_size;
 }
 
@@ -71,18 +63,12 @@ std::vector<std::vector<clip_image_u8*>> slice_image(const clip_image_u8* img, c
     const int multiple = fmin(ceil(ratio), max_slice_nums);
 
     std::vector<std::vector<clip_image_u8*>> images;
-    LOG_TEE("%s: multiple %d\n", __func__, multiple);
     images.push_back(std::vector<clip_image_u8*>());
 
     if (multiple <= 1) {
-        // auto best_resolution = select_best_resolution(image_size, grid_pinpoints);
-        // clip_image_u8 *image_original_resize = clip_image_u8_init();
-        // bicubic_resize(*img, *image_original_resize, best_resolution.first, best_resolution.second);
-
         auto best_size = find_best_resize(original_size, scale_resolution, patch_size, true);
         clip_image_u8* source_image = clip_image_u8_init();
         bicubic_resize(*img, *source_image, best_size.first, best_size.second);
-        // source_image = image.resize(best_size, Image.Resampling.BICUBIC)
         images[images.size() - 1].push_back(source_image);
     }
     else if (multiple > 1) {
@@ -98,7 +84,6 @@ std::vector<std::vector<clip_image_u8*>> slice_image(const clip_image_u8* img, c
         auto best_size = find_best_resize(original_size, scale_resolution, patch_size);
         clip_image_u8* source_image = clip_image_u8_init();
         bicubic_resize(*img, *source_image, best_size.first, best_size.second);
-        // source_image = image.copy().resize(best_resize, Image.Resampling.BICUBIC)
         images[images.size() - 1].push_back(source_image);
 
         std::vector<std::pair<int, int>> candidate_grids;
@@ -123,13 +108,13 @@ std::vector<std::vector<clip_image_u8*>> slice_image(const clip_image_u8* img, c
                 min_error = error;
             }
         }
-        LOG_TEE("%s: image_size: %d %d; best_grid: %d %d\n", __func__, img->nx, img->ny, best_grid.first, best_grid.second);
+        //LOG_TEE("%s: image_size: %d %d; best_grid: %d %d\n", __func__, img->nx, img->ny, best_grid.first, best_grid.second);
 
         auto refine_size = get_refine_size(original_size, best_grid, scale_resolution, patch_size, true);
         clip_image_u8* refine_image = clip_image_u8_init();
         bicubic_resize(*img, *refine_image, refine_size.first, refine_size.second);
 
-        LOG_TEE("%s: refine_image_size: %d %d; best_grid: %d %d\n", __func__, refine_image->nx, refine_image->ny, best_grid.first, best_grid.second);
+        //LOG_TEE("%s: refine_image_size: %d %d; best_grid: %d %d\n", __func__, refine_image->nx, refine_image->ny, best_grid.first, best_grid.second);
 
         // split_to_patches
         int width = refine_image->nx;
@@ -211,7 +196,7 @@ static bool encode_image_with_clip(clip_ctx* ctx_clip, int n_threads, const clip
     }
 
     auto duration_ms = get_duration_ms_until_now(startTime);
-    LOG_TEE("\n%s: image encoded in %8.2f ms by clip_image_preprocess.\n", __func__, duration_ms);
+    //LOG_TEE("\n%s: image encoded in %8.2f ms by clip_image_preprocess.\n", __func__, duration_ms);
 
     startTime = Time::now();
 
@@ -226,11 +211,11 @@ static bool encode_image_with_clip(clip_ctx* ctx_clip, int n_threads, const clip
         return false;
     }
 
-    LOG_TEE("%s: image embedding created: %d tokens\n", __func__, *n_img_pos);
+    //LOG_TEE("%s: image embedding created: %d tokens\n", __func__, *n_img_pos);
 
     duration_ms = get_duration_ms_until_now(startTime);
 
-    LOG_TEE("\n%s: image encoded in %8.2f ms by CLIP (%8.2f ms per image patch)\n", __func__, duration_ms, duration_ms / *n_img_pos);
+    //LOG_TEE("\n%s: image encoded in %8.2f ms by CLIP (%8.2f ms per image patch)\n", __func__, duration_ms, duration_ms / *n_img_pos);
 
     return true;
 }
@@ -264,14 +249,18 @@ std::vector<std::vector<struct llava_image_embed*>> llava_image_embed_make_with_
         return std::vector<std::vector<struct llava_image_embed*>>();
     }
 
-    //resize to 800x800
+    clip_image_u8* reshaped_image = clip_image_u8_init();
 
-    std::vector<std::vector<clip_image_u8*>> imgs = slice_image(img);
-    for (size_t i = 0; i < imgs.size(); ++i) {
-        for (size_t j = 0; j < imgs[i].size(); ++j) {
-            LOG_TEE("%s: %d %d\n", __func__, imgs[i][j]->nx, imgs[i][j]->ny);
-        }
-    }
+    //resize to 800x800
+    bicubic_resize(*img, *reshaped_image, 800, 800);
+    clip_image_u8_free(img);
+
+    std::vector<std::vector<clip_image_u8*>> imgs = slice_image(reshaped_image);
+    //for (size_t i = 0; i < imgs.size(); ++i) {
+    //    for (size_t j = 0; j < imgs[i].size(); ++j) {
+    //        LOG_TEE("%s: %d %d\n", __func__, imgs[i][j]->nx, imgs[i][j]->ny);
+    //    }
+    //}
     std::vector<std::vector<llava_image_embed*>> results;
 
     for (size_t i = 0; i < imgs.size(); ++i) {
@@ -281,7 +270,7 @@ std::vector<std::vector<struct llava_image_embed*>> llava_image_embed_make_with_
             int n_image_pos = 0;
             bool image_embed_result = llava_image_embed_make_with_clip_img(ctx_clip, n_threads, imgs[i][j], &image_embed, &n_image_pos);
             if (!image_embed_result) {
-                clip_image_u8_free(img);
+                clip_image_u8_free(reshaped_image);
                 LOG_TEE("%s: coulnd't embed the image\n", __func__);
                 return std::vector<std::vector<struct llava_image_embed*>>();
             }
@@ -292,7 +281,7 @@ std::vector<std::vector<struct llava_image_embed*>> llava_image_embed_make_with_
             results[i].push_back(result);
         }
     }
-    clip_image_u8_free(img);
+    clip_image_u8_free(reshaped_image);
     return results;
 }
 
