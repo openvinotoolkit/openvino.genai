@@ -25,6 +25,7 @@ Build the pipelines and `openvino_tokenizers`
 
 ```sh
 git clone https://github.com/wenyi5608/openvino.genai.git -b wenyi5608-stateful
+cd openvino.genai/
 git submodule update --init
 ```
 
