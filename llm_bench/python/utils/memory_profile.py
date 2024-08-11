@@ -6,7 +6,6 @@ import psutil
 import time
 import os
 import sys
-import platform
 
 
 class MemConsumption:
@@ -34,7 +33,7 @@ class MemConsumption:
                     elif sys.platform.startswith('win'):
                         uss_mem_data = process.memory_info().private / float(2**20)
                         shared_mem_data = (rss_mem_data - uss_mem_data) if rss_mem_data > uss_mem_data \
-                              else (uss_mem_data - rss_mem_data)
+                            else (uss_mem_data - rss_mem_data)
                     else:
                         uss_mem_data = -1
                         shared_mem_data = -1
