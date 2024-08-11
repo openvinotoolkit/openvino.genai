@@ -62,12 +62,6 @@ struct clip_image_f32 {
     std::vector<float> buf;
 };
 
-/*
-#ifdef __cplusplus
-extern "C" {
-#endif
-*/
-
 
 struct clip_image_u8_batch {
     struct clip_image_u8 * data;
@@ -78,7 +72,6 @@ struct clip_image_f32_batch {
     struct clip_image_f32 * data;
     size_t size;
 };
-
 
 
 CLIP_API void clip_free(struct clip_ctx * ctx);
@@ -110,10 +103,4 @@ CLIP_API bool clip_image_encode(struct clip_ctx* ctx, int n_threads, struct clip
 CLIP_API bool clip_image_batch_encode(struct clip_ctx* ctx, int n_threads, const struct clip_image_f32_batch* imgs, float* vec, std::pair<int, int> load_image_size);
 
 
-
-/*
-#ifdef __cplusplus
-}
-#endif
-*/
 #endif // CLIP_H
