@@ -2,7 +2,7 @@
 // so there might be still unnecessary artifacts hanging around
 // I'll gradually clean and extend it
 // Note: Even when using identical normalized image inputs (see normalize_image_u8_to_f32()) we have a significant difference in resulting embeddings compared to pytorch
-#include "clip.h"
+
 #include "log.h"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -39,136 +39,6 @@ static std::string format(const char * fmt, ...) {
 }
 
 
-static void replace_all(std::string & s, const std::string & search, const std::string & replace) {
-    std::string result;
-    for (size_t pos = 0; ; pos += search.length()) {
-        auto new_pos = s.find(search, pos);
-        if (new_pos == std::string::npos) {
-            result += s.substr(pos, s.size() - pos);
-            break;
-        }
-        result += s.substr(pos, new_pos - pos) + replace;
-        pos = new_pos;
-    }
-    s = std::move(result);
-}
-
-
-
-
-#ifdef CLIP_DEBUG_FUNCTIONS
-static void clip_image_write_image_to_ppm(const clip_image_u8& img, const std::string& filename) {
-    std::ofstream file(filename, std::ios::binary);
-    if (!file.is_open()) {
-        LOG_TEE("Failed to open file for writing: %s\n", filename.c_str());
-        return;
-    }
-
-    // PPM header: P6 format, width, height, and max color value
-    file << "P6\n" << img.nx << " " << img.ny << "\n255\n";
-
-    // Write pixel data
-    for (size_t i = 0; i < img.buf.size(); i += 3) {
-        // PPM expects binary data in RGB format, which matches our image buffer
-        file.write(reinterpret_cast<const char*>(&img.buf[i]), 3);
-    }
-
-    file.close();
-}
-
-static void clip_image_save_to_bmp(const clip_image_u8& img, const std::string& filename) {
-    std::ofstream file(filename, std::ios::binary);
-    if (!file.is_open()) {
-        LOG_TEE("Failed to open file for writing: %s\n", filename.c_str());
-        return;
-    }
-
-    int fileSize = 54 + 3 * img.nx * img.ny; // File header + info header + pixel data
-    int bytesPerPixel = 3;
-    int widthInBytes = img.nx * bytesPerPixel;
-    int paddingAmount = (4 - (widthInBytes % 4)) % 4;
-    int stride = widthInBytes + paddingAmount;
-
-    // Bitmap file header
-    unsigned char fileHeader[14] = {
-        'B','M',     // Signature
-        0,0,0,0,    // Image file size in bytes
-        0,0,0,0,    // Reserved
-        54,0,0,0    // Start of pixel array
-    };
-
-    // Total file size
-    fileSize = 54 + (stride * img.ny);
-    fileHeader[2] = (unsigned char)(fileSize);
-    fileHeader[3] = (unsigned char)(fileSize >> 8);
-    fileHeader[4] = (unsigned char)(fileSize >> 16);
-    fileHeader[5] = (unsigned char)(fileSize >> 24);
-
-    // Bitmap information header (BITMAPINFOHEADER)
-    unsigned char infoHeader[40] = {
-        40,0,0,0,   // Size of this header (40 bytes)
-        0,0,0,0,    // Image width
-        0,0,0,0,    // Image height
-        1,0,        // Number of color planes
-        24,0,       // Bits per pixel
-        0,0,0,0,    // No compression
-        0,0,0,0,    // Image size (can be 0 for no compression)
-        0,0,0,0,    // X pixels per meter (not specified)
-        0,0,0,0,    // Y pixels per meter (not specified)
-        0,0,0,0,    // Total colors (color table not used)
-        0,0,0,0     // Important colors (all are important)
-    };
-
-    // Width and height in the information header
-    infoHeader[4] = (unsigned char)(img.nx);
-    infoHeader[5] = (unsigned char)(img.nx >> 8);
-    infoHeader[6] = (unsigned char)(img.nx >> 16);
-    infoHeader[7] = (unsigned char)(img.nx >> 24);
-    infoHeader[8] = (unsigned char)(img.ny);
-    infoHeader[9] = (unsigned char)(img.ny >> 8);
-    infoHeader[10] = (unsigned char)(img.ny >> 16);
-    infoHeader[11] = (unsigned char)(img.ny >> 24);
-
-    // Write file headers
-    file.write(reinterpret_cast<char*>(fileHeader), sizeof(fileHeader));
-    file.write(reinterpret_cast<char*>(infoHeader), sizeof(infoHeader));
-
-    // Pixel data
-    std::vector<unsigned char> padding(3, 0); // Max padding size to be added to each row
-    for (int y = img.ny - 1; y >= 0; --y) { // BMP files are stored bottom-to-top
-        for (int x = 0; x < img.nx; ++x) {
-            // Each pixel
-            size_t pixelIndex = (y * img.nx + x) * 3;
-            unsigned char pixel[3] = {
-                img.buf[pixelIndex + 2], // BMP stores pixels in BGR format
-                img.buf[pixelIndex + 1],
-                img.buf[pixelIndex]
-            };
-            file.write(reinterpret_cast<char*>(pixel), 3);
-        }
-        // Write padding for the row
-        file.write(reinterpret_cast<char*>(padding.data()), paddingAmount);
-    }
-
-    file.close();
-}
-
-// debug function to convert f32 to u8
-static void clip_image_convert_f32_to_u8(const clip_image_f32& src, clip_image_u8& dst) {
-    dst.nx = src.nx;
-    dst.ny = src.ny;
-    dst.buf.resize(3 * src.nx * src.ny);
-    for (size_t i = 0; i < src.buf.size(); ++i) {
-        dst.buf[i] = static_cast<uint8_t>(std::min(std::max(int(src.buf[i] * 255.0f), 0), 255));
-    }
-}
-#endif
-
-
-//
-// clip layers
-//
-
 struct clip_hparams {
     int32_t image_size;
     int32_t patch_size;
@@ -185,7 +55,6 @@ struct clip_hparams {
     int32_t image_grid_pinpoints[32];
     int32_t image_crop_resolution;
 };
-
 
 
 struct clip_image_u8 * clip_image_u8_init() {
@@ -229,6 +98,8 @@ bool clip_image_load_from_file(const char * fname, clip_image_u8 * img) {
     stbi_image_free(data);
     return true;
 }
+
+
 
 bool clip_image_load_from_bytes(const unsigned char * bytes, size_t bytes_length, struct clip_image_u8 * img) {
     int nx, ny, nc;
@@ -600,11 +471,6 @@ bool clip_image_encode(struct clip_ctx* ctx, const int n_threads, clip_image_f32
 
 
 bool clip_image_batch_encode(clip_ctx* ctx, const int n_threads, const clip_image_f32_batch* imgs, float* vec, std::pair<int, int> load_image_size = { 448, 448 }) {
-    //if (!ctx->has_vision_encoder) {
-    //    LOG_TEE("This gguf file seems to have no vision encoder\n");
-    //    return false;
-    //}
-
     //don't support multi batch
     size_t batch_size = imgs->size;
 
@@ -616,12 +482,13 @@ bool clip_image_batch_encode(clip_ctx* ctx, const int n_threads, const clip_imag
 
     //OpenVINO inference to get vision embedding
     ov::Shape input_shape = { batch_size, 3, image_size_height, image_size_width };
-    ov::Tensor input_tensor = ov::Tensor(ov::element::f32, input_shape, imgs->data[0].buf.data());
+    ov::Tensor input_tensor = ov::Tensor(ov::element::f32, input_shape); // , imgs->data[0].buf.data());
+    std::memcpy(input_tensor.data<float>(), imgs->data[0].buf.data(), input_tensor.get_byte_size());
 
     ctx->ireq_vision.set_input_tensor(input_tensor);
-    //ctx->ireq_vision.infer();
-    ctx->ireq_vision.start_async();
-    ctx->ireq_vision.wait();
+    ctx->ireq_vision.infer();
+    //ctx->ireq_vision.start_async();
+    //ctx->ireq_vision.wait();
 
     const ov::Tensor& vision_output_tensor = ctx->ireq_vision.get_output_tensor();
 
@@ -634,9 +501,9 @@ bool clip_image_batch_encode(clip_ctx* ctx, const int n_threads, const clip_imag
     ctx->ireq_resampler.get_tensor("tgt_size").data<int64_t>()[0] = image_size_height / patch_size;
     ctx->ireq_resampler.get_tensor("tgt_size").data<int64_t>()[1] = image_size_width / patch_size;
 
-    //ctx->ireq_resampler.infer();
-    ctx->ireq_resampler.start_async();
-    ctx->ireq_resampler.wait();
+    ctx->ireq_resampler.infer();
+    //ctx->ireq_resampler.start_async();
+    //ctx->ireq_resampler.wait();
     const ov::Tensor& vision_embded_tensor = ctx->ireq_resampler.get_output_tensor();
 
     // copy the embeddings to the location passed by the user
