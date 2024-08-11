@@ -6,7 +6,7 @@ import logging as log
 
 def print_metrics(
         iter_num, iter_data, tms=None, tms_infer=None, warm_up=False, max_rss_mem=-1, max_shared_mem=-1,
-        stable_diffusion=None, tokenization_time=None, batch_size=1
+        max_uss_mem=-1, stable_diffusion=None, tokenization_time=None, batch_size=1
 ):
     if tms is None:
         tms = []
@@ -61,6 +61,8 @@ def print_metrics(
     output_str = ''
     if max_rss_mem != '' and max_rss_mem > -1:
         output_str += 'Max rss memory cost: {:.2f}MBytes, '.format(max_rss_mem)
+    if max_uss_mem != '' and max_uss_mem > -1:
+        output_str += 'max uss memory cost: {:.2f}MBytes, '.format(max_uss_mem)
     if max_shared_mem != '' and max_shared_mem > -1:
         output_str += 'max shared memory cost: {:.2f}MBytes'.format(max_shared_mem)
     if output_str != '':

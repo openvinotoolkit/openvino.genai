@@ -5,6 +5,8 @@ from threading import Event, Thread
 import psutil
 import time
 import os
+import sys
+import platform
 
 
 class MemConsumption:
@@ -13,6 +15,7 @@ class MemConsumption:
         self.g_exit_get_mem_thread = False
         self.g_end_collect_mem = False
         self.g_max_rss_mem_consumption = -1
+        self.g_max_uss_mem_consumption = -1
         self.g_max_shared_mem_consumption = -1
         self.g_event = Event()
         self.g_data_event = Event()
@@ -23,15 +26,29 @@ class MemConsumption:
             self.g_event.wait()
             while True:
                 process = psutil.Process(os.getpid())
-                rss_mem_data = process.memory_info().rss / float(2**20)
                 try:
-                    shared_mem_data = process.memory_info().shared / float(2**20)
+                    rss_mem_data = process.memory_info().rss / float(2**20)
+                    if sys.platform.startswith('linux'):
+                        shared_mem_data = process.memory_info().shared / float(2**20)
+                        uss_mem_data = rss_mem_data - shared_mem_data
+                    elif sys.platform.startswith('win'):
+                        uss_mem_data = process.memory_info().private / float(2**20)
+                        shared_mem_data = (rss_mem_data - uss_mem_data) if rss_mem_data > uss_mem_data \
+                              else (uss_mem_data - rss_mem_data)
+                    else:
+                        uss_mem_data = -1
+                        shared_mem_data = -1
                 except Exception:
+                    rss_mem_data = -1
+                    uss_mem_data = -1
                     shared_mem_data = -1
+
                 if rss_mem_data > self.g_max_rss_mem_consumption:
                     self.g_max_rss_mem_consumption = rss_mem_data
                 if shared_mem_data > self.g_max_shared_mem_consumption:
                     self.g_max_shared_mem_consumption = shared_mem_data
+                if uss_mem_data > self.g_max_uss_mem_consumption:
+                    self.g_max_uss_mem_consumption = uss_mem_data
                 self.g_data_event.set()
                 if self.g_end_collect_mem is True:
                     self.g_event.set()
@@ -54,11 +71,12 @@ class MemConsumption:
         """Return the data."""
         self.g_data_event.wait()
         self.g_data_event.clear()
-        return self.g_max_rss_mem_consumption, self.g_max_shared_mem_consumption
+        return self.g_max_rss_mem_consumption, self.g_max_shared_mem_consumption, self.g_max_uss_mem_consumption
 
     def clear_max_memory_consumption(self):
         """Clear MemConsumption."""
         self.g_max_rss_mem_consumption = -1
+        self.g_max_uss_mem_consumption = -1
         self.g_max_shared_mem_consumption = -1
 
     def start_collect_mem_consumption_thread(self):
