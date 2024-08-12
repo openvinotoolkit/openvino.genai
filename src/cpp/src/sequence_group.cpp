@@ -4,7 +4,9 @@
 #include <string_view>
 #include "sequence_group.hpp"
 
-size_t ov::genai::Sequence::_make_hash(size_t content_length) {
+namespace ov {
+namespace genai {
+size_t Sequence::_make_hash(size_t content_length) {
         auto sequence_group = get_sequence_group_ptr();
         auto block_size = sequence_group->get_block_size();
         size_t block_start_idx = content_length - (content_length % block_size);
@@ -35,7 +37,7 @@ size_t ov::genai::Sequence::_make_hash(size_t content_length) {
 // Each KV block can be uniquely identified by 
 // the tokens within the block and the tokens in the prefix before the block.
 // hash(prefix tokens + block tokens) <--> KV Block
-size_t ov::genai::Sequence::get_hash(size_t content_length) {
+size_t Sequence::get_hash(size_t content_length) {
 
     auto sequence_group = get_sequence_group_ptr();
     OPENVINO_ASSERT(sequence_group, "Hash computation requires setting of sequence_group ptr.");
@@ -58,3 +60,5 @@ size_t ov::genai::Sequence::get_hash(size_t content_length) {
     
     return _make_hash(content_len);
 }
+}  // namespace genai
+}  // namespace ov
