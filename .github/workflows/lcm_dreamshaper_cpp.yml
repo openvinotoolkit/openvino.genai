@@ -15,7 +15,7 @@ permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b
 env:
   PYTHON_VERSION: '3.8'
   working_directory: "./image_generation/lcm_dreamshaper_v7/cpp/"
-  LINUX_OV_ARCHIVE_URL: "https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.3/linux/l_openvino_toolkit_ubuntu20_2024.3.0.16041.1e3b88e4e3f_x86_64.tgz"
+  LINUX_OV_ARCHIVE_URL: "https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16311-2c8fd1e6e97/l_openvino_toolkit_ubuntu20_2024.4.0.dev20240809_x86_64.tgz"
   OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
 concurrency:
