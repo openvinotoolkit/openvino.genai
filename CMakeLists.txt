@@ -5,19 +5,6 @@ cmake_minimum_required(VERSION 3.13)  # The requirement comes from thirdparty/op
 project(GenAI)
 
 list(APPEND CUSTOM_OPERATIONS tokenizer)
-add_subdirectory(thirdparty/openvino_contrib/modules/custom_operations/)  # Build user_ov_extensions
-if(NOT MSVC)  # # Disable the warning from user_ov_extensions
-    target_compile_options(sentencepiece-static PRIVATE -Wno-stringop-overflow)
-endif()
-
-add_subdirectory(llm/cpp)
-target_compile_definitions(llm PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
-target_link_libraries(llm PRIVATE user_ov_extensions)
-
-add_subdirectory(llm/chatglm_cpp)
-target_compile_definitions(chatglm PRIVATE USER_OV_EXTENSIONS_PATH=\"$<TARGET_FILE:user_ov_extensions>\")
-target_link_libraries(chatglm PRIVATE user_ov_extensions)
-
 add_subdirectory(llm/mincpmv2_cpp)
 add_subdirectory(thirdparty/openvino_tokenizers/ "${CMAKE_CURRENT_BINARY_DIR}/openvino_tokenizers/")
 target_compile_definitions(minicpmv2 PRIVATE OPENVINO_TOKENIZERS_PATH=\"$<TARGET_FILE:openvino_tokenizers>\")
