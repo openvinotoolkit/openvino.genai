@@ -33,13 +33,13 @@ TEST(TestScheduler, general_test) {
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7};
         SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size);
+                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
         auto idx0 = (*sequence_group1)[0]->get_id();
         SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size);
+                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
         auto idx1 = (*sequence_group2)[0]->get_id();
         SequenceGroup::Ptr sequence_group3 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size);
+                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
         auto idx2 = (*sequence_group3)[0]->get_id();
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2, sequence_group3};
                                                                         
@@ -124,10 +124,10 @@ TEST(TestScheduler, test_append_slots_considers_all_sequences) {
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7};
         SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size);
+                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
         auto idx0 = (*sequence_group1)[0]->get_id();
         SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size);
+                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
         auto idx1 = (*sequence_group2)[0]->get_id();
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
         
@@ -189,11 +189,11 @@ TEST(TestScheduler, test_partial_preemption) {
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> tokens1 = {0,1,2,3,4,5,6,7,8,9,10};
         SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens1.size()}, tokens1.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size);
+                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
         std::vector<uint64_t> tokens2 = {0,1,2,3,4,5,6,7};
         auto idx0 = (*sequence_group1)[0]->get_id();
         SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens2.size()}, tokens2.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size);
+                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
         auto idx1 = (*sequence_group2)[0]->get_id();
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
                                                                         
@@ -281,10 +281,10 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
     for (auto scheduler_config: configs) {
         std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7,8,9,10,11};
         SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size);
+                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
         auto idx0 = (*sequence_group1)[0]->get_id();
         SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                ov::genai::greedy(), scheduler_config.block_size);
+                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
         auto idx1 = (*sequence_group2)[0]->get_id();
         std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
                                                                         
@@ -393,7 +393,9 @@ TEST(TestScheduler, prefix_caching_test) {
             std::vector<uint64_t> tokens = histrory_tokens;
             tokens.insert(tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
             SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                    ov::genai::greedy(), scheduler_config.block_size);
+                                                                                    ov::genai::greedy(), scheduler_config.block_size, 
+                                                                                    scheduler_config.enable_prefix_caching);
+            sequence_group->set_sequence_group_ptr(sequence_group);
             scheduler.restore_cached_blocks(sequence_group);
             std::vector<SequenceGroup::Ptr> requests = {sequence_group};
 

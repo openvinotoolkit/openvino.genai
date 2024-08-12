@@ -21,6 +21,7 @@ enum class SequenceStatus {
 };
 
 using TokenIds = std::vector<int64_t>;
+class SequenceGroup;
 
 class Sequence {
     // This can be a problem if we launch two pipelines in the same application.
@@ -35,29 +36,34 @@ class Sequence {
     SequenceStatus m_status = SequenceStatus::RUNNING;
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
+    std::vector<int64_t> m_prefix_hashes;
+    std::weak_ptr<SequenceGroup> m_sequence_group;
+    bool m_enable_prefix_caching;
 
+    size_t _make_hash(size_t content_length);
 public:
     using Ptr = std::shared_ptr<Sequence>;
     using CPtr = std::shared_ptr<const Sequence>;
 
     // don't use directly
-    Sequence(const uint64_t id) : m_grouped_id(id) {};
+    Sequence(const uint64_t id, bool enable_prefix_caching) : m_grouped_id(id), m_enable_prefix_caching(enable_prefix_caching) {};
 
     // don't use directly
-    Sequence(const Sequence& seq, const uint64_t id) :
+    Sequence(const Sequence& seq, const uint64_t id, bool enable_prefix_caching) :
         m_generated_ids(seq.m_generated_ids),
         m_grouped_id(id),
         m_status(seq.m_status),
-        m_cumulative_log_prob(seq.m_cumulative_log_prob) {
+        m_cumulative_log_prob(seq.m_cumulative_log_prob), 
+        m_enable_prefix_caching(enable_prefix_caching) {
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
 
-    static Sequence::Ptr create(const uint64_t id) {
-        return std::make_shared<Sequence>(id);
+    static Sequence::Ptr create(const uint64_t id, bool enable_prefix_caching) {
+        return std::make_shared<Sequence>(id, enable_prefix_caching);
     }
 
     static Sequence::Ptr fork(Sequence::CPtr sequence, const uint64_t id) {
-        return std::make_shared<Sequence>(*sequence, id);
+        return std::make_shared<Sequence>(*sequence, id, sequence->m_enable_prefix_caching);
     }
 
     bool operator ==(const Sequence& other) const {
@@ -133,34 +139,20 @@ public:
         return score;
     }
 
+    void set_sequence_group_ptr(std::shared_ptr<SequenceGroup> sequence_group) {
+        m_sequence_group = sequence_group;
+    }
+
+    std::shared_ptr<SequenceGroup> get_sequence_group_ptr() const {
+        OPENVINO_ASSERT(m_enable_prefix_caching);
+        OPENVINO_ASSERT(!m_sequence_group.expired());
+        return m_sequence_group.lock();
+    }
+
     // Each KV block can be uniquely identified by 
     // the tokens within the block and the tokens in the prefix before the block.
     // hash(prefix tokens + block tokens) <--> KV Block
-    size_t get_hash(const std::vector<size_t>& prefix_hashes, size_t block_size, size_t content_length, const ov::genai::TokenIds& prompt_ids) const {
-        OPENVINO_ASSERT(content_length <= prompt_ids.size() + m_generated_ids.size());
-        size_t block_start_idx = content_length - (content_length % block_size);
-        if (block_start_idx == content_length) {
-            block_start_idx -= block_size;
-        }
-
-        // hash of current block depends on prefix hashes
-        std::vector<int64_t> content;
-        for (auto hash : prefix_hashes) {
-            content.push_back(hash);
-        }
-
-        // get tokens corresponding to current block
-        if (block_start_idx < prompt_ids.size()) {
-            content.insert(content.end(), prompt_ids.begin() + block_start_idx, prompt_ids.begin() + std::min(prompt_ids.size(), content_length));
-        }
-        if (content_length > prompt_ids.size()) {
-            size_t start = block_start_idx < prompt_ids.size() ? 0 : block_start_idx - prompt_ids.size();
-            content.insert(content.end(), m_generated_ids.begin() + start, m_generated_ids.begin() + content_length - prompt_ids.size());
-        }
-        const char* data = reinterpret_cast<const char*>(content.data());
-        std::size_t size = content.size() * sizeof(content[0]);
-        return std::hash<std::string_view>{}(std::string_view(data, size));
-    }
+    size_t get_hash(size_t content_length = 0);
 };
 
 // contains a list of Sequences in generic case (beam search or parallel sampling)
@@ -174,6 +166,7 @@ class SequenceGroup {
     std::size_t m_block_size;
     TokenIds m_prompt_ids;
     GenerationStream::Ptr m_generation_stream;
+    bool m_enable_prefix_caching;
 
     uint64_t m_next_sequence_id = 0;
 
@@ -187,23 +180,24 @@ class SequenceGroup {
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
 
-    SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
+    SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
-          m_block_size(block_size) {
+          m_block_size(block_size),
+          m_enable_prefix_caching(enable_prefix_caching) {
             m_generation_stream = GenerationStream::create();    
            }
 public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
 
-    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size) {
+    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size, enable_prefix_caching) {
     }
 
-    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
-        : SequenceGroup(request_id, sampling_params, block_size) {
-        add_sequence(Sequence::create(m_next_sequence_id++));
+    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
+        : SequenceGroup(request_id, sampling_params, block_size, enable_prefix_caching) {
+        add_sequence(Sequence::create(m_next_sequence_id++, enable_prefix_caching));
 
         m_prompt_ids.resize(input_ids.get_size());
         std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), m_prompt_ids.begin());
@@ -423,7 +417,9 @@ public:
     }
 
     Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
+        auto ptr = m_enable_prefix_caching ? sequence->get_sequence_group_ptr() : nullptr;
         m_sequences.emplace_back(Sequence::fork(std::move(sequence), m_next_sequence_id++));
+        set_sequence_group_ptr(ptr);
         return m_sequences.back();
     }
 
@@ -463,6 +459,12 @@ public:
             }
         }
         return false;
+    }
+
+    void set_sequence_group_ptr(std::shared_ptr<SequenceGroup> sequence_group) {
+        for (auto sequence: m_sequences) {
+            sequence->set_sequence_group_ptr(sequence_group);
+        }
     }
     
     GenerationStream::Ptr get_generation_stream() {
