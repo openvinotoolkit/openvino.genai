@@ -73,7 +73,9 @@ jobs:
       
       - name: Run app
         working-directory: ${{ env.working_directory }}
-        run: ./build/lcm_dreamshaper
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          ./build/lcm_dreamshaper
 
   lcm_dreamshaper_v7_cpp-windows:
     # TODO Enable windows job
