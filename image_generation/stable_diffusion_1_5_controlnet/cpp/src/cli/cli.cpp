@@ -8,7 +8,7 @@
 #include "imwrite.hpp"
 #include "openvino/runtime/core.hpp"
 
-#include "core.hpp"
+#include "core/core.hpp"
 
 
 ov::Tensor postprocess_image(ov::Tensor decoded_image) {

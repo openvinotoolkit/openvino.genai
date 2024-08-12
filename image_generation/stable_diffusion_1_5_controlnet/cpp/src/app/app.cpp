@@ -1,6 +1,7 @@
-#include "gui.hpp"
+#include "app/gui.hpp"
 #include <wx/dir.h>
 #include <openvino/runtime/core.hpp>
+#include <random>
 
 bool ContainsModelFiles(const wxString& directory) {
     wxDir dir(directory);
@@ -158,6 +159,7 @@ void AppFrame::OnSelectImage(wxCommandEvent& event) {
     wxString filePath = openFileDialog.GetPath();
     wxImage image;
     if (image.LoadFile(filePath)) {
+        inputImagePath = filePath.ToStdString();
         int previewWidth = inputImagePreview->GetSize().GetWidth();
         int previewHeight = inputImagePreview->GetSize().GetHeight();
         int imgWidth = image.GetWidth();
@@ -193,6 +195,8 @@ void AppFrame::OnSelectImage(wxCommandEvent& event) {
 
 void AppFrame::OnGenerate(wxCommandEvent& event) {
     wxDialog* resultDialog = new wxDialog(this, wxID_ANY, "Generated Image");
+    // TODO: start new thread, get output here
+    // get result here
     wxStaticText* text = new wxStaticText(resultDialog, wxID_ANY, "Here would be the generated image");
     resultDialog->SetClientSize(text->GetBestSize());
     resultDialog->ShowModal();
@@ -264,8 +268,39 @@ void AppFrame::InitEvents() {
     });
 
     // start button
-    confirmButton->Bind(wxEVT_BUTTON, [this](wxCommandEvent& event) {});
+    confirmButton->Bind(wxEVT_BUTTON, &AppFrame::OnGenerate, this);
 }
+
+ void AppFrame::GetImageToImageParam(StableDiffusionControlnetPipelineParam& param) {
+    std::string modelPath = modelPathCtrl->GetValue().ToStdString();
+    std::string prompt = promptTextCtrl->GetValue().ToStdString();
+    std::string negativePrompt = negativePromptTextCtrl->GetValue().ToStdString();
+
+    int steps;
+    stepsValueCtrl->GetValue().ToInt(&steps);
+
+    uint32_t seed;
+    auto seedValue = seedSpinCtrl->GetValue();
+    if (seedValue == -1) {
+        std::random_device rd;                               
+        std::mt19937 gen(rd());                              
+        std::uniform_int_distribution<> dis(1, 2147483647);
+        seed = dis(gen);
+    } else {
+        seed = seedValue;
+    }
+
+    param.prompt = prompt;
+    param.negative_prompt = negativePrompt;
+    param.input_image = inputImagePath;
+    param.steps = steps;
+    param.seed = seed;
+ }
+
+
+ ImageToImagePipeline* AppFrame::GetImageToImagePipeline(){
+    return imageToImagePipeline;
+ }
 
 
 class MyApp : public wxApp

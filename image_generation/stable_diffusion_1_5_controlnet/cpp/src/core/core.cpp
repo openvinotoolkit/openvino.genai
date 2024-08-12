@@ -1,7 +1,7 @@
 #include <random>
 #include <algorithm>
 
-#include "core.hpp"
+#include "core/core.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/core/preprocess/pre_post_process.hpp"
 #include "utils.hpp"

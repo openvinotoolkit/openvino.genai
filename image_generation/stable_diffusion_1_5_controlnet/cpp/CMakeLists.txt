@@ -30,7 +30,7 @@ add_subdirectory(../../common/diffusers _deps/diffusers)
 add_subdirectory(../../../thirdparty/openvino_tokenizers/ _deps/tokenizers)
 
 # create executable
-add_executable(${PROJECT_NAME} ${PROJECT_SOURCE_DIR}/src/core.cpp ${PROJECT_SOURCE_DIR}/src/main.cpp)
+add_executable(${PROJECT_NAME} ${PROJECT_SOURCE_DIR}/src/core/core.cpp ${PROJECT_SOURCE_DIR}/src/cli/cli.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(${PROJECT_NAME} PRIVATE
     openvino::runtime
@@ -46,7 +46,11 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE TOKENIZERS_LIBRARY_PATH=\"$<T
 # gui
 set(GUI_APP_NAME "stable_diffusion_controlnet_gui")
 find_package(wxWidgets CONFIG REQUIRED)
-add_executable(${GUI_APP_NAME} WIN32 ${PROJECT_SOURCE_DIR}/src/core.cpp ${PROJECT_SOURCE_DIR}/src/app.cpp)
+add_executable(${GUI_APP_NAME} WIN32 
+    ${PROJECT_SOURCE_DIR}/src/core/core.cpp 
+    ${PROJECT_SOURCE_DIR}/src/app/app.cpp
+    ${PROJECT_SOURCE_DIR}/src/app/worker.cpp
+)
 target_include_directories(${GUI_APP_NAME} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(${GUI_APP_NAME} PRIVATE
     openvino::runtime

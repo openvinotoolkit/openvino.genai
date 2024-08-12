@@ -13,10 +13,13 @@
 #include <wx/notebook.h>
 #include <vector>
 #include <string>
+#include "worker.hpp"
+#include "core/core.hpp"
 
  class AppFrame : public wxFrame {
  public:
      AppFrame(const wxString& title);
+     ImageToImagePipeline* GetImageToImagePipeline();
 
  private:
      void InitMainPannel();
@@ -25,6 +28,7 @@
      void OnSelectImage(wxCommandEvent& event);
      void OnGenerate(wxCommandEvent& event);
      void ValidateSettings(wxCommandEvent& event);
+     void GetImageToImageParam(StableDiffusionControlnetPipelineParam& param);
      
      wxNotebook* notebook;
 
@@ -42,4 +46,8 @@
      wxChoice* deviceChoice;
 
      std::vector<std::string> devices;
+     std::string inputImagePath;
+
+     WorkerThread* workerThread;
+     ImageToImagePipeline *imageToImagePipeline;
  };
