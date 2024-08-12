@@ -13,9 +13,15 @@ ov::Tensor postprocess_image(ov::Tensor decoded_image) {
     return generated_image;
 }
 
-ImageToImagePipeline::ImageToImagePipeline(std::string& model, std::string& device) {
+
+void ImageToImagePipeline::Init(std::string& model, std::string& device) {
+    if (pipe != nullptr) {
+        // TODO: unload all resources, how? ov model unload?
+        delete pipe;
+    }
     pipe = new StableDiffusionControlnetPipeline(model, device);
 }
+
 
 void ImageToImagePipeline::Run(std::string& prompt,
     std::string& negative_prompt,
@@ -33,9 +39,6 @@ void ImageToImagePipeline::Run(std::string& prompt,
     auto image = postprocess_image(decoded_image);
     // TODO: to wxBitmap?
 }
-
-wxDECLARE_EVENT(wxEVT_COMMAND_IMAGE_GEN_COMPLETED, wxThreadEvent);
-wxDEFINE_EVENT(wxEVT_COMMAND_IMAGE_GEN_COMPLETED, wxThreadEvent);
 
 WorkerThread::WorkerThread(AppFrame* handler)
     : wxThread(wxTHREAD_DETACHED),

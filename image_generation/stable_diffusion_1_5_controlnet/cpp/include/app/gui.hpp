@@ -24,11 +24,14 @@
  private:
      void InitMainPannel();
      void InitEvents();
+     void InitWorkers();
 
      void OnSelectImage(wxCommandEvent& event);
      void OnGenerate(wxCommandEvent& event);
      void ValidateSettings(wxCommandEvent& event);
      void GetImageToImageParam(StableDiffusionControlnetPipelineParam& param);
+
+    void OnImageGenCompleted(wxThreadEvent& event);
      
      wxNotebook* notebook;
 
@@ -47,6 +50,9 @@
 
      std::vector<std::string> devices;
      std::string inputImagePath;
+
+     std::string currentModelPath;
+     std::string currentDevice;
 
      WorkerThread* workerThread;
      ImageToImagePipeline *imageToImagePipeline;

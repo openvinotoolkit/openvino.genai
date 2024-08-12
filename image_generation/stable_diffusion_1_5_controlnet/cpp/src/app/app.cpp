@@ -32,7 +32,7 @@ AppFrame::AppFrame(const wxString& title) : wxFrame(NULL, wxID_ANY, title, wxDef
 
     InitMainPannel();
     InitEvents();
-
+    InitWorkers();
 
     SetClientSize(800, 600);
     SetSizer(new wxBoxSizer(wxVERTICAL));
@@ -195,18 +195,32 @@ void AppFrame::OnSelectImage(wxCommandEvent& event) {
 
 void AppFrame::OnGenerate(wxCommandEvent& event) {
     wxDialog* resultDialog = new wxDialog(this, wxID_ANY, "Generated Image");
-    // TODO: start new thread, get output here
-    // get result here
+    // TODO: display progress
     wxStaticText* text = new wxStaticText(resultDialog, wxID_ANY, "Here would be the generated image");
     resultDialog->SetClientSize(text->GetBestSize());
     resultDialog->ShowModal();
     resultDialog->Destroy();
 }
 
+void AppFrame::OnImageGenCompleted(wxThreadEvent& event) {
+    wxMessageBox("Task completed!", "Info");
+}
+
 void AppFrame::ValidateSettings(wxCommandEvent& event) {
     bool valid = !modelPathCtrl->GetValue().IsEmpty() && stepsSlider->GetValue() >= 0 &&
                  seedSpinCtrl->GetValue() >= -1 && !promptTextCtrl->GetValue().IsEmpty();
     confirmButton->Enable(valid);
+}
+
+void AppFrame::InitWorkers() {
+    workerThread = new WorkerThread(this);
+    if (workerThread->Run() != wxTHREAD_NO_ERROR) {
+        delete workerThread;
+        workerThread = nullptr;
+    }
+
+    imageToImagePipeline = new ImageToImagePipeline();
+    Bind(wxEVT_COMMAND_IMAGE_GEN_COMPLETED, &AppFrame::OnImageGenCompleted, this);
 }
 
 void AppFrame::InitEvents() {
@@ -223,6 +237,12 @@ void AppFrame::InitEvents() {
         wxString dirPath = openDirDialog.GetPath();
         if (ContainsModelFiles(dirPath)) {
             modelPathCtrl->SetValue(dirPath);
+            
+            if (currentModelPath != dirPath.ToStdString()) {
+                // TODO: we may load here
+                currentModelPath = dirPath.ToStdString();
+            }
+
         } else {
             wxMessageBox("Selected directory does not contain any .xml or .bin files.", "Error", wxOK | wxICON_ERROR);
         }
@@ -256,6 +276,15 @@ void AppFrame::InitEvents() {
     // settings validation
     modelPathCtrl->Bind(wxEVT_TEXT, [this](wxCommandEvent& evt) {
         ValidateSettings(evt);
+    });
+    deviceChoice->Bind(wxEVT_CHOICE, [this](wxCommandEvent& evt) {
+        int selection = deviceChoice->GetSelection();
+        if (selection != wxNOT_FOUND) {
+            auto choice = deviceChoice->GetString(selection).ToStdString();
+            if (choice != currentDevice) {
+                // TODO:
+            }
+        }
     });
     stepsSlider->Bind(wxEVT_SLIDER, [this](wxCommandEvent& evt) {
         ValidateSettings(evt);

@@ -15,7 +15,8 @@
 
 class ImageToImagePipeline {
 public:
-    ImageToImagePipeline(std::string& model, std::string& device);
+    ImageToImagePipeline();
+    void Init(std::string& model, std::string& device);
     void Run(std::string& prompt,
                  std::string& negative_prompt,
                  std::string& input_image_path,
@@ -43,3 +44,6 @@ private:
     bool shouldRun;
     bool shouldExit;
 };
+
+wxDECLARE_EVENT(wxEVT_COMMAND_IMAGE_GEN_COMPLETED, wxThreadEvent);
+wxDEFINE_EVENT(wxEVT_COMMAND_IMAGE_GEN_COMPLETED, wxThreadEvent);
