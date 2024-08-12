@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 
+#include <openvino/genai/tokenizer.hpp>
 #include <regex>
 #include <random>
 #include <openvino/openvino.hpp>
@@ -38,8 +39,7 @@ struct Args {
     std::string vision_model_path = "minicpm-v-2_vision.xml";
     std::string resam_model_path = "minicpm-v-2_resampler.xml";
     std::string embed_model_path = "minicpm-v-2_embedding.xml";
-    std::string token_model_path = "tokenizer.xml";
-    std::string detoken_model_path = "detokenizer.xml";
+    std::string token_model_path;
     std::string img_file = "airplane.jpg";
     std::string device = "GPU";
     bool reduce_logits = false;
@@ -66,8 +66,7 @@ static void usage(const std::string& prog) {
         << "  -vision PATH            minicpmv vision model path (default: minicpm-v-2_vision.xml)\n"
         << "  -resam PATH             minicpmv resampler model path (default: minicpm-v-2_resampler.xml)\n"
         << "  -embed PATH             minicpmv embedding model path (default: minicpm-v-2_embedding.xml)\n"
-        << "  -token PATH             Tokenizer model path (default: tokenizer.xml)\n"
-        << "  -detoken PATH           DeTokenizer model path (default: detokenizer.xml)\n"
+        << "  -token PATH             Tokenizer model folder\n"
         << "  -d, --device            Device (default: CPU)\n"
         << "  --reduce_logits         Reduce_logits (default: False)\n"
         << "  --do_sample             Search (default: False)\n"
@@ -103,9 +102,6 @@ static Args parse_args(const std::vector<std::string>& argv) {
         }
         else if (arg == "-token") {
             args.token_model_path = argv[++i];
-        }
-        else if (arg == "-detoken") {
-            args.detoken_model_path = argv[++i];
         }
         else if (arg == "-d" || arg == "--device") {
             args.device = argv[++i];
@@ -217,32 +213,18 @@ int64_t get_out_token_id(const std::vector<int>& input_ids, float* logits, size_
     return out_token;
 }
 
-std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string && prompt) {
-    constexpr size_t BATCH_SIZE = 1;
-    tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
-    tokenizer.infer();
-    return {tokenizer.get_tensor("input_ids"), tokenizer.get_tensor("attention_mask")};
-}
-
-std::string detokenize(ov::InferRequest& detokenizer, std::vector<int64_t>& tokens) {
-    constexpr size_t BATCH_SIZE = 1;
-    detokenizer.set_input_tensor(ov::Tensor{ov::element::i64, {BATCH_SIZE, tokens.size()}, tokens.data()});
-    detokenizer.infer();
-    return detokenizer.get_output_tensor().data<std::string>()[0];
-}
-
 // The following reasons require TextStreamer to keep a cache of previous tokens:
 // detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
 // but detokenize(tokenize("prefix a")) == "prefix a"
 // 1 printable token may consist of 2 token ids: detokenize(incomplete_token_idx) == "�"
 struct TextStreamer {
-    ov::InferRequest detokenizer;
+    ov::genai::Tokenizer tokenizer;
     std::vector<int64_t> token_cache;
     size_t print_len = 0;
 
     void put(int64_t token) {
         token_cache.push_back(token);
-        std::string text = detokenize(detokenizer, token_cache);
+        std::string text = tokenizer.decode(token_cache);
         if (!text.empty() && '\n' == text.back()) {
             // Flush the cache after the new line symbol
             std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
@@ -259,7 +241,7 @@ struct TextStreamer {
     }
 
     void end() {
-        std::string text = detokenize(detokenizer, token_cache);
+        std::string text = tokenizer.decode(token_cache);
         std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
         token_cache.clear();
         print_len = 0;
@@ -339,7 +321,6 @@ public:
                 std::set<ov::Input<ov::Node>> consumers = grand_parent_output.get_target_inputs();
                 auto partial_shape = grand_parent_output.get_partial_shape().get_min_shape();
                 int32_t dims = static_cast<int32_t>(partial_shape[2]);
-		    
                 std::vector<int32_t> start_v = { 0, -1, 0 };
                 std::vector<int32_t> stop_v = { 1, -2, dims };
                 std::vector<int32_t> step_v = { 1, -1, 1 };
@@ -372,7 +353,7 @@ public:
 };
 
 
-void get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> image_embed_slices, ov::InferRequest& tokenizer, ov::InferRequest& embedding, ov::Tensor &imgEmbedding) {
+void get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> image_embed_slices, ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, ov::Tensor &imgEmbedding) {
     std::string user_prompt;
     size_t embedding_dim;
     size_t embedding_len = 0;
@@ -380,9 +361,8 @@ void get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> ima
     int scale_emb = 12;
 
     user_prompt = "<用户>";
-    tokenize(tokenizer, (user_prompt).c_str());
+    ov::Tensor input_ids = tokenizer.encode(user_prompt).input_ids;
 
-    auto input_ids = tokenizer.get_tensor("input_ids");
     auto input_len = input_ids.get_size();
     embedding_len += input_len;
 
@@ -432,9 +412,8 @@ void get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> ima
 
     //get special token embedding info
     user_prompt = "\n<image></image><slice></slice>";
-    tokenize(tokenizer, (user_prompt).c_str());
+    input_ids = tokenizer.encode(user_prompt).input_ids;
 
-    input_ids = tokenizer.get_tensor("input_ids");
     input_len = input_ids.get_size();
 
     input_tensor = ov::Tensor(ov::element::i64, { 1, input_ids.get_size() }, input_ids.data());
@@ -497,7 +476,7 @@ void get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> ima
 
 
 
-ov::Tensor process_prompt(ov::InferRequest& tokenizer, ov::InferRequest& embedding, std::string prompt, bool isAddUser) {
+ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, std::string prompt, bool isAddUser) {
     std::string user_prompt;
     size_t embedding_dim;
     size_t idx;
@@ -510,9 +489,7 @@ ov::Tensor process_prompt(ov::InferRequest& tokenizer, ov::InferRequest& embeddi
         user_prompt = prompt + "<AI>";
     }
 
-    tokenize(tokenizer, (user_prompt).c_str());
-
-    auto input_ids = tokenizer.get_tensor("input_ids");
+    ov::Tensor input_ids = tokenizer.encode(user_prompt).input_ids;
     auto input_len = input_ids.get_size();
 
     ov::Tensor input_tensor = ov::Tensor(ov::element::i64, { 1, input_ids.get_size() }, input_ids.data());
@@ -529,7 +506,6 @@ ov::Tensor process_prompt(ov::InferRequest& tokenizer, ov::InferRequest& embeddi
     for (idx = 0; idx < embed_output_tensor.get_size(); idx++) {
         data[idx] = data[idx] * scale_emb;
     }
-       
     return embed_output_tensor;
 }
 
@@ -547,163 +523,27 @@ static bool get_utf8_line(std::string& line) {
 
 }
 
-
-
-int main(int argc, char* argv[]) try {
-#ifdef _WIN32
-    SetConsoleOutputCP(CP_UTF8);
-    _setmode(_fileno(stdin), _O_WTEXT);
-#endif
-
-    Args args = parse_args(argc, argv);
-
-    std::cout << ov::get_openvino_version() << std::endl;
-
-    ov::Core core;
-
-    core.add_extension(OPENVINO_TOKENIZERS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
-    //core.add_extension("D:\\openvino\\runtime\\openvino_tokenizers_windows_2024.4.0.0.dev20240723_x86_64\\runtime\\bin\\intel64\\Release\\openvino_tokenizers.dll");
-    auto startTime = Time::now();
-    ov::InferRequest tokenizer = core.compile_model(args.token_model_path, "CPU").create_infer_request();
-    auto input_ids = tokenizer.get_tensor("input_ids");
-    auto attention_mask = tokenizer.get_tensor("attention_mask");
-    ov::InferRequest detokenizer = core.compile_model(args.detoken_model_path, "CPU").create_infer_request();
-    auto duration_ms = get_duration_ms_until_now(startTime);
-    std::cout << "Load minicpm tokenizer took " << duration_ms << " ms" << std::endl;
-
-    unsigned char* image_bytes;
-    long image_bytes_length;
-    auto loaded = load_file_to_bytes(args.img_file.c_str(), &image_bytes, &image_bytes_length);
-    if (!loaded) {
-        std::cout << "failed to load " << args.img_file << std::endl;
-        return 0;
-    }
-
-    clip_ctx* ctx_clip = new clip_ctx;
-    int n_threads = 1;
-    for (int i = 0; i < 3; ++i) {
-        ctx_clip->image_mean[i] = 0.5;
-        ctx_clip->image_std[i] = 0.5;
-    }
-    
-
-
-    std::string device = args.device;
-    constexpr size_t BATCH_SIZE = 1;
-    size_t convert_model;
-
-    if (args.reduce_logits){
-        convert_model = 1;
-    }
-    else {
-        convert_model = 0;
-    }
-
-    size_t group_size = 32;
-	
-    ov::AnyMap device_config = {};
-    if (device.find("CPU") != std::string::npos) {
-        device_config[ov::cache_dir.name()] = "llm-cache";
-        device_config[ov::hint::scheduling_core_type.name()] = ov::hint::SchedulingCoreType::PCORE_ONLY;
-        device_config[ov::hint::enable_hyper_threading.name()] = false;
-        device_config[ov::hint::enable_cpu_pinning.name()] = true;
-        device_config[ov::enable_profiling.name()] = false;
-        //device_config[ov::hint::dynamic_quantization_group_size.name()] = group_size;
-    }
-
-    if (device.find("GPU") != std::string::npos) {
-        device_config[ov::cache_dir.name()] = "llm-cache";
-        device_config[ov::intel_gpu::hint::queue_throttle.name()] = ov::intel_gpu::hint::ThrottleLevel::MEDIUM;
-        device_config[ov::intel_gpu::hint::queue_priority.name()] = ov::hint::Priority::MEDIUM;
-        device_config[ov::intel_gpu::hint::host_task_priority.name()] = ov::hint::Priority::HIGH;
-        device_config[ov::hint::enable_cpu_pinning.name()] = true;
-        device_config[ov::enable_profiling.name()] = false;
-        //device_config[ov::hint::dynamic_quantization_group_size.name()] = group_size;
-        //std::cout << "set dynamic quantization group size 32" << std::endl;
-    }
-
-    double total_time = 0;
-    int count = 0;
-    double first_time;
-    
-    // Read OpenVINO Model
-    if (1 == convert_model) {
-        startTime = Time::now();
-        std::shared_ptr<ov::Model> model = core.read_model(args.ov_model_path);
-        duration_ms = get_duration_ms_until_now(startTime);
-        std::cout << "Read minicpm Model took " << duration_ms << " ms" << std::endl;
-
-        std::cout << "######## [Model Graph Optimization] Step 2: Insert slice node after reshape to reduce logits operation ########\n";
-        ov::pass::Manager manager;
-        manager.register_pass<InsertSlice>();
-        manager.run_passes(model);
-
-        std::string modifiled_file = std::regex_replace(args.ov_model_path, std::regex("openvino_model"), "modified_openvino_model");
-        std::cout << "Save modified model in " << modifiled_file << "\n";
-        ov::serialize(model, modifiled_file);
-
-        ov::CompiledModel compilemodel = core.compile_model(modifiled_file, device, device_config);
-
-        return 0;
-    }
-
-    ov::CompiledModel vision_compilemodel = core.compile_model(args.vision_model_path, "CPU"); // "AUTO:GPU,CPU");
-    ctx_clip->ireq_vision = vision_compilemodel.create_infer_request();
-
-    ov::CompiledModel resam_compilemodel = core.compile_model(args.resam_model_path, device);
-    ctx_clip->ireq_resampler = resam_compilemodel.create_infer_request();
-
-    ov::CompiledModel embed_compilemodel = core.compile_model(args.embed_model_path, device, device_config);
-    ov::InferRequest ireq_embed = embed_compilemodel.create_infer_request();
-
-    //Compile model
-    startTime = Time::now();
-    ov::CompiledModel compilemodel = core.compile_model(args.ov_model_path, device, device_config); // "AUTO:GPU,CPU");
-    ov::InferRequest ireq = compilemodel.create_infer_request();
-    duration_ms = get_duration_ms_until_now(startTime);
-    std::cout << "Compile LLM model took " << duration_ms << " ms" << std::endl;
- 
-    TextStreamer text_streamer{ std::move(detokenizer) };
-	
+class VLMPipeline {
+public:
+    ov::genai::Tokenizer tokenizer;
+    ov::InferRequest ireq_embed;
+    ov::InferRequest ireq;
+    ov::Tensor imgEmbedTensor;
+    ov::Shape img_embed_shape;
+    int output_fixed_len;
+    size_t embed_dim;
+    TextStreamer text_streamer;
+    std::vector<float> llm_inputs_embeds;
     // input length, output length, first time, other time
     std::vector<std::tuple<size_t, size_t, double, double>> perf_records;
-
-    //extract image embedding
-    std::vector<std::vector<struct llava_image_embed*>> embeds = llava_image_embed_make_with_bytes_slice(ctx_clip, n_threads, image_bytes, image_bytes_length);
-    free(image_bytes);
-
-    //get image embedding
-    ov::Tensor imgEmbedTensor;
-    get_image_embedding(embeds, tokenizer, ireq_embed, imgEmbedTensor);
-
-    ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
-    size_t embed_dim = img_embed_shape[2];
-
     size_t max_lenth = 2048;
-
-    std::vector<float> llm_inputs_embeds;
-    llm_inputs_embeds.resize((max_lenth * embed_dim));
-    
-    size_t embed_lenth;
-
+    size_t embed_lenth = 0;
+    int count = 0;
+    double total_time = 0;
     size_t round = 0;
-    std::cout << "please input prompt: " << std::endl;
-    while (true) {
-        std::string prompt;
-        if (!get_utf8_line(prompt) || prompt == "stop") {
-            break;
-        }
-        if (prompt.empty()) {
-            std::cout << "prompt empty " << std::endl;
-            continue;
-        }
+    const size_t BATCH_SIZE = 1;
 
-        if (prompt == "clear") {
-            round = 0;
-            std::cout << "please input prompt:  " << std::endl;
-            continue;
-        }
-
+    void generate(const std::string& prompt) {
         ov::Tensor llmEmbedTensor;
 
         //first round
@@ -712,7 +552,6 @@ int main(int argc, char* argv[]) try {
             std::cout << "first round " << std::endl;
             ov::Tensor promtTensor;
             promtTensor = process_prompt(tokenizer, ireq_embed, prompt, false);
-            
             embed_lenth = img_embed_shape[1] + promtTensor.get_shape()[1];
 
             //memcpy image embedding buf
@@ -743,7 +582,6 @@ int main(int argc, char* argv[]) try {
             embed_lenth = embed_lenth + promtTensor.get_shape()[1];
 
             llmEmbedTensor = ov::Tensor(ov::element::f32, { 1, embed_lenth, img_embed_shape[2] }, llm_inputs_embeds.data());
-                       
         }
 
         auto input_len = llmEmbedTensor.get_shape()[1];
@@ -760,11 +598,11 @@ int main(int argc, char* argv[]) try {
             state.reset();
         }
 
-        startTime = Time::now();
+        auto startTime = Time::now();
         ireq.infer();
-        duration_ms = get_duration_ms_until_now(startTime);
+        auto duration_ms = get_duration_ms_until_now(startTime);
         std::cout << "First token took " << duration_ms << " ms" << std::endl;
-        first_time = duration_ms;
+        auto first_time = duration_ms;
 
         ov::Shape logits_shape = ireq.get_tensor("logits").get_shape();
         auto attention_size = ireq.get_tensor("attention_mask").get_size();
@@ -822,8 +660,8 @@ int main(int argc, char* argv[]) try {
 
             out_token = std::max_element(logits, logits + vocab_size) - logits;
 
-            if (args.output_fixed_len > 0) {
-                if (count >= (args.output_fixed_len - 1))
+            if (output_fixed_len > 0) {
+                if (count >= (output_fixed_len - 1))
                     break;
             }
             else {
@@ -843,17 +681,146 @@ int main(int argc, char* argv[]) try {
 
         round++;
     }
+};
+
+int main(int argc, char* argv[]) try {
+    Args args = parse_args(argc, argv);
+    ov::Core core;
+
+    core.add_extension(OPENVINO_TOKENIZERS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
+    //core.add_extension("D:\\openvino\\runtime\\openvino_tokenizers_windows_2024.4.0.0.dev20240723_x86_64\\runtime\\bin\\intel64\\Release\\openvino_tokenizers.dll");
+    auto startTime = Time::now();
+    ov::genai::Tokenizer tokenizer{args.token_model_path};
+    auto duration_ms = get_duration_ms_until_now(startTime);
+    std::cout << "Load minicpm tokenizer took " << duration_ms << " ms" << std::endl;
+
+    unsigned char* image_bytes;
+    long image_bytes_length;
+    auto loaded = load_file_to_bytes(args.img_file.c_str(), &image_bytes, &image_bytes_length);
+    if (!loaded) {
+        std::cout << "failed to load " << args.img_file << std::endl;
+        return 0;
+    }
+
+    clip_ctx* ctx_clip = new clip_ctx;
+    int n_threads = 1;
+    for (int i = 0; i < 3; ++i) {
+        ctx_clip->image_mean[i] = 0.5;
+        ctx_clip->image_std[i] = 0.5;
+    }
+
+    std::string device = args.device;
+    size_t convert_model;
+
+    if (args.reduce_logits){
+        convert_model = 1;
+    }
+    else {
+        convert_model = 0;
+    }
+
+    size_t group_size = 32;
+    ov::AnyMap device_config = {};
+    if (device.find("CPU") != std::string::npos) {
+        device_config[ov::cache_dir.name()] = "llm-cache";
+        device_config[ov::hint::scheduling_core_type.name()] = ov::hint::SchedulingCoreType::PCORE_ONLY;
+        device_config[ov::hint::enable_hyper_threading.name()] = false;
+        device_config[ov::hint::enable_cpu_pinning.name()] = true;
+        device_config[ov::enable_profiling.name()] = false;
+        //device_config[ov::hint::dynamic_quantization_group_size.name()] = group_size;
+    }
+
+    if (device.find("GPU") != std::string::npos) {
+        device_config[ov::cache_dir.name()] = "llm-cache";
+        device_config[ov::intel_gpu::hint::queue_throttle.name()] = ov::intel_gpu::hint::ThrottleLevel::MEDIUM;
+        device_config[ov::intel_gpu::hint::queue_priority.name()] = ov::hint::Priority::MEDIUM;
+        device_config[ov::intel_gpu::hint::host_task_priority.name()] = ov::hint::Priority::HIGH;
+        device_config[ov::hint::enable_cpu_pinning.name()] = true;
+        device_config[ov::enable_profiling.name()] = false;
+        //device_config[ov::hint::dynamic_quantization_group_size.name()] = group_size;
+        //std::cout << "set dynamic quantization group size 32" << std::endl;
+    }
+
+    double first_time;
+    // Read OpenVINO Model
+    if (1 == convert_model) {
+        startTime = Time::now();
+        std::shared_ptr<ov::Model> model = core.read_model(args.ov_model_path);
+        duration_ms = get_duration_ms_until_now(startTime);
+        std::cout << "Read minicpm Model took " << duration_ms << " ms" << std::endl;
+
+        std::cout << "######## [Model Graph Optimization] Step 2: Insert slice node after reshape to reduce logits operation ########\n";
+        ov::pass::Manager manager;
+        manager.register_pass<InsertSlice>();
+        manager.run_passes(model);
+
+        std::string modifiled_file = std::regex_replace(args.ov_model_path, std::regex("openvino_model"), "modified_openvino_model");
+        std::cout << "Save modified model in " << modifiled_file << "\n";
+        ov::serialize(model, modifiled_file);
+
+        ov::CompiledModel compilemodel = core.compile_model(modifiled_file, device, device_config);
+
+        return 0;
+    }
+
+    ov::CompiledModel vision_compilemodel = core.compile_model(args.vision_model_path, "CPU"); // "AUTO:GPU,CPU");
+    ctx_clip->ireq_vision = vision_compilemodel.create_infer_request();
+
+    ov::CompiledModel resam_compilemodel = core.compile_model(args.resam_model_path, device);
+    ctx_clip->ireq_resampler = resam_compilemodel.create_infer_request();
+
+    ov::CompiledModel embed_compilemodel = core.compile_model(args.embed_model_path, device, device_config);
+    ov::InferRequest ireq_embed = embed_compilemodel.create_infer_request();
+
+    //Compile model
+    startTime = Time::now();
+    ov::CompiledModel compilemodel = core.compile_model(args.ov_model_path, device, device_config); // "AUTO:GPU,CPU");
+    ov::InferRequest ireq = compilemodel.create_infer_request();
+    duration_ms = get_duration_ms_until_now(startTime);
+    std::cout << "Compile LLM model took " << duration_ms << " ms" << std::endl;
+    TextStreamer text_streamer{ std::move(tokenizer) };
+
+    //extract image embedding
+    std::vector<std::vector<struct llava_image_embed*>> embeds = llava_image_embed_make_with_bytes_slice(ctx_clip, n_threads, image_bytes, image_bytes_length);
+    free(image_bytes);
+
+    //get image embedding
+    ov::Tensor imgEmbedTensor;
+    get_image_embedding(embeds, tokenizer, ireq_embed, imgEmbedTensor);
+
+    ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
+    size_t embed_dim = img_embed_shape[2];
+
+    std::cout << "please input prompt: " << std::endl;
+    VLMPipeline pipe{tokenizer, ireq_embed, ireq, imgEmbedTensor, img_embed_shape, args.output_fixed_len, embed_dim, text_streamer};
+    pipe.llm_inputs_embeds.resize((pipe.max_lenth * embed_dim));
+    while (true) {
+        std::string prompt;
+        if (!get_utf8_line(prompt) || prompt == "stop") {
+            break;
+        }
+        if (prompt.empty()) {
+            std::cout << "prompt empty " << std::endl;
+            continue;
+        }
+
+        if (prompt == "clear") {
+            pipe.round = 0;
+            std::cout << "please input prompt:  " << std::endl;
+            continue;
+        }
+        pipe.generate(prompt);
+    }
 
     std::cout << "bye" << std::endl;
     llava_image_embed_free_slice(embeds);
 
     std::cout << "input id, input token len, out token len, first token time, average time" << std::endl;
     size_t index = 0;
-    for (auto i : perf_records) {
+    for (auto i : pipe.perf_records) {
         std::cout << index << ", " << std::get<0>(i) << ", " << std::get<1>(i) << ", " << std::get<2>(i) << ", " << std::get<3>(i) << std::endl;
         index++;
     }
-            
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

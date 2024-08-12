@@ -5,7 +5,7 @@ file(GLOB SRC *.cpp)
 
 add_executable(minicpmv2  ${SRC})
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
-target_link_libraries(minicpmv2 PRIVATE openvino::runtime)
+target_link_libraries(minicpmv2 PRIVATE openvino::genai)
 set_target_properties(minicpmv2 PROPERTIES CXX_STANDARD 17)
 set_target_properties(minicpmv2 PROPERTIES CXX_STANDARD_REQUIRED ON)
 if(MSVC)
