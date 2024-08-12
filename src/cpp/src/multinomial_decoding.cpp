@@ -162,7 +162,9 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
 
     size_t prompt_len = prompts_shape[1];
 
-    ov::genai::EncodedResults results;
+    // Initialize results and performance metrics.
+    EncodedResults results;
+    auto& raw_perf_counters = results.perf_metrics.raw_metrics;
     results.scores.resize(batch_size, 0);
     results.tokens.resize(batch_size);
 
@@ -179,6 +181,8 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
     m_model_runner.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
     m_model_runner.infer();
+    raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+    raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
     auto logits_tensor = m_model_runner.get_tensor("logits");
 
@@ -222,6 +226,8 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
         m_model_runner.get_tensor("input_ids").data<int64_t>()[0] = out_token.id;
 
         m_model_runner.infer();
+        raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+        raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
         logits = m_model_runner.get_tensor("logits").data<float>();
         out_token = sampling.get_out_token(logits, vocab_size, tokens);
