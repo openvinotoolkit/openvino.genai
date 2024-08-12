@@ -32,29 +32,29 @@ size_t ov::genai::Sequence::_make_hash(size_t content_length) {
         return std::hash<std::string_view>{}(std::string_view(data, size));
 }
 
-    // Each KV block can be uniquely identified by 
-    // the tokens within the block and the tokens in the prefix before the block.
-    // hash(prefix tokens + block tokens) <--> KV Block
-    size_t ov::genai::Sequence::get_hash(size_t content_length) {
+// Each KV block can be uniquely identified by 
+// the tokens within the block and the tokens in the prefix before the block.
+// hash(prefix tokens + block tokens) <--> KV Block
+size_t ov::genai::Sequence::get_hash(size_t content_length) {
 
-        auto sequence_group = get_sequence_group_ptr();
-        OPENVINO_ASSERT(sequence_group, "Hash computation requires setting of sequence_group ptr.");
-        auto content_len = content_length == 0 ? sequence_group->get_context_len() : content_length;
-        auto block_size = sequence_group->get_block_size();
-        size_t cur_content = block_size;
-        size_t hash_idx = 0;
-        while (cur_content <= content_len)
-        {
-            if (hash_idx >= m_prefix_hashes.size()) {
-                m_prefix_hashes.push_back(_make_hash(cur_content));
+    auto sequence_group = get_sequence_group_ptr();
+    OPENVINO_ASSERT(sequence_group, "Hash computation requires setting of sequence_group ptr.");
+    auto content_len = content_length == 0 ? sequence_group->get_context_len() : content_length;
+    auto block_size = sequence_group->get_block_size();
+    size_t cur_content = block_size;
+    size_t hash_idx = 0;
+    while (cur_content <= content_len)
+    {
+        if (hash_idx >= m_prefix_hashes.size()) {
+            m_prefix_hashes.push_back(_make_hash(cur_content));
 
-            }
-            hash_idx ++;
-            cur_content += block_size;
         }
-        if (content_len % block_size == 0) {
-            return m_prefix_hashes[content_len / block_size - 1];
-        }
-        
-        return _make_hash(content_len);
+        hash_idx ++;
+        cur_content += block_size;
     }
+    if (content_len % block_size == 0) {
+        return m_prefix_hashes[content_len / block_size - 1];
+    }
+    
+    return _make_hash(content_len);
+}
