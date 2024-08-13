@@ -47,6 +47,7 @@ jobs:
           cache: 'pip'
         
       - name: Create virtual environment
+        working-directory: ${{ env.working_directory }}
         run: python3 -m venv openvino_lcm_cpp
       
       - name: Install python dependencies
@@ -101,19 +102,20 @@ jobs:
           cache: 'pip'
         
       - name: Create virtual environment
+        working-directory: ${{ env.working_directory }}
         run: python -m venv openvino_lcm_cpp
       
       - name: Install python dependencies
         working-directory: ${{ env.working_directory }}
         run: |
-          ./openvino_lcm_cpp/Scripts/Activate.ps1
+          . "./openvino_lcm_cpp/Scripts/Activate.ps1"
           python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ../../requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 
       - name: Download and convert model and tokenizer
         working-directory: ${{ env.working_directory }}
         run: |
-          ./openvino_lcm_cpp/Scripts/Activate.ps1
+          . "./openvino_lcm_cpp/Scripts/Activate.ps1"
           optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 models/lcm_dreamshaper_v7/FP16
   
       - name: Build app
