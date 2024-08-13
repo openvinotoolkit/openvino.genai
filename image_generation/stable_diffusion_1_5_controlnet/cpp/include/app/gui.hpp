@@ -18,7 +18,7 @@ struct UIState {
     char prompt[1024] = "Dancing Darth Vader, best quality, extremely detailed";
     char negative_prompt[1024] = "monochrome, lowres, bad anatomy, worst quality, low quality";
     int steps = 20;
-    int64_t seed = 42;
+    int64_t seed = 963503610;
 
     // right
     std::vector<std::string> devices;

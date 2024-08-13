@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string>
 #include <filesystem>
+#include <random>
 
 #include "gui.hpp"
 #include "worker.hpp"
@@ -13,6 +14,14 @@ static void glfw_error_callback(int error, const char* description)
 {
     fprintf(stderr, "Glfw Error %d: %s\n", error, description);
 }
+
+uint32_t gen_seed() {
+    std::random_device rd;                                       
+    std::mt19937_64 gen(rd());                                   
+    std::uniform_int_distribution<uint32_t> dis(0, UINT32_MAX);
+    return dis(gen);
+}
+
 
 ov::Tensor postprocess_image(ov::Tensor decoded_image) {
     ov::Tensor generated_image(ov::element::u8, decoded_image.get_shape());
@@ -211,6 +220,20 @@ void App::RenderLeftPanel() {
             }
         }
     }
+     ImGui::SameLine();
+     ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0 / 7.0f, 0.6f, 0.6f));
+     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0 / 7.0f, 0.7f, 0.7f));
+     ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0/ 7.0f, 0.8f, 0.8f));
+     if (ImGui::Button("Remove")) {
+         preview_state.image_path = "";
+         preview_state.should_load = false;
+         if (preview_state.preview_texture) {
+             glDeleteTextures(1, &preview_state.preview_texture);
+             preview_state.preview_texture = 0;
+         }
+     }
+     ImGui::PopStyleColor(3);
+     ImGui::PopID();
 
     if (preview_state.should_load) {
         // load image data and construct texture
@@ -305,12 +328,18 @@ void App::RenderRightPanel() {
             if (ImGui::Button("Run")) {
                 worker.Request([this] {
                     running = true;
+                    uint32_t input_seed;
+                    if (state.seed != -1) {
+                        input_seed = state.seed;
+                    } else {
+                        input_seed = gen_seed();
+                    }
                     StableDiffusionControlnetPipelineParam param = {
                         state.prompt,
                         state.negative_prompt,
                         preview_state.image_path,
                         state.steps,
-                        state.seed,
+                        input_seed,
                     };
                     auto decoded_image = pipe->Run(param);
                     result_state.image = postprocess_image(decoded_image);
@@ -322,7 +351,7 @@ void App::RenderRightPanel() {
                             std::cout << "Directory does not exist, creating: " << folder_name << std::endl;
                             std::filesystem::create_directory(folder_name);
                         } 
-                        imwrite(std::string("./images/seed_") + std::to_string(state.seed) + ".bmp",
+                        imwrite(std::string("./images/seed_") + std::to_string(input_seed) + ".bmp",
                                 result_state.image,
                                 true);
                     } catch (const std::exception& e) {
@@ -334,14 +363,6 @@ void App::RenderRightPanel() {
                 });
             }
         }
-
-        //ImGui::SameLine();
-        //ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0 / 7.0f, 0.6f, 0.6f));
-        //ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0 / 7.0f, 0.7f, 0.7f));
-        //ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0/ 7.0f, 0.8f, 0.8f));
-        //ImGui::Button("Cancel");
-        //ImGui::PopStyleColor(3);
-        //ImGui::PopID();
     }
     if (result_state.should_render) {
         LoadResultImageData();
