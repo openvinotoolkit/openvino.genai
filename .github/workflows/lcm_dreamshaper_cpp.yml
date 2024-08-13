@@ -13,8 +13,8 @@ on:
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
 env:
+  WORKING_DIRECTORY: "./image_generation/lcm_dreamshaper_v7/cpp/"
   PYTHON_VERSION: '3.8'
-  working_directory: "./image_generation/lcm_dreamshaper_v7/cpp/"
   LINUX_OV_ARCHIVE_URL: "https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16327-033a5151e20/l_openvino_toolkit_ubuntu20_2024.4.0.dev20240812_x86_64.tgz"
   WINDOWS_OV_ARCHIVE_URL: "https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16327-033a5151e20/w_openvino_toolkit_windows_2024.4.0.dev20240812_x86_64.zip"
   OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -47,31 +47,31 @@ jobs:
           cache: 'pip'
         
       - name: Create virtual environment
-        working-directory: ${{ env.working_directory }}
+        working-directory: ${{ env.WORKING_DIRECTORY }}
         run: python3 -m venv openvino_lcm_cpp
       
       - name: Install python dependencies
-        working-directory: ${{ env.working_directory }}
+        working-directory: ${{ env.WORKING_DIRECTORY }}
         run: |
           source openvino_lcm_cpp/bin/activate
           python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ../../requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           
       - name: Download and convert model and tokenizer
-        working-directory: ${{ env.working_directory }}
+        working-directory: ${{ env.WORKING_DIRECTORY }}
         run: |
           source openvino_lcm_cpp/bin/activate
           optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 models/lcm_dreamshaper_v7/FP16
 
       - name: Build app
-        working-directory: ${{ env.working_directory }}
+        working-directory: ${{ env.WORKING_DIRECTORY }}
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release --parallel
       
       - name: Run app
-        working-directory: ${{ env.working_directory }}
+        working-directory: ${{ env.WORKING_DIRECTORY }}
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           ./build/lcm_dreamshaper
@@ -102,31 +102,31 @@ jobs:
           cache: 'pip'
         
       - name: Create virtual environment
-        working-directory: ${{ env.working_directory }}
+        working-directory: ${{ env.WORKING_DIRECTORY }}
         run: python -m venv openvino_lcm_cpp
       
       - name: Install python dependencies
-        working-directory: ${{ env.working_directory }}
+        working-directory: ${{ env.WORKING_DIRECTORY }}
         run: |
           . "./openvino_lcm_cpp/Scripts/Activate.ps1"
           python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ../../requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 
       - name: Download and convert model and tokenizer
-        working-directory: ${{ env.working_directory }}
+        working-directory: ${{ env.WORKING_DIRECTORY }}
         run: |
           . "./openvino_lcm_cpp/Scripts/Activate.ps1"
           optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 models/lcm_dreamshaper_v7/FP16
   
       - name: Build app
-        working-directory: ${{ env.working_directory }}
+        working-directory: ${{ env.WORKING_DIRECTORY }}
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release --parallel
       
       - name: Run app
-        working-directory: ${{ env.working_directory }}
+        working-directory: ${{ env.WORKING_DIRECTORY }}
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           ./build/Release/lcm_dreamshaper.exe -r --dynamic
