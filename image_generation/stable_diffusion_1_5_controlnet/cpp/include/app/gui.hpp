@@ -65,4 +65,8 @@ private:
     ResultState result_state;
     StableDiffusionControlnetPipeline *pipe = nullptr;
     Worker worker;
+
+    std::atomic<bool> running{false};
+    float xscale = 1.0;
+    float yscale = 1.0;
 };

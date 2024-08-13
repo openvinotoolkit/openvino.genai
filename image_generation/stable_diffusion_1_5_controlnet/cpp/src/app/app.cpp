@@ -7,6 +7,7 @@
 #include "tinyfiledialogs.h"
 
 #include "utils.hpp"
+#include "imwrite.hpp"
 
 static void glfw_error_callback(int error, const char* description)
 {
@@ -73,7 +74,8 @@ int App::Init() {
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-    window = glfwCreateWindow(800, 600, "Stable Diffusion Controlnet Demo", NULL, NULL);
+
+    window = glfwCreateWindow(1200, 800, "Stable Diffusion Controlnet Demo", NULL, NULL);
     if (window == NULL)
         return 1;
     glfwMakeContextCurrent(window);
@@ -81,10 +83,23 @@ int App::Init() {
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    (void)io;
-
     ImGui::StyleColorsDark();
+
+    glfwGetWindowContentScale(window, &xscale, &yscale);
+    
+    // resize window
+    int width, height;
+    glfwGetWindowSize(window, &width, &height);
+    int new_width = static_cast<int>(width * xscale);
+    int new_height = static_cast<int>(height * yscale);
+    glfwSetWindowSize(window, new_width, new_height);
+
+    // resize fonts and all
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->Clear();
+    io.Fonts->AddFontDefault();
+    io.FontGlobalScale = xscale;
+    ImGui::GetStyle().ScaleAllSizes(xscale);
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
@@ -154,7 +169,7 @@ void App::LoadInputImageData() {
 }
 
 void App::RenderLeftPanel() {
-    ImGui::BeginChild("LeftPanel", ImVec2(400, 0), true);
+    ImGui::BeginChild("LeftPanel", ImVec2(400 * xscale, 0), true);
     ImGui::Text("Options");
 
     // prompt & negative prompt
@@ -177,7 +192,7 @@ void App::RenderLeftPanel() {
     // seeds
     int64_t seed_min = -1;
     int64_t seed_max = 4294967295;
-    ImGui::DragScalar("Seed(-1 for random)",
+    ImGui::DragScalar("Seed",
                       ImGuiDataType_S64,
                       &state.seed,
                       1,
@@ -206,7 +221,7 @@ void App::RenderLeftPanel() {
     if (preview_state.preview_texture) {
         ImGui::Text("Controlnet Image: %s", preview_state.image_path.c_str());
         float aspect_ratio = (float)preview_state.image_width / preview_state.image_height;
-        ImVec2 preview_size(250, 250);
+        ImVec2 preview_size(250*xscale, 250*yscale);
 
         if (aspect_ratio > 1.0f) {
             // Image is wider than tall, limit by width
@@ -242,7 +257,7 @@ void App::LoadResultImageData() {
                  result_state.image_width,
                  result_state.image_height,
                  0,
-                 (channels == 4 ? GL_BGRA_EXT : GL_BGR_EXT),
+                 (channels == 4 ? GL_RGBA : GL_RGB),
                  GL_UNSIGNED_BYTE,
                  image_data);
 }
@@ -278,29 +293,55 @@ void App::RenderRightPanel() {
         }
     }
     if (pipe != nullptr) {
-        ImGui::Text("Ready");
+        
+        if (running) {
+            ImGui::Text("Running..");
+            if (result_state.texture) {
+                glDeleteTextures(1, &result_state.texture);
+                result_state.texture = 0;
+            }
+        } else {
+            ImGui::Text("Ready");
+            if (ImGui::Button("Run")) {
+                worker.Request([this] {
+                    running = true;
+                    StableDiffusionControlnetPipelineParam param = {
+                        state.prompt,
+                        state.negative_prompt,
+                        preview_state.image_path,
+                        state.steps,
+                        state.seed,
+                    };
+                    auto decoded_image = pipe->Run(param);
+                    result_state.image = postprocess_image(decoded_image);
 
-        if (ImGui::Button("Run")) {
-            worker.Request([this] {
-                StableDiffusionControlnetPipelineParam param = {
-                    state.prompt,
-                    state.negative_prompt,
-                    preview_state.image_path,
-                    state.steps,
-                    state.seed,
-                };
-                auto decoded_image = pipe->Run(param);
-                result_state.image = postprocess_image(decoded_image);
-                result_state.should_render = true;
-            });
+                    // will save hisotry calls here
+                    const std::string folder_name = "images";
+                    try {
+                        if (!std::filesystem::exists(folder_name)) {
+                            std::cout << "Directory does not exist, creating: " << folder_name << std::endl;
+                            std::filesystem::create_directory(folder_name);
+                        } 
+                        imwrite(std::string("./images/seed_") + std::to_string(state.seed) + ".bmp",
+                                result_state.image,
+                                true);
+                    } catch (const std::exception& e) {
+                        std::cerr << "Failed to create dir" << e.what() << std::endl;
+                    }
+
+                    result_state.should_render = true;
+                    running = false;
+                });
+            }
         }
-        ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0 / 7.0f, 0.6f, 0.6f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0 / 7.0f, 0.7f, 0.7f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0/ 7.0f, 0.8f, 0.8f));
-        ImGui::Button("Cancel");
-        ImGui::PopStyleColor(3);
-        ImGui::PopID();
+
+        //ImGui::SameLine();
+        //ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0 / 7.0f, 0.6f, 0.6f));
+        //ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0 / 7.0f, 0.7f, 0.7f));
+        //ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0/ 7.0f, 0.8f, 0.8f));
+        //ImGui::Button("Cancel");
+        //ImGui::PopStyleColor(3);
+        //ImGui::PopID();
     }
     if (result_state.should_render) {
         LoadResultImageData();
@@ -309,7 +350,7 @@ void App::RenderRightPanel() {
 
     if (result_state.texture) {
         float aspect_ratio = (float)result_state.image_width / result_state.image_height;
-        ImVec2 preview_size(512, 512);
+        ImVec2 preview_size(512*xscale, 512*yscale);
 
         if (aspect_ratio > 1.0f) {
             // Image is wider than tall, limit by width
@@ -331,7 +372,20 @@ void App::Render() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::Begin("demo");
+    int display_w, display_h;
+    glfwGetFramebufferSize(window, &display_w, &display_h);
+
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(display_w, display_h));
+
+    ImGuiWindowFlags window_flags = 0;
+    window_flags |= ImGuiWindowFlags_NoTitleBar;
+    window_flags |= ImGuiWindowFlags_NoResize;
+    window_flags |= ImGuiWindowFlags_NoMove;
+    window_flags |= ImGuiWindowFlags_NoCollapse;
+    window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+    ImGui::Begin("Stable Diffusion Controlnet", nullptr, window_flags);
 
     RenderLeftPanel();
     ImGui::SameLine();
@@ -341,7 +395,6 @@ void App::Render() {
 
     ImGui::Render();
 
-    int display_w, display_h;
     glfwGetFramebufferSize(window, &display_w, &display_h);
     glViewport(0, 0, display_w, display_h);
     glClear(GL_COLOR_BUFFER_BIT);
