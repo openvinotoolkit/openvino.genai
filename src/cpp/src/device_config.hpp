@@ -29,19 +29,28 @@ public:
         if (m_device == "CPU") {
             auto inference_precision = core.get_property(device, ov::hint::inference_precision);
             m_kv_cache_type = inference_precision == ov::element::bf16 ? ov::element::bf16 : ov::element::f16;
+
             // if user sets precision hint, kv cache type should be changed
-            if (plugin_config.find(ov::hint::inference_precision.name()) != plugin_config.end()) {
-                const auto precision = plugin_config.at(ov::hint::inference_precision.name()).as<ov::element::Type>();
-                if (precision == ov::element::f32) {
+            const auto inference_precision_it = plugin_config.find(ov::hint::inference_precision.name());
+            if (inference_precision_it != plugin_config.end()) {
+                const auto inference_precision = inference_precision_it->second.as<ov::element::Type>();
+                if (inference_precision == ov::element::f32) {
                     m_kv_cache_type = ov::element::f32;
-                } else if (precision == ov::element::f16) {
+                } else if (inference_precision == ov::element::f16) {
                     m_kv_cache_type = ov::element::f16;
-                } else if (precision == ov::element::bf16) {
+                } else if (inference_precision == ov::element::bf16) {
                     m_kv_cache_type = ov::element::bf16;
                 } else {
                     // use default f32
                     m_kv_cache_type = ov::element::f32;
                 }
+            }
+
+            // if user sets ov::kv_cache_precision hint
+            const auto kv_cache_precision_it = plugin_config.find(ov::hint::kv_cache_precision.name());
+            if (kv_cache_precision_it != plugin_config.end()) {
+                const auto kv_cache_precision = kv_cache_precision_it->second.as<ov::element::Type>();
+                m_kv_cache_type = kv_cache_precision;
             }
         } else if (m_device == "GPU") {
             OPENVINO_ASSERT("GPU is not currently supported. Please, remove this assert and fill configuration");
@@ -55,7 +64,6 @@ public:
         }
         else {
             m_cache_size = scheduling_config.cache_size;
-
         }
     }
 
