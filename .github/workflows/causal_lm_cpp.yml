@@ -13,9 +13,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16161-d253f4fd89c/l_openvino_toolkit_ubuntu20_2024.4.0.dev20240730_x86_64.tgz
-  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16161-d253f4fd89c/m_openvino_toolkit_macos_12_6_2024.4.0.dev20240730_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16161-d253f4fd89c/w_openvino_toolkit_windows_2024.4.0.dev20240730_x86_64.zip
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16249-d604f1d8b2a/l_openvino_toolkit_ubuntu20_2024.4.0.dev20240805_x86_64.tgz
+  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16249-d604f1d8b2a/m_openvino_toolkit_macos_12_6_2024.4.0.dev20240805_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16249-d604f1d8b2a/w_openvino_toolkit_windows_2024.4.0.dev20240805_x86_64.zip
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -406,6 +406,7 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+          optimum-cli export openvino --trust-remote-code --weight-format fp16 --model Qwen/Qwen-7B-Chat Qwen-7B-Chat --task text-generation-with-past
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release -j
       - name: run and compare
@@ -421,6 +422,28 @@ jobs:
 
           ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./TinyLlama-1.1B-Chat-v1.0/ "$(<prompt.txt)" > predictions_greedy.txt
+          python -c "
+          with open('predictions_greedy.txt', 'r') as f:
+              predicted_greedy = f.readline()
+          with open('predictions_prompt_lookup.txt', 'r') as f:
+              predicted_prompt_lookup = f.readline()
+          assert predicted_greedy == predicted_prompt_lookup
+          "
+          echo "Prompt lookup" passed
+      - name: run and compare (model with seq_length_axis = 1)
+        run: |
+          source ./ov/setupvars.sh
+
+          echo 'Code:```python
+          def add(a, b):
+              return a + b
+          ```
+          Question: Can you please add 2 and 3
+          A:' > ./prompt.txt
+
+          ./build/samples/cpp/prompt_lookup_decoding_lm/prompt_lookup_decoding_lm ./Qwen-7B-Chat/ "$(<prompt.txt)" > predictions_prompt_lookup.txt
+          ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ "$(<prompt.txt)" > predictions_greedy.txt
+          
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
               predicted_greedy = f.readline()
@@ -618,14 +641,12 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           timeout 50s ./build/samples/cpp/continuous_batching_accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
-        if: False  # Fails with nightly ov
       - name: Run throughput_benchmark
         run: |
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
           source ./ov/setupvars.sh
           timeout 200s ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 10 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
           timeout 200s ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 10 --dynamic_split_fuse --max_batch_size 256 --max_input_len 256 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
-        if: False  # Fails with nightly ov
 
   cpp-continuous-batching-windows:
     runs-on: windows-latest
@@ -665,14 +686,12 @@ jobs:
           set PATH=.\build\openvino_genai\;%PATH%
           call .\ov\setupvars.bat
           .\build\samples\cpp\continuous_batching_accuracy\Release\continuous_batching_accuracy.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 5
-        if: False  # Fails with nightly ov
       - name: Run throughput_benchmark
         run: |
           curl -o .\ShareGPT_V3_unfiltered_cleaned_split.json -s -L "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json"
           set PATH=.\build\openvino_genai\;%PATH%
           call .\ov\setupvars.bat
           .\build\samples\cpp\continuous_batching_benchmark\Release\continuous_batching_benchmark.exe -n 2 -m .\TinyLlama-1.1B-Chat-v1.0\ --dataset .\ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
-        if: False  # Fails with nightly ov
 
   cpp-continuous-batching-macos:
     runs-on: macos-12
@@ -704,10 +723,8 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           timeout 120s ./build/samples/cpp/continuous_batching_accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
-        if: False  # Fails with nightly ov
       - name: Run throughput_benchmark
         run: |
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
           source ./ov/setupvars.sh
           ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 5 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
-        if: False  # Fails with nightly ov
