@@ -20,6 +20,7 @@
 #include "openvino/op/reshape.hpp"
 #include "openvino/op/read_value.hpp"
 #include "openvino/op/assign.hpp"
+#include "openvino/op/transpose.hpp"
 #include "openvino/op/util/variable.hpp"
 #include "openvino/pass/pattern/matcher.hpp"
 #include "openvino/pass/pattern/op/wrap_type.hpp"
@@ -101,7 +102,7 @@ NodePtr squeeze_2d (NodePtr node) {
     // std::vector<unsigned int> dims(2);
     //auto squeeze_num = rank - 2;
     // std::fill_n(dims.begin() + 2, dims.end(), 1);
-    auto shape = v0::Constant::create(ov::element::i32, {2}, std::vector<unsigned int>{0, 0});
+    auto shape = v0::Constant::create(ov::element::i32, {2}, std::vector<int>{0, 0});
     auto reshape = std::make_shared<v1::Reshape>(node->output(0), shape->output(0), true);
     return reshape;
 }
@@ -126,7 +127,7 @@ AdapterMap::const_iterator find_adapter(const std::string& name, const AdapterMa
 
 #define FAST_WEIGHTS_FUSE 0
 #define SEPARATE_TERM 1
-#define SEPARATE_TERM_STATE 1  
+#define SEPARATE_TERM_STATE 0
 
 
 class ApplyLoRA : public ov::pass::MatcherPass {
@@ -144,8 +145,9 @@ class ApplyLoRA : public ov::pass::MatcherPass {
     }
 
     NodePtr lora_multiplication(NodePtr input, const NodeVector multipliers, ov::Output<ov::Node> target, bool transpose_weights) {
-        auto target_type = target.get_element_type();
-        auto target_rank = target.get_partial_shape().rank().get_length();
+        const auto target_type = target.get_element_type();
+        const auto target_shape = target.get_partial_shape();
+        const auto target_rank = target_shape.rank().get_length();
         for(auto multiplier : multipliers) {
             NodePtr normalized = multiplier;
             if(normalized->get_output_element_type(0) != target_type) {
@@ -167,7 +169,12 @@ class ApplyLoRA : public ov::pass::MatcherPass {
             }
         }
 
-        if(input->get_output_partial_shape(0).rank().get_length() != target_rank) {
+        if(target_rank == 4 && target_shape[-1].is_static() && target_shape[-1].get_length() > 1) {  // FIXME: Check all potentially permuted dimensions, not only the last one
+            // FIXME: Check the dimensions we really need to move, currently it is hardcoded 2 + 2 dimensions
+            // FIXME: Stash transposition constant to reuse
+            auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int>{2, 3, 0, 1});
+            input = std::make_shared<v1::Transpose>(input, transposition);
+        } else if(input->get_output_partial_shape(0).rank().get_length() != target_rank) {
             // FIXME: Make sure that this is always unsqueeze of the same kind
             input = unsqueeze(input, target_rank);
         }
@@ -208,15 +215,18 @@ public:
                     auto activations = node->input_value(0);    // FIXME: consider MatMul.transpose_a
                     auto weights_input = node->input_value(1);
                     auto weights_input_type = weights_input.get_element_type();
+                    DEBUG_PRINT("WEIGHTS SHAPE: " << weights_input.get_partial_shape());
+                    #if FAST_WEIGHTS_FUSE
                     auto weights_convert = decompression_convert(weights_input.get_node_shared_ptr());
                     auto weights_constant = weights_convert ? weights_convert->input_value(0) : weights_input;
+                    #endif
                     auto adapter = adapter_iter->second; // FIXME: a copy
                     NodePtr add_term = nullptr;
                     Signature signature;
                     #if SEPARATE_TERM
                     adapter = Adapter{adapter[0], adapter[2], adapter[1]};
                     #endif
-                    signature_push_back(signature, weights_convert);
+                    signature_push_back(signature, weights_input);
                     for(auto multiplier : adapter) {
                         signature_push_back(signature, multiplier);
                     }
@@ -267,11 +277,15 @@ public:
                     auto target_rank = target.get_partial_shape().rank().get_length();
                     auto consumers = target.get_target_inputs();
 
-                    #if 0
-                    // FIXME: This is hack for missing transposes for tensors that cannot be directly multiplied (UNET: CONV)
+                    #if 1
+                    // FIXME: Should check rank of activations instead of target
                     if(target_rank == 4 && target.get_partial_shape()[target_rank - 3].get_length() > 1) {
-                        DEBUG_PRINT("Skipping unspported model tensor with shape: " << target.get_partial_shape());
-                        return false;
+                        //DEBUG_PRINT("Skipping unspported model tensor with shape: " << target.get_partial_shape());
+                        // FIXME: Check the dimensions we really need to move, currently it is hardcoded 2 + 2 dimensions
+                        // FIXME: Stash transposition constant to reuse
+                        auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int>{2, 3, 0, 1});
+                        auto transpose = register_new_node<v1::Transpose>(activations, transposition);
+                        activations = transpose;
                     }
                     #endif
 

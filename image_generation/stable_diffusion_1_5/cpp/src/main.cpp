@@ -172,7 +172,8 @@ StableDiffusionModels compile_models(const std::string& model_path,
             reshape_text_encoder(text_encoder_model, batch_size, TOKENIZER_MODEL_MAX_LENGTH);
         }
         #if GENAI_NEW_LORA
-        apply_lora_adapter(text_encoder_model, lora_adapter["text_encoder"]);
+        ConstantMap variables;
+        apply_lora_adapter(text_encoder_model, lora_adapter["text_encoder"], variables);
         #else
         apply_lora(text_encoder_model, lora_weights["text_encoder"]);
         #endif
@@ -187,7 +188,8 @@ StableDiffusionModels compile_models(const std::string& model_path,
             reshape_unet(unet_model, batch_size, height, width, TOKENIZER_MODEL_MAX_LENGTH);
         }
         #if GENAI_NEW_LORA
-        apply_lora_adapter(unet_model, lora_adapter["unet"]);
+        ConstantMap variables;
+        apply_lora_adapter(unet_model, lora_adapter["unet"], variables);
         #else
         apply_lora(unet_model, lora_weights["unet"]);
         #endif
