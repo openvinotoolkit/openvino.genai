@@ -264,14 +264,14 @@ if __name__ == '__main__':
     tokenizer = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
 
     # set path to save openvino IR
-    VISION_MODEL_OV = Path(f"{model_path}/minicpm-v-2_vision.xml")
-    RESAMPLER_MODEL_OV = Path(f"{model_path}/minicpm-v-2_resampler.xml")
-    TOKENIZER_MODEL_OV = Path(f"{model_path}/minicpm-v-2_openvino_tokenizer.xml")
-    DE_TOKENIZER_MODEL_OV = Path(f"{model_path}/minicpm-v-2_openvino_detokenizer.xml")
-    EMBEDDING_MODEL_OV = Path(f"{model_path}/minicpm-v-2_embedding.xml")
-    LLM_MODEL_OV = Path(f"{model_path}/minicpm-v-2_openvino.xml")
-    LLM_MODEL_OV_INT4 = Path(f"{model_path}/minicpm-v-2_openvino-int4.xml")
-    LLM_MODEL_OV_INT4_REDUCE_LOGITS = Path(f"{model_path}/modified_minicpm-v-2_openvino-int4.xml")
+    VISION_MODEL_OV = Path(f"{model_path}/openvino_vision.xml")
+    RESAMPLER_MODEL_OV = Path(f"{model_path}/openvino_resampler.xml")
+    TOKENIZER_MODEL_OV = Path(f"{model_path}/openvino_tokenizer.xml")
+    DE_TOKENIZER_MODEL_OV = Path(f"{model_path}/openvino_detokenizer.xml")
+    EMBEDDING_MODEL_OV = Path(f"{model_path}/openvino_embedding.xml")
+    LLM_MODEL_OV = Path(f"{model_path}/openvino_model.xml")
+    LLM_MODEL_OV_INT4 = Path(f"{model_path}/openvino_model_int4.xml")
+    LLM_MODEL_OV_INT4_REDUCE_LOGITS = Path(f"{model_path}/openvino_model_int4.xml")
 
     # convert vision model to openvino IR
     if not VISION_MODEL_OV.exists():

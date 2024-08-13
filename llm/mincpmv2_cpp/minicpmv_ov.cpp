@@ -35,14 +35,6 @@ typedef std::chrono::nanoseconds ns;
 namespace {
 
 struct Args {
-    std::string ov_model_path = "openvino_model.xml";
-    std::string vision_model_path = "minicpm-v-2_vision.xml";
-    std::string resam_model_path = "minicpm-v-2_resampler.xml";
-    std::string embed_model_path = "minicpm-v-2_embedding.xml";
-    std::string token_model_path;
-    std::string img_file = "airplane.jpg";
-    std::string device = "GPU";
-    bool reduce_logits = false;
     bool do_sample = false;
     int top_k = 0;
     float top_p = 0.7;
@@ -76,90 +68,6 @@ static void usage(const std::string& prog) {
         << "  --repeat_penalty N      penalize repeat sequence of tokens (default: 1.0, 1.0 = disabled)\n"
         << "  --output_fixed_len N    set output fixed lenth (default: 0, output lenth is determined by the model)\n"
         << "  --image PATH            path to an image file. use with multimodal models. Specify multiple times for batching\n";
-}
-
-static Args parse_args(const std::vector<std::string>& argv) {
-    Args args;
-
-    for (size_t i = 1; i < argv.size(); i++) {
-        const std::string& arg = argv[i];
-
-        if (arg == "-h" || arg == "--help") {
-            usage(argv[0]);
-            exit(EXIT_SUCCESS);
-        }
-        else if (arg == "-m" || arg == "--model") {
-            args.ov_model_path = argv[++i];
-        }
-        else if (arg == "-vision") {
-            args.vision_model_path = argv[++i];
-        }
-        else if (arg == "-resam") {
-            args.resam_model_path = argv[++i];
-        }
-        else if (arg == "-embed") {
-            args.embed_model_path = argv[++i];
-        }
-        else if (arg == "-token") {
-            args.token_model_path = argv[++i];
-        }
-        else if (arg == "-d" || arg == "--device") {
-            args.device = argv[++i];
-        }
-        else if (arg == "--reduce_logits") {
-            args.reduce_logits = true;
-        }
-        else if (arg == "--do_sample") {
-            args.do_sample = true;
-        }
-        else if (arg == "--top_k") {
-            args.top_k = std::stoi(argv[++i]);
-        }
-        else if (arg == "--top_p") {
-            args.top_p = std::stof(argv[++i]);
-        }
-        else if (arg == "--temp") {
-            args.temp = std::stof(argv[++i]);
-        }
-        else if (arg == "--repeat_penalty") {
-            args.repeat_penalty = std::stof(argv[++i]);
-        }
-        else if (arg == "--output_fixed_len") {
-            args.output_fixed_len = std::stoi(argv[++i]);
-        }
-        else if (arg == "--image") {
-            args.img_file = argv[++i];
-        }
-        else {
-            std::cerr << "Unknown argument: " << arg << std::endl;
-            usage(argv[0]);
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    return args;
-}
-
-static Args parse_args(int argc, char** argv) {
-    std::vector<std::string> argv_vec;
-    argv_vec.reserve(argc);
-
-#ifdef _WIN32
-    LPWSTR* wargs = CommandLineToArgvW(GetCommandLineW(), &argc);
-
-    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-    for (int i = 0; i < argc; i++) {
-        argv_vec.emplace_back(converter.to_bytes(wargs[i]));
-    }
-
-    LocalFree(wargs);
-#else
-    for (int i = 0; i < argc; i++) {
-        argv_vec.emplace_back(argv[i]);
-    }
-#endif
-
-    return parse_args(argv_vec);
 }
 
 int64_t get_out_token_id(const std::vector<int>& input_ids, float* logits, size_t vocab_size, Args args) {
@@ -251,107 +159,6 @@ struct TextStreamer {
 static double get_duration_ms_until_now(Time::time_point& startTime) {
     return std::chrono::duration_cast<ns>(Time::now() - startTime).count() * 0.000001;
 }
-
-/*@brief Insert slice transformation matches following graph, start from logits (Results) to search along root->parent-> grandparent node,
- * then insert slice between Reshape (grandparent node) and Matmul to keep only last dim of matmul first input, first input shape reduced
- * from [1, seq_len, 4096] to [1, 1,4096]. Therefore, after graph transformation, we can reduce matmul computation
- * from [1, seq_len, 4096] * [1, 4096, 151936] = [1, seq_len, 151936] to [1,1,4096]*[4096,151936] = [1,1,151936]
- *
- * Original graph
- *         +----------+            +----------+
- *         |  Reshape |            | Constant |
- *         +----------+            +----------+
- *              |                       |
- *              -----------    ----------
- *                        |    |
- *                        v    v
- *                      +--------+
- *                      | MatMul |
- *                      +--------+
- *                          |
- *                          v
- *                     +----------+
- *                     |  logits  |
- *                     +----------+
- *
- * Modified graph after insert slice:
- *
- *         +----------+            +----------+
- *         |  Reshape |            | Constant |
- *         +----------+            +----------+
- *              |                       |
- *         +----------+                 |
- *         |  Slice   |                 |
- *         +----------+                 |
- *              |                       |
- *              -----------    ----------
- *                        |    |
- *                        v    v
- *                      +--------+
- *                      | MatMul |
- *                      +--------+
- *                          |
- *                          v
- *                     +----------+
- *                     |  logits  |
- *                     +----------+
-*/
-
-class InsertSlice : public ov::pass::MatcherPass {
-public:
-    OPENVINO_RTTI("InsertSlice", "0");
-    explicit InsertSlice() {
-        auto label = ov::pass::pattern::wrap_type<ov::op::v0::Result>();
-        ov::matcher_pass_callback callback = [=](ov::pass::pattern::Matcher& m) {
-            auto root = std::dynamic_pointer_cast<ov::op::v0::Result>(m.get_match_root());
-            if (!root) {
-                return false;
-            }
-            std::string root_name = root->get_friendly_name();
-            if (root->get_output_partial_shape(0).size() == 3) {
-                std::cout << "Find target root node name: " << root_name << "\n";
-                auto parent = root->input_value(0).get_node_shared_ptr();
-                std::cout << "Find parent node name: " << parent->get_friendly_name() << "\n";
-
-                //llama2
-                auto grand_parent = parent->input_value(0).get_node_shared_ptr();
-                std::cout << "Find grandparent node name: " << grand_parent->get_friendly_name() << "\n";
-
-                ov::Output<ov::Node> grand_parent_output = parent->get_input_source_output(0); // parent->get_input_source_output(0);
-                std::set<ov::Input<ov::Node>> consumers = grand_parent_output.get_target_inputs();
-                auto partial_shape = grand_parent_output.get_partial_shape().get_min_shape();
-                int32_t dims = static_cast<int32_t>(partial_shape[2]);
-                std::vector<int32_t> start_v = { 0, -1, 0 };
-                std::vector<int32_t> stop_v = { 1, -2, dims };
-                std::vector<int32_t> step_v = { 1, -1, 1 };
-
-                std::cout << "Original reshape node output shape:" << grand_parent_output.get_partial_shape() << std::endl;
-                auto starts = ov::op::v0::Constant::create(ov::element::i32,
-                    ov::Shape{ 3 },
-                    start_v);
-                auto stop = ov::op::v0::Constant::create(ov::element::i32,
-                    ov::Shape{ 3 },
-                    stop_v);
-                auto step = ov::op::v0::Constant::create(ov::element::i32,
-                    ov::Shape{ 3 },
-                    step_v);
-                auto slice = std::make_shared<ov::opset13::Slice>(grand_parent, starts, stop, step); //data, starts, ends, steps
-                std::cout << "After insert slice node, output shape" << slice->output(0).get_partial_shape() << std::endl;
-                for (auto consumer : consumers) {
-                    consumer.replace_source_output(slice->output(0));
-                }
-                register_new_node(slice);
-            }
-
-            return true;
-            };
-        // Register pattern with Parameter operation as a pattern root node
-        auto m = std::make_shared<ov::pass::pattern::Matcher>(label, "InsertSlice");
-        // Register Matcher
-        register_matcher(m, callback);
-    }
-};
-
 
 void get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> image_embed_slices, ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, ov::Tensor &imgEmbedding) {
     std::string user_prompt;
@@ -508,26 +315,23 @@ ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& emb
     }
     return embed_output_tensor;
 }
-
-static bool get_utf8_line(std::string& line) {
-#ifdef _WIN32
-    std::wstring wline;
-    bool ret = !!std::getline(std::wcin, wline);
-    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-    line = converter.to_bytes(wline);
-    return ret;
-#else
-    return !!std::getline(std::cin, line);
-#endif
 }
 
-}
+struct ModelConfig {
+    std::filesystem::path model_dir;
+    std::string device = "CPU";
+    ov::AnyMap device_config;
+    // per model devices and configs
+    mutable ov::Core core{};
+};
 
 class VLMPipeline {
 public:
     ov::genai::Tokenizer tokenizer;
     ov::InferRequest ireq_embed;
     ov::InferRequest ireq;
+    ov::InferRequest ireq_vision;
+    ov::InferRequest ireq_resampler;
     ov::Tensor imgEmbedTensor;
     ov::Shape img_embed_shape;
     int output_fixed_len;
@@ -542,6 +346,24 @@ public:
     double total_time = 0;
     size_t round = 0;
     const size_t BATCH_SIZE = 1;
+
+    explicit VLMPipeline(const ModelConfig& conf) :
+        tokenizer{conf.model_dir.string()},
+        ireq_embed{conf.core.compile_model(
+            conf.model_dir / "openvino_embedding.xml", conf.device, conf.device_config
+        ).create_infer_request()},
+        ireq{conf.core.compile_model(
+            conf.model_dir / "openvino_model.xml", conf.device, conf.device_config
+        ).create_infer_request()},
+        ireq_vision{conf.core.compile_model(
+            // CPU only because of 146022.
+            conf.model_dir / "openvino_vision.xml", "CPU", conf.device_config
+        ).create_infer_request()},
+        ireq_resampler{conf.core.compile_model(
+            // CPU randomly fails: 149560.
+            conf.model_dir / "openvino_resampler.xml", "GPU"
+        ).create_infer_request()},
+        text_streamer{tokenizer} {}
 
     void generate(const std::string& prompt) {
         ov::Tensor llmEmbedTensor;
@@ -684,21 +506,15 @@ public:
 };
 
 int main(int argc, char* argv[]) try {
-    Args args = parse_args(argc, argv);
-    ov::Core core;
-
-    core.add_extension(OPENVINO_TOKENIZERS_PATH);  // USER_OV_EXTENSIONS_PATH is defined in root CMakeLists.txt
-    //core.add_extension("D:\\openvino\\runtime\\openvino_tokenizers_windows_2024.4.0.0.dev20240723_x86_64\\runtime\\bin\\intel64\\Release\\openvino_tokenizers.dll");
-    auto startTime = Time::now();
-    ov::genai::Tokenizer tokenizer{args.token_model_path};
-    auto duration_ms = get_duration_ms_until_now(startTime);
-    std::cout << "Load minicpm tokenizer took " << duration_ms << " ms" << std::endl;
-
+    if (3 != argc) {
+        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE>");
+    }
+    Args args;
     unsigned char* image_bytes;
     long image_bytes_length;
-    auto loaded = load_file_to_bytes(args.img_file.c_str(), &image_bytes, &image_bytes_length);
+    auto loaded = load_file_to_bytes(argv[2], &image_bytes, &image_bytes_length);
     if (!loaded) {
-        std::cout << "failed to load " << args.img_file << std::endl;
+        std::cout << "failed to load " << argv[2] << std::endl;
         return 0;
     }
 
@@ -709,15 +525,7 @@ int main(int argc, char* argv[]) try {
         ctx_clip->image_std[i] = 0.5;
     }
 
-    std::string device = args.device;
-    size_t convert_model;
-
-    if (args.reduce_logits){
-        convert_model = 1;
-    }
-    else {
-        convert_model = 0;
-    }
+    std::string device = "CPU";
 
     size_t group_size = 32;
     ov::AnyMap device_config = {};
@@ -740,45 +548,11 @@ int main(int argc, char* argv[]) try {
         //device_config[ov::hint::dynamic_quantization_group_size.name()] = group_size;
         //std::cout << "set dynamic quantization group size 32" << std::endl;
     }
+    VLMPipeline pipe({argv[1], device, device_config});
+    ctx_clip->ireq_vision = pipe.ireq_vision;
+    ctx_clip->ireq_resampler = pipe.ireq_resampler;
 
     double first_time;
-    // Read OpenVINO Model
-    if (1 == convert_model) {
-        startTime = Time::now();
-        std::shared_ptr<ov::Model> model = core.read_model(args.ov_model_path);
-        duration_ms = get_duration_ms_until_now(startTime);
-        std::cout << "Read minicpm Model took " << duration_ms << " ms" << std::endl;
-
-        std::cout << "######## [Model Graph Optimization] Step 2: Insert slice node after reshape to reduce logits operation ########\n";
-        ov::pass::Manager manager;
-        manager.register_pass<InsertSlice>();
-        manager.run_passes(model);
-
-        std::string modifiled_file = std::regex_replace(args.ov_model_path, std::regex("openvino_model"), "modified_openvino_model");
-        std::cout << "Save modified model in " << modifiled_file << "\n";
-        ov::serialize(model, modifiled_file);
-
-        ov::CompiledModel compilemodel = core.compile_model(modifiled_file, device, device_config);
-
-        return 0;
-    }
-
-    ov::CompiledModel vision_compilemodel = core.compile_model(args.vision_model_path, "CPU"); // "AUTO:GPU,CPU");
-    ctx_clip->ireq_vision = vision_compilemodel.create_infer_request();
-
-    ov::CompiledModel resam_compilemodel = core.compile_model(args.resam_model_path, device);
-    ctx_clip->ireq_resampler = resam_compilemodel.create_infer_request();
-
-    ov::CompiledModel embed_compilemodel = core.compile_model(args.embed_model_path, device, device_config);
-    ov::InferRequest ireq_embed = embed_compilemodel.create_infer_request();
-
-    //Compile model
-    startTime = Time::now();
-    ov::CompiledModel compilemodel = core.compile_model(args.ov_model_path, device, device_config); // "AUTO:GPU,CPU");
-    ov::InferRequest ireq = compilemodel.create_infer_request();
-    duration_ms = get_duration_ms_until_now(startTime);
-    std::cout << "Compile LLM model took " << duration_ms << " ms" << std::endl;
-    TextStreamer text_streamer{ std::move(tokenizer) };
 
     //extract image embedding
     std::vector<std::vector<struct llava_image_embed*>> embeds = llava_image_embed_make_with_bytes_slice(ctx_clip, n_threads, image_bytes, image_bytes_length);
@@ -786,33 +560,27 @@ int main(int argc, char* argv[]) try {
 
     //get image embedding
     ov::Tensor imgEmbedTensor;
-    get_image_embedding(embeds, tokenizer, ireq_embed, imgEmbedTensor);
+    get_image_embedding(embeds, pipe.tokenizer, pipe.ireq_embed, imgEmbedTensor);
 
     ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
     size_t embed_dim = img_embed_shape[2];
 
-    std::cout << "please input prompt: " << std::endl;
-    VLMPipeline pipe{tokenizer, ireq_embed, ireq, imgEmbedTensor, img_embed_shape, args.output_fixed_len, embed_dim, text_streamer};
+    std::cout << "question:\n";
+    pipe.imgEmbedTensor = imgEmbedTensor;
+    pipe.img_embed_shape = img_embed_shape;
+    pipe.output_fixed_len = args.output_fixed_len;
+    pipe.embed_dim = embed_dim;
     pipe.llm_inputs_embeds.resize((pipe.max_lenth * embed_dim));
-    while (true) {
-        std::string prompt;
-        if (!get_utf8_line(prompt) || prompt == "stop") {
-            break;
-        }
-        if (prompt.empty()) {
-            std::cout << "prompt empty " << std::endl;
-            continue;
-        }
-
+    std::string prompt;
+    while (std::getline(std::cin, prompt)) {
         if (prompt == "clear") {
             pipe.round = 0;
             std::cout << "please input prompt:  " << std::endl;
             continue;
         }
         pipe.generate(prompt);
+        std::cout << "question:\n";
     }
-
-    std::cout << "bye" << std::endl;
     llava_image_embed_free_slice(embeds);
 
     std::cout << "input id, input token len, out token len, first token time, average time" << std::endl;
@@ -822,9 +590,13 @@ int main(int argc, char* argv[]) try {
         index++;
     }
 } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
-    return 1;
+    try {
+        std::cerr << error.what() << '\n';
+    } catch (...) {}
+    return EXIT_FAILURE;
 } catch (...) {
-    std::cerr << "Non-exception object thrown\n";
-    return 1;
+    try {
+        std::cerr << "Non-exception object thrown\n";
+    } catch (...) {}
+    return EXIT_FAILURE;
 }
