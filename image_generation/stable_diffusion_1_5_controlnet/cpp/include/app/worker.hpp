@@ -3,47 +3,25 @@
 
 #pragma once
 
-#include <vector>
-#include <string>
+#include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <queue>
+#include <atomic>
+#include <chrono>
+#include <functional>
 
-#include <wx/wx.h>
-#include <wx/thread.h>
-
-#include "core/core.hpp"
-
-class ImageToImagePipeline {
+class Worker {
 public:
-    ImageToImagePipeline();
-    void Init(std::string& model, std::string& device);
-    void Run(std::string& prompt,
-                 std::string& negative_prompt,
-                 std::string& input_image_path,
-                 int steps,
-                 uint32_t seed);
+    Worker();
+    void Start();
+    void Stop();
+    void Request(std::function<void()> task);
 
 private:
-    StableDiffusionControlnetPipeline *pipe;
+    std::queue<std::function<void()>> task_queue;
+    std::mutex queue_mutex;
+    std::condition_variable cv;
+    std::atomic<bool> stop_requested{false};
+    std::thread worker;
 };
-
-class AppFrame;
-
-class WorkerThread : public wxThread {
-public:
-    WorkerThread(AppFrame* handler);
-    void RequestRun();
-
-protected:
-    virtual ExitCode Entry();
-
-private:
-    AppFrame* frame;
-    std::mutex mutex;
-    std::condition_variable cond;
-    bool shouldRun;
-    bool shouldExit;
-};
-
-wxDECLARE_EVENT(wxEVT_COMMAND_IMAGE_GEN_COMPLETED, wxThreadEvent);
-wxDEFINE_EVENT(wxEVT_COMMAND_IMAGE_GEN_COMPLETED, wxThreadEvent);

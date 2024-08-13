@@ -3,57 +3,66 @@
 
 #pragma once
 
-#include <wx/wx.h>
-#include <wx/sizer.h>
-#include <wx/filedlg.h>
-#include <wx/image.h>
-#include <wx/statbmp.h>
-#include <wx/slider.h>
-#include <wx/spinctrl.h>
-#include <wx/notebook.h>
-#include <vector>
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+#include <GLFW/glfw3.h>
+
 #include <string>
+#include <cstdint>
+
+#include "core.hpp"
 #include "worker.hpp"
-#include "core/core.hpp"
 
- class AppFrame : public wxFrame {
- public:
-     AppFrame(const wxString& title);
-     ImageToImagePipeline* GetImageToImagePipeline();
+struct UIState {
+    char prompt[1024] = "Dancing Darth Vader, best quality, extremely detailed";
+    char negative_prompt[1024] = "monochrome, lowres, bad anatomy, worst quality, low quality";
+    int steps = 20;
+    int64_t seed = 42;
 
- private:
-     void InitMainPannel();
-     void InitEvents();
-     void InitWorkers();
+    // right
+    std::vector<std::string> devices;
+    int active_device_index = 0;
+    std::string model_path;
+};
 
-     void OnSelectImage(wxCommandEvent& event);
-     void OnGenerate(wxCommandEvent& event);
-     void ValidateSettings(wxCommandEvent& event);
-     void GetImageToImageParam(StableDiffusionControlnetPipelineParam& param);
+struct UIPreviewState {
+    std::string image_path;
+    bool should_load = false;
 
-    void OnImageGenCompleted(wxThreadEvent& event);
-     
-     wxNotebook* notebook;
+    int image_width = 0;
+    int image_height = 0;
 
-     wxPanel* mainPanel;
-     wxButton* selectImageButton;
-     wxStaticBitmap* inputImagePreview;
-     wxTextCtrl* modelPathCtrl;
-     wxButton* selectModelButton;
-     wxTextCtrl* promptTextCtrl;
-     wxTextCtrl* negativePromptTextCtrl;
-     wxSlider* stepsSlider;
-     wxTextCtrl* stepsValueCtrl;
-     wxSpinCtrl* seedSpinCtrl;
-     wxButton* confirmButton;
-     wxChoice* deviceChoice;
+    GLuint preview_texture = 0;
+};
 
-     std::vector<std::string> devices;
-     std::string inputImagePath;
+struct ResultState {
+    GLuint texture = 0;
+    int image_width = 0;
+    int image_height = 0;
+    bool should_render = false;
+    ov::Tensor image;
+};
 
-     std::string currentModelPath;
-     std::string currentDevice;
+class App {
+public:
+    int Init();
+    int Run();
 
-     WorkerThread* workerThread;
-     ImageToImagePipeline *imageToImagePipeline;
- };
+
+private:
+    void RenderLeftPanel();
+    void RenderRightPanel();
+    void Render();
+    int Clean();
+    void LoadInputImageData();
+    void LoadResultImageData();
+
+    const char* glsl_version = "#version 130";
+    GLFWwindow* window;
+    UIState state;
+    UIPreviewState preview_state;
+    ResultState result_state;
+    StableDiffusionControlnetPipeline *pipe = nullptr;
+    Worker worker;
+};

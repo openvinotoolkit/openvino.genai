@@ -1,347 +1,363 @@
-#include "app/gui.hpp"
-#include <wx/dir.h>
-#include <openvino/runtime/core.hpp>
-#include <random>
+#include <stdio.h>
+#include <string>
+#include <filesystem>
 
-bool ContainsModelFiles(const wxString& directory) {
-    wxDir dir(directory);
-    if (!dir.IsOpened()) {
-        return false;
-    }
+#include "gui.hpp"
+#include "worker.hpp"
+#include "tinyfiledialogs.h"
 
-    wxString filename;
-    bool hasXml = dir.GetFirst(&filename, "*.xml", wxDIR_FILES);
-    if (hasXml) {
-        return true;
-    }
+#include "utils.hpp"
 
-    bool hasBin = dir.GetFirst(&filename, "*.bin", wxDIR_FILES);
-    return hasBin;
-}
-
-
-std::vector<std::string> GetAvailableDevices() {
-    ov::Core core;
-    return core.get_available_devices();
-}
-
-AppFrame::AppFrame(const wxString& title) : wxFrame(NULL, wxID_ANY, title, wxDefaultPosition, wxSize(800, 600)) {
-    devices = GetAvailableDevices();
-    notebook = new wxNotebook(this, wxID_ANY);
-
-
-    InitMainPannel();
-    InitEvents();
-    InitWorkers();
-
-    SetClientSize(800, 600);
-    SetSizer(new wxBoxSizer(wxVERTICAL));
-    GetSizer()->Add(notebook, 1, wxEXPAND);
-
-    Centre();
-}
-
-void AppFrame::InitMainPannel() {
-    // Create a panel
-    mainPanel = new wxPanel(notebook, wxID_ANY);
-    notebook->AddPage(mainPanel, "Main");
-
-    // Create a box sizer for the main layout
-    wxBoxSizer* mainSizer = new wxBoxSizer(wxHORIZONTAL);
-
-    // Create a vertical sizer for the left part
-    wxBoxSizer* leftSizer = new wxBoxSizer(wxVERTICAL);
-
-    // Create the image preview area
-    leftSizer->Add(new wxStaticText(mainPanel, wxID_ANY, wxEmptyString), 0, wxALL, 5);
-    inputImagePreview = new wxStaticBitmap(mainPanel, wxID_ANY, wxBitmap(200, 200));
-    leftSizer->Add(inputImagePreview, 0, wxALL | wxALIGN_CENTER_HORIZONTAL, 5);
-
-    // Create the image selection button
-    selectImageButton = new wxButton(mainPanel, wxID_ANY, wxT("Select Image"));
-    leftSizer->Add(selectImageButton, 0, wxALL | wxALIGN_CENTER_HORIZONTAL, 5);
-
-    // Create the model selection button and text control
-    wxBoxSizer* modelSizer = new wxBoxSizer(wxHORIZONTAL);
-    modelSizer->Add(new wxStaticText(mainPanel, wxID_ANY, wxT("Model")), 0, wxALL | wxCENTER, 5);
-
-    modelPathCtrl =
-        new wxTextCtrl(mainPanel, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(300, -1), wxTE_READONLY);
-    modelSizer->Add(modelPathCtrl, 1, wxALL | wxEXPAND, 5);
-
-    selectModelButton = new wxButton(mainPanel, wxID_ANY, wxT("Select Model"));
-    modelSizer->Add(selectModelButton, 0, wxALL | wxCENTER, 5);
-
-    leftSizer->Add(modelSizer, 0, wxALL | wxEXPAND, 5);
-
-    // Create the slider for steps
-    wxBoxSizer* stepsSizer = new wxBoxSizer(wxHORIZONTAL);
-    stepsSizer->Add(new wxStaticText(mainPanel, wxID_ANY, wxT("Steps")), 0, wxALL | wxCENTER, 5);
-
-    // Create a text control to display and input the slider value
-    stepsValueCtrl =
-        new wxTextCtrl(mainPanel, wxID_ANY, wxT("20"), wxDefaultPosition, wxSize(50, -1), wxTE_PROCESS_ENTER);
-    stepsSizer->Add(stepsValueCtrl, 0, wxALL | wxCENTER, 5);
-
-    stepsSlider = new wxSlider(mainPanel, wxID_ANY, 20, 0, 50, wxDefaultPosition, wxDefaultSize, wxSL_HORIZONTAL);
-    stepsSizer->Add(stepsSlider, 1, wxALL | wxEXPAND, 5);
-
-    leftSizer->Add(stepsSizer, 0, wxALL | wxEXPAND, 5);
-
-    // Create the spin control for seed
-    wxBoxSizer* seedSizer = new wxBoxSizer(wxHORIZONTAL);
-    seedSizer->Add(new wxStaticText(mainPanel, wxID_ANY, wxT("Seed")), 0, wxALL | wxCENTER, 5);
-    seedSpinCtrl = new wxSpinCtrl(mainPanel,
-                                    wxID_ANY,
-                                    wxEmptyString,
-                                    wxDefaultPosition,
-                                    wxDefaultSize,
-                                    wxSP_ARROW_KEYS,
-                                    -1,
-                                    2147483647,
-                                    -1);
-    seedSizer->Add(seedSpinCtrl, 1, wxALL | wxEXPAND, 5);
-    leftSizer->Add(seedSizer, 0, wxALL | wxEXPAND, 5);
-
-    // Create the device selection dropdown
-    wxBoxSizer* deviceSizer = new wxBoxSizer(wxHORIZONTAL);
-    deviceSizer->Add(new wxStaticText(mainPanel, wxID_ANY, wxT("Device")), 0, wxALL | wxCENTER, 5);
-
-    deviceChoice = new wxChoice(mainPanel, wxID_ANY);
-    for (const auto& device : devices) {
-        deviceChoice->Append(device);
-    }
-    // Set a default selection if devices are available
-    if (!devices.empty()) {
-        deviceChoice->SetSelection(0);
-    }
-    deviceSizer->Add(deviceChoice, 1, wxALL | wxEXPAND, 5);
-    leftSizer->Add(deviceSizer, 0, wxALL | wxEXPAND, 5);
-
-    // Add new confirm button
-    confirmButton = new wxButton(mainPanel, wxID_ANY, wxT("Confirm"));
-    confirmButton->Disable();
-    leftSizer->Add(confirmButton, 0, wxALL, 5);
-
-    // Add leftSizer to the mainSizer
-    mainSizer->Add(leftSizer, 1, wxALL | wxEXPAND, 5);
-
-    // Create a vertical sizer for the right part
-    wxBoxSizer* rightSizer = new wxBoxSizer(wxVERTICAL);
-
-    // Create text areas for prompts
-    promptTextCtrl = new wxTextCtrl(mainPanel, wxID_ANY, "Dancing Darth Vader, best quality, extremely detailed", wxDefaultPosition, wxDefaultSize, wxTE_MULTILINE);
-    rightSizer->Add(new wxStaticText(mainPanel, wxID_ANY, wxT("Prompt")), 0, wxALL, 5);
-    rightSizer->Add(promptTextCtrl, 1, wxALL | wxEXPAND, 5);
-
-    negativePromptTextCtrl = new wxTextCtrl(mainPanel, wxID_ANY, "monochrome, lowres, bad anatomy, worst quality, low quality", wxDefaultPosition, wxDefaultSize, wxTE_MULTILINE);
-    rightSizer->Add(new wxStaticText(mainPanel, wxID_ANY, wxT("Negative Prompt")), 0, wxALL, 5);
-    rightSizer->Add(negativePromptTextCtrl, 1, wxALL | wxEXPAND, 5);
-
-    // Add rightSizer to the mainSizer
-    mainSizer->Add(rightSizer, 1, wxALL | wxEXPAND, 5);
-
-    // Set the panel sizer
-    mainPanel->SetSizer(mainSizer);
-}
-
-void AppFrame::OnSelectImage(wxCommandEvent& event) {
-    wxFileDialog openFileDialog(this,
-                                _("Open Image file"),
-                                "",
-                                "",
-                                "Image files (*.jpg;*.png;*.bmp)|*.jpg;*.png;*.bmp",
-                                wxFD_OPEN | wxFD_FILE_MUST_EXIST);
-
-    if (openFileDialog.ShowModal() == wxID_CANCEL)
-        return;
-
-    wxString filePath = openFileDialog.GetPath();
-    wxImage image;
-    if (image.LoadFile(filePath)) {
-        inputImagePath = filePath.ToStdString();
-        int previewWidth = inputImagePreview->GetSize().GetWidth();
-        int previewHeight = inputImagePreview->GetSize().GetHeight();
-        int imgWidth = image.GetWidth();
-        int imgHeight = image.GetHeight();
-
-        // Calculate the new width and height while maintaining aspect ratio
-        double aspectRatio = static_cast<double>(imgWidth) / imgHeight;
-        int newWidth, newHeight;
-        if (previewWidth / static_cast<double>(previewHeight) > aspectRatio) {
-            newHeight = previewHeight;
-            newWidth = static_cast<int>(previewHeight * aspectRatio);
-        } else {
-            newWidth = previewWidth;
-            newHeight = static_cast<int>(previewWidth / aspectRatio);
-        }
-
-        // Resize the image
-        wxImage scaledImage = image.Scale(newWidth, newHeight, wxIMAGE_QUALITY_HIGH);
-
-        // Clear the previous image and center the new image in the preview area
-        wxBitmap previewBitmap(previewWidth, previewHeight);
-        wxMemoryDC dc;
-        dc.SelectObject(previewBitmap);
-        dc.SetBackground(*wxWHITE_BRUSH);
-        dc.Clear();
-        dc.DrawBitmap(wxBitmap(scaledImage), (previewWidth - newWidth) / 2, (previewHeight - newHeight) / 2, true);
-        dc.SelectObject(wxNullBitmap);
-
-        inputImagePreview->SetBitmap(previewBitmap);
-        Layout();  // Ensure the layout is updated
-    }
-}
-
-void AppFrame::OnGenerate(wxCommandEvent& event) {
-    wxDialog* resultDialog = new wxDialog(this, wxID_ANY, "Generated Image");
-    // TODO: display progress
-    wxStaticText* text = new wxStaticText(resultDialog, wxID_ANY, "Here would be the generated image");
-    resultDialog->SetClientSize(text->GetBestSize());
-    resultDialog->ShowModal();
-    resultDialog->Destroy();
-}
-
-void AppFrame::OnImageGenCompleted(wxThreadEvent& event) {
-    wxMessageBox("Task completed!", "Info");
-}
-
-void AppFrame::ValidateSettings(wxCommandEvent& event) {
-    bool valid = !modelPathCtrl->GetValue().IsEmpty() && stepsSlider->GetValue() >= 0 &&
-                 seedSpinCtrl->GetValue() >= -1 && !promptTextCtrl->GetValue().IsEmpty();
-    confirmButton->Enable(valid);
-}
-
-void AppFrame::InitWorkers() {
-    workerThread = new WorkerThread(this);
-    if (workerThread->Run() != wxTHREAD_NO_ERROR) {
-        delete workerThread;
-        workerThread = nullptr;
-    }
-
-    imageToImagePipeline = new ImageToImagePipeline();
-    Bind(wxEVT_COMMAND_IMAGE_GEN_COMPLETED, &AppFrame::OnImageGenCompleted, this);
-}
-
-void AppFrame::InitEvents() {
-    // select image
-    selectImageButton->Bind(wxEVT_BUTTON, &AppFrame::OnSelectImage, this);
-
-    // file dialog
-    selectModelButton->Bind(wxEVT_BUTTON, [this](wxCommandEvent& event) {
-        wxDirDialog openDirDialog(this, _("Select Model Directory"), "", wxDD_DEFAULT_STYLE | wxDD_DIR_MUST_EXIST);
-
-        if (openDirDialog.ShowModal() == wxID_CANCEL)
-            return;
-
-        wxString dirPath = openDirDialog.GetPath();
-        if (ContainsModelFiles(dirPath)) {
-            modelPathCtrl->SetValue(dirPath);
-            
-            if (currentModelPath != dirPath.ToStdString()) {
-                // TODO: we may load here
-                currentModelPath = dirPath.ToStdString();
-            }
-
-        } else {
-            wxMessageBox("Selected directory does not contain any .xml or .bin files.", "Error", wxOK | wxICON_ERROR);
-        }
-    });
-
-    // steps events to synchronize the slider and text control
-    stepsSlider->Bind(wxEVT_SLIDER, [this](wxCommandEvent& event) {
-        stepsValueCtrl->SetValue(wxString::Format("%d", event.GetInt()));
-    });
-
-    stepsValueCtrl->Bind(wxEVT_TEXT_ENTER, [this](wxCommandEvent& event) {
-        long value;
-        if (stepsValueCtrl->GetValue().ToLong(&value) && value >= 0 && value <= 50) {
-            stepsSlider->SetValue(value);
-        } else {
-            stepsValueCtrl->SetValue(wxString::Format("%d", stepsSlider->GetValue()));
-        }
-    });
-
-    stepsValueCtrl->Bind(wxEVT_KILL_FOCUS, [this](wxFocusEvent& event) {
-        long value;
-        if (stepsValueCtrl->GetValue().ToLong(&value) && value >= 0 && value <= 50) {
-            stepsSlider->SetValue(value);
-        } else {
-            stepsValueCtrl->SetValue(wxString::Format("%d", stepsSlider->GetValue()));
-        }
-        event.Skip();
-    });
-
-
-    // settings validation
-    modelPathCtrl->Bind(wxEVT_TEXT, [this](wxCommandEvent& evt) {
-        ValidateSettings(evt);
-    });
-    deviceChoice->Bind(wxEVT_CHOICE, [this](wxCommandEvent& evt) {
-        int selection = deviceChoice->GetSelection();
-        if (selection != wxNOT_FOUND) {
-            auto choice = deviceChoice->GetString(selection).ToStdString();
-            if (choice != currentDevice) {
-                // TODO:
-            }
-        }
-    });
-    stepsSlider->Bind(wxEVT_SLIDER, [this](wxCommandEvent& evt) {
-        ValidateSettings(evt);
-    });
-    seedSpinCtrl->Bind(wxEVT_SPINCTRL, [this](wxCommandEvent& evt) {
-        ValidateSettings(evt);
-    });
-    promptTextCtrl->Bind(wxEVT_TEXT, [this](wxCommandEvent& evt) {
-        ValidateSettings(evt);
-    });
-
-    // start button
-    confirmButton->Bind(wxEVT_BUTTON, &AppFrame::OnGenerate, this);
-}
-
- void AppFrame::GetImageToImageParam(StableDiffusionControlnetPipelineParam& param) {
-    std::string modelPath = modelPathCtrl->GetValue().ToStdString();
-    std::string prompt = promptTextCtrl->GetValue().ToStdString();
-    std::string negativePrompt = negativePromptTextCtrl->GetValue().ToStdString();
-
-    int steps;
-    stepsValueCtrl->GetValue().ToInt(&steps);
-
-    uint32_t seed;
-    auto seedValue = seedSpinCtrl->GetValue();
-    if (seedValue == -1) {
-        std::random_device rd;                               
-        std::mt19937 gen(rd());                              
-        std::uniform_int_distribution<> dis(1, 2147483647);
-        seed = dis(gen);
-    } else {
-        seed = seedValue;
-    }
-
-    param.prompt = prompt;
-    param.negative_prompt = negativePrompt;
-    param.input_image = inputImagePath;
-    param.steps = steps;
-    param.seed = seed;
- }
-
-
- ImageToImagePipeline* AppFrame::GetImageToImagePipeline(){
-    return imageToImagePipeline;
- }
-
-
-class MyApp : public wxApp
+static void glfw_error_callback(int error, const char* description)
 {
-public:
-    bool OnInit() override
-    {
-        wxInitAllImageHandlers();
-        AppFrame* frame = new AppFrame("Stable Diffusion Controlnet Demo");
-        frame->Show(true);
-        return true;
-    }
-};
+    fprintf(stderr, "Glfw Error %d: %s\n", error, description);
+}
 
-wxIMPLEMENT_APP(MyApp);
+ov::Tensor postprocess_image(ov::Tensor decoded_image) {
+    ov::Tensor generated_image(ov::element::u8, decoded_image.get_shape());
+    // convert to u8 image
+    const float* decoded_data = decoded_image.data<const float>();
+    std::uint8_t* generated_data = generated_image.data<std::uint8_t>();
+    for (size_t i = 0; i < decoded_image.get_size(); ++i) {
+        generated_data[i] = static_cast<std::uint8_t>(std::clamp(decoded_data[i] * 0.5f + 0.5f, 0.0f, 1.0f) * 255);
+    }
+
+    return generated_image;
+}
+
+std::string openFileDialog() {
+    const char* filters[] = {"*.png", "*.jpg", "*.jpeg", "*.bmp"};
+    const char* filePath = tinyfd_openFileDialog("Select an Image",  // Dialog title
+                                                 "",                 // Default path
+                                                 1,                  // Number of filters
+                                                 filters,            // Filters
+                                                 "Image files",  // Filter description
+                                                 1               // Single selection
+    );
+
+    return filePath ? filePath : "";  // Return empty string if canceled
+}
+
+
+
+bool validate_directory(const std::string& path) {
+    bool has_xml = false;
+    bool has_bin = false;
+
+    for (const auto& entry : std::filesystem::directory_iterator(path)) {
+        if (entry.path().extension() == ".xml") {
+            has_xml = true;
+        } else if (entry.path().extension() == ".bin") {
+            has_bin = true;
+        }
+        if (has_xml && has_bin) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string openFolderDialog() {
+    const char* path = tinyfd_selectFolderDialog("Select Model Directory", "");
+    if (path && validate_directory(path)) {
+        return path;
+    }
+    return "";
+}
+
+int App::Init() {
+    if (!glfwInit())
+        return 1;
+
+    glfwSetErrorCallback(glfw_error_callback);
+
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+    window = glfwCreateWindow(800, 600, "Stable Diffusion Controlnet Demo", NULL, NULL);
+    if (window == NULL)
+        return 1;
+    glfwMakeContextCurrent(window);
+    glfwSwapInterval(1);  // Enable vsync
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    (void)io;
+
+    ImGui::StyleColorsDark();
+
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init(glsl_version);
+
+    // init ov
+    ov::Core core;
+    state.devices = core.get_available_devices();
+    state.active_device_index = 0;
+
+    // init worker
+    worker.Start();
+
+    return 0;
+}
+
+int App::Clean() {
+    worker.Stop();
+
+    if (preview_state.preview_texture)
+        glDeleteTextures(1, &preview_state.preview_texture);
+
+    if (result_state.texture)
+        glDeleteTextures(1, &result_state.texture);
+
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    return 0;
+}
+
+int App::Run() {
+    while (!glfwWindowShouldClose(window)) {
+        Render();
+    }
+
+    Clean();
+    return 0;
+}
+
+void App::LoadInputImageData() {
+    if (preview_state.preview_texture)
+        glDeleteTextures(1, &preview_state.preview_texture);
+
+    auto image_tensor = read_image_to_tensor(preview_state.image_path.c_str());
+    preview_state.image_height = image_tensor.get_shape()[1];
+    preview_state.image_width = image_tensor.get_shape()[2];
+    int channels = image_tensor.get_shape()[3];
+
+    auto* image_data = image_tensor.data<uint8_t>();
+
+    glGenTextures(1, &preview_state.preview_texture);
+    glBindTexture(GL_TEXTURE_2D, preview_state.preview_texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D,
+                 0,
+                 (channels == 4 ? GL_RGBA : GL_RGB),
+                 preview_state.image_width,
+                 preview_state.image_height,
+                 0,
+                 (channels == 4 ? GL_BGRA_EXT : GL_BGR_EXT),
+                 GL_UNSIGNED_BYTE,
+                 image_data);
+}
+
+void App::RenderLeftPanel() {
+    ImGui::BeginChild("LeftPanel", ImVec2(400, 0), true);
+    ImGui::Text("Options");
+
+    // prompt & negative prompt
+    ImGuiInputTextFlags flags = ImGuiInputTextFlags_AllowTabInput;
+    ImGui::Text("Prompt");
+    ImGui::InputTextMultiline("##prompt",
+                              state.prompt,
+                              IM_ARRAYSIZE(state.prompt),
+                              ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 8),
+                              flags);
+    ImGui::Text("Negative Prompt");
+    ImGui::InputTextMultiline("##negative_prompt",
+                              state.negative_prompt,
+                              IM_ARRAYSIZE(state.negative_prompt),
+                              ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 8),
+                              flags);
+    // steps
+    ImGui::InputInt("Steps", &state.steps);
+
+    // seeds
+    int64_t seed_min = -1;
+    int64_t seed_max = 4294967295;
+    ImGui::DragScalar("Seed(-1 for random)",
+                      ImGuiDataType_S64,
+                      &state.seed,
+                      1,
+                      &seed_min,
+                      &seed_max,
+                      "%ld",
+                      ImGuiSliderFlags_AlwaysClamp);
+
+    // conditioning image
+    if (ImGui::Button("Select Image")) {
+        std::string next_image_path = openFileDialog();
+        if (!next_image_path.empty()) {
+            if (preview_state.image_path != next_image_path) {
+                preview_state.image_path = next_image_path;
+                preview_state.should_load = true;
+            }
+        }
+    }
+
+    if (preview_state.should_load) {
+        // load image data and construct texture
+        LoadInputImageData();
+        preview_state.should_load = false;
+    }
+
+    if (preview_state.preview_texture) {
+        ImGui::Text("Controlnet Image: %s", preview_state.image_path.c_str());
+        float aspect_ratio = (float)preview_state.image_width / preview_state.image_height;
+        ImVec2 preview_size(250, 250);
+
+        if (aspect_ratio > 1.0f) {
+            // Image is wider than tall, limit by width
+            preview_size.y = preview_size.x / aspect_ratio;
+        } else {
+            // Image is taller than wide, limit by height
+            preview_size.x = preview_size.y * aspect_ratio;
+        }
+        ImGui::Image((void*)(intptr_t)preview_state.preview_texture, preview_size);
+    }
+
+    ImGui::EndChild();
+}
+
+void App::LoadResultImageData() {
+    if (result_state.texture)
+        glDeleteTextures(1, &result_state.texture);
+
+    auto image_tensor = result_state.image;
+    result_state.image_height = image_tensor.get_shape()[1];
+    result_state.image_width = image_tensor.get_shape()[2];
+    int channels = image_tensor.get_shape()[3];
+
+    auto* image_data = image_tensor.data<uint8_t>();
+
+    glGenTextures(1, &result_state.texture);
+    glBindTexture(GL_TEXTURE_2D, result_state.texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D,
+                 0,
+                 (channels == 4 ? GL_RGBA : GL_RGB),
+                 result_state.image_width,
+                 result_state.image_height,
+                 0,
+                 (channels == 4 ? GL_BGRA_EXT : GL_BGR_EXT),
+                 GL_UNSIGNED_BYTE,
+                 image_data);
+}
+
+
+void App::RenderRightPanel() {
+    ImGui::BeginChild("RightPanel", ImVec2(0, 0), true);
+    std::vector<const char*> items;
+    for (int i = 0; i < state.devices.size(); ++i)
+        items.push_back(state.devices[i].c_str());
+
+    ImGui::Combo("device", &state.active_device_index, items.data(), items.size());
+
+    ImGui::Text("Model Path: ");
+    ImGui::SameLine();
+    if (state.model_path.empty()) {
+        if (ImGui::Button("...")) {
+            std::string model_path = openFolderDialog();
+            if (model_path.empty()) {
+                ImGui::Text("model path must contains *.xml and *.bin");
+            } else {
+                state.model_path = model_path;
+                worker.Request([this] {
+                    pipe = new StableDiffusionControlnetPipeline(state.model_path,
+                                                                 state.devices[state.active_device_index]);
+                });
+            }
+        }
+    } else {
+        ImGui::Text("%s", state.model_path.c_str());
+        if (pipe == nullptr) {
+            ImGui::Text("Loading..");
+        }
+    }
+    if (pipe != nullptr) {
+        ImGui::Text("Ready");
+
+        if (ImGui::Button("Run")) {
+            worker.Request([this] {
+                StableDiffusionControlnetPipelineParam param = {
+                    state.prompt,
+                    state.negative_prompt,
+                    preview_state.image_path,
+                    state.steps,
+                    state.seed,
+                };
+                auto decoded_image = pipe->Run(param);
+                result_state.image = postprocess_image(decoded_image);
+                result_state.should_render = true;
+            });
+        }
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0 / 7.0f, 0.6f, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0 / 7.0f, 0.7f, 0.7f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0/ 7.0f, 0.8f, 0.8f));
+        ImGui::Button("Cancel");
+        ImGui::PopStyleColor(3);
+        ImGui::PopID();
+    }
+    if (result_state.should_render) {
+        LoadResultImageData();
+        result_state.should_render = false;
+    }
+
+    if (result_state.texture) {
+        float aspect_ratio = (float)result_state.image_width / result_state.image_height;
+        ImVec2 preview_size(512, 512);
+
+        if (aspect_ratio > 1.0f) {
+            // Image is wider than tall, limit by width
+            preview_size.y = preview_size.x / aspect_ratio;
+        } else {
+            // Image is taller than wide, limit by height
+            preview_size.x = preview_size.y * aspect_ratio;
+        }
+        ImGui::Image((void*)(intptr_t)result_state.texture, preview_size);
+    }
+
+    ImGui::EndChild();
+}
+
+void App::Render() {
+    glfwPollEvents();
+
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    ImGui::Begin("demo");
+
+    RenderLeftPanel();
+    ImGui::SameLine();
+    RenderRightPanel();
+
+    ImGui::End();
+
+    ImGui::Render();
+
+    int display_w, display_h;
+    glfwGetFramebufferSize(window, &display_w, &display_h);
+    glViewport(0, 0, display_w, display_h);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    glfwSwapBuffers(window);
+}
+
+int main(int, char**)
+{
+    App app;
+
+    if (app.Init()) {
+        fprintf(stderr, "Failed to init app\n");
+        return -1;
+    }
+
+    return app.Run();
+}
