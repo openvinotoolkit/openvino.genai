@@ -101,7 +101,7 @@ jobs:
           cache: 'pip'
         
       - name: Create virtual environment
-        run: python3 -m venv openvino_lcm_cpp
+        run: python -m venv openvino_lcm_cpp
       
       - name: Install python dependencies
         working-directory: ${{ env.working_directory }}
