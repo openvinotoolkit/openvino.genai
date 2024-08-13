@@ -154,6 +154,7 @@ public:
         }
     }
 
+    // allocates a single sequence KV cache block
     KVCacheBlock::Ptr allocate_block() {
         OPENVINO_ASSERT(!m_enable_prefix_caching);
         OPENVINO_ASSERT(can_allocate_blocks(1));
@@ -246,42 +247,43 @@ public:
         // OPENVINO_ASSERT(m_block_table.empty());
     }
 
+    // returns a block table for a sequence with a given ID
     const std::vector<KVCacheBlock::Ptr>& get_block_table(uint64_t seq_id) {
         OPENVINO_ASSERT(m_block_table.count(seq_id) == 1);
         return m_block_table[seq_id];
     }
 
-    const size_t free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
-        size_t blocks_num = std::ceil(num_required_blocks / sequence_group->get_not_finished_sequences().size());
-        auto running_sequences = sequence_group->get_not_finished_sequences();
-        std::set<size_t> blocks_released_indices;
+    // frees at most 'num_required_blocks' blocks for a given sequence group and
+    // returns actually de-allocated number of KV cache blocks
+    // This method is used by preemption algorigthm
+    const size_t free_sequence_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
+        auto running_sequences = sequence_group->get_running_sequences();
+        // TODO: ilavrenov - why beam search case is not handled here?
+        // in case of beam search 'blocks_num' are not equally distributed between sequences
+        // because some of them share the same blocks
+        size_t blocks_num = std::ceil(num_required_blocks / running_sequences.size());
         for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
-            auto seq_id = running_sequences[idx]->get_id();
-            OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
-            auto block_table = m_block_table[seq_id];
+            const auto seq_id = running_sequences[idx]->get_id();
             free_sequence_partially(seq_id, blocks_num);
         }
         return blocks_num;
     }
 
-    const size_t get_number_of_blocks_occupied_by_sequence(SequenceGroup::Ptr sequence_group) {
-        auto running_sequences = sequence_group->get_not_finished_sequences();
+    // computes a number of allocated blocks for a given sequence group
+    const size_t get_number_of_used_blocks(SequenceGroup::Ptr sequence_group) const {
+        auto running_sequences = sequence_group->get_running_sequences();
         size_t num_blocks = 0;
         std::set<size_t> indices;
         for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
             auto seq_id = running_sequences[idx]->get_id();
-            if (m_block_table.count(seq_id) == 0) {
-                continue;
-            }
-           // OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
-            auto block_table = m_block_table[seq_id];
-            size_t last_idx = block_table.back()->get_index();
-            if (indices.find(last_idx) != indices.end()) {
-                continue;
-            }
-            else {
-                indices.insert(last_idx);
-                num_blocks += block_table.size();
+            auto block_table_it = m_block_table.find(seq_id);
+            if (block_table_it != m_block_table.end()) {
+                const auto& block_table = block_table_it->second;
+                size_t last_idx = block_table.back()->get_index();
+                if (indices.find(last_idx) == indices.end()) {
+                    indices.insert(last_idx);
+                    num_blocks += block_table.size();
+                }
             }
         }
         return num_blocks;
@@ -299,28 +301,27 @@ public:
         return m_allocator.can_allocate_blocks(num_blocks);
     }
 
-    void allocate(ov::genai::Sequence::CPtr sequence, size_t num_blocks, const ov::genai::TokenIds& prompt_ids = {}) {
+    // allocates 'num_blocks' KV cache blocks for sequence
+    void allocate(Sequence::CPtr sequence, size_t num_blocks, const TokenIds& prompt_ids = {}) {
         OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
         if (m_enable_prefix_caching) {
             OPENVINO_ASSERT(prompt_ids.size() > 0, "prompt_ids should be set for hash calculation.");
         }
         auto sequence_id = sequence->get_id();
         auto block_table = m_block_table[sequence_id];
-        auto content_length = sequence->get_generated_len() + prompt_ids.size();
+        auto context_len = sequence->get_generated_len() + prompt_ids.size();
         size_t num_hashed_tokens = block_table.size() * m_block_size;
 
         for (size_t i = 0; i < num_blocks; ++i) {
-
-            ov::genai::KVCacheBlock::Ptr block = nullptr; 
+            KVCacheBlock::Ptr block = nullptr; 
             if (m_enable_prefix_caching) {
                 num_hashed_tokens += m_block_size;
-                if (num_hashed_tokens > content_length) {
-                    num_hashed_tokens = content_length;
+                if (num_hashed_tokens > context_len) {
+                    num_hashed_tokens = context_len;
                 }
                 auto hash = sequence->get_hash(num_hashed_tokens, prompt_ids);
                 block = m_allocator.allocate_block(hash, num_hashed_tokens, cached_blocks);
-            }
-            else {
+            } else {
                 block = m_allocator.allocate_block();
             }
             OPENVINO_ASSERT(block != nullptr);
@@ -328,10 +329,13 @@ public:
         }
     }
 
+    // returns usage of KV cache
     float get_used_percentage() const {
         return m_allocator.get_used_percentage();
     }
 
+    // forks a sequence with a given 'parent_id' and creates sequence
+    // with ID 'child_id'
     void fork_sequence(uint64_t parent_id, uint64_t child_id) {
         OPENVINO_ASSERT(m_block_table.count(child_id) == 0);
         m_block_table[child_id].reserve(m_block_table[parent_id].size());
@@ -341,37 +345,19 @@ public:
         }
     }
 
+    // frees all blocks for a given sequence ID
     void free_sequence(size_t seq_id) {
-        auto block_table = m_block_table[seq_id];
-
-        for (KVCacheBlock::Ptr& block : block_table) {
-            m_allocator.free(block);
-        }
-
-        OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
+        free_sequence_partially(seq_id, m_block_table[seq_id].size());
     }
 
-    bool free_last_block(size_t seq_id) {
-        auto block_table = m_block_table[seq_id];
-        OPENVINO_ASSERT(block_table.size() >= 1);
-        size_t block_idx = m_block_table[seq_id].size() - 1;
-        m_allocator.free(block_table[block_idx]);
-        m_block_table[seq_id].resize(m_block_table[seq_id].size() - 1);
-
-        if (m_block_table[seq_id].size() == 0) {
-            OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
-        }
-        return block_table[block_idx]->is_free();
-    }
-
+    // frees 'block_num' KV cache blocks for a sequence with a given 'seq_id' ID
     void free_sequence_partially(size_t seq_id, size_t block_num) {
-
         auto block_table = m_block_table[seq_id];
         OPENVINO_ASSERT(block_table.size() >= block_num);
         for (size_t idx = 0; idx < block_num; idx++) {
             size_t block_idx = m_block_table[seq_id].size() - idx - 1;
             m_allocator.free(block_table[block_idx]);
-        } 
+        }
         m_block_table[seq_id].resize(m_block_table[seq_id].size() - block_num);
 
         if (m_block_table[seq_id].size() == 0) {
@@ -379,13 +365,15 @@ public:
         }
     }
 
+    // whether KV cache manager has free slots / blocks required for a given sequence group
     bool can_append_slots(SequenceGroup::CPtr seq_group) {
-        return required_blocks_count(std::move(seq_group)) <= m_allocator.num_free_blocks();
+        return get_number_of_required_blocks(std::move(seq_group)) <= m_allocator.num_free_blocks();
     }
 
-    size_t required_blocks_count(SequenceGroup::CPtr seq_group) {
+    // estimates required blocks number to perform scheduling of a given sequence group
+    size_t get_number_of_required_blocks(SequenceGroup::CPtr seq_group) {
         std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
-        size_t blocks_count= 0; // totat number of needed blocks for sequence group
+        size_t blocks_count = 0; // total number of needed blocks for sequence group
         std::set<size_t> last_block_ids; // unique last block indices
 
         for (auto seq: running_sequences) {
@@ -433,8 +421,8 @@ public:
         return blocks_count;
     }
 
+    // appends slots for a given sequence group
     std::map<size_t, std::list<size_t>> append_slots(SequenceGroup::CPtr seq_group) {
-
         size_t num_logical_blocks = seq_group->get_num_logical_blocks();
         std::vector<Sequence::CPtr> running_sequences = seq_group->get_running_sequences();
 
@@ -449,14 +437,15 @@ public:
                 OPENVINO_ASSERT(can_allocate_blocks(num_logical_blocks - num_physical_blocks));
                 allocate(sequence, num_logical_blocks - num_physical_blocks, seq_group->get_prompt_ids());
             } else {
-                OPENVINO_ASSERT(num_logical_blocks == num_physical_blocks, "A number of physical and logic blocks must be the same in this code path");
+                OPENVINO_ASSERT(num_logical_blocks == num_physical_blocks,
+                    "A number of physical and logic blocks must be the same in this code path");
                 KVCacheBlock::Ptr last_block = block_table.back();
                 if (last_block->copy_on_write()) {
                     // we need to fork current block, because reference counter is more than 1
                     KVCacheBlock::Ptr new_block = nullptr;
                     if (m_enable_prefix_caching) {
-                        auto hash = sequence->get_hash(seq_group->get_context_len(), seq_group->get_prompt_ids());
-                        new_block = m_allocator.allocate_block(hash, seq_group->get_context_len(), cached_blocks);
+                        auto hash = sequence->get_hash(seq_group->get_future_context_len(), seq_group->get_prompt_ids());
+                        new_block = m_allocator.allocate_block(hash, seq_group->get_future_context_len(), cached_blocks);
                         cached_blocks[hash] = new_block;
                     }
                     else {
@@ -472,8 +461,8 @@ public:
                     if (m_enable_prefix_caching) {
                         // update hash of block
                         auto prev_hash = last_block->get_hash();
-                        auto hash = sequence->get_hash(seq_group->get_context_len(), seq_group->get_prompt_ids());
-                        last_block->set_hash(hash, seq_group->get_context_len());
+                        auto hash = sequence->get_hash(seq_group->get_future_context_len(), seq_group->get_prompt_ids());
+                        last_block->set_hash(hash, seq_group->get_future_context_len());
                         cached_blocks.erase(prev_hash);
                         cached_blocks[hash] = last_block;
                     }
@@ -485,45 +474,47 @@ public:
         return copy_blocks_map;
     }
 
-
-    void _restore_cached_blocks(SequenceGroup::Ptr group, size_t block_size) {
-        auto prompt_ids = group->get_prompt_ids(); 
-        auto sequences = group->get_not_finished_sequences();
+    // performs restoring of some KV cache blocks which can be previously computed for
+    // prefix of a given sequence group
+    // It can be useful for chat scenarios with multiple turns of conversation
+    // when KV blocks used on previous generation can be restored on current generate() call
+    void _restore_cached_blocks(SequenceGroup::Ptr seq_group, size_t block_size) {
+        auto prompt_ids = seq_group->get_prompt_ids(); 
+        auto sequences = seq_group->get_sequences();
         OPENVINO_ASSERT(sequences.size() == 1);
         auto sequence = sequences[0];
         auto seq_id = sequence->get_id();
         auto& block_table = m_block_table[seq_id];
 
-        size_t content_len = 0;       
-        while (content_len < prompt_ids.size()) {
-            size_t prev_iteration_content_len = content_len; 
-            content_len += block_size;
-            if (content_len > prompt_ids.size()) {
-                content_len = prompt_ids.size();
+        size_t context_len = 0;
+        while (context_len < prompt_ids.size()) {
+            size_t prev_iteration_context_len = context_len; 
+            context_len += block_size;
+            if (context_len > prompt_ids.size()) {
+                context_len = prompt_ids.size();
             }
             // restore fully filled blocks
-            auto hash = sequence->get_hash(content_len, prompt_ids);
+            auto hash = sequence->get_hash(context_len, prompt_ids);
             auto block = m_allocator.get_cached_block(hash, cached_blocks);
             if (block != nullptr) {
                 block->set_timestamp(std::chrono::system_clock::now());
                 m_block_table[seq_id].push_back(block);
-                group->update_processed_tokens_num(content_len);
-            }
-            else {
+                seq_group->set_context_len(context_len);
+            } else {
                 // restore partially filled block
                 for (size_t i = 1; i < block_size; i++) {
-                    if (prev_iteration_content_len + i > prompt_ids.size()) {
+                    if (prev_iteration_context_len + i > prompt_ids.size()) {
                         break;
                     }
-                    auto hash = sequence->get_hash(prev_iteration_content_len + i, prompt_ids);
+                    auto hash = sequence->get_hash(prev_iteration_context_len + i, prompt_ids);
                     auto block = m_allocator.get_cached_block(hash, cached_blocks);
                     if (block != nullptr) {
                         block->set_timestamp(std::chrono::system_clock::now());
                         m_block_table[seq_id].push_back(block);
-                        group->update_processed_tokens_num(prev_iteration_content_len + i);
+                        seq_group->set_context_len(prev_iteration_context_len + i);
 
-                        size_t new_tokens_count_in_block = std::min(content_len, prev_iteration_content_len + block_size);
-                        if (new_tokens_count_in_block > prev_iteration_content_len + i) {
+                        size_t new_tokens_count_in_block = std::min(context_len, prev_iteration_context_len + block_size);
+                        if (new_tokens_count_in_block > prev_iteration_context_len + i) {
                             cached_blocks.erase(hash);
                             auto new_hash = sequence->get_hash(new_tokens_count_in_block, prompt_ids);
                             cached_blocks[new_hash] = block;
@@ -532,7 +523,7 @@ public:
                         break;
                     }
                 }
-                break;                
+                break;
             }
         }
     }

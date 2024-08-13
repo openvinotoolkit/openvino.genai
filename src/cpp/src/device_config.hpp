@@ -18,12 +18,17 @@ class DeviceConfig {
     size_t m_block_size = 0;
     size_t m_cache_size = 0;
     std::string m_device;
+    bool m_initialized = false;
+
+    void _check_is_initialized() const {
+        OPENVINO_ASSERT(m_initialized, "Internal error: some CB parameters are not yet computed. Please, call set_model_params first");
+    }
 
 public:
     DeviceConfig(ov::Core& core, const SchedulerConfig& scheduling_config, const std::string& device, const ov::AnyMap& plugin_config = {}) {
         m_device = device;
 
-        // keep information about blocsk
+        // keep information about block size
         m_block_size = scheduling_config.block_size;
 
         if (m_device == "CPU") {
@@ -82,6 +87,8 @@ public:
                                                             m_num_kv_heads,
                                                             m_block_size,
                                                             m_head_size};
+
+        m_initialized = true;
     }
 
     std::string get_device() const {
@@ -93,20 +100,22 @@ public:
     }
 
     size_t get_num_layers() const {
+        _check_is_initialized();
         return m_num_decoder_layers;
     }
 
     ov::Shape get_key_cache_shape() const {
-        OPENVINO_ASSERT(!m_key_cache_shape.empty());
+        _check_is_initialized();
         return m_key_cache_shape;
     }
 
     ov::Shape get_value_cache_shape() const {
-        OPENVINO_ASSERT(!m_value_cache_shape.empty());
+        _check_is_initialized();
         return m_value_cache_shape;
     }
 
     size_t get_num_kv_blocks() const {
+        OPENVINO_ASSERT(m_num_kv_blocks > 0, "Num KV blocks is not yet computed. Please, call set_model_params first");
         return m_num_kv_blocks;
     }
 };

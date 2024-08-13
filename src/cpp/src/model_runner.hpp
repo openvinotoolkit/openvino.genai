@@ -40,7 +40,7 @@ public:
             batch_size_in_sequences += num_sequences;
             total_num_tokens += sequence_group->get_num_scheduled_tokens() * num_sequences;
             total_num_blocks += sequence_group->get_num_blocks() * num_sequences;
-            max_context_len_val = std::max(max_context_len_val, sequence_group->get_context_len());
+            max_context_len_val = std::max(max_context_len_val, sequence_group->get_future_context_len());
         }
 
         ov::Tensor
@@ -76,7 +76,7 @@ public:
             size_t num_running_sequences = running_sequences.size();
             size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
             size_t num_blocks = sequence_group->get_num_blocks();
-            size_t group_position_id = sequence_group->get_num_processed_tokens(),
+            size_t group_position_id = sequence_group->get_context_len(),
                 // spec: In case of multiple input tokens for current sequence (prompt_len > 1), context_len corresponds to first token within subgroup of scheduled tokens
                 group_context_len = group_position_id;
 

@@ -29,11 +29,17 @@ class Sequence {
         return m_counter++;
     }
 
+    // a vector of generated token IDs
     TokenIds m_generated_ids;
+    // global ID within a sequence group
     uint64_t m_grouped_id;
+    // global ID across all the sequences (e.g. used as ID in block manager to get block tables)
     uint64_t m_id = _get_next_global_sequence_id();
+    // current sequence state
     SequenceStatus m_status = SequenceStatus::RUNNING;
+    // defines reason of sequence when it's finished, NONE otherwise
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
+    // cumulative log probabilities for all generated tokens
     float m_cumulative_log_prob = 0.0f;
 
 public:
@@ -41,33 +47,30 @@ public:
     using CPtr = std::shared_ptr<const Sequence>;
 
     // don't use directly
-    Sequence(const uint64_t id) : m_grouped_id(id) {};
+    Sequence(const uint64_t grouped_id) : m_grouped_id(grouped_id) {};
 
     // don't use directly
-    Sequence(const Sequence& seq, const uint64_t id) :
+    Sequence(const Sequence& seq, const uint64_t grouped_id) :
         m_generated_ids(seq.m_generated_ids),
-        m_grouped_id(id),
+        m_grouped_id(grouped_id),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob) {
-        OPENVINO_ASSERT(seq.m_id != m_id);
+        OPENVINO_ASSERT(seq.m_id != m_id, "Internal error: sequence ID must be auto-generated");
     }
 
-    static Sequence::Ptr create(const uint64_t id) {
-        return std::make_shared<Sequence>(id);
+    static Sequence::Ptr create(const uint64_t grouped_id) {
+        return std::make_shared<Sequence>(grouped_id);
     }
 
-    static Sequence::Ptr fork(Sequence::CPtr sequence, const uint64_t id) {
-        return std::make_shared<Sequence>(*sequence, id);
-    }
-
-    bool operator ==(const Sequence& other) const {
-        return other.m_id == m_id;
+    static Sequence::Ptr fork(Sequence::CPtr sequence, const uint64_t grouped_id) {
+        return std::make_shared<Sequence>(*sequence, grouped_id);
     }
 
     uint64_t get_id() const {
         return m_id;
     }
 
+    // returns unique ID within a sequence group
     uint64_t get_grouped_id() const {
         return m_grouped_id;
     }
@@ -103,16 +106,7 @@ public:
     // appends new tokens to a generated part
     void append_token(int64_t token_id, float log_prob) {
         m_cumulative_log_prob += log_prob;
-        m_generated_ids.push_back(token_id);     
-    }
-
-    GenerationOutput get_last_generation_output() {
-        GenerationOutput output;
-        OPENVINO_ASSERT(m_generated_ids.size());
-        output.score = get_cumulative_log_probs();
-        output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};
-        output.finish_reason = get_finish_reason();
-        return output;
+        m_generated_ids.push_back(token_id);
     }
 
     size_t get_generated_len() const {
@@ -147,10 +141,19 @@ public:
         std::size_t size = content.size() * sizeof(content[0]);
         return std::hash<std::string_view>{}(std::string_view(data, size));
     }
+
+    GenerationOutput get_last_generation_output() {
+        GenerationOutput output;
+        OPENVINO_ASSERT(!m_generated_ids.empty());
+        output.score = get_cumulative_log_probs();
+        output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};
+        output.finish_reason = get_finish_reason();
+        return output;
+    }
 };
 
 // contains a list of Sequences in generic case (beam search or parallel sampling)
-// - each sequence shares the same prompt and KV-caches for promp
+// - each sequence shares the same prompt and KV-caches for prompt
 // - in case of beam search each sequence also shares specific part of generic phase
 //   via reference counter machanism on BlockManager level
 class SequenceGroup {
@@ -161,24 +164,30 @@ class SequenceGroup {
     TokenIds m_prompt_ids;
     GenerationStream::Ptr m_generation_stream;
 
+    // used to uniquely identify sequences within a group
     uint64_t m_next_sequence_id = 0;
-
-    bool m_preempted = false;
  
-    // amount of processed tokens, e.g. prompt can be processed using multiple consequence inferences
-    // so, we need to track which part of the prompt we have already processed
-    size_t m_num_processed_tokens = 0;
+    // a number of tokens in KV cache
+    size_t m_context_len = 0;
     // a number of scheduled tokens by Scheduler::schedule logic
     size_t m_num_scheduled_tokens = 0;
-    // context length of longest sequence within a group
+    // context length of longest sequence within a group before preemption
+    // (when sequence is preempted, its m_context_len is decreased, while
+    // m_max_content_len is kept the same to denote a number of generated tokens
+    // and processed prompt_ids)
     size_t m_max_content_len = 0;
 
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
           m_block_size(block_size) {
-            m_generation_stream = GenerationStream::create();    
-           }
+        m_generation_stream = GenerationStream::create();
+    }
+
+    void add_sequence(const Sequence::Ptr & sequence) {
+        m_sequences.emplace_back(sequence);
+    }
+
 public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
@@ -195,10 +204,6 @@ public:
         std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), m_prompt_ids.begin());
     }
 
-    void add_sequence(const Sequence::Ptr & sequence) {
-        m_sequences.emplace_back(sequence);
-    }
-
     void remove_sequence(uint64_t sequence_id) {
         auto remove_it = std::remove_if(m_sequences.begin(), m_sequences.end(), [sequence_id] (Sequence::Ptr seq) {
             return seq->get_id() == sequence_id;
@@ -207,21 +212,24 @@ public:
         m_sequences.erase(remove_it);
     }
 
-    std::vector<int64_t> try_finish_generation() {
+    // handles whether stop criteria is met
+    // and performs required actions in this case
+    std::vector<int64_t> try_to_finish_generation() {
         std::vector<int64_t> dropped_seq_ids;
         for (auto& running_sequence : get_running_sequences()) {
             const auto generated_len = running_sequence->get_generated_len();
+            const bool eos_is_met = running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id;
             if (m_sampling_params.max_new_tokens == generated_len ||
-                running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
+                eos_is_met && !m_sampling_params.ignore_eos) {
                 // stop sequence by max_new_tokens or EOS token
                 running_sequence->set_status(SequenceStatus::FINISHED);
 
-                if (running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
+                if (eos_is_met && !m_sampling_params.ignore_eos) {
                     running_sequence->set_finish_reason(GenerationFinishReason::STOP);
                 } else if (m_sampling_params.max_new_tokens == generated_len) {
                     running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
                 }
-                
+
                 dropped_seq_ids.push_back(running_sequence->get_id());
             }
         }
@@ -233,8 +241,10 @@ public:
     }
 
     // a sequence group can generate new tokens if it already proccessed m_max_content_len before
+    // otherwise it's considered as prompt phase, where prompt is split on chunks
+    // also, is sequence group was preempted (has waiting status), it cannot generate tokens as well
     bool can_generate_tokens() const {
-        return m_max_content_len >= get_prompt_len();
+        return m_max_content_len >= get_prompt_len() && !is_waiting();
     }
 
     Sequence::Ptr operator[] (size_t index) {
@@ -253,7 +263,7 @@ public:
 
     size_t num_finished_seqs() const {
         return std::count_if(m_sequences.begin(), m_sequences.end(), [] (Sequence::CPtr seq) {
-            return seq->has_finished();
+            return seq->has_finished() || seq->out_of_memory();
         });
     }
 
@@ -273,37 +283,10 @@ public:
         return m_sequences;
     }
 
-    std::vector<Sequence::CPtr> get_finished_sequences() const {
-        std::vector<Sequence::CPtr> finished_seqs;
-        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->has_finished() || m_sequences[seq_id]->out_of_memory()) {
-                finished_seqs.push_back(m_sequences[seq_id]);
-            }
-        }
-
-        // do we need to sort sequences here or sampler can handle it for us?
-        std::sort(finished_seqs.begin(), finished_seqs.end(), [=] (Sequence::CPtr s1, Sequence::CPtr s2) {
-            return s1->get_beam_search_score(m_sampling_params) > s2->get_beam_search_score(m_sampling_params);
-        });
-
-        return finished_seqs;
-    }
-
     std::vector<Sequence::Ptr> get_running_sequences() {
         std::vector<Sequence::Ptr> running_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->is_running()) {
-                running_seqs.emplace_back(m_sequences[seq_id]);
-            }
-        }
-
-        return running_seqs;
-    }
-
-    std::vector<Sequence::Ptr> get_not_finished_sequences() {
-        std::vector<Sequence::Ptr> running_seqs;
-        for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (!m_sequences[seq_id]->has_finished()) {
+            if (m_sequences[seq_id]->is_running() || m_sequences[seq_id]->is_waiting()) {
                 running_seqs.emplace_back(m_sequences[seq_id]);
             }
         }
@@ -314,7 +297,7 @@ public:
     std::vector<Sequence::CPtr> get_running_sequences() const {
         std::vector<Sequence::CPtr> running_seqs;
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
-            if (m_sequences[seq_id]->is_running()) {
+            if (m_sequences[seq_id]->is_running() || m_sequences[seq_id]->is_waiting()) {
                 running_seqs.emplace_back(m_sequences[seq_id]);
             }
         }
@@ -330,31 +313,31 @@ public:
         return m_num_scheduled_tokens;
     }
 
-    size_t get_num_processed_tokens() const {
-        return m_num_processed_tokens;
+    size_t get_context_len() const {
+        return m_context_len;
     }
 
     void preempt_tokens(size_t num_preempt_tokens) {
-        OPENVINO_ASSERT(num_preempt_tokens <= m_num_processed_tokens);
-        m_num_processed_tokens -= num_preempt_tokens;
-        m_preempted = true;
+        OPENVINO_ASSERT(num_preempt_tokens <= m_context_len);
+        m_context_len -= num_preempt_tokens;
+        set_waiting();
     }
 
     // returns context length taking into account scheduled tokens
-    size_t get_context_len() const {
-        OPENVINO_ASSERT(!has_finished());
-        return get_num_processed_tokens() + get_num_scheduled_tokens();
+    size_t get_future_context_len() const {
+        OPENVINO_ASSERT(is_scheduled(), "Internal error: sequence group must be scheduled");
+        return get_context_len() + get_num_scheduled_tokens();
     }
 
     bool requires_sampling() const {
-        return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len;
+        return get_future_context_len() >= get_prompt_len() && get_future_context_len() > m_max_content_len;
     }
 
     void schedule_tokens(size_t num_tokens) {
         m_num_scheduled_tokens = num_tokens;
     }
 
-    void clear_scheduled_tokens() {
+    void reset_scheduled_tokens() {
         m_num_scheduled_tokens = 0;
     }
 
@@ -367,23 +350,26 @@ public:
         OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");
         // if sequence group has not finished, it has at least one token to process
         size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len);
-        return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u);
+        return std::max<size_t>(num_available_tokens - m_context_len, 1u);
     }
 
     // mark current schedule phase as finished and updates internal counters
     void finish_iteration() {
-        m_num_processed_tokens += m_num_scheduled_tokens;
-        // if some processed tokens were evicted, max content len is greater than number of processed tokens
-        m_max_content_len = std::max(m_max_content_len, m_num_processed_tokens);
-        clear_scheduled_tokens();
+        m_context_len += m_num_scheduled_tokens;
+        // if some processed tokens were preempted, max content len is greater than number of processed tokens
+        m_max_content_len = std::max(m_max_content_len, m_context_len);
+        reset_scheduled_tokens();
     }
 
-    void update_processed_tokens_num(size_t processed_tokens) {
-        m_num_processed_tokens = processed_tokens;
-        m_max_content_len = processed_tokens;
+    // used when prefix caching managed to restore some already computed KV cache blocks
+    void set_context_len(size_t processed_tokens) {
+        m_context_len = processed_tokens;
+        m_max_content_len = m_context_len;
     }
 
-    void clear_waiting_sequences() {
+    // once scheduler iteration has finished, we need to reset preemption status
+    // for sequences within sequence group, so they can be scheduled again on next step()
+    void reset_preempted_sequences() {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_waiting()) {
                 m_sequences[seq_id]->set_status(SequenceStatus::RUNNING);
@@ -395,11 +381,14 @@ public:
         return m_prompt_ids;
     }
 
+    // returns a number of required blocks for next generation
+    // (including slots for scheduled tokens)
     size_t get_num_logical_blocks() const {
-        return (get_context_len() + m_block_size - 1) / m_block_size;
+        return (get_future_context_len() + m_block_size - 1) / m_block_size;
     }
 
     // requires number of physical blocks for next generation
+    // (including slots for scheduled tokens)
     size_t get_num_blocks() const {
         return get_num_logical_blocks();
     }
@@ -425,6 +414,8 @@ public:
         }
     }
 
+    // sets all sequences within a group to wait until next iteration of
+    // scheduler (i.e. next step())
     void set_waiting() {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_running()) {

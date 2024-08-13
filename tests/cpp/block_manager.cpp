@@ -19,7 +19,7 @@ TEST(TestBlockManager, general_test) {
         prompt_ids.size()}, prompt_ids.data()),
         ov::genai::beam_search(),
         4);
-    auto sequence = sequence_group->get_not_finished_sequences()[0];
+    auto sequence = sequence_group->get_sequences()[0];
     bm.allocate(sequence, 6);
     auto seq_id = sequence->get_id();
     EXPECT_TRUE(bm.has_block_table(seq_id));
@@ -41,7 +41,7 @@ TEST(TestBlockManager, general_test) {
 
 }
 
-TEST(TestBlockManager, required_blocks_count) {
+TEST(TestBlockManager, get_number_of_required_blocks) {
     ov::genai::BlockManager bm = ov::genai::BlockManager(8, false, 4);
 
     std::vector<uint64_t> tokens = {0,1,2,3,4};
@@ -52,7 +52,7 @@ TEST(TestBlockManager, required_blocks_count) {
         ov::genai::beam_search(),
         4);
     sequence_group->schedule_tokens(5);
-    auto required_blocks = bm.required_blocks_count(sequence_group);
+    auto required_blocks = bm.get_number_of_required_blocks(sequence_group);
     EXPECT_EQ(required_blocks, 2);
     EXPECT_TRUE(bm.can_append_slots(sequence_group));
     bm.append_slots(sequence_group);
@@ -65,7 +65,7 @@ TEST(TestBlockManager, required_blocks_count) {
         bm.fork_sequence(sequence_to_fork->get_id(), forked_sequence->get_id());
     }
     sequence_group->schedule_tokens(1);
-    required_blocks = bm.required_blocks_count(sequence_group);
+    required_blocks = bm.get_number_of_required_blocks(sequence_group);
     EXPECT_EQ(required_blocks, 4);
     EXPECT_TRUE(bm.can_append_slots(sequence_group));
     bm.append_slots(sequence_group);
@@ -73,7 +73,7 @@ TEST(TestBlockManager, required_blocks_count) {
     sequence_group->finish_iteration();
 
     sequence_group->schedule_tokens(3);
-    required_blocks = bm.required_blocks_count(sequence_group);
+    required_blocks = bm.get_number_of_required_blocks(sequence_group);
     EXPECT_EQ(required_blocks, 5);
     EXPECT_FALSE(bm.can_append_slots(sequence_group));
 }

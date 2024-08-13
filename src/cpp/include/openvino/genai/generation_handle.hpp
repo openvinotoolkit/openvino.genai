@@ -38,6 +38,7 @@ enum class GenerationFinishReason {
     LENGTH = 2 // Generation finished by reaching max_new_tokens limit
 };
 
+// Output of generate() method, which represents full information about request with a given request_id
 struct GenerationResult {
     // request ID - obsolete when handle API is approved as handle will connect results with prompts.
     uint64_t m_request_id;
@@ -52,37 +53,53 @@ struct GenerationResult {
     GenerationStatus m_status = GenerationStatus::RUNNING;
 };
 
+// Represents already generated tokens of running generate() method.
+// E.g. typically generate() method consists of multiple step() which generate
+// token by token. This structure represents a vector of already generated tokens so far
+// for a given prompt.
 struct GenerationOutput {
+    // Currently generated list of tokens
     std::vector<int64_t> generated_token_ids;
+    // Score
+    // For beam search case: beam score
+    // For other sampling types: cumulative log probabilitity of output tokens
     float score;
+    // Finish reason if generation has finished, NONE otherwise
     GenerationFinishReason finish_reason;
 };
 
+// Current outputs of step() method for all scheduled requests
 using GenerationOutputs = std::unordered_map<uint64_t, GenerationOutput>;
 
 class GenerationStream;
 
-class OPENVINO_GENAI_EXPORTS GenerationHandleImpl {
+class OPENVINO_GENAI_EXPORTS GenerationHandle {
     std::shared_ptr<GenerationStream> m_generation_stream;
     ov::genai::GenerationConfig m_sampling_params;
 
-    bool is_dropped();
+    // whether client ha dropped session with pipeline
+    bool is_dropped() const;
  
 public:
-    GenerationHandleImpl(std::shared_ptr<GenerationStream> generation_stream, const ov::genai::GenerationConfig& sampling_params) :
-    m_generation_stream(std::move(generation_stream)),
-    m_sampling_params(sampling_params) {};
+    using Ptr = std::shared_ptr<GenerationHandle>;
 
-    ~GenerationHandleImpl();
+    GenerationHandle(std::shared_ptr<GenerationStream> generation_stream, const ov::genai::GenerationConfig& sampling_params) :
+        m_generation_stream(std::move(generation_stream)),
+        m_sampling_params(sampling_params) {
+    }
+
+    ~GenerationHandle();
 
     // There can be only one handle for a request
-    GenerationHandleImpl(const GenerationHandleImpl&) = delete;
-    GenerationHandleImpl& operator=(const GenerationHandleImpl&) = delete;
+    GenerationHandle(const GenerationHandle&) = delete;
+    GenerationHandle& operator=(const GenerationHandle&) = delete;
 
-    GenerationStatus get_status();
+    GenerationStatus get_status() const;
 
-    bool can_read();
+    // whether new tokens are available
+    bool can_read() const;
 
+    // client drops generation session on server
     void drop();
 
     GenerationOutputs back();
@@ -92,5 +109,4 @@ public:
     std::vector<GenerationOutput> read_all();
 };
 
-using GenerationHandle = std::shared_ptr<GenerationHandleImpl>;
 }

@@ -73,11 +73,11 @@ class ContinuousBatchingPipeline::Impl {
         std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
         while (requests_iterator != m_requests.end()) {
             const auto& request = *requests_iterator;
-            if(request->has_finished() || request->out_of_memory() || request->handle_dropped()) {
+            if (request->has_finished() || request->out_of_memory() || request->handle_dropped()) {
                 for (const auto& sequence: request->get_sequences()) {
                     m_scheduler->free_sequence(sequence->get_id());
                 }
-                m_sampler->clear_beam_search_info(request->get_request_id());
+                m_sampler->drop_sequence_group(request->get_request_id());
                 requests_iterator = m_requests.erase(requests_iterator);
             } else {
                 requests_iterator++;
@@ -86,7 +86,8 @@ class ContinuousBatchingPipeline::Impl {
     }
 
 public:
-    Impl(const std::string& models_path, const Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& plugin_config) :
+    Impl(const std::string& models_path, const Tokenizer& tokenizer, const SchedulerConfig& scheduler_config,
+         const std::string& device, const ov::AnyMap& plugin_config) :
             m_tokenizer{tokenizer} {
         ov::Core core;
 
@@ -100,25 +101,19 @@ public:
         ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
 
         // setup KV caches
-        m_cache_manager = std::make_shared<CacheManager>(device_config);
-        for (size_t decoder_layer_id = 0; decoder_layer_id < device_config.get_num_layers(); ++decoder_layer_id) {
-            infer_request.set_input_tensor(2 + decoder_layer_id * 2, m_cache_manager->get_key_cache(decoder_layer_id));
-            infer_request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager->get_value_cache(decoder_layer_id));
-        }
+        m_cache_manager = std::make_shared<CacheManager>(device_config, infer_request);
 
-        SchedulerConfig updated_config = scheduler_config;
+        SchedulerConfig updated_scheduler_config = scheduler_config;
         // update KV number in scheduler config
         if (scheduler_config.num_kv_blocks != device_config.get_num_kv_blocks()) {
-            updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
+            updated_scheduler_config.num_kv_blocks = device_config.get_num_kv_blocks();
         }
 
-        m_scheduler = std::make_shared<Scheduler>(updated_config);
+        m_scheduler = std::make_shared<Scheduler>(updated_scheduler_config);
         // and finally create model runner
-        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
+        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_scheduler_config);
         m_sampler = std::make_shared<Sampler>();
         m_sampler->set_seed(m_generation_config.rng_seed);
-
-        // read default generation config
     }
 
     Impl(const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& llm_plugin_config, const ov::AnyMap& tokenizer_plugin_config)
@@ -136,7 +131,7 @@ public:
         return m_tokenizer;
     }
 
-    GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids, ov::genai::GenerationConfig sampling_params) {
+    GenerationHandle::Ptr add_request(uint64_t request_id, const ov::Tensor& input_ids, ov::genai::GenerationConfig sampling_params) {
         sampling_params.set_eos_token_id(m_tokenizer.get_eos_token_id());
         sampling_params.validate();
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
@@ -145,10 +140,10 @@ public:
             std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
             m_awaiting_requests.push_back(sequence_group);
         }
-        return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
+        return std::make_shared<GenerationHandle>(sequence_group->get_generation_stream(), sampling_params);
     }
 
-    GenerationHandle add_request(uint64_t request_id, const std::string& prompt, ov::genai::GenerationConfig sampling_params) {
+    GenerationHandle::Ptr add_request(uint64_t request_id, const std::string& prompt, ov::genai::GenerationConfig sampling_params) {
         static ManualTimer timer("tokenize");
         timer.start();
         ov::Tensor input_ids = m_tokenizer.encode(prompt).input_ids;
@@ -173,10 +168,11 @@ public:
             static ManualTimer timer("scheduling");
             timer.start();
             scheduler_output = m_scheduler->schedule(m_requests);
-            m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
-            m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
             m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
             timer.end();
+
+            m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
+            m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
         }
 
         // if no tokens were scheduled, we are out of memory
@@ -218,7 +214,7 @@ public:
             timer.end();
         }
 
-        // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
+        // process sampler_output (e.g. fork or drop sequences from Scheduler)
         {
             static ManualTimer timer("fork / free sequence");
             timer.start();
@@ -277,7 +273,7 @@ public:
             }
         }, streamer);
 
-        std::vector<GenerationHandle> generations;
+        std::vector<GenerationHandle::Ptr> generations;
         for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
             OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
             generations.push_back(add_request(request_id, input_ids[request_id], sampling_params[request_id]));
@@ -405,11 +401,11 @@ PipelineMetrics ContinuousBatchingPipeline::get_metrics() const{
     return m_impl->get_metrics();
 }
 
-GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params) {
+GenerationHandle::Ptr ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params) {
     return m_impl->add_request(request_id, prompt, sampling_params);
 }
 
-GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params) {
+GenerationHandle::Ptr ContinuousBatchingPipeline::add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params) {
     return m_impl->add_request(request_id, input_ids, sampling_params);
 }
 

@@ -14,8 +14,6 @@ class GenerationStream {
     GenerationStatus m_status = GenerationStatus::RUNNING;
     SynchronizedQueue<GenerationOutputs> m_output_queue;
 
-    std::vector<uint64_t> last_sequence_ids;
-
 public:
     using Ptr = std::shared_ptr<GenerationStream>;
 
