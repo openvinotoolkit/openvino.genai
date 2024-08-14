@@ -143,8 +143,8 @@ public:
                                                                             sampling_params, 
                                                                             m_scheduler->get_config().block_size,
                                                                             m_scheduler->get_config().enable_prefix_caching);
+        sequence_group->set_sequence_group_ptr(sequence_group);
         if (m_scheduler->get_config().enable_prefix_caching) {
-            sequence_group->set_sequence_group_ptr(sequence_group);
             m_scheduler->restore_cached_blocks(sequence_group);
         }
 

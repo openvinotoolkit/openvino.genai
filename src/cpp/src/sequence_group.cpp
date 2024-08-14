@@ -16,7 +16,8 @@ size_t Sequence::_make_hash(size_t content_length) {
 
         // hash of current block depends on prefix hashes
         std::vector<int64_t> content;
-        size_t prefix_hashes_needed_count = content_length % block_size == 0 ? content_length / block_size - 1 : content_length / block_size;
+        size_t prefix_hashes_needed_count = block_start_idx / block_size;
+        OPENVINO_ASSERT(prefix_hashes_needed_count <= m_prefix_hashes.size()); 
         content.insert(content.end(), m_prefix_hashes.begin(), m_prefix_hashes.begin() + prefix_hashes_needed_count);
 
         // get tokens corresponding to current block
@@ -43,15 +44,10 @@ size_t Sequence::get_hash(size_t content_length) {
     OPENVINO_ASSERT(sequence_group, "Hash computation requires setting of sequence_group ptr.");
     auto content_len = content_length == 0 ? sequence_group->get_context_len() : content_length;
     auto block_size = sequence_group->get_block_size();
-    size_t cur_content = block_size;
-    size_t hash_idx = 0;
+    size_t cur_content = block_size * (m_prefix_hashes.size() + 1);
     while (cur_content <= content_len)
     {
-        if (hash_idx >= m_prefix_hashes.size()) {
-            m_prefix_hashes.push_back(_make_hash(cur_content));
-
-        }
-        hash_idx ++;
+        m_prefix_hashes.push_back(_make_hash(cur_content));
         cur_content += block_size;
     }
     if (content_len % block_size == 0) {

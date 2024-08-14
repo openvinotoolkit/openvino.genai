@@ -53,6 +53,7 @@ TEST(TestBlockManager, required_blocks_count) {
         ov::genai::beam_search(),
         4,
         false);
+    sequence_group->set_sequence_group_ptr(sequence_group);
     sequence_group->schedule_tokens(5);
     auto required_blocks = bm.required_blocks_count(sequence_group);
     EXPECT_EQ(required_blocks, 2);

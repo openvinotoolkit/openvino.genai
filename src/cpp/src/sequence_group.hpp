@@ -38,7 +38,6 @@ class Sequence {
     float m_cumulative_log_prob = 0.0f;
     std::vector<int64_t> m_prefix_hashes;
     std::weak_ptr<SequenceGroup> m_sequence_group;
-    bool m_enable_prefix_caching;
 
     size_t _make_hash(size_t content_length);
 public:
@@ -46,24 +45,23 @@ public:
     using CPtr = std::shared_ptr<const Sequence>;
 
     // don't use directly
-    Sequence(const uint64_t id, bool enable_prefix_caching) : m_grouped_id(id), m_enable_prefix_caching(enable_prefix_caching) {};
+    Sequence(const uint64_t id) : m_grouped_id(id) {};
 
     // don't use directly
-    Sequence(const Sequence& seq, const uint64_t id, bool enable_prefix_caching) :
+    Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
         m_grouped_id(id),
         m_status(seq.m_status),
-        m_cumulative_log_prob(seq.m_cumulative_log_prob), 
-        m_enable_prefix_caching(enable_prefix_caching) {
+        m_cumulative_log_prob(seq.m_cumulative_log_prob){
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
 
-    static Sequence::Ptr create(const uint64_t id, bool enable_prefix_caching) {
-        return std::make_shared<Sequence>(id, enable_prefix_caching);
+    static Sequence::Ptr create(const uint64_t id) {
+        return std::make_shared<Sequence>(id);
     }
 
     static Sequence::Ptr fork(Sequence::CPtr sequence, const uint64_t id) {
-        return std::make_shared<Sequence>(*sequence, id, sequence->m_enable_prefix_caching);
+        return std::make_shared<Sequence>(*sequence, id);
     }
 
     bool operator ==(const Sequence& other) const {
@@ -144,7 +142,6 @@ public:
     }
 
     std::shared_ptr<SequenceGroup> get_sequence_group_ptr() const {
-        OPENVINO_ASSERT(m_enable_prefix_caching);
         OPENVINO_ASSERT(!m_sequence_group.expired());
         return m_sequence_group.lock();
     }
@@ -197,7 +194,7 @@ public:
 
     SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
         : SequenceGroup(request_id, sampling_params, block_size, enable_prefix_caching) {
-        add_sequence(Sequence::create(m_next_sequence_id++, enable_prefix_caching));
+        add_sequence(Sequence::create(m_next_sequence_id++));
 
         m_prompt_ids.resize(input_ids.get_size());
         std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), m_prompt_ids.begin());
@@ -417,7 +414,7 @@ public:
     }
 
     Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
-        auto ptr = m_enable_prefix_caching ? sequence->get_sequence_group_ptr() : nullptr;
+        auto ptr = sequence->get_sequence_group_ptr();
         m_sequences.emplace_back(Sequence::fork(std::move(sequence), m_next_sequence_id++));
         set_sequence_group_ptr(ptr);
         return m_sequences.back();
