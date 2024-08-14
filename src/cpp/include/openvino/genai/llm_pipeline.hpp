@@ -12,6 +12,7 @@
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
+#include "openvino/genai/scheduler_config.hpp"
 
 namespace ov {
 namespace genai {
