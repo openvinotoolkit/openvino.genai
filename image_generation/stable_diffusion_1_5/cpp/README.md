@@ -45,7 +45,7 @@ cd ./openvino.genai/image_generation/stable_diffusion_1_5/cpp/
 Follow the [install instructions](https://docs.openvino.ai/2024/get-started/install-openvino.html) selecting OpenVINO Archives distribution.
 The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throughout the document.
 
-## Step 3: Obtain Stable Diffusion Model
+### Step 3: Obtain Stable Diffusion Model
 
 1. Install dependencies to import models from HuggingFace:
 
@@ -73,7 +73,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
 > [!NOTE]
 > Now the pipeline support batch size = 1 only, i.e. static model `(1, 3, 512, 512)`
 
-### (Optional) Enable LoRA Weights with Safetensors
+#### (Optional) Enable LoRA Weights with Safetensors
 
 Low-Rank Adaptation (LoRA) is a technique introduced to deal with the problem of fine-tuning Diffusers and Large Language Models (LLMs). In the case of Stable Diffusion fine-tuning, LoRA can be applied to the cross-attention layers for the image representations with the latent described.
 
@@ -87,7 +87,7 @@ The LoRA safetensors model is loaded via [safetensors.h](https://github.com/hsny
 There are various LoRA models on https://civitai.com/tag/lora and on HuggingFace, you can consider to choose your own LoRA model in safetensor format. For example, you can use LoRA [soulcard model](https://civitai.com/models/67927?modelVersionId=72591).
 Download and put LoRA safetensors model into the models directory. When running the built sample provide the path to the LoRA model with `-l, --loraPath arg` argument.
 
-## Step 4: Build the SD Application
+### Step 4: Build the SD Application
 
 1. Set up the environment:
     Linux and macOS:
@@ -111,7 +111,7 @@ Download and put LoRA safetensors model into the models directory. When running 
    cmake --build build --config Release --parallel
    ```
 
-## Step 5: Run Pipeline
+### Step 5: Run Pipeline
 ```shell
 ./build/stable_diffusion [-p <posPrompt>] [-n <negPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <device>] [-r <readNPLatent>] [-l <lora.safetensors>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-t <modelType>] [--guidanceScale <guidanceScale>] [--dynamic]
 
