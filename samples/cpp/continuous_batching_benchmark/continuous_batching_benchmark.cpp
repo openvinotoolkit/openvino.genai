@@ -181,14 +181,14 @@ class GenerationInfo {
         size_t num_input_tokens;
     };
 
-    ov::genai::GenerationHandle generation_handle;
+    ov::genai::GenerationHandle::Ptr generation_handle;
     std::chrono::steady_clock::time_point start_time;
     std::unordered_map<int64_t, SequenceInfo> sequences_info;
     bool active = true;
     size_t input_len;
 
 public:
-    GenerationInfo(ov::genai::GenerationHandle generation_handle, size_t input_len) : input_len(input_len)
+    GenerationInfo(ov::genai::GenerationHandle::Ptr generation_handle, size_t input_len) : input_len(input_len)
     {
         this->generation_handle = std::move(generation_handle);
         start_time = std::chrono::steady_clock::now();
@@ -253,7 +253,7 @@ public:
     }
 
     void add_generation(ov::genai::ContinuousBatchingPipeline* pipe, Dataset* dataset, size_t request_id) {
-        ov::genai::GenerationHandle generation_handle = pipe->add_request(request_id, dataset->m_prompts[request_id], dataset->m_sampling_params[request_id]);
+        ov::genai::GenerationHandle::Ptr generation_handle = pipe->add_request(request_id, dataset->m_prompts[request_id], dataset->m_sampling_params[request_id]);
         std::lock_guard<std::mutex> lock(mutex);
         generations_info.emplace_back(std::move(generation_handle), dataset->m_input_lens[request_id]);
     }

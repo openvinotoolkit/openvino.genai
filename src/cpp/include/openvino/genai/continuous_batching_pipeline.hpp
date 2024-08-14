@@ -58,8 +58,8 @@ public:
 
     PipelineMetrics get_metrics() const;
 
-    GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params);
-    GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params);
+    GenerationHandle::Ptr add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params);
+    GenerationHandle::Ptr add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params);
 
     void step();
 

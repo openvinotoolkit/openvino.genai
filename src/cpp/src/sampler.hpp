@@ -265,7 +265,7 @@ public:
 
     void set_seed(size_t seed) { rng_engine.seed(seed); }
 
-    void clear_beam_search_info(uint64_t request_id);
+    void drop_sequence_group(uint64_t request_id);
 };
 
 SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits) {
@@ -333,7 +333,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                     register_new_token(sampled_token_id, running_sequences[running_sequence_id]);
                 }
                 logit_processor.increment_gen_tokens();
-                for (const auto& dropped_seq_id : sequence_group->try_finish_generation()) {
+                for (const auto& dropped_seq_id : sequence_group->try_to_finish_generation()) {
                     sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
                 }
             } else if (sampling_params.is_beam_search()) {
@@ -599,7 +599,13 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
     }
 }
 
-void Sampler::clear_beam_search_info(uint64_t request_id) { 
-    m_beam_search_info.erase(request_id);
+void Sampler::drop_sequence_group(uint64_t request_id) { 
+    auto beam_search_info_it = m_beam_search_info.find(request_id);
+    if (beam_search_info_it != m_beam_search_info.end())
+        m_beam_search_info.erase(request_id);
+
+    auto logit_processors_it = m_logit_processors.find(request_id);
+    if (logit_processors_it != m_logit_processors.end())
+        m_logit_processors.erase(request_id);
 }
 }

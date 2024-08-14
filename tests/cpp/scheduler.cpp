@@ -103,7 +103,7 @@ TEST(TestScheduler, general_test) {
         EXPECT_EQ(out4.m_block_tables[idx2][1]->get_index(), 1);
 
         // requests1[1] should be fully scheduled plus 1 slot for requests[0] for generate phase
-        EXPECT_EQ(out4.m_total_num_scheduled_tokens, requests[1]->get_context_len() + 1);
+        EXPECT_EQ(out4.m_total_num_scheduled_tokens, requests[1]->get_future_context_len() + 1);
         EXPECT_EQ(out4.is_prompt, false);
     }
 
