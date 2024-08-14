@@ -325,6 +325,8 @@ public:
     double total_time = 0;
     size_t round = 0;
     const size_t BATCH_SIZE = 1;
+    std::vector<std::vector<struct llava_image_embed*>> embeds;
+    clip_ctx* ctx_clip = nullptr;
 
     explicit VLMPipeline(const ModelConfig& conf) :
         tokenizer{conf.model_dir.string()},
@@ -482,6 +484,40 @@ public:
 
         round++;
     }
+
+    void generate(const std::shared_ptr<unsigned char[]>& image, long image_length, int output_fixed_len, const std::string& first_prompt) {
+        llava_image_embed_free_slice(embeds);
+        if (ctx_clip) {
+            delete ctx_clip;
+        }
+        ctx_clip = new clip_ctx;
+        int n_threads = 1;
+        for (int i = 0; i < 3; ++i) {
+            ctx_clip->image_mean[i] = 0.5;
+            ctx_clip->image_std[i] = 0.5;
+        }
+        ctx_clip->ireq_vision = this->ireq_vision;
+        ctx_clip->ireq_resampler = this->ireq_resampler;
+
+        double first_time;
+
+        //extract image embedding
+        embeds = llava_image_embed_make_with_bytes_slice(ctx_clip, n_threads, image.get(), image_length);
+
+        //get image embedding
+        ov::Tensor imgEmbedTensor;
+        get_image_embedding(embeds, this->tokenizer, this->ireq_embed, imgEmbedTensor);
+
+        ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
+        size_t embed_dim = img_embed_shape[2];
+
+        this->imgEmbedTensor = imgEmbedTensor;
+        this->img_embed_shape = img_embed_shape;
+        this->output_fixed_len = output_fixed_len;
+        this->embed_dim = embed_dim;
+        this->llm_inputs_embeds.resize((this->max_lenth * embed_dim));
+        generate(first_prompt);
+    }
 };
 
 int main(int argc, char* argv[]) try {
@@ -495,13 +531,6 @@ int main(int argc, char* argv[]) try {
     if (!loaded) {
         std::cout << "failed to load " << argv[2] << std::endl;
         return 0;
-    }
-
-    clip_ctx* ctx_clip = new clip_ctx;
-    int n_threads = 1;
-    for (int i = 0; i < 3; ++i) {
-        ctx_clip->image_mean[i] = 0.5;
-        ctx_clip->image_std[i] = 0.5;
     }
 
     std::string device = "CPU";
@@ -525,29 +554,13 @@ int main(int argc, char* argv[]) try {
         device_config[ov::enable_profiling.name()] = false;
     }
     VLMPipeline pipe({argv[1], device, device_config});
-    ctx_clip->ireq_vision = pipe.ireq_vision;
-    ctx_clip->ireq_resampler = pipe.ireq_resampler;
-
-    double first_time;
-
-    //extract image embedding
-    std::vector<std::vector<struct llava_image_embed*>> embeds = llava_image_embed_make_with_bytes_slice(ctx_clip, n_threads, image_bytes, image_bytes_length);
-    free(image_bytes);
-
-    //get image embedding
-    ov::Tensor imgEmbedTensor;
-    get_image_embedding(embeds, pipe.tokenizer, pipe.ireq_embed, imgEmbedTensor);
-
-    ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
-    size_t embed_dim = img_embed_shape[2];
-
-    std::cout << "question:\n";
-    pipe.imgEmbedTensor = imgEmbedTensor;
-    pipe.img_embed_shape = img_embed_shape;
-    pipe.output_fixed_len = args.output_fixed_len;
-    pipe.embed_dim = embed_dim;
-    pipe.llm_inputs_embeds.resize((pipe.max_lenth * embed_dim));
     std::string prompt;
+    std::cout << "question:\n";
+    if (!std::getline(std::cin, prompt)) {
+        throw std::runtime_error("std::cin failed");
+    }
+    pipe.generate(std::shared_ptr<unsigned char[]>{image_bytes}, image_bytes_length, args.output_fixed_len, prompt);
+    std::cout << "question:\n";
     while (std::getline(std::cin, prompt)) {
         if (prompt == "clear") {
             pipe.round = 0;
@@ -557,7 +570,6 @@ int main(int argc, char* argv[]) try {
         pipe.generate(prompt);
         std::cout << "question:\n";
     }
-    llava_image_embed_free_slice(embeds);
 
     std::cout << "input id, input token len, out token len, first token time, average time" << std::endl;
     size_t index = 0;
@@ -568,11 +580,11 @@ int main(int argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
-    } catch (...) {}
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (...) {}
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 }
