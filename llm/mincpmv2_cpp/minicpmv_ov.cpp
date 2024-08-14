@@ -49,27 +49,6 @@ struct minicpmv_embed {
     std::vector<float> buf;
 };
 
-static void usage(const std::string& prog) {
-    std::cout << "Usage: " << prog << " [options]\n"
-        << "\n"
-        << "options:\n"
-        << "  -h, --help              show this help message and exit\n"
-        << "  -m, --model PATH        minicpm OpenVINO model path (default: openvino_model.xml)\n"
-        << "  -vision PATH            minicpmv vision model path (default: minicpm-v-2_vision.xml)\n"
-        << "  -resam PATH             minicpmv resampler model path (default: minicpm-v-2_resampler.xml)\n"
-        << "  -embed PATH             minicpmv embedding model path (default: minicpm-v-2_embedding.xml)\n"
-        << "  -token PATH             Tokenizer model folder\n"
-        << "  -d, --device            Device (default: CPU)\n"
-        << "  --reduce_logits         Reduce_logits (default: False)\n"
-        << "  --do_sample             Search (default: False)\n"
-        << "  --top_k N               top-k sampling (default: 0)\n"
-        << "  --top_p N               top-p sampling (default: 0.7)\n"
-        << "  --temp N                temperature (default: 0.95)\n"
-        << "  --repeat_penalty N      penalize repeat sequence of tokens (default: 1.0, 1.0 = disabled)\n"
-        << "  --output_fixed_len N    set output fixed lenth (default: 0, output lenth is determined by the model)\n"
-        << "  --image PATH            path to an image file. use with multimodal models. Specify multiple times for batching\n";
-}
-
 int64_t get_out_token_id(const std::vector<int>& input_ids, float* logits, size_t vocab_size, Args args) {
     int64_t out_token;
 
@@ -317,16 +296,16 @@ ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& emb
 }
 }
 
-struct ModelConfig {
-    std::filesystem::path model_dir;
-    std::string device = "CPU";
-    ov::AnyMap device_config;
-    // per model devices and configs
-    mutable ov::Core core{};
-};
-
 class VLMPipeline {
 public:
+    struct ModelConfig {
+        std::filesystem::path model_dir;
+        std::string device = "CPU";
+        ov::AnyMap device_config;
+        // per model devices and configs
+        mutable ov::Core core{};
+    };
+
     ov::genai::Tokenizer tokenizer;
     ov::InferRequest ireq_embed;
     ov::InferRequest ireq;
@@ -535,7 +514,6 @@ int main(int argc, char* argv[]) try {
         device_config[ov::hint::enable_hyper_threading.name()] = false;
         device_config[ov::hint::enable_cpu_pinning.name()] = true;
         device_config[ov::enable_profiling.name()] = false;
-        //device_config[ov::hint::dynamic_quantization_group_size.name()] = group_size;
     }
 
     if (device.find("GPU") != std::string::npos) {
@@ -545,8 +523,6 @@ int main(int argc, char* argv[]) try {
         device_config[ov::intel_gpu::hint::host_task_priority.name()] = ov::hint::Priority::HIGH;
         device_config[ov::hint::enable_cpu_pinning.name()] = true;
         device_config[ov::enable_profiling.name()] = false;
-        //device_config[ov::hint::dynamic_quantization_group_size.name()] = group_size;
-        //std::cout << "set dynamic quantization group size 32" << std::endl;
     }
     VLMPipeline pipe({argv[1], device, device_config});
     ctx_clip->ireq_vision = pipe.ireq_vision;
