@@ -16,12 +16,10 @@ static void glfw_error_callback(int error, const char* description)
 }
 
 uint32_t gen_seed() {
-    std::random_device rd;                                       
-    std::mt19937_64 gen(rd());                                   
-    std::uniform_int_distribution<uint32_t> dis(0, UINT32_MAX);
+    static std::mt19937_64 gen(std::random_device{}());
+    static std::uniform_int_distribution<uint32_t> dis(0, UINT32_MAX);
     return dis(gen);
 }
-
 
 ov::Tensor postprocess_image(ov::Tensor decoded_image) {
     ov::Tensor generated_image(ov::element::u8, decoded_image.get_shape());
@@ -329,11 +327,12 @@ void App::RenderRightPanel() {
                 worker.Request([this] {
                     running = true;
                     uint32_t input_seed;
-                    if (state.seed != -1) {
-                        input_seed = state.seed;
-                    } else {
+                    if ((int)state.seed == -1) {
                         input_seed = gen_seed();
+                    } else {
+                        input_seed = state.seed;
                     }
+
                     StableDiffusionControlnetPipelineParam param = {
                         state.prompt,
                         state.negative_prompt,
