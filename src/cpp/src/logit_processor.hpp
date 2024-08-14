@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "openvino/genai/generation_config.hpp"
+#include "timer.hpp"
 
 struct Token {
     float m_log_prob = 0.;
@@ -58,11 +59,42 @@ class TopPFilter : public ILogitTransformer {
 public:
     TopPFilter(double top_p) : m_top_p(top_p) {}
 
+    bool _incremental_sort(std::vector<Token>& logits_vector) {
+        // Experimental method
+        // Since most of the time huge part of logits vector contains minimal values 
+        // expensive sorting of entire vector might be unnecessary, especially for low values of top_p. 
+        // This method partially sorts vector 3 times considering 10, 100 and 1000 top elements and stops when top_p condition is met.
+        // If top_p is found in considered scope it resizes logits vector and returns true. Otherwise it returns false and regular sorting is performed.
+        // Note that it can we less performant than standard approach if logits value are more evenly distributed across the vector.
+        float sum = 0.0;
+        for (uint32_t step = 10; step <= 1000; step *= 10) {
+            std::partial_sort(logits_vector.begin(), logits_vector.begin() + step, logits_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+            for (int i = 0; i < step; i++) {
+                sum += logits_vector[i].m_log_prob;
+                if (sum > m_top_p) {
+                    logits_vector.resize(i+1);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     void apply(Logits& logits) override {
+        static ManualTimer timer("top_p filter");
+        timer.start();
         if (!logits.is_vector_initialized()) {
             // Initialize and sort vector
+            static ManualTimer timer1("top_p filter - initialize vector");
+            timer1.start();
             logits.initialize_vector();
+            timer1.end();
+            static ManualTimer timer2("top_p filter - sort");
+            timer2.start();
+            if (_incremental_sort(logits.m_vector))
+                return;
             std::sort(logits.m_vector.begin(), logits.m_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+            timer2.end();
         }
         float probability_sum = 0.0f;
         size_t nucleus_size = 0;
@@ -72,6 +104,7 @@ public:
             if (probability_sum > m_top_p) break;
         }
         logits.resize(nucleus_size);
+        timer.end();
     }
 
 protected:
@@ -84,6 +117,8 @@ public:
 
     // If this transform is used along with top_p, it should be applied after it since top_p sorts entire vector and top_k does it only partially
     void apply(Logits& logits) override {
+        static ManualTimer timer("top_k filter");
+        timer.start();
 
         if (m_top_k >= logits.m_size) 
             return;
@@ -94,6 +129,7 @@ public:
             std::partial_sort(logits.m_vector.begin(), logits.m_vector.begin() + m_top_k, logits.m_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
         }
         logits.resize(m_top_k);
+        timer.end();
     }
 
 protected:
@@ -105,6 +141,8 @@ public:
     TemperatureLogitTransform(double temperature) : m_temperature(temperature) {};
 
     void apply(Logits& logits) override {
+        static ManualTimer timer("temperature transform");
+        timer.start();
         float max_logit = -std::numeric_limits<float>::infinity();
         for (size_t i = 0; i < logits.m_size; i++) {
             if (logits.m_data[i] > max_logit) {
@@ -121,6 +159,7 @@ public:
         for (size_t i = 0; i < logits.m_size; i++) {
             logits.m_data[i] /= norm_sum;
         }
+        timer.end();
     }
 
 protected:

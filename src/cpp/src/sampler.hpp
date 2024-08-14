@@ -19,6 +19,7 @@
 #include "logit_processor.hpp"
 #include "scheduler.hpp"
 #include "sequence_group.hpp"
+#include "timer.hpp"
 
 namespace ov::genai {
 // Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
@@ -307,7 +308,10 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 };
                 for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
                     auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id);
+                    static ManualTimer timer("logit_processor.apply()");
+                    timer.start();
                     logit_processor.apply(logit_vector);
+                    timer.end();
                     Token sampled_token_id;
                     if (sampling_params.is_greedy_decoding()) {
                         sampled_token_id = _greedy_sample(logit_vector);
@@ -315,7 +319,10 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         // is_multinomial()
                         const bool is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
                         const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
+                        static ManualTimer timer2("multinomial_sample()");
+                        timer2.start();
                         auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence);
+                        timer2.end();
                         sampled_token_id = sampled_token_ids[0];
 
                         if (is_generate_n_tokens) {
