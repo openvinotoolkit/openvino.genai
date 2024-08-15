@@ -26,14 +26,15 @@ class MemConsumption:
             while True:
                 process = psutil.Process(os.getpid())
                 try:
-                    rss_mem_data = process.memory_info().rss / float(2**20)
+                    kb_unit = float(2**20)
+                    memory_full_info = process.memory_full_info()
+                    rss_mem_data = memory_full_info.rss / kb_unit
                     if sys.platform.startswith('linux'):
-                        shared_mem_data = process.memory_info().shared / float(2**20)
+                        shared_mem_data = memory_full_info.shared / kb_unit
                         uss_mem_data = rss_mem_data - shared_mem_data
                     elif sys.platform.startswith('win'):
-                        uss_mem_data = process.memory_info().private / float(2**20)
-                        shared_mem_data = (rss_mem_data - uss_mem_data) if rss_mem_data > uss_mem_data \
-                            else (uss_mem_data - rss_mem_data)
+                        uss_mem_data = memory_full_info.uss / kb_unit
+                        shared_mem_data = rss_mem_data - uss_mem_data
                     else:
                         uss_mem_data = -1
                         shared_mem_data = -1
