@@ -455,7 +455,7 @@ public:
         round++;
     }
 
-    void generate(const std::shared_ptr<unsigned char[]>& image, long image_length, int output_fixed_len, const std::string& first_prompt) {
+    void generate(const ov::Tensor image, int output_fixed_len, const std::string& first_prompt) {
         this->round = 0;
         llava_image_embed_free_slice(embeds);
         if (ctx_clip) {
@@ -473,7 +473,7 @@ public:
         double first_time;
 
         //extract image embedding
-        embeds = llava_image_embed_make_with_bytes_slice(ctx_clip, n_threads, image.get(), image_length);
+        embeds = llava_image_embed_make_with_bytes_slice(ctx_clip, n_threads, image.data<unsigned char>(), image.get_size());
 
         //get image embedding
         ov::Tensor imgEmbedTensor;
@@ -490,3 +490,23 @@ public:
         generate(first_prompt);
     }
 };
+
+ov::Tensor read_file(const char* path) {
+    auto file = fopen(path, "rb");
+    OPENVINO_ASSERT(nullptr != file, "Can't read file");
+    fseek(file, 0, SEEK_END);
+    size_t fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    ov::Tensor image{ov::element::u8, {fileSize}};
+
+    errno = 0;
+    size_t ret = fread(image.data(), 1, fileSize, file); // Read the file into the buffer
+    if (ferror(file)) {
+        std::cerr << "Read error\n";
+    }
+    if (ret != (size_t)fileSize) {
+        std::cerr << "unexpectedly reached end of file\n";
+    }
+    fclose(file); // Close the file
+    return image;
+}

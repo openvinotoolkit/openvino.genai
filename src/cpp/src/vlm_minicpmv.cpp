@@ -145,41 +145,6 @@ std::vector<std::vector<clip_image_u8*>> slice_image(const clip_image_u8* img, c
     return images;
 }
 
-
-
-bool load_file_to_bytes(const char* path, unsigned char** bytesOut, long* sizeOut) {
-    auto file = fopen(path, "rb");
-    if (file == NULL) {
-        LOG_TEE("%s: can't read file %s\n", __func__, path);
-        return false;
-    }
-
-    fseek(file, 0, SEEK_END);
-    auto fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    auto buffer = (unsigned char*)malloc(fileSize); // Allocate memory to hold the file data
-    if (buffer == NULL) {
-        LOG_TEE("%s: failed to alloc %ld bytes for file %s\n", __func__, fileSize, path);
-        perror("Memory allocation error");
-        fclose(file);
-        return false;
-    }
-    errno = 0;
-    size_t ret = fread(buffer, 1, fileSize, file); // Read the file into the buffer
-    if (ferror(file)) {
-        LOG_TEE("read error: %s", strerror(errno));
-    }
-    if (ret != (size_t)fileSize) {
-        LOG_TEE("unexpectedly reached end of file");
-    }
-    fclose(file); // Close the file
-
-    *bytesOut = buffer;
-    *sizeOut = fileSize;
-    return true;
-}
-
 static bool encode_image_with_clip(clip_ctx* ctx_clip, int n_threads, const clip_image_u8* img, float* image_embd, int* n_img_pos) {
     // std::vector<clip_image_f32*> img_res_v; // format VectN x H x W x RGB (N x 336 x 336 x 3), so interleaved RGB - different to the python implementation which is N x 3 x 336 x 336
     clip_image_f32_batch img_res_v;

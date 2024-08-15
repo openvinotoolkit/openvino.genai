@@ -20,9 +20,4 @@ OPENVINO_GENAI_EXPORTS void llava_image_embed_free_slice(std::vector<std::vector
 
 //MINICPMV_API bool llava_image_embed_make_with_clip_img_ollama(struct clip_ctx * ctx_clip, int n_threads, const struct clip_image_u8 * img, float ** image_embd_out, int * n_img_pos_out);
 OPENVINO_GENAI_EXPORTS bool llava_image_embed_make_with_clip_img(struct clip_ctx * ctx_clip, int n_threads, const struct clip_image_u8 * img, float ** image_embd_out, int * n_img_pos_out);
-
-//read image from file
-OPENVINO_GENAI_EXPORTS bool load_file_to_bytes(const char* path, unsigned char** bytesOut, long* sizeOut);
-
-
 #endif

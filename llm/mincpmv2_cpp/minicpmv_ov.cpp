@@ -28,6 +28,7 @@
 #include <windows.h>
 #endif
 
+
 int main(int argc, char* argv[]) try {
     if (3 != argc) {
         throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE>");
@@ -35,11 +36,7 @@ int main(int argc, char* argv[]) try {
     Args args;
     unsigned char* image_bytes;
     long image_bytes_length;
-    auto loaded = load_file_to_bytes(argv[2], &image_bytes, &image_bytes_length);
-    if (!loaded) {
-        std::cout << "failed to load " << argv[2] << std::endl;
-        return 0;
-    }
+    ov::Tensor image = read_file(argv[2]);
 
     std::string device = "CPU";
 
@@ -67,7 +64,7 @@ int main(int argc, char* argv[]) try {
     if (!std::getline(std::cin, prompt)) {
         throw std::runtime_error("std::cin failed");
     }
-    pipe.generate(std::shared_ptr<unsigned char[]>{image_bytes}, image_bytes_length, args.output_fixed_len, prompt);
+    pipe.generate(image, args.output_fixed_len, prompt);
     std::cout << "question:\n";
     while (std::getline(std::cin, prompt)) {
         if (prompt == "clear") {
