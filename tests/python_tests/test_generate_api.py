@@ -166,7 +166,7 @@ input_tensors_list = [
     raises=TypeError, 
     reason="pybind was unable to find ov::Tensor from openvino yet",
     strict=True,
-    condition=sys.platform in ["linux", "win32"]
+    condition=sys.platform == "win32"
 )
 @pytest.mark.precommit
 @pytest.mark.nightly
