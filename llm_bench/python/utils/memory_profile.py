@@ -21,12 +21,12 @@ class MemConsumption:
 
     def collect_memory_consumption(self):
         """Collect the data."""
+        kb_unit = float(2**20)
         while self.g_exit_get_mem_thread is False:
             self.g_event.wait()
             while True:
                 process = psutil.Process(os.getpid())
                 try:
-                    kb_unit = float(2**20)
                     memory_full_info = process.memory_full_info()
                     rss_mem_data = memory_full_info.rss / kb_unit
                     if sys.platform.startswith('linux'):
