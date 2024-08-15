@@ -141,12 +141,14 @@ def create_text_gen_model(model_path, device, **kwargs):
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        remote_code = False
-        try:
-            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
-        except Exception:
-            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-            remote_code = True
+        # remote_code = False
+        # try:
+        #     model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
+        # except Exception:
+        #     model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+        #     remote_code = True
+        model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+        remote_code = True
         start = time.perf_counter()
         ov_model = model_class.from_pretrained(
             model_path,
