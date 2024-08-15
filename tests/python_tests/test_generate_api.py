@@ -162,12 +162,6 @@ input_tensors_list = [
 ]
 @pytest.mark.parametrize("inputs", input_tensors_list)
 @pytest.mark.parametrize("model_descr", get_models_list())
-@pytest.mark.xfail(
-    raises=TypeError, 
-    reason="pybind was unable to find ov::Tensor from openvino yet",
-    strict=True,
-    condition=sys.platform == "win32"
-)
 @pytest.mark.precommit
 @pytest.mark.nightly
 def test_ov_tensors(model_descr, inputs):
