@@ -23,22 +23,21 @@ int main(int argc, char* argv[]) try {
     };
 
     pipe.start_chat();
-    for (;;) {
-        std::cout << "question:\n";
-        
-        std::getline(std::cin, prompt);
-        if (prompt == "Stop!") 
-            break;
-
+    std::cout << "question:\n";
+    while (std::getline(std::cin, prompt)) {
         pipe.generate(prompt, config, streamer);
-        
-        std::cout << "\n----------\n";
+        std::cout << "\n----------\n"
+            "question:\n";
     }
     pipe.finish_chat();
 } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
+    try {
+        std::cerr << error.what() << '\n';
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 } catch (...) {
-    std::cerr << "Non-exception object thrown\n";
+    try {
+        std::cerr << "Non-exception object thrown\n";
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 }

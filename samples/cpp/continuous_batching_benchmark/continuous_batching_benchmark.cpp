@@ -521,9 +521,13 @@ int main(int argc, char* argv[]) try {
 
     std::cout << "Benchmark finished" << std::endl;
 } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
+    try {
+        std::cerr << error.what() << '\n';
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 } catch (...) {
-    std::cerr << "Non-exception object thrown\n";
+    try {
+        std::cerr << "Non-exception object thrown\n";
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 }
