@@ -27,7 +27,7 @@ int main(int argc, char* argv[]) try {
     while (std::getline(std::cin, prompt)) {
         pipe.generate(prompt, config, streamer);
         std::cout << "\n----------\n"
-            << "question:\n";
+            "question:\n";
     }
     pipe.finish_chat();
 } catch (const std::exception& error) {
