@@ -28,6 +28,9 @@
 #include <windows.h>
 #endif
 
+bool callback(std::string&& subword) {
+    return !(std::cout << subword);
+}
 
 int main(int argc, char* argv[]) try {
     if (3 != argc) {
@@ -64,15 +67,10 @@ int main(int argc, char* argv[]) try {
     if (!std::getline(std::cin, prompt)) {
         throw std::runtime_error("std::cin failed");
     }
-    pipe.generate(image, prompt);
+    pipe.generate({prompt, image}, callback);
     std::cout << "question:\n";
     while (std::getline(std::cin, prompt)) {
-        if (prompt == "clear") {
-            pipe.round = 0;
-            std::cout << "please input prompt:  " << std::endl;
-            continue;
-        }
-        pipe.generate(prompt);
+        pipe.generate({prompt}, callback);
         std::cout << "question:\n";
     }
 

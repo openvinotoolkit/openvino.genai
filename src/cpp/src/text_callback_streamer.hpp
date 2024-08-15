@@ -9,7 +9,7 @@
 namespace ov {
 namespace genai {
 
-class TextCallbackStreamer: public StreamerBase {
+class OPENVINO_GENAI_EXPORTS TextCallbackStreamer: public StreamerBase {
 public:
     bool put(int64_t token) override;
     void end() override;

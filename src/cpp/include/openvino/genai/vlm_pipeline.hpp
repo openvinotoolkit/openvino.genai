@@ -8,6 +8,8 @@
 #include "openvino/genai/vlm_sampling.hpp"
 #include "openvino/genai/clip.hpp"
 #include <openvino/openvino.hpp>
+#include "../src/text_callback_streamer.hpp"
+#include <optional>
 #include <random>
 
 typedef std::chrono::high_resolution_clock Time;
@@ -71,41 +73,6 @@ int64_t get_out_token_id(const std::vector<int>& input_ids, float* logits, size_
 
     return out_token;
 }
-
-// The following reasons require TextStreamer to keep a cache of previous tokens:
-// detokenizer removes starting ' '. For example detokenize(tokenize(" a")) == "a",
-// but detokenize(tokenize("prefix a")) == "prefix a"
-// 1 printable token may consist of 2 token ids: detokenize(incomplete_token_idx) == "�"
-struct TextStreamer {
-    ov::genai::Tokenizer tokenizer;
-    std::vector<int64_t> token_cache;
-    size_t print_len = 0;
-
-    void put(int64_t token) {
-        token_cache.push_back(token);
-        std::string text = tokenizer.decode(token_cache);
-        if (!text.empty() && '\n' == text.back()) {
-            // Flush the cache after the new line symbol
-            std::cout << std::string_view{text.data() + print_len, text.size() - print_len};
-            token_cache.clear();
-            print_len = 0;
-            return;
-        }
-        if (text.size() >= 3 && text.compare(text.size() - 3, 3, "�") == 0) {
-            // Don't print incomplete text
-            return;
-        }
-        std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << std::flush;
-        print_len = text.size();
-    }
-
-    void end() {
-        std::string text = tokenizer.decode(token_cache);
-        std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
-        token_cache.clear();
-        print_len = 0;
-    }
-};
 
 static double get_duration_ms_until_now(Time::time_point& startTime) {
     return std::chrono::duration_cast<ns>(Time::now() - startTime).count() * 0.000001;
@@ -258,6 +225,11 @@ ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& emb
     return embed_output_tensor;
 }
 
+struct PromptImage {
+    std::string prompt;
+    ov::Tensor image;
+};
+
 class VLMPipeline {
 public:
     struct ModelConfig {
@@ -276,7 +248,6 @@ public:
     ov::Tensor imgEmbedTensor;
     ov::Shape img_embed_shape;
     size_t embed_dim;
-    TextStreamer text_streamer;
     std::vector<float> llm_inputs_embeds;
     // input length, output length, first time, other time
     std::vector<std::tuple<size_t, size_t, double, double>> perf_records;
@@ -304,18 +275,47 @@ public:
         ireq_resampler{conf.core.compile_model(
             // CPU randomly fails: 149560.
             conf.model_dir / "openvino_resampler.xml", "GPU"
-        ).create_infer_request()},
-        text_streamer{tokenizer} {}
+        ).create_infer_request()} {}
 
-    void generate(const std::string& prompt) {
-        ov::Tensor llmEmbedTensor;
+    void generate(const PromptImage& pi, const std::function<bool(std::string&&)>& callback) {
+        generate(pi, std::make_unique<ov::genai::TextCallbackStreamer>(tokenizer, callback));
+    }
+    void generate(const PromptImage& pi, const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr) {
+        if (pi.image) {
+            this->round = 0;
+            llava_image_embed_free_slice(embeds);
+            if (ctx_clip) {
+                delete ctx_clip;
+            }
+            ctx_clip = new clip_ctx;
+            int n_threads = 1;
+            for (int i = 0; i < 3; ++i) {
+                ctx_clip->image_mean[i] = 0.5;
+                ctx_clip->image_std[i] = 0.5;
+            }
+            ctx_clip->ireq_vision = this->ireq_vision;
+            ctx_clip->ireq_resampler = this->ireq_resampler;
 
-        //first round
-        if (0 == round) {
+            double first_time;
+
+            //extract image embedding
+            embeds = llava_image_embed_make_with_bytes_slice(ctx_clip, n_threads, pi.image.data<unsigned char>(), pi.image.get_size());
+
+            //get image embedding
+            ov::Tensor imgEmbedTensor;
+            get_image_embedding(embeds, this->tokenizer, this->ireq_embed, imgEmbedTensor);
+
+            ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
+            size_t embed_dim = img_embed_shape[2];
+
+            this->imgEmbedTensor = imgEmbedTensor;
+            this->img_embed_shape = img_embed_shape;
+            this->embed_dim = embed_dim;
+            this->llm_inputs_embeds.resize((this->max_lenth * embed_dim));
+
             //<用户> + image embedding + prompt + <AI> LLM first input
-            std::cout << "first round " << std::endl;
             ov::Tensor promtTensor;
-            promtTensor = process_prompt(tokenizer, ireq_embed, prompt);
+            promtTensor = process_prompt(tokenizer, ireq_embed, pi.prompt);
             embed_lenth = img_embed_shape[1] + promtTensor.get_shape()[1];
 
             //memcpy image embedding buf
@@ -326,16 +326,10 @@ public:
 
             memcpy(llm_inputs_embeds.data(), imgEmbedTensor.data<float>(), imgEmbedTensor.get_byte_size());
             memcpy(llm_inputs_embeds.data() + img_embed_shape[1] * img_embed_shape[2], promtTensor.data<float>(), promtTensor.get_byte_size());
-
-            llmEmbedTensor = ov::Tensor(ov::element::f32, { 1, embed_lenth, img_embed_shape[2] }, llm_inputs_embeds.data());
-        }
-        else {
+        } else {
             //<用户> + prompt + <AI>  LLM first input
-            //first inference
-            std::cout << "round index " << round << std::endl;
-
             ov::Tensor promtTensor;
-            promtTensor = process_prompt(tokenizer, ireq_embed, "<用户>" + prompt);
+            promtTensor = process_prompt(tokenizer, ireq_embed, "<用户>" + pi.prompt);
 
             if ((embed_lenth + promtTensor.get_shape()[1]) > max_lenth) {
                 llm_inputs_embeds.resize((embed_lenth + 256) * img_embed_shape[2]);
@@ -344,9 +338,8 @@ public:
 
             memcpy(llm_inputs_embeds.data() + embed_lenth * img_embed_shape[2], promtTensor.data<float>(), promtTensor.get_byte_size());
             embed_lenth = embed_lenth + promtTensor.get_shape()[1];
-
-            llmEmbedTensor = ov::Tensor(ov::element::f32, { 1, embed_lenth, img_embed_shape[2] }, llm_inputs_embeds.data());
         }
+        ov::Tensor llmEmbedTensor = ov::Tensor(ov::element::f32, { 1, embed_lenth, img_embed_shape[2] }, llm_inputs_embeds.data());
 
         auto input_len = llmEmbedTensor.get_shape()[1];
 
@@ -418,7 +411,9 @@ public:
             count += 1;
             total_time += duration_ms;
 
-            text_streamer.put(out_token);
+            if (streamer && streamer->put(out_token)) {
+                break;
+            }
             logits = ireq.get_tensor("logits").data<float>();
 
             out_token = std::max_element(logits, logits + vocab_size) - logits;
@@ -427,7 +422,9 @@ public:
             }
         }
 
-        text_streamer.end();
+        if (streamer) {
+            streamer->end();
+        }
 
         if (count > 0) {
             double avg_time = total_time / count;
@@ -436,40 +433,6 @@ public:
         }
 
         round++;
-    }
-
-    void generate(const ov::Tensor image, const std::string& first_prompt) {
-        this->round = 0;
-        llava_image_embed_free_slice(embeds);
-        if (ctx_clip) {
-            delete ctx_clip;
-        }
-        ctx_clip = new clip_ctx;
-        int n_threads = 1;
-        for (int i = 0; i < 3; ++i) {
-            ctx_clip->image_mean[i] = 0.5;
-            ctx_clip->image_std[i] = 0.5;
-        }
-        ctx_clip->ireq_vision = this->ireq_vision;
-        ctx_clip->ireq_resampler = this->ireq_resampler;
-
-        double first_time;
-
-        //extract image embedding
-        embeds = llava_image_embed_make_with_bytes_slice(ctx_clip, n_threads, image.data<unsigned char>(), image.get_size());
-
-        //get image embedding
-        ov::Tensor imgEmbedTensor;
-        get_image_embedding(embeds, this->tokenizer, this->ireq_embed, imgEmbedTensor);
-
-        ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
-        size_t embed_dim = img_embed_shape[2];
-
-        this->imgEmbedTensor = imgEmbedTensor;
-        this->img_embed_shape = img_embed_shape;
-        this->embed_dim = embed_dim;
-        this->llm_inputs_embeds.resize((this->max_lenth * embed_dim));
-        generate(first_prompt);
     }
 };
 
