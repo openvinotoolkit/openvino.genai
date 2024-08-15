@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) try {
     if (!std::getline(std::cin, prompt)) {
         throw std::runtime_error("std::cin failed");
     }
-    pipe.generate(image, args.output_fixed_len, prompt);
+    pipe.generate(image, prompt);
     std::cout << "question:\n";
     while (std::getline(std::cin, prompt)) {
         if (prompt == "clear") {

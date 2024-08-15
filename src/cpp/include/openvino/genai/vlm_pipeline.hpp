@@ -19,7 +19,6 @@ struct Args {
     float top_p = 0.7;
     float temp = 0.95;
     float repeat_penalty = 1.0;
-    int output_fixed_len = 0;
 };
 
 int64_t get_out_token_id(const std::vector<int>& input_ids, float* logits, size_t vocab_size, Args args) {
@@ -233,20 +232,13 @@ void get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> ima
     }
 }
 
-ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, std::string prompt, bool isAddUser) {
+ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, std::string prompt) {
     std::string user_prompt;
     size_t embedding_dim;
     size_t idx;
     int scale_emb = 12;
 
-    if (isAddUser) {
-        user_prompt = "<用户>" + prompt + "<AI>";
-    }
-    else {
-        user_prompt = prompt + "<AI>";
-    }
-
-    ov::Tensor input_ids = tokenizer.encode(user_prompt).input_ids;
+    ov::Tensor input_ids = tokenizer.encode(prompt + "<AI>").input_ids;
     auto input_len = input_ids.get_size();
 
     ov::Tensor input_tensor = ov::Tensor(ov::element::i64, { 1, input_ids.get_size() }, input_ids.data());
@@ -283,7 +275,6 @@ public:
     ov::InferRequest ireq_resampler;
     ov::Tensor imgEmbedTensor;
     ov::Shape img_embed_shape;
-    int output_fixed_len;
     size_t embed_dim;
     TextStreamer text_streamer;
     std::vector<float> llm_inputs_embeds;
@@ -324,7 +315,7 @@ public:
             //<用户> + image embedding + prompt + <AI> LLM first input
             std::cout << "first round " << std::endl;
             ov::Tensor promtTensor;
-            promtTensor = process_prompt(tokenizer, ireq_embed, prompt, false);
+            promtTensor = process_prompt(tokenizer, ireq_embed, prompt);
             embed_lenth = img_embed_shape[1] + promtTensor.get_shape()[1];
 
             //memcpy image embedding buf
@@ -344,7 +335,7 @@ public:
             std::cout << "round index " << round << std::endl;
 
             ov::Tensor promtTensor;
-            promtTensor = process_prompt(tokenizer, ireq_embed, prompt, true);
+            promtTensor = process_prompt(tokenizer, ireq_embed, "<用户>" + prompt);
 
             if ((embed_lenth + promtTensor.get_shape()[1]) > max_lenth) {
                 llm_inputs_embeds.resize((embed_lenth + 256) * img_embed_shape[2]);
@@ -416,7 +407,6 @@ public:
             embed_lenth = embed_lenth + 1;
 
             ireq.set_tensor("inputs_embeds", embed_prompt_tensor);
-            //ireq.get_tensor("inputs_embeds").data<int64_t>()[0] = out_token;
 
             ireq.get_tensor("attention_mask").set_shape({ BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1 });
             std::fill_n(ireq.get_tensor("attention_mask").data<float>(), ireq.get_tensor("attention_mask").get_size(), 1);
@@ -432,15 +422,8 @@ public:
             logits = ireq.get_tensor("logits").data<float>();
 
             out_token = std::max_element(logits, logits + vocab_size) - logits;
-
-            if (output_fixed_len > 0) {
-                if (count >= (output_fixed_len - 1))
-                    break;
-            }
-            else {
-                if (out_token == SPECIAL_EOS_TOKEN) {
-                    break;
-                }
+            if (out_token == SPECIAL_EOS_TOKEN) {
+                break;
             }
         }
 
@@ -455,7 +438,7 @@ public:
         round++;
     }
 
-    void generate(const ov::Tensor image, int output_fixed_len, const std::string& first_prompt) {
+    void generate(const ov::Tensor image, const std::string& first_prompt) {
         this->round = 0;
         llava_image_embed_free_slice(embeds);
         if (ctx_clip) {
@@ -484,7 +467,6 @@ public:
 
         this->imgEmbedTensor = imgEmbedTensor;
         this->img_embed_shape = img_embed_shape;
-        this->output_fixed_len = output_fixed_len;
         this->embed_dim = embed_dim;
         this->llm_inputs_embeds.resize((this->max_lenth * embed_dim));
         generate(first_prompt);
