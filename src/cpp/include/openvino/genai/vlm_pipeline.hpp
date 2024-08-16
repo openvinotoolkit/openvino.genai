@@ -18,9 +18,9 @@ typedef std::chrono::nanoseconds ns;
 struct Args {
     bool do_sample = false;
     int top_k = 0;
-    float top_p = 0.7;
-    float temp = 0.95;
-    float repeat_penalty = 1.0;
+    float top_p = 0.7f;
+    float temp = 0.95f;
+    float repeat_penalty = 1.0f;
 };
 
 int64_t get_out_token_id(const std::vector<int>& input_ids, float* logits, size_t vocab_size, Args args) {
@@ -201,7 +201,6 @@ void get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> ima
 
 ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, std::string prompt) {
     std::string user_prompt;
-    size_t embedding_dim;
     size_t idx;
     int scale_emb = 12;
 
@@ -225,39 +224,14 @@ ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& emb
     return embed_output_tensor;
 }
 
-class Clip {
+class VisionEncoder {
 public:
-    struct ModelConfig {
-        std::filesystem::path model_dir;
-        std::string device = "CPU";
-        ov::AnyMap device_config;
-        mutable ov::Core core{};
-    };
-
-    ov::InferRequest vision, resampler;
-
-    Clip(const ModelConfig& conf) :
-        vision{conf.core.compile_model(
+    ov::InferRequest encoder;
+    VisionEncoder(const std::filesystem::path& model_dir, const std::string& device="CPU", const ov::AnyMap device_config={}, ov::Core core=ov::Core{}) :
+        encoder{core.compile_model(
             // CPU only because of 146022.
-            conf.model_dir / "openvino_vision.xml", "CPU", conf.device_config).create_infer_request()},
-        resampler{conf.core.compile_model(
-            // CPU randomly fails: 149560.
-            conf.model_dir / "openvino_resampler.xml", "GPU"
+            model_dir / "openvino_vision.xml", "CPU", device_config
         ).create_infer_request()} {}
-
-    std::vector<std::vector<struct llava_image_embed*>> embeddings(const ov::Tensor& image) {
-        clip_ctx ctx_clip;
-        int n_threads = 1;
-        for (int i = 0; i < 3; ++i) {
-            ctx_clip.image_mean[i] = 0.5;
-            ctx_clip.image_std[i] = 0.5;
-        }
-        ctx_clip.ireq_vision = vision;
-        ctx_clip.ireq_resampler = resampler;
-
-        //extract image embedding
-        return llava_image_embed_make_with_bytes_slice(&ctx_clip, image.data<unsigned char>(), image.get_size());
-    }
 };
 
 struct PromptImage {
@@ -267,7 +241,7 @@ struct PromptImage {
 
 class VLMPipeline {
 public:
-    struct ModelConfig {
+    struct Config {
         std::filesystem::path model_dir;
         std::string device = "CPU";
         ov::AnyMap device_config;
@@ -276,9 +250,8 @@ public:
     };
 
     ov::genai::Tokenizer tokenizer;
-    Clip clip;
-    ov::InferRequest ireq_embed;
-    ov::InferRequest ireq;
+    VisionEncoder vision_encoder;
+    ov::InferRequest resampler, ireq_embed, ireq;
     ov::Tensor imgEmbedTensor;
     ov::Shape img_embed_shape;
     size_t embed_dim;
@@ -291,9 +264,13 @@ public:
     double total_time = 0;
     const size_t BATCH_SIZE = 1;
 
-    explicit VLMPipeline(const ModelConfig& conf) :
+    explicit VLMPipeline(const Config& conf) :
         tokenizer{conf.model_dir.string()},
-        clip({conf.model_dir, conf.device, conf.device_config, conf.core}),
+        vision_encoder(conf.model_dir, conf.device, conf.device_config, conf.core),
+        resampler{conf.core.compile_model(
+            // CPU randomly fails: 149560.
+            conf.model_dir / "openvino_resampler.xml", "GPU"
+        ).create_infer_request()},
         ireq_embed{conf.core.compile_model(
             conf.model_dir / "openvino_embedding.xml", conf.device, conf.device_config
         ).create_infer_request()},
@@ -307,7 +284,17 @@ public:
 
     void generate(const PromptImage& pi, const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr) {
         if (pi.image) {
-            std::vector<std::vector<struct llava_image_embed*>> embeds = clip.embeddings(pi.image);
+            clip_ctx ctx_clip;
+            int n_threads = 1;
+            for (int i = 0; i < 3; ++i) {
+                ctx_clip.image_mean[i] = 0.5;
+                ctx_clip.image_std[i] = 0.5;
+            }
+            ctx_clip.ireq_vision = vision_encoder.encoder;
+            ctx_clip.ireq_resampler = resampler;
+
+            //extract image embedding
+            std::vector<std::vector<struct llava_image_embed*>> embeds = llava_image_embed_make_with_bytes_slice(&ctx_clip, pi.image.data<unsigned char>(), pi.image.get_size());
             ov::Tensor imgEmbedTensor;
             get_image_embedding(embeds, this->tokenizer, this->ireq_embed, imgEmbedTensor);
             llava_image_embed_free_slice(embeds);
@@ -351,7 +338,7 @@ public:
 
         ireq.set_tensor("inputs_embeds", llmEmbedTensor);
         ireq.get_tensor("attention_mask").set_shape({ llmEmbedTensor.get_shape()[0], llmEmbedTensor.get_shape()[1] });
-        std::fill_n(ireq.get_tensor("attention_mask").data<float>(), ireq.get_tensor("attention_mask").get_size(), 1);
+        std::fill_n(ireq.get_tensor("attention_mask").data<float>(), ireq.get_tensor("attention_mask").get_size(), 1.0f);
         ireq.get_tensor("position_ids").set_shape({ llmEmbedTensor.get_shape()[0], llmEmbedTensor.get_shape()[1] });
         std::iota(ireq.get_tensor("position_ids").data<int64_t>(), ireq.get_tensor("position_ids").data<int64_t>() + ireq.get_tensor("position_ids").get_size(), 0);
         ireq.get_tensor("beam_idx").set_shape({ BATCH_SIZE });
@@ -408,7 +395,7 @@ public:
             ireq.set_tensor("inputs_embeds", embed_prompt_tensor);
 
             ireq.get_tensor("attention_mask").set_shape({ BATCH_SIZE, ireq.get_tensor("attention_mask").get_shape()[1] + 1 });
-            std::fill_n(ireq.get_tensor("attention_mask").data<float>(), ireq.get_tensor("attention_mask").get_size(), 1);
+            std::fill_n(ireq.get_tensor("attention_mask").data<float>(), ireq.get_tensor("attention_mask").get_size(), 1.0f);
             ireq.get_tensor("position_ids").data<int64_t>()[0] = ireq.get_tensor("attention_mask").get_size() - 2;
 
             ireq.start_async();
