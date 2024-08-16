@@ -457,7 +457,7 @@ size_t clip_embd_nbytes(const struct clip_ctx * ctx) {
 
 
 
-bool clip_image_encode(struct clip_ctx* ctx, const int n_threads, clip_image_f32* img, float* vec, std::pair<int, int> load_image_size = { 448, 448 }) {
+bool clip_image_encode(struct clip_ctx* ctx, clip_image_f32* img, float* vec, std::pair<int, int> load_image_size = { 448, 448 }) {
     //if (!ctx->has_vision_encoder) {
     //    LOG_TEE("This gguf file seems to have no vision encoder\n");
     //    return false;
@@ -466,11 +466,11 @@ bool clip_image_encode(struct clip_ctx* ctx, const int n_threads, clip_image_f32
     clip_image_f32_batch imgs{};
     imgs.size = 1;
     imgs.data = img;
-    return clip_image_batch_encode(ctx, n_threads, &imgs, vec, load_image_size);
+    return clip_image_batch_encode(ctx, &imgs, vec, load_image_size);
 }
 
 
-bool clip_image_batch_encode(clip_ctx* ctx, const int n_threads, const clip_image_f32_batch* imgs, float* vec, std::pair<int, int> load_image_size = { 448, 448 }) {
+bool clip_image_batch_encode(clip_ctx* ctx, const clip_image_f32_batch* imgs, float* vec, std::pair<int, int> load_image_size = { 448, 448 }) {
     //don't support multi batch
     size_t batch_size = imgs->size;
 

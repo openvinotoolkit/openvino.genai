@@ -145,7 +145,7 @@ std::vector<std::vector<clip_image_u8*>> slice_image(const clip_image_u8* img, c
     return images;
 }
 
-static bool encode_image_with_clip(clip_ctx* ctx_clip, int n_threads, const clip_image_u8* img, float* image_embd, int* n_img_pos) {
+static bool encode_image_with_clip(clip_ctx* ctx_clip, const clip_image_u8* img, float* image_embd, int* n_img_pos) {
     // std::vector<clip_image_f32*> img_res_v; // format VectN x H x W x RGB (N x 336 x 336 x 3), so interleaved RGB - different to the python implementation which is N x 3 x 336 x 336
     clip_image_f32_batch img_res_v;
     img_res_v.size = 0;
@@ -168,7 +168,7 @@ static bool encode_image_with_clip(clip_ctx* ctx_clip, int n_threads, const clip
     //RESAMPLER query_num minicpmv-2 64, minicpmv-2.5 96
     *n_img_pos = clip_n_patches(ctx_clip);
 
-    bool encoded = clip_image_encode(ctx_clip, n_threads, &img_res_v.data[0], image_embd, load_image_size); // image_embd shape is 576 x 4096
+    bool encoded = clip_image_encode(ctx_clip, &img_res_v.data[0], image_embd, load_image_size); // image_embd shape is 576 x 4096
     delete[] img_res_v.data;
     if (!encoded) {
         LOG_TEE("Unable to encode image\n");
@@ -186,7 +186,7 @@ static bool encode_image_with_clip(clip_ctx* ctx_clip, int n_threads, const clip
 }
 
 
-bool llava_image_embed_make_with_clip_img(clip_ctx* ctx_clip, int n_threads, const clip_image_u8* img, float** image_embd_out, int* n_img_pos_out) {
+bool llava_image_embed_make_with_clip_img(clip_ctx* ctx_clip, const clip_image_u8* img, float** image_embd_out, int* n_img_pos_out) {
     float* image_embd = (float*)malloc(clip_embd_nbytes(ctx_clip) * 6); // TODO: base on gridsize/llava model
     if (!image_embd) {
         LOG_TEE("Unable to allocate memory for image embeddings\n");
@@ -194,7 +194,7 @@ bool llava_image_embed_make_with_clip_img(clip_ctx* ctx_clip, int n_threads, con
     }
 
     int n_img_pos;
-    if (!encode_image_with_clip(ctx_clip, n_threads, img, image_embd, &n_img_pos)) {
+    if (!encode_image_with_clip(ctx_clip, img, image_embd, &n_img_pos)) {
         LOG_TEE("%s: cannot encode image, aborting\n", __func__);
         free(image_embd);
         return false;
@@ -206,7 +206,7 @@ bool llava_image_embed_make_with_clip_img(clip_ctx* ctx_clip, int n_threads, con
 }
 
 
-std::vector<std::vector<struct llava_image_embed*>> llava_image_embed_make_with_bytes_slice(struct clip_ctx* ctx_clip, int n_threads, const unsigned char* image_bytes, int image_bytes_length) {
+std::vector<std::vector<struct llava_image_embed*>> llava_image_embed_make_with_bytes_slice(struct clip_ctx* ctx_clip, const unsigned char* image_bytes, int image_bytes_length) {
     clip_image_u8* img = clip_image_u8_init();
     if (!clip_image_load_from_bytes(image_bytes, image_bytes_length, img)) {
         clip_image_u8_free(img);
@@ -233,7 +233,7 @@ std::vector<std::vector<struct llava_image_embed*>> llava_image_embed_make_with_
         for (size_t j = 0; j < imgs[i].size(); ++j) {
             float* image_embed = NULL;
             int n_image_pos = 0;
-            bool image_embed_result = llava_image_embed_make_with_clip_img(ctx_clip, n_threads, imgs[i][j], &image_embed, &n_image_pos);
+            bool image_embed_result = llava_image_embed_make_with_clip_img(ctx_clip, imgs[i][j], &image_embed, &n_image_pos);
             if (!image_embed_result) {
                 clip_image_u8_free(reshaped_image);
                 LOG_TEE("%s: coulnd't embed the image\n", __func__);

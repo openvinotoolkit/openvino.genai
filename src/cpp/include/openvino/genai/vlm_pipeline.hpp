@@ -256,7 +256,7 @@ public:
         ctx_clip.ireq_resampler = resampler;
 
         //extract image embedding
-        return llava_image_embed_make_with_bytes_slice(&ctx_clip, n_threads, image.data<unsigned char>(), image.get_size());
+        return llava_image_embed_make_with_bytes_slice(&ctx_clip, image.data<unsigned char>(), image.get_size());
     }
 };
 
