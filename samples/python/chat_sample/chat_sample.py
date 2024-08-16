@@ -26,11 +26,11 @@ def main():
 
     pipe.start_chat()
     while True:
-        prompt = input('question:\n')
-        if 'Stop!' == prompt:
+        try:
+            prompt = input('question:\n')
+        except EOFError:
             break
         pipe.generate(prompt, config, streamer)
-
         print('\n----------')
     pipe.finish_chat()
 
