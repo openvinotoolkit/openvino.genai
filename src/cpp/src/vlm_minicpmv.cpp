@@ -207,7 +207,7 @@ bool llava_image_embed_make_with_clip_img(clip_ctx* ctx_clip, const clip_image_u
 
 
 std::vector<std::vector<struct llava_image_embed*>> llava_image_embed_make_with_bytes_slice(struct clip_ctx* ctx_clip, const ov::Tensor& img) {
-    clip_image_u8 casted_img{img.get_shape()[2], img.get_shape()[1], {img.data<uint8_t>(), img.data<uint8_t>() + img.get_size()}};
+    clip_image_u8 casted_img{int(img.get_shape()[2]), int(img.get_shape()[1]), {img.data<uint8_t>(), img.data<uint8_t>() + img.get_size()}};
     clip_image_u8* reshaped_image = clip_image_u8_init();
 
     //resize to 800x800
