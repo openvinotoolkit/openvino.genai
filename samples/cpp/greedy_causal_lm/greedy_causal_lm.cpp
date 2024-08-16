@@ -11,9 +11,10 @@ int main(int argc, char* argv[]) try {
     std::string prompt = argv[2];
     std::string device = "CPU";  // GPU can be used as well
 
-    ov::genai::LLMPipeline pipe(model_path, device);
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
+    config.adapters = ov::genai::Adapter("/home/developer/persistent/models/adapter_mixtral_cnn.safetensors");
+    ov::genai::LLMPipeline pipe(model_path, device, config);
     std::string result = pipe.generate(prompt, config);
     std::cout << result << std::endl;
 } catch (const std::exception& error) {

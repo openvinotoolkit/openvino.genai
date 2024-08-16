@@ -10,6 +10,7 @@
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "lora_adapter.hpp"
 
 namespace ov {
 namespace genai {
@@ -94,6 +95,9 @@ public:
     // EOS special token
     int64_t eos_token_id = -1;
 
+    // Adapters
+    AdaptersConfig adapters;
+
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
      */
@@ -108,7 +112,7 @@ public:
     util::EnableIfAllStringAny<void, Properties...> update_generation_config(Properties&&... properties) {
         return update_generation_config(AnyMap{std::forward<Properties>(properties)...});
     }
-    
+
     /// @brief checks that are no conflicting parameters, e.g. do_sample=true and num_beams > 1.
     /// @throws Exception if config is invalid.
     void validate() const;
@@ -141,6 +145,8 @@ static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};
 static constexpr ov::Property<float> presence_penalty{"presence_penalty"};
 static constexpr ov::Property<float> frequency_penalty{"frequency_penalty"};
 static constexpr ov::Property<size_t> rng_seed{"rng_seed"};
+
+static constexpr ov::Property<AdaptersConfig> adapters("adapters");
 
 // Predefined Configs
 OPENVINO_GENAI_EXPORTS GenerationConfig beam_search();

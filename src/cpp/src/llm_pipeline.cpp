@@ -89,19 +89,25 @@ public:
         const std::filesystem::path& model_path,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
+        const AdaptersConfig& adapters_config,
         const ov::AnyMap& plugin_config
     ):
+        // TODO: How adapters_config interfer with config loaded from the file? Suggestion: adapters_conig overrides adapters from the file
         LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(model_path))
     {
         ov::Core core;
         core.set_property(device, plugin_config);
         auto model = core.read_model(model_path / "openvino_model.xml");
+        if(adapters_config) {
+            m_generation_config.adapter.adapters = adapters_config;
+        }
         auto lora_flag = getenv(("OV_GENAI_LORA"));
         ConstantMap variables;
         if(lora_flag && lora_flag == std::string("1")) {
             DEBUG_PRINT("Applying LoRA here");
             auto adapter = load_lora_adapter(
-                "/home/developer/persistent/models/adapter_model.safetensors",
+                //"/home/developer/persistent/models/adapter_model.safetensors",
+                "/home/developer/persistent/models/adapter_mixtral_cnn.safetensors",
                 1,
                 {{"base_model.model.mode", ""}});
             apply_lora_adapter(model, adapter[""], variables);
@@ -125,7 +131,14 @@ public:
         const std::filesystem::path& model_path,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
+    ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, {}, plugin_config} {}
+
+    StatefulLLMPipeline(
+        const std::filesystem::path& model_path,
+        const std::string& device,
+        const AdaptersConfig& adapters_config,
+        const ov::AnyMap& plugin_config
+    ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, adapters_config, plugin_config} {}
 
     DecodedResults generate(
         StringInputs inputs,
@@ -568,6 +581,26 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<StaticLLMPipeline>(path, device, config);
     } else {
         m_pimpl = std::make_unique<StatefulLLMPipeline>(path, device, config);
+    }
+    auto stop_time = std::chrono::steady_clock::now();
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+}
+
+ov::genai::LLMPipeline::LLMPipeline(
+    const std::string& path, 
+    const std::string& device,
+    const AdaptersConfig& adapters_config,
+    const ov::AnyMap& plugin_config={}
+) {
+    auto start_time = std::chrono::steady_clock::now();
+    if ("CB" == device) {
+        OPENVINO_THROW("Continious batching pipeline doesn't support passing generation config in constructor");
+        //m_pimpl = std::make_unique<ContinuousBatchingAdapter>(path, "CPU", config);
+    } else if ("NPU" == device) {
+        OPENVINO_THROW("NPU pipeline doesn't support passing generation config in constructor");
+        //m_pimpl = std::make_unique<StaticLLMPipeline>(path, device, config);
+    } else {
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(path, device, adapters_config, config);
     }
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
