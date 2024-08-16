@@ -294,7 +294,7 @@ public:
             ctx_clip.ireq_resampler = resampler;
 
             //extract image embedding
-            std::vector<std::vector<struct llava_image_embed*>> embeds = llava_image_embed_make_with_bytes_slice(&ctx_clip, pi.image.data<unsigned char>(), pi.image.get_size());
+            std::vector<std::vector<struct llava_image_embed*>> embeds = llava_image_embed_make_with_bytes_slice(&ctx_clip, pi.image);
             ov::Tensor imgEmbedTensor;
             get_image_embedding(embeds, this->tokenizer, this->ireq_embed, imgEmbedTensor);
             llava_image_embed_free_slice(embeds);
@@ -427,7 +427,7 @@ public:
     }
 };
 
-ov::Tensor read_file(const char* path) {
+ov::Tensor read_jpg(const char* path) {
     auto file = fopen(path, "rb");
     OPENVINO_ASSERT(nullptr != file, "Can't read file");
     fseek(file, 0, SEEK_END);
@@ -444,5 +444,9 @@ ov::Tensor read_file(const char* path) {
         std::cerr << "unexpectedly reached end of file\n";
     }
     fclose(file); // Close the file
-    return image;
+    clip_image_u8 img;
+    OPENVINO_ASSERT(clip_image_load_from_bytes(image.data<uint8_t>(), fileSize, &img), "Can't load image from bytes, is it a valid image?");
+    ov::Tensor tensor{ov::element::u8, {1, size_t(img.ny), size_t(img.nx), 3}};
+    std::copy_n(img.buf.begin(), img.buf.size(), tensor.data<uint8_t>());
+    return tensor;
 }

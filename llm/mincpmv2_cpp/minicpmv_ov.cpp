@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) try {
         throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE>");
     }
     Args args;
-    ov::Tensor image = read_file(argv[2]);
+    ov::Tensor image = read_jpg(argv[2]);
 
     std::string device = "CPU";
 

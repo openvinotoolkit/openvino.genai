@@ -7,6 +7,7 @@
 #include <numeric>
 
 #include <openvino/openvino.hpp>
+#include "openvino/genai/visibility.hpp"
 
 #ifdef LLAMA_SHARED
 #    if defined(_WIN32) && !defined(__MINGW32__)
@@ -92,7 +93,7 @@ CLIP_API void clip_image_f32_batch_free(struct clip_image_f32_batch * batch);
 CLIP_API bool clip_image_load_from_file(const char * fname, struct clip_image_u8 * img);
 
 /** interpret bytes as an image file with length bytes_length, and use the result to populate img */
-CLIP_API bool clip_image_load_from_bytes(const unsigned char * bytes, size_t bytes_length, struct clip_image_u8 * img);
+OPENVINO_GENAI_EXPORTS bool clip_image_load_from_bytes(const unsigned char * bytes, size_t bytes_length, struct clip_image_u8 * img);
 
 CLIP_API bool bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height);
 

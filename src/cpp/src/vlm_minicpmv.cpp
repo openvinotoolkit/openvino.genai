@@ -206,19 +206,12 @@ bool llava_image_embed_make_with_clip_img(clip_ctx* ctx_clip, const clip_image_u
 }
 
 
-std::vector<std::vector<struct llava_image_embed*>> llava_image_embed_make_with_bytes_slice(struct clip_ctx* ctx_clip, const unsigned char* image_bytes, int image_bytes_length) {
-    clip_image_u8* img = clip_image_u8_init();
-    if (!clip_image_load_from_bytes(image_bytes, image_bytes_length, img)) {
-        clip_image_u8_free(img);
-        LOG_TEE("%s: can't load image from bytes, is it a valid image?", __func__);
-        return std::vector<std::vector<struct llava_image_embed*>>();
-    }
-
+std::vector<std::vector<struct llava_image_embed*>> llava_image_embed_make_with_bytes_slice(struct clip_ctx* ctx_clip, const ov::Tensor& img) {
+    clip_image_u8 casted_img{img.get_shape()[2], img.get_shape()[1], {img.data<uint8_t>(), img.data<uint8_t>() + img.get_size()}};
     clip_image_u8* reshaped_image = clip_image_u8_init();
 
     //resize to 800x800
-    bicubic_resize(*img, *reshaped_image, 800, 800);
-    clip_image_u8_free(img);
+    bicubic_resize(casted_img, *reshaped_image, 800, 800);
 
     std::vector<std::vector<clip_image_u8*>> imgs = slice_image(reshaped_image);
     //for (size_t i = 0; i < imgs.size(); ++i) {
