@@ -108,8 +108,7 @@ void copy_with_offset(const ov::Tensor& orig, const int32_t offset, ov::Tensor& 
 ov::AnyMap extract_config_or_default(const ov::AnyMap& config, const std::string& config_name) {
     ov::AnyMap stage_cfg;
     if (auto it = config.find(config_name); it != config.end()) {
-        const auto& map = it->second.as<std::map<std::string, std::string>>();
-        stage_cfg = { map.begin(), map.end() };
+        stage_cfg = it->second.as<ov::AnyMap>();
     } else if (config_name == "PREFILL_CONFIG") {
         std::map<std::string, std::string> prefill_config = {
 			{ "NPU_USE_NPUW", "YES" },
