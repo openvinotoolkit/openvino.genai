@@ -39,16 +39,22 @@ using namespace ov::op;
 // FIXME: Use ov::AlignedBuffer instead of std::vector. ov::AlignedBuffer is not available in public OV API
 using Buffer = std::vector<std::uint8_t>;
 using BufferPtr = std::shared_ptr<Buffer>;
+using ConstantVector = std::vector<std::shared_ptr<v0::Constant>>;
 
 tempalate <typename T>
 struct LoRAParts {
-    LoRAParts(const T& alpha, const T& A, const T& B) : alpha(alpha), A(A), B(B)
     T alpha, A, B;
+
+    LoRAParts(const T& alpha, const T& A, const T& B) : alpha(alpha), A(A), B(B) {}
+
+    template <typename Other>
+    LoRAParts(const LoRAParts<Other>& other) : alpha(other.alpha), A(other.A), B(other.B) {}
 };
 
-using LoRAWeights = LoRAParts<std::shared_ptr<v0::Constant>>;
+using LoRAWeight = LoRAParts<std::shared_ptr<v0::Constant>>;
+using LoRANodes = LoRAParts<std::shared_ptr<ov::Node>>;
 using LoRAPartsParser = LoRAParts<std::function<std::optional<std::string>(const std::string&)>>;
-using LoRATensors = std::map<std::string, LoRAWeights>;
+using LoRATensors = std::map<std::string, LoRAWeight>;
 
 struct RegexParser {
     std::regex pattern;
@@ -149,13 +155,22 @@ NodePtr unsqueeze (NodePtr node, unsigned int rank) {
     return reshape;
 }
 
-using LoRAWeightGetter = std::function< std::optional<LoRAWeight>(NodePtr node)>;
+using LoRAWeightGetter = std::function<std::optional<LoRANode>(NodePtr node)>;
+
+struct LoRAParameters {
+    ov::Dimension rank;
+    ov::element::Type type;
+    bool fine_grained_alpha;    // use 1D tensor of the same rank for alpha instead of a scalar to blend multiple weighted LoRAs
+    // TODO: alpha different over the batch?
+};
+
+using LoRAParametersGetter = std::fuctnion<std::optional<LoRAParameters(NodePtr node)>>;
 
 struct LoRAWeightGetterDefault {
     LoRATensors& lora_tensors;
     LoRAWeightGetterDefault (LoRATensors& lora_tensors) : lora_tensors(lora_tensors) {}
 
-    std::optional<LoRAWeight> operator() (NodePtr node) const {
+    std::optional<LoRANode> operator() (NodePtr node) const {
         std::string name = node->get_friendly_name();
         std::string name_with_underscores;
         std::replace(name_with_underscores.begin(), name_with_underscores.end(), '.', '_');   // FIXME: Customize mapping or change PT FE to produce correct weight names
@@ -167,7 +182,75 @@ struct LoRAWeightGetterDefault {
         }
         return std::nullopt;
     }
-}
+};
+
+
+struct LoRAWeightStateGetter {
+    const LoRAParametersGetter& params_getter;
+    std::shared_ptr<ov::Model> model;
+    std::map<std::string, std::string> node_name_to_variable_id;    // maps node name to corresponding lora state name prefix
+    // TODO: Use variable indices instead of variable_id for faster search for a state tensor
+
+    LoRAWeightGetterDefault (const LoRAParametersGetter& params_getter, std::shared_ptr<ov::Model> model) :
+        weight_getter(weight_getter), model(model) {}
+
+    std::optional<LoRANode> operator() (NodePtr node) const {
+        if(auto params = params_getter(node)) {
+            Dimension input_dim, output_dim;
+            if(std::dynamic_pointer_cast<v1::Convolution>(node)) {
+                input_dim = node->get_input_partal_shape(1)[1];
+                output_dim = node->get_input_partal_shape(1)[0];
+            } else if(auto matmul = std::dynamic_pointer_cast<v0::MatMul>) {
+                input_dim = node->get_input_partal_shape(1)[matmul->get_transpose_b()];
+                output_dim = node->get_input_partal_shape(1)[!matmul->get_transpose_b()];
+            } else {
+                OPENVINO_THROW("LoRAWeightsStateGetter expects MatMul or Convolution, but get ", node);
+            }
+
+            std::string name = node->get_friendly_name();
+            std::string variable_id_prefix = "lora_state_" + std::to_string(model->get_sinks().size()) + name;
+            node_name_to_variable_id[name] = variable_id_prefix;
+            LoRANode result;
+
+            std::string variable_id_A = variable_id_prefix + ".A";
+            auto variable = std::make_shared<ov::op::util::Variable>(ov::op::util::VariableInfo{
+                ov::PartialShape{params->rank, input_dim},  // Will be used with transpose_b == true
+                params->type,
+                variable_id_A});
+            model->add_variables({variable});
+            result.A = add_variable(
+                ov::PartialShape{params->rank, input_dim},  // Will be used with transpose_b == true
+                params->type,
+                variable_id_prefix + ".A"
+            );
+            result.alpha = add_variable(
+                params->fine_grained_alpha ? ov::PartialShape{params->rank} : ov::PartialShape{},
+                params->type,
+                variable_id_prefix + ".alpha"
+            );
+            result.A = add_variable(
+                ov::PartialShape{output_dim, params->rank},  // Will be used with transpose_b == true
+                params->type,
+                variable_id_prefix + ".B"
+            );
+            return result;
+        } else {
+            return std::nullopt;
+        }
+    }
+
+    NodePtr add_variable(const ov::PartialShape& shape, const ov::element::Type& type, const std::string& variable_id) {
+        auto variable = std::make_shared<ov::op::util::Variable>(ov::op::util::VariableInfo{
+            shape, type, variable_id_A
+        });
+        model->add_variables({variable});
+        auto read_value = std::make_shared<v6::ReadValue>(variable);
+        //model->add_sinks({register_new_node<v6::Assign>(result.A, read_value)});  // FIXME: Required?
+        return read_value;
+    }
+};
+
+
 
 #define FAST_WEIGHTS_FUSE 0
 #define SEPARATE_TERM 1
@@ -186,7 +269,10 @@ public:
                 try {
                     auto node = m.get_match_root();
                     if(auto lora_weight = lora_weight_getter(node)) {
-                        return apply(node, *lora_weight);
+                        if(apply(node, *lora_weight)) {
+                            ++applied; // FIXME: For debugging purposes only
+                            return true;
+                        }
                     }
                     return false;
                 } catch(const std::exception& exception) {
@@ -201,12 +287,12 @@ public:
     }
 
     ~LoRATransformBase () {
-        DEBUG_PRINT("LoRA applied for " << applied << " layers");
+        DEBUG_PRINT("LoRA applied for " << applied << " layers"); // FIXME: For debugging purposes only
     }
 
 protected:
 
-    virtual bool apply(NodePtr node) = 0;
+    virtual bool apply(NodePtr node, const LoRAWeight& lora_weight) = 0;
 
 private:
 
@@ -271,426 +357,124 @@ class LoRAFuseTransform : public LoRATransformBase {
     using Signature = std::string;
     ov::Core core;
     std::map<Signature, ov::InferRequest> compiled_weight_models;
-    //std::shared_ptr<ov::Model> model;
-    ConstantMap variable_map;
-    //ov::SinkVector& assigns;
-    //ov::op::util::VariableVector& variables;
 
     void signature_push_back(Signature& signature, ov::Output<ov::Node> input) const {
         // FIXME: Define hash function on vector<tuple<element_type, PartialShape>> to make it C++ish
         signature += "(el: " + input.get_element_type().get_type_name() + ", shape: " + input.get_partial_shape().to_string() + ")";
     }
 
-
-
 public:
-    OPENVINO_RTTI("ApplyLoRA");
-        ApplyLoRA(
-            const AdapterMap& adapter_map,
-            std::shared_ptr<ov::Model> model,
-            ConstantMap& variable_map
-            /*ov::SinkVector& assigns, ov::op::util::VariableVector& variables*/) :
-            /*assigns(assigns), variables(variables),*/ model(model), variable_map(variable_map) {
-        OPENVINO_REGISTER_MATCHER(
-            (ov::pass::pattern::wrap_type<v0::MatMul, v1::Convolution>()),
-            ([&, this](ov::pass::pattern::Matcher& m) {
-                auto node = m.get_match_root();
-                auto name = node->get_friendly_name();
-                try{
-                    auto adapter_iter = find_adapter(name, adapter_map);
-                    if(adapter_iter == adapter_map.end()) {
-                        return false;
-                    }
+    
+    OPENVINO_RTTI("LoRAFuseTransform");
+    
+    LoRAFuseTransform(const LoRAWeightGetter& lora_weight_getter) : LoRATransformBase(lora_weight_gather) {}
 
-                    auto activations = node->input_value(0);    // FIXME: consider MatMul.transpose_a
-                    auto weights_input = node->input_value(1);
-                    auto weights_input_type = weights_input.get_element_type();
-                    DEBUG_PRINT("WEIGHTS SHAPE: " << weights_input.get_partial_shape());
-                    #if FAST_WEIGHTS_FUSE
-                    auto weights_convert = decompression_convert(weights_input.get_node_shared_ptr());
-                    auto weights_constant = weights_convert ? weights_convert->input_value(0) : weights_input;
-                    #endif
-                    auto adapter = adapter_iter->second; // FIXME: a copy
-                    NodePtr add_term = nullptr;
-                    Signature signature;
-                    #if SEPARATE_TERM
-                    adapter = Adapter{adapter[0], adapter[2], adapter[1]};
-                    #endif
-                    signature_push_back(signature, weights_input);
-                    for(auto multiplier : adapter) {
-                        signature_push_back(signature, multiplier);
-                    }
-                    NodePtr replacement = nullptr;
+    bool apply (NodePtr node, const LoRANode& lora_weight) override {
+        auto activations = node->input_value(0);    // FIXME: consider MatMul.transpose_a
+        auto weights_input = node->input_value(1);
+        auto weights_input_type = weights_input.get_element_type();
+        DEBUG_PRINT("WEIGHTS SHAPE: " << weights_input.get_partial_shape());
+        auto weights_convert = decompression_convert(weights_input.get_node_shared_ptr());
+        auto weights_constant = weights_convert ? weights_convert->input_value(0) : weights_input;
+        ConstantVector adapter = {lora_weight.alpha, lora_weight.B, lora_weight.A};
+        NodePtr add_term = nullptr;
+        Signature signature;
+        signature_push_back(signature, weights_input);
+        for(auto multiplier : adapter) {
+            signature_push_back(signature, multiplier);
+        }
+        NodePtr replacement = nullptr;
 
-                    #if FAST_WEIGHTS_FUSE
+        auto consumers = weights_input.get_target_inputs();    // replace constant with decompression pattern, TODO: Consider to compress weights in weights_model to save memory (in this case chage weights_input to weights_constant)
 
-                        auto consumers = weights_input.get_target_inputs();    // replace constant with decompression pattern, TODO: Consider to compress weights in weights_model to save memory (in this case chage weights_input to weights_constant)
+        if(!compiled_weight_models.count(signature)) {
+            ov::ParameterVector parameters;
+            auto target_parameter = std::make_shared<v0::Parameter>(weights_constant.get_element_type(), weights_constant.get_partial_shape());
+            parameters.push_back(target_parameter);   // original weights input is one of the parameters
+            // FIXME: Convert is not counted in the signature but in general it doesn't have to appear at every weights across the entire model, should be a part of the signature
+            // Support only a single convert as a decompression pattern
+            ov::Output<ov::Node> target = weights_convert ? weights_convert->clone_with_new_inputs({target_parameter}) : target_parameter;
+            for(auto multiplier : adapter) {
+                parameters.push_back(std::make_shared<v0::Parameter>(multiplier->get_output_element_type(0), multiplier->get_output_partial_shape(0)));
+            }
+            auto result = std::make_shared<v0::Result>(tensors_multiplication(nullptr, NodeVector{parameters.begin() + 1, parameters.end()}, target, false));
+            auto weights_model = std::make_shared<ov::Model>(ov::ResultVector{result}, parameters);
+            auto compiled_model = core.compile_model(weights_model, "CPU");
+            compiled_weight_models[signature] = compiled_model.create_infer_request();
+        }
+        auto request = compiled_weight_models.at(signature);  // FIXME: use .find instead of .count and .at
+        auto output = request.get_compiled_model().output(0);
+        // FIXME: The following constant are big for LLMs, they will eventually replicate all big weights from the model, and it is not mmaped unlike original weights
+        auto replacement_const = std::make_shared<v0::Constant>(output.get_element_type(), output.get_shape());  // TODO: why there is no Constant::create with this signature?
+        replacement = replacement_const;
+        request.set_output_tensor(replacement_const->get_tensor_view());
+        OPENVINO_ASSERT(adapter.size() + 1 == request.get_compiled_model().inputs().size());
+        // set input constants
+        request.set_input_tensor(0, std::dynamic_pointer_cast<v0::Constant>(weights_constant.get_node_shared_ptr())->get_tensor_view());
+        for(size_t i = 0; i < adapter.size(); ++i) {
+            request.set_input_tensor(i+1, adapter[i]->get_tensor_view());
+        }
+        request.infer();
+        // `replacement` contains recomputed weights
 
-                        if(!compiled_weight_models.count(signature)) {
-                            ov::ParameterVector parameters;
-                            auto target_parameter = std::make_shared<v0::Parameter>(weights_constant.get_element_type(), weights_constant.get_partial_shape());
-                            parameters.push_back(target_parameter);   // original weights input is one of the parameters
-                            // FIXME: Convert is not counted in the signature but in general it doesn't have to appear at every weights across the entire model, should be a part of the signature
-                            // Support only a single convert as a decompression pattern
-                            ov::Output<ov::Node> target = weights_convert ? weights_convert->clone_with_new_inputs({target_parameter}) : target_parameter;
-                            for(auto multiplier : adapter) {
-                                parameters.push_back(std::make_shared<v0::Parameter>(multiplier->get_output_element_type(0), multiplier->get_output_partial_shape(0)));
-                            }
-                            auto result = std::make_shared<v0::Result>(lora_multiplication(nullptr, NodeVector{parameters.begin() + 1, parameters.end()}, target, false));
-                            auto weights_model = std::make_shared<ov::Model>(ov::ResultVector{result}, parameters);
-                            auto compiled_model = core.compile_model(weights_model, "CPU");
-                            compiled_weight_models[signature] = compiled_model.create_infer_request();
-                        }
-                        auto request = compiled_weight_models.at(signature);  // FIXME: use .find instead of .count and .at
-                        auto output = request.get_compiled_model().output(0);
-                        // FIXME: The following constant are big for LLMs, they will eventually replicate all big weights from the model, and it is not mmaped unlike original weights
-                        auto replacement_const = std::make_shared<v0::Constant>(output.get_element_type(), output.get_shape());  // TODO: why there is no Constant::create with this signature?
-                        replacement = replacement_const;
-                        request.set_output_tensor(replacement_const->get_tensor_view());
-                        OPENVINO_ASSERT(adapter.size() + 1 == request.get_compiled_model().inputs().size());
-                        // set input constants
-                        request.set_input_tensor(0, std::dynamic_pointer_cast<v0::Constant>(weights_constant.get_node_shared_ptr())->get_tensor_view());
-                        for(size_t i = 0; i < adapter.size(); ++i) {
-                            request.set_input_tensor(i+1, adapter[i]->get_tensor_view());
-                        }
-                        request.infer();
-                        // `replacement` contains recomputed weights
-
-                    #else
-
-                    #if SEPARATE_TERM
-                    auto target = node->output(0);
-                    #else
-                    auto target = weights_input;
-                    #endif
-
-                    auto target_rank = target.get_partial_shape().rank().get_length();
-                    auto consumers = target.get_target_inputs();
-
-                    #if 1
-                    // FIXME: Should check rank of activations instead of target
-                    if(target_rank == 4 && target.get_partial_shape()[target_rank - 3].get_length() > 1) {
-                        //DEBUG_PRINT("Skipping unspported model tensor with shape: " << target.get_partial_shape());
-                        // FIXME: Check the dimensions we really need to move, currently it is hardcoded 2 + 2 dimensions
-                        // FIXME: Stash transposition constant to reuse
-                        auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int>{2, 3, 0, 1});
-                        auto transpose = register_new_node<v1::Transpose>(activations, transposition);
-                        activations = transpose;
-                    }
-                    #endif
-
-                    #if SEPARATE_TERM_STATE
-                    NodeVector input_constants;
-                    for(size_t i = 0; i < adapter.size(); ++i) {
-                        std::string variable_id = "lora_state_" + std::to_string(model->get_sinks().size());
-                        auto variable = std::make_shared<ov::op::util::Variable>(ov::op::util::VariableInfo{
-                            adapter[i]->get_output_partial_shape(0),
-                            adapter[i]->get_output_element_type(0),
-                            variable_id});
-                        /*variables.push_back*/model->add_variables({variable});
-                        variable_map[variable_id] = adapter[i];
-                        auto read_value = register_new_node<v6::ReadValue>(variable);
-                        input_constants.push_back(read_value);
-                        //input_constants.push_back(adapter[i]);
-                        /*assigns.push_back*/model->add_sinks({register_new_node<v6::Assign>(read_value, variable)});
-                    }
-                    #else
-                    NodeVector input_constants{adapter.begin(), adapter.end()};
-                    #endif
-                    replacement = lora_multiplication(
-                        #if SEPARATE_TERM
-                        activations.get_node_shared_ptr()
-                        #else
-                        nullptr
-                        #endif
-                        , input_constants, target,
-                        #if SEPARATE_TERM
-                                true
-                                #else
-                                false
-                                #endif
-                        );
-                    #if 0
-                    {
-                    for(auto multiplier : adapter) {
-                        NodePtr normalized = multiplier;
-                        if(normalized->get_element_type() != weights_type) {
-                            normalized = std::make_shared<v0::Convert>(normalized, weights_type);
-                        }
-                        if(normalized->get_output_partial_shape(0).rank().get_length() > 2) {
-                            // FIXME: Any other shape patterns possible?
-                            normalized = squeeze_2d(normalized);
-                        }
-                        if(add_term) {
-                            // FIXME: Apply alpha multiplication separately
-                            if(add_term->get_output_partial_shape(0).rank().get_length() == 0) {
-                                add_term = std::make_shared<v1::Multiply>(add_term, normalized);
-                            } else {
-                                #if SEPARATE_TERM
-                                bool transpose_b = true;
-                                #else
-                                bool transpose_b = false;
-                                #endif
-                                add_term = std::make_shared<v0::MatMul>(add_term, normalized, /*transpose_a = */false, transpose_b);  // FIXME: verify transpose_a == true
-                            }
-                        } else {
-                            #if SEPARATE_TERM
-                            add_term = register_new_node<v1::Multiply>(activations, multiplier);
-                            #else
-                            add_term = multiplier;
-                            #endif
-                        }
-                    }
-
-                    if(add_term->get_output_partial_shape(0).rank() != target_rank) {
-                        // FIXME: Make sure that this is always unsqueeze of the same kind
-                        add_term = unsqueeze(add_term, target_rank.get_length());
-                    }
-
-                    replacement = register_new_node<v1::Add>(target, add_term);
-
-                    #endif
-                    #endif
-
-                    for (auto consumer : consumers) {
-                        consumer.replace_source_output(replacement->output(0));
-                    }
-                    ++applied;
-                    return true;
-                } catch(...) {
-                    DEBUG_PRINT("Exception happens on layer: " << name);
-                    throw;
-                }
-            })
-        );
+        for (auto consumer : consumers) {
+            consumer.replace_source_output(replacement->output(0));
+        }
+        return true;
     }
 
-    ~ApplyLoRA () {
+    ~LoRAFuseTransform () {
         for(auto signature: compiled_weight_models) {
             DEBUG_PRINT(signature.first);
         }
     }
-
-private:
-    size_t applied = 0;
 };
 
 
+
+
+
 class LoRASeparateTransform : public LoRATransformBase {
-    using Signature = std::string;
-    std::map<Signature, ov::InferRequest> compiled_weight_models;
-    ov::Core core;
-    std::shared_ptr<ov::Model> model;
-    ConstantMap variable_map;
-    //ov::SinkVector& assigns;
-    //ov::op::util::VariableVector& variables;
-
-    void signature_push_back(Signature& signature, ov::Output<ov::Node> input) const {
-        // FIXME: Define hash function on vector<tuple<element_type, PartialShape>> to make it C++ish
-        signature += "(el: " + input.get_element_type().get_type_name() + ", shape: " + input.get_partial_shape().to_string() + ")";
-    }
-
-
-    NodePtr decompression_convert (NodePtr node) {
-        auto convert = std::dynamic_pointer_cast<v0::Convert>(node);
-        if(convert) {
-            node = convert->get_input_node_shared_ptr(0);
-        }
-        OPENVINO_ASSERT(std::dynamic_pointer_cast<v0::Constant>(node), "Not supported decompression pattern at the weight input (low bit compression?). Use f32/f16/bf16 weights only.");
-        return convert;
-    }
 
 public:
-    OPENVINO_RTTI("ApplyLoRA");
-        ApplyLoRA(
-            const AdapterMap& adapter_map,
-            std::shared_ptr<ov::Model> model,
-            ConstantMap& variable_map
-            /*ov::SinkVector& assigns, ov::op::util::VariableVector& variables*/) :
-            /*assigns(assigns), variables(variables),*/ model(model), variable_map(variable_map) {
-        OPENVINO_REGISTER_MATCHER(
-            (ov::pass::pattern::wrap_type<v0::MatMul, v1::Convolution>()),
-            ([&, this](ov::pass::pattern::Matcher& m) {
-                auto node = m.get_match_root();
-                auto name = node->get_friendly_name();
-                try{
-                    auto adapter_iter = find_adapter(name, adapter_map);
-                    if(adapter_iter == adapter_map.end()) {
-                        return false;
-                    }
 
-                    auto activations = node->input_value(0);    // FIXME: consider MatMul.transpose_a
-                    auto weights_input = node->input_value(1);
-                    auto weights_input_type = weights_input.get_element_type();
-                    DEBUG_PRINT("WEIGHTS SHAPE: " << weights_input.get_partial_shape());
-                    #if FAST_WEIGHTS_FUSE
-                    auto weights_convert = decompression_convert(weights_input.get_node_shared_ptr());
-                    auto weights_constant = weights_convert ? weights_convert->input_value(0) : weights_input;
-                    #endif
-                    auto adapter = adapter_iter->second; // FIXME: a copy
-                    NodePtr add_term = nullptr;
-                    Signature signature;
-                    #if SEPARATE_TERM
-                    adapter = Adapter{adapter[0], adapter[2], adapter[1]};
-                    #endif
-                    signature_push_back(signature, weights_input);
-                    for(auto multiplier : adapter) {
-                        signature_push_back(signature, multiplier);
-                    }
-                    NodePtr replacement = nullptr;
+    OPENVINO_RTTI("LoRASeparateTransform");
 
-                    #if FAST_WEIGHTS_FUSE
+    LoRASeparateTransform(const LoRAWeightStateGetter& lora_getter) : LoRATransformBase(lora_getter) {}
 
-                        auto consumers = weights_input.get_target_inputs();    // replace constant with decompression pattern, TODO: Consider to compress weights in weights_model to save memory (in this case chage weights_input to weights_constant)
+    bool apply (NodePtr node, const LoRANode& lora_weight) override {
+        auto activations = node->input_value(0);    // FIXME: consider MatMul.transpose_a
+        auto weights_input = node->input_value(1);
+        auto weights_input_type = weights_input.get_element_type();
+        DEBUG_PRINT("WEIGHTS SHAPE: " << weights_input.get_partial_shape());
+        NodePtr add_term = nullptr;
+        NodePtr replacement = nullptr;
 
-                        if(!compiled_weight_models.count(signature)) {
-                            ov::ParameterVector parameters;
-                            auto target_parameter = std::make_shared<v0::Parameter>(weights_constant.get_element_type(), weights_constant.get_partial_shape());
-                            parameters.push_back(target_parameter);   // original weights input is one of the parameters
-                            // FIXME: Convert is not counted in the signature but in general it doesn't have to appear at every weights across the entire model, should be a part of the signature
-                            // Support only a single convert as a decompression pattern
-                            ov::Output<ov::Node> target = weights_convert ? weights_convert->clone_with_new_inputs({target_parameter}) : target_parameter;
-                            for(auto multiplier : adapter) {
-                                parameters.push_back(std::make_shared<v0::Parameter>(multiplier->get_output_element_type(0), multiplier->get_output_partial_shape(0)));
-                            }
-                            auto result = std::make_shared<v0::Result>(lora_multiplication(nullptr, NodeVector{parameters.begin() + 1, parameters.end()}, target, false));
-                            auto weights_model = std::make_shared<ov::Model>(ov::ResultVector{result}, parameters);
-                            auto compiled_model = core.compile_model(weights_model, "CPU");
-                            compiled_weight_models[signature] = compiled_model.create_infer_request();
-                        }
-                        auto request = compiled_weight_models.at(signature);  // FIXME: use .find instead of .count and .at
-                        auto output = request.get_compiled_model().output(0);
-                        // FIXME: The following constant are big for LLMs, they will eventually replicate all big weights from the model, and it is not mmaped unlike original weights
-                        auto replacement_const = std::make_shared<v0::Constant>(output.get_element_type(), output.get_shape());  // TODO: why there is no Constant::create with this signature?
-                        replacement = replacement_const;
-                        request.set_output_tensor(replacement_const->get_tensor_view());
-                        OPENVINO_ASSERT(adapter.size() + 1 == request.get_compiled_model().inputs().size());
-                        // set input constants
-                        request.set_input_tensor(0, std::dynamic_pointer_cast<v0::Constant>(weights_constant.get_node_shared_ptr())->get_tensor_view());
-                        for(size_t i = 0; i < adapter.size(); ++i) {
-                            request.set_input_tensor(i+1, adapter[i]->get_tensor_view());
-                        }
-                        request.infer();
-                        // `replacement` contains recomputed weights
+        auto target = node->output(0);
 
-                    #else
+        auto target_rank = target.get_partial_shape().rank().get_length();
+        auto consumers = target.get_target_inputs();
 
-                    #if SEPARATE_TERM
-                    auto target = node->output(0);
-                    #else
-                    auto target = weights_input;
-                    #endif
-
-                    auto target_rank = target.get_partial_shape().rank().get_length();
-                    auto consumers = target.get_target_inputs();
-
-                    #if 1
-                    // FIXME: Should check rank of activations instead of target
-                    if(target_rank == 4 && target.get_partial_shape()[target_rank - 3].get_length() > 1) {
-                        //DEBUG_PRINT("Skipping unspported model tensor with shape: " << target.get_partial_shape());
-                        // FIXME: Check the dimensions we really need to move, currently it is hardcoded 2 + 2 dimensions
-                        // FIXME: Stash transposition constant to reuse
-                        auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int>{2, 3, 0, 1});
-                        auto transpose = register_new_node<v1::Transpose>(activations, transposition);
-                        activations = transpose;
-                    }
-                    #endif
-
-                    #if SEPARATE_TERM_STATE
-                    NodeVector input_constants;
-                    for(size_t i = 0; i < adapter.size(); ++i) {
-                        std::string variable_id = "lora_state_" + std::to_string(model->get_sinks().size());
-                        auto variable = std::make_shared<ov::op::util::Variable>(ov::op::util::VariableInfo{
-                            adapter[i]->get_output_partial_shape(0),
-                            adapter[i]->get_output_element_type(0),
-                            variable_id});
-                        /*variables.push_back*/model->add_variables({variable});
-                        variable_map[variable_id] = adapter[i];
-                        auto read_value = register_new_node<v6::ReadValue>(variable);
-                        input_constants.push_back(read_value);
-                        //input_constants.push_back(adapter[i]);
-                        /*assigns.push_back*/model->add_sinks({register_new_node<v6::Assign>(read_value, variable)});
-                    }
-                    #else
-                    NodeVector input_constants{adapter.begin(), adapter.end()};
-                    #endif
-                    replacement = lora_multiplication(
-                        #if SEPARATE_TERM
-                        activations.get_node_shared_ptr()
-                        #else
-                        nullptr
-                        #endif
-                        , input_constants, target,
-                        #if SEPARATE_TERM
-                                true
-                                #else
-                                false
-                                #endif
-                        );
-                    #if 0
-                    {
-                    for(auto multiplier : adapter) {
-                        NodePtr normalized = multiplier;
-                        if(normalized->get_element_type() != weights_type) {
-                            normalized = std::make_shared<v0::Convert>(normalized, weights_type);
-                        }
-                        if(normalized->get_output_partial_shape(0).rank().get_length() > 2) {
-                            // FIXME: Any other shape patterns possible?
-                            normalized = squeeze_2d(normalized);
-                        }
-                        if(add_term) {
-                            // FIXME: Apply alpha multiplication separately
-                            if(add_term->get_output_partial_shape(0).rank().get_length() == 0) {
-                                add_term = std::make_shared<v1::Multiply>(add_term, normalized);
-                            } else {
-                                #if SEPARATE_TERM
-                                bool transpose_b = true;
-                                #else
-                                bool transpose_b = false;
-                                #endif
-                                add_term = std::make_shared<v0::MatMul>(add_term, normalized, /*transpose_a = */false, transpose_b);  // FIXME: verify transpose_a == true
-                            }
-                        } else {
-                            #if SEPARATE_TERM
-                            add_term = register_new_node<v1::Multiply>(activations, multiplier);
-                            #else
-                            add_term = multiplier;
-                            #endif
-                        }
-                    }
-
-                    if(add_term->get_output_partial_shape(0).rank() != target_rank) {
-                        // FIXME: Make sure that this is always unsqueeze of the same kind
-                        add_term = unsqueeze(add_term, target_rank.get_length());
-                    }
-
-                    replacement = register_new_node<v1::Add>(target, add_term);
-
-                    #endif
-                    #endif
-
-                    for (auto consumer : consumers) {
-                        consumer.replace_source_output(replacement->output(0));
-                    }
-                    ++applied;
-                    return true;
-                } catch(...) {
-                    DEBUG_PRINT("Exception happens on layer: " << name);
-                    throw;
-                }
-            })
-        );
-    }
-
-    ~ApplyLoRA () {
-        DEBUG_PRINT("LoRA Applied: " << applied);
-        for(auto signature: compiled_weight_models) {
-            DEBUG_PRINT(signature.first);
+        #if 1
+        // FIXME: Should check rank of activations instead of target
+        if(target_rank == 4 && target.get_partial_shape()[target_rank - 3].get_length() > 1) {
+            //DEBUG_PRINT("Skipping unspported model tensor with shape: " << target.get_partial_shape());
+            // FIXME: Check the dimensions we really need to move, currently it is hardcoded 2 + 2 dimensions
+            // FIXME: Stash transposition constant to reuse
+            auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int>{2, 3, 0, 1});
+            auto transpose = register_new_node<v1::Transpose>(activations, transposition);
+            activations = transpose;
         }
-    }
+        #endif
 
-private:
-    size_t applied = 0;
+        NodeVector lora_variables{lora_weight.A, lora_weight.alpha, lora_weight.B};
+        replacement = tensors_multiplication(activations.get_node_shared_ptr(), lora_variables, target, true);
+
+        for (auto consumer : consumers) {
+            consumer.replace_source_output(replacement->output(0));
+        }
+        return true;
+    }
 };
 
 
