@@ -3,10 +3,8 @@
 
 #pragma once
 
-#include <iostream>
 #include <string>
-#include <sstream>
-#include <vector>
+#include <iostream>
 
 #include <openvino/openvino.hpp>
 
