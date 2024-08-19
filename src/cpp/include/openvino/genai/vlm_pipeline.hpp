@@ -78,7 +78,7 @@ static double get_duration_ms_until_now(Time::time_point& startTime) {
     return std::chrono::duration_cast<ns>(Time::now() - startTime).count() * 0.000001;
 }
 
-void get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> image_embed_slices, ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, ov::Tensor &imgEmbedding) {
+ov::Tensor get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> image_embed_slices, ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding) {
     std::string user_prompt;
     size_t embedding_dim;
     size_t embedding_len = 0;
@@ -128,7 +128,7 @@ void get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> ima
         embedding_len += 1;
     }
 
-    imgEmbedding = ov::Tensor(ov::element::f32, {1, embedding_len, embedding_dim});
+    ov::Tensor imgEmbedding = ov::Tensor(ov::element::f32, {1, embedding_len, embedding_dim});
     auto imgEmbedData = imgEmbedding.data<float>();
 
     //copy <用户> embedding info
@@ -197,6 +197,7 @@ void get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> ima
         std::copy(data + embedding_dim * 5, data + embedding_dim * 6, imgEmbedData);
         imgEmbedData += embedding_dim;
     }
+    return imgEmbedding;
 }
 
 ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, std::string prompt) {
@@ -295,8 +296,7 @@ public:
 
             //extract image embedding
             std::vector<std::vector<struct llava_image_embed*>> embeds = llava_image_embed_make_with_bytes_slice(&ctx_clip, pi.image);
-            ov::Tensor imgEmbedTensor;
-            get_image_embedding(embeds, this->tokenizer, this->ireq_embed, imgEmbedTensor);
+            ov::Tensor imgEmbedTensor = get_image_embedding(embeds, this->tokenizer, this->ireq_embed);
             llava_image_embed_free_slice(embeds);
 
             ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
