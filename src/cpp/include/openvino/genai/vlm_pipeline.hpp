@@ -110,14 +110,15 @@ ov::Tensor get_image_embedding(std::vector<std::vector<struct llava_image_embed*
 
     //compute inputs_embedding length
     embedding_len += 2;
-    embedding_len += image_embed_slices[0][0]->n_image_pos;
+    constexpr size_t n_img_pos = 64;  // RESAMPLER query_num minicpmv-2 64, minicpmv-2.5 96
+    embedding_len += n_img_pos;
 
     if (image_embed_slices.size() > 1) {
         embedding_len += 1;
         for (size_t i = 1; i < image_embed_slices.size(); ++i) {
             for (size_t j = 0; j < image_embed_slices[i].size(); ++j) {
                 embedding_len += 2;
-                embedding_len += image_embed_slices[i][j]->n_image_pos;
+                embedding_len += n_img_pos;
 
                 if (j == image_embed_slices[i].size() - 1) {
                     embedding_len += 1;
@@ -160,8 +161,8 @@ ov::Tensor get_image_embedding(std::vector<std::vector<struct llava_image_embed*
     imgEmbedData += embedding_dim;
 
     //fill image_embed_slices[0][0]
-    std::copy(image_embed_slices[0][0]->embed, image_embed_slices[0][0]->embed + image_embed_slices[0][0]->n_image_pos * embedding_dim, imgEmbedData);
-    imgEmbedData += image_embed_slices[0][0]->n_image_pos * embedding_dim;
+    std::copy(image_embed_slices[0][0]->embed, image_embed_slices[0][0]->embed + n_img_pos * embedding_dim, imgEmbedData);
+    imgEmbedData += n_img_pos * embedding_dim;
 
     //fill "</image>" embedding
     std::copy(data + embedding_dim * 3, data + embedding_dim * 4, imgEmbedData);
@@ -179,8 +180,8 @@ ov::Tensor get_image_embedding(std::vector<std::vector<struct llava_image_embed*
                 imgEmbedData += embedding_dim;
 
                 // fill image_embed_slices[i][j]
-                std::copy(image_embed_slices[i][j]->embed, image_embed_slices[i][j]->embed + image_embed_slices[i][j]->n_image_pos * embedding_dim, imgEmbedData);
-                imgEmbedData += image_embed_slices[i][j]->n_image_pos * embedding_dim;
+                std::copy(image_embed_slices[i][j]->embed, image_embed_slices[i][j]->embed + n_img_pos * embedding_dim, imgEmbedData);
+                imgEmbedData += n_img_pos * embedding_dim;
 
                 //fill "</image>" embedding
                 std::copy(data + embedding_dim * 3, data + embedding_dim * 4, imgEmbedData);
