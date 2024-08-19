@@ -17,6 +17,6 @@ updates:
     schedule:
       interval: "weekly"
   - package-ecosystem: "pip"
-    directory: "text_generation/causal_lm/cpp/"
+    directory: "samples/"
     schedule:
       interval: "weekly"

@@ -10,30 +10,40 @@
 #include "scheduler.hpp"
 
 TEST(TestBlockManager, general_test) {
-    ov::genai::BlockManager bm = ov::genai::BlockManager(6);
+    ov::genai::BlockManager bm = ov::genai::BlockManager(6, false, 4);
+    ov::genai::TokenIds prompt_ids;
 
-    bm.allocate(0, 6);
-    EXPECT_TRUE(bm.has_block_table(0));
-    EXPECT_EQ(bm.get_block_table(0).size(), 6);
+    ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
+        0, 
+        ov::Tensor(ov::element::i64, {
+        prompt_ids.size()}, prompt_ids.data()),
+        ov::genai::beam_search(),
+        4, 
+        false);
+    auto sequence = sequence_group->get_not_finished_sequences()[0];
+    bm.allocate(sequence, 6);
+    auto seq_id = sequence->get_id();
+    EXPECT_TRUE(bm.has_block_table(seq_id));
+    EXPECT_EQ(bm.get_block_table(seq_id).size(), 6);
     EXPECT_EQ(bm.num_free_blocks(), 0);
 
-    bm.free_sequence_partially_single_runnning_sequence(0, 4);
-    EXPECT_EQ(bm.get_block_table(0).size(), 2);
+    bm.free_sequence_partially(seq_id, 4);
+    EXPECT_EQ(bm.get_block_table(seq_id).size(), 2);
     EXPECT_EQ(bm.num_free_blocks(), 4);
 
-    bm.free_sequence(0);
-    EXPECT_FALSE(bm.has_block_table(0));
+    bm.free_sequence(seq_id);
+    EXPECT_FALSE(bm.has_block_table(seq_id));
     EXPECT_EQ(bm.num_free_blocks(), 6);
 
-    bm.allocate(0, 2);
-    bm.fork_sequence(0, 1);
+    bm.allocate(sequence, 2);
+    bm.fork_sequence(seq_id, 1);
     EXPECT_TRUE(bm.has_block_table(1));
     EXPECT_EQ(bm.get_block_table(1).back()->get_references_count(), 2);
 
 }
 
 TEST(TestBlockManager, required_blocks_count) {
-    ov::genai::BlockManager bm = ov::genai::BlockManager(8);
+    ov::genai::BlockManager bm = ov::genai::BlockManager(8, false, 4);
 
     std::vector<uint64_t> tokens = {0,1,2,3,4};
     ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
@@ -41,7 +51,9 @@ TEST(TestBlockManager, required_blocks_count) {
         ov::Tensor(ov::element::i64, {
         tokens.size()}, tokens.data()),
         ov::genai::beam_search(),
-        4);
+        4,
+        false);
+    sequence_group->set_sequence_group_ptr(sequence_group);
     sequence_group->schedule_tokens(5);
     auto required_blocks = bm.required_blocks_count(sequence_group);
     EXPECT_EQ(required_blocks, 2);

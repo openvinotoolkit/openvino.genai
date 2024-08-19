@@ -6,13 +6,38 @@
 #include <openvino/openvino.hpp>
 #include <random>
 
+namespace {
+
 constexpr size_t BATCH_SIZE = 1;
 
-// sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
-// threfore usually SEQ_LEN_AXIS = 2
-constexpr size_t SEQ_LEN_AXIS = 2;
+size_t get_seq_len_axis(std::shared_ptr<ov::Model> model) {
+    // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
+    // threfore usually seq_length_axis = 2
+    size_t seq_length_axis = 2;
 
-namespace {
+    // "ReadValue" node is KV cache representation in stateful model
+    std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
+
+    for (const auto op : model->get_ops()) {
+        if (op->get_type_name() != kv_node_type_name) {
+            continue;
+        }
+
+        // Shape example: [-1,4,0,64]
+        auto shape = op->get_input_partial_shape(0);
+
+        for (size_t i = 0; i < shape.rank().get_length(); i++) {
+            // Find axis = 0. This would be sequence length axis.
+            if (shape[i] == 0) {
+                seq_length_axis = i;
+            }
+        }
+        break;
+    }
+
+    return seq_length_axis;
+}
+
 std::pair<ov::Tensor, ov::Tensor> tokenize(ov::InferRequest& tokenizer, std::string&& prompt) {
     tokenizer.set_input_tensor(ov::Tensor{ov::element::string, {BATCH_SIZE}, &prompt});
     tokenizer.infer();
@@ -58,7 +83,7 @@ struct TextStreamer {
     void end() {
         std::string text = detokenize(detokenizer, token_cache);
         if (text.size() <= print_len)
-            return ;
+            return;
         std::cout << std::string_view{text.data() + print_len, text.size() - print_len} << '\n';
         token_cache.clear();
         print_len = 0;
@@ -67,18 +92,19 @@ struct TextStreamer {
 
 ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_seq_len) {
     // Copy elements from the old to a new tensor and return it.
-    // It's assumed that key/values tensor has a shape [BATCH_SIZE, num_kv_heads, seq_len, head_size] or [seq_len, ...],
-    // It that's not the case for your model please implement your own trim method.
-    OPENVINO_ASSERT(seq_len_axis == 2 || seq_len_axis == 0,
-                    "Cannot trim key/values with sequence length axis = ",
-                    seq_len_axis);
+    // Trim kv tensor on sequence length axis
+    // key/values tensor shape example: [BATCH_SIZE, num_kv_heads, seq_len, head_size]
+    // Sequense length axis position may vary from one model to another
 
-    auto old_tensor_data = tensor.data<float>();
     auto shape = tensor.get_shape();
-    size_t batch_size = shape[0];
-    size_t num_kv_heads = shape[1];
-    size_t old_seq_len = shape[2];
-    size_t head_size = shape[3];
+
+    OPENVINO_ASSERT(seq_len_axis < shape.size(),
+                    "Sequence length axis: ",
+                    seq_len_axis,
+                    " should be less than shape size: ",
+                    shape.size());
+
+    size_t old_seq_len = shape[seq_len_axis];
 
     OPENVINO_ASSERT(new_seq_len <= old_seq_len);
 
@@ -86,14 +112,16 @@ ov::Tensor trimm_tensor(ov::Tensor& tensor, uint64_t seq_len_axis, uint64_t new_
     if (old_seq_len == new_seq_len)
         return tensor;
 
+    shape[seq_len_axis] = new_seq_len;
+
     if (seq_len_axis == 0) {
-        shape[0] = new_seq_len;
         tensor.set_shape(shape);
         return tensor;
     }
 
     ov::Coordinate new_shape_begin{0, 0, 0, 0};
-    ov::Coordinate new_shape_end{batch_size, num_kv_heads, new_seq_len, head_size};
+    ov::Coordinate new_shape_end{shape};
+
     auto new_tensor = ov::Tensor(tensor, new_shape_begin, new_shape_end);
 
     return new_tensor;
@@ -113,15 +141,20 @@ private:
     ov::InferRequest draft_model;
     size_t max_seq_length;
     size_t num_pred_tokens = 5;
+    size_t seq_len_axis;
     const size_t max_pred_tokens = 10;
     int64_t out_of_kv_cache_token = -1;
     size_t draft_model_seq_length = 0;
 
 public:
-    AssistedCandidateGenerator(ov::InferRequest draft_model, const size_t max_seq_length, const size_t num_pred_tokens)
+    AssistedCandidateGenerator(ov::InferRequest draft_model,
+                               const size_t max_seq_length,
+                               const size_t num_pred_tokens,
+                               const size_t seq_len_axis)
         : draft_model{draft_model},
           max_seq_length{max_seq_length},
-          num_pred_tokens{num_pred_tokens} {};
+          num_pred_tokens{num_pred_tokens},
+          seq_len_axis{seq_len_axis} {};
 
     int64_t generate_next_token(const std::vector<int64_t> tokens) {
         size_t tokens_size = tokens.size();
@@ -199,7 +232,7 @@ public:
         }
 
         out_of_kv_cache_token = -1;
-        ::update_kv_cache(draft_model, SEQ_LEN_AXIS, seq_length);
+        ::update_kv_cache(draft_model, seq_len_axis, seq_length);
         draft_model_seq_length = seq_length;
     }
 };
@@ -233,18 +266,24 @@ int main(int argc, char* argv[]) try {
     TextStreamer text_streamer{std::move(detokenizer)};
 
     // draft model (which is smaller, less accurate but faster)
-    ov::InferRequest draft_model =
-        core.compile_model(std::string{argv[1]} + "/openvino_model.xml", "CPU").create_infer_request();
+    std::shared_ptr<ov::Model> ov_draft_model = core.read_model(std::string{argv[1]} + "/openvino_model.xml");
+
+    size_t draft_model_seq_len_axis = get_seq_len_axis(ov_draft_model);
+
+    ov::InferRequest draft_model = core.compile_model(ov_draft_model, "CPU").create_infer_request();
 
     uint64_t seq_len = input_ids.get_shape()[1];
 
     // main model (which is bigger, more accurate but slower)
-    ov::InferRequest main_model =
-        core.compile_model(std::string{argv[2]} + "/openvino_model.xml", "CPU").create_infer_request();
+    std::shared_ptr<ov::Model> ov_main_model = core.read_model(std::string{argv[2]} + "/openvino_model.xml");
+
+    size_t main_model_seq_len_axis = get_seq_len_axis(ov_main_model);
+
+    ov::InferRequest main_model = core.compile_model(ov_main_model, "CPU").create_infer_request();
 
     size_t max_sequence_length = 100;
 
-    AssistedCandidateGenerator candidateGenerator{draft_model, max_sequence_length, 5};
+    AssistedCandidateGenerator candidateGenerator{draft_model, max_sequence_length, 5, draft_model_seq_len_axis};
 
     main_model.set_tensor("input_ids", input_ids);
     main_model.set_tensor("attention_mask", attention_mask);
@@ -347,7 +386,7 @@ int main(int argc, char* argv[]) try {
         }
 
         candidateGenerator.update_kv_cache(seq_len);
-        update_kv_cache(main_model, SEQ_LEN_AXIS, seq_len);
+        update_kv_cache(main_model, main_model_seq_len_axis, seq_len);
 
         candidates.clear();
     }
@@ -360,9 +399,13 @@ int main(int argc, char* argv[]) try {
     draft_model.reset_state();
     main_model.reset_state();
 } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
+    try {
+        std::cerr << error.what() << '\n';
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 } catch (...) {
-    std::cerr << "Non-exception object thrown\n";
+    try {
+        std::cerr << "Non-exception object thrown\n";
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 }

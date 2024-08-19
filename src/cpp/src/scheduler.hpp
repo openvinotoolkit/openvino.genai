@@ -10,7 +10,6 @@
 #include "openvino/genai/scheduler_config.hpp"
 #include "block_manager.hpp"
 #include "sequence_group.hpp"
-#include "block_manager.hpp"
 
 namespace ov::genai {
 class Scheduler {
@@ -34,7 +33,7 @@ public:
     };
 
     explicit Scheduler(const SchedulerConfig & config = {}) :
-        m_config(config), m_block_manager(m_config.num_kv_blocks) { }
+        m_config(config), m_block_manager(m_config.num_kv_blocks, m_config.enable_prefix_caching, m_config.block_size) { }
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
         Output scheduler_output;
@@ -79,6 +78,10 @@ public:
         m_block_manager.fork_sequence(parent_id, child_id);
     }
 
+    void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group) {
+        m_block_manager.restore_cached_blocks(sequence_group, m_config.block_size);
+    }
+
     const SchedulerConfig& get_config() const {
         return m_config;
     }
@@ -115,31 +118,14 @@ private:
             return m_block_manager.num_free_blocks() > prev_blocks_count;
         }
 
-        if (num_running_sequences > 1) {
-            size_t phisycal_blocks_released;
-            size_t logical_blocks_released;
-            m_block_manager.free_group_partially_multiple_runnning_sequence(sequence_group, blocks_needed, phisycal_blocks_released, logical_blocks_released);
+        size_t logical_blocks_released = m_block_manager.free_group_partially(sequence_group, blocks_needed);
 
-            // calculate the number of preempted tokens
-            auto tokens_in_last_block = processed_tokens % block_size;
-            if (tokens_in_last_block == 0) {    
-                tokens_in_last_block = block_size;
-            }
-            preempted_tokens = tokens_in_last_block + std::max<size_t>((int)logical_blocks_released - 1, 0) * block_size;
-
+        // calculate the number of preempted tokens
+        auto tokens_in_last_block = processed_tokens % block_size;
+        if (tokens_in_last_block == 0) {    
+            tokens_in_last_block = block_size;
         }
-        else {
-            OPENVINO_ASSERT(num_running_sequences == 1);
-            size_t phisycal_blocks_released;
-            m_block_manager.free_group_partially_single_runnning_sequence(sequence_group, blocks_needed, phisycal_blocks_released);
-
-            // calculate the number of preempted tokens
-            auto tokens_in_last_block = processed_tokens % block_size;
-            if (tokens_in_last_block == 0) {    
-                tokens_in_last_block = block_size;
-            }
-            preempted_tokens = tokens_in_last_block + std::max<size_t>((int)phisycal_blocks_released - 1, 0) * block_size;
-        }
+        preempted_tokens = tokens_in_last_block + std::max<size_t>((int)logical_blocks_released - 1, 0) * block_size;
 
         // case when preemption requires preempt prompt tokens
         if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
@@ -222,7 +208,7 @@ private:
                 if (num_scheduled_tokens > 0) {
                     // allocate KV blocks if required
                     if (num_scheduled_blocks > 0)
-                        m_block_manager.allocate(seq_id, num_scheduled_blocks);
+                        m_block_manager.allocate(sequence, num_scheduled_blocks, sequence_group->get_prompt_ids());
                     // and schedule tokens
                     sequence_group->schedule_tokens(num_scheduled_tokens);
 
@@ -326,7 +312,8 @@ private:
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
                 // here we also assume that sequence must be scheduler in a single shot and has no already generated context
-                OPENVINO_ASSERT(sequence_group->get_context_len() == 0);
+                if (!m_config.enable_prefix_caching)
+                    OPENVINO_ASSERT(sequence_group->get_context_len() == 0);
 
                 size_t num_available_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t sequence_len = sequence_group->get_num_available_tokens_for_batching();
@@ -354,10 +341,11 @@ private:
                     Sequence::Ptr sequence = (*sequence_group)[0];
                     uint64_t seq_id = sequence->get_id();
 
-                    // allocate KV blocks
-                    m_block_manager.allocate(seq_id, num_required_blocks);
                     // and schedule tokens
                     sequence_group->schedule_tokens(sequence_len);
+
+                    // allocate KV blocks
+                    m_block_manager.append_slots(sequence_group);
 
                     // add information to scheduler_output
                     {

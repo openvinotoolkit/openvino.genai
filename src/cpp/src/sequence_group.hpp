@@ -6,6 +6,7 @@
 #include <vector>
 #include <set>
 #include <cstdlib>
+#include <string_view>
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
@@ -20,6 +21,7 @@ enum class SequenceStatus {
 };
 
 using TokenIds = std::vector<int64_t>;
+class SequenceGroup;
 
 class Sequence {
     // This can be a problem if we launch two pipelines in the same application.
@@ -32,8 +34,12 @@ class Sequence {
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     SequenceStatus m_status = SequenceStatus::RUNNING;
+    GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
+    std::vector<int64_t> m_prefix_hashes;
+    std::weak_ptr<SequenceGroup> m_sequence_group;
 
+    size_t _make_hash(size_t content_length);
 public:
     using Ptr = std::shared_ptr<Sequence>;
     using CPtr = std::shared_ptr<const Sequence>;
@@ -46,7 +52,7 @@ public:
         m_generated_ids(seq.m_generated_ids),
         m_grouped_id(id),
         m_status(seq.m_status),
-        m_cumulative_log_prob(seq.m_cumulative_log_prob) {
+        m_cumulative_log_prob(seq.m_cumulative_log_prob){
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
 
@@ -90,6 +96,14 @@ public:
         m_status = status;
     }
 
+    GenerationFinishReason get_finish_reason() const {
+        return m_finish_reason;
+    }
+
+    void set_finish_reason(GenerationFinishReason finish_reason) {
+        m_finish_reason = finish_reason;
+    }
+
     // appends new tokens to a generated part
     void append_token(int64_t token_id, float log_prob) {
         m_cumulative_log_prob += log_prob;
@@ -101,6 +115,7 @@ public:
         OPENVINO_ASSERT(m_generated_ids.size());
         output.score = get_cumulative_log_probs();
         output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};
+        output.finish_reason = get_finish_reason();
         return output;
     }
 
@@ -121,6 +136,20 @@ public:
         float score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
         return score;
     }
+
+    void set_sequence_group_ptr(std::shared_ptr<SequenceGroup> sequence_group) {
+        m_sequence_group = sequence_group;
+    }
+
+    std::shared_ptr<SequenceGroup> get_sequence_group_ptr() const {
+        OPENVINO_ASSERT(!m_sequence_group.expired());
+        return m_sequence_group.lock();
+    }
+
+    // Each KV block can be uniquely identified by 
+    // the tokens within the block and the tokens in the prefix before the block.
+    // hash(prefix tokens + block tokens) <--> KV Block
+    size_t get_hash(size_t content_length = 0);
 };
 
 // contains a list of Sequences in generic case (beam search or parallel sampling)
@@ -134,6 +163,7 @@ class SequenceGroup {
     std::size_t m_block_size;
     TokenIds m_prompt_ids;
     GenerationStream::Ptr m_generation_stream;
+    bool m_enable_prefix_caching;
 
     uint64_t m_next_sequence_id = 0;
 
@@ -147,22 +177,23 @@ class SequenceGroup {
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
 
-    SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
+    SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
-          m_block_size(block_size) {
+          m_block_size(block_size),
+          m_enable_prefix_caching(enable_prefix_caching) {
             m_generation_stream = GenerationStream::create();    
            }
 public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
 
-    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size) {
+    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size, enable_prefix_caching) {
     }
 
-    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
-        : SequenceGroup(request_id, sampling_params, block_size) {
+    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
+        : SequenceGroup(request_id, sampling_params, block_size, enable_prefix_caching) {
         add_sequence(Sequence::create(m_next_sequence_id++));
 
         m_prompt_ids.resize(input_ids.get_size());
@@ -189,6 +220,13 @@ public:
                 running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
                 // stop sequence by max_new_tokens or EOS token
                 running_sequence->set_status(SequenceStatus::FINISHED);
+
+                if (running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
+                    running_sequence->set_finish_reason(GenerationFinishReason::STOP);
+                } else if (m_sampling_params.max_new_tokens == generated_len) {
+                    running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
+                }
+                
                 dropped_seq_ids.push_back(running_sequence->get_id());
             }
         }
@@ -345,6 +383,11 @@ public:
         clear_scheduled_tokens();
     }
 
+    void update_processed_tokens_num(size_t processed_tokens) {
+        m_num_processed_tokens = processed_tokens;
+        m_max_content_len = processed_tokens;
+    }
+
     void clear_waiting_sequences() {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_waiting()) {
@@ -371,7 +414,9 @@ public:
     }
 
     Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
-        m_sequences.emplace_back(Sequence::fork(sequence, m_next_sequence_id++));
+        auto ptr = sequence->get_sequence_group_ptr();
+        m_sequences.emplace_back(Sequence::fork(std::move(sequence), m_next_sequence_id++));
+        set_sequence_group_ptr(ptr);
         return m_sequences.back();
     }
 
@@ -412,6 +457,12 @@ public:
         }
         return false;
     }
+
+    void set_sequence_group_ptr(std::shared_ptr<SequenceGroup> sequence_group) {
+        for (auto sequence: m_sequences) {
+            sequence->set_sequence_group_ptr(sequence_group);
+        }
+    }
     
     GenerationStream::Ptr get_generation_stream() {
         return m_generation_stream;
@@ -425,27 +476,31 @@ public:
         return m_generation_stream->get_status() == GenerationStatus::DROPPED_BY_HANDLE;
     }
 
+    void push_empty_outputs() {
+        m_generation_stream->push({});
+    }
+
     void push_outputs() {
         GenerationOutputs outputs;
         for (auto& sequence: m_sequences) {
             GenerationOutput output;
             output.generated_token_ids = sequence->get_generated_ids();
-            output.score = sequence->get_beam_search_score(m_sampling_params);
+            output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_probs();
+            output.finish_reason = sequence->get_finish_reason();
             outputs.emplace(sequence->get_grouped_id(), output);
         }
-        m_generation_stream->push(outputs);
+        m_generation_stream->push(std::move(outputs));
     }
 
     void push_partial_outputs() {
         GenerationOutputs outputs;
-        // TODO: support streamimg for n seqs
         for (auto& sequence : m_sequences) {
             // todo: check seq.is_finished() to generate without several </s>
             // or is it ok to use padding?
             const auto last_gen_token = sequence->get_last_generation_output();
             outputs.emplace(sequence->get_grouped_id(), last_gen_token);
         }
-        m_generation_stream->push(outputs);
+        m_generation_stream->push(std::move(outputs));
     }
 
     void notify_handle() {
