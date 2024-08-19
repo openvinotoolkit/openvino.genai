@@ -140,7 +140,14 @@ public:
         sampling_params.set_eos_token_id(m_tokenizer.get_eos_token_id());
         sampling_params.validate();
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
-                                                                            sampling_params, m_scheduler->get_config().block_size);
+                                                                            sampling_params, 
+                                                                            m_scheduler->get_config().block_size,
+                                                                            m_scheduler->get_config().enable_prefix_caching);
+        sequence_group->set_sequence_group_ptr(sequence_group);
+        if (m_scheduler->get_config().enable_prefix_caching) {
+            m_scheduler->restore_cached_blocks(sequence_group);
+        }
+
         {
             std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
             m_awaiting_requests.push_back(sequence_group);
