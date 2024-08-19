@@ -61,12 +61,15 @@ public:
     bool partial_sort_and_resize(Logits& logits) {
         // Since most of the time huge part of logits vector contains minimal values 
         // expensive sorting of entire vector might be unnecessary, especially for low values of top_p. 
-        // This method partially sorts vector 3 times considering 10, 100 and 1000 top elements and stops when top_p condition is met.
-        // If top_p is found in considered scope it resizes logits vector and returns true. Otherwise it returns false and regular sorting is performed.
+        // This method partially sorts vector finding M top elements and stops when top_p condition is met.
+        // It iterates a few times starting with M = 16 and multiplying it by 2 each iteration until M = 1024.
+        // If top_p is found in considered scope it resizes logits vector and returns true. Otherwise it returns false.
         // Note that it can we less performant than standard approach if logits value are more evenly distributed across the vector.
-        float sum = 0.0;
-        for (uint32_t step = 10; step <= 1000; step *= 10) {
+        for (size_t step = 16; step <= 1024; step *= 2) {
+            if (logits.m_vector.size() <= step)
+                break;
             std::partial_sort(logits.m_vector.begin(), logits.m_vector.begin() + step, logits.m_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+            float sum = 0.0;
             for (int i = 0; i < step; i++) {
                 sum += logits.m_vector[i].m_log_prob;
                 if (sum > m_top_p) {
