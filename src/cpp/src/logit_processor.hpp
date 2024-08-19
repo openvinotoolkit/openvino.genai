@@ -58,7 +58,7 @@ class TopPFilter : public ILogitTransformer {
 public:
     TopPFilter(double top_p) : m_top_p(top_p) {}
 
-    bool partial_sort_and_resize(std::vector<Token>& logits_vector) {
+    bool partial_sort_and_resize(Logits& logits) {
         // Since most of the time huge part of logits vector contains minimal values 
         // expensive sorting of entire vector might be unnecessary, especially for low values of top_p. 
         // This method partially sorts vector 3 times considering 10, 100 and 1000 top elements and stops when top_p condition is met.
@@ -66,11 +66,11 @@ public:
         // Note that it can we less performant than standard approach if logits value are more evenly distributed across the vector.
         float sum = 0.0;
         for (uint32_t step = 10; step <= 1000; step *= 10) {
-            std::partial_sort(logits_vector.begin(), logits_vector.begin() + step, logits_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+            std::partial_sort(logits.m_vector.begin(), logits.m_vector.begin() + step, logits.m_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
             for (int i = 0; i < step; i++) {
-                sum += logits_vector[i].m_log_prob;
+                sum += logits.m_vector[i].m_log_prob;
                 if (sum > m_top_p) {
-                    logits_vector.resize(i+1);
+                    logits.resize(i+1);
                     return true;
                 }
             }
@@ -78,23 +78,23 @@ public:
         return false;
     }
 
-    void full_sort_and_resize(std::vector<Token>& logits_vector) {
-        std::sort(logits_vector.begin(), logits_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
+    void full_sort_and_resize(Logits& logits) {
+        std::sort(logits.m_vector.begin(), logits.m_vector.end(), [](const Token& lhs, const Token& rhs) {return lhs.m_log_prob > rhs.m_log_prob; });
         float probability_sum = 0.0f;
         size_t nucleus_size = 0;
-        for (const auto& logit : logits_vector) {
+        for (const auto& logit : logits.m_vector) {
             probability_sum += logit.m_log_prob;
             nucleus_size += 1;
             if (probability_sum > m_top_p) break;
         }
-        logits_vector.resize(nucleus_size);
+        logits.resize(nucleus_size);
     }
 
     void apply(Logits& logits) override {
         // Initialize and sort vector. Try partial sorting first and if it's not enough, sort entire vector.
         logits.initialize_vector();
-        if(!partial_sort_and_resize(logits.m_vector))
-            full_sort_and_resize(logits.m_vector);
+        if(!partial_sort_and_resize(logits))
+            full_sort_and_resize(logits);
     }
 
 protected:
