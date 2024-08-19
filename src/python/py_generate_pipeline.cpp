@@ -505,6 +505,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             LLMPipeline class constructor.
             model_path (str): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
         )")
 
         .def(py::init([](
@@ -525,6 +526,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             model_path (str): Path to the model file.
             tokenizer (openvino_genai.Tokenizer): tokenizer object.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
         )")
 
         .def(

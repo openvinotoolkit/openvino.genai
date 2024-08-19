@@ -23,6 +23,11 @@ using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
 
+/**
+* @brief scheduler_config property serves to activate continuous batching pipeline.
+* Create SchedulerConfig and fill it with sutable values. Copy or move it to plugin_config.
+* And create LLMPipeline instance with this config.
+*/
 static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_config"};
 
 /**

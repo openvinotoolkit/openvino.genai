@@ -13,6 +13,7 @@ from pathlib import Path
 import shutil
 import json
 
+
 def get_models_list():
     precommit_models = [
         "katuni4ka/tiny-random-phi3",
