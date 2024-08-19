@@ -109,6 +109,7 @@ public:
     * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
     * @param device optional device
     * @param plugin_config optional plugin_config
+    * Add ov::genai::scheduler_config property to plugin_config to create continuous batching pipeline
     */
     LLMPipeline(
         const std::string& path, 
@@ -136,6 +137,7 @@ public:
     * @param tokenizer manually initialized ov::genai::Tokenizer 
     * @param device optional device
     * @param plugin_config optional plugin_config
+    * Add ov::genai::scheduler_config property to plugin_config to create continuous batching pipeline
     */
     LLMPipeline(
         const std::string& model_path,
