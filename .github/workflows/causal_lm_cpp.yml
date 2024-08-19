@@ -576,7 +576,7 @@ jobs:
       - name: Compare
         run: |
           source ./ov/setupvars.sh
-          printf 'What is 2 + 2?\nWhat is the previous answer?\nAdd 1 to it.\nSubtract 5 from it.\nWhy is the sun yellow?\nWhat was my first question?\nStop!\n' > ./input.txt
+          printf 'What is 2 + 2?\nWhat is the previous answer?\nAdd 1 to it.\nSubtract 5 from it.\nWhy is the sun yellow?\nWhat was my first question?\n' > ./input.txt
           timeout 30s ./build/samples/cpp/chat_sample/chat_sample ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred.txt
           python -c "
           from transformers import LlamaTokenizer, AutoModelForCausalLM
