@@ -255,6 +255,15 @@ public:
             // CPU only because of 146022.
             model_dir / "openvino_vision.xml", "CPU", device_config
         ).create_infer_request()} {}
+    std::pair<std::vector<std::vector<ov::Tensor>>, size_t> encode(const ov::Tensor image) {
+        clip_ctx ctx_clip;
+        for (int i = 0; i < 3; ++i) {
+            ctx_clip.image_mean[i] = 0.5;
+            ctx_clip.image_std[i] = 0.5;
+        }
+        ctx_clip.ireq_vision = encoder;
+        return llava_image_embed_make_with_bytes_slice(&ctx_clip, image);
+    }
 };
 
 struct PromptImage {
@@ -307,17 +316,7 @@ public:
 
     void generate(const PromptImage& pi, const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr) {
         if (pi.image) {
-            clip_ctx ctx_clip;
-            int n_threads = 1;
-            for (int i = 0; i < 3; ++i) {
-                ctx_clip.image_mean[i] = 0.5;
-                ctx_clip.image_std[i] = 0.5;
-            }
-            ctx_clip.ireq_vision = vision_encoder.encoder;
-            ctx_clip.ireq_resampler = resampler;
-
-            //extract image embedding
-            std::pair<std::vector<std::vector<ov::Tensor>>, size_t> embeds = llava_image_embed_make_with_bytes_slice(&ctx_clip, pi.image);
+            std::pair<std::vector<std::vector<ov::Tensor>>, size_t> embeds = vision_encoder.encode(pi.image);
             ov::Tensor imgEmbedTensor = get_image_embedding(embeds, this->tokenizer, this->ireq_embed, this->resampler);
 
             ov::Shape img_embed_shape = imgEmbedTensor.get_shape();

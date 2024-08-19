@@ -43,7 +43,6 @@ struct clip_ctx {
     projector_type proj_type = PROJECTOR_TYPE_RESAMPLER;
 
     ov::InferRequest ireq_vision;
-    ov::InferRequest ireq_resampler;
 };
 
 // RGB uint8 image
