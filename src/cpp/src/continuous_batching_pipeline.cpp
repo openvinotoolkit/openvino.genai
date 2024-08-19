@@ -15,6 +15,7 @@
 #include "text_callback_streamer.hpp"
 #include "timer.hpp"
 #include "debug_utils.hpp"
+#include "utils.hpp"
 
 using namespace ov::genai;
 
@@ -99,7 +100,7 @@ public:
         apply_paged_attention_transformations(model, device_config);
 
         auto compiled_model = core.compile_model(model, device_config.get_device(), plugin_config);
-        read_properties([compiled_model](const std::string& key) {
+        ov::genai::utils::read_properties([compiled_model](const std::string& key) {
             return compiled_model.get_property(key); },
             m_model_config_namevalues);
 
@@ -138,15 +139,12 @@ public:
         return m_pipeline_metrics;
     }
 
-    std::vector<std::string> get_model_configuration() {
-        return m_model_config_namevalues;
-    }
-
-    void print_model_configuration() {
-        std::cout << "Loaded model configuration:" << std::endl;
+    std::string get_model_configuration_string() {
+        std::string print_values = "";
         for( auto prop : m_model_config_namevalues) {
-            std::cout << "\t" << prop << std::endl;
+            print_values = print_values + "\t" + prop + "\n";
         }
+        return print_values;
     }
 
     ov::genai::Tokenizer get_tokenizer() {
@@ -429,15 +427,11 @@ PipelineMetrics ContinuousBatchingPipeline::get_metrics() const{
     return m_impl->get_metrics();
 }
 
-std::vector<std::string> ContinuousBatchingPipeline::get_model_configuration() {
-    return m_impl->get_model_configuration();
+std::string ContinuousBatchingPipeline::get_model_configuration_string() {
+    return m_impl->get_model_configuration_string();
 }
 
-void ContinuousBatchingPipeline::print_model_configuration() {
-    return m_impl->print_model_configuration();
-}
-
-GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, std::string prompt, ov::genai::GenerationConfig sampling_params) {
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params) {
     return m_impl->add_request(request_id, prompt, sampling_params);
 }
 

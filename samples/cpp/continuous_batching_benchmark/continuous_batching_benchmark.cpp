@@ -499,7 +499,7 @@ int main(int argc, char* argv[]) try {
     std::cout << "Loading models, creating pipelines, preparing environment..." << std::endl;
     ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map);
 
-    pipe.print_model_configuration();
+    std::cout << "Model configuration: " << std::endl << pipe.get_model_configuration_string();
 
     std::cout << "Setup finished, launching LLM executor, traffic simulation and statistics reporter threads" << std::endl;
 

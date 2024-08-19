@@ -185,6 +185,21 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
         return std::nullopt;
 }
 
+std::string join(const std::vector<std::string>& listOfStrings, const std::string delimiter) {
+    std::stringstream ss;
+    auto it = listOfStrings.cbegin();
+    if (it == listOfStrings.end()) {
+        return "";
+    }
+    for (; it != (listOfStrings.end() - 1); ++it) {
+        ss << *it << delimiter;
+    }
+    if (it != listOfStrings.end()) {
+        ss << *it;
+    }
+    return ss.str();
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

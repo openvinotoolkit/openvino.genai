@@ -76,6 +76,28 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
 
+std::string join(const std::vector<std::string>& listOfStrings, const std::string delimiter);
+
+template <typename PropertyExtractor>
+static void read_properties(PropertyExtractor&& property_extractor, std::vector<std::string>& output_configuration_values) {
+    auto key = std::string("SUPPORTED_PROPERTIES");  // ov::supported_properties;
+    std::vector<ov::PropertyName> supported_config_keys;
+
+    ov::Any value = property_extractor(key);
+    supported_config_keys = value.as<std::vector<ov::PropertyName>>();
+
+    for (auto& key : supported_config_keys) {
+        if (key == "SUPPORTED_PROPERTIES")
+            continue;
+        std::string value;
+        ov::Any param_value = property_extractor(key);
+        value = param_value.as<std::string>();
+
+        output_configuration_values.emplace_back(join({key, value}, ": "));
+    }
+    std::sort(output_configuration_values.begin(), output_configuration_values.end());
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
