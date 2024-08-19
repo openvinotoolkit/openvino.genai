@@ -5,6 +5,7 @@ on:
     paths:
       - image_generation/stable_diffusion_1_5/cpp/**
       - image_generation/common/**
+      - image_generation/requirements.txt
       - samples/requirements.txt
       - .github/workflows/stable_diffusion_1_5_cpp.yml
       - thirdparty/openvino_tokenizers
