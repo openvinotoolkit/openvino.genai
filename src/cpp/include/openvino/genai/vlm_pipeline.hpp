@@ -78,7 +78,8 @@ static double get_duration_ms_until_now(Time::time_point& startTime) {
     return std::chrono::duration_cast<ns>(Time::now() - startTime).count() * 0.000001;
 }
 
-ov::Tensor get_image_embedding(std::vector<std::vector<struct llava_image_embed*>> image_embed_slices, ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding) {
+ov::Tensor get_image_embedding(const std::pair<std::vector<std::vector<ov::Tensor>>, size_t>& slices, ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, ov::InferRequest& resampler) {
+    auto [image_embed_slices, ratio] = slices;
     std::string user_prompt;
     size_t embedding_dim;
     size_t embedding_len = 0;
@@ -160,8 +161,18 @@ ov::Tensor get_image_embedding(std::vector<std::vector<struct llava_image_embed*
     std::copy(data + embedding_dim * 2, data + embedding_dim * 3, imgEmbedData);
     imgEmbedData += embedding_dim;
 
+    const ov::Tensor& vision_output_tensor = image_embed_slices[0][0];
+
+    //Resampler inference with OpenVINO
+    resampler.set_tensor("x", vision_output_tensor);
+    resampler.get_tensor("tgt_size").set_shape({ 1, 1 });
+    resampler.get_tensor("tgt_size").data<int64_t>()[0] = ratio;
+    resampler.get_tensor("tgt_size").data<int64_t>()[1] = ratio;
+
+    resampler.infer();
+    const ov::Tensor& vision_embded_tensor = resampler.get_output_tensor();
     //fill image_embed_slices[0][0]
-    std::copy(image_embed_slices[0][0]->embed, image_embed_slices[0][0]->embed + n_img_pos * embedding_dim, imgEmbedData);
+    std::copy_n(vision_embded_tensor.data<float>(), vision_embded_tensor.get_size(), imgEmbedData);
     imgEmbedData += n_img_pos * embedding_dim;
 
     //fill "</image>" embedding
@@ -179,8 +190,18 @@ ov::Tensor get_image_embedding(std::vector<std::vector<struct llava_image_embed*
                 std::copy(data + embedding_dim * 2, data + embedding_dim * 3, imgEmbedData);
                 imgEmbedData += embedding_dim;
 
+                const ov::Tensor& vision_output_tensor_i_j = image_embed_slices[i][j];
+
+                //Resampler inference with OpenVINO
+                resampler.set_tensor("x", vision_output_tensor);
+                resampler.get_tensor("tgt_size").set_shape({ 1, 1 });
+                resampler.get_tensor("tgt_size").data<int64_t>()[0] = ratio;
+                resampler.get_tensor("tgt_size").data<int64_t>()[1] = ratio;
+
+                resampler.infer();
+                const ov::Tensor& vision_embded_tensor_i_j = resampler.get_output_tensor();
                 // fill image_embed_slices[i][j]
-                std::copy(image_embed_slices[i][j]->embed, image_embed_slices[i][j]->embed + n_img_pos * embedding_dim, imgEmbedData);
+                std::copy_n(vision_embded_tensor_i_j.data<float>(), vision_embded_tensor_i_j.get_size(), imgEmbedData);
                 imgEmbedData += n_img_pos * embedding_dim;
 
                 //fill "</image>" embedding
@@ -296,9 +317,8 @@ public:
             ctx_clip.ireq_resampler = resampler;
 
             //extract image embedding
-            std::vector<std::vector<struct llava_image_embed*>> embeds = llava_image_embed_make_with_bytes_slice(&ctx_clip, pi.image);
-            ov::Tensor imgEmbedTensor = get_image_embedding(embeds, this->tokenizer, this->ireq_embed);
-            llava_image_embed_free_slice(embeds);
+            std::pair<std::vector<std::vector<ov::Tensor>>, size_t> embeds = llava_image_embed_make_with_bytes_slice(&ctx_clip, pi.image);
+            ov::Tensor imgEmbedTensor = get_image_embedding(embeds, this->tokenizer, this->ireq_embed, this->resampler);
 
             ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
             size_t embed_dim = img_embed_shape[2];

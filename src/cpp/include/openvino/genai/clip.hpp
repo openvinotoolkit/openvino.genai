@@ -77,10 +77,7 @@ struct clip_image_f32_batch {
 
 CLIP_API void clip_free(struct clip_ctx * ctx);
 
-CLIP_API size_t clip_embd_nbytes(const struct clip_ctx * ctx);
-
 CLIP_API int clip_n_patches(const struct clip_ctx* ctx);
-CLIP_API int clip_n_mmproj_embd(const struct clip_ctx* ctx);
 
 CLIP_API struct clip_image_u8  * clip_image_u8_init ();
 CLIP_API struct clip_image_f32 * clip_image_f32_init();
@@ -100,8 +97,8 @@ CLIP_API bool bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int t
 /** preprocess img and store the result in res_imgs, pad_to_square may be overriden to false depending on model configuration */
 CLIP_API bool clip_image_preprocess(struct clip_ctx* ctx, const struct clip_image_u8* img, struct clip_image_f32_batch* res_imgs);
 
-CLIP_API bool clip_image_encode(struct clip_ctx* ctx, struct clip_image_f32* img, float* vec, std::pair<int, int> load_image_size);
-CLIP_API bool clip_image_batch_encode(struct clip_ctx* ctx, const struct clip_image_f32_batch* imgs, float* vec, std::pair<int, int> load_image_size);
+CLIP_API ov::Tensor clip_image_encode(struct clip_ctx* ctx, struct clip_image_f32* img, std::pair<int, int> load_image_size);
+CLIP_API ov::Tensor clip_image_batch_encode(struct clip_ctx* ctx, const struct clip_image_f32_batch* imgs, std::pair<int, int> load_image_size);
 
 
 #endif // CLIP_H

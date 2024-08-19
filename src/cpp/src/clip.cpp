@@ -431,13 +431,6 @@ void clip_free(clip_ctx * ctx) {
     delete ctx;
 }
 
-int clip_n_mmproj_embd(const struct clip_ctx* ctx) {
-    //embedding hidden_size minicpmv-2 2304 minicpmv-2.5 4096
-    if (ctx->proj_type == PROJECTOR_TYPE_RESAMPLER) {
-        return 2304;
-    }
-}
-
 int clip_n_patches(const struct clip_ctx* ctx) {
 
     int n_patches = 1;
@@ -450,27 +443,15 @@ int clip_n_patches(const struct clip_ctx* ctx) {
     return n_patches;
 }
 
-size_t clip_embd_nbytes(const struct clip_ctx * ctx) {
-    return clip_n_patches(ctx) * clip_n_mmproj_embd(ctx) * sizeof(float);
-}
-
-
-
-
-bool clip_image_encode(struct clip_ctx* ctx, clip_image_f32* img, float* vec, std::pair<int, int> load_image_size = { 448, 448 }) {
-    //if (!ctx->has_vision_encoder) {
-    //    LOG_TEE("This gguf file seems to have no vision encoder\n");
-    //    return false;
-    //}
-
+ov::Tensor clip_image_encode(struct clip_ctx* ctx, clip_image_f32* img, std::pair<int, int> load_image_size = { 448, 448 }) {
     clip_image_f32_batch imgs{};
     imgs.size = 1;
     imgs.data = img;
-    return clip_image_batch_encode(ctx, &imgs, vec, load_image_size);
+    return clip_image_batch_encode(ctx, &imgs, load_image_size);
 }
 
 
-bool clip_image_batch_encode(clip_ctx* ctx, const clip_image_f32_batch* imgs, float* vec, std::pair<int, int> load_image_size = { 448, 448 }) {
+ov::Tensor clip_image_batch_encode(clip_ctx* ctx, const clip_image_f32_batch* imgs, std::pair<int, int> load_image_size = { 448, 448 }) {
     //don't support multi batch
     size_t batch_size = imgs->size;
 
@@ -487,28 +468,6 @@ bool clip_image_batch_encode(clip_ctx* ctx, const clip_image_f32_batch* imgs, fl
 
     ctx->ireq_vision.set_input_tensor(input_tensor);
     ctx->ireq_vision.infer();
-    //ctx->ireq_vision.start_async();
-    //ctx->ireq_vision.wait();
-
-    const ov::Tensor& vision_output_tensor = ctx->ireq_vision.get_output_tensor();
-
-    ov::Shape out_shape = vision_output_tensor.get_shape();
-    float *data = vision_output_tensor.data<float>();
-
-    //Resampler inference with OpenVINO
-    ctx->ireq_resampler.set_tensor("x", vision_output_tensor);
-    ctx->ireq_resampler.get_tensor("tgt_size").set_shape({ 1, 1 });
-    ctx->ireq_resampler.get_tensor("tgt_size").data<int64_t>()[0] = image_size_height / patch_size;
-    ctx->ireq_resampler.get_tensor("tgt_size").data<int64_t>()[1] = image_size_width / patch_size;
-
-    ctx->ireq_resampler.infer();
-    //ctx->ireq_resampler.start_async();
-    //ctx->ireq_resampler.wait();
-    const ov::Tensor& vision_embded_tensor = ctx->ireq_resampler.get_output_tensor();
-
-    // copy the embeddings to the location passed by the user
-    std::memcpy(vec, vision_embded_tensor.data<float>(), vision_embded_tensor.get_byte_size());
-
-    return true;
+    return ctx->ireq_vision.get_output_tensor();
 }
 

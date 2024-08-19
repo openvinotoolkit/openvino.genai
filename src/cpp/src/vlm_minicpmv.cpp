@@ -145,7 +145,7 @@ std::vector<std::vector<clip_image_u8*>> slice_image(const clip_image_u8* img, c
     return images;
 }
 
-static bool encode_image_with_clip(clip_ctx* ctx_clip, const clip_image_u8* img, float* image_embd) {
+ov::Tensor encode_image_with_clip(clip_ctx* ctx_clip, const clip_image_u8* img) {
     // std::vector<clip_image_f32*> img_res_v; // format VectN x H x W x RGB (N x 336 x 336 x 3), so interleaved RGB - different to the python implementation which is N x 3 x 336 x 336
     clip_image_f32_batch img_res_v;
     img_res_v.size = 0;
@@ -153,43 +153,16 @@ static bool encode_image_with_clip(clip_ctx* ctx_clip, const clip_image_u8* img,
     std::pair<int, int> load_image_size;
     load_image_size.first = img->nx;
     load_image_size.second = img->ny;
-    auto startTime = Time::now();
     if (!clip_image_preprocess(ctx_clip, img, &img_res_v)) {
         LOG_TEE("%s: unable to preprocess image\n", __func__);
         delete[] img_res_v.data;
-        return false;
+        return ov::Tensor{};
     }
 
-    bool encoded = clip_image_encode(ctx_clip, &img_res_v.data[0], image_embd, load_image_size); // image_embd shape is 576 x 4096
-    delete[] img_res_v.data;
-    if (!encoded) {
-        LOG_TEE("Unable to encode image\n");
-
-        return false;
-    }
-    return true;
+    return clip_image_encode(ctx_clip, &img_res_v.data[0], load_image_size); // image_embd shape is 576 x 4096
 }
 
-
-bool llava_image_embed_make_with_clip_img(clip_ctx* ctx_clip, const clip_image_u8* img, float** image_embd_out) {
-    float* image_embd = (float*)malloc(clip_embd_nbytes(ctx_clip) * 6); // TODO: base on gridsize/llava model
-    if (!image_embd) {
-        LOG_TEE("Unable to allocate memory for image embeddings\n");
-        return false;
-    }
-
-    if (!encode_image_with_clip(ctx_clip, img, image_embd)) {
-        LOG_TEE("%s: cannot encode image, aborting\n", __func__);
-        free(image_embd);
-        return false;
-    }
-    *image_embd_out = image_embd;
-
-    return true;
-}
-
-
-std::vector<std::vector<struct llava_image_embed*>> llava_image_embed_make_with_bytes_slice(struct clip_ctx* ctx_clip, const ov::Tensor& img) {
+std::pair<std::vector<std::vector<ov::Tensor>>, size_t> llava_image_embed_make_with_bytes_slice(struct clip_ctx* ctx_clip, const ov::Tensor& img) {
     clip_image_u8 casted_img{int(img.get_shape()[2]), int(img.get_shape()[1]), {img.data<uint8_t>(), img.data<uint8_t>() + img.get_size()}};
     clip_image_u8* reshaped_image = clip_image_u8_init();
 
@@ -197,31 +170,17 @@ std::vector<std::vector<struct llava_image_embed*>> llava_image_embed_make_with_
     bicubic_resize(casted_img, *reshaped_image, 800, 800);
 
     std::vector<std::vector<clip_image_u8*>> imgs = slice_image(reshaped_image);
-    //for (size_t i = 0; i < imgs.size(); ++i) {
-    //    for (size_t j = 0; j < imgs[i].size(); ++j) {
-    //        LOG_TEE("%s: %d %d\n", __func__, imgs[i][j]->nx, imgs[i][j]->ny);
-    //    }
-    //}
-    std::vector<std::vector<llava_image_embed*>> results;
+    std::vector<std::vector<ov::Tensor>> results;
 
     for (size_t i = 0; i < imgs.size(); ++i) {
-        results.push_back(std::vector<llava_image_embed*>());
+        results.push_back(std::vector<ov::Tensor>());
         for (size_t j = 0; j < imgs[i].size(); ++j) {
-            float* image_embed = NULL;
-            bool image_embed_result = llava_image_embed_make_with_clip_img(ctx_clip, imgs[i][j], &image_embed);
-            if (!image_embed_result) {
-                clip_image_u8_free(reshaped_image);
-                LOG_TEE("%s: coulnd't embed the image\n", __func__);
-                return std::vector<std::vector<struct llava_image_embed*>>();
-            }
-
-            auto result = (llava_image_embed*)malloc(sizeof(llava_image_embed));
-            result->embed = image_embed;
-            results[i].push_back(result);
+            results[i].push_back(encode_image_with_clip(ctx_clip, imgs[i][j]));
         }
     }
     clip_image_u8_free(reshaped_image);
-    return results;
+    constexpr size_t patch_size = 14;
+    return {results, imgs.at(0).at(0)->nx / patch_size};
 }
 
 void llava_image_embed_free_slice(std::vector<std::vector<struct llava_image_embed*>> embed) {
