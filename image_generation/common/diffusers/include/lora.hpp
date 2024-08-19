@@ -1,11 +1,15 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#pragma once
+
 #define GENAI_NEW_LORA 1
 
 #if GENAI_NEW_LORA
-
-#include  "../../../../src/cpp/src/lora.hpp"
+// #ifndef INCLUDED_FROM_LORA_CPP
+// #include  "../../../../src/cpp/include/openvino/genai/lora_adapter.hpp"
+// #endif
+#include <openvino/genai/lora_adapter.hpp>
 
 #else
 

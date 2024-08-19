@@ -1,6 +1,6 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
-
+#if 0
 #include <map>
 #include <memory>
 #include <string>
@@ -21,3 +21,4 @@ std::map<std::string, AdapterMap> load_lora_adapter(const std::string& adapter_f
 // FIXME: Split to two independen functions: one for static weights fuse, and another one for dynamicly attached loras preparation
 void apply_lora_adapter(std::shared_ptr<ov::Model> model, const AdapterMap& adapter_map, ConstantMap& variables);
 void connect_lora_adapter(ov::InferRequest infer_request, const ConstantMap& variables);
+#endif

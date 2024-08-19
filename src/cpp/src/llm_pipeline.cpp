@@ -97,34 +97,24 @@ public:
     {
         ov::Core core;
         core.set_property(device, plugin_config);
-        auto model = core.read_model(model_path / "openvino_model.xml");
         if(adapters_config) {
-            m_generation_config.adapter.adapters = adapters_config;
+            // DEBUG_PRINT("ADAPTER UPDATE CONFIG");
+            m_generation_config.adapters = adapters_config;
         }
-        auto lora_flag = getenv(("OV_GENAI_LORA"));
-        ConstantMap variables;
-        if(lora_flag && lora_flag == std::string("1")) {
-            DEBUG_PRINT("Applying LoRA here");
-            auto adapter = load_lora_adapter(
-                //"/home/developer/persistent/models/adapter_model.safetensors",
-                "/home/developer/persistent/models/adapter_mixtral_cnn.safetensors",
-                1,
-                {{"base_model.model.mode", ""}});
-            apply_lora_adapter(model, adapter[""], variables);
-        }
+        // DEBUG_PRINT("About to prepare model for LoRA");
         const auto start{std::chrono::steady_clock::now()};
-        auto compiled_model = core.compile_model(model, device);
-        //ov::serialize(compiled_model.get_runtime_model(), "alfter_lora.compiled.xml");
-        m_model_runner = compiled_model.create_infer_request();
-        if(lora_flag && lora_flag == std::string("1")) {
-            connect_lora_adapter(m_model_runner, variables);
+        if(m_generation_config.adapters) {
+            // DEBUG_PRINT("Prepare model for LoRA");
+            // Read model explicitly to be able to inject the adapters
+            auto model = core.read_model(model_path / "openvino_model.xml");
+            m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.");   // TODO: Make the prefix name configurable
+            m_model_runner = core.compile_model(model, device).create_infer_request();
+            m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
+        } else {
+            m_model_runner = core.compile_model(model_path / "openvino_model.xml", device).create_infer_request();
         }
         const auto end{std::chrono::steady_clock::now()};
-        DEBUG_PRINT("compile_model().create_infer_request(): " << std::chrono::duration<float>(end - start).count());
-
-        // If eos_token_id was not provided, take value
-        if (m_generation_config.eos_token_id == -1)
-            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
+        DEBUG_PRINT("Model preparation/compilation: " << std::chrono::duration<float>(end - start).count());
     }
 
     StatefulLLMPipeline(
@@ -176,6 +166,7 @@ public:
                     encoded_input = subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
                 }
                 m_templated_chat_history = new_templated_chat_history;
+                // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
             } else {
                 encoded_input = m_tokenizer.encode(prompt);
             }
@@ -282,6 +273,12 @@ public:
             utils::initialize_position_ids(*position_ids, attention_mask, kv_cache_len);
         }
 
+        // DEBUG_PRINT("About to apply LoRA");
+        if(m_adapter_controller) {
+            // DEBUG_PRINT("Apply LoRA");
+            m_adapter_controller->apply(m_model_runner, config.adapters);
+        }
+
         ov::genai::EncodedResults result;
         if (config.is_greedy_decoding()) {
             result = ov::genai::greedy_decoding(m_model_runner, input_ids, concatenated_attention_mask,
@@ -299,6 +296,7 @@ public:
         }
 
         if (!is_chat_conversation) {
+            // FIXME: Reset only KV cache part of state, there is also can be LoRA applied in the states
             m_model_runner.reset_state();
             m_selected_beam = std::nullopt;
         } else {
@@ -563,7 +561,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if ("NPU" == device) {
         m_pimpl = std::make_unique<StaticLLMPipeline>(model_path, tokenizer, device, plugin_config);
     } else {
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, plugin_config);
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, AdaptersConfig{}, plugin_config);
     }
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
@@ -590,7 +588,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& path, 
     const std::string& device,
     const AdaptersConfig& adapters_config,
-    const ov::AnyMap& plugin_config={}
+    const ov::AnyMap& plugin_config
 ) {
     auto start_time = std::chrono::steady_clock::now();
     if ("CB" == device) {
@@ -600,7 +598,9 @@ ov::genai::LLMPipeline::LLMPipeline(
         OPENVINO_THROW("NPU pipeline doesn't support passing generation config in constructor");
         //m_pimpl = std::make_unique<StaticLLMPipeline>(path, device, config);
     } else {
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(path, device, adapters_config, config);
+        // DEBUG_PRINT("LLMPipeline::LLMPipeline");
+        // DEBUG_PRINT(adapters_config.adapters.size());
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(path, device, adapters_config, plugin_config);
     }
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();

@@ -1,9 +1,11 @@
+#if 0
+#define INCLUDED_FROM_LORA_CPP
 #include "lora.hpp"
 
 
 #if GENAI_NEW_LORA
 
-#include "../../../../src/cpp/src/lora.cpp"
+#include "../../../../src/cpp/src/lora_adapter.cpp"
 
 #else
 
@@ -396,4 +398,5 @@ read_lora_adapters(const std::string& filename, const float alpha) {
     return lora_constants;
 }
 
+#endif
 #endif

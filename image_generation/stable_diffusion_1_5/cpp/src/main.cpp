@@ -67,6 +67,11 @@ struct StableDiffusionModels {
     ov::CompiledModel unet;
     ov::CompiledModel vae_decoder;
     ov::CompiledModel tokenizer;
+
+    #if GENAI_NEW_LORA
+    ov::genai::AdapterController adapter_controller_text_encoder;
+    ov::genai::AdapterController adapter_controller_unet;
+    #endif
 };
 
 #if !GENAI_NEW_LORA
@@ -151,14 +156,14 @@ StableDiffusionModels compile_models(const std::string& model_path,
 
     // read LoRA weights
     #if GENAI_NEW_LORA
-    std::map<std::string, AdapterMap> lora_adapter;
+    ov::genai::Adapter lora_adapter;
     #else
     std::map<std::string, InsertLoRA::LoRAMap> lora_weights;
     #endif
     if (!lora_path.empty()) {
         Timer t("Loading and multiplying LoRA weights");
     #if GENAI_NEW_LORA
-        lora_adapter = load_lora_adapter(lora_path, alpha, {{"lora_te", "text_encoder"}, {"lora_unet", "unet"}});
+        lora_adapter = ov::genai::Adapter(lora_path, alpha);
     #else
         lora_weights = read_lora_adapters(lora_path, alpha);
     #endif
@@ -172,11 +177,13 @@ StableDiffusionModels compile_models(const std::string& model_path,
             reshape_text_encoder(text_encoder_model, batch_size, TOKENIZER_MODEL_MAX_LENGTH);
         }
         #if GENAI_NEW_LORA
-        ConstantMap variables;
-        apply_lora_adapter(text_encoder_model, lora_adapter["text_encoder"], variables);
+        if(lora_adapter) {
+            models.adapter_controller_text_encoder = ov::genai::AdapterController(text_encoder_model, lora_adapter, "lora_te");
+        }
         #else
         apply_lora(text_encoder_model, lora_weights["text_encoder"]);
         #endif
+        text_encoder_model->validate_nodes_and_infer_types();
         models.text_encoder = core.compile_model(text_encoder_model, device);
     }
 
@@ -188,8 +195,9 @@ StableDiffusionModels compile_models(const std::string& model_path,
             reshape_unet(unet_model, batch_size, height, width, TOKENIZER_MODEL_MAX_LENGTH);
         }
         #if GENAI_NEW_LORA
-        ConstantMap variables;
-        apply_lora_adapter(unet_model, lora_adapter["unet"], variables);
+        if(lora_adapter) {
+            models.adapter_controller_unet = ov::genai::AdapterController(unet_model, lora_adapter, "lora_unet");
+        }
         #else
         apply_lora(unet_model, lora_weights["unet"]);
         #endif
@@ -226,6 +234,9 @@ ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt, s
 
     ov::InferRequest tokenizer_req = models.tokenizer.create_infer_request();
     ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
+    if(models.adapter_controller_text_encoder) {
+        models.adapter_controller_text_encoder.apply(text_encoder_req);
+    }
 
     auto compute_text_embeddings = [&](std::string& prompt, ov::Tensor encoder_output_tensor) {
         ov::Tensor input_ids(ov::element::i32, input_ids_shape);
@@ -371,6 +382,9 @@ int32_t main(int32_t argc, char* argv[]) try {
     StableDiffusionModels models =
         compile_models(model_path, device, lora_path, alpha, use_cache, use_dynamic_shapes, batch_size, height, width);
     ov::InferRequest unet_infer_request = models.unet.create_infer_request();
+    if(models.adapter_controller_text_encoder) {
+        models.adapter_controller_unet.apply(unet_infer_request);
+    }
 
     ov::PartialShape sample_shape = models.unet.input("sample").get_partial_shape();
     OPENVINO_ASSERT(sample_shape.is_dynamic() ||

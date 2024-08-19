@@ -1,6 +1,6 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
-
+#if 0
 #include "lora.hpp"
 
 #include <algorithm>
@@ -67,6 +67,8 @@ ov::element::Type safetensors_to_ov_element_type (int dtype) {
             OPENVINO_THROW("Not supported safetensors dtype: ", dtype);
     }
 }
+
+using ConstantMap = std::map<std::string, std::shared_ptr<ov::op::v0::Constant>>;
 
 ConstantMap read_safetensors(const std::string& filename) {
     ConstantMap tensors;
@@ -476,3 +478,4 @@ void connect_lora_adapter(ov::InferRequest infer_request, const ConstantMap& var
         }
     }
 }
+#endif
