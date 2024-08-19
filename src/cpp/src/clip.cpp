@@ -508,6 +508,7 @@ bool clip_image_batch_encode(clip_ctx* ctx, const clip_image_f32_batch* imgs, fl
 
     // copy the embeddings to the location passed by the user
     std::memcpy(vec, vision_embded_tensor.data<float>(), vision_embded_tensor.get_byte_size());
+    std::cout << ctx->proj_type << "AAAAAAAAAAAAAAAA\n";
 
     return true;
 }
