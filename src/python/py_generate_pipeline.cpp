@@ -366,7 +366,9 @@ ov::Any py_object_to_any(const py::object& py_obj) {
         return py::cast<ov::Tensor>(py_obj);
     } else if (py::isinstance<ov::Output<ov::Node>>(py_obj)) {
         return py::cast<ov::Output<ov::Node>>(py_obj);
-     } else if (py::isinstance<py::object>(py_obj)) {
+    } else if (py::isinstance<ov::genai::SchedulerConfig>(py_obj)) {
+        return py::cast<ov::genai::SchedulerConfig>(py_obj);
+    } else if (py::isinstance<py::object>(py_obj)) {
         return py_obj;
     }
     OPENVINO_ASSERT(false, "Unsupported attribute type.");
@@ -503,17 +505,28 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             LLMPipeline class constructor.
             model_path (str): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
         )")
 
-        .def(py::init<const std::string, const Tokenizer&, const std::string>(), 
+        .def(py::init([](
+            const std::string& model_path,
+            const Tokenizer& tokenizer,
+            const std::string& device,
+            const std::map<std::string, py::object>& config
+        ) {
+            ScopedVar env_manager(ov_tokenizers_module_path());
+            return std::make_unique<LLMPipeline>(model_path, tokenizer, device, properties_to_any_map(config));
+        }),
         py::arg("model_path"),
         py::arg("tokenizer"),
         py::arg("device") = "CPU",
+        py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
             LLMPipeline class constructor for manualy created openvino_genai.Tokenizer.
             model_path (str): Path to the model file.
             tokenizer (openvino_genai.Tokenizer): tokenizer object.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
         )")
 
         .def(
