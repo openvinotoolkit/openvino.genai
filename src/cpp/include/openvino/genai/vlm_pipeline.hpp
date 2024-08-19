@@ -250,8 +250,9 @@ ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& emb
 class VisionEncoder {
 public:
     ov::InferRequest encoder;
-    VisionEncoder(const std::filesystem::path& model_dir, const std::string& device="CPU", const ov::AnyMap device_config={}, ov::Core core=ov::Core{}) :
-        encoder{core.compile_model(
+    VisionEncoder(const ov::InferRequest& encoder) : encoder{encoder} {}
+    explicit VisionEncoder(const std::filesystem::path& model_dir, const std::string& device="CPU", const ov::AnyMap device_config={}, ov::Core core=ov::Core{}) :
+        VisionEncoder{core.compile_model(
             // CPU only because of 146022.
             model_dir / "openvino_vision.xml", "CPU", device_config
         ).create_infer_request()} {}
@@ -273,14 +274,6 @@ struct PromptImage {
 
 class VLMPipeline {
 public:
-    struct Config {
-        std::filesystem::path model_dir;
-        std::string device = "CPU";
-        ov::AnyMap device_config;
-        // per model devices and configs
-        mutable ov::Core core{};
-    };
-
     ov::genai::Tokenizer tokenizer;
     VisionEncoder vision_encoder;
     ov::InferRequest resampler, ireq_embed, ireq;
@@ -296,19 +289,34 @@ public:
     double total_time = 0;
     const size_t BATCH_SIZE = 1;
 
-    explicit VLMPipeline(const Config& conf) :
-        tokenizer{conf.model_dir.string()},
-        vision_encoder(conf.model_dir, conf.device, conf.device_config, conf.core),
-        resampler{conf.core.compile_model(
-            // CPU randomly fails: 149560.
-            conf.model_dir / "openvino_resampler.xml", "GPU"
-        ).create_infer_request()},
-        ireq_embed{conf.core.compile_model(
-            conf.model_dir / "openvino_embedding.xml", conf.device, conf.device_config
-        ).create_infer_request()},
-        ireq{conf.core.compile_model(
-            conf.model_dir / "openvino_model.xml", conf.device, conf.device_config
-        ).create_infer_request()} {}
+    VLMPipeline(
+        const ov::genai::Tokenizer& tokenizer,
+        const VisionEncoder& vision_encoder,
+        const ov::InferRequest& resampler,
+        const ov::InferRequest& embedding,
+        const ov::InferRequest& language_model
+    ) :
+        tokenizer{tokenizer},
+        vision_encoder{vision_encoder},
+        resampler{resampler},
+        ireq_embed{embedding},
+        ireq{language_model} {}
+
+    explicit VLMPipeline(const std::filesystem::path& model_dir, const std::string& device="CPU", const ov::AnyMap device_config={}, ov::Core core=ov::Core{}) :
+        VLMPipeline{
+            ov::genai::Tokenizer(model_dir.string(), device_config),
+            VisionEncoder(model_dir, device, device_config, core),
+            core.compile_model(
+                // CPU randomly fails: 149560.
+                model_dir / "openvino_resampler.xml", "GPU"
+            ).create_infer_request(),
+            core.compile_model(
+                model_dir / "openvino_embedding.xml", device, device_config
+            ).create_infer_request(),
+            core.compile_model(
+                model_dir / "openvino_model.xml", device, device_config
+            ).create_infer_request()
+        } {}
 
     void generate(const PromptImage& pi, const std::function<bool(std::string&&)>& callback) {
         generate(pi, std::make_unique<ov::genai::TextCallbackStreamer>(tokenizer, callback));
@@ -445,6 +453,9 @@ public:
             perf_records.push_back({ input_len, count, first_time, avg_time });
         }
     }
+
+    void start_chat() {}
+    void finish_chat() {}
 };
 
 ov::Tensor read_jpg(const char* path) {

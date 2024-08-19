@@ -1,32 +1,8 @@
-
-// Copyright (C) 2023 Intel Corporation
+// Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-
 #include <openvino/genai/vlm_pipeline.hpp>
-#include <regex>
-#include <random>
-#include <openvino/openvino.hpp>
-#include <openvino/runtime/properties.hpp>
-#include "openvino/runtime/intel_gpu/properties.hpp"
-#include "openvino/op/ops.hpp"
-#include "openvino/opsets/opset13.hpp"
-#include "openvino/pass/graph_rewrite.hpp"
-#include "openvino/pass/manager.hpp"
-#include "openvino/pass/pattern/matcher.hpp"
-#include "openvino/pass/pattern/op/wrap_type.hpp"
-#include "openvino/pass/serialize.hpp"
-#include "openvino/genai/vlm_sampling.hpp"
-
-#include "openvino/genai/clip.hpp"
-#include "openvino/genai/vlm_minicpmv.hpp"
-
-#ifdef _WIN32
-#include <codecvt>
-#include <fcntl.h>
-#include <io.h>
-#include <windows.h>
-#endif
+#include <openvino/runtime/intel_gpu/properties.hpp>
 
 bool callback(std::string&& subword) {
     return !(std::cout << subword);
@@ -36,12 +12,10 @@ int main(int argc, char* argv[]) try {
     if (3 != argc) {
         throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE>");
     }
-    Args args;
     ov::Tensor image = read_jpg(argv[2]);
 
     std::string device = "CPU";
 
-    size_t group_size = 32;
     ov::AnyMap device_config = {};
     if (device.find("CPU") != std::string::npos) {
         device_config[ov::cache_dir.name()] = "llm-cache";
@@ -59,7 +33,7 @@ int main(int argc, char* argv[]) try {
         device_config[ov::hint::enable_cpu_pinning.name()] = true;
         device_config[ov::enable_profiling.name()] = false;
     }
-    VLMPipeline pipe({argv[1], device, device_config});
+    VLMPipeline pipe(argv[1], device, device_config);
     std::string prompt;
     std::cout << "question:\n";
     if (!std::getline(std::cin, prompt)) {
