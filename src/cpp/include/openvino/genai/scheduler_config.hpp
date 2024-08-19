@@ -16,7 +16,7 @@ struct SchedulerConfig {
     std::size_t num_kv_blocks = 0;
 
     // total size of KV cache in GB
-    std::size_t cache_size = 1;
+    std::size_t cache_size = 0;
 
     // block size for KV cache
     std::size_t block_size = 32;
