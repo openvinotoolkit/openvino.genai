@@ -1,17 +1,16 @@
 #include <stdio.h>
-#include <string>
+
 #include <filesystem>
 #include <random>
+#include <string>
 
 #include "gui.hpp"
-#include "worker.hpp"
-#include "tinyfiledialogs.h"
-
-#include "utils.hpp"
 #include "imwrite.hpp"
+#include "tinyfiledialogs.h"
+#include "utils.hpp"
+#include "worker.hpp"
 
-static void glfw_error_callback(int error, const char* description)
-{
+static void glfw_error_callback(int error, const char* description) {
     fprintf(stderr, "Glfw Error %d: %s\n", error, description);
 }
 
@@ -39,14 +38,12 @@ std::string openFileDialog() {
                                                  "",                 // Default path
                                                  1,                  // Number of filters
                                                  filters,            // Filters
-                                                 "Image files",  // Filter description
-                                                 1               // Single selection
+                                                 "Image files",      // Filter description
+                                                 1                   // Single selection
     );
 
     return filePath ? filePath : "";  // Return empty string if canceled
 }
-
-
 
 bool validate_directory(const std::string& path) {
     bool has_xml = false;
@@ -93,7 +90,7 @@ int App::Init() {
     ImGui::StyleColorsDark();
 
     glfwGetWindowContentScale(window, &xscale, &yscale);
-    
+
     // resize window
     int width, height;
     glfwGetWindowSize(window, &width, &height);
@@ -115,6 +112,9 @@ int App::Init() {
     ov::Core core;
     state.devices = core.get_available_devices();
     state.active_device_index = 0;
+
+    // init configs settings, we currently onluy support this one
+    state.samplers.push_back("LMS");
 
     // init worker
     worker.Start();
@@ -176,7 +176,7 @@ void App::LoadInputImageData() {
 }
 
 void App::RenderLeftPanel() {
-    ImGui::BeginChild("LeftPanel", ImVec2(400 * xscale, 0), true);
+    ImGui::BeginChild("LeftPanel", ImVec2(600 * xscale, 0), true);
     ImGui::Text("Options");
 
     // prompt & negative prompt
@@ -193,8 +193,20 @@ void App::RenderLeftPanel() {
                               IM_ARRAYSIZE(state.negative_prompt),
                               ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 8),
                               flags);
-    // steps
+
+    std::vector<const char*> items;
+    for (int i = 0; i < state.samplers.size(); ++i)
+        items.push_back(state.samplers[i].c_str());
+
+    // sampler and steps
+    ImGui::Combo("Sampler", &state.active_sampler_index, items.data(), items.size());
     ImGui::InputInt("Steps", &state.steps);
+
+    ImGui::SliderInt("Width", &state.width, 64, 2048, "%d");
+    ImGui::SliderInt("Height", &state.height, 64, 2048, "%d");
+
+    ImGui::SliderInt("CFG Scale", &state.cfg, 1, 30, "%d");
+    ImGui::SliderFloat("Denoising strength", &state.strength, 0.0, 1.0, "%.2f");
 
     // seeds
     int64_t seed_min = -1;
@@ -218,20 +230,27 @@ void App::RenderLeftPanel() {
             }
         }
     }
-     ImGui::SameLine();
-     ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0 / 7.0f, 0.6f, 0.6f));
-     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0 / 7.0f, 0.7f, 0.7f));
-     ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0/ 7.0f, 0.8f, 0.8f));
-     if (ImGui::Button("Remove")) {
-         preview_state.image_path = "";
-         preview_state.should_load = false;
-         if (preview_state.preview_texture) {
-             glDeleteTextures(1, &preview_state.preview_texture);
-             preview_state.preview_texture = 0;
-         }
-     }
-     ImGui::PopStyleColor(3);
-     ImGui::PopID();
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(0 / 7.0f, 0.6f, 0.6f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(0 / 7.0f, 0.7f, 0.7f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(0 / 7.0f, 0.8f, 0.8f));
+    if (ImGui::Button("Remove")) {
+        preview_state.image_path = "";
+        preview_state.should_load = false;
+        if (preview_state.preview_texture) {
+            glDeleteTextures(1, &preview_state.preview_texture);
+            preview_state.preview_texture = 0;
+        }
+    }
+    ImGui::PopStyleColor(3);
+    ImGui::PopID();
+
+    ImGui::SameLine();
+    ImGui::RadioButton("Just resize", &state.resize_mode, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Resize and fill", &state.resize_mode, 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("Crop and resize", &state.resize_mode, 2);
 
     if (preview_state.should_load) {
         // load image data and construct texture
@@ -242,7 +261,7 @@ void App::RenderLeftPanel() {
     if (preview_state.preview_texture) {
         ImGui::Text("Controlnet Image: %s", preview_state.image_path.c_str());
         float aspect_ratio = (float)preview_state.image_width / preview_state.image_height;
-        ImVec2 preview_size(250*xscale, 250*yscale);
+        ImVec2 preview_size(250 * xscale, 250 * yscale);
 
         if (aspect_ratio > 1.0f) {
             // Image is wider than tall, limit by width
@@ -283,7 +302,6 @@ void App::LoadResultImageData() {
                  image_data);
 }
 
-
 void App::RenderRightPanel() {
     ImGui::BeginChild("RightPanel", ImVec2(0, 0), true);
     std::vector<const char*> items;
@@ -313,8 +331,8 @@ void App::RenderRightPanel() {
             ImGui::Text("Loading..");
         }
     }
+
     if (pipe != nullptr) {
-        
         if (running) {
             ImGui::Text("Running..");
             if (result_state.texture) {
@@ -339,6 +357,8 @@ void App::RenderRightPanel() {
                         preview_state.image_path,
                         state.steps,
                         input_seed,
+                        state.cfg,
+                        state.strength,
                     };
                     auto decoded_image = pipe->Run(param);
                     result_state.image = postprocess_image(decoded_image);
@@ -349,7 +369,7 @@ void App::RenderRightPanel() {
                         if (!std::filesystem::exists(folder_name)) {
                             std::cout << "Directory does not exist, creating: " << folder_name << std::endl;
                             std::filesystem::create_directory(folder_name);
-                        } 
+                        }
                         imwrite(std::string("./images/seed_") + std::to_string(input_seed) + ".bmp",
                                 result_state.image,
                                 true);
@@ -370,7 +390,7 @@ void App::RenderRightPanel() {
 
     if (result_state.texture) {
         float aspect_ratio = (float)result_state.image_width / result_state.image_height;
-        ImVec2 preview_size(512*xscale, 512*yscale);
+        ImVec2 preview_size(512 * xscale, 512 * yscale);
 
         if (aspect_ratio > 1.0f) {
             // Image is wider than tall, limit by width
@@ -423,8 +443,7 @@ void App::Render() {
     glfwSwapBuffers(window);
 }
 
-int main(int, char**)
-{
+int main(int, char**) {
     App app;
 
     if (app.Init()) {

@@ -1,11 +1,12 @@
-#include <random>
-#include <algorithm>
-
 #include "core/core.hpp"
-#include "openvino/runtime/core.hpp"
+
+#include <algorithm>
+#include <random>
+
 #include "openvino/core/preprocess/pre_post_process.hpp"
-#include "utils.hpp"
+#include "openvino/runtime/core.hpp"
 #include "scheduler_lms_discrete.hpp"
+#include "utils.hpp"
 
 const size_t TOKENIZER_MODEL_MAX_LENGTH = 77;  // 'model_max_length' parameter from 'tokenizer_config.json'
 const size_t VAE_SCALE_FACTOR = 8;
@@ -45,7 +46,6 @@ ov::Tensor randn_tensor(ov::Shape shape, uint32_t seed = 42) {
     return noise;
 }
 
-
 void reshape_text_encoder(std::shared_ptr<ov::Model> model, size_t batch_size, size_t tokenizer_model_max_length) {
     ov::PartialShape input_shape = model->input(0).get_partial_shape();
     input_shape[0] = batch_size;
@@ -61,7 +61,6 @@ void reshape_vae_decoder(std::shared_ptr<ov::Model> model, int64_t height, int64
     ov::PartialShape input_shape = model->input(0).get_partial_shape();
     std::map<size_t, ov::PartialShape> idx_to_shape{{0, {1, input_shape[1], height, width}}};
     model->reshape(idx_to_shape);
-
 }
 StableDiffusionControlnetPipeline::StableDiffusionControlnetPipeline(std::string model_path, std::string device) {
     ov::Core core;
@@ -69,14 +68,13 @@ StableDiffusionControlnetPipeline::StableDiffusionControlnetPipeline(std::string
     core.add_extension(TOKENIZERS_LIBRARY_PATH);
 
     // Text encoder
-    { 
-        Timer t("Loading and compiling text encoder"); 
+    {
+        Timer t("Loading and compiling text encoder");
         auto text_encoder_model = core.read_model(model_path + "/text_encoder.xml");
         reshape_text_encoder(text_encoder_model, 1, TOKENIZER_MODEL_MAX_LENGTH);
         text_encoder = core.compile_model(text_encoder_model, device);
     }
 
-   
     {
         Timer t("Loading and compiling UNet");
         auto unet_model = core.read_model(model_path + "/unet_controlnet.xml");
@@ -89,7 +87,7 @@ StableDiffusionControlnetPipeline::StableDiffusionControlnetPipeline(std::string
         detector.load(model_path + +"/openpose.xml");
     }
 
-     // Controlnet
+    // Controlnet
     {
         Timer t("Loading and compiling Controlnet");
         auto controlnet_model = core.read_model(model_path + "/controlnet-pose.xml");
@@ -107,7 +105,7 @@ StableDiffusionControlnetPipeline::StableDiffusionControlnetPipeline(std::string
         vae_decoder = core.compile_model(vae_decoder_model = ppp.build(), device);
     }
 
-     // Tokenizer
+    // Tokenizer
     {
         Timer t("Loading and compiling tokenizer");
         // Tokenizer model wil be loaded to CPU: OpenVINO Tokenizers can be inferred on a CPU device only.
@@ -143,7 +141,7 @@ ov::Tensor StableDiffusionControlnetPipeline::Preprocess(ov::Tensor pose, int* p
     }
 
     // TODO: we may be interest with this
-    //imwrite("controlnet_input_tensor.bmp", padded_tensor, true);
+    // imwrite("controlnet_input_tensor.bmp", padded_tensor, true);
 
     // normalize to float32
     auto normalized_tensor = init_tensor_with_zeros({1, 512, 512, 3}, ov::element::f32);
@@ -167,10 +165,10 @@ ov::Tensor StableDiffusionControlnetPipeline::Preprocess(ov::Tensor pose, int* p
 }
 
 ov::Tensor StableDiffusionControlnetPipeline::Postprocess(const ov::Tensor& decoded_image,
-    int pad_height,
-    int pad_width,
-    int result_height,
-    int result_width) {
+                                                          int pad_height,
+                                                          int pad_width,
+                                                          int result_height,
+                                                          int result_width) {
     auto shape = decoded_image.get_shape();  // NHWC
     size_t batch_size = shape[0];
     size_t height = shape[1];
@@ -205,7 +203,6 @@ ov::Tensor StableDiffusionControlnetPipeline::Postprocess(const ov::Tensor& deco
 
     return result_image;
 }
-
 
 ov::Tensor StableDiffusionControlnetPipeline::TextEncoder(std::string& pos_prompt, std::string& neg_prompt) {
     const size_t HIDDEN_SIZE = static_cast<size_t>(text_encoder.output(0).get_partial_shape()[2].get_length());
@@ -242,9 +239,10 @@ ov::Tensor StableDiffusionControlnetPipeline::TextEncoder(std::string& pos_promp
 }
 
 ov::Tensor StableDiffusionControlnetPipeline::Unet(ov::InferRequest req,
-                                                 ov::Tensor sample,
-                                                 ov::Tensor timestep,
-                                                 ov::Tensor text_embedding_1d) {
+                                                   ov::Tensor sample,
+                                                   ov::Tensor timestep,
+                                                   ov::Tensor text_embedding_1d,
+                                                   float guidance_scale) {
     req.set_tensor("sample", sample);
     req.set_tensor("timestep", timestep);
     req.set_tensor("encoder_hidden_states", text_embedding_1d);
@@ -256,7 +254,6 @@ ov::Tensor StableDiffusionControlnetPipeline::Unet(ov::InferRequest req,
     noise_pred_shape[0] = 1;
 
     // perform guidance
-    const float guidance_scale = 7.5f;
     const float* noise_pred_uncond = noise_pred_tensor.data<const float>();
     const float* noise_pred_text = noise_pred_uncond + ov::shape_size(noise_pred_shape);
 
@@ -269,11 +266,13 @@ ov::Tensor StableDiffusionControlnetPipeline::Unet(ov::InferRequest req,
 }
 
 ov::Tensor StableDiffusionControlnetPipeline::ControlnetUnet(ov::InferRequest controlnet_infer_request,
-    ov::InferRequest unet_infer_request,
-    ov::Tensor sample,
-    ov::Tensor timestep,
-    ov::Tensor text_embedding_1d,
-    ov::Tensor controlnet_cond) {
+                                                             ov::InferRequest unet_infer_request,
+                                                             ov::Tensor sample,
+                                                             ov::Tensor timestep,
+                                                             ov::Tensor text_embedding_1d,
+                                                             ov::Tensor controlnet_cond,
+                                                             float guidance_scale,
+                                                             float controlnet_conditioning_scale) {
     controlnet_infer_request.set_tensor("sample", sample);
     controlnet_infer_request.set_tensor("timestep", timestep);
     controlnet_infer_request.set_tensor("encoder_hidden_states", text_embedding_1d);
@@ -289,7 +288,10 @@ ov::Tensor StableDiffusionControlnetPipeline::ControlnetUnet(ov::InferRequest co
 
     for (size_t i = 0; i < controlnet.outputs().size(); i++, unet_input_idx++) {
         auto t = controlnet_infer_request.get_output_tensor(i);
-        // TODO: controlnet_conditioning_scale, default to 1.0, so not scaling here
+        float* t_data = t.data<float>();
+        for (size_t i = 0; i < t.get_size(); ++i) {
+            t_data[i] = t_data[i] * controlnet_conditioning_scale;
+        }
         unet_infer_request.set_input_tensor(unet_input_idx, t);
     }
 
@@ -301,7 +303,6 @@ ov::Tensor StableDiffusionControlnetPipeline::ControlnetUnet(ov::InferRequest co
     noise_pred_shape[0] = 1;
 
     // perform guidance
-    const float guidance_scale = 7.5f;
     const float* noise_pred_uncond = noise_pred_tensor.data<const float>();
     const float* noise_pred_text = noise_pred_uncond + ov::shape_size(noise_pred_shape);
 
@@ -352,7 +353,6 @@ ov::Tensor StableDiffusionControlnetPipeline::Run(StableDiffusionControlnetPipel
         controlnet_input_tensor = concat_twice(preprocessed_tensor);
     }
 
-
     std::shared_ptr<Scheduler> scheduler = std::make_shared<LMSDiscreteScheduler>();
     scheduler->set_timesteps(param.steps);
     std::vector<std::int64_t> timesteps = scheduler->get_timesteps();
@@ -360,8 +360,7 @@ ov::Tensor StableDiffusionControlnetPipeline::Run(StableDiffusionControlnetPipel
     const size_t unet_in_channels = static_cast<size_t>(sample_shape[1].get_length());
 
     // latents are multiplied by 'init_noise_sigma'
-    ov::Shape latent_shape =
-        ov::Shape({1, unet_in_channels, 512 / VAE_SCALE_FACTOR, 512 / VAE_SCALE_FACTOR});
+    ov::Shape latent_shape = ov::Shape({1, unet_in_channels, 512 / VAE_SCALE_FACTOR, 512 / VAE_SCALE_FACTOR});
     ov::Shape latent_model_input_shape = latent_shape;
     ov::Tensor noise = randn_tensor(latent_shape, param.seed);
     latent_model_input_shape[0] = 2;  // Unet accepts batch 2
@@ -385,13 +384,16 @@ ov::Tensor StableDiffusionControlnetPipeline::Run(StableDiffusionControlnetPipel
         ov::Tensor noisy_residual;
         if (has_input_image) {
             noisy_residual = ControlnetUnet(controlnet_infer_request,
-                                             unet_infer_request,
-                                             latent_model_input,
-                                             timestep,
+                                            unet_infer_request,
+                                            latent_model_input,
+                                            timestep,
                                             text_embeddings,
-                                             controlnet_input_tensor);
+                                            controlnet_input_tensor,
+                                            param.guidance_scale,
+                                            param.controlnet_conditioning_scale);
         } else {
-            noisy_residual = Unet(unet_infer_request, latent_model_input, timestep, text_embeddings);
+            noisy_residual =
+                Unet(unet_infer_request, latent_model_input, timestep, text_embeddings, param.guidance_scale);
         }
 
         latent = scheduler->step(noisy_residual, latent, inference_step)["latent"];

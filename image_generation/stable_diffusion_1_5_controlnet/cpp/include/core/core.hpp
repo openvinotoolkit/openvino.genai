@@ -3,6 +3,7 @@
 
 #pragma once
 #include <string>
+
 #include "openpose_detector.hpp"
 
 struct StableDiffusionControlnetPipelineParam {
@@ -11,6 +12,8 @@ struct StableDiffusionControlnetPipelineParam {
     std::string input_image;
     std::uint32_t steps;
     std::uint32_t seed;
+    float guidance_scale = 7.5;
+    float controlnet_conditioning_scale = 1.0;
 };
 
 class StableDiffusionControlnetPipeline {
@@ -21,18 +24,24 @@ public:
 private:
     ov::Tensor Preprocess(ov::Tensor pose, int* pad_width, int* pad_height);
     ov::Tensor Postprocess(const ov::Tensor& decoded_image,
-                                    int pad_height,
-                                    int pad_width,
-                                    int result_height,
-                                    int result_width);
+                           int pad_height,
+                           int pad_width,
+                           int result_height,
+                           int result_width);
     ov::Tensor TextEncoder(std::string& pos_prompt, std::string& neg_prompt);
     ov::Tensor ControlnetUnet(ov::InferRequest controlnet_infer_request,
                               ov::InferRequest unet_infer_request,
                               ov::Tensor sample,
                               ov::Tensor timestep,
                               ov::Tensor text_embedding_1d,
-                              ov::Tensor controlnet_cond);
-    ov::Tensor Unet(ov::InferRequest req, ov::Tensor sample, ov::Tensor timestep, ov::Tensor text_embedding_1d);
+                              ov::Tensor controlnet_cond,
+                              float guidance_scale,
+                              float controlnet_conditioning_scale);
+    ov::Tensor Unet(ov::InferRequest req,
+                    ov::Tensor sample,
+                    ov::Tensor timestep,
+                    ov::Tensor text_embedding_1d,
+                    float guidance_scale);
     ov::Tensor VAE(ov::Tensor sample);
 
     OpenposeDetector detector;
