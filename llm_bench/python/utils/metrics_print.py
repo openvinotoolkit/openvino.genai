@@ -77,7 +77,14 @@ def print_generated(iter_num, warm_up=False, generated=None):
     if warm_up:
         iter_str = 'warm-up'
     if generated is not None:
-        log.info(f'[{iter_str}] Generated: {generated}')
+        try:
+            log.info(f'[{iter_str}] Generated: {generated}')
+        except UnicodeError:
+            try:
+                utf8_generated = generated.encode(encoding="utf-8", errors="replace").decode()
+                log.info(f'[{iter_str}] Generated: {utf8_generated}')
+            except Exception:
+                log.warning(f"[{iter_str}] Unable print generated")
 
 
 def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion):
