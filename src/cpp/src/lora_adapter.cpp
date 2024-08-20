@@ -310,7 +310,7 @@ struct LoRAWeightStateGetter {
         });
         model->add_variables({variable});
         #if 0
-        // FIXME: CPU plugin fails when there is no initialization expression is given
+        // FIXME: CPU plugin fails when there is no initialization expression is given and type is not fp32
         ov::Shape init_shape(shape.rank().get_length());
         for(size_t i = 0; i < shape.size(); ++i) {
             init_shape[i] = shape[i].get_min_length();
@@ -790,6 +790,20 @@ void AdapterController::apply(ov::InferRequest& request){
     return m_pimpl->apply(request);
 }
 
+AdaptersConfig& AdaptersConfig::set(const Adapter& adapter, float alpha) {
+    auto it = std::find(adapters.begin(), adapters.end(), adapter);
+    if(it == adapters.end()) {
+        adapters.push_back(adapter);
+        // FIXME: Temporary limitation
+        OPENVINO_ASSERT(adapters.size() - 1 == alphas.size());
+        alphas.push_back(alpha);
+    } else {
+        size_t index = it - adapters.begin();
+        OPENVINO_ASSERT(adapters.size() == alphas.size());
+        alphas[index] = alpha;
+    }
+    return *this;
+}
 
 
 }  // namespace genai

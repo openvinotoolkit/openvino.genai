@@ -17,6 +17,8 @@ set(CMAKE_BUILD_TYPE "Release" CACHE STRING "CMake build type")
 
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 
+find_package(OpenVINOGenAI REQUIRED PATHS ${OpenVINO_DIR})
+
 include(FetchContent)
 
 FetchContent_Declare(cxxopts
@@ -39,6 +41,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     openvino::runtime
+    openvino::genai
     cxxopts::cxxopts
     diffusers::diffusers
     imwrite::imwrite)
