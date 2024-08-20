@@ -15,7 +15,7 @@ from openvino import save_model
 import nncf
 from ..nncf_utils import COMPRESSION_OPTIONS
 from optimum.gptq.data import get_dataset, prepare_dataset
-from optimum.intel.openvino.configuration import get_default_int4_config, _DEFAULT_4BIT_CONFIG, OVQuantizationMethod
+from optimum.intel.openvino.configuration import get_default_int4_config, OVQuantizationMethod
 import warnings
 
 
