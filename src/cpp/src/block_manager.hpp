@@ -156,20 +156,6 @@ public:
     KVCacheBlock::Ptr allocate_block(size_t hash, std::map<uint64_t, KVCacheBlock::Ptr>& cached_blocks) {
         OPENVINO_ASSERT(m_enable_prefix_caching);
         OPENVINO_ASSERT(can_allocate_blocks(1));
-        auto block = m_evictor.get_block(hash);
-        auto it = cached_blocks.find(hash);
-        if (block != nullptr) {
-            // use cached block from evictor
-            return block;
-        }
-        // TODO: Currently we cache all allocated blocks which might be redundant for beam search,
-        // where blocks of non-used candidates are not needed in cache.
-        // This part can be improved if we cache only blocks for prompt.
-        if (it != cached_blocks.end()) {
-            // use cashed block from cached_blocks
-            it->second->increment();
-            return it->second;
-        }
         if (m_free_blocks.size() > 0) {
             // allocate new empty block
             KVCacheBlock::Ptr allocated_block = m_free_blocks.front();

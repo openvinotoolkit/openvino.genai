@@ -384,24 +384,26 @@ public:
     ContinuousBatchingAdapter(
         const std::filesystem::path& model_path,
         const Tokenizer& tokenizer,
+        const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& plugin_config
     ): LLMPipelineImplBase{tokenizer}, m_impl{
         model_path.string(),
         tokenizer,
-        SchedulerConfig{},
+        scheduler_config,
         device,
         plugin_config
     } {}
 
     ContinuousBatchingAdapter(
         const std::filesystem::path& model_path,
+        const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& plugin_config
     ): LLMPipelineImplBase{Tokenizer(model_path.string())}, m_impl{
         model_path.string(),
         m_tokenizer,
-        SchedulerConfig{},
+        scheduler_config,
         device,
         plugin_config
     } {}
@@ -523,9 +525,12 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& plugin_config
 ){
-    auto start_time = std::chrono::steady_clock::now();    
-    if ("CB" == device) {
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_path, tokenizer, "CPU", plugin_config);
+    auto start_time = std::chrono::steady_clock::now();
+    if (plugin_config.find(ov::genai::scheduler_config.name()) != plugin_config.end()) {
+        auto config_without_scheduler_config = plugin_config;
+        config_without_scheduler_config.erase(ov::genai::scheduler_config.name());
+        auto& scheduler_config = plugin_config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_path, tokenizer, scheduler_config, device, config_without_scheduler_config);
     } else if ("NPU" == device) {
         m_pimpl = std::make_unique<StaticLLMPipeline>(model_path, tokenizer, device, plugin_config);
     } else {
@@ -539,10 +544,13 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& path,
     const std::string& device,
     const ov::AnyMap& config
-){ 
+){
     auto start_time = std::chrono::steady_clock::now();
-    if ("CB" == device) {
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(path, "CPU", config);
+    if (config.find(ov::genai::scheduler_config.name()) != config.end()) {
+        auto config_without_scheduler_config = config;
+        config_without_scheduler_config.erase(ov::genai::scheduler_config.name());
+        auto& scheduler_config = config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(path, scheduler_config, device, config_without_scheduler_config);
     } else if ("NPU" == device) {
         m_pimpl = std::make_unique<StaticLLMPipeline>(path, device, config);
     } else {
