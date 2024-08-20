@@ -61,7 +61,7 @@ jobs:
         shell: bash
     runs-on: 'macos-12-large'
     env:
-      MACOSX_DEPLOYMENT_TARGET: '10.12'
+      MACOSX_DEPLOYMENT_TARGET: '10.15'
       CMAKE_BUILD_TYPE: 'Release'
       CMAKE_GENERATOR: 'Ninja Multi-Config'
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
