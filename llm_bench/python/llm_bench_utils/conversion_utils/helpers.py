@@ -169,7 +169,7 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
         compression_args = get_default_int4_config(config.name_or_path)
         compression_args.pop("bits")
 
-        sym = compression_args.pop("sym", _DEFAULT_4BIT_CONFIG["sym"])
+        sym = compression_args.pop("sym", False)
         compression_args["mode"] = nncf.CompressWeightsMode.INT4_SYM if sym else nncf.CompressWeightsMode.INT4_ASYM
         if compression_args.pop("quant_method", None) == OVQuantizationMethod.AWQ:
             compression_args["awq"] = True
