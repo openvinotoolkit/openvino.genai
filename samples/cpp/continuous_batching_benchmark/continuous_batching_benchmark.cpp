@@ -428,7 +428,7 @@ int main(int argc, char* argv[]) try {
     options.add_options()
     ("n,num_prompts", "A number of prompts", cxxopts::value<size_t>()->default_value("1000"))
     ("b,max_batch_size", "A maximum number of batched tokens", cxxopts::value<size_t>()->default_value("256"))
-    ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("true"))
+    ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling. Use --dynamic_split_fuse=false to disable", cxxopts::value<bool>()->default_value("true"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
     ("dataset", "Path to dataset .json file", cxxopts::value<std::string>()->default_value("./ShareGPT_V3_unfiltered_cleaned_split.json"))
     ("max_input_len", "Max input length take from dataset", cxxopts::value<size_t>()->default_value("1024"))
@@ -437,6 +437,7 @@ int main(int argc, char* argv[]) try {
     ("cache_size", "Size of memory used for KV cache in GB. Default: 16", cxxopts::value<size_t>()->default_value("16"))
     ("device", "Target device to run the model. Default: CPU", cxxopts::value<std::string>()->default_value("CPU"))
     ("device_config", "Plugin configuration JSON. Example: '{\"MODEL_DISTRIBUTION_POLICY\":\"TENSOR_PARALLEL\",\"PERF_COUNT\":true}' Default: {\"PERF_COUNT\":true}", cxxopts::value<std::string>()->default_value("{\"PERF_COUNT\":true}"))
+    ("full_log", "Whether to enable logging of additional information, like model configuration. Use --full_log=false to disable", cxxopts::value<bool>()->default_value("true"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -464,6 +465,7 @@ int main(int argc, char* argv[]) try {
     const std::string device = result["device"].as<std::string>();
     const std::string device_config = result["device_config"].as<std::string>();
     const size_t cache_size = result["cache_size"].as<size_t>();
+    const bool full_log = result["full_log"].as<bool>();
 
     // Create requests for generation
     Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
@@ -488,6 +490,7 @@ int main(int argc, char* argv[]) try {
     std::cout << "\tMax output length: " << max_output_len << std::endl;
     std::cout << "\tTarget device: " << device << std::endl;
     std::cout << "\tPlugin configuration JSON: " << device_config << std::endl;
+    std::cout << "\tFull logging set to: " << full_log << std::endl;
 
     ov::AnyMap device_config_map = {};
     if (!parse_plugin_config_string(device_config, device_config_map)) {
@@ -497,7 +500,7 @@ int main(int argc, char* argv[]) try {
     
     // Benchmarking
     std::cout << "Loading models, creating pipelines, preparing environment..." << std::endl;
-    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map);
+    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map, {}, full_log);
 
     std::cout << "Model configuration: " << std::endl << pipe.get_model_configuration_string();
 

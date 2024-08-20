@@ -33,7 +33,8 @@ public:
                                const SchedulerConfig& scheduler_config,
                                const std::string& device = "CPU",
                                const ov::AnyMap& llm_plugin_config = {},
-                               const ov::AnyMap& tokenizer_plugin_config = {});
+                               const ov::AnyMap& tokenizer_plugin_config = {},
+                               const bool full_log = false);
 
     /**
     * @brief Constructs a ContinuousBatchingPipeline when ov::genai::Tokenizer is initialized manually using file from the different dirs.
@@ -49,7 +50,8 @@ public:
         const ov::genai::Tokenizer& tokenizer,
         const SchedulerConfig& scheduler_config,
         const std::string& device="CPU",
-        const ov::AnyMap& plugin_config={}
+        const ov::AnyMap& plugin_config={},
+        const bool full_log = false
     );
 
     ov::genai::Tokenizer get_tokenizer();
