@@ -203,9 +203,12 @@ void App::RenderLeftPanel() {
     ImGui::InputInt("Steps", &state.steps);
 
     ImGui::SliderInt("Width", &state.width, 64, 2048, "%d");
+
     ImGui::SliderInt("Height", &state.height, 64, 2048, "%d");
 
-    ImGui::SliderInt("CFG Scale", &state.cfg, 1, 30, "%d");
+    if (ImGui::SliderFloat("CFG Scale", &state.cfg, 1.0f, 30.0f, "%.1f")) {
+        state.cfg = std::floor(state.cfg / 0.5f) * 0.5f;
+    }
     ImGui::SliderFloat("Denoising strength", &state.strength, 0.0, 1.0, "%.2f");
 
     // seeds
@@ -243,7 +246,6 @@ void App::RenderLeftPanel() {
         }
     }
     ImGui::PopStyleColor(3);
-    ImGui::PopID();
 
     ImGui::SameLine();
     ImGui::RadioButton("Just resize", &state.resize_mode, 0);
@@ -320,8 +322,9 @@ void App::RenderRightPanel() {
             } else {
                 state.model_path = model_path;
                 worker.Request([this] {
-                    pipe = new StableDiffusionControlnetPipeline(state.model_path,
-                                                                 state.devices[state.active_device_index]);
+                    pipe =
+                        std::make_shared<StableDiffusionControlnetPipeline>(state.model_path,
+                                                                            state.devices[state.active_device_index]);
                 });
             }
         }
@@ -359,6 +362,10 @@ void App::RenderRightPanel() {
                         input_seed,
                         state.cfg,
                         state.strength,
+                        state.width,
+                        state.height,
+                        true,
+                        static_cast<StableDiffusionControlnetPipelinePreprocessMode>(state.resize_mode),
                     };
                     auto decoded_image = pipe->Run(param);
                     result_state.image = postprocess_image(decoded_image);

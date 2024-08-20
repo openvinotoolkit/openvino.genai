@@ -20,11 +20,11 @@ struct UIState {
     char negative_prompt[1024] = "monochrome, lowres, bad anatomy, worst quality, low quality";
     int steps = 20;
     int64_t seed = 963503610;
-    int cfg = 7;
+    float cfg = 7.5;
     int width = 512;
     int height = 512;
-    float strength = 0.75;
-    int resize_mode = 1;
+    float strength = 1.0;
+    int resize_mode = 0;
     std::vector<std::string> samplers;
     int active_sampler_index = 0;
 
@@ -71,7 +71,7 @@ private:
     UIState state;
     UIPreviewState preview_state;
     ResultState result_state;
-    StableDiffusionControlnetPipeline *pipe = nullptr;
+    std::shared_ptr<StableDiffusionControlnetPipeline> pipe = nullptr;
     Worker worker;
 
     std::atomic<bool> running{false};

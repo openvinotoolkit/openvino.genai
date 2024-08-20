@@ -6,6 +6,9 @@
 
 #include "openpose_detector.hpp"
 
+enum StableDiffusionControlnetPipelinePreprocessMode { JustResize = 0, ResizeAndFill = 1, CropAndResize = 2 };
+
+
 struct StableDiffusionControlnetPipelineParam {
     std::string prompt;
     std::string negative_prompt;
@@ -14,6 +17,10 @@ struct StableDiffusionControlnetPipelineParam {
     std::uint32_t seed;
     float guidance_scale = 7.5;
     float controlnet_conditioning_scale = 1.0;
+    int width = 512;
+    int height = 512;
+    bool use_preprocess_ex = false;
+    StableDiffusionControlnetPipelinePreprocessMode mode = JustResize;
 };
 
 class StableDiffusionControlnetPipeline {
@@ -22,6 +29,14 @@ public:
     ov::Tensor Run(StableDiffusionControlnetPipelineParam&);
 
 private:
+    ov::Tensor PreprocessEx(ov::Tensor pose,
+                            int result_height,
+                            int result_width,
+                            StableDiffusionControlnetPipelinePreprocessMode mode,
+                            int* pad_width,
+                            int* pad_height
+    );
+
     ov::Tensor Preprocess(ov::Tensor pose, int* pad_width, int* pad_height);
     ov::Tensor Postprocess(const ov::Tensor& decoded_image,
                            int pad_height,

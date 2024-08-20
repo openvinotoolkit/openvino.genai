@@ -54,14 +54,6 @@ void reshape_text_encoder(std::shared_ptr<ov::Model> model, size_t batch_size, s
     model->reshape(idx_to_shape);
 }
 
-void reshape_vae_decoder(std::shared_ptr<ov::Model> model, int64_t height, int64_t width) {
-    height = height / VAE_SCALE_FACTOR;
-    width = width / VAE_SCALE_FACTOR;
-
-    ov::PartialShape input_shape = model->input(0).get_partial_shape();
-    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {1, input_shape[1], height, width}}};
-    model->reshape(idx_to_shape);
-}
 StableDiffusionControlnetPipeline::StableDiffusionControlnetPipeline(std::string model_path, std::string device) {
     ov::Core core;
 
@@ -75,6 +67,7 @@ StableDiffusionControlnetPipeline::StableDiffusionControlnetPipeline(std::string
         text_encoder = core.compile_model(text_encoder_model, device);
     }
 
+    // Unet
     {
         Timer t("Loading and compiling UNet");
         auto unet_model = core.read_model(model_path + "/unet_controlnet.xml");
@@ -98,7 +91,6 @@ StableDiffusionControlnetPipeline::StableDiffusionControlnetPipeline(std::string
     {
         Timer t("Loading and compiling VAE decoder");
         auto vae_decoder_model = core.read_model(model_path + "/vae_decoder.xml");
-        reshape_vae_decoder(vae_decoder_model, 512, 512);
         ov::preprocess::PrePostProcessor ppp(vae_decoder_model);
         ppp.output().model().set_layout("NCHW");
         ppp.output().tensor().set_layout("NHWC");
@@ -111,6 +103,34 @@ StableDiffusionControlnetPipeline::StableDiffusionControlnetPipeline(std::string
         // Tokenizer model wil be loaded to CPU: OpenVINO Tokenizers can be inferred on a CPU device only.
         tokenizer = core.compile_model(model_path + "/tokenizer/openvino_tokenizer.xml", "CPU");
     }
+}
+
+ov::Tensor StableDiffusionControlnetPipeline::PreprocessEx(ov::Tensor pose,
+                                                           int dst_height,
+                                                           int dst_width,
+                                                           StableDiffusionControlnetPipelinePreprocessMode mode,
+                                                           int* pad_width,
+                                                           int* pad_height) {
+    auto shape = pose.get_shape();  // NHWC
+    auto image_height = shape[1];
+    auto image_width = shape[2];
+    ov::Tensor resized_tensor = smart_resize(pose, dst_height, dst_width);
+
+    switch (mode) {
+    case JustResize:
+        // resize
+        break;
+    case ResizeAndFill:
+        // TODO: not supported yet
+        break;
+    case CropAndResize:
+        // TODO: not supported yet
+        break;
+    default:
+        break;
+    }
+
+    return Preprocess(resized_tensor, pad_width, pad_height);
 }
 
 ov::Tensor StableDiffusionControlnetPipeline::Preprocess(ov::Tensor pose, int* pad_width, int* pad_height) {
@@ -126,6 +146,9 @@ ov::Tensor StableDiffusionControlnetPipeline::Preprocess(ov::Tensor pose, int* p
     *pad_height = 512 - result_height;
 
     auto resized_tensor = smart_resize(pose, result_height, result_width);
+
+    std::cout << "image_width: " << image_width << ", image_height" << image_height << std::endl;
+    std::cout << "pad_width: " << *pad_width << ", pad_height" << *pad_height << std::endl;
 
     // pad the right bottom with 0
     auto padded_tensor = init_tensor_with_zeros({1, 512, 512, 3}, ov::element::u8);
@@ -337,7 +360,7 @@ ov::Tensor StableDiffusionControlnetPipeline::Run(StableDiffusionControlnetPipel
 
     ov::Tensor controlnet_input_tensor;
     int pad_width, pad_height = 0;
-    int result_width, result_height = 0;
+    int pose_width, pose_height = 0;
     bool has_input_image = param.input_image != "";
 
     if (has_input_image) {
@@ -346,10 +369,16 @@ ov::Tensor StableDiffusionControlnetPipeline::Run(StableDiffusionControlnetPipel
         std::vector<std::vector<float>> candidate;
 
         ov::Tensor pose_image = detector.forward(input_image, subset, candidate);
-        result_width = pose_image.get_shape()[2];
-        result_height = pose_image.get_shape()[1];
-
-        ov::Tensor preprocessed_tensor = Preprocess(pose_image, &pad_width, &pad_height);
+        pose_width = pose_image.get_shape()[2];
+        pose_height = pose_image.get_shape()[1];
+        ov::Tensor preprocessed_tensor;
+        if (param.use_preprocess_ex) {
+            preprocessed_tensor =
+                PreprocessEx(pose_image, param.height, param.width, param.mode, &pad_width, &pad_height);
+        } else {
+            // default
+            preprocessed_tensor = Preprocess(pose_image, &pad_width, &pad_height);
+        }
         controlnet_input_tensor = concat_twice(preprocessed_tensor);
     }
 
@@ -360,7 +389,8 @@ ov::Tensor StableDiffusionControlnetPipeline::Run(StableDiffusionControlnetPipel
     const size_t unet_in_channels = static_cast<size_t>(sample_shape[1].get_length());
 
     // latents are multiplied by 'init_noise_sigma'
-    ov::Shape latent_shape = ov::Shape({1, unet_in_channels, 512 / VAE_SCALE_FACTOR, 512 / VAE_SCALE_FACTOR});
+    ov::Shape latent_shape =
+        ov::Shape({1, unet_in_channels, 512 / VAE_SCALE_FACTOR, 512 / VAE_SCALE_FACTOR});
     ov::Shape latent_model_input_shape = latent_shape;
     ov::Tensor noise = randn_tensor(latent_shape, param.seed);
     latent_model_input_shape[0] = 2;  // Unet accepts batch 2
@@ -401,7 +431,12 @@ ov::Tensor StableDiffusionControlnetPipeline::Run(StableDiffusionControlnetPipel
 
     ov::Tensor decoded_image = VAE(latent);
     if (has_input_image) {
-        decoded_image = Postprocess(decoded_image, pad_height, pad_width, result_height, result_width);
+        if (param.use_preprocess_ex) {
+            decoded_image = Postprocess(decoded_image, pad_height, pad_width, param.height, param.width);
+        } else {
+            // default
+            decoded_image = Postprocess(decoded_image, pad_height, pad_width, pose_height, pose_width);
+        }
     }
     return decoded_image;
 }
