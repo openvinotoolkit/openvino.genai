@@ -12,6 +12,7 @@
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
+#include "openvino/genai/scheduler_config.hpp"
 
 namespace ov {
 namespace genai {
@@ -21,6 +22,13 @@ using StreamerVariant = std::variant<std::function<bool(std::string)>, std::shar
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
 using EncodedInputs = std::variant<ov::Tensor, TokenizedInputs>;
 using StringInputs = std::variant<std::string, std::vector<std::string>>;
+
+/**
+* @brief scheduler_config property serves to activate continuous batching pipeline.
+* Create SchedulerConfig and fill it with sutable values. Copy or move it to plugin_config.
+* And create LLMPipeline instance with this config.
+*/
+static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_config"};
 
 /**
 * @brief Structure to store resulting batched tokens and scores for each batch sequence.
@@ -101,6 +109,7 @@ public:
     * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
     * @param device optional device
     * @param plugin_config optional plugin_config
+    * Add ov::genai::scheduler_config property to plugin_config to create continuous batching pipeline
     */
     LLMPipeline(
         const std::string& path, 
@@ -128,6 +137,7 @@ public:
     * @param tokenizer manually initialized ov::genai::Tokenizer 
     * @param device optional device
     * @param plugin_config optional plugin_config
+    * Add ov::genai::scheduler_config property to plugin_config to create continuous batching pipeline
     */
     LLMPipeline(
         const std::string& model_path,
