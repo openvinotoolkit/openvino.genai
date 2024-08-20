@@ -2,36 +2,54 @@
 
 The pure C++ text-to-image pipeline, driven by the OpenVINO native API for SD v1.5 Latent Consistency Model with LCM Scheduler. It includes advanced features like [LoRA](https://huggingface.co/docs/peft/main/en/conceptual_guides/lora#lora) integration with [safetensors](https://huggingface.co/docs/safetensors/index#format) and [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers). Loading `openvino_tokenizers` to `ov::Core` enables tokenization. [The common folder](../../common/) contains schedulers for image generation and `imwrite()` for saving `bmp` images. This demo has been tested for Linux platform only. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/latest/notebooks/latent-consistency-models-image-generation/lcm-lora-controlnet.ipynb) which provides an example of image generaztion in Python.
 
+## Software Requirements
+
+### Linux
+
+- [CMake](https://cmake.org/download/) 3.23 or higher
+- GCC 7.5 or higher
+- Python 3.8 or higher
+- Git
+
+### Windows
+
+- [CMake](https://cmake.org/download/) 3.23 or higher
+- Microsoft Visual Studio 2019 or higher, version 16.3 or later
+- Python 3.8 or higher
+- Git for Windows
+
+### macOS
+
+- [CMake](https://cmake.org/download/) 3.23 or higher
+- Clang compiler and other command line tools from Xcode 10.1 or higher:
+    ```sh
+    xcode-select --install
+    ```
+- Python 3.8 or higher
+- Git
+
+## Build Instructions
+
+### Step 1: Clone the Repository
+
+```shell
+git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
+cd ./openvino.genai/image_generation/lcm_dreamshaper_v7/cpp/
+```
+
 > [!NOTE]
 > This tutorial assumes that the current working directory is `<openvino.genai repo>/image_generation/lcm_dreamshaper_v7/cpp/` and all paths are relative to this folder.
 
-## Step 1: Prepare Build Environment
+### Step 2: Install OpenVINO from Archive
 
-Prerequisites:
-- Conda ([installation guide](https://conda.io/projects/conda/en/latest/user-guide/install/index.html))
+Follow the [install instructions](https://docs.openvino.ai/2024/get-started/install-openvino.html) selecting OpenVINO Archives distribution.
+The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throughout the document.
 
-C++ Packages:
-* [CMake](https://cmake.org/download/): Cross-platform build tool
-* [OpenVINO](https://docs.openvino.ai/2024/get-started/install-openvino.html): Model inference
-
-Prepare a python environment and install dependencies:
-
-```shell
-conda create -n openvino_lcm_cpp python==3.10
-conda activate openvino_lcm_cpp
-conda update -c conda-forge --all
-conda install -c conda-forge openvino=2024.2.0 c-compiler cxx-compiler git make cmake
-# Ensure that Conda standard libraries are used
-conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
-```
-
-## Step 2: Obtain Latent Consistency Model
+### Step 3: Obtain Latent Consistency Model
 
 1. Install dependencies to import models from HuggingFace:
 
     ```shell
-    git submodule update --init
-    conda activate openvino_lcm_cpp
     python -m pip install -r ../../requirements.txt
     python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers]
     ```
@@ -48,7 +66,7 @@ conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
     If https://huggingface.co/ is down, the script won't be able to download the model.
 
-### (Optional) Enable LoRA Weights with Safetensors
+#### (Optional) Enable LoRA Weights with Safetensors
 
 Low-Rank Adaptation (LoRA) is a technique introduced to deal with the problem of fine-tuning Diffusers and Large Language Models (LLMs). In the case of Stable Diffusion fine-tuning, LoRA can be applied to the cross-attention layers for the image representations with the latent described.
 
@@ -62,15 +80,31 @@ The LoRA safetensors model is loaded via [safetensors.h](https://github.com/hsny
 There are various LoRA models on https://civitai.com/tag/lora and on HuggingFace, you can consider to choose your own LoRA model in safetensor format. For example, you can use LoRA [soulcard model](https://civitai.com/models/67927?modelVersionId=72591).
 Download and put LoRA safetensors model into the models directory. When running the built sample provide the path to the LoRA model with `-l, --loraPath arg` argument.
 
-## Step 3: Build the LCM Application
+### Step 4: Build the LCM Application
 
-```shell
-conda activate openvino_lcm_cpp
-cmake -DCMAKE_BUILD_TYPE=Release -S . -B build
-cmake --build build --config Release --parallel
-```
+1. Set up the environment:
+    Linux and macOS:
+    ```sh
+    source <INSTALL_DIR>/setupvars.sh
+    ```
 
-## Step 4: Run Pipeline
+    Windows Command Prompt:
+    ```cmd
+    call <INSTALL_DIR>\setupvars.bat
+    ```
+
+    Windows PowerShell:
+    ```cmd
+    . <INSTALL_DIR>/setupvars.ps1
+    ```
+   
+2. Build the application:
+    ```shell
+    cmake -DCMAKE_BUILD_TYPE=Release -S . -B build
+    cmake --build build --config Release --parallel
+    ```
+
+### Step 5: Run Pipeline
 ```shell
 ./build/lcm_dreamshaper [-p <posPrompt>] [-s <seed>] [--height <output image>] [--width <output image>] [-d <device>] [-r <readNPLatent>] [-a <alpha>] [-h <help>] [-m <modelPath>] [-t <modelType>] [--guidanceScale <guidanceScale>] [--dynamic]
 
@@ -98,7 +132,7 @@ Usage:
 > [!NOTE]
 > The tokenizer model will always be loaded to CPU: [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers) can be inferred on a CPU device only.
 
-Example:
+#### Examples
 
 Positive prompt: a beautiful pink unicorn
 

@@ -50,6 +50,7 @@ def gen_iterate_data(
     res_md5='',
     max_rss_mem='',
     max_shared_mem='',
+    max_uss_mem='',
     prompt_idx='',
     tokenization_time=[],
 ):
@@ -67,6 +68,7 @@ def gen_iterate_data(
     iter_data['other_tokens_infer_avg_latency'] = ''
     iter_data['max_rss_mem_consumption'] = max_rss_mem
     iter_data['max_shared_mem_consumption'] = max_shared_mem
+    iter_data['max_uss_mem_consumption'] = max_uss_mem
     iter_data['prompt_idx'] = prompt_idx
     iter_data['tokenization_time'] = tokenization_time[0] if len(tokenization_time) > 0 else ''
     iter_data['detokenization_time'] = tokenization_time[1] if len(tokenization_time) > 1 else ''
@@ -96,6 +98,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         log.info(out_str)
 
     max_rss_mem_consumption = ''
+    max_uss_mem_consumption = ''
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
@@ -123,7 +126,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
-        max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
+        max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
 
     generation_time = end - start
@@ -176,6 +179,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
+        max_uss_mem=max_uss_mem_consumption,
         prompt_idx=prompt_index,
         tokenization_time=(tok_encode_time, tok_decode_time)
     )
@@ -188,6 +192,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
+        max_uss_mem=max_uss_mem_consumption,
         tokenization_time=(tok_encode_time, tok_decode_time),
         batch_size=args['batch_size']
     )
@@ -233,6 +238,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         log.info(out_str)
 
     max_rss_mem_consumption = ''
+    max_uss_mem_consumption = ''
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
@@ -244,7 +250,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     log.info(type(generated_tokens[0]))
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
-        max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
+        max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
 
     generation_time = end - start
@@ -282,6 +288,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
+        max_uss_mem=max_uss_mem_consumption,
         prompt_idx=prompt_index,
         tokenization_time=(tok_encode_time, tok_decode_time)
     )
@@ -294,6 +301,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
+        max_uss_mem=max_uss_mem_consumption,
         tokenization_time=(tok_encode_time, tok_decode_time),
         batch_size=args['batch_size']
     )
@@ -369,6 +377,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     )
     result_md5_list = []
     max_rss_mem_consumption = ''
+    max_uss_mem_consumption = ''
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
@@ -389,7 +398,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
-        max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
+        max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
     for bs_idx in range(args['batch_size']):
         rslt_img_fn = utils.output_file.output_gen_image(res[bs_idx], args, image_id, num, bs_idx, proc_id, '.png')
@@ -402,6 +411,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         res_md5=result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
+        max_uss_mem=max_uss_mem_consumption,
         prompt_idx=image_id,
     )
     iter_data_list.append(iter_data)
@@ -411,6 +421,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
+        max_uss_mem=max_uss_mem_consumption,
         stable_diffusion=stable_diffusion_hook
     )
     utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn)
@@ -492,6 +503,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     low_res_img = PIL.Image.open(img['prompt']).convert('RGB')
     low_res_img = low_res_img.resize((resize_image_width, resize_image_height))
     max_rss_mem_consumption = ''
+    max_uss_mem_consumption = ''
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
@@ -500,7 +512,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
-        max_rss_mem_consumption, max_shared_mem_consumption = mem_consumption.get_max_memory_consumption()
+        max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
     result_md5_list = []
     if framework == 'ov':
@@ -515,6 +527,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         res_md5=result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
+        max_uss_mem=max_uss_mem_consumption,
         prompt_idx=image_id,
     )
     iter_data_list.append(iter_data)
@@ -524,6 +537,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
+        max_uss_mem=max_uss_mem_consumption
     )
     utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn)
     utils.metrics_print.print_ldm_unet_vqvae_infer_latency(num, iter_data, tm_list, warm_up=(num == 0))
@@ -712,7 +726,7 @@ CASE_TO_BENCH = {
 
 
 def main():
-    log.basicConfig(format='[ %(levelname)s ] %(message)s', level=os.environ.get("LOGLEVEL", log.INFO), stream=sys.stdout)
+    log.basicConfig(format='[ %(levelname)s ] %(message)s', level=os.environ.get("LOGLEVEL", log.INFO), stream=sys.stdout, encoding="utf-8")
     args = get_argprser()
     model_path, framework, model_args, model_name = utils.model_utils.analyze_args(args)
 
