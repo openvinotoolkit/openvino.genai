@@ -45,6 +45,9 @@ struct json_type_traits<std::string> { static constexpr auto json_value_t = nloh
 template <>
 struct json_type_traits<bool> { static constexpr auto json_value_t = nlohmann::json::value_t::boolean; };
 
+template <>
+struct json_type_traits<std::vector<int64_t>> { static constexpr auto json_value_t = nlohmann::json::value_t::array; };
+
 /// @brief reads value to param if T argument type is aligned with value stores in json
 /// if types are not compatible leave param unchanged
 template <typename T>
@@ -57,6 +60,15 @@ void read_json_param(const nlohmann::json& data, const std::string& name, T& par
         } else if (data[name].type() == json_type_traits<T>::json_value_t) {
             param = data[name].get<T>();
         }
+    } else if (name.find(".") != std::string::npos) {
+        size_t delimiter_pos = name.find(".");
+        std::string key = name.substr(0, delimiter_pos);
+        if (!data.contains(key)) {
+            return;
+        }
+        std::string rest_key = name.substr(delimiter_pos + 1);
+
+        read_json_param(data[key], rest_key, param);
     }
 }
 
