@@ -16,13 +16,11 @@ namespace audio {
 
 void fill_sin_cos_table();
 
-void mel_spectrogram_convert_audio(const float* samples,
-                                   const int n_samples,
-                                   const int sample_rate,
-                                   const int frame_size,
-                                   const int frame_step,
-                                   const int n_threads,
-                                   std::vector<float>& outMelData);
+std::vector<float> mel_spectrogram_convert_audio(const std::vector<float> pcmf32,
+                                                 const int sample_rate,
+                                                 const int frame_size,
+                                                 const int frame_step,
+                                                 const int n_threads);
 }  // namespace audio
 }  // namespace utils
 }  // namespace genai

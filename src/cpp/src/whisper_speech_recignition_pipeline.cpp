@@ -11,6 +11,25 @@
 #include "utils.hpp"
 #include "whisper/whisper_models.hpp"
 
+namespace {
+ov::genai::WhisperGenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path) {
+    auto config_file_path = model_path / "generation_config.json";
+    if (std::filesystem::exists(config_file_path)) {
+        return ov::genai::WhisperGenerationConfig((config_file_path).string());
+    } else {
+        return ov::genai::WhisperGenerationConfig{};
+    }
+}
+
+ov::genai::OptionalWhisperGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {
+    if (config_map.count("generation_config")) {
+        return config_map.at("generation_config").as<ov::genai::WhisperGenerationConfig>();
+    } else {
+        return std::nullopt;
+    }
+}
+}  // namespace
+
 namespace ov {
 namespace genai {
 
@@ -20,16 +39,6 @@ std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& 
                                       const std::shared_ptr<StreamerBase> streamer);
 
 class WhisperSpeechRecognitionPipeline::Impl {
-    // todo: move to utils
-    ov::genai::WhisperGenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path) {
-        auto config_file_path = model_path / "generation_config.json";
-        if (std::filesystem::exists(config_file_path)) {
-            return ov::genai::WhisperGenerationConfig((config_file_path).string());
-        } else {
-            return ov::genai::WhisperGenerationConfig{};
-        }
-    }
-
 public:
     ov::genai::WhisperGenerationConfig m_generation_config;
     ov::genai::WhisperInitializedModels m_models;
@@ -84,15 +93,6 @@ public:
         DecodedResults decoded_results{std::vector{m_tokenizer.decode(tokens)}, std::vector{1.f}};
         return decoded_results;
     }
-
-    // todo: move to utils
-    ov::genai::OptionalWhisperGenerationConfig get_config_from_map(const ov::AnyMap& config_map) {
-        if (config_map.count("generation_config")) {
-            return config_map.at("generation_config").as<ov::genai::WhisperGenerationConfig>();
-        } else {
-            return std::nullopt;
-        }
-    }
 };
 
 }  // namespace genai
@@ -107,7 +107,7 @@ ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(
 
 ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(PCMf32AudioDataInput inputs,
                                                                                 const ov::AnyMap& config_map) {
-    auto config_arg = m_impl->get_config_from_map(config_map);
+    auto config_arg = get_config_from_map(config_map);
     WhisperGenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
 

@@ -12,10 +12,7 @@
 #include <thread>
 #include <vector>
 
-namespace ov {
-namespace genai {
-namespace utils {
-namespace audio {
+namespace {
 
 struct whisper_mel {
     int n_len;
@@ -50,20 +47,6 @@ static bool hann_window(int length, bool periodic, std::vector<float>& output) {
 #define SIN_COS_N_COUNT WHISPER_N_FFT
 static float sin_vals[SIN_COS_N_COUNT];
 static float cos_vals[SIN_COS_N_COUNT];
-
-// In FFT, we frequently use sine and cosine operations with the same values.
-// We can use precalculated values to speed up the process.
-void fill_sin_cos_table() {
-    static bool is_filled = false;
-    if (is_filled)
-        return;
-    for (int i = 0; i < SIN_COS_N_COUNT; i++) {
-        double theta = (2 * M_PI * i) / SIN_COS_N_COUNT;
-        sin_vals[i] = sinf(theta);
-        cos_vals[i] = cosf(theta);
-    }
-    is_filled = true;
-}
 
 // naive Discrete Fourier Transform
 // input is real-valued
@@ -216,14 +199,34 @@ static void log_mel_spectrogram_worker_thread(int ith,
         }
     }
 }
+}  // namespace
 
-void mel_spectrogram_convert_audio(const float* samples,
-                                   const int n_samples,
-                                   const int sample_rate,
-                                   const int frame_size,
-                                   const int frame_step,
-                                   const int n_threads,
-                                   std::vector<float>& outMelData) {
+namespace ov {
+namespace genai {
+namespace utils {
+namespace audio {
+
+// In FFT, we frequently use sine and cosine operations with the same values.
+// We can use precalculated values to speed up the process.
+void fill_sin_cos_table() {
+    static bool is_filled = false;
+    if (is_filled)
+        return;
+    for (int i = 0; i < SIN_COS_N_COUNT; i++) {
+        double theta = (2 * M_PI * i) / SIN_COS_N_COUNT;
+        sin_vals[i] = sinf(theta);
+        cos_vals[i] = cosf(theta);
+    }
+    is_filled = true;
+}
+
+std::vector<float> mel_spectrogram_convert_audio(const std::vector<float> pcmf32,
+                                                 const int sample_rate,
+                                                 const int frame_size,
+                                                 const int frame_step,
+                                                 const int n_threads) {
+    const float* samples = pcmf32.data();
+    const int n_samples = pcmf32.size();
     whisper_filters filters;
     whisper_mel mel;
 
@@ -327,7 +330,7 @@ void mel_spectrogram_convert_audio(const float* samples,
         mel.data[i] = (mel.data[i] + 4.0) / 4.0;
     }
 
-    outMelData = mel.data;
+    return mel.data;
 }
 
 }  // namespace audio

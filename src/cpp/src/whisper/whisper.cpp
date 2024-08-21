@@ -171,7 +171,7 @@ std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& 
     std::vector<int64_t> output_tokens;
     size_t max_new_tokens = config.get_max_new_tokens();
 
-    // on a small chunk sizes (eg 1s) the results are starting to diverge from HF
+    // on small chunk sizes (eg 1s) the results are starting to diverge from HF
     for (int i = 0; i < pcmf32.size(); i += AUDIO_CHUNK_SIZE) {
         if (output_tokens.size() >= max_new_tokens) {
             break;
@@ -181,16 +181,12 @@ std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& 
         int copy_size = std::min((int)(pcmf32.size() - i), (int)AUDIO_CHUNK_SIZE);
         std::vector<float> pcmf32_sub_chunk(pcmf32.begin() + i, pcmf32.begin() + i + copy_size);
 
-        std::vector<float> mel_data;
-
-        ov::genai::utils::audio::mel_spectrogram_convert_audio(
-            pcmf32_sub_chunk.data(),
-            pcmf32_sub_chunk.size(),
+        auto mel_data = ov::genai::utils::audio::mel_spectrogram_convert_audio(
+            pcmf32_sub_chunk,
             WHISPER_SAMPLE_RATE,
             WHISPER_N_FFT,
             WHISPER_HOP_LENGTH,
-            std::min(4, (int32_t)std::thread::hardware_concurrency()),
-            mel_data);
+            std::min(4, (int32_t)std::thread::hardware_concurrency()));
 
         ov::Tensor hidden_state_tensor = encode(models.encoder, mel_data);
 
