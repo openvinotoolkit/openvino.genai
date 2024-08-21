@@ -249,6 +249,9 @@ ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& emb
 
 class VisionEncoder {
 public:
+    class Config {
+        size_t scale_resolution = 448, max_slice_nums = 9, patch_size = 14;
+    };
     ov::InferRequest encoder;
     VisionEncoder(const ov::InferRequest& encoder) : encoder{encoder} {}
     explicit VisionEncoder(const std::filesystem::path& model_dir, const std::string& device="CPU", const ov::AnyMap device_config={}, ov::Core core=ov::Core{}) :
@@ -256,7 +259,7 @@ public:
             // CPU only because of 146022.
             model_dir / "openvino_vision.xml", "CPU", device_config
         ).create_infer_request()} {}
-    std::pair<std::vector<std::vector<ov::Tensor>>, size_t> encode(const ov::Tensor image) {
+    std::pair<std::vector<std::vector<ov::Tensor>>, size_t> encode(const ov::Tensor image, const Config& config = Config{}) {
         clip_ctx ctx_clip;
         for (int i = 0; i < 3; ++i) {
             ctx_clip.image_mean[i] = 0.5;
@@ -274,6 +277,9 @@ struct PromptImage {
 
 class VLMPipeline {
 public:
+    size_t query_num = 64;  // query_num throughput this impl - the number of <unk> to insert into the prompt per image slice.
+    float scale_emb = 12.0f;  // multiply embeddings by it. Hardcoded throughout this impl
+    bool slice_mode = true;  // Don't resize and slice an input image.
     ov::genai::Tokenizer tokenizer;
     VisionEncoder vision_encoder;
     ov::InferRequest resampler, ireq_embed, ireq;

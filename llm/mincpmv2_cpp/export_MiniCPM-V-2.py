@@ -338,22 +338,22 @@ if __name__ == '__main__':
         save_tokenizer(tokenizer, model_path)
         model.config.save_pretrained(model_path)
 
-    if not LLM_MODEL_OV_INT4.exists() and LLM_MODEL_OV.exists():
-        compression_configuration = {
-            "mode": nncf.CompressWeightsMode.INT4_SYM,
-            "group_size": 128,
-            "ratio": 1,
-            }
-        core = ov.Core()
-        print("LLM model_ov", LLM_MODEL_OV)
-        ov_model = core.read_model(LLM_MODEL_OV)
-        ov_compressed_model = nncf.compress_weights(ov_model, **compression_configuration)
-        ov.save_model(ov_compressed_model, LLM_MODEL_OV_INT4)
+    # if not LLM_MODEL_OV_INT4.exists() and LLM_MODEL_OV.exists():
+    #     compression_configuration = {
+    #         "mode": nncf.CompressWeightsMode.INT4_SYM,
+    #         "group_size": 128,
+    #         "ratio": 1,
+    #         }
+    #     core = ov.Core()
+    #     print("LLM model_ov", LLM_MODEL_OV)
+    #     ov_model = core.read_model(LLM_MODEL_OV)
+    #     ov_compressed_model = nncf.compress_weights(ov_model, **compression_configuration)
+    #     ov.save_model(ov_compressed_model, LLM_MODEL_OV_INT4)
 
-    if LLM_MODEL_OV_INT4.exists():
-        core = ov.Core()
-        ov_model = core.read_model(LLM_MODEL_OV_INT4)
-        manager = Manager()
-        manager.register_pass(InsertSlice())
-        manager.run_passes(ov_model)
-        ov.save_model(ov_model, LLM_MODEL_OV_INT4_REDUCE_LOGITS)
+    # if LLM_MODEL_OV_INT4.exists():
+    #     core = ov.Core()
+    #     ov_model = core.read_model(LLM_MODEL_OV_INT4)
+    #     manager = Manager()
+    #     manager.register_pass(InsertSlice())
+    #     manager.run_passes(ov_model)
+    #     ov.save_model(ov_model, LLM_MODEL_OV_INT4_REDUCE_LOGITS)
