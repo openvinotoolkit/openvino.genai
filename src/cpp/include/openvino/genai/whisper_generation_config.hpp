@@ -10,9 +10,7 @@ namespace ov {
 namespace genai {
 
 /**
- * @brief Structure to keep generation config parameters. For a selected method of decoding, only parameters from that
- * group and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and
- * random sampling parameters will be used while greedy and beam search parameters will not affect decoding at all.
+ * @brief Structure to keep generation config parameters.
  *
  * Generic parameters:
  * @param max_length the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
@@ -32,8 +30,8 @@ public:
     // Generic
     size_t max_new_tokens = SIZE_MAX;
     size_t max_length = SIZE_MAX;
-    bool ignore_eos = false;
 
+    // Whisper specific
     std::vector<int64_t> begin_suppress_tokens;
     std::vector<int64_t> suppress_tokens;
 

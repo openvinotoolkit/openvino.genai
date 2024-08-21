@@ -15,7 +15,7 @@ namespace audio {
 bool OPENVINO_GENAI_EXPORTS read_wav(const std::string& fname,
                                      std::vector<float>& pcmf32,
                                      std::vector<std::vector<float>>& pcmf32s,
-                                     bool stereo);
+                                     bool stereo = false);
 }  // namespace audio
 }  // namespace utils
 }  // namespace genai

@@ -6,6 +6,7 @@
 #include <regex>
 #include <thread>
 
+#include "../utils.hpp"
 #include "audio_processing.hpp"
 #include "openvino/genai/audio_utils.hpp"
 #include "openvino/genai/streamer_base.hpp"
@@ -16,20 +17,12 @@
 
 namespace {
 
-// todo: refactor
-template <typename T>
-int get_new_token(const T* inDataArr, ov::Shape tensorShape) {
-    const int idx_start = (int)(tensorShape[1] - 1) * tensorShape[2];
-    const int idx_end = idx_start + tensorShape[2];
-    int maxIndex = idx_start;
-    T maxValue = inDataArr[idx_start];
-    for (int i = idx_start + 1; i < idx_end; ++i) {
-        if (inDataArr[i] > maxValue) {
-            maxValue = inDataArr[i];
-            maxIndex = i;
-        }
+// todo: support multi batch
+void supress_tokens(ov::Tensor& logits, std::vector<int64_t> supress_tokens) {
+    auto data = logits.data<float>();
+    for (auto supress_token : supress_tokens) {
+        data[supress_token] = -std::numeric_limits<float>::infinity();
     }
-    return maxIndex - idx_start;
 }
 
 ov::Tensor encode(ov::InferRequest& request, std::vector<float>& mel_data) {
@@ -41,14 +34,6 @@ ov::Tensor encode(ov::InferRequest& request, std::vector<float>& mel_data) {
     request.infer();
 
     return request.get_tensor("last_hidden_state");
-}
-
-// todo: support multi batch
-void supress_tokens(ov::Tensor& logits, std::vector<int64_t> supress_tokens) {
-    auto data = logits.data<float>();
-    for (auto supress_token : supress_tokens) {
-        data[supress_token] = -std::numeric_limits<float>::infinity();
-    }
 }
 
 void set_past_kev_value(ov::CompiledModel& source_compiled_model, ov::InferRequest& source, ov::InferRequest& dest) {
@@ -74,17 +59,15 @@ void set_past_kev_value(ov::CompiledModel& source_compiled_model, ov::InferReque
             std::regex_replace(dec_output_name, std::regex("present"), "past_key_values");
 
         auto kv_tensor = source.get_tensor(dec_output_name);
-        ov::Tensor kv_tensor_copy{kv_tensor};
-        dest.set_tensor(with_past_input_name, kv_tensor_copy);
+        dest.set_tensor(with_past_input_name, ov::Tensor{kv_tensor});
     }
 }
 
-int64_t decode(ov::Tensor& encoded,
+int64_t decode(ov::Tensor& encoder_hidden_state,
                ov::InferRequest& decoder,
                std::vector<int64_t> input_ids,
                const ov::genai::WhisperGenerationConfig& config) {
-    ov::Tensor encoder_hidden_states{encoded};
-    decoder.set_tensor("encoder_hidden_states", encoder_hidden_states);
+    decoder.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
 
     ov::Tensor input_ids_tensor(ov::element::i64, {1, input_ids.size()}, input_ids.data());
     decoder.set_tensor("input_ids", input_ids_tensor);
@@ -95,25 +78,23 @@ int64_t decode(ov::Tensor& encoded,
 
     supress_tokens(output_tensor, config.begin_suppress_tokens);
 
-    int output_token = get_new_token<float>(output_tensor.data<float>(), output_tensor.get_shape());
+    int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
 
     return output_token;
 }
 
-int64_t decode_with_past(ov::Tensor& encoded,
+int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
                          ov::InferRequest& decoder_with_past,
                          ov::CompiledModel& decoder_with_past_compiled,
                          int64_t input_id,
                          size_t cache_position,
                          const ov::genai::WhisperGenerationConfig& config) {
-    ov::Tensor encoder_hidden_states{encoded};
-    decoder_with_past.set_tensor("encoder_hidden_states", encoder_hidden_states);
+    decoder_with_past.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
 
     std::vector<int64_t> input_ids = {input_id};
     ov::Tensor input_ids_tensor(ov::element::i64, {1, 1}, input_ids.data());
     decoder_with_past.set_tensor("input_ids", input_ids_tensor);
 
-    // todo: no cache_position input, investigate
     ov::Tensor cache_position_tensor = decoder_with_past.get_tensor("cache_position");
     cache_position_tensor.set_shape({1});
     cache_position_tensor.data<int64_t>()[0] = cache_position;
@@ -124,14 +105,14 @@ int64_t decode_with_past(ov::Tensor& encoded,
 
     supress_tokens(output_tensor, config.suppress_tokens);
 
-    int output_token = get_new_token<float>(output_tensor.data<float>(), output_tensor.get_shape());
+    int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
 
     set_past_kev_value(decoder_with_past_compiled, decoder_with_past, decoder_with_past);
 
     return output_token;
 }
 
-std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoded,
+std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_state,
                                                   const ov::genai::WhisperGenerationConfig& config,
                                                   ov::genai::WhisperInitializedModels& models,
                                                   size_t max_new_tokens,
@@ -141,7 +122,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoded,
                                       config.transcribe_token_id,
                                       config.no_timestamps_token_id};
 
-    int64_t output_token = decode(encoded, models.decoder, input_ids, config);
+    int64_t output_token = decode(encoder_hidden_state, models.decoder, input_ids, config);
 
     std::vector<int64_t> output_tokens{output_token};
 
@@ -156,7 +137,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoded,
     set_past_kev_value(models.decoder_compiled, models.decoder, models.decoder_with_past);
 
     for (size_t i = 0; i < max_new_tokens - 1; i++) {
-        auto output_token = decode_with_past(encoded,
+        auto output_token = decode_with_past(encoder_hidden_state,
                                              models.decoder_with_past,
                                              models.decoder_with_past_compiled,
                                              output_tokens.back(),
@@ -195,8 +176,8 @@ std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& 
         if (output_tokens.size() >= max_new_tokens) {
             break;
         }
+
         // Split audio data into fixed 30 seconds x 30 seconds window.
-        // todo: Possible root cause is encoder input shape, its fixed currently
         int copy_size = std::min((int)(pcmf32.size() - i), (int)AUDIO_CHUNK_SIZE);
         std::vector<float> pcmf32_sub_chunk(pcmf32.begin() + i, pcmf32.begin() + i + copy_size);
 
@@ -213,7 +194,7 @@ std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& 
 
         ov::Tensor hidden_state_tensor = encode(models.encoder, mel_data);
 
-        bool cancelled = false;
+        bool cancelled;
         std::vector<int64_t> chunk_output_tokens;
         std::tie(cancelled, chunk_output_tokens) =
             full_decode(hidden_state_tensor, config, models, max_new_tokens - output_tokens.size(), streamer);

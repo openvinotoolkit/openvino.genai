@@ -80,9 +80,6 @@ void WhisperGenerationConfig::validate() const {
     OPENVINO_ASSERT(max_new_tokens != SIZE_MAX || max_length > 0,
                     "'max_length' must be greater than 0 or 'max_new_tokens' should be defined");
 
-    OPENVINO_ASSERT(!ignore_eos || max_new_tokens != SIZE_MAX || max_length != SIZE_MAX,
-                    "ignore_eos == true, in this case either 'max_new_tokens', or 'max_length' should be defined.");
-
     OPENVINO_ASSERT(eos_token_id != -1 || max_new_tokens != SIZE_MAX || max_length != SIZE_MAX,
                     "Either 'eos_token_id', or 'max_new_tokens', or 'max_length' should be defined.");
 }
