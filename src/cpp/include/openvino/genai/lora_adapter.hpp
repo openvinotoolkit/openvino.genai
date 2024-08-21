@@ -6,6 +6,7 @@
 #include <limits>
 #include <variant>
 #include <string>
+#include <optional>
 
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/infer_request.hpp"
@@ -26,10 +27,12 @@ class OPENVINO_GENAI_EXPORTS Adapter {
     friend AdapterController;
     friend AdapterControllerImpl;
     friend bool operator== (const Adapter& a, const Adapter& b);
+    friend bool operator< (const Adapter& a, const Adapter& b);
 public:
     explicit Adapter(const std::string& path, float default_alpha);
     explicit Adapter(const std::string& path);
     Adapter() = default;
+    std::optional<float> get_default_alpha() const;
 
     operator bool() const {
         return bool(m_pimpl);
@@ -42,24 +45,22 @@ bool OPENVINO_GENAI_EXPORTS operator== (const Adapter& a, const Adapter& b);
 
 struct OPENVINO_GENAI_EXPORTS AdaptersConfig {
 public:
-    bool is_dynamic = false;    // false -- parameters cannot be changed during inference, this config should match for every generation
+    bool is_dynamic = true;    // false -- parameters cannot be changed during inference, this config should match for every generation
     std::vector<Adapter> adapters;
     std::vector<float> alphas;
     std::set<std::string> modules;  // additional modules that can be patched, from LoRA config "target_modules": ["q_proj", "v_proj"] etc.
     ov::element::Type adapter_element_type = ov::element::dynamic; // optional element type for adapter tensors in case if multiple adapters have various types or they are not known in advance
 
-    AdaptersConfig (const std::vector<Adapter>& adapters = {}, bool is_dynamic = false) : is_dynamic(is_dynamic), adapters(adapters) {}
-    AdaptersConfig (const Adapter& adapter, bool is_dynamic = false);
-
-    AdaptersConfig (const Adapter& adapter, bool alpha, bool is_dynamic = false) : is_dynamic(is_dynamic) {
-        add(adapter, alpha);
-    }
+    AdaptersConfig (const std::vector<Adapter>& adapters, bool is_dynamic = true);// : is_dynamic(is_dynamic), adapters(adapters) {}
+    AdaptersConfig (const std::vector<std::pair<Adapter, float>>& adapters, bool is_dynamic = true);// : is_dynamic(is_dynamic), adapters(adapters) {}
+    AdaptersConfig (const Adapter& adapter, float alpha, bool is_dynamic = true);
+    AdaptersConfig() = default;
 
     AdaptersConfig& add(const Adapter& adapter, float alpha);
     AdaptersConfig& add(const Adapter& adapter);
-    AdaptersConfig& set(const Adapter& adapter, float alpha);
-    AdaptersConfig& set(const Adapter& adapter);
-    AdaptersConfig& remove(const Adapter);
+    AdaptersConfig& set_alpha(const Adapter& adapter, float alpha);
+    float get_alpha(const Adapter& adapter) const;
+    AdaptersConfig& remove(const Adapter&);
 
     // Returns true if it is not a trivial config
     operator bool() const {

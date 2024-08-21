@@ -607,6 +607,10 @@ public:
         default_alpha(default_alpha) {
     }
 
+    std::optional<float> get_default_alpha () const {
+        return default_alpha;
+    }
+
     LoRATensors tensors;
     std::optional<float> default_alpha;
 };
@@ -617,6 +621,10 @@ Adapter::Adapter(const std::string& path, float default_alpha) :
 
 Adapter::Adapter(const std::string& path) :
     m_pimpl(std::make_shared<Adapter::Impl>(path)) {
+}
+
+std::optional<float> Adapter::get_default_alpha() const {
+    return m_pimpl->get_default_alpha();
 }
 
 
@@ -632,10 +640,15 @@ bool operator== (const Adapter& a, const Adapter& b) {
     return a.m_pimpl == b.m_pimpl;
 }
 
+bool operator< (const Adapter& a, const Adapter& b) {
+    return a.m_pimpl < b.m_pimpl;
+}
+
 struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
     std::vector<LoRAVarIDs> variable_ids;
     const std::string prefix;
     AdaptersConfig current_config;
+    bool need_full_apply = true;
 
     AdapterControllerImplSeparateState(std::shared_ptr<ov::Model> model, const AdaptersConfig& config, const std::string& prefix) :
         prefix(prefix),
@@ -666,14 +679,68 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         ov::pass::Manager pm;
         pm.register_pass<LoRASeparateTransform>(state_getter);
         pm.run_passes(model);
-        ov::serialize(model, "after_lora.xml");
+        model->validate_nodes_and_infer_types();    // FIXME: For debugging purposes only
+        //ov::serialize(model, "after_lora.xml");
         // auto variables = model->get_variables();
         // for(size_t i = 0; i < variables.size(); ++i) {
         //     DEBUG_PRINT("Variable: " << variables[i]->get_info().variable_id);
         // }
     }
 
+    struct ConfigChanged {
+        bool is_dynamic = false;
+        bool alpha = false;
+        bool adapter = false;
+
+        operator bool() const {
+            return is_dynamic || alpha || adapter;
+        }
+    };
+
+    ConfigChanged compare_configs(const AdaptersConfig& config1, const AdaptersConfig& config2) {
+        ConfigChanged diff;
+        diff.is_dynamic = config1.is_dynamic != config2.is_dynamic;
+        std::set<Adapter>
+            adapters1(config1.adapters.begin(), config1.adapters.end()),
+            adapters2(config2.adapters.begin(), config2.adapters.end());
+        
+        if(adapters1 != adapters2) {
+            diff.adapter = true;
+            diff.alpha = true;
+        } else {
+            OPENVINO_ASSERT(config1.adapters.size() == config2.adapters.size());
+            OPENVINO_ASSERT(config1.alphas.size() == config2.alphas.size());
+            OPENVINO_ASSERT(config1.adapters.size() == config1.alphas.size());
+            for(size_t i = 0; i < config1.adapters.size() && !diff.alpha; ++i) {
+                const auto& adapter = config1.adapters[i];
+                diff.alpha = config1.get_alpha(adapter) != config2.get_alpha(adapter);
+            }
+        }
+        return diff;
+    }
+
     void apply (ov::InferRequest& infer_request, const AdaptersConfig& config) override {
+        if(need_full_apply) {
+            need_full_apply = false;
+            set_new_adapter_tensors(infer_request, config);
+        }
+        if(const auto diff = compare_configs(current_config, config)) {
+            OPENVINO_ASSERT(!diff.is_dynamic, "AdapterConfig::is_dynamic cannot be changed and should be configured once for a model at the initialization");
+            if(diff.adapter) {
+                set_new_adapter_tensors(infer_request, config);
+            } else {
+                OPENVINO_ASSERT(diff.alpha);
+                set_new_adapter_alphas(infer_request, config);
+            }
+        }
+    }
+
+    void set_new_adapter_alphas (ov::InferRequest& infer_request, const AdaptersConfig& config) {
+        // FIXME
+        set_new_adapter_tensors(infer_request, config);
+    }
+
+    void set_new_adapter_tensors (ov::InferRequest& infer_request, const AdaptersConfig& config) {
         current_config = config;       // FIXME: Compare current_config and passed config, verify that they are compatible and make incremental changes
         // FIXME: Temporary limitation for one lora adapter, run in a loop to adapt for multiple LoRAs
         OPENVINO_ASSERT(config.adapters.size() == 1);
@@ -790,18 +857,57 @@ void AdapterController::apply(ov::InferRequest& request){
     return m_pimpl->apply(request);
 }
 
-AdaptersConfig& AdaptersConfig::set(const Adapter& adapter, float alpha) {
-    auto it = std::find(adapters.begin(), adapters.end(), adapter);
-    if(it == adapters.end()) {
-        adapters.push_back(adapter);
-        // FIXME: Temporary limitation
-        OPENVINO_ASSERT(adapters.size() - 1 == alphas.size());
-        alphas.push_back(alpha);
-    } else {
-        size_t index = it - adapters.begin();
-        OPENVINO_ASSERT(adapters.size() == alphas.size());
-        alphas[index] = alpha;
+AdaptersConfig::AdaptersConfig (const std::vector<Adapter>& adapters, bool is_dynamic) : is_dynamic(is_dynamic), adapters(adapters) {
+    alphas.reserve(adapters.size());
+    for(const auto& adapter: adapters) {
+        alphas.push_back(adapter.get_default_alpha().value_or(1));
     }
+}
+
+AdaptersConfig::AdaptersConfig (const std::vector<std::pair<Adapter, float>>& _adapters, bool is_dynamic) : is_dynamic(is_dynamic) {
+    adapters.reserve(_adapters.size());
+    alphas.reserve(_adapters.size());
+    for(auto const& adapter_and_alpha: _adapters) {
+        adapters.push_back(adapter_and_alpha.first);
+        alphas.push_back(adapter_and_alpha.second);
+    }
+}
+
+AdaptersConfig::AdaptersConfig (const Adapter& adapter, float alpha, bool is_dynamic) : AdaptersConfig({{adapter, alpha}}, is_dynamic) {}
+
+AdaptersConfig& AdaptersConfig::add(const Adapter& adapter, float alpha) {
+    OPENVINO_ASSERT(adapters.size() == alphas.size());
+    OPENVINO_ASSERT(adapters.end() != std::find(adapters.begin(), adapters.end(), adapter), "Adapter object passed to AdaptersConfig::add was already registered");
+    adapters.push_back(adapter);
+    alphas.push_back(alpha);
+    return *this;
+}
+
+AdaptersConfig& AdaptersConfig::add(const Adapter& adapter) {
+    return add(adapter, adapter.get_default_alpha().value_or(1));
+}
+
+AdaptersConfig& AdaptersConfig::set_alpha(const Adapter& adapter, float alpha) {
+    OPENVINO_ASSERT(adapters.size() == alphas.size());
+    auto it = std::find(adapters.begin(), adapters.end(), adapter);
+    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdaptersConfig::set_alpha, register adapter object first with AdaptersConfig::add");
+    alphas[it - adapters.begin()] = alpha;
+    return *this;
+}
+
+float AdaptersConfig::get_alpha(const Adapter& adapter) const {
+    OPENVINO_ASSERT(adapters.size() == alphas.size());
+    auto it = std::find(adapters.begin(), adapters.end(), adapter);
+    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdaptersConfig::get_alpha, alpha can be retrieved for previously registered adatpers only");  
+    return alphas[it - adapters.begin()];
+}
+
+AdaptersConfig& AdaptersConfig::remove(const Adapter& adapter) {
+    OPENVINO_ASSERT(adapters.size() == alphas.size());
+    auto it = std::find(adapters.begin(), adapters.end(), adapter);
+    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdaptersConfig::remove, you can remove previously registered adapters only");
+    alphas.erase(alphas.begin() + (it - adapters.begin()));
+    adapters.erase(it);
     return *this;
 }
 
