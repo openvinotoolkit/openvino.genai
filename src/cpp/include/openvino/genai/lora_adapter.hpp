@@ -30,7 +30,7 @@ public:
     explicit Adapter(const std::string& path, float default_alpha);
     explicit Adapter(const std::string& path);
     Adapter() = default;
-    
+
     operator bool() const {
         return bool(m_pimpl);
     }
@@ -49,9 +49,14 @@ public:
     ov::element::Type adapter_element_type = ov::element::dynamic; // optional element type for adapter tensors in case if multiple adapters have various types or they are not known in advance
 
     AdaptersConfig (const std::vector<Adapter>& adapters = {}, bool is_dynamic = false) : is_dynamic(is_dynamic), adapters(adapters) {}
-    AdaptersConfig (const Adapter& adapter, bool is_dynamic = false) : is_dynamic(is_dynamic), adapters({adapter}) {}
-    // AdaptersConfig& add(const Adapter& adapter);
-    // AdaptersConfig& add(const Adapter& adapter, float alpha);
+    AdaptersConfig (const Adapter& adapter, bool is_dynamic = false);
+
+    AdaptersConfig (const Adapter& adapter, bool alpha, bool is_dynamic = false) : is_dynamic(is_dynamic) {
+        add(adapter, alpha);
+    }
+
+    AdaptersConfig& add(const Adapter& adapter, float alpha);
+    AdaptersConfig& add(const Adapter& adapter);
     AdaptersConfig& set(const Adapter& adapter, float alpha);
     AdaptersConfig& set(const Adapter& adapter);
     AdaptersConfig& remove(const Adapter);
@@ -75,7 +80,7 @@ public:
 
     // Call it every time when adapter config is changed; if adapter was configured as a static one, this call is not required
     void apply(ov::InferRequest& request, const AdaptersConfig& config);
-    
+
     // Apply the same config that was used last time (in initialization or in previous call to apply).
     void apply(ov::InferRequest& request);
 
