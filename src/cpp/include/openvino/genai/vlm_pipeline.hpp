@@ -78,7 +78,7 @@ static double get_duration_ms_until_now(Time::time_point& startTime) {
     return std::chrono::duration_cast<ns>(Time::now() - startTime).count() * 0.000001;
 }
 
-ov::Tensor get_image_embedding(const std::pair<std::vector<std::vector<ov::Tensor>>, size_t>& slices, ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, ov::InferRequest& resampler) {
+ov::Tensor get_image_embedding(const std::pair<std::vector<std::vector<ov::Tensor>>, std::pair<size_t, size_t>>& slices, ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, ov::InferRequest& resampler) {
     auto [image_embed_slices, ratio] = slices;
     std::string user_prompt;
     size_t embedding_dim;
@@ -166,8 +166,8 @@ ov::Tensor get_image_embedding(const std::pair<std::vector<std::vector<ov::Tenso
     //Resampler inference with OpenVINO
     resampler.set_tensor("x", vision_output_tensor);
     resampler.get_tensor("tgt_size").set_shape({ 1, 1 });
-    resampler.get_tensor("tgt_size").data<int64_t>()[0] = ratio;
-    resampler.get_tensor("tgt_size").data<int64_t>()[1] = ratio;
+    resampler.get_tensor("tgt_size").data<int64_t>()[0] = ratio.second;
+    resampler.get_tensor("tgt_size").data<int64_t>()[1] = ratio.first;
 
     resampler.infer();
     const ov::Tensor& vision_embded_tensor = resampler.get_output_tensor();
@@ -195,9 +195,8 @@ ov::Tensor get_image_embedding(const std::pair<std::vector<std::vector<ov::Tenso
                 //Resampler inference with OpenVINO
                 resampler.set_tensor("x", vision_output_tensor);
                 resampler.get_tensor("tgt_size").set_shape({ 1, 1 });
-                resampler.get_tensor("tgt_size").data<int64_t>()[0] = ratio;
-                resampler.get_tensor("tgt_size").data<int64_t>()[1] = ratio;
-
+                resampler.get_tensor("tgt_size").data<int64_t>()[0] = ratio.second;
+                resampler.get_tensor("tgt_size").data<int64_t>()[1] = ratio.first;
                 resampler.infer();
                 const ov::Tensor& vision_embded_tensor_i_j = resampler.get_output_tensor();
                 // fill image_embed_slices[i][j]
@@ -251,6 +250,7 @@ class VisionEncoder {
 public:
     struct Config {
         size_t scale_resolution = 448, max_slice_nums = 9, patch_size = 14;
+        bool never_split = false;
     };
     ov::InferRequest encoder;
     VisionEncoder(const ov::InferRequest& encoder) : encoder{encoder} {}
@@ -259,14 +259,14 @@ public:
             // CPU only because of 146022.
             model_dir / "openvino_vision.xml", "CPU", device_config
         ).create_infer_request()} {}
-    std::pair<std::vector<std::vector<ov::Tensor>>, size_t> encode(const ov::Tensor image, const Config& config=Config{448, 9, 14}) {
+    std::pair<std::vector<std::vector<ov::Tensor>>, std::pair<size_t, size_t>> encode(const ov::Tensor image, const Config& config=Config{448, 9, 14, false}) {
         clip_ctx ctx_clip;
         for (int i = 0; i < 3; ++i) {
             ctx_clip.image_mean[i] = 0.5;
             ctx_clip.image_std[i] = 0.5;
         }
         ctx_clip.ireq_vision = encoder;
-        return llava_image_embed_make_with_bytes_slice(&ctx_clip, image);
+        return llava_image_embed_make_with_bytes_slice(&ctx_clip, image, config.max_slice_nums, config.scale_resolution, config.patch_size, config.never_split);
     }
 };
 
@@ -330,7 +330,7 @@ public:
 
     void generate(const PromptImage& pi, const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr) {
         if (pi.image) {
-            std::pair<std::vector<std::vector<ov::Tensor>>, size_t> embeds = vision_encoder.encode(pi.image);
+            std::pair<std::vector<std::vector<ov::Tensor>>, std::pair<size_t, size_t>> embeds = vision_encoder.encode(pi.image);
             ov::Tensor imgEmbedTensor = get_image_embedding(embeds, this->tokenizer, this->ireq_embed, this->resampler);
 
             ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
