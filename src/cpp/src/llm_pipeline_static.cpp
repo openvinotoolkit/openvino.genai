@@ -140,7 +140,8 @@ ov::AnyMap extract_config_or_default(const ov::AnyMap& config, const std::string
             { "NPUW_DCOFF_SCALE", "YES" },
             { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
             { "NPUW_PARALLEL_COMPILE", "YES" },
-            { "NPUW_FUNCALL_ASYNC", "YES" }
+            { "NPUW_FUNCALL_ASYNC", "YES" },
+            { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
         };
         stage_cfg.insert(generate_config.begin(), generate_config.end());
     }
@@ -331,7 +332,7 @@ EncodedResults StaticLLMPipeline::generate(
 
     auto padded_position_ids = m_prefill_request.get_tensor("position_ids");
     auto* padded_pos_data = padded_position_ids.data<int64_t>();
-    std::iota(padded_pos_data + (m_kvcache_desc.total_size - prompt_len + 1), padded_pos_data + padded_position_ids.get_size(), 0u);
+    std::iota(padded_pos_data + offset, padded_pos_data + padded_position_ids.get_size(), 0u);
 
     m_prefill_request.infer();
 
