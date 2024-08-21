@@ -11,6 +11,23 @@
 #include "utils.hpp"
 #include "whisper/whisper_models.hpp"
 
+// llm_pipeline.cpp headers, debug win fail
+// todo: remove
+#include <filesystem>
+#include <fstream>
+#include <variant>
+#include <algorithm>
+#include <nlohmann/json.hpp>
+#include <openvino/openvino.hpp>
+#include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/perf_metrics.hpp"
+#include "llm_pipeline_base.hpp"
+#include "llm_pipeline_static.hpp"
+#include "utils.hpp"
+#include "text_callback_streamer.hpp"
+
 namespace {
 ov::genai::WhisperGenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path) {
     auto config_file_path = model_path / "generation_config.json";

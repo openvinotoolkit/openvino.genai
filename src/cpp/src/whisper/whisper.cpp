@@ -171,14 +171,14 @@ std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& 
     size_t max_new_tokens = config.get_max_new_tokens();
 
     // on small chunk sizes (eg 1s) the results are starting to diverge from HF
-    for (int i = 0; i < pcmf32.size(); i += AUDIO_CHUNK_SIZE) {
+    for (size_t chunk_offset = 0; chunk_offset < pcmf32.size(); chunk_offset += AUDIO_CHUNK_SIZE) {
         if (output_tokens.size() >= max_new_tokens) {
             break;
         }
 
         // Split audio data into fixed 30 seconds x 30 seconds window.
-        int copy_size = std::min((int)(pcmf32.size() - i), (int)AUDIO_CHUNK_SIZE);
-        std::vector<float> pcmf32_sub_chunk(pcmf32.begin() + i, pcmf32.begin() + i + copy_size);
+        size_t copy_size = std::min((pcmf32.size() - chunk_offset), size_t(AUDIO_CHUNK_SIZE));
+        std::vector<float> pcmf32_sub_chunk(pcmf32.begin() + chunk_offset, pcmf32.begin() + chunk_offset + copy_size);
 
         auto mel_data = ov::genai::utils::audio::mel_spectrogram_convert_audio(
             pcmf32_sub_chunk,
