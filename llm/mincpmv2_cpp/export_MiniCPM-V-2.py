@@ -1,8 +1,8 @@
 import argparse
 from pathlib import Path
 
+import types
 import torch
-from PIL import Image
 from transformers import AutoModel, AutoTokenizer, AutoConfig, AutoModelForCausalLM
 import openvino as ov
 from openvino_tokenizers import convert_tokenizer
@@ -247,6 +247,107 @@ class InsertSlice(MatcherPass):
 
         self.register_matcher(Matcher(param,"InsertSlice"), callback)
 
+
+def get_1d_sincos_pos_embed_from_grid_new(embed_dim, pos):
+    """
+    embed_dim: output dimension for each position
+    pos: a list of positions to be encoded: size (H, W)
+    out: (H, W, D)
+    """
+    assert embed_dim % 2 == 0
+    omega = np.arange(embed_dim // 2, dtype=np.float32)
+    omega /= embed_dim / 2.0
+    omega = 1.0 / 10000**omega  # (D/2,)
+
+    out = np.einsum("hw,d->hwd", pos, omega)  # (H, W, D/2), outer product
+
+    emb_sin = np.sin(out)  # (H, W, D/2)
+    emb_cos = np.cos(out)  # (H, W, D/2)
+
+    emb = np.concatenate([emb_sin, emb_cos], axis=-1)  # (H, W, D)
+    return emb
+
+
+def cleanup_torchscript_cache():
+    """
+    Helper for removing cached model representation
+    """
+    torch._C._jit_clear_class_registry()
+    torch.jit._recursive.concrete_type_store = torch.jit._recursive.ConcreteTypeStore()
+    torch.jit._state._clear_class_state()
+
+def get_2d_sincos_pos_embed_from_grid(embed_dim, grid):
+    assert embed_dim % 2 == 0
+
+    # use half of dimensions to encode grid_h
+    emb_h = get_1d_sincos_pos_embed_from_grid_new(embed_dim // 2, grid[0])  # (H, W, D/2)
+    emb_w = get_1d_sincos_pos_embed_from_grid_new(embed_dim // 2, grid[1])  # (H, W, D/2)
+
+    emb = np.concatenate([emb_h, emb_w], axis=-1)  # (H, W, D)
+    return emb
+
+
+def get_2d_sincos_pos_embed(embed_dim, image_size):
+    """
+    image_size: image_size or (image_height, image_width)
+    return:
+    pos_embed: [image_height, image_width, embed_dim]
+    """
+    if isinstance(image_size, int):
+        grid_h_size, grid_w_size = image_size, image_size
+    else:
+        grid_h_size, grid_w_size = image_size[0], image_size[1]
+
+    grid_h = np.arange(grid_h_size, dtype=np.float32)
+    grid_w = np.arange(grid_w_size, dtype=np.float32)
+    grid = np.meshgrid(grid_w, grid_h)  # here w goes first
+    grid = np.stack(grid, axis=0)
+
+    pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)
+    return pos_embed
+
+
+def convert_vision_encoder(model, model_dir):
+    resampler_path = Path("openvino_resampler.xml")
+    tgt_sizes = torch.tensor([[23, 45]])
+    if True or not (model_dir / resampler_path).exists():
+        def resampler_forward(self, x, pos_embed, key_padding_mask):
+            bs = x.shape[0]
+            x = self.kv_proj(x)  # B * L * D
+            x = self.ln_kv(x).permute(1, 0, 2)  # L * B * D
+
+            q = self.ln_q(self.query)  # Q * D
+
+            out = self.attn(self._repeat(q, bs), x + pos_embed, x, key_padding_mask=key_padding_mask)[0]  # Q * B * D  # L * B * D +  L * B * D
+            #  out: Q * B * D
+            x = out.permute(1, 0, 2)  # B * Q * D
+
+            x = self.ln_post(x)
+            x = x @ self.proj
+            return x
+
+        model.resampler.forward = types.MethodType(resampler_forward, model.resampler)
+
+        pos_embed_base = get_2d_sincos_pos_embed(model.resampler.embed_dim, 70)
+
+        patch_len = tgt_sizes[:, 0] * tgt_sizes[:, 1]
+
+        max_patch_len = torch.max(patch_len)
+        key_padding_mask = torch.zeros((1, max_patch_len), dtype=torch.bool)
+
+        pos_embed = []
+        tgt_h, tgt_w = tgt_sizes[0]
+        pos_embed = torch.from_numpy(pos_embed_base[:tgt_h, :tgt_w, :].reshape((tgt_h * tgt_w, 1, -1)))  # patches * D
+        key_padding_mask[0, patch_len:] = True
+        breakpoint()
+
+        ov_model = ov.convert_model(model.resampler, example_input=[torch.randn(1, 1035, 1152), pos_embed, key_padding_mask])
+        ov.save_model(ov_model, model_dir / resampler_path)
+        del ov_model
+        cleanup_torchscript_cache()
+        print("✅ Resampler model successfully converted")
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Export minicpm-v2 Model to IR", add_help=True)
     parser.add_argument("-m", "--model_id", required=True, help="model_id or directory for loading")
@@ -282,15 +383,17 @@ if __name__ == '__main__':
         ov_vision_model = ov.convert_model(vision_model, example_input=image_pixel)
         ov.save_model(ov_vision_model, str(VISION_MODEL_OV), compress_to_fp16=True)
 
-    # convert resampler model to openvino IR
-    if not RESAMPLER_MODEL_OV.exists():
-       resampler_model = model.resampler
-       resampler_model.eval()
-       vision_embedding = torch.randn(1, 1024, 1152, dtype=torch.float32)
-       tgt_size = torch.tensor([[32], [32]])
-       inputs = (vision_embedding, tgt_size)
-       ov_resampler = ov.convert_model(resampler_model, example_input=inputs)
-       ov.save_model(ov_resampler, str(RESAMPLER_MODEL_OV), compress_to_fp16=True)
+    convert_vision_encoder(model, model_path)
+
+    # # convert resampler model to openvino IR
+    # if not RESAMPLER_MODEL_OV.exists():
+    #    resampler_model = model.resampler
+    #    resampler_model.eval()
+    #    vision_embedding = torch.randn(1, 1024, 1152, dtype=torch.float32)
+    #    tgt_size = torch.tensor([[32], [32]])
+    #    inputs = (vision_embedding, tgt_size)
+    #    ov_resampler = ov.convert_model(resampler_model, example_input=inputs)
+    #    ov.save_model(ov_resampler, str(RESAMPLER_MODEL_OV), compress_to_fp16=True)
 
     if not TOKENIZER_MODEL_OV.exists():
         ov_tokenizer, ov_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, handle_special_tokens_with_re=True)

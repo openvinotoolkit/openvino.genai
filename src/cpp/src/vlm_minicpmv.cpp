@@ -164,10 +164,10 @@ ov::Tensor encode_image_with_clip(clip_ctx* ctx_clip, const clip_image_u8* img) 
 
 std::pair<std::vector<std::vector<ov::Tensor>>, std::pair<size_t, size_t>> llava_image_embed_make_with_bytes_slice(struct clip_ctx* ctx_clip, const ov::Tensor& img, int max_slice_nums, int scale_resolution, int patch_size, bool never_split) {
     clip_image_u8 source{int(img.get_shape()[2]), int(img.get_shape()[1]), {img.data<uint8_t>(), img.data<uint8_t>() + img.get_size()}};
-    clip_image_u8 resized;
-    bicubic_resize(source, resized, 800, 800);
+    // clip_image_u8 resized;
+    // bicubic_resize(source, resized, 800, 800);
 
-    std::vector<std::vector<clip_image_u8*>> imgs = slice_image(&resized, max_slice_nums, scale_resolution, patch_size, never_split);
+    std::vector<std::vector<clip_image_u8*>> imgs = slice_image(&source, max_slice_nums, scale_resolution, patch_size, never_split);
     std::vector<std::vector<ov::Tensor>> results;
 
     for (size_t i = 0; i < imgs.size(); ++i) {

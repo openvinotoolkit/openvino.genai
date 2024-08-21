@@ -249,8 +249,11 @@ ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& emb
 class VisionEncoder {
 public:
     struct Config {
-        size_t scale_resolution = 448, max_slice_nums = 9, patch_size = 14;
-        bool never_split = false;
+        size_t scale_resolution, max_slice_nums, patch_size;
+        bool never_split;
+        // The constructor works around gcc and clang bug of default initialization of a nested struct.
+        Config(size_t scale_resolution=448, size_t max_slice_nums=9, size_t patch_size=14, bool never_split=false) :
+            scale_resolution{scale_resolution}, max_slice_nums{max_slice_nums}, patch_size{patch_size}, never_split{never_split} {}
     };
     ov::InferRequest encoder;
     VisionEncoder(const ov::InferRequest& encoder) : encoder{encoder} {}
@@ -259,7 +262,7 @@ public:
             // CPU only because of 146022.
             model_dir / "openvino_vision.xml", "CPU", device_config
         ).create_infer_request()} {}
-    std::pair<std::vector<std::vector<ov::Tensor>>, std::pair<size_t, size_t>> encode(const ov::Tensor image, const Config& config=Config{448, 9, 14, false}) {
+    std::pair<std::vector<std::vector<ov::Tensor>>, std::pair<size_t, size_t>> encode(const ov::Tensor image, const Config& config=Config{}) {
         clip_ctx ctx_clip;
         for (int i = 0; i < 3; ++i) {
             ctx_clip.image_mean[i] = 0.5;
@@ -322,7 +325,9 @@ public:
             core.compile_model(
                 model_dir / "openvino_model.xml", device, device_config
             ).create_infer_request()
-        } {}
+        } {
+            std::cout << core.read_model(model_dir / "openvino_resampler.xml") << '\n';
+        }
 
     void generate(const PromptImage& pi, const std::function<bool(std::string&&)>& callback) {
         generate(pi, std::make_unique<ov::genai::TextCallbackStreamer>(tokenizer, callback));
