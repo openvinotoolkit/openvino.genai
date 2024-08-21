@@ -9,6 +9,11 @@
 #define DR_WAV_IMPLEMENTATION
 #include "openvino/genai/dr_wav.h"
 
+#ifdef _WIN32
+#    include <fcntl.h>
+#    include <io.h>
+#endif
+
 namespace {
 bool is_wav_buffer(const std::string buf) {
     // RIFF ref: https://en.wikipedia.org/wiki/Resource_Interchange_File_Format
