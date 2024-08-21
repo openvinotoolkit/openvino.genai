@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-
+import json
 from enum import Enum
 import logging as log
 from pathlib import Path
@@ -15,7 +15,7 @@ from openvino import save_model
 import nncf
 from ..nncf_utils import COMPRESSION_OPTIONS
 from optimum.gptq.data import get_dataset, prepare_dataset
-from optimum.intel.openvino.configuration import get_default_int4_config, OVQuantizationMethod
+from optimum.intel.openvino.configuration import _check_default_4bit_configs, OVQuantizationMethod, _DEFAULT_4BIT_CONFIG
 import warnings
 
 
@@ -166,7 +166,17 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
     if "INT8" in compress_weights_format and "INT8_ASYM" in COMPRESSION_OPTIONS:
         warnings.warn("Usage INT8 mode is deprecated and will be removed soon. Please use INT8_ASYM instead", DeprecationWarning)
     if "4BIT_DEFAULT" in compress_weights_format:
-        compression_args = get_default_int4_config(config.name_or_path)
+        compression_args = _check_default_4bit_configs(config.name_or_path)
+        if compression_args is None:
+            config_path = Path(config.name_or_path) / "config.json"
+            if config_path.exists():
+                with config_path.open("r") as f:
+                    json_config = json.load(f)
+                name_or_path = json_config.get("_name_or_path", None)
+                if name_or_path is not None:
+                    # Do additional check in case the input model is a full precision IR exported from PT model by path
+                    compression_args = _check_default_4bit_configs(name_or_path)
+        compression_args = compression_args or _DEFAULT_4BIT_CONFIG
         compression_args.pop("bits")
 
         sym = compression_args.pop("sym", False)
