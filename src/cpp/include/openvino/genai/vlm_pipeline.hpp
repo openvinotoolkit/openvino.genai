@@ -254,12 +254,12 @@ public:
     };
     ov::InferRequest encoder;
     VisionEncoder(const ov::InferRequest& encoder) : encoder{encoder} {}
-    explicit VisionEncoder(const std::filesystem::path& model_dir, const std::string& device="CPU", const ov::AnyMap device_config={}, ov::Core core=ov::Core{448, 9, 14}) :
+    explicit VisionEncoder(const std::filesystem::path& model_dir, const std::string& device="CPU", const ov::AnyMap device_config={}, ov::Core core=ov::Core{}) :
         VisionEncoder{core.compile_model(
             // CPU only because of 146022.
             model_dir / "openvino_vision.xml", "CPU", device_config
         ).create_infer_request()} {}
-    std::pair<std::vector<std::vector<ov::Tensor>>, size_t> encode(const ov::Tensor image, const Config& config = Config{}) {
+    std::pair<std::vector<std::vector<ov::Tensor>>, size_t> encode(const ov::Tensor image, const Config& config = Config{448, 9, 14}) {
         clip_ctx ctx_clip;
         for (int i = 0; i < 3; ++i) {
             ctx_clip.image_mean[i] = 0.5;
