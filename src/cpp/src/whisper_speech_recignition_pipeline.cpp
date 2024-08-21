@@ -22,9 +22,10 @@
 namespace ov {
 namespace genai {
 
-std::vector<int64_t> whisper_generate(ov::genai::WhisperGenerationConfig& config,
+std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& config,
                                       std::vector<float> pcmf32,
-                                      ov::genai::WhisperInitializedModels& models);
+                                      ov::genai::WhisperInitializedModels& models,
+                                      const std::shared_ptr<StreamerBase> streamer);
 
 class WhisperSpeechRecognitionPipeline::Impl {
     // todo: move to utils
@@ -95,7 +96,16 @@ public:
         auto start_time = std::chrono::steady_clock::now();
         WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
 
-        auto tokens = ov::genai::whisper_generate(config, inputs, m_models);
+        std::shared_ptr<StreamerBase> streamer_ptr;
+        if (auto streamer_obj = std::get_if<std::monostate>(&streamer)) {
+            streamer_ptr = nullptr;
+        } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
+            streamer_ptr = *streamer_obj;
+        } else if (auto callback = std::get_if<std::function<bool(std::string)>>(&streamer)) {
+            streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
+        }
+
+        auto tokens = ov::genai::whisper_generate(config, inputs, m_models, streamer_ptr);
 
         // if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
         //     encoded_input = m_tokenizer.encode(*input_vector);

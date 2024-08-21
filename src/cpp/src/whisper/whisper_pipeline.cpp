@@ -8,6 +8,7 @@
 
 #include "audio_processing.hpp"
 #include "openvino/genai/audio_utils.hpp"
+#include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "whisper_models.hpp"
 
@@ -81,7 +82,7 @@ void set_past_kev_value(ov::CompiledModel& source_compiled_model, ov::InferReque
 int64_t decode(ov::Tensor& encoded,
                ov::InferRequest& decoder,
                std::vector<int64_t> input_ids,
-               ov::genai::WhisperGenerationConfig& config) {
+               const ov::genai::WhisperGenerationConfig& config) {
     ov::Tensor encoder_hidden_states{encoded};
     decoder.set_tensor("encoder_hidden_states", encoder_hidden_states);
 
@@ -104,7 +105,7 @@ int64_t decode_with_past(ov::Tensor& encoded,
                          ov::CompiledModel& decoder_with_past_compiled,
                          int64_t input_id,
                          size_t cache_position,
-                         ov::genai::WhisperGenerationConfig& config) {
+                         const ov::genai::WhisperGenerationConfig& config) {
     ov::Tensor encoder_hidden_states{encoded};
     decoder_with_past.set_tensor("encoder_hidden_states", encoder_hidden_states);
 
@@ -130,10 +131,11 @@ int64_t decode_with_past(ov::Tensor& encoded,
     return output_token;
 }
 
-std::vector<int64_t> full_decode(ov::Tensor& encoded,
-                                 ov::genai::WhisperGenerationConfig& config,
-                                 ov::genai::WhisperInitializedModels& models,
-                                 size_t max_new_tokens) {
+std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoded,
+                                                  const ov::genai::WhisperGenerationConfig& config,
+                                                  ov::genai::WhisperInitializedModels& models,
+                                                  size_t max_new_tokens,
+                                                  const std::shared_ptr<ov::genai::StreamerBase> streamer) {
     std::vector<int64_t> input_ids = {config.decoder_start_token_id,
                                       config.language_token_id,
                                       config.transcribe_token_id,
@@ -143,8 +145,12 @@ std::vector<int64_t> full_decode(ov::Tensor& encoded,
 
     std::vector<int64_t> output_tokens{output_token};
 
+    if (streamer && streamer->put(output_token)) {
+        return {true, output_tokens};
+    }
+
     if (max_new_tokens == 1) {
-        return output_tokens;
+        return {false, output_tokens};
     }
 
     set_past_kev_value(models.decoder_compiled, models.decoder, models.decoder_with_past);
@@ -160,19 +166,25 @@ std::vector<int64_t> full_decode(ov::Tensor& encoded,
         if (output_token == config.eos_token_id) {
             break;
         }
+
         output_tokens.push_back(output_token);
+
+        if (streamer && streamer->put(output_token)) {
+            return {true, output_tokens};
+        }
     }
 
-    return output_tokens;
+    return {false, output_tokens};
 }
 
 }  // namespace
 
 namespace ov {
 namespace genai {
-std::vector<int64_t> whisper_generate(ov::genai::WhisperGenerationConfig& config,
+std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& config,
                                       std::vector<float> pcmf32,
-                                      ov::genai::WhisperInitializedModels& models) {
+                                      ov::genai::WhisperInitializedModels& models,
+                                      const std::shared_ptr<StreamerBase> streamer) {
     ov::genai::utils::audio::fill_sin_cos_table();
 
     std::vector<int64_t> output_tokens;
@@ -201,10 +213,16 @@ std::vector<int64_t> whisper_generate(ov::genai::WhisperGenerationConfig& config
 
         ov::Tensor hidden_state_tensor = encode(models.encoder, mel_data);
 
-        auto chunk_output_tokens =
-            full_decode(hidden_state_tensor, config, models, max_new_tokens - output_tokens.size());
+        bool cancelled = false;
+        std::vector<int64_t> chunk_output_tokens;
+        std::tie(cancelled, chunk_output_tokens) =
+            full_decode(hidden_state_tensor, config, models, max_new_tokens - output_tokens.size(), streamer);
 
         output_tokens.insert(output_tokens.end(), chunk_output_tokens.begin(), chunk_output_tokens.end());
+
+        if (cancelled) {
+            break;
+        }
     }
 
     return output_tokens;

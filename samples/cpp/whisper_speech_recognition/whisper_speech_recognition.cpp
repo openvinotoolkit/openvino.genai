@@ -16,12 +16,17 @@ int main(int argc, char* argv[]) try {
         throw std::runtime_error("Failed to read WAV file " + std::string{argv[2]});
     }
 
+    auto streamer = [](std::string subword) {
+        std::cout << subword << std::flush;
+        return false;
+    };
+
     ov::genai::WhisperSpeechRecognitionPipeline pipeline{std::string{argv[1]}};
 
     ov::genai::WhisperGenerationConfig config = pipeline.get_generation_config();
     // config.max_new_tokens = 15;
 
-    auto results = pipeline.generate(pcmf32, config);
+    auto results = pipeline.generate(pcmf32, config, streamer);
 
     std::cout << results << std::endl;
 
