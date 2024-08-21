@@ -753,11 +753,6 @@ if __name__ == '__main__':
     question = args.prompt #'描述画面内容' #'What is in the image?'
     msgs = [{'role': 'user', 'content': question}]
 
-    #image resize
-    image_width=800
-    image_height=800
-    image = image.resize((image_width, image_height), Image.Resampling.BILINEAR)
-
     #vision info
     config.patch_size= 14
     config.num_prefix_tokens = 0

@@ -307,10 +307,10 @@ def get_2d_sincos_pos_embed(embed_dim, image_size):
     return pos_embed
 
 
-def convert_vision_encoder(model, model_dir):
-    resampler_path = Path("openvino_resampler.xml")
-    tgt_sizes = torch.tensor([[23, 45]])
-    if True or not (model_dir / resampler_path).exists():
+def convert_resampler(model, model_dir):
+    if not (model_dir / resampler_path).exists():
+        resampler_path = Path("openvino_resampler.xml")
+        tgt_sizes = torch.tensor([[23, 45]])
         def resampler_forward(self, x, pos_embed, key_padding_mask):
             bs = x.shape[0]
             x = self.kv_proj(x)  # B * L * D
@@ -339,7 +339,6 @@ def convert_vision_encoder(model, model_dir):
         tgt_h, tgt_w = tgt_sizes[0]
         pos_embed = torch.from_numpy(pos_embed_base[:tgt_h, :tgt_w, :].reshape((tgt_h * tgt_w, 1, -1)))  # patches * D
         key_padding_mask[0, patch_len:] = True
-        breakpoint()
 
         ov_model = ov.convert_model(model.resampler, example_input=[torch.randn(1, 1035, 1152), pos_embed, key_padding_mask])
         ov.save_model(ov_model, model_dir / resampler_path)
@@ -383,17 +382,7 @@ if __name__ == '__main__':
         ov_vision_model = ov.convert_model(vision_model, example_input=image_pixel)
         ov.save_model(ov_vision_model, str(VISION_MODEL_OV), compress_to_fp16=True)
 
-    convert_vision_encoder(model, model_path)
-
-    # # convert resampler model to openvino IR
-    # if not RESAMPLER_MODEL_OV.exists():
-    #    resampler_model = model.resampler
-    #    resampler_model.eval()
-    #    vision_embedding = torch.randn(1, 1024, 1152, dtype=torch.float32)
-    #    tgt_size = torch.tensor([[32], [32]])
-    #    inputs = (vision_embedding, tgt_size)
-    #    ov_resampler = ov.convert_model(resampler_model, example_input=inputs)
-    #    ov.save_model(ov_resampler, str(RESAMPLER_MODEL_OV), compress_to_fp16=True)
+    convert_resampler(model, model_path)
 
     if not TOKENIZER_MODEL_OV.exists():
         ov_tokenizer, ov_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, handle_special_tokens_with_re=True)
