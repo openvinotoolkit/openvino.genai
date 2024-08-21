@@ -249,7 +249,7 @@ ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& emb
 
 class VisionEncoder {
 public:
-    class Config {
+    struct Config {
         size_t scale_resolution = 448, max_slice_nums = 9, patch_size = 14;
     };
     ov::InferRequest encoder;
@@ -259,7 +259,7 @@ public:
             // CPU only because of 146022.
             model_dir / "openvino_vision.xml", "CPU", device_config
         ).create_infer_request()} {}
-    std::pair<std::vector<std::vector<ov::Tensor>>, size_t> encode(const ov::Tensor image, const Config& config = Config{448, 9, 14}) {
+    std::pair<std::vector<std::vector<ov::Tensor>>, size_t> encode(const ov::Tensor image, const Config& config=Config{}) {
         clip_ctx ctx_clip;
         for (int i = 0; i < 3; ++i) {
             ctx_clip.image_mean[i] = 0.5;
