@@ -254,7 +254,7 @@ public:
     };
     ov::InferRequest encoder;
     VisionEncoder(const ov::InferRequest& encoder) : encoder{encoder} {}
-    explicit VisionEncoder(const std::filesystem::path& model_dir, const std::string& device="CPU", const ov::AnyMap device_config={}, ov::Core core=ov::Core{}) :
+    explicit VisionEncoder(const std::filesystem::path& model_dir, const std::string& device="CPU", const ov::AnyMap device_config={}, ov::Core core=ov::Core{448, 9, 14}) :
         VisionEncoder{core.compile_model(
             // CPU only because of 146022.
             model_dir / "openvino_vision.xml", "CPU", device_config
