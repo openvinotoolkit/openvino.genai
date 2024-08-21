@@ -233,6 +233,25 @@ pipe.generate("The Sun is yellow because", max_new_tokens=15, streamer=custom_st
 ```
 For fully implemented iterable CustomStreamer please refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/samples/python/multinomial_causal_lm/README.md) sample.
 
+
+Continuous batching with LLMPipeline:
+
+To activate continuous batching please provide additional property to LLMPipeline config: ov::genai::scheduler_config. This property contains struct SchedulerConfig.
+```cpp
+#include "openvino/genai/llm_pipeline.hpp"
+
+int main(int argc, char* argv[]) {
+    ov::AnyMap config;
+    ov::genai::SchedulerConfig scheduler_config;
+    {
+    //fill scheduler_config with custom data if required
+    }
+    config[ov::genai::scheduler_config.name()] = scheduler_config;
+
+    ov::genai::LLMPipeline pipe(model_path, "CPU", config);
+}
+```
+
 ### Performance Metrics
 
 `openvino_genai.PerfMetrics` (referred as `PerfMetrics` for simplicity) is a structure that holds performance metrics for each generate call. `PerfMetrics` holds fields with mean and standard deviations for the following metrics:
