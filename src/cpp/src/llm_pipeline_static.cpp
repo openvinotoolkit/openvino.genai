@@ -29,6 +29,20 @@ void align_u4_zp_constants(const std::shared_ptr<ov::Model>& model) {
     }
 }
 
+std::shared_ptr<ov::Model> redirect_new_kv_to_output(const std::shared_ptr<ov::Model>& model) {
+    const auto kStartOutputKVCacheLayers = 1u;
+    for (int i = kStartOutputKVCacheLayers; i < model->outputs().size(); ++i) {
+        auto kvout  = model->output(i);
+        auto kvrslt = kvout.get_node();
+        auto kvcat  = kvrslt->inputs()[0].get_source_output().get_node();
+        auto kvval  = kvcat->inputs()[1].get_source_output();
+        kvval.set_names({kvout.get_any_name()});
+        kvrslt->inputs()[0].replace_source_output(kvval);
+    }
+    model->validate_nodes_and_infer_types();
+    return model;
+}
+
 std::shared_ptr<ov::Model> add_slices_to_kvcache_inputs(const std::shared_ptr<ov::Model>& model) {
     const auto kvcache_name_pattern = "past_key_values";
     std::vector<std::shared_ptr<ov::opset13::Parameter>> new_params;
@@ -133,6 +147,14 @@ ov::AnyMap extract_config_or_default(const ov::AnyMap& config, const std::string
     return stage_cfg;
 }
 
+ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos) {
+    ov::Shape start_shape(std::vector<size_t>(tensor.get_shape().size(), 0u));
+    start_shape[dim] = start_pos;
+    ov::Shape end_shape = tensor.get_shape();
+    end_shape[dim] = end_pos;
+    return ov::Tensor(tensor, start_shape, end_shape);
+}
+
 } // anonymous namespace
 
 namespace ov {
@@ -151,38 +173,40 @@ StaticLLMPipeline::StaticLLMPipeline(
        Initialization assumes multiple steps:
        1) Read the template model - this will be kvcache model
        2) Expose KV-cache input and output layers from kvcache model
-       3) Clone the model - this will be prefill
-       3) Reshape both models to static shape
-       4) Add slices to KV-cache inputs for kvcache model, this will make input and output KV-cache
-          layers to have the same shape and allow outputs writes directly to inputs for the next iteration.
-       5) Compile both models
-       6) Initialize input tensors for kvcache and prefill models
+       3) Align u4 ZP constants - TODO: get rid of this step in future
+       4) Replace KV-cache tensors for the entire cache to tensors only for new token (before concat)
+       5) Clone the model - this will be prefill
+       6) Reshape both models to static shape
+       7) Compile both models
+       8) Initialize input tensors for kvcache and prefill models
     */
     ov::Core core;
     // (1) Read the template model - this will be kvcache model
     m_kvcache_model = core.read_model(path / "openvino_model.xml");
     // (2) Expose KV-cache input and output layers from kvcache model
     ov::pass::StatefulToStateless().run_on_model(m_kvcache_model);
+    // (3) Align u4 ZP constants
     align_u4_zp_constants(m_kvcache_model);
-    // (3) Clone the model - this will be prefill
+    // (4) Replace KV-tensors for the entire cache to tensors only for new token
+    m_kvcache_model = redirect_new_kv_to_output(m_kvcache_model);
+    // (5) Clone the model - this will be prefill
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
-    // (4) Reshape both models to static shape
-    m_kvcache_desc = KVCacheDesc { 1024u, 0u };
+    // FIXME For some models KV-cache dim != 2u
+    m_kvcache_desc = KVCacheDesc { 1024u, 0u, 2u };
+    // (6) Reshape both models to static shape
     const uint32_t max_prompt_size = m_kvcache_desc.total_size;
     const uint32_t max_kvcache_size = m_kvcache_desc.total_size;
     reshape_to_static(m_prefill_model, max_prompt_size, max_kvcache_size);
     reshape_to_static(m_kvcache_model, 1u, max_kvcache_size);
-    // (5) Add slices to kvcache model
-    m_kvcache_model = add_slices_to_kvcache_inputs(m_kvcache_model);
-    // (6) Compile both model
+    // (7) Compile both model
     m_prefill_request = core.compile_model(
         m_prefill_model, device, extract_config_or_default(config, "PREFILL_CONFIG")
     ).create_infer_request();
     m_kvcache_request = core.compile_model(
         m_kvcache_model, device, extract_config_or_default(config, "GENERATE_CONFIG")
     ).create_infer_request();
-    // (7) Initialize tensors
+    // (8) Initialize tensors
     prepare_for_new_conversation();
 };
 
@@ -319,33 +343,43 @@ EncodedResults StaticLLMPipeline::generate(
         return results;
     }
 
-    padded_attention_mask.copy_to(m_kvcache_request.get_tensor("attention_mask"));
-
     // Inputs: input_ids, attention_mask, position_ids, ...
     // Outputs: logits, ...
     const auto kStartInputKVCacheLayers = 3u;
     const auto kStartOutputKVCacheLayers = 1u;
 
+    // NB: Copy KV-cache tensors from prefill model to kvcache model
     const auto& kvcache_compiled = m_kvcache_request.get_compiled_model();
     for (int i = 0; i < kvcache_compiled.outputs().size() - 1; ++i) {
-        const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
+
         const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
-        auto kvcache_out_tensor = m_kvcache_request.get_tensor(output_name);
-        m_kvcache_request.set_tensor(input_name, kvcache_out_tensor);
-        auto prefill_tensor = m_prefill_request.get_tensor(output_name);
-        auto kvcache_tensor = m_kvcache_request.get_tensor(input_name);
-        prefill_tensor.copy_to(kvcache_tensor);
+        auto prefill_out_tensor = m_prefill_request.get_tensor(output_name);
+        auto prefill_out_slice = make_tensor_slice(
+            prefill_out_tensor, m_kvcache_desc.dim, m_kvcache_desc.total_size - m_kvcache_desc.num_stored_tokens, m_kvcache_desc.total_size
+        );
+
+        const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
+        auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
+        auto kvcache_in_slice = make_tensor_slice(
+            kvcache_in_tensor, m_kvcache_desc.dim, 0u, m_kvcache_desc.num_stored_tokens
+        );
+
+        prefill_out_slice.copy_to(kvcache_in_slice);
     }
 
     auto* input_ids_data = m_kvcache_request.get_tensor("input_ids").data<int64_t>();
     auto* position_ids_data = m_kvcache_request.get_tensor("position_ids").data<int64_t>();
     auto* attention_mask_data = m_kvcache_request.get_tensor("attention_mask").data<int64_t>();
 
+    // NB: Fill attention mask in the correct format [1, 1 ... 1, 0, 0 ... 0, 1]
+    std::fill(attention_mask_data, attention_mask_data + m_kvcache_desc.num_stored_tokens - 1u, 1u);
+    attention_mask_data[m_kvcache_desc.total_size - 1] = 1u;
+
     const size_t max_tokens = config.get_max_new_tokens(prompt_len);
     for (int i = 0; i < max_tokens - 1; ++i) {
         input_ids_data[0] = last_token;
         position_ids_data[0] = m_kvcache_desc.num_stored_tokens;
-        attention_mask_data[m_kvcache_desc.total_size - m_kvcache_desc.num_stored_tokens - 1] = 1u;
+        attention_mask_data[m_kvcache_desc.num_stored_tokens - 1] = 1u;
 
         m_kvcache_request.infer();
         m_kvcache_desc.num_stored_tokens += 1;
@@ -366,6 +400,16 @@ EncodedResults StaticLLMPipeline::generate(
             break;
         }
 
+        // NB: Write KV-cache for the new token to the correct input position for the next iteration
+        for (int i = 0; i < kvcache_compiled.outputs().size() - 1; ++i) {
+            const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
+            auto kvcache_in_tensor = m_kvcache_request.get_tensor(input_name);
+            auto kvcache_in_slice = make_tensor_slice(
+                kvcache_in_tensor, m_kvcache_desc.dim, m_kvcache_desc.num_stored_tokens - 1, m_kvcache_desc.num_stored_tokens
+            );
+            const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
+            m_kvcache_request.get_tensor(output_name).copy_to(kvcache_in_slice);
+        }
     }
     return results;
 }
