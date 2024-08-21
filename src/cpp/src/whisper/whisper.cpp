@@ -17,8 +17,7 @@
 
 namespace {
 
-// todo: support multi batch
-void supress_tokens(ov::Tensor& logits, std::vector<int64_t> supress_tokens) {
+void supress_tokens(ov::Tensor& logits, const std::vector<int64_t>& supress_tokens) {
     auto data = logits.data<float>();
     for (auto supress_token : supress_tokens) {
         data[supress_token] = -std::numeric_limits<float>::infinity();
@@ -65,7 +64,7 @@ void set_past_kev_value(ov::CompiledModel& source_compiled_model, ov::InferReque
 
 int64_t decode(ov::Tensor& encoder_hidden_state,
                ov::InferRequest& decoder,
-               std::vector<int64_t> input_ids,
+               std::vector<int64_t>& input_ids,
                const ov::genai::WhisperGenerationConfig& config) {
     decoder.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
 
@@ -163,7 +162,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 namespace ov {
 namespace genai {
 std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& config,
-                                      std::vector<float> pcmf32,
+                                      const std::vector<float>& pcmf32,
                                       ov::genai::WhisperInitializedModels& models,
                                       const std::shared_ptr<StreamerBase> streamer) {
     ov::genai::utils::audio::fill_sin_cos_table();

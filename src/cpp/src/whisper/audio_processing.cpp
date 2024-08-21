@@ -24,7 +24,7 @@ struct whisper_mel {
 
 struct whisper_filters {
     const int32_t n_mel = 80;
-    const int32_t n_fft = 201;
+    const int32_t n_fft = 201;  // 1 + (WHISPER_N_FFT / 2)
 
     std::vector<float> data;
 };
