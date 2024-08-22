@@ -78,150 +78,8 @@ static double get_duration_ms_until_now(Time::time_point& startTime) {
     return std::chrono::duration_cast<ns>(Time::now() - startTime).count() * 0.000001;
 }
 
-ov::Tensor get_image_embedding(const std::pair<std::vector<std::vector<ov::Tensor>>, std::pair<size_t, size_t>>& slices, ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, ov::InferRequest& resampler) {
-    auto [image_embed_slices, ratio] = slices;
-    std::string user_prompt;
-    size_t embedding_dim;
-    size_t embedding_len = 0;
-    size_t idx;
-    int scale_emb = 12;
 
-    user_prompt = "<用户>";
-    ov::Tensor input_ids = tokenizer.encode(user_prompt).input_ids;
-
-    auto input_len = input_ids.get_size();
-    embedding_len += input_len;
-
-    ov::Tensor input_tensor = ov::Tensor(ov::element::i64, { 1, input_ids.get_size() }, input_ids.data());
-
-    embedding.set_input_tensor(input_tensor);
-    embedding.infer();
-
-    const ov::Tensor& embed_output_tensor = embedding.get_output_tensor();
-
-    ov::Shape out_shape = embed_output_tensor.get_shape();
-    float* data = embed_output_tensor.data<float>();
-
-    embedding_dim = out_shape[out_shape.size() - 1];
-
-    //input ids embed * config.scale_emb(12)
-    for (idx = 0; idx < embed_output_tensor.get_size(); idx++) {
-        data[idx] = data[idx] * scale_emb;
-    }
-
-    //compute inputs_embedding length
-    embedding_len += 2;
-    constexpr size_t n_img_pos = 64;  // RESAMPLER query_num minicpmv-2 64, minicpmv-2.5 96
-    embedding_len += n_img_pos;
-
-    if (image_embed_slices.size() > 1) {
-        embedding_len += 1;
-        for (size_t i = 1; i < image_embed_slices.size(); ++i) {
-            for (size_t j = 0; j < image_embed_slices[i].size(); ++j) {
-                embedding_len += 2;
-                embedding_len += n_img_pos;
-
-                if (j == image_embed_slices[i].size() - 1) {
-                    embedding_len += 1;
-                }
-            }
-        }
-
-        embedding_len += 1;
-    }
-
-    ov::Tensor imgEmbedding = ov::Tensor(ov::element::f32, {1, embedding_len, embedding_dim});
-    auto imgEmbedData = imgEmbedding.data<float>();
-
-    //copy <用户> embedding info
-    memcpy(imgEmbedData, data, embed_output_tensor.get_byte_size());
-    imgEmbedData += embed_output_tensor.get_size();
-
-    //get special token embedding info
-    user_prompt = "\n<image></image><slice></slice>";
-    input_ids = tokenizer.encode(user_prompt).input_ids;
-
-    input_len = input_ids.get_size();
-
-    input_tensor = ov::Tensor(ov::element::i64, { 1, input_ids.get_size() }, input_ids.data());
-
-    embedding.set_input_tensor(input_tensor);
-    embedding.infer();
-
-    const ov::Tensor& embed_spec_tensor = embedding.get_output_tensor();
-    data = embed_spec_tensor.data<float>();
-
-    //input ids embed * config.scale_emb(12)
-    for (idx = embedding_dim; idx < embed_spec_tensor.get_size(); idx++) {
-        data[idx] = data[idx] * scale_emb;
-    }
-
-
-    //fill "<image>" embedding
-    std::copy(data + embedding_dim * 2, data + embedding_dim * 3, imgEmbedData);
-    imgEmbedData += embedding_dim;
-
-    const ov::Tensor& vision_output_tensor = image_embed_slices[0][0];
-
-    //Resampler inference with OpenVINO
-    resampler.set_tensor("x", vision_output_tensor);
-    resampler.get_tensor("tgt_size").set_shape({ 1, 1 });
-    resampler.get_tensor("tgt_size").data<int64_t>()[0] = ratio.second;
-    resampler.get_tensor("tgt_size").data<int64_t>()[1] = ratio.first;
-
-    resampler.infer();
-    const ov::Tensor& vision_embded_tensor = resampler.get_output_tensor();
-    //fill image_embed_slices[0][0]
-    std::copy_n(vision_embded_tensor.data<float>(), vision_embded_tensor.get_size(), imgEmbedData);
-    imgEmbedData += n_img_pos * embedding_dim;
-
-    //fill "</image>" embedding
-    std::copy(data + embedding_dim * 3, data + embedding_dim * 4, imgEmbedData);
-    imgEmbedData += embedding_dim;
-
-    if (image_embed_slices.size() > 1) {
-        //fill "<slice>" embedding
-        std::copy(data + embedding_dim * 4, data + embedding_dim * 5, imgEmbedData);
-        imgEmbedData += embedding_dim;
-
-        for (size_t i = 1; i < image_embed_slices.size(); ++i) {
-            for (size_t j = 0; j < image_embed_slices[i].size(); ++j) {
-                //fill "<image>" embedding
-                std::copy(data + embedding_dim * 2, data + embedding_dim * 3, imgEmbedData);
-                imgEmbedData += embedding_dim;
-
-                const ov::Tensor& vision_output_tensor_i_j = image_embed_slices[i][j];
-
-                //Resampler inference with OpenVINO
-                resampler.set_tensor("x", vision_output_tensor);
-                resampler.get_tensor("tgt_size").set_shape({ 1, 1 });
-                resampler.get_tensor("tgt_size").data<int64_t>()[0] = ratio.second;
-                resampler.get_tensor("tgt_size").data<int64_t>()[1] = ratio.first;
-                resampler.infer();
-                const ov::Tensor& vision_embded_tensor_i_j = resampler.get_output_tensor();
-                // fill image_embed_slices[i][j]
-                std::copy_n(vision_embded_tensor_i_j.data<float>(), vision_embded_tensor_i_j.get_size(), imgEmbedData);
-                imgEmbedData += n_img_pos * embedding_dim;
-
-                //fill "</image>" embedding
-                std::copy(data + embedding_dim * 3, data + embedding_dim * 4, imgEmbedData);
-                imgEmbedData += embedding_dim;
-
-                if (j == image_embed_slices[i].size() - 1) {
-                    //fill "\n" embedding
-                    std::copy(data + embedding_dim, data + embedding_dim * 1, imgEmbedData);
-                    imgEmbedData += embedding_dim;
-                }
-            }
-        }
-        //fill "</slice>" embedding
-        std::copy(data + embedding_dim * 5, data + embedding_dim * 6, imgEmbedData);
-        imgEmbedData += embedding_dim;
-    }
-    return imgEmbedding;
-}
-
-ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, std::string prompt) {
+ov::Tensor process_prompt(ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, const std::string& prompt) {
     std::string user_prompt;
     size_t idx;
     int scale_emb = 12;
@@ -262,7 +120,7 @@ public:
             // CPU only because of 146022.
             model_dir / "openvino_vision.xml", "CPU", device_config
         ).create_infer_request()} {}
-    std::pair<std::vector<std::vector<ov::Tensor>>, std::pair<size_t, size_t>> encode(const ov::Tensor image, const Config& config=Config{}) {
+    std::pair<std::vector<std::vector<ov::Tensor>>, std::vector<std::vector<HeightWidth>>> encode(const ov::Tensor image, const Config& config=Config{}) {
         clip_ctx ctx_clip;
         for (int i = 0; i < 3; ++i) {
             ctx_clip.image_mean[i] = 0.5;
@@ -273,10 +131,109 @@ public:
     }
 };
 
+
+ov::Tensor concatenate(const ov::Tensor& first, const ov::Tensor& second) {
+    size_t res_d_0 = first.get_shape().at(0);
+    size_t res_d_1 = first.get_shape().at(1);
+    size_t res_d_2 = first.get_shape().at(2) * 2;
+    ov::Tensor res{first.get_element_type(), {res_d_0, res_d_1, res_d_2}};
+    float* first_data = first.data<float>();
+    float* second_data = second.data<float>();
+    float* res_data = res.data<float>();
+    for (size_t i = 0; i < res_d_0; ++i) {
+        for (size_t j = 0; j < res_d_1; ++j) {
+            size_t k = 0;
+            for (; k < first.get_shape().at(2); ++k) {
+                res_data[i * res_d_1 * res_d_2 + j * res_d_2 + k]
+                    = first_data[i * res_d_1 * first.get_shape().at(2) + j * first.get_shape().at(2) + k];
+            }
+            for (size_t l = 0; l < second.get_shape().at(2); ++l, ++k) {
+                res_data[i * res_d_1 * res_d_2 + j * res_d_2 + k]
+                    = second_data[i * res_d_1 * second.get_shape().at(2) + j * second.get_shape().at(2) + l];
+            }
+        }
+    }
+    return res;
+}
+
+/// embed_dim: output dimension for each position
+/// pos: a list of positions to be encoded: size (H, W)
+/// out: (H, W, D)
+ov::Tensor get_1d_sincos_pos_embed_from_grid_new(size_t embed_dim, const ov::Tensor& pos) {
+    OPENVINO_ASSERT(embed_dim % 2 == 0);
+    OPENVINO_ASSERT(pos.get_shape().size() == 3);
+    OPENVINO_ASSERT(pos.get_shape().at(0) == 1);
+    size_t d0 = pos.get_shape().at(0);
+    size_t d1 = pos.get_shape().at(1);
+    size_t d2 = embed_dim / 2;
+    std::vector<float> omega(d2);
+    for (size_t idx = 0; idx < omega.size(); ++idx) {
+        omega.at(idx) = idx / (embed_dim / 2.0);
+        omega.at(idx) = 1.0 / std::pow(10000, omega.at(idx));  // (D/2,)
+    }
+    const float* const pos_data = pos.data<float>();
+    ov::Tensor out(ov::element::f32, {d0, d1, d2});  // (H, W, D/2), outer product
+    float* out_data = out.data<float>();
+    for (size_t i = 0; i < d0; ++i) {
+        for (size_t j = 0; j < d1; ++j) {
+            for (size_t k = 0; k < d2; ++k) {
+                out_data[i * d1 * d2 + j * d2 + k]
+                    = pos_data[i * d1 + j] * omega[k];
+            }
+        }
+    }
+
+    ov::Tensor emb_sin{out.get_element_type(), out.get_shape()};  // (H, W, D/2)
+    float* emb_sin_data = emb_sin.data<float>();
+    std::transform(out_data, out_data + out.get_size(), emb_sin_data, [](float arg) {
+        return std::sin(arg);
+    });
+    ov::Tensor emb_cos{out.get_element_type(), out.get_shape()};  // (H, W, D/2)
+    float* emb_cos_data = emb_cos.data<float>();
+    std::transform(out_data, out_data + out.get_size(), emb_cos_data, [](float arg) {
+        return std::cos(arg);
+    });
+    return concatenate(emb_sin, emb_cos); // (H, W, D)
+}
+
+ov::Tensor get_2d_sincos_pos_embed_from_grid(size_t embed_dim, const ov::Tensor& grid) {
+    OPENVINO_ASSERT(embed_dim % 2 == 0);
+
+    // use half of dimensions to encode grid_h
+    ov::Coordinate begin_h{0, 0, 0};
+    ov::Coordinate end_h{grid.get_shape()};
+    end_h.at(0) = 1;
+    ov::Coordinate begin_w{1, 0, 0};
+    ov::Coordinate end_w{grid.get_shape()};
+    end_w.at(0) = 2;
+    ov::Tensor emb_h = get_1d_sincos_pos_embed_from_grid_new(embed_dim / 2, ov::Tensor{grid, begin_h, end_h});  // (H, W, D/2)
+    ov::Tensor emb_w = get_1d_sincos_pos_embed_from_grid_new(embed_dim / 2, ov::Tensor{grid, begin_w, end_w});  // (H, W, D/2)
+    return concatenate(emb_h, emb_w);
+}
+
 struct PromptImage {
     std::string prompt;
     ov::Tensor image;
 };
+
+
+/// image_size: image_size or (image_height, image_width)
+/// return:
+/// pos_embed: [image_height, image_width, embed_dim]
+ov::Tensor get_2d_sincos_pos_embed(size_t embed_dim, const HeightWidth& image_size) {
+    size_t grid_h_size = image_size.height, grid_w_size = image_size.width;
+    ov::Tensor grid(ov::element::f32, {2, grid_h_size, grid_w_size});
+    float* data = grid.data<float>();
+    for (size_t y = 0; y < grid_h_size; ++y) {
+        std::iota(data, data + grid_w_size, 0);
+        data += grid_w_size;
+    }
+    for (size_t y = 0; y < grid_h_size; ++y) {
+        std::fill(data, data + grid_w_size, y);
+        data += grid_w_size;
+    }
+    return get_2d_sincos_pos_embed_from_grid(embed_dim, grid);
+}
 
 class VLMPipeline {
 public:
@@ -288,7 +245,7 @@ public:
     ov::InferRequest resampler, ireq_embed, ireq;
     ov::Tensor imgEmbedTensor;
     ov::Shape img_embed_shape;
-    size_t embed_dim;
+    size_t encoder_embed_dim;  // check that it's the same as embed_dim
     std::vector<float> llm_inputs_embeds;
     // input length, output length, first time, other time
     std::vector<std::tuple<size_t, size_t, double, double>> perf_records;
@@ -297,6 +254,9 @@ public:
     int count = 0;
     double total_time = 0;
     const size_t BATCH_SIZE = 1;
+    HeightWidth max_size{70, 70};
+    size_t embed_dim = 2304;
+    ov::Tensor _pos_embeds = get_2d_sincos_pos_embed(this->embed_dim, {70, 70});
 
     VLMPipeline(
         const ov::genai::Tokenizer& tokenizer,
@@ -325,9 +285,192 @@ public:
             core.compile_model(
                 model_dir / "openvino_model.xml", device, device_config
             ).create_infer_request()
-        } {
-            std::cout << core.read_model(model_dir / "openvino_resampler.xml") << '\n';
+        } {}
+
+    void set_2d_pos_cache(const HeightWidth& max_size) {
+        this->_pos_embeds = get_2d_sincos_pos_embed(this->embed_dim, max_size);
+    }
+
+    void adjust_pos_cache(const std::vector<HeightWidth>& target_sizes) {
+        size_t max_h = std::max_element(target_sizes.begin(), target_sizes.end(), [](const HeightWidth& left, const HeightWidth& right) {
+            return left.height < right.height;
+        })->height;
+        size_t max_w = std::max_element(target_sizes.begin(), target_sizes.end(), [](const HeightWidth& left, const HeightWidth& right) {
+            return left.width < right.width;
+        })->width;
+        if (max_h > this->max_size.height || max_w > this->max_size.width) {
+            this->max_size = {std::max(max_h, this->max_size.height), std::max(max_w, this->max_size.width)};
+            this->set_2d_pos_cache(this->max_size);
         }
+    }
+
+    ov::Tensor resample(const ov::Tensor& encoded_image, const std::vector<HeightWidth>& target_sizes) {
+        size_t bs = encoded_image.get_shape().at(0);
+        std::vector<size_t> patch_len{target_sizes.size()};
+        std::transform(target_sizes.begin(), target_sizes.end(), patch_len.begin(), [](const HeightWidth& height_width) {
+            return height_width.height * height_width.width;
+        });
+        adjust_pos_cache(target_sizes);
+        size_t max_patch_len = *std::max_element(patch_len.begin(), patch_len.end());
+        ov::Tensor key_padding_mask(ov::element::boolean, {bs, max_patch_len});
+        bool* mask_data = key_padding_mask.data<bool>();
+        size_t embed_len = this->_pos_embeds.get_shape().at(2);
+        ov::Tensor pos_embed(ov::element::f32, {max_patch_len, bs, embed_len});  // BLD => L * B * D
+        float* pos_embed_data = pos_embed.data<float>();
+        float* _pos_embed_data = _pos_embeds.data<float>();
+        size_t _d0 = _pos_embeds.get_shape().at(0);
+        size_t _d1 = _pos_embeds.get_shape().at(1);
+        for (size_t i = 0; i < bs; ++i) {
+            size_t target_h = target_sizes.at(i).height;
+            size_t target_w = target_sizes.at(i).width;
+            for (size_t h_idx = 0; h_idx < target_h; ++h_idx) {
+                for (size_t w_idx = 0; w_idx < target_w; ++w_idx) {
+                    std::copy_n(
+                        _pos_embed_data + h_idx * _d1 + w_idx,
+                        embed_len,
+                        pos_embed_data + (h_idx * target_w + w_idx) * bs * embed_len + i * embed_len
+                    );
+                }
+            }
+            for (size_t flat = target_h * target_w; flat < max_patch_len; ++flat) {
+                std::fill_n(pos_embed_data + flat * bs * embed_len + i * embed_len, embed_len, 0.0f);
+            }
+            std::fill_n(mask_data + i * max_patch_len, patch_len[i], false);
+            std::fill_n(mask_data + i * max_patch_len + patch_len[i], max_patch_len - patch_len[i], true);
+        }
+        resampler.set_tensor("x", encoded_image);
+        resampler.set_tensor("pos_embed", pos_embed);
+        resampler.set_tensor("key_padding_mask", key_padding_mask);
+        resampler.infer();
+        return resampler.get_output_tensor();
+    }
+
+    ov::Tensor get_image_embedding(const std::pair<std::vector<std::vector<ov::Tensor>>, std::vector<std::vector<HeightWidth>>>& slices, ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, ov::InferRequest& resampler) {
+        auto [image_embed_slices, ratio] = slices;
+        std::string user_prompt;
+        size_t embedding_dim;
+        size_t embedding_len = 0;
+        size_t idx;
+        int scale_emb = 12;
+
+        user_prompt = "<用户>";
+        ov::Tensor input_ids = tokenizer.encode(user_prompt).input_ids;
+
+        auto input_len = input_ids.get_size();
+        embedding_len += input_len;
+
+        ov::Tensor input_tensor = ov::Tensor(ov::element::i64, { 1, input_ids.get_size() }, input_ids.data());
+
+        embedding.set_input_tensor(input_tensor);
+        embedding.infer();
+
+        const ov::Tensor& embed_output_tensor = embedding.get_output_tensor();
+
+        ov::Shape out_shape = embed_output_tensor.get_shape();
+        float* data = embed_output_tensor.data<float>();
+
+        embedding_dim = out_shape[out_shape.size() - 1];
+
+        //input ids embed * config.scale_emb(12)
+        for (idx = 0; idx < embed_output_tensor.get_size(); idx++) {
+            data[idx] = data[idx] * scale_emb;
+        }
+
+        //compute inputs_embedding length
+        embedding_len += 2;
+        constexpr size_t n_img_pos = 64;  // RESAMPLER query_num minicpmv-2 64, minicpmv-2.5 96
+        embedding_len += n_img_pos;
+
+        if (image_embed_slices.size() > 1) {
+            embedding_len += 1;
+            for (size_t i = 1; i < image_embed_slices.size(); ++i) {
+                for (size_t j = 0; j < image_embed_slices[i].size(); ++j) {
+                    embedding_len += 2;
+                    embedding_len += n_img_pos;
+
+                    if (j == image_embed_slices[i].size() - 1) {
+                        embedding_len += 1;
+                    }
+                }
+            }
+
+            embedding_len += 1;
+        }
+
+        ov::Tensor imgEmbedding = ov::Tensor(ov::element::f32, {1, embedding_len, embedding_dim});
+        auto imgEmbedData = imgEmbedding.data<float>();
+
+        //copy <用户> embedding info
+        memcpy(imgEmbedData, data, embed_output_tensor.get_byte_size());
+        imgEmbedData += embed_output_tensor.get_size();
+
+        //get special token embedding info
+        user_prompt = "\n<image></image><slice></slice>";
+        input_ids = tokenizer.encode(user_prompt).input_ids;
+
+        input_len = input_ids.get_size();
+
+        input_tensor = ov::Tensor(ov::element::i64, { 1, input_ids.get_size() }, input_ids.data());
+
+        embedding.set_input_tensor(input_tensor);
+        embedding.infer();
+
+        const ov::Tensor& embed_spec_tensor = embedding.get_output_tensor();
+        data = embed_spec_tensor.data<float>();
+
+        //input ids embed * config.scale_emb(12)
+        for (idx = embedding_dim; idx < embed_spec_tensor.get_size(); idx++) {
+            data[idx] = data[idx] * scale_emb;
+        }
+
+
+        //fill "<image>" embedding
+        std::copy(data + embedding_dim * 2, data + embedding_dim * 3, imgEmbedData);
+        imgEmbedData += embedding_dim;
+
+        const ov::Tensor& vision_embded_tensor = resample(image_embed_slices[0][0], {ratio[0][0]});
+        //fill image_embed_slices[0][0]
+        std::copy_n(vision_embded_tensor.data<float>(), vision_embded_tensor.get_size(), imgEmbedData);
+        imgEmbedData += n_img_pos * embedding_dim;
+
+        //fill "</image>" embedding
+        std::copy(data + embedding_dim * 3, data + embedding_dim * 4, imgEmbedData);
+        imgEmbedData += embedding_dim;
+
+        if (image_embed_slices.size() > 1) {
+            //fill "<slice>" embedding
+            std::copy(data + embedding_dim * 4, data + embedding_dim * 5, imgEmbedData);
+            imgEmbedData += embedding_dim;
+
+            for (size_t i = 1; i < image_embed_slices.size(); ++i) {
+                for (size_t j = 0; j < image_embed_slices[i].size(); ++j) {
+                    //fill "<image>" embedding
+                    std::copy(data + embedding_dim * 2, data + embedding_dim * 3, imgEmbedData);
+                    imgEmbedData += embedding_dim;
+
+                    //Resampler inference with OpenVINO
+                    const ov::Tensor& vision_embded_tensor_i_j = resample(image_embed_slices[i][j], {ratio[i][j]});
+                    // fill image_embed_slices[i][j]
+                    std::copy_n(vision_embded_tensor_i_j.data<float>(), vision_embded_tensor_i_j.get_size(), imgEmbedData);
+                    imgEmbedData += n_img_pos * embedding_dim;
+
+                    //fill "</image>" embedding
+                    std::copy(data + embedding_dim * 3, data + embedding_dim * 4, imgEmbedData);
+                    imgEmbedData += embedding_dim;
+
+                    if (j == image_embed_slices[i].size() - 1) {
+                        //fill "\n" embedding
+                        std::copy(data + embedding_dim, data + embedding_dim * 1, imgEmbedData);
+                        imgEmbedData += embedding_dim;
+                    }
+                }
+            }
+            //fill "</slice>" embedding
+            std::copy(data + embedding_dim * 5, data + embedding_dim * 6, imgEmbedData);
+            imgEmbedData += embedding_dim;
+        }
+        return imgEmbedding;
+    }
 
     void generate(const PromptImage& pi, const std::function<bool(std::string&&)>& callback) {
         generate(pi, std::make_unique<ov::genai::TextCallbackStreamer>(tokenizer, callback));
@@ -335,16 +478,16 @@ public:
 
     void generate(const PromptImage& pi, const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr) {
         if (pi.image) {
-            std::pair<std::vector<std::vector<ov::Tensor>>, std::pair<size_t, size_t>> embeds = vision_encoder.encode(pi.image);
+            std::pair<std::vector<std::vector<ov::Tensor>>, std::vector<std::vector<HeightWidth>>> embeds = vision_encoder.encode(pi.image);
             ov::Tensor imgEmbedTensor = get_image_embedding(embeds, this->tokenizer, this->ireq_embed, this->resampler);
 
             ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
-            size_t embed_dim = img_embed_shape[2];
+            size_t encoder_embed_dim = img_embed_shape[2];
 
             this->imgEmbedTensor = imgEmbedTensor;
             this->img_embed_shape = img_embed_shape;
-            this->embed_dim = embed_dim;
-            this->llm_inputs_embeds.resize((this->max_lenth * embed_dim));
+            this->encoder_embed_dim = encoder_embed_dim;
+            this->llm_inputs_embeds.resize((this->max_lenth * encoder_embed_dim));
 
             //<用户> + image embedding + prompt + <AI> LLM first input
             ov::Tensor promtTensor;
@@ -401,7 +544,7 @@ public:
         float* logits = ireq.get_tensor("logits").data<float>() + sequence_len * vocab_size;
         int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
 
-        ireq.get_tensor("inputs_embeds").set_shape({ BATCH_SIZE, 1,  embed_dim });
+        ireq.get_tensor("inputs_embeds").set_shape({ BATCH_SIZE, 1,  encoder_embed_dim });
         ireq.get_tensor("position_ids").set_shape({ BATCH_SIZE, 1 });
 
         ireq_embed.get_tensor("inputs_id").set_shape({ 1, 1 });

@@ -162,21 +162,24 @@ ov::Tensor encode_image_with_clip(clip_ctx* ctx_clip, const clip_image_u8* img) 
     return clip_image_encode(ctx_clip, &img_res_v.data[0], load_image_size); // image_embd shape is 576 x 4096
 }
 
-std::pair<std::vector<std::vector<ov::Tensor>>, std::pair<size_t, size_t>> llava_image_embed_make_with_bytes_slice(struct clip_ctx* ctx_clip, const ov::Tensor& img, int max_slice_nums, int scale_resolution, int patch_size, bool never_split) {
+std::pair<std::vector<std::vector<ov::Tensor>>, std::vector<std::vector<HeightWidth>>> llava_image_embed_make_with_bytes_slice(struct clip_ctx* ctx_clip, const ov::Tensor& img, int max_slice_nums, int scale_resolution, int patch_size, bool never_split) {
     clip_image_u8 source{int(img.get_shape()[2]), int(img.get_shape()[1]), {img.data<uint8_t>(), img.data<uint8_t>() + img.get_size()}};
     // clip_image_u8 resized;
     // bicubic_resize(source, resized, 800, 800);
 
     std::vector<std::vector<clip_image_u8*>> imgs = slice_image(&source, max_slice_nums, scale_resolution, patch_size, never_split);
     std::vector<std::vector<ov::Tensor>> results;
+    std::vector<std::vector<HeightWidth>> sizes;
 
     for (size_t i = 0; i < imgs.size(); ++i) {
         results.push_back(std::vector<ov::Tensor>());
+        sizes.push_back(std::vector<HeightWidth>{});
         for (size_t j = 0; j < imgs[i].size(); ++j) {
             results[i].push_back(encode_image_with_clip(ctx_clip, imgs[i][j]));
+            sizes.back().push_back({size_t(imgs.at(i).at(j)->ny / 14), size_t(imgs.at(i).at(j)->nx / 14)});
         }
     }
-    return {results, {imgs.at(0).at(0)->nx / patch_size, imgs.at(0).at(0)->ny / patch_size}};
+    return {results, sizes};
 }
 
 void llava_image_embed_free_slice(std::vector<std::vector<struct llava_image_embed*>> embed) {
