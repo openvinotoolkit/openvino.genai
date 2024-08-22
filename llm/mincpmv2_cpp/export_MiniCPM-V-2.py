@@ -308,8 +308,8 @@ def get_2d_sincos_pos_embed(embed_dim, image_size):
 
 
 def convert_resampler(model, model_dir):
+    resampler_path = Path("openvino_resampler.xml")
     if not (model_dir / resampler_path).exists():
-        resampler_path = Path("openvino_resampler.xml")
         tgt_sizes = torch.tensor([[23, 45]])
         def resampler_forward(self, x, pos_embed, key_padding_mask):
             bs = x.shape[0]
