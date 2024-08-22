@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <openvino/core/except.hpp>
 #include <thread>
 #include <vector>
 
@@ -240,9 +241,7 @@ std::vector<float> mel_spectrogram_convert_audio(const std::vector<float> pcmf32
 
     std::vector<float> filter_data;
 
-    if (!file_fdata.is_open()) {
-        throw std::runtime_error("Failed to open file models/mel_filters_data.bin for reading.");
-    }
+    OPENVINO_ASSERT(file_fdata.is_open(), "Failed to open file models/mel_filters_data.bin for reading.");
 
     size_t numElements = filters.n_fft * filters.n_mel;
     filter_data.resize(numElements);

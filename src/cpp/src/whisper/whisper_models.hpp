@@ -10,9 +10,7 @@ namespace genai {
 
 struct WhisperInitializedModels {
     ov::InferRequest encoder;
-    ov::CompiledModel decoder_compiled;
     ov::InferRequest decoder;
-    ov::CompiledModel decoder_with_past_compiled;
     ov::InferRequest decoder_with_past;
 };
 }  // namespace genai

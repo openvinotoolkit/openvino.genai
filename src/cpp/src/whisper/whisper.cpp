@@ -17,9 +17,9 @@
 
 namespace {
 
-void supress_tokens(ov::Tensor& logits, const std::vector<int64_t>& supress_tokens) {
+void suppress_tokens(ov::Tensor& logits, const std::vector<int64_t>& suppress_tokens) {
     auto data = logits.data<float>();
-    for (auto supress_token : supress_tokens) {
+    for (auto supress_token : suppress_tokens) {
         data[supress_token] = -std::numeric_limits<float>::infinity();
     }
 }
@@ -32,10 +32,13 @@ ov::Tensor encode(ov::InferRequest& request, std::vector<float>& mel_data) {
 
     request.infer();
 
+    // reset input tensor
+    request.set_tensor("input_features", ov::Tensor(ov::element::f32, input_shape));
+
     return request.get_tensor("last_hidden_state");
 }
 
-void set_past_kev_value(ov::CompiledModel& source_compiled_model, ov::InferRequest& source, ov::InferRequest& dest) {
+void set_past_kev_value(ov::InferRequest& source, ov::InferRequest& dest) {
     // source outputs:
     // present.0.decoder.key
     // present.0.decoder.value
@@ -48,7 +51,7 @@ void set_past_kev_value(ov::CompiledModel& source_compiled_model, ov::InferReque
     // past_key_values.0.encoder.key
     // past_key_values.0.encoder.value
 
-    for (auto& dec_output : source_compiled_model.outputs()) {
+    for (auto& dec_output : source.get_compiled_model().outputs()) {
         std::string dec_output_name = dec_output.get_any_name();
         if (dec_output_name.find("logits") != std::string::npos) {
             continue;
@@ -75,7 +78,7 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
 
     auto output_tensor = decoder.get_tensor("logits");
 
-    supress_tokens(output_tensor, config.begin_suppress_tokens);
+    suppress_tokens(output_tensor, config.begin_suppress_tokens);
 
     int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
 
@@ -84,7 +87,6 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
 
 int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
                          ov::InferRequest& decoder_with_past,
-                         ov::CompiledModel& decoder_with_past_compiled,
                          int64_t input_id,
                          size_t cache_position,
                          const ov::genai::WhisperGenerationConfig& config) {
@@ -102,11 +104,11 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
 
     auto output_tensor = decoder_with_past.get_tensor("logits");
 
-    supress_tokens(output_tensor, config.suppress_tokens);
+    suppress_tokens(output_tensor, config.suppress_tokens);
 
     int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
 
-    set_past_kev_value(decoder_with_past_compiled, decoder_with_past, decoder_with_past);
+    set_past_kev_value(decoder_with_past, decoder_with_past);
 
     return output_token;
 }
@@ -133,12 +135,11 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
         return {false, output_tokens};
     }
 
-    set_past_kev_value(models.decoder_compiled, models.decoder, models.decoder_with_past);
+    set_past_kev_value(models.decoder, models.decoder_with_past);
 
     for (size_t i = 0; i < max_new_tokens - 1; i++) {
         auto output_token = decode_with_past(encoder_hidden_state,
                                              models.decoder_with_past,
-                                             models.decoder_with_past_compiled,
                                              output_tokens.back(),
                                              input_ids.size() + output_tokens.size() - 1,
                                              config);

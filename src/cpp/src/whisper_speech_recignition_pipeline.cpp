@@ -54,16 +54,10 @@ public:
         ov::Core core;
         core.set_property(device, plugin_config);
 
-        const std::string encoder_model_path = model_path / "openvino_encoder_model.xml";
-        const std::filesystem::path& decoder_model_path = model_path / "openvino_decoder_model.xml";
-        // std::string decoder_with_past_model_path = model_path / "openvino_decoder_with_past_model.xml";
-
-        m_models.encoder = core.compile_model(encoder_model_path, device).create_infer_request();
-        m_models.decoder_compiled = core.compile_model(decoder_model_path, device);
-        m_models.decoder = m_models.decoder_compiled.create_infer_request();
-        m_models.decoder_with_past_compiled =
-            core.compile_model(model_path / "openvino_decoder_with_past_model.xml", device);
-        m_models.decoder_with_past = m_models.decoder_with_past_compiled.create_infer_request();
+        m_models.encoder = core.compile_model(model_path / "openvino_encoder_model.xml", device).create_infer_request();
+        m_models.decoder = core.compile_model(model_path / "openvino_decoder_model.xml", device).create_infer_request();
+        m_models.decoder_with_past =
+            core.compile_model(model_path / "openvino_decoder_with_past_model.xml", device).create_infer_request();
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
