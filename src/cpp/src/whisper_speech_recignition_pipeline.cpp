@@ -11,23 +11,6 @@
 #include "utils.hpp"
 #include "whisper/whisper_models.hpp"
 
-// llm_pipeline.cpp headers, debug win fail
-// todo: remove
-#include <filesystem>
-#include <fstream>
-#include <variant>
-#include <algorithm>
-#include <nlohmann/json.hpp>
-#include <openvino/openvino.hpp>
-#include "openvino/genai/continuous_batching_pipeline.hpp"
-#include "openvino/genai/generation_config.hpp"
-#include "openvino/genai/llm_pipeline.hpp"
-#include "openvino/genai/perf_metrics.hpp"
-#include "llm_pipeline_base.hpp"
-#include "llm_pipeline_static.hpp"
-#include "utils.hpp"
-#include "text_callback_streamer.hpp"
-
 namespace {
 ov::genai::WhisperGenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path) {
     auto config_file_path = model_path / "generation_config.json";
@@ -71,14 +54,15 @@ public:
         ov::Core core;
         core.set_property(device, plugin_config);
 
-        std::string encoder_model_path = model_path / "openvino_encoder_model.xml";
-        std::string decoder_model_path = model_path / "openvino_decoder_model.xml";
-        std::string decoder_with_past_model_path = model_path / "openvino_decoder_with_past_model.xml";
+        const std::string encoder_model_path = model_path / "openvino_encoder_model.xml";
+        const std::filesystem::path& decoder_model_path = model_path / "openvino_decoder_model.xml";
+        // std::string decoder_with_past_model_path = model_path / "openvino_decoder_with_past_model.xml";
 
         m_models.encoder = core.compile_model(encoder_model_path, device).create_infer_request();
         m_models.decoder_compiled = core.compile_model(decoder_model_path, device);
         m_models.decoder = m_models.decoder_compiled.create_infer_request();
-        m_models.decoder_with_past_compiled = core.compile_model(decoder_with_past_model_path, device);
+        m_models.decoder_with_past_compiled =
+            core.compile_model(model_path / "openvino_decoder_with_past_model.xml", device);
         m_models.decoder_with_past = m_models.decoder_with_past_compiled.create_infer_request();
 
         // If eos_token_id was not provided, take value
