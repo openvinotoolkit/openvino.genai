@@ -49,6 +49,7 @@ class Evaluator:
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
         max_new_tokens=128,
         crop_question=True,
+        skip_special_tokens=True
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -59,9 +60,10 @@ class Evaluator:
         self.max_new_tokens = max_new_tokens
         self.tokenizer = tokenizer
         self._crop_question = crop_question
+        self._skip_special_tokens = skip_special_tokens
 
         if base_model:
-            self.gt_data = self._generate_data(base_model)
+            self.gt_data = self._generate_data(base_model, self._skip_special_tokens)
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
@@ -79,7 +81,7 @@ class Evaluator:
         self.gt_data.to_csv(csv_name)
 
     def score(self, model, gen_answer_fn=None):
-        predictions = self._generate_data(model, gen_answer_fn)
+        predictions = self._generate_data(model, gen_answer_fn, self._skip_special_tokens)
 
         all_metrics_per_question = {}
         all_metrics = {}
@@ -119,11 +121,11 @@ class Evaluator:
 
         return res
 
-    def _generate_data(self, model, gen_answer_fn=None):
+    def _generate_data(self, model, gen_answer_fn=None, skip_special_tokens=True):
         def default_gen_answer(model, tokenizer, question, max_new_tokens, crop_question):
             inputs = self.tokenizer(question, return_tensors="pt")
             tokens = model.generate(**inputs, max_new_tokens=max_new_tokens)
-            out = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
+            out = self.tokenizer.batch_decode(tokens, skip_special_tokens=skip_special_tokens)[0]
             return out[len(question) :] if crop_question else out
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
