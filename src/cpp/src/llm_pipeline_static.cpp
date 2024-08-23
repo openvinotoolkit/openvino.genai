@@ -219,13 +219,13 @@ StaticLLMPipeline::StaticLLMPipeline(
     // (5) Clone the model - this will be prefill
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
-    // FIXME For some models KV-cache dim != 2u
-    m_kvcache_desc = KVCacheDesc { 1024u, 0u, 2u };
     // (6) Reshape both models to static shape
-    const uint32_t max_prompt_size = m_kvcache_desc.total_size;
-    const uint32_t max_kvcache_size = m_kvcache_desc.total_size;
-    reshape_to_static(m_prefill_model, max_prompt_size, max_kvcache_size);
-    reshape_to_static(m_kvcache_model, 1u, max_kvcache_size);
+    const auto kMaxPromptLen = pop_or_default(pipeline_config, "MAX_PROMPT_LEN", 1024u);
+    const auto kMinResponseLen = pop_or_default(pipeline_config, "MIN_RESPONSE_LEN", 150u);
+    // FIXME For some models KV-cache dim != 2u
+    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, 2u };
+    reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size);
+    reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size);
     // (7) Compile both model
     auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", get_default_prefill_config());
     auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", get_default_generate_config());
@@ -234,7 +234,6 @@ StaticLLMPipeline::StaticLLMPipeline(
     // FIXME: Drop CACHE_DIR option if NPUW is enabled
     drop_cache_dir(prefill_config);
     drop_cache_dir(generate_config);
-
     m_prefill_request = core.compile_model(
         m_prefill_model, device, prefill_config
     ).create_infer_request();
@@ -349,8 +348,10 @@ EncodedResults StaticLLMPipeline::generate(
 
     // NB: Check if there is enough space in KV-cache to process input prompt
     auto prompt_len = input_ids.get_size();
-    if (prompt_len > m_kvcache_desc.total_size) {
-        OPENVINO_THROW("Currently static pipeline only process up to " + std::to_string(m_kvcache_desc.total_size) + " tokens");
+    if (prompt_len > m_kvcache_desc.max_prompt_size) {
+        OPENVINO_THROW("Static LLM pipeline may only process prompts up to "
+                       + std::to_string(m_kvcache_desc.max_prompt_size) + " tokens. "
+                       + "Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
     }
 
     // NB: From the "generate" perspective, every call is treated as start of new conversation,
@@ -390,7 +391,7 @@ EncodedResults StaticLLMPipeline::generate(
         const auto& output_name = kvcache_compiled.outputs()[kStartOutputKVCacheLayers + i].get_any_name();
         auto prefill_out_tensor = m_prefill_request.get_tensor(output_name);
         auto prefill_out_slice = make_tensor_slice(
-            prefill_out_tensor, m_kvcache_desc.dim, m_kvcache_desc.total_size - m_kvcache_desc.num_stored_tokens, m_kvcache_desc.total_size
+            prefill_out_tensor, m_kvcache_desc.dim, m_kvcache_desc.max_prompt_size - m_kvcache_desc.num_stored_tokens, m_kvcache_desc.max_prompt_size
         );
 
         const auto& input_name = kvcache_compiled.inputs()[kStartInputKVCacheLayers + i].get_any_name();
