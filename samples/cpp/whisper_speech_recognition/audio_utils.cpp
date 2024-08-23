@@ -1,13 +1,13 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/audio_utils.hpp"
+#include "audio_utils.hpp"
 
 #include <iostream>
 #include <vector>
 
 #define DR_WAV_IMPLEMENTATION
-#include "openvino/genai/dr_wav.h"
+#include <dr_wav.h>
 
 #ifdef _WIN32
 #    include <fcntl.h>
@@ -31,8 +31,6 @@ bool is_wav_buffer(const std::string buf) {
 }
 }  // namespace
 
-namespace ov {
-namespace genai {
 namespace utils {
 namespace audio {
 
@@ -142,5 +140,3 @@ bool read_wav(const std::string& fname,
 }
 }  // namespace audio
 }  // namespace utils
-}  // namespace genai
-}  // namespace ov

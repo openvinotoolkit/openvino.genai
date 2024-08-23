@@ -8,7 +8,6 @@
 
 #include "../utils.hpp"
 #include "audio_processing.hpp"
-#include "openvino/genai/audio_utils.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "whisper_models.hpp"

@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/audio_utils.hpp"
+#include "audio_utils.hpp"
 #include "openvino/genai/whisper_speech_recognition_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) try {
     std::vector<float> pcmf32;                // mono-channel F32 PCM
     std::vector<std::vector<float>> pcmf32s;  // stereo-channel F32 PCM
 
-    if (!ov::genai::utils::audio::read_wav(wav_file_path, pcmf32, pcmf32s)) {
+    if (!utils::audio::read_wav(wav_file_path, pcmf32, pcmf32s)) {
         throw std::runtime_error("Failed to read WAV file " + wav_file_path);
     }
 
