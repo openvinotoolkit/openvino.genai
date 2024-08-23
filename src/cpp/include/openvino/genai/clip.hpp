@@ -62,15 +62,8 @@ struct clip_image_f32 {
     std::vector<float> buf;
 };
 
-
-struct clip_image_u8_batch {
-    struct clip_image_u8 * data;
-    size_t size;
-};
-
 struct clip_image_f32_batch {
-    struct clip_image_f32 * data;
-    size_t size;
+    std::vector<clip_image_f32> data;
 };
 
 
@@ -81,23 +74,16 @@ CLIP_API int clip_n_patches(const struct clip_ctx* ctx);
 CLIP_API struct clip_image_u8  * clip_image_u8_init ();
 CLIP_API struct clip_image_f32 * clip_image_f32_init();
 
-CLIP_API void clip_image_u8_free (struct clip_image_u8  * img);
-CLIP_API void clip_image_f32_free(struct clip_image_f32 * img);
-CLIP_API void clip_image_u8_batch_free (struct clip_image_u8_batch  * batch);
-CLIP_API void clip_image_f32_batch_free(struct clip_image_f32_batch * batch);
-
-CLIP_API bool clip_image_load_from_file(const char * fname, struct clip_image_u8 * img);
-
 /** interpret bytes as an image file with length bytes_length, and use the result to populate img */
 OPENVINO_GENAI_EXPORTS bool clip_image_load_from_bytes(const unsigned char * bytes, size_t bytes_length, struct clip_image_u8 * img);
 
 CLIP_API bool bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height);
 
 /** preprocess img and store the result in res_imgs, pad_to_square may be overriden to false depending on model configuration */
-CLIP_API bool clip_image_preprocess(struct clip_ctx* ctx, const struct clip_image_u8* img, struct clip_image_f32_batch* res_imgs);
+CLIP_API clip_image_f32_batch clip_image_preprocess(struct clip_ctx& ctx, const clip_image_u8& img);
 
-CLIP_API ov::Tensor clip_image_encode(struct clip_ctx* ctx, struct clip_image_f32* img, std::pair<int, int> load_image_size);
-CLIP_API ov::Tensor clip_image_batch_encode(struct clip_ctx* ctx, const struct clip_image_f32_batch* imgs, std::pair<int, int> load_image_size);
+CLIP_API ov::Tensor clip_image_encode(clip_ctx& ctx, clip_image_f32& img, std::pair<int, int> load_image_size);
+CLIP_API ov::Tensor clip_image_batch_encode(clip_ctx& ctx, const clip_image_f32_batch& imgs, std::pair<int, int> load_image_size);
 
 
 #endif // CLIP_H

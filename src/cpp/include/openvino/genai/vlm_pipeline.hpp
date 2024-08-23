@@ -123,14 +123,13 @@ public:
     std::pair<std::vector<std::vector<ov::Tensor>>, std::vector<std::vector<HeightWidth>>> encode(const ov::Tensor image, const Config& config=Config{}) {
         clip_ctx ctx_clip;
         for (int i = 0; i < 3; ++i) {
-            ctx_clip.image_mean[i] = 0.5;
-            ctx_clip.image_std[i] = 0.5;
+            ctx_clip.image_mean[i] = 0.5f;
+            ctx_clip.image_std[i] = 0.5f;
         }
         ctx_clip.ireq_vision = encoder;
-        return llava_image_embed_make_with_bytes_slice(&ctx_clip, image, config.max_slice_nums, config.scale_resolution, config.patch_size, config.never_split);
+        return llava_image_embed_make_with_bytes_slice(ctx_clip, image, config.max_slice_nums, config.scale_resolution, config.patch_size, config.never_split);
     }
 };
-
 
 ov::Tensor concatenate(const ov::Tensor& first, const ov::Tensor& second) {
     size_t res_d_0 = first.get_shape().at(0);
@@ -198,7 +197,6 @@ ov::Tensor get_1d_sincos_pos_embed_from_grid_new(size_t embed_dim, const ov::Ten
 
 ov::Tensor get_2d_sincos_pos_embed_from_grid(size_t embed_dim, const ov::Tensor& grid) {
     OPENVINO_ASSERT(embed_dim % 2 == 0);
-
     // use half of dimensions to encode grid_h
     ov::Coordinate begin_h{0, 0, 0};
     ov::Coordinate end_h{grid.get_shape()};
@@ -215,7 +213,6 @@ struct PromptImage {
     std::string prompt;
     ov::Tensor image;
 };
-
 
 /// image_size: image_size or (image_height, image_width)
 /// return:

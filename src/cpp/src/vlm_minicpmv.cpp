@@ -52,24 +52,21 @@ std::pair<int, int> get_refine_size(std::pair<int, int> original_size, std::pair
     return refine_size;
 }
 
-
-
-std::vector<std::vector<clip_image_u8*>> slice_image(const clip_image_u8* img, const int max_slice_nums, const int scale_resolution, const int patch_size, const bool never_split) {
-    const std::pair<int, int> original_size = { img->nx,img->ny };
-    const int original_width = img->nx;
-    const int original_height = img->ny;
+std::vector<std::vector<clip_image_u8>> slice_image(const clip_image_u8& img, const int max_slice_nums, const int scale_resolution, const int patch_size, const bool never_split) {
+    const std::pair<int, int> original_size{img.nx, img.ny};
+    const int original_width = img.nx;
+    const int original_height = img.ny;
     const float log_ratio = log(1.0 * original_width / original_height); //
     const float ratio = 1.0 * original_width * original_height / (scale_resolution * scale_resolution);
     const int multiple = fmin(ceil(ratio), max_slice_nums);
 
-    std::vector<std::vector<clip_image_u8*>> images;
-    images.push_back(std::vector<clip_image_u8*>());
+    std::vector<std::vector<clip_image_u8>> images;
+    images.push_back(std::vector<clip_image_u8>{});
 
     if (multiple <= 1) {
         auto best_size = find_best_resize(original_size, scale_resolution, patch_size, true);
-        clip_image_u8* source_image = clip_image_u8_init();
-        bicubic_resize(*img, *source_image, best_size.first, best_size.second);
-        images[images.size() - 1].push_back(source_image);
+        images.back().push_back(clip_image_u8{});
+        bicubic_resize(img, images.back().back(), best_size.first, best_size.second);
     }
     else if (multiple > 1) {
 
@@ -82,9 +79,8 @@ std::vector<std::vector<clip_image_u8*>> slice_image(const clip_image_u8* img, c
         }
 
         auto best_size = find_best_resize(original_size, scale_resolution, patch_size);
-        clip_image_u8* source_image = clip_image_u8_init();
-        bicubic_resize(*img, *source_image, best_size.first, best_size.second);
-        images[images.size() - 1].push_back(source_image);
+        images.back().push_back(clip_image_u8{});
+        bicubic_resize(img, images.back().back(), best_size.first, best_size.second);
 
         std::vector<std::pair<int, int>> candidate_grids;
 
@@ -108,36 +104,32 @@ std::vector<std::vector<clip_image_u8*>> slice_image(const clip_image_u8* img, c
                 min_error = error;
             }
         }
-        //LOG_TEE("%s: image_size: %d %d; best_grid: %d %d\n", __func__, img->nx, img->ny, best_grid.first, best_grid.second);
-
         auto refine_size = get_refine_size(original_size, best_grid, scale_resolution, patch_size, true);
-        clip_image_u8* refine_image = clip_image_u8_init();
-        bicubic_resize(*img, *refine_image, refine_size.first, refine_size.second);
-
-        //LOG_TEE("%s: refine_image_size: %d %d; best_grid: %d %d\n", __func__, refine_image->nx, refine_image->ny, best_grid.first, best_grid.second);
+        clip_image_u8 refine_image;
+        bicubic_resize(img, refine_image, refine_size.first, refine_size.second);
 
         // split_to_patches
-        int width = refine_image->nx;
-        int height = refine_image->ny;
+        int width = refine_image.nx;
+        int height = refine_image.ny;
         int grid_x = int(width / best_grid.first);
         int grid_y = int(height / best_grid.second);
         for (int patches_i = 0, ic = 0; patches_i < height && ic < best_grid.second; patches_i += grid_y, ic += 1) {
-            images.push_back(std::vector<clip_image_u8*>());
+            images.push_back(std::vector<clip_image_u8>{});
             for (int patches_j = 0, jc = 0; patches_j < width && jc < best_grid.first; patches_j += grid_x, jc += 1) {
-                clip_image_u8* patch = clip_image_u8_init();
-                patch->nx = grid_x;
-                patch->ny = grid_y;
-                patch->buf.resize(3 * patch->nx * patch->ny);
+                images.back().push_back(clip_image_u8{});
+                clip_image_u8& patch = images.back().back();
+                patch.nx = grid_x;
+                patch.ny = grid_y;
+                patch.buf.resize(3 * patch.nx * patch.ny);
                 for (int y = patches_i; y < patches_i + grid_y; ++y) {
                     for (int x = patches_j; x < patches_j + grid_x; ++x) {
-                        const int i = 3 * (y * refine_image->nx + x);
-                        const int j = 3 * ((y - patches_i) * patch->nx + (x - patches_j));
-                        patch->buf[j] = refine_image->buf[i];
-                        patch->buf[j + 1] = refine_image->buf[i + 1];
-                        patch->buf[j + 2] = refine_image->buf[i + 2];
+                        const int i = 3 * (y * refine_image.nx + x);
+                        const int j = 3 * ((y - patches_i) * patch.nx + (x - patches_j));
+                        patch.buf[j] = refine_image.buf[i];
+                        patch.buf[j + 1] = refine_image.buf[i + 1];
+                        patch.buf[j + 2] = refine_image.buf[i + 2];
                     }
                 }
-                images[images.size() - 1].push_back(patch);
             }
         }
     }
@@ -145,29 +137,21 @@ std::vector<std::vector<clip_image_u8*>> slice_image(const clip_image_u8* img, c
     return images;
 }
 
-ov::Tensor encode_image_with_clip(clip_ctx* ctx_clip, const clip_image_u8* img) {
+ov::Tensor encode_image_with_clip(clip_ctx& ctx_clip, const clip_image_u8& img) {
     // std::vector<clip_image_f32*> img_res_v; // format VectN x H x W x RGB (N x 336 x 336 x 3), so interleaved RGB - different to the python implementation which is N x 3 x 336 x 336
-    clip_image_f32_batch img_res_v;
-    img_res_v.size = 0;
-    img_res_v.data = nullptr;
     std::pair<int, int> load_image_size;
-    load_image_size.first = img->nx;
-    load_image_size.second = img->ny;
-    if (!clip_image_preprocess(ctx_clip, img, &img_res_v)) {
-        LOG_TEE("%s: unable to preprocess image\n", __func__);
-        delete[] img_res_v.data;
-        return ov::Tensor{};
-    }
-
-    return clip_image_encode(ctx_clip, &img_res_v.data[0], load_image_size); // image_embd shape is 576 x 4096
+    load_image_size.first = img.nx;
+    load_image_size.second = img.ny;
+    clip_image_f32_batch img_res_v = clip_image_preprocess(ctx_clip, img);
+    return clip_image_encode(ctx_clip, img_res_v.data[0], load_image_size); // image_embd shape is 576 x 4096
 }
 
-std::pair<std::vector<std::vector<ov::Tensor>>, std::vector<std::vector<HeightWidth>>> llava_image_embed_make_with_bytes_slice(struct clip_ctx* ctx_clip, const ov::Tensor& img, int max_slice_nums, int scale_resolution, int patch_size, bool never_split) {
+std::pair<std::vector<std::vector<ov::Tensor>>, std::vector<std::vector<HeightWidth>>> llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const ov::Tensor& img, int max_slice_nums, int scale_resolution, int patch_size, bool never_split) {
     clip_image_u8 source{int(img.get_shape()[2]), int(img.get_shape()[1]), {img.data<uint8_t>(), img.data<uint8_t>() + img.get_size()}};
     // clip_image_u8 resized;
     // bicubic_resize(source, resized, 800, 800);
 
-    std::vector<std::vector<clip_image_u8*>> imgs = slice_image(&source, max_slice_nums, scale_resolution, patch_size, never_split);
+    std::vector<std::vector<clip_image_u8>> imgs = slice_image(source, max_slice_nums, scale_resolution, patch_size, never_split);
     std::vector<std::vector<ov::Tensor>> results;
     std::vector<std::vector<HeightWidth>> sizes;
 
@@ -176,7 +160,7 @@ std::pair<std::vector<std::vector<ov::Tensor>>, std::vector<std::vector<HeightWi
         sizes.push_back(std::vector<HeightWidth>{});
         for (size_t j = 0; j < imgs[i].size(); ++j) {
             results[i].push_back(encode_image_with_clip(ctx_clip, imgs[i][j]));
-            sizes.back().push_back({size_t(imgs.at(i).at(j)->ny / 14), size_t(imgs.at(i).at(j)->nx / 14)});
+            sizes.back().push_back({size_t(imgs.at(i).at(j).ny / 14), size_t(imgs.at(i).at(j).nx / 14)});
         }
     }
     return {results, sizes};

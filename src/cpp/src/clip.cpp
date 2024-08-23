@@ -56,50 +56,12 @@ struct clip_hparams {
     int32_t image_crop_resolution;
 };
 
-
-struct clip_image_u8 * clip_image_u8_init() {
-    return new clip_image_u8();
-}
-
-struct clip_image_f32 * clip_image_f32_init() {
-    return new clip_image_f32();
-}
-
-void clip_image_u8_free(struct clip_image_u8  * img) { delete img; }
-void clip_image_f32_free(struct clip_image_f32 * img) { delete img; }
-void clip_image_u8_batch_free(struct clip_image_u8_batch  * batch) {
-    if (batch->size > 0) {
-        delete[] batch->data;
-        batch->size = 0;
-    }
-}
-void clip_image_f32_batch_free(struct clip_image_f32_batch  * batch) {
-    if (batch->size > 0) {
-        delete[] batch->data;
-        batch->size = 0;
-    }
-}
-
 static void build_clip_img_from_data(const stbi_uc * data, int nx, int ny, clip_image_u8 * img) {
     img->nx = nx;
     img->ny = ny;
     img->buf.resize(3 * nx * ny);
     memcpy(img->buf.data(), data, img->buf.size());
 }
-
-bool clip_image_load_from_file(const char * fname, clip_image_u8 * img) {
-    int nx, ny, nc;
-    auto * data = stbi_load(fname, &nx, &ny, &nc, 3);
-    if (!data) {
-        LOG_TEE("%s: failed to load image '%s'\n", __func__, fname);
-        return false;
-    }
-    build_clip_img_from_data(data, nx, ny, img);
-    stbi_image_free(data);
-    return true;
-}
-
-
 
 bool clip_image_load_from_bytes(const unsigned char * bytes, size_t bytes_length, struct clip_image_u8 * img) {
     int nx, ny, nc;
@@ -332,37 +294,32 @@ static std::vector<clip_image_u8*> divide_to_patches_u8(const clip_image_u8 & im
 
 // returns the normalized float tensor for llava-1.5, for spatial_unpad with anyres processing for llava-1.6 it returns the normalized image patch tensors as a vector
 // res_imgs memory is being allocated here, previous allocations will be freed if found
-bool clip_image_preprocess(struct clip_ctx* ctx, const clip_image_u8* img, clip_image_f32_batch* res_imgs) {
+clip_image_f32_batch clip_image_preprocess(clip_ctx& ctx, const clip_image_u8& img) {
     bool pad_to_square = true;
 
-    // free the previous res_imgs if any set
-    if (res_imgs->size > 0) {
-        clip_image_f32_batch_free(res_imgs);
-    }
-    res_imgs->data = nullptr;
-    res_imgs->size = 0;
+    clip_image_f32_batch res_imgs;
 
     // the logic below is to pad the shorter side to the longer side with a background color: rgb(122, 116, 104)
     // see https://github.com/haotian-liu/LLaVA/blob/e854a2bf85118c504f6f16bf5c3c7c92f8fa8c6b/llava/conversation.py#L113-L156
 
-    clip_image_u8* temp = clip_image_u8_init(); // we will keep the input image data here temporarily
-    temp->nx = img->nx;
-    temp->ny = img->ny;
-    temp->buf.resize(img->buf.size());
-    memcpy(temp->buf.data(), img->buf.data(), temp->buf.size());
+    clip_image_u8 temp;  // we will keep the input image data here temporarily
+    temp.nx = img.nx;
+    temp.ny = img.ny;
+    temp.buf.resize(img.buf.size());
+    memcpy(temp.buf.data(), img.buf.data(), temp.buf.size());
 
 
-    const int nx = temp->nx;
-    const int ny = temp->ny;
+    const int nx = temp.nx;
+    const int ny = temp.ny;
     // clip_image_save_to_bmp(*temp, "resized_vanilla.bmp");
 
-    const int nx2 = temp->nx;
-    const int ny2 = temp->ny;
+    const int nx2 = temp.nx;
+    const int ny2 = temp.ny;
 
-    clip_image_f32* res = clip_image_f32_init();
-    res->nx = nx2;
-    res->ny = ny2;
-    res->buf.resize(3 * nx2 * ny2);
+    clip_image_f32 res;
+    res.nx = nx2;
+    res.ny = ny2;
+    res.buf.resize(3 * nx2 * ny2);
 
     // const float scale = std::max(nx, ny) / (float)ctx->vision_model.hparams.image_size;
 
@@ -372,8 +329,8 @@ bool clip_image_preprocess(struct clip_ctx* ctx, const clip_image_u8* img, clip_
     const int nx3 = nx;
     const int ny3 = ny;
 
-    const auto& m3 = ctx->image_mean; // {0.48145466f, 0.4578275f, 0.40821073f};
-    const auto& s3 = ctx->image_std;  // {0.26862954f, 0.26130258f, 0.27577711f};
+    const auto& m3 = ctx.image_mean; // {0.48145466f, 0.4578275f, 0.40821073f};
+    const auto& s3 = ctx.image_std;  // {0.26862954f, 0.26130258f, 0.27577711f};
 
     for (int y = 0; y < ny3; y++) {
         for (int x = 0; x < nx3; x++) {
@@ -396,10 +353,10 @@ bool clip_image_preprocess(struct clip_ctx* ctx, const clip_image_u8* img, clip_
                 const int j10 = 3 * (y1 * nx + x0) + c;
                 const int j11 = 3 * (y1 * nx + x1) + c;
 
-                const float v00 = temp->buf[j00];
-                const float v01 = temp->buf[j01];
-                const float v10 = temp->buf[j10];
-                const float v11 = temp->buf[j11];
+                const float v00 = temp.buf[j00];
+                const float v01 = temp.buf[j01];
+                const float v10 = temp.buf[j10];
+                const float v11 = temp.buf[j11];
 
                 const float v0 = v00 * (1.0f - dx) + v01 * dx;
                 const float v1 = v10 * (1.0f - dx) + v11 * dx;
@@ -412,18 +369,13 @@ bool clip_image_preprocess(struct clip_ctx* ctx, const clip_image_u8* img, clip_
                 //const int i = 3 * (y * nx3 + x) + c;
                 const int i = (y * nx3 + x) + c * nx3 * ny3;
 
-                res->buf[i] = ((float(v2) / 255.0f) - m3[c]) / s3[c];
+                res.buf[i] = ((float(v2) / 255.0f) - m3[c]) / s3[c];
             }
         }
     }
-    clip_image_u8_free(temp);
 
-    res_imgs->size = 1;
-    res_imgs->data = new clip_image_f32[res_imgs->size];
-    res_imgs->data[0] = *res;
-    clip_image_f32_free(res);
-
-    return true;
+    res_imgs.data.push_back(std::move(res));
+    return res_imgs;
 }
 
 
@@ -443,18 +395,13 @@ int clip_n_patches(const struct clip_ctx* ctx) {
     return n_patches;
 }
 
-ov::Tensor clip_image_encode(struct clip_ctx* ctx, clip_image_f32* img, std::pair<int, int> load_image_size = { 448, 448 }) {
-    clip_image_f32_batch imgs{};
-    imgs.size = 1;
-    imgs.data = img;
-    return clip_image_batch_encode(ctx, &imgs, load_image_size);
+ov::Tensor clip_image_encode(clip_ctx& ctx, clip_image_f32& img, std::pair<int, int> load_image_size = { 448, 448 }) {
+    return clip_image_batch_encode(ctx, clip_image_f32_batch{std::vector<clip_image_f32>{img}}, load_image_size);
 }
 
 
-ov::Tensor clip_image_batch_encode(clip_ctx* ctx, const clip_image_f32_batch* imgs, std::pair<int, int> load_image_size = { 448, 448 }) {
+ov::Tensor clip_image_batch_encode(clip_ctx& ctx, const clip_image_f32_batch& imgs, std::pair<int, int> load_image_size = { 448, 448 }) {
     //don't support multi batch
-    size_t batch_size = imgs->size;
-
     const size_t image_size_width = load_image_size.first;
     const size_t image_size_height = load_image_size.second;
     const size_t patch_size = 14;
@@ -462,12 +409,12 @@ ov::Tensor clip_image_batch_encode(clip_ctx* ctx, const clip_image_f32_batch* im
     const size_t num_positions = num_patches;
 
     //OpenVINO inference to get vision embedding
-    ov::Shape input_shape = { batch_size, 3, image_size_height, image_size_width };
-    ov::Tensor input_tensor = ov::Tensor(ov::element::f32, input_shape); // , imgs->data[0].buf.data());
-    std::memcpy(input_tensor.data<float>(), imgs->data[0].buf.data(), input_tensor.get_byte_size());
+    ov::Shape input_shape = {imgs.data.size(), 3, image_size_height, image_size_width };
+    ov::Tensor input_tensor = ov::Tensor(ov::element::f32, input_shape);
+    std::memcpy(input_tensor.data<float>(), imgs.data[0].buf.data(), input_tensor.get_byte_size());
 
-    ctx->ireq_vision.set_input_tensor(input_tensor);
-    ctx->ireq_vision.infer();
-    return ctx->ireq_vision.get_output_tensor();
+    ctx.ireq_vision.set_input_tensor(input_tensor);
+    ctx.ireq_vision.infer();
+    return ctx.ireq_vision.get_output_tensor();
 }
 
