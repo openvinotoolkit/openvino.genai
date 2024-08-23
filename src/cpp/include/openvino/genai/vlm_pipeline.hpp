@@ -162,8 +162,8 @@ ov::Tensor get_1d_sincos_pos_embed_from_grid_new(size_t embed_dim, const ov::Ten
     OPENVINO_ASSERT(embed_dim % 2 == 0);
     OPENVINO_ASSERT(pos.get_shape().size() == 3);
     OPENVINO_ASSERT(pos.get_shape().at(0) == 1);
-    size_t d0 = pos.get_shape().at(0);
-    size_t d1 = pos.get_shape().at(1);
+    size_t d0 = pos.get_shape().at(1);
+    size_t d1 = pos.get_shape().at(2);
     size_t d2 = embed_dim / 2;
     std::vector<float> omega(d2);
     for (size_t idx = 0; idx < omega.size(); ++idx) {
