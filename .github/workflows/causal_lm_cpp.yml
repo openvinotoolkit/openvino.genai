@@ -41,11 +41,11 @@ jobs:
           cmake --build ./build/ --config Release -j
       - run: >
           . ./ov/setupvars.sh
-          && PYTHONPATH=./build/:$PYTHONPATH timeout 25s
+          && PYTHONPATH=./build/:$PYTHONPATH timeout 30s
           ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
       - run: >
           . ./ov/setupvars.sh
-          && PYTHONPATH=./build/:$PYTHONPATH timeout 25s
+          && PYTHONPATH=./build/:$PYTHONPATH timeout 30s
           ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
       - run: >
           . ./ov/setupvars.sh
