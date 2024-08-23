@@ -190,7 +190,7 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
         if not compression_args.get("all_layers", None):
             compression_args.pop("all_layers", None)
     else:
-        compression_args = COMPRESSION_OPTIONS[compress_weights_format]
+        compression_args = copy.deepcopy(COMPRESSION_OPTIONS[compress_weights_format])
         for arg_name in ["ratio", "group_size", "all_layers", "dataset", "awq", "scale_estimation"]:
             arg_value = getattr(args, arg_name, None)
             if arg_value:
