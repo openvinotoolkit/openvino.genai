@@ -108,6 +108,7 @@ public:
             // Read model explicitly to be able to inject the adapters
             auto model = core.read_model(model_path / "openvino_model.xml");
             m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.");   // TODO: Make the prefix name configurable
+            //ov::serialize(model, "after_lora.xml");
             m_model_runner = core.compile_model(model, device).create_infer_request();
             m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
         } else {
@@ -296,8 +297,11 @@ public:
         }
 
         if (!is_chat_conversation) {
-            // FIXME: Reset only KV cache part of state, there is also can be LoRA applied in the states
+            // FIXME: Reset only KV cache part of state, there is also can be LoRA applied in the states and full reset will need to reapply LoRA even if the LoRA config is not changed
             m_model_runner.reset_state();
+            if(m_adapter_controller) {
+                m_adapter_controller->force_full_apply(); // FIXME: Reset only KV cache part to avoid this call
+            }
             m_selected_beam = std::nullopt;
         } else {
             m_is_cache_empty = false;

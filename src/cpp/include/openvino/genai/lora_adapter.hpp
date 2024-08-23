@@ -8,6 +8,7 @@
 #include <string>
 #include <optional>
 
+#include "openvino/op/constant.hpp"
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/genai/tokenizer.hpp"
@@ -43,13 +44,16 @@ public:
 
 bool OPENVINO_GENAI_EXPORTS operator== (const Adapter& a, const Adapter& b);
 
+class OPENVINO_GENAI_EXPORTS AdapterController;
+
 struct OPENVINO_GENAI_EXPORTS AdaptersConfig {
-public:
+    // FIXME: Hide data fields in the private section
     bool is_dynamic = true;    // false -- parameters cannot be changed during inference, this config should match for every generation
     std::vector<Adapter> adapters;
     std::vector<float> alphas;
     std::set<std::string> modules;  // additional modules that can be patched, from LoRA config "target_modules": ["q_proj", "v_proj"] etc.
     ov::element::Type adapter_element_type = ov::element::dynamic; // optional element type for adapter tensors in case if multiple adapters have various types or they are not known in advance
+    std::vector<std::shared_ptr<ov::op::v0::Constant>> alpha_constants;
 
     AdaptersConfig (const std::vector<Adapter>& adapters, bool is_dynamic = true);// : is_dynamic(is_dynamic), adapters(adapters) {}
     AdaptersConfig (const std::vector<std::pair<Adapter, float>>& adapters, bool is_dynamic = true);// : is_dynamic(is_dynamic), adapters(adapters) {}
@@ -81,6 +85,9 @@ public:
 
     // Call it every time when adapter config is changed; if adapter was configured as a static one, this call is not required
     void apply(ov::InferRequest& request, const AdaptersConfig& config);
+
+    // the next call of apply will set all adapter tensors regardless of config change, use this method if full state.reset is called for the controlled model
+    void force_full_apply(bool full_apply = true);
 
     // Apply the same config that was used last time (in initialization or in previous call to apply).
     void apply(ov::InferRequest& request);
