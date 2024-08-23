@@ -115,7 +115,7 @@ public:
             m_model_runner = core.compile_model(model_path / "openvino_model.xml", device).create_infer_request();
         }
         const auto end{std::chrono::steady_clock::now()};
-        DEBUG_PRINT("Model preparation/compilation: " << std::chrono::duration<float>(end - start).count());
+        DEBUG_PRINT("Model preparation/compilation: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
     }
 
     StatefulLLMPipeline(
