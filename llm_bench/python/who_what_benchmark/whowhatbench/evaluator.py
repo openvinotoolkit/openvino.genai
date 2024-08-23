@@ -63,7 +63,7 @@ class Evaluator:
         self._skip_special_tokens = skip_special_tokens
 
         if base_model:
-            self.gt_data = self._generate_data(base_model, self._skip_special_tokens)
+            self.gt_data = self._generate_data(base_model, skip_special_tokens=self._skip_special_tokens)
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
