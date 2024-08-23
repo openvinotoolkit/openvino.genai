@@ -204,12 +204,74 @@ static void log_mel_spectrogram_worker_thread(int ith,
         }
     }
 }
+
+// python implementation: https://github.com/huggingface/transformers/blob/check_gemma/src/transformers/audio_utils.py
+
+// mel_scale = "htk"
+float hertz_to_mel(float hertz) {
+    return 2595 * std::log10(1 + hertz / 700.0);
+}
+
+float mel_to_hertz(float mel) {
+    return 700 * (std::pow(10, mel / 2595.0) - 1);
+}
+
 }  // namespace
 
 namespace ov {
 namespace genai {
 namespace utils {
 namespace audio {
+
+// num_frequency_bins (`int`):
+//     Number of frequencies used to compute the spectrogram (should be the same as in `stft`).
+// num_mel_filters (`int`):
+//     Number of mel filters to generate.
+// min_frequency (`float`):
+//     Lowest frequency of interest in Hz.
+// max_frequency (`float`):
+//     Highest frequency of interest in Hz. This should not exceed `sampling_rate / 2`.
+// sampling_rate (`int`):
+//     Sample rate of the audio waveform.
+
+std::vector<std::vector<float>> mel_filter_bank(const int64_t num_frequency_bins,
+                                                const int64_t num_mel_filters,
+                                                const int64_t sampling_rate,
+                                                const float min_frequency,
+                                                const float max_frequency) {
+    OPENVINO_ASSERT(max_frequency <= (sampling_rate / 2), "max_frequency should be less or equal sampling_rate / 2");
+
+    float mel_min = hertz_to_mel(min_frequency);
+    float mel_max = hertz_to_mel(max_frequency);
+
+    float mel_freqs_step = (mel_max - mel_min) / float(num_mel_filters + 1);
+    std::vector<float> mel_freqs(num_mel_filters + 2);
+    for (size_t i = 0; i < (int)mel_freqs.size(); i++) {
+        mel_freqs[i] = mel_min + i * mel_freqs_step;
+    }
+
+    // our points are in Mels, but we use fft bins, so we have to convert
+    // from mel to Hz to fft bin number
+    for (int i = 0; i < (int)mel_freqs.size(); i++) {
+        // melpoints[i] = round(mel2hz(melpoints[i]) * nfft / samplerate);
+        mel_freqs[i] = floor(mel_to_hertz(mel_freqs[i]) * ((num_frequency_bins - 1) * 2 + 1) / sampling_rate);
+    }
+
+    std::vector<std::vector<float>> filterbank(num_mel_filters, std::vector<float>(num_frequency_bins));
+    for (int j = 0; j < num_mel_filters; j++) {
+        // Create first half of triangle
+        for (int i = int(mel_freqs[j]); i < int(mel_freqs[j + 1]); i++) {
+            filterbank[j][i] = (i - mel_freqs[j]) / (mel_freqs[j + 1] - mel_freqs[j]);
+        }
+
+        // Create second half of triangle
+        for (int i = int(mel_freqs[j + 1]); i < int(mel_freqs[j + 2]); i++) {
+            filterbank[j][i] = (mel_freqs[j + 2] - i) / (mel_freqs[j + 2] - mel_freqs[j + 1]);
+        }
+    }
+
+    return filterbank;
+}
 
 // In FFT, we frequently use sine and cosine operations with the same values.
 // We can use precalculated values to speed up the process.

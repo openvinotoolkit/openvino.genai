@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #define WHISPER_SAMPLE_RATE 16000
@@ -13,6 +14,12 @@ namespace ov {
 namespace genai {
 namespace utils {
 namespace audio {
+
+std::vector<std::vector<float>> mel_filter_bank(const int64_t num_frequency_bins,
+                                                const int64_t num_mel_filters,
+                                                const int64_t sampling_rate,
+                                                const float min_frequency = 0.0f,
+                                                const float max_frequency = 8000.0f);
 
 void fill_sin_cos_table();
 
