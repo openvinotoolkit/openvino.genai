@@ -119,13 +119,13 @@ void copy_with_offset(const ov::Tensor& orig, const int32_t offset, ov::Tensor& 
     std::copy(orig_data, orig_data + orig.get_size(), padded_data + offset);
 }
 
-void merge_config_with(ov::AnyMap& rhs, const ov::AnyMap& lhs) {
-    for (const auto& [key, value] : lhs) {
+void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
+    for (const auto& [key, value] : rhs) {
         // NB: Overwrite the value if key already exists
-        if (auto it = rhs.find(key); it != rhs.end()) {
+        if (auto it = lhs.find(key); it != lhs.end()) {
             it->second = value;
         } else {
-            rhs.emplace(key, value);
+            lhs.emplace(key, value);
         }
     }
 }
