@@ -465,7 +465,7 @@ public:
         }
         for(size_t i = 0; i < outputs.size(); ++i) {
             auto target_shape = request.get_compiled_model().output(i).get_partial_shape();
-            if(target_shape.is_static()) {
+            if(target_shape.is_static()) {  // TODO: Can we avoid this corner case for static shapes? Make it tensor-type dependent.
                 outputs[i].set_shape(target_shape.get_shape());
             }
             request.set_output_tensor(i, outputs[i]);
@@ -980,7 +980,33 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         // TODO: Optimize trivial Parameter->Result cases
     }
 
-    LoRAParts<ov::Tensor> concat_adapters(const std::vector<LoRAWeight>& inputs, const LoRAParts<ov::Tensor>& outputs) {
+    LoRAParts<ov::Tensor> empty_adapters(const std::vector<LoRAWeight>& inputs, LoRAParts<ov::Tensor>& outputs) {
+        //DEBUG_PRINT("empty_adapter");
+        #define EMPTY_TENSORS_SUPPORTED_IN_MATMUL 0
+        #if EMPTY_TENSORS_SUPPORTED_IN_MATMUL
+
+        outputs.alpha.set_shape({1, 0});
+        outputs.A.set_shape({0, outputs.A.get_shape()[1]});
+        outputs.B.set_shape({outputs.B.get_shape()[0], 0});
+
+        #else
+
+        // TODO: As ov::Tensor lacks a convenient constructor to fill all elements with the same scalar value, do it via Constant that has such constructor
+        // FIXME: It's a huge overhead for setting just a scalar 0
+        
+        std::make_shared<v0::Constant>(outputs.alpha.get_element_type(), ov::Shape{1, 1}, 0)->get_tensor_view().copy_to(outputs.alpha);
+        // Element values for A and B don't matter as we are multiplying by 0 in alpha anyway
+        std::make_shared<v0::Constant>(outputs.A.get_element_type(), ov::Shape{1, outputs.A.get_shape()[1]}, 0)->get_tensor_view().copy_to(outputs.A);
+        std::make_shared<v0::Constant>(outputs.B.get_element_type(), ov::Shape{outputs.B.get_shape()[0], 1}, 0)->get_tensor_view().copy_to(outputs.B);
+        //outputs.A.set_shape({0, outputs.A.get_shape()[1]});
+        //outputs.B.set_shape({outputs.B.get_shape()[0], 0});
+
+        #endif
+
+        return outputs;
+    }
+
+    LoRAParts<ov::Tensor> concat_adapters(const std::vector<LoRAWeight>& inputs, LoRAParts<ov::Tensor>& outputs) {
         auto signature = get_lora_signature(inputs, outputs);
         if(!lora_state_evaluators.exist(signature)) {
             // Prepare LoRA state evaluate model
@@ -1029,34 +1055,20 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
     void set_lora_tensors(std::vector<VariableState>& state, const LoRAIndices& lora_indices, const std::vector<LoRAWeightGetterDefault>& weight_getters) {
         auto lora_tensors = collect_applicable_tensors(lora_indices, weight_getters);
 
+        LoRAParts<ov::Tensor> lora_state_tensors(
+            state[lora_indices.alpha].get_state(),  
+            state[lora_indices.A].get_state(),
+            state[lora_indices.B].get_state()
+        );        LoRAParts<ov::Tensor> new_tensors;
         if(!lora_tensors.empty()) {
-            LoRAParts<ov::Tensor> lora_state_tensors(
-                state[lora_indices.alpha].get_state(),  
-                state[lora_indices.A].get_state(),
-                state[lora_indices.B].get_state()
-            );
-            //DEBUG_PRINT("1: alpha[0] = " << lora_state_tensors.alpha.data<float>()[0]);
-            // static int count = 0;
-            // if(count < 2)
-            //     print_tensor(std::cout, lora_tensors[0].A->get_tensor_view());
-            auto concated_lora = concat_adapters(lora_tensors, lora_state_tensors);
-            // if(count < 2)
-            //     print_tensor(std::cout, concated_lora.A);
-            // if(count < 2)
-            //     std::cout << "-------------------------------------------\n";
-            // ++count;
-            state[lora_indices.alpha].set_state(concated_lora.alpha);
-            state[lora_indices.A].set_state(concated_lora.A);
-            state[lora_indices.B].set_state(concated_lora.B);
-            //DEBUG_PRINT("2: alpha[0] = " << lora_state_tensors.alpha.data<float>()[0]);
-            // state[lora_indices.alpha].set_state(lora_state_tensors.alpha);
-            // //DEBUG_PRINT("3: alpha[0] = " << state[lora_indices.alpha].get_state().data<float>()[0]);
-            // state[lora_indices.A].set_state(lora_state_tensors.A);
-            // state[lora_indices.B].set_state(lora_state_tensors.B);
+            new_tensors = concat_adapters(lora_tensors, lora_state_tensors);
         } else {
-            // FIXME: Set near-empty tensors to states to minimized compute
-            OPENVINO_THROW("No tensors applied for a given LoRA state, it is not yet implemented");
+            new_tensors = empty_adapters(lora_tensors, lora_state_tensors);
         }
+        state[lora_indices.alpha].set_state(new_tensors.alpha);
+        state[lora_indices.A].set_state(new_tensors.A);
+        state[lora_indices.B].set_state(new_tensors.B);
+        //print_tensor(std::cout, new_tensors.alpha);
     }
 
     void apply (ov::InferRequest& infer_request) override {

@@ -277,7 +277,10 @@ public:
         // DEBUG_PRINT("About to apply LoRA");
         if(m_adapter_controller) {
             // DEBUG_PRINT("Apply LoRA");
+            auto start_lora_time = std::chrono::steady_clock::now();
             m_adapter_controller->apply(m_model_runner, config.adapters);
+            auto stop_lora_time = std::chrono::steady_clock::now();
+            DEBUG_PRINT("m_adapter_controller->apply: " << std::chrono::duration_cast<std::chrono::milliseconds>(stop_lora_time - start_lora_time).count());
         }
 
         ov::genai::EncodedResults result;
