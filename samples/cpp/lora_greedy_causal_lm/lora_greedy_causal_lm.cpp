@@ -13,25 +13,32 @@ int main(int argc, char* argv[]) try {
     std::string device = "CPU";  // GPU can be used as well
 
     // Prepare Adapter object before creation of LLMPipeline
-    ov::genai::Adapter adapter = ov::genai::Adapter(adapter_path);
-    ov::genai::AdaptersConfig adapters_config(adapter, /*alpha = */ 1);
+    ov::genai::Adapter adapter1 = ov::genai::Adapter(adapter_path);
+    //ov::genai::Adapter adapter2 = ov::genai::Adapter(adapter_path);
+    ov::genai::AdaptersConfig adapters_config({{adapter1, /*alpha = */ 1}/*, {adapter2, 0.5}*/});
 
     // Pass AdapterConfig to LLMPipeline to be able to dynamically connect adapter in following generate calls
     ov::genai::LLMPipeline pipe(model_path, device, adapters_config);
 
     // Create generation config as usual or take it from an LLMPipeline, adjust config as usualy required in your app
     ov::genai::GenerationConfig config = pipe.get_generation_config();
-    config.max_new_tokens = 100;
+    config.max_new_tokens = 10;
     // Note: If a GenerationConfig object is created from scratch and not given by `get_generation_config`
     // you need to set AdaptersConfig manually to it, the adapters won't be applied otherwise.
 
     std::cout << "*** Generation with LoRA adapter applied: ***\n";
     std::string result = pipe.generate(prompt, config);
     std::cout << result << std::endl;
+    result = pipe.generate(prompt, config);
+    std::cout << result << std::endl;
 
     std::cout << "*** Generation without LoRA adapter: ****\n";
     // Set alpha to 0 for a paticular adapter to temporary disable it.
-    config.adapters.set_alpha(adapter, 0);
+    //config.adapters.set_alpha(adapter1, 0);
+    config.adapters.remove(adapter1);
+    //config.adapters.set_alpha(adapter2, 0);
+    result = pipe.generate(prompt, config);
+    std::cout << result << std::endl;
     result = pipe.generate(prompt, config);
     std::cout << result << std::endl;
 
