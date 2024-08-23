@@ -9,6 +9,8 @@
 #include "utils.hpp"
 
 #include <openvino/pass/stateful_to_stateless.hpp>
+#include <jinja2cpp/user_callable.h>
+#include <fstream>
 
 namespace {
 
@@ -85,7 +87,17 @@ std::shared_ptr<ov::Model> add_slices_to_kvcache_inputs(const std::shared_ptr<ov
 
 void reshape_to_static(std::shared_ptr<ov::Model> model,
                        const uint32_t input_size,
-                       const uint32_t kvcache_size) {
+                       const uint32_t kvcache_size,
+                       const std::filesystem::path& path) {
+    auto config_file_path = path / "config.json";
+    if (!std::filesystem::exists(config_file_path))
+            return ;
+        std::ifstream file(config_file_path);
+        if (!file.is_open())
+            return ;
+    nlohmann::json config_data = nlohmann::json::parse(file);
+    std::string model_type;
+    model_type = config_data["model_type"].get<std::string>();
     std::map<std::string, ov::PartialShape> new_shapes;
     for (auto input : model->inputs()) {
         const auto& input_name = input.get_any_name();
@@ -98,7 +110,15 @@ void reshape_to_static(std::shared_ptr<ov::Model> model,
             new_shape = ov::PartialShape({1, input_size});
         } else {
             const auto& partial_shape = input.get_partial_shape();
-            new_shape = ov::PartialShape({1,
+            if (model_type == "chatglm") {
+                size_t num_kv_heads = partial_shape[0].is_static() ? partial_shape[0].get_length() : 2;
+                new_shape = ov::PartialShape({kvcache_size-input_size,
+                                              1,
+                                              num_kv_heads,
+                                              partial_shape[3].get_length()});
+            }
+            else
+                new_shape = ov::PartialShape({1,
                                           partial_shape[1].get_length(),
                                           kvcache_size-input_size,
                                           partial_shape[3].get_length()});
@@ -198,8 +218,8 @@ StaticLLMPipeline::StaticLLMPipeline(
     // (6) Reshape both models to static shape
     const uint32_t max_prompt_size = m_kvcache_desc.total_size;
     const uint32_t max_kvcache_size = m_kvcache_desc.total_size;
-    reshape_to_static(m_prefill_model, max_prompt_size, max_kvcache_size);
-    reshape_to_static(m_kvcache_model, 1u, max_kvcache_size);
+    reshape_to_static(m_prefill_model, max_prompt_size, max_kvcache_size, path);
+    reshape_to_static(m_kvcache_model, 1u, max_kvcache_size, path);
     // (7) Compile both model
     m_prefill_request = core.compile_model(
         m_prefill_model, device, extract_config_or_default(config, "PREFILL_CONFIG")
