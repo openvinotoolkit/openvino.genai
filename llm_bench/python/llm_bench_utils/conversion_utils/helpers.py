@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+import copy
 import json
 from enum import Enum
 import logging as log
@@ -177,6 +178,7 @@ def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_w
                     # Do additional check in case the input model is a full precision IR exported from PT model by path
                     compression_args = _check_default_4bit_configs(name_or_path)
         compression_args = compression_args or _DEFAULT_4BIT_CONFIG
+        compression_args = copy.deepcopy(compression_args)
         compression_args.pop("bits")
 
         sym = compression_args.pop("sym", False)
