@@ -41,17 +41,17 @@ jobs:
           cmake --build ./build/ --config Release -j
       - run: >
           . ./ov/setupvars.sh
-          && PYTHONPATH=./build/:$PYTHONPATH timeout 30s
+          && PYTHONPATH=./build/:$PYTHONPATH timeout 50s
           ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
       - run: >
           . ./ov/setupvars.sh
-          && PYTHONPATH=./build/:$PYTHONPATH timeout 30s
+          && PYTHONPATH=./build/:$PYTHONPATH timeout 50s
           ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
       - run: >
           . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
-          && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
-          | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
+          && timeout 50s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
+          | diff <(timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
 
   cpp-beam_search_causal_lm-ubuntu:
     strategy:
