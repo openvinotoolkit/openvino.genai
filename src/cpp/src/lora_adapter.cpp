@@ -348,89 +348,6 @@ struct LoRAWeightStateGetter {
     }
 };
 
-#if 0
-struct LoRAWeightConstGetter {
-    LoRAWeightGetter weight_getter;
-    std::shared_ptr<ov::Model> model;
-
-    LoRAWeightConstGetter (std::shared_ptr<ov::Model> model, const LoRAWeightGetter& weight_getter) :
-        model(model), weight_getter(weight_getter) {}
-
-    std::optional<LoRANode> operator() (NodePtr node) const {
-        return 
-        if(auto lora_weight = weight_getter(node)) {
-            ov::Dimension input_dim, output_dim;
-            if(std::dynamic_pointer_cast<v1::Convolution>(node)) {
-                input_dim = node->get_input_partial_shape(1)[1];
-                output_dim = node->get_input_partial_shape(1)[0];
-            } else if(auto matmul = std::dynamic_pointer_cast<v0::MatMul>(node)) {
-                input_dim = node->get_input_partial_shape(1)[matmul->get_transpose_b()];
-                output_dim = node->get_input_partial_shape(1)[!matmul->get_transpose_b()];
-            } else {
-                OPENVINO_THROW("LoRAWeightsStateGetter expects MatMul or Convolution, but get ", node);
-            }
-
-            std::string name = node->get_friendly_name();
-            std::string variable_id_prefix = "lora_state_" + std::to_string(model->get_sinks().size()) + name;
-            LoRANode result;
-            LoRAVarIDs var_ids;
-            var_ids.name = name;
-
-            // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
-            //indices.A = model->get_variables().size();
-            var_ids.A = variable_id_prefix + ".A";
-            result.A = add_variable(
-                ov::PartialShape{params->rank, input_dim},  // Will be used with transpose_b == true
-                params->type,
-                var_ids.A
-            );
-            // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
-            //indices.A = model->get_variables().size();
-            var_ids.alpha = variable_id_prefix + ".alpha";
-            result.alpha = add_variable(
-                params->fine_grained_alpha ? ov::PartialShape{1, params->rank} : ov::PartialShape{},
-                ov::element::f32,
-                var_ids.alpha
-            );
-            // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
-            //indices.B = model->get_variables().size();
-            var_ids.B = variable_id_prefix + ".B";
-            result.B = add_variable(
-                ov::PartialShape{output_dim, params->rank},  // Will be used with transpose_b == true
-                params->type,
-                var_ids.B
-            );
-            variable_ids.emplace_back(var_ids);
-            return result;
-        } else {
-            return std::nullopt;
-        }
-    }
-
-    NodePtr add_variable(const ov::PartialShape& shape, const ov::element::Type& type, const std::string& variable_id) const {
-        auto variable = std::make_shared<ov::op::util::Variable>(ov::op::util::VariableInfo{
-            shape, ov::element::f32, variable_id
-        });
-        model->add_variables({variable});
-        #if 0
-        // FIXME: CPU plugin fails when there is no initialization expression is given and type is not fp32
-        ov::Shape init_shape(shape.rank().get_length());
-        for(size_t i = 0; i < shape.size(); ++i) {
-            init_shape[i] = shape[i].get_min_length();
-        }
-        DEBUG_PRINT("Workaround for init, shape: " << init_shape);
-        auto init = v0::Constant::create(type, init_shape, std::vector<float>(ov::shape_size(init_shape), 0));
-        auto read_value = std::make_shared<v6::ReadValue>(init, variable);
-        #else
-        auto read_value = std::make_shared<v6::ReadValue>(variable);
-        #endif
-        model->add_sinks({std::make_shared<v6::Assign>(read_value, variable)});  // FIXME: Required? -- Yes, create ticket agains CPU
-        //return std::make_shared<v1::Add>(read_value, v0::Constant::create(type, ov::Shape{}, {1e-5}));    // FIXME: Workaround for bug in CPU plugin
-        return read_value;
-    }
-};
-
-#endif
 
 class LoRATransformBase : public ov::pass::MatcherPass {
 public:
@@ -804,6 +721,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         current_config(config),  // FIXME: Compare current and passed configs and change incrementally
         lora_state_evaluators("CPU")    // FIXME: Try to run on the same device that is used for model inference
     {
+        OPENVINO_ASSERT(!config.is_dynamic || !config.fuse, "Both is_dynamic and fuse modes cannot be set simultaniously in adapter config");
         LoRAParametersByWeightGetter params_getter;
         params_getter.type = ov::element::dynamic;
 
@@ -826,57 +744,68 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
             }
         }
 
+        auto weight_as_constant = [&, this](NodePtr node) -> std::optional<LoRANode> {
+            // FIXME: lora_placeholder is for passing element type only
+            LoRAParts<ov::Tensor> lora_placeholder{ov::Tensor(ov::element::f32, Shape{0}),  ov::Tensor(params_getter.type, ov::Shape{0}),  ov::Tensor(params_getter.type, ov::Shape{0})};                
+            auto name = node->get_friendly_name();
+            auto lora_weight = prepare_lora_tensors(name, params_getter.weight_getter, lora_placeholder, false);
+            if(lora_weight.alpha) {
+                return LoRANode(
+                    // TODO: Make sure that tensors will not be disposed during constant life time
+                    std::make_shared<v0::Constant>(lora_weight.alpha),
+                    std::make_shared<v0::Constant>(lora_weight.A),
+                    std::make_shared<v0::Constant>(lora_weight.B)
+                );
+            } else {
+                return std::nullopt;
+            }
+        };
+
+        ov::pass::Manager pm;
         if(current_config.is_dynamic) {
-            ov::pass::Manager pm;
+            // State mode
             pm.register_pass<LoRASeparateTransform>(LoRAWeightStateGetter(params_getter, model, variable_ids));
-            pm.run_passes(model);
             //ov::serialize(model, "after_lora.xml");
             // auto variables = model->get_variables();
             // for(size_t i = 0; i < variables.size(); ++i) {
             //     DEBUG_PRINT("Variable: " << variables[i]->get_info().variable_id);
-            // }
+            // }(
+        } else if(!current_config.fuse) {
+            // Separate constant mode
+            pm.register_pass<LoRASeparateTransform>(weight_as_constant);
         } else {
-            ov::pass::Manager pm;
-            pm.register_pass<LoRASeparateTransform>([&, this](NodePtr node) -> std::optional<LoRANode> {
-                // FIXME: lora_placeholder is for passing element type only
-                LoRAParts<ov::Tensor> lora_placeholder{ov::Tensor(ov::element::f32, Shape{0}),  ov::Tensor(params_getter.type, ov::Shape{0}),  ov::Tensor(params_getter.type, ov::Shape{0})};                
-                auto name = node->get_friendly_name();
-                auto lora_weight = prepare_lora_tensors(name, params_getter.weight_getter, lora_placeholder, false);
-                if(lora_weight.alpha) {
-                    return LoRANode(
-                        // TODO: Make sure that tensors will not be disposed during constant life time
-                        std::make_shared<v0::Constant>(lora_weight.alpha),
-                        std::make_shared<v0::Constant>(lora_weight.A),
-                        std::make_shared<v0::Constant>(lora_weight.B)
-                    );
-                } else {
-                    return std::nullopt;
-                }
-            });
-            pm.run_passes(model);            
+            // Fuse mode
+            pm.register_pass<LoRAFuseTransform>(weight_as_constant);
         }
 
+        pm.run_passes(model);
         model->validate_nodes_and_infer_types();    // FIXME: For debugging purposes only
     }
 
     struct ConfigChanged {
         bool is_dynamic = false;
+        bool fuse = false;
         bool alpha = false;
         bool adapter = false;
 
         operator bool() const {
-            return is_dynamic || alpha || adapter;
+            return is_dynamic || fuse || alpha || adapter;
         }
     };
 
     ConfigChanged compare_configs(const AdapterConfig& config1, const AdapterConfig& config2) {
         ConfigChanged diff;
         diff.is_dynamic = config1.is_dynamic != config2.is_dynamic;
+        diff.fuse = config1.fuse != config2.fuse;
         // TODO: Use `set` from this commented block when the config change tracking is implemented at adapter granularity and will track order of adapters correctly
         // std::set<Adapter>
         //     adapters1(config1.adapters.begin(), config1.adapters.end()),
         //     adapters2(config2.adapters.begin(), config2.adapters.end());
         const auto& adapters1 = config1.adapters, adapters2 = config2.adapters;
+
+        DEBUG_PRINT(config1.adapters.size());
+        DEBUG_PRINT(config2.adapters.size());
+        DEBUG_PRINT("adapters1 != adapters2: " << (adapters1 != adapters2));
         
         if(adapters1 != adapters2) {
             diff.adapter = true;
@@ -895,12 +824,20 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
 
     void apply (ov::InferRequest& infer_request, const AdapterConfig& config) override {
         // FIXME: If a part of LoRA state tensors are not set here, then need to carefully reset state in LLMPipeline where global reset is called after the generation
-        DEBUG_PRINT("ALPHA: " << config.alphas[0]);
+        OPENVINO_ASSERT(!config.is_dynamic || !config.fuse, "Both is_dynamic and fuse modes cannot be set simultaniously in adapter config");
+
+        const auto diff = compare_configs(current_config, config);
+        DEBUG_PRINT("config.is_dynamic: " << config.is_dynamic);
+        DEBUG_PRINT("config.fuse: " << config.fuse);
+        DEBUG_PRINT("diff.adapter: " << diff.adapter);
+        OPENVINO_ASSERT(!diff.is_dynamic, "AdapterConfig::is_dynamic cannot be changed and should be configured once for a model at the initialization");
+        OPENVINO_ASSERT(!diff.fuse, "AdapterConfig::fuse cannot be changed and should be configured once for a model at the initialization");
+        OPENVINO_ASSERT(config.is_dynamic || (!diff.alpha && !diff.adapter), "Cannot change adapters and/or the alphas when is_dynamic = false.");
         if(need_full_apply) {
             need_full_apply = false;
+            DEBUG_PRINT("force apply");
             set_new_adapter_tensors(infer_request, config);
-        } if(const auto diff = compare_configs(current_config, config)) {
-            OPENVINO_ASSERT(!diff.is_dynamic, "AdapterConfig::is_dynamic cannot be changed and should be configured once for a model at the initialization");
+        } else if(diff) {
             if(diff.adapter) {
                 set_new_adapter_tensors(infer_request, config);
             } else {
@@ -921,6 +858,9 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
 
     void set_new_adapter_tensors (ov::InferRequest& infer_request, const AdapterConfig& config) {
         current_config = config;       // FIXME: Keep the old config to map to cached LoRA state tensors instead of the current approach where we start from scratch each time
+        if(!current_config.is_dynamic) {
+            return;
+        }
 
         std::vector<LoRAWeightGetter> weight_getters;
         weight_getters.reserve(current_config.adapters.size());

@@ -16,6 +16,7 @@ int main(int argc, char* argv[]) try {
     ov::genai::Adapter adapter1 = ov::genai::Adapter(adapter_path);
     //ov::genai::Adapter adapter2 = ov::genai::Adapter(adapter_path);
     ov::genai::AdapterConfig adapters_config({{adapter1, /*alpha = */ 1}/*, {adapter2, 0.5}*/}, false);
+    adapters_config.fuse = true;
 
     // Pass AdapterConfig to LLMPipeline to be able to dynamically connect adapter in following generate calls
     ov::genai::LLMPipeline pipe(model_path, device, adapters_config);
@@ -31,6 +32,10 @@ int main(int argc, char* argv[]) try {
     std::cout << result << std::endl;
     result = pipe.generate(prompt, config);
     std::cout << result << std::endl;
+
+    if(!adapters_config.is_dynamic) {
+        return 0;
+    }
 
     std::cout << "*** Generation without LoRA adapter: ****\n";
     // Set alpha to 0 for a paticular adapter to temporary disable it.

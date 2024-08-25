@@ -49,6 +49,7 @@ class OPENVINO_GENAI_EXPORTS AdapterController;
 struct OPENVINO_GENAI_EXPORTS AdapterConfig {
     // FIXME: Hide data fields in the private section
     bool is_dynamic = true;    // false -- parameters cannot be changed during inference, this config should match for every generation
+    bool fuse = false;  // true -- repack original big weight matrix with adapter applied, requires +1x copy of all affected wheights in memory and will unpack int8 to fp32, incompatible with is_dynamic = true
     std::vector<Adapter> adapters;
     std::vector<float> alphas;
     std::set<std::string> modules;  // additional modules that can be patched, from LoRA config "target_modules": ["q_proj", "v_proj"] etc.
