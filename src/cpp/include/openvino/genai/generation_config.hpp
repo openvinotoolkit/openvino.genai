@@ -96,7 +96,7 @@ public:
     int64_t eos_token_id = -1;
 
     // Optional adapters
-    AdaptersConfig adapters;
+    AdapterConfig adapters;
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
@@ -146,7 +146,7 @@ static constexpr ov::Property<float> presence_penalty{"presence_penalty"};
 static constexpr ov::Property<float> frequency_penalty{"frequency_penalty"};
 static constexpr ov::Property<size_t> rng_seed{"rng_seed"};
 
-static constexpr ov::Property<AdaptersConfig> adapters("adapters");
+static constexpr ov::Property<AdapterConfig> adapters("adapters");
 
 // Predefined Configs
 OPENVINO_GENAI_EXPORTS GenerationConfig beam_search();

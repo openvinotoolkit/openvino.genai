@@ -43,7 +43,7 @@ using ov::NodeVector;
 using namespace ov::op;
 
 // FIXME: Use ov::AlignedBuffer instead of std::vector. ov::AlignedBuffer is not available in public OV API
-using Buffer = std::vector<std::uint8_t>;
+using Buffer = std::vector<char>;
 using BufferPtr = std::shared_ptr<Buffer>;
 using ConstantVector = std::vector<std::shared_ptr<v0::Constant>>;
 
@@ -70,7 +70,7 @@ struct LoRAParts {
 
 using LoRAWeight = LoRAParts<std::shared_ptr<v0::Constant>>;
 using LoRANode = LoRAParts<std::shared_ptr<ov::Node>>;
-using LoRAPartsParser = LoRAParts<std::function<std::optional<std::string>(const std::string&)>>;
+using LoRAPartsParser = LoRAParts<std::function<std::optional<std::string>(const std::string& name)>>;
 using LoRATensors = std::map<std::string, LoRAWeight>;
 
 struct RegexParser {
@@ -97,14 +97,15 @@ LoRAPartsParser default_lora_patterns () {
 
 BufferPtr read_file_helper(const std::string& filename) {
     std::ifstream file(filename, std::ios::binary | std::ios::ate);
-    OPENVINO_ASSERT(file.is_open(), "Cannot open file ", filename, " with LoRA weights");
+    OPENVINO_ASSERT(file.is_open(), "Cannot open file with LoRA weights: ", filename);
 
     size_t filesize = file.tellg();
-    auto buffer = std::make_shared<std::vector<std::uint8_t>>();
-    buffer->reserve(filesize);
+    auto buffer = std::make_shared<Buffer>(filesize);
+    //buffer->reserve(filesize);
     file.seekg(0, std::ios::beg);
     // FIXME: Use mmapped AlignedBuffer as ov::Core::read_model can do, necessary functionality is not available in public OV API
-    std::copy(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>(), std::back_inserter(*buffer));
+    //std::copy(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>(), std::back_inserter(*buffer));
+    file.read(&(*buffer)[0], filesize);
 
     return buffer;
 }
@@ -153,28 +154,30 @@ ConstantMap read_safetensors(const std::string& filename) {
 
 #define OPENVINO_REGISTER_MATCHER(PATTERN, CALLBACK) do register_matcher(std::make_shared<ov::pass::pattern::Matcher>(PATTERN, this->get_type_info().name), CALLBACK); while(false)
 
+
 // Squeeze all dimensions from right to 2D shape
-NodePtr squeeze_2d (NodePtr node) {
+NodePtr squeeze_2d (const ov::Output<ov::Node>& input) {
     // auto rank = node->get_output_partial_shape(0).rank().get_length();
     // std::vector<unsigned int> dims(2);
     //auto squeeze_num = rank - 2;
     // std::fill_n(dims.begin() + 2, dims.end(), 1);
     auto shape = v0::Constant::create(ov::element::i32, {2}, std::vector<int>{0, 0});
-    auto reshape = std::make_shared<v1::Reshape>(node->output(0), shape->output(0), true);
+    auto reshape = std::make_shared<v1::Reshape>(input, shape->output(0), true);
     return reshape;
 }
 
 // Unsqueeze shape to add dimensions to the right to have `rank`-D tensor
-NodePtr unsqueeze (NodePtr node, unsigned int rank) {
-    auto src_rank = node->get_output_partial_shape(0).rank().get_length();
+NodePtr unsqueeze (const ov::Output<ov::Node>& input, unsigned int rank) {
+    auto src_rank = input.get_partial_shape().rank().get_length();
     std::vector<unsigned int> dims(rank);
     std::fill(dims.begin() + src_rank, dims.end(), 1);
     auto shape = v0::Constant::create(ov::element::i32, {rank}, dims);
-    auto reshape = std::make_shared<v1::Reshape>(node->output(0), shape->output(0), true);
+    auto reshape = std::make_shared<v1::Reshape>(input, shape->output(0), true);
     return reshape;
 }
 
-using LoRAWeightGetter = std::function<std::optional<LoRANode>(NodePtr node)>;
+using LoRAWeightGetter = std::function<std::optional<LoRANode>(const std::string&)>;
+using LoRAWeightByNodeGetter = std::function<std::optional<LoRANode>(NodePtr)>;
 
 struct LoRAParameters {
     ov::Dimension rank;
@@ -192,9 +195,9 @@ struct LoRAWeightGetterDefault {
     mutable std::set<std::string> used_tensors;
     LoRAWeightGetterDefault (const LoRATensors* lora_tensors, const std::string& prefix) : lora_tensors(lora_tensors), prefix(prefix) {}
 
-    std::optional<LoRANode> operator() (NodePtr node) const {
-        return operator()(node->get_friendly_name());
-    }
+    // std::optional<LoRANode> operator() (NodePtr node) const {
+    //     return operator()(node->get_friendly_name());
+    // }
 
     std::optional<LoRANode> operator() (const std::string& name) const {
         std::string name_with_underscores = name;
@@ -218,7 +221,7 @@ struct LoRAWeightGetterDefault {
     }
 
     ~LoRAWeightGetterDefault () {
-        DEBUG_PRINT("Used LoRA tensors: " << used_tensors.size());
+        //DEBUG_PRINT("Used LoRA tensors: " << used_tensors.size());
     }
 };
 
@@ -236,7 +239,7 @@ struct LoRAParametersByWeightGetter {
         // TODO: To implement known static LoRA rank, need to accumulate ranks from all found weights instead of searching for at least one match:
 
         auto it = std::find_if(weight_getter.begin(), weight_getter.end(), [node](const LoRAWeightGetter& getter) {
-            return bool(getter(node));
+            return bool(getter(node->get_friendly_name()));
         });
         if(weight_getter.end() != it) {
             LoRAParameters result;
@@ -257,7 +260,19 @@ struct LoRAIndices : public LoRAParts<size_t> {
 
 struct LoRAVarIDs : public LoRAParts<std::string> {
     std::string name;
-}; 
+};
+
+void deduce_input_output_dims(NodePtr node, ov::Dimension& input_dim, ov::Dimension& output_dim) {
+    if(std::dynamic_pointer_cast<v1::Convolution>(node)) {
+        input_dim = node->get_input_partial_shape(1)[1];
+        output_dim = node->get_input_partial_shape(1)[0];
+    } else if(auto matmul = std::dynamic_pointer_cast<v0::MatMul>(node)) {
+        input_dim = node->get_input_partial_shape(1)[matmul->get_transpose_b()];
+        output_dim = node->get_input_partial_shape(1)[!matmul->get_transpose_b()];
+    } else {
+        OPENVINO_THROW("deduce_input_output_dims expects MatMul or Convolution, but get ", node);
+    }
+}
 
 struct LoRAWeightStateGetter {
     LoRAParametersGetter params_getter;
@@ -270,6 +285,80 @@ struct LoRAWeightStateGetter {
 
     std::optional<LoRANode> operator() (NodePtr node) const {
         if(auto params = params_getter(node)) {
+            ov::Dimension input_dim, output_dim;
+            deduce_input_output_dims(node, input_dim, output_dim);
+
+            std::string name = node->get_friendly_name();
+            std::string variable_id_prefix = "lora_state_" + std::to_string(model->get_sinks().size()) + name;
+            LoRANode result;
+            LoRAVarIDs var_ids;
+            var_ids.name = name;
+
+            // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
+            //indices.A = model->get_variables().size();
+            var_ids.A = variable_id_prefix + ".A";
+            result.A = add_variable(
+                ov::PartialShape{params->rank, input_dim},  // Will be used with transpose_b == true
+                params->type,
+                var_ids.A
+            );
+            // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
+            //indices.A = model->get_variables().size();
+            var_ids.alpha = variable_id_prefix + ".alpha";
+            result.alpha = add_variable(
+                params->fine_grained_alpha ? ov::PartialShape{1, params->rank} : ov::PartialShape{},
+                ov::element::f32,
+                var_ids.alpha
+            );
+            // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
+            //indices.B = model->get_variables().size();
+            var_ids.B = variable_id_prefix + ".B";
+            result.B = add_variable(
+                ov::PartialShape{output_dim, params->rank},  // Will be used with transpose_b == true
+                params->type,
+                var_ids.B
+            );
+            variable_ids.emplace_back(var_ids);
+            return result;
+        } else {
+            return std::nullopt;
+        }
+    }
+
+    NodePtr add_variable(const ov::PartialShape& shape, const ov::element::Type& type, const std::string& variable_id) const {
+        auto variable = std::make_shared<ov::op::util::Variable>(ov::op::util::VariableInfo{
+            shape, ov::element::f32, variable_id
+        });
+        model->add_variables({variable});
+        #if 0
+        // FIXME: CPU plugin fails when there is no initialization expression is given and type is not fp32
+        ov::Shape init_shape(shape.rank().get_length());
+        for(size_t i = 0; i < shape.size(); ++i) {
+            init_shape[i] = shape[i].get_min_length();
+        }
+        DEBUG_PRINT("Workaround for init, shape: " << init_shape);
+        auto init = v0::Constant::create(type, init_shape, std::vector<float>(ov::shape_size(init_shape), 0));
+        auto read_value = std::make_shared<v6::ReadValue>(init, variable);
+        #else
+        auto read_value = std::make_shared<v6::ReadValue>(variable);
+        #endif
+        model->add_sinks({std::make_shared<v6::Assign>(read_value, variable)});  // FIXME: Required? -- Yes, create ticket agains CPU
+        //return std::make_shared<v1::Add>(read_value, v0::Constant::create(type, ov::Shape{}, {1e-5}));    // FIXME: Workaround for bug in CPU plugin
+        return read_value;
+    }
+};
+
+#if 0
+struct LoRAWeightConstGetter {
+    LoRAWeightGetter weight_getter;
+    std::shared_ptr<ov::Model> model;
+
+    LoRAWeightConstGetter (std::shared_ptr<ov::Model> model, const LoRAWeightGetter& weight_getter) :
+        model(model), weight_getter(weight_getter) {}
+
+    std::optional<LoRANode> operator() (NodePtr node) const {
+        return 
+        if(auto lora_weight = weight_getter(node)) {
             ov::Dimension input_dim, output_dim;
             if(std::dynamic_pointer_cast<v1::Convolution>(node)) {
                 input_dim = node->get_input_partial_shape(1)[1];
@@ -341,17 +430,17 @@ struct LoRAWeightStateGetter {
     }
 };
 
-
+#endif
 
 class LoRATransformBase : public ov::pass::MatcherPass {
 public:
 
     OPENVINO_RTTI("LoRATransformBase");
    
-    LoRATransformBase(const LoRAWeightGetter& lora_weight_getter) : lora_weight_getter(lora_weight_getter) {
-        OPENVINO_REGISTER_MATCHER(
-            (ov::pass::pattern::wrap_type<v0::MatMul, v1::Convolution>()),
-            ([&, this](ov::pass::pattern::Matcher& m) {
+    LoRATransformBase(const LoRAWeightByNodeGetter& lora_weight_getter) {
+        register_matcher(
+            std::make_shared<ov::pass::pattern::Matcher>(ov::pass::pattern::wrap_type<v0::MatMul, v1::Convolution>(), this->get_type_info().name),
+            ([lora_weight_getter, this](ov::pass::pattern::Matcher& m) {
                 auto node = m.get_match_root();
                 try {
                     if(auto lora_weight = lora_weight_getter(node)) {
@@ -383,7 +472,7 @@ protected:
 private:
 
     size_t applied = 0; // FIXME: For debug statistics only
-    LoRAWeightGetter lora_weight_getter;
+    //LoRAWeightByNodeGetter lora_weight_getter;
 
 };
 
@@ -450,7 +539,7 @@ public:
     }
 
     void insert (const Signature& signature, std::shared_ptr<ov::Model> model) {
-        DEBUG_PRINT(signature);
+        //DEBUG_PRINT(signature);
         requests[signature] = core.compile_model(model, device).create_infer_request();
     }
 
@@ -496,7 +585,7 @@ public:
     
     OPENVINO_RTTI("LoRAFuseTransform");
     
-    LoRAFuseTransform(const LoRAWeightGetter& lora_weight_getter) : LoRATransformBase(lora_weight_getter) {}
+    LoRAFuseTransform(const LoRAWeightByNodeGetter& lora_weight_getter) : LoRATransformBase(lora_weight_getter) {}
 
     bool apply (NodePtr node, const LoRANode& lora_weight) override {
         auto activations = node->input_value(0);    // FIXME: consider MatMul.transpose_a
@@ -563,16 +652,12 @@ public:
 };
 
 
-
-
-
 class LoRASeparateTransform : public LoRATransformBase {
-
 public:
 
     OPENVINO_RTTI("LoRASeparateTransform");
 
-    LoRASeparateTransform(const LoRAWeightGetter& lora_getter) : LoRATransformBase(lora_getter) {}
+    LoRASeparateTransform(const LoRAWeightByNodeGetter& lora_getter) : LoRATransformBase(lora_getter) {}
 
     bool apply (NodePtr node, const LoRANode& lora_weight) override {
         auto activations = node->input_value(0);    // FIXME: consider MatMul.transpose_a
@@ -690,7 +775,7 @@ std::optional<float> Adapter::get_default_alpha() const {
 
 
 struct AdapterControllerImpl {
-    virtual void apply (ov::InferRequest& infer_request, const AdaptersConfig& config) = 0;
+    virtual void apply (ov::InferRequest& infer_request, const AdapterConfig& config) = 0;
     virtual void apply (ov::InferRequest& infer_request) = 0;
     static std::shared_ptr<Adapter::Impl> get_adapter_impl(const Adapter& adapter) {
         return adapter.m_pimpl;
@@ -710,21 +795,22 @@ bool operator< (const Adapter& a, const Adapter& b) {
 struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
     std::vector<LoRAVarIDs> variable_ids;
     const std::string prefix;
-    AdaptersConfig current_config;
+    AdapterConfig current_config;
     bool need_full_apply = true;
     InferRequestSignatureCache lora_state_evaluators;
 
-    AdapterControllerImplSeparateState(std::shared_ptr<ov::Model> model, const AdaptersConfig& config, const std::string& prefix) :
+    AdapterControllerImplSeparateState(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix) :
         prefix(prefix),
         current_config(config),  // FIXME: Compare current and passed configs and change incrementally
         lora_state_evaluators("CPU")    // FIXME: Try to run on the same device that is used for model inference
     {
         LoRAParametersByWeightGetter params_getter;
         params_getter.type = ov::element::dynamic;
-        // TODO: Instead of aggregating types over all tensors in each adapter, make decision per node in LoRAWeightStateGetter
+
         for(auto const& adapter : current_config.adapters) {
             auto adapter_impl = get_adapter_impl(adapter);
-            params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->tensors, prefix));  // FIXME: Pass prefix from config
+            params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->tensors, prefix));
+            // TODO: Instead of aggregating types over all tensors in each adapter, make decision per node in LoRAWeightStateGetter
             /*if(params_getter.type != ov::element::f32)*/ {  // FIXME: Implement element_type tolerant code when state is set and uncomment this condition
                 for(auto const& tensor : adapter_impl->tensors) {
                     auto lora_tensor_type = tensor.second.A->get_output_element_type(0);
@@ -740,16 +826,37 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
             }
         }
 
-        LoRAWeightGetter state_getter(LoRAWeightStateGetter(params_getter, model, variable_ids));
-        ov::pass::Manager pm;
-        pm.register_pass<LoRASeparateTransform>(state_getter);
-        pm.run_passes(model);
+        if(current_config.is_dynamic) {
+            ov::pass::Manager pm;
+            pm.register_pass<LoRASeparateTransform>(LoRAWeightStateGetter(params_getter, model, variable_ids));
+            pm.run_passes(model);
+            //ov::serialize(model, "after_lora.xml");
+            // auto variables = model->get_variables();
+            // for(size_t i = 0; i < variables.size(); ++i) {
+            //     DEBUG_PRINT("Variable: " << variables[i]->get_info().variable_id);
+            // }
+        } else {
+            ov::pass::Manager pm;
+            pm.register_pass<LoRASeparateTransform>([&, this](NodePtr node) -> std::optional<LoRANode> {
+                // FIXME: lora_placeholder is for passing element type only
+                LoRAParts<ov::Tensor> lora_placeholder{ov::Tensor(ov::element::f32, Shape{0}),  ov::Tensor(params_getter.type, ov::Shape{0}),  ov::Tensor(params_getter.type, ov::Shape{0})};                
+                auto name = node->get_friendly_name();
+                auto lora_weight = prepare_lora_tensors(name, params_getter.weight_getter, lora_placeholder, false);
+                if(lora_weight.alpha) {
+                    return LoRANode(
+                        // TODO: Make sure that tensors will not be disposed during constant life time
+                        std::make_shared<v0::Constant>(lora_weight.alpha),
+                        std::make_shared<v0::Constant>(lora_weight.A),
+                        std::make_shared<v0::Constant>(lora_weight.B)
+                    );
+                } else {
+                    return std::nullopt;
+                }
+            });
+            pm.run_passes(model);            
+        }
+
         model->validate_nodes_and_infer_types();    // FIXME: For debugging purposes only
-        //ov::serialize(model, "after_lora.xml");
-        // auto variables = model->get_variables();
-        // for(size_t i = 0; i < variables.size(); ++i) {
-        //     DEBUG_PRINT("Variable: " << variables[i]->get_info().variable_id);
-        // }
     }
 
     struct ConfigChanged {
@@ -762,7 +869,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         }
     };
 
-    ConfigChanged compare_configs(const AdaptersConfig& config1, const AdaptersConfig& config2) {
+    ConfigChanged compare_configs(const AdapterConfig& config1, const AdapterConfig& config2) {
         ConfigChanged diff;
         diff.is_dynamic = config1.is_dynamic != config2.is_dynamic;
         // TODO: Use `set` from this commented block when the config change tracking is implemented at adapter granularity and will track order of adapters correctly
@@ -786,14 +893,13 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         return diff;
     }
 
-    void apply (ov::InferRequest& infer_request, const AdaptersConfig& config) override {
+    void apply (ov::InferRequest& infer_request, const AdapterConfig& config) override {
         // FIXME: If a part of LoRA state tensors are not set here, then need to carefully reset state in LLMPipeline where global reset is called after the generation
-
+        DEBUG_PRINT("ALPHA: " << config.alphas[0]);
         if(need_full_apply) {
             need_full_apply = false;
             set_new_adapter_tensors(infer_request, config);
-        }
-        if(const auto diff = compare_configs(current_config, config)) {
+        } if(const auto diff = compare_configs(current_config, config)) {
             OPENVINO_ASSERT(!diff.is_dynamic, "AdapterConfig::is_dynamic cannot be changed and should be configured once for a model at the initialization");
             if(diff.adapter) {
                 set_new_adapter_tensors(infer_request, config);
@@ -808,15 +914,15 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         need_full_apply = full_apply;
     }
 
-    void set_new_adapter_alphas (ov::InferRequest& infer_request, const AdaptersConfig& config) {
+    void set_new_adapter_alphas (ov::InferRequest& infer_request, const AdapterConfig& config) {
         // FIXME: Provide more economical way to update only alphas
         set_new_adapter_tensors(infer_request, config);
     }
 
-    void set_new_adapter_tensors (ov::InferRequest& infer_request, const AdaptersConfig& config) {
+    void set_new_adapter_tensors (ov::InferRequest& infer_request, const AdapterConfig& config) {
         current_config = config;       // FIXME: Keep the old config to map to cached LoRA state tensors instead of the current approach where we start from scratch each time
 
-        std::vector<LoRAWeightGetterDefault> weight_getters;
+        std::vector<LoRAWeightGetter> weight_getters;
         weight_getters.reserve(current_config.adapters.size());
         for(const auto& adapter: current_config.adapters) {
             weight_getters.emplace_back(LoRAWeightGetterDefault(&get_adapter_impl(adapter)->tensors, prefix));
@@ -850,12 +956,12 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         }
     }
 
-     std::vector<LoRAWeight> collect_applicable_tensors (const LoRAIndices& lora_indices, const std::vector<LoRAWeightGetterDefault>& weight_getters) {
+     std::vector<LoRAWeight> collect_applicable_tensors (const std::string& lora_name, const std::vector<LoRAWeightGetter>& weight_getters) {
         OPENVINO_ASSERT(weight_getters.size() == current_config.adapters.size());
         std::vector<LoRAWeight> result;
         result.reserve(weight_getters.size());
         for(size_t i = 0; i < current_config.adapters.size(); ++i) {
-            if(auto lora_tensors = weight_getters[i](lora_indices.name)) {
+            if(auto lora_tensors = weight_getters[i](lora_name)) {
                 // FIXME: Introduce more flexible logic of setting alpha based on alpha set in the adapter file itself, now it is ignored and only alpha from config is used
                 OPENVINO_ASSERT(lora_tensors->A);
                 OPENVINO_ASSERT(lora_tensors->B);
@@ -959,6 +1065,9 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
             if(input->get_output_element_type(0) != output.get_element_type()) {
                 input = std::make_shared<v0::Convert>(input, output.get_element_type());
             }
+            if(input->get_output_partial_shape(0).rank().get_length() > 2) {
+                input = squeeze_2d(input);
+            }
             input = parameter_postprocessing(inputs[i], input);
             concat_inputs.push_back(input);
         }
@@ -1052,23 +1161,33 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         return outputs;
     }
 
-    void set_lora_tensors(std::vector<VariableState>& state, const LoRAIndices& lora_indices, const std::vector<LoRAWeightGetterDefault>& weight_getters) {
-        auto lora_tensors = collect_applicable_tensors(lora_indices, weight_getters);
-
+    void set_lora_tensors(std::vector<VariableState>& state, const LoRAIndices& lora_indices, const std::vector<LoRAWeightGetter>& weight_getters) {
         LoRAParts<ov::Tensor> lora_state_tensors(
             state[lora_indices.alpha].get_state(),  
             state[lora_indices.A].get_state(),
             state[lora_indices.B].get_state()
-        );        LoRAParts<ov::Tensor> new_tensors;
-        if(!lora_tensors.empty()) {
-            new_tensors = concat_adapters(lora_tensors, lora_state_tensors);
-        } else {
-            new_tensors = empty_adapters(lora_tensors, lora_state_tensors);
-        }
+        );
+        auto new_tensors = prepare_lora_tensors(lora_indices.name, weight_getters, lora_state_tensors);
         state[lora_indices.alpha].set_state(new_tensors.alpha);
         state[lora_indices.A].set_state(new_tensors.A);
         state[lora_indices.B].set_state(new_tensors.B);
         //print_tensor(std::cout, new_tensors.alpha);
+    }
+
+    LoRAParts<ov::Tensor> prepare_lora_tensors (
+        const std::string& name,
+        const std::vector<LoRAWeightGetter>& weight_getters,
+        LoRAParts<ov::Tensor>& output,
+        bool set_empty_adapters = true
+    ) {
+        auto lora_tensors = collect_applicable_tensors(name, weight_getters);
+        LoRAParts<ov::Tensor> new_tensors;
+        if(!lora_tensors.empty()) {
+            new_tensors = concat_adapters(lora_tensors, output);
+        } else if(set_empty_adapters) {  // FIXME: Make it as a separate step outside of this function
+            new_tensors = empty_adapters(lora_tensors, output);
+        }
+        return new_tensors;
     }
 
     void apply (ov::InferRequest& infer_request) override {
@@ -1076,13 +1195,13 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
     }
 };
 
-AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const AdaptersConfig& config, const std::string& prefix) :
+AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix) :
     m_pimpl(std::make_shared<AdapterControllerImplSeparateState>(model, config, prefix)) {
     // FIXME: Create Static lora if user requested, now always dynamic LoRA is created
 }
 
 // Call it every time when adapter config is changed; if adapter was configured as a static one, this call is not required
-void AdapterController::apply(ov::InferRequest& request, const AdaptersConfig& config) {
+void AdapterController::apply(ov::InferRequest& request, const AdapterConfig& config) {
     return m_pimpl->apply(request, config);
 }
 
@@ -1094,7 +1213,7 @@ void AdapterController::force_full_apply(bool full_apply) {
     return m_pimpl->force_full_apply(full_apply);
 }
 
-AdaptersConfig::AdaptersConfig (const std::vector<Adapter>& adapters, bool is_dynamic) : is_dynamic(is_dynamic), adapters(adapters) {
+AdapterConfig::AdapterConfig (const std::vector<Adapter>& adapters, bool is_dynamic) : is_dynamic(is_dynamic), adapters(adapters) {
     alphas.reserve(adapters.size());
     for(const auto& adapter: adapters) {
         auto const alpha = adapter.get_default_alpha().value_or(1);
@@ -1103,7 +1222,7 @@ AdaptersConfig::AdaptersConfig (const std::vector<Adapter>& adapters, bool is_dy
     }
 }
 
-AdaptersConfig::AdaptersConfig (const std::vector<std::pair<Adapter, float>>& _adapters, bool is_dynamic) : is_dynamic(is_dynamic) {
+AdapterConfig::AdapterConfig (const std::vector<std::pair<Adapter, float>>& _adapters, bool is_dynamic) : is_dynamic(is_dynamic) {
     adapters.reserve(_adapters.size());
     alphas.reserve(_adapters.size());
     for(auto const& adapter_and_alpha: _adapters) {
@@ -1113,42 +1232,42 @@ AdaptersConfig::AdaptersConfig (const std::vector<std::pair<Adapter, float>>& _a
     }
 }
 
-AdaptersConfig::AdaptersConfig (const Adapter& adapter, float alpha, bool is_dynamic) : AdaptersConfig({{adapter, alpha}}, is_dynamic) {}
+//AdapterConfig::AdapterConfig (const Adapter& adapter, float alpha, bool is_dynamic) : AdapterConfig(std::vector<std::pair<Adapter, float>>{{adapter, alpha}}, is_dynamic) {}
 
-AdaptersConfig& AdaptersConfig::add(const Adapter& adapter, float alpha) {
+AdapterConfig& AdapterConfig::add(const Adapter& adapter, float alpha) {
     OPENVINO_ASSERT(adapters.size() == alphas.size());
-    OPENVINO_ASSERT(adapters.end() != std::find(adapters.begin(), adapters.end(), adapter), "Adapter object passed to AdaptersConfig::add was already registered");
+    OPENVINO_ASSERT(adapters.end() == std::find(adapters.begin(), adapters.end(), adapter), "Adapter object passed to AdapterConfig::add was already registered");
     adapters.push_back(adapter);
     alphas.push_back(alpha);
     alpha_constants.push_back(alpha_as_constant(alpha));
     return *this;
 }
 
-AdaptersConfig& AdaptersConfig::add(const Adapter& adapter) {
+AdapterConfig& AdapterConfig::add(const Adapter& adapter) {
     return add(adapter, adapter.get_default_alpha().value_or(1));
 }
 
-AdaptersConfig& AdaptersConfig::set_alpha(const Adapter& adapter, float alpha) {
+AdapterConfig& AdapterConfig::set_alpha(const Adapter& adapter, float alpha) {
     OPENVINO_ASSERT(adapters.size() == alphas.size());
     auto it = std::find(adapters.begin(), adapters.end(), adapter);
-    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdaptersConfig::set_alpha, register adapter object first with AdaptersConfig::add");
+    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdapterConfig::set_alpha, register adapter object first with AdapterConfig::add");
     auto index = it - adapters.begin();
     alphas[index] = alpha;
     alpha_constants[index] = alpha_as_constant(alpha);
     return *this;
 }
 
-float AdaptersConfig::get_alpha(const Adapter& adapter) const {
+float AdapterConfig::get_alpha(const Adapter& adapter) const {
     OPENVINO_ASSERT(adapters.size() == alphas.size());
     auto it = std::find(adapters.begin(), adapters.end(), adapter);
-    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdaptersConfig::get_alpha, alpha can be retrieved for previously registered adatpers only");  
+    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdapterConfig::get_alpha, alpha can be retrieved for previously registered adatpers only");  
     return alphas[it - adapters.begin()];
 }
 
-AdaptersConfig& AdaptersConfig::remove(const Adapter& adapter) {
+AdapterConfig& AdapterConfig::remove(const Adapter& adapter) {
     OPENVINO_ASSERT(adapters.size() == alphas.size());
     auto it = std::find(adapters.begin(), adapters.end(), adapter);
-    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdaptersConfig::remove, you can remove previously registered adapters only");
+    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdapterConfig::remove, you can remove previously registered adapters only");
     auto index = it - adapters.begin();
     alphas.erase(alphas.begin() + index);
     alpha_constants.erase(alpha_constants.begin() + index);

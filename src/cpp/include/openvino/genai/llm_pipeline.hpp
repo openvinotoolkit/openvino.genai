@@ -111,7 +111,7 @@ public:
     LLMPipeline(
         const std::string& path, 
         const std::string& device,
-        const AdaptersConfig& adapters_config,
+        const AdapterConfig& adapters_config,
         const ov::AnyMap& plugin_config={}
     );
     

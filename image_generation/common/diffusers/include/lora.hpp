@@ -6,9 +6,7 @@
 #define GENAI_NEW_LORA 1
 
 #if GENAI_NEW_LORA
-// #ifndef INCLUDED_FROM_LORA_CPP
-// #include  "../../../../src/cpp/include/openvino/genai/lora_adapter.hpp"
-// #endif
+
 #include <openvino/genai/lora_adapter.hpp>
 
 #else

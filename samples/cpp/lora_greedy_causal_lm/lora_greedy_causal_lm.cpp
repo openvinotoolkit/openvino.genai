@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) try {
     // Prepare Adapter object before creation of LLMPipeline
     ov::genai::Adapter adapter1 = ov::genai::Adapter(adapter_path);
     //ov::genai::Adapter adapter2 = ov::genai::Adapter(adapter_path);
-    ov::genai::AdaptersConfig adapters_config({{adapter1, /*alpha = */ 1}/*, {adapter2, 0.5}*/});
+    ov::genai::AdapterConfig adapters_config({{adapter1, /*alpha = */ 1}/*, {adapter2, 0.5}*/}, false);
 
     // Pass AdapterConfig to LLMPipeline to be able to dynamically connect adapter in following generate calls
     ov::genai::LLMPipeline pipe(model_path, device, adapters_config);
@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) try {
     ov::genai::GenerationConfig config = pipe.get_generation_config();
     config.max_new_tokens = 10;
     // Note: If a GenerationConfig object is created from scratch and not given by `get_generation_config`
-    // you need to set AdaptersConfig manually to it, the adapters won't be applied otherwise.
+    // you need to set AdapterConfig manually to it, the adapters won't be applied otherwise.
 
     std::cout << "*** Generation with LoRA adapter applied: ***\n";
     std::string result = pipe.generate(prompt, config);

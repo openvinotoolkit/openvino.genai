@@ -89,7 +89,7 @@ public:
         const std::filesystem::path& model_path,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
-        const AdaptersConfig& adapters_config,
+        const AdapterConfig& adapters_config,
         const ov::AnyMap& plugin_config
     ):
         // TODO: How adapters_config interfer with config loaded from the file? Suggestion: adapters_conig overrides adapters from the file
@@ -127,7 +127,7 @@ public:
     StatefulLLMPipeline(
         const std::filesystem::path& model_path,
         const std::string& device,
-        const AdaptersConfig& adapters_config,
+        const AdapterConfig& adapters_config,
         const ov::AnyMap& plugin_config
     ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, adapters_config, plugin_config} {}
 
@@ -568,7 +568,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if ("NPU" == device) {
         m_pimpl = std::make_unique<StaticLLMPipeline>(model_path, tokenizer, device, plugin_config);
     } else {
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, AdaptersConfig{}, plugin_config);
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, AdapterConfig{}, plugin_config);
     }
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
@@ -594,7 +594,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 ov::genai::LLMPipeline::LLMPipeline(
     const std::string& path, 
     const std::string& device,
-    const AdaptersConfig& adapters_config,
+    const AdapterConfig& adapters_config,
     const ov::AnyMap& plugin_config
 ) {
     auto start_time = std::chrono::steady_clock::now();

@@ -46,7 +46,7 @@ bool OPENVINO_GENAI_EXPORTS operator== (const Adapter& a, const Adapter& b);
 
 class OPENVINO_GENAI_EXPORTS AdapterController;
 
-struct OPENVINO_GENAI_EXPORTS AdaptersConfig {
+struct OPENVINO_GENAI_EXPORTS AdapterConfig {
     // FIXME: Hide data fields in the private section
     bool is_dynamic = true;    // false -- parameters cannot be changed during inference, this config should match for every generation
     std::vector<Adapter> adapters;
@@ -55,36 +55,37 @@ struct OPENVINO_GENAI_EXPORTS AdaptersConfig {
     ov::element::Type adapter_element_type = ov::element::dynamic; // optional element type for adapter tensors in case if multiple adapters have various types or they are not known in advance
     std::vector<std::shared_ptr<ov::op::v0::Constant>> alpha_constants;
 
-    AdaptersConfig (const std::vector<Adapter>& adapters, bool is_dynamic = true);// : is_dynamic(is_dynamic), adapters(adapters) {}
-    AdaptersConfig (const std::vector<std::pair<Adapter, float>>& adapters, bool is_dynamic = true);// : is_dynamic(is_dynamic), adapters(adapters) {}
-    AdaptersConfig (const Adapter& adapter, float alpha, bool is_dynamic = true);
-    AdaptersConfig() = default;
+    AdapterConfig (const std::vector<Adapter>& adapters, bool is_dynamic = true);// : is_dynamic(is_dynamic), adapters(adapters) {}
+    AdapterConfig (const std::vector<std::pair<Adapter, float>>& adapters, bool is_dynamic = true);// : is_dynamic(is_dynamic), adapters(adapters) {}
+    //AdapterConfig (const Adapter& adapter, float alpha, bool is_dynamic = true);
+    //AdapterConfig (const Adapter& adapter, bool is_dynamic = true) : AdapterConfig(std::vector<Adapter>{adapter}, is_dynamic) {}
+    AdapterConfig() = default;
 
-    AdaptersConfig& add(const Adapter& adapter, float alpha);
-    AdaptersConfig& add(const Adapter& adapter);
-    AdaptersConfig& set_alpha(const Adapter& adapter, float alpha);
+    AdapterConfig& add(const Adapter& adapter, float alpha);
+    AdapterConfig& add(const Adapter& adapter);
+    AdapterConfig& set_alpha(const Adapter& adapter, float alpha);
     float get_alpha(const Adapter& adapter) const;
-    AdaptersConfig& remove(const Adapter&);
+    AdapterConfig& remove(const Adapter&);
 
     // Returns true if it is not a trivial config
     operator bool() const {
-        return is_dynamic || !adapters.empty();
+        return !adapters.empty();
     }
 };
 
 
 class OPENVINO_GENAI_EXPORTS AdapterController {
-    // FIXME: Should hold AdaptersConfig to compare with previsly set config and to hold Adapter objects
+    // FIXME: Should hold AdapterConfig to compare with previsly set config and to hold Adapter objects
 
     std::shared_ptr<AdapterControllerImpl> m_pimpl;
     friend AdapterControllerImpl;
     //static std::shared_ptr<Adapter::Impl> get_adapter_impl(const Adapter& adapter);
 public:
     AdapterController() = default;
-    AdapterController(std::shared_ptr<ov::Model> model, const AdaptersConfig& config, const std::string& prefix);
+    AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix);
 
     // Call it every time when adapter config is changed; if adapter was configured as a static one, this call is not required
-    void apply(ov::InferRequest& request, const AdaptersConfig& config);
+    void apply(ov::InferRequest& request, const AdapterConfig& config);
 
     // the next call of apply will set all adapter tensors regardless of config change, use this method if full state.reset is called for the controlled model
     void force_full_apply(bool full_apply = true);

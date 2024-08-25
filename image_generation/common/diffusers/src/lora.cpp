@@ -1,13 +1,6 @@
-#if 0
-#define INCLUDED_FROM_LORA_CPP
 #include "lora.hpp"
 
-
-#if GENAI_NEW_LORA
-
-#include "../../../../src/cpp/src/lora_adapter.cpp"
-
-#else
+#if !GENAI_NEW_LORA
 
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
@@ -398,5 +391,4 @@ read_lora_adapters(const std::string& filename, const float alpha) {
     return lora_constants;
 }
 
-#endif
 #endif
