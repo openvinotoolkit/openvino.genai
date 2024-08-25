@@ -173,7 +173,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
         #else
         OPENVINO_ASSERT(lora_path.size() == 1, "Multiple LoRA adapters are not supported");
         Timer t("Loading and multiplying LoRA weights");
-        lora_weights = read_lora_adapters(lora_path, alpha);
+        lora_weights = read_lora_adapters(lora_path[0], alpha[0]);
         #endif
     }
 
