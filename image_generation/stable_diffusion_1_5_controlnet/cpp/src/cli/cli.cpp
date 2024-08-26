@@ -4,12 +4,10 @@
 #include <filesystem>
 #include <string>
 
+#include "core/core.hpp"
 #include "cxxopts.hpp"
 #include "imwrite.hpp"
 #include "openvino/runtime/core.hpp"
-
-#include "core/core.hpp"
-
 
 ov::Tensor postprocess_image(ov::Tensor decoded_image) {
     ov::Tensor generated_image(ov::element::u8, decoded_image.get_shape());
@@ -52,10 +50,9 @@ int32_t main(int32_t argc, char* argv[]) try {
             ""))("c,useCache", "Use model caching", cxxopts::value<bool>()->default_value("false"))(
         "m,modelPath",
         "Specify path of SD model IRs",
-        cxxopts::value<std::string>()->default_value("./models"))(
-        "i,inputImage",
-        "Specify path of Input image",
-        cxxopts::value<std::string>()->default_value(""))(
+        cxxopts::value<std::string>()->default_value("./models"))("i,inputImage",
+                                                                  "Specify path of Input image",
+                                                                  cxxopts::value<std::string>()->default_value(""))(
         "o,outputImage",
         "Specify path of output image",
         cxxopts::value<std::string>()->default_value(""))("h,help", "Print usage");
@@ -86,7 +83,6 @@ int32_t main(int32_t argc, char* argv[]) try {
     const std::string model_base_path = result["modelPath"].as<std::string>();
     const std::string input_image_path = result["inputImage"].as<std::string>();
     const std::string output_image_path = result["outputImage"].as<std::string>();
-    // FIXME:
     const std::string np_latent = result["latent"].as<std::string>();
 
     const std::string folder_name = "images";
@@ -100,7 +96,8 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     const std::string model_path = model_base_path;
     if (!std::filesystem::exists(model_path)) {
-        std::cerr << "Model path " << model_path << " don't exist" << "\n";
+        std::cerr << "Model path " << model_path << " don't exist"
+                  << "\n";
         std::cerr << "Refer to README.md to know how to export OpenVINO model with particular data type." << std::endl;
         return EXIT_FAILURE;
     }
@@ -109,13 +106,8 @@ int32_t main(int32_t argc, char* argv[]) try {
     StableDiffusionControlnetPipeline pipeline(model_path, device);
     for (uint32_t n = 0; n < num_images; n++) {
         std::uint32_t seed = num_images == 1 ? user_seed : user_seed + n;
-        StableDiffusionControlnetPipelineParam param = {
-            positive_prompt,
-            negative_prompt,
-            input_image_path,
-            num_inference_steps,
-            seed,
-        };
+        StableDiffusionControlnetPipelineParam param =
+            {positive_prompt, negative_prompt, input_image_path, num_inference_steps, seed, np_latent};
         auto decoded_image = pipeline.Run(param);
         auto image = postprocess_image(decoded_image);
         if (output_image_path != "") {

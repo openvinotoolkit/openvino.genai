@@ -36,13 +36,32 @@ ov::Tensor concat_twice(const ov::Tensor& input) {
     return output_tensor;
 }
 
-ov::Tensor randn_tensor(ov::Shape shape, uint32_t seed = 42) {
+ov::Tensor randn_tensor(ov::Shape shape, std::string latent_path, uint32_t seed = 42) {
     ov::Tensor noise(ov::element::f32, shape);
-    std::mt19937 gen{seed};
-    std::normal_distribution<float> normal{0.0f, 1.0f};
-    std::generate_n(noise.data<float>(), noise.get_size(), [&]() {
-        return normal(gen);
-    });
+    if (latent_path.empty()) {
+        std::mt19937 gen{seed};
+        std::normal_distribution<float> normal{0.0f, 1.0f};
+        std::generate_n(noise.data<float>(), noise.get_size(), [&]() {
+            return normal(gen);
+        });
+    } else {
+        // read from latent file
+        std::ifstream latent_copy_file(latent_path.c_str(), std::ios::ate);
+        OPENVINO_ASSERT(latent_copy_file.is_open(), "Cannot open ", latent_path.c_str());
+
+        size_t file_size = latent_copy_file.tellg() / sizeof(float);
+        OPENVINO_ASSERT(file_size >= noise.get_size(),
+                        "Cannot generate ",
+                        noise.get_shape(),
+                        " with ",
+                        latent_path.c_str(),
+                        ". File size is small");
+
+        latent_copy_file.seekg(0, std::ios::beg);
+        for (size_t i = 0; i < noise.get_size(); ++i)
+            latent_copy_file >> noise.data<float>()[i];
+    }
+
     return noise;
 }
 
@@ -396,13 +415,12 @@ ov::Tensor StableDiffusionControlnetPipeline::Run(StableDiffusionControlnetPipel
     // latents are multiplied by 'init_noise_sigma'
     ov::Shape latent_shape = ov::Shape({1, unet_in_channels, 512 / VAE_SCALE_FACTOR, 512 / VAE_SCALE_FACTOR});
     ov::Shape latent_model_input_shape = latent_shape;
-    ov::Tensor noise = randn_tensor(latent_shape, param.seed);
+    ov::Tensor noise = randn_tensor(latent_shape, param.latent_path, param.seed);
     latent_model_input_shape[0] = 2;  // Unet accepts batch 2
     ov::Tensor latent(ov::element::f32, latent_shape), latent_model_input(ov::element::f32, latent_model_input_shape);
     for (size_t i = 0; i < noise.get_size(); ++i) {
         latent.data<float>()[i] = noise.data<float>()[i] * scheduler->get_init_noise_sigma();
     }
-
     for (size_t inference_step = 0; inference_step < param.steps; inference_step++) {
         std::cout << "running " << inference_step + 1 << "/" << param.steps << std::endl;
 
