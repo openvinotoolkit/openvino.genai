@@ -67,8 +67,14 @@ struct StableDiffusionModels {
     ov::CompiledModel unet;
     ov::CompiledModel vae_decoder;
     ov::CompiledModel tokenizer;
+
+    #if GENAI_NEW_LORA
+    ov::genai::AdapterController adapter_controller_text_encoder;
+    ov::genai::AdapterController adapter_controller_unet;
+    #endif
 };
 
+#if !GENAI_NEW_LORA
 void apply_lora(std::shared_ptr<ov::Model> model, InsertLoRA::LoRAMap& lora_map) {
     if (!lora_map.empty()) {
         ov::pass::Manager manager;
@@ -76,6 +82,7 @@ void apply_lora(std::shared_ptr<ov::Model> model, InsertLoRA::LoRAMap& lora_map)
         manager.run_passes(model);
     }
 }
+#endif
 
 void reshape_text_encoder(std::shared_ptr<ov::Model> model, size_t batch_size, size_t tokenizer_model_max_length) {
     ov::PartialShape input_shape = model->input(0).get_partial_shape();
@@ -125,8 +132,8 @@ void reshape_vae_decoder(std::shared_ptr<ov::Model> model, int64_t height, int64
 
 StableDiffusionModels compile_models(const std::string& model_path,
                                      const std::string& device,
-                                     const std::string& lora_path, 
-                                     const float alpha, 
+                                     const std::vector<std::string>& lora_path,
+                                     const std::vector<float>& alpha,
                                      const bool use_cache,
                                      const bool use_dynamic_shapes,
                                      const size_t batch_size,
@@ -141,10 +148,26 @@ StableDiffusionModels compile_models(const std::string& model_path,
     core.add_extension(TOKENIZERS_LIBRARY_PATH);
 
     // read LoRA weights
+    #if GENAI_NEW_LORA
+    ov::genai::Adapter lora_adapter;
+    ov::genai::AdapterConfig lora_config;
+    #else
     std::map<std::string, InsertLoRA::LoRAMap> lora_weights;
+    #endif
     if (!lora_path.empty()) {
+        #if GENAI_NEW_LORA
+        Timer t("Loading LoRA weights");
+        DEBUG_PRINT("Adapters registered:" << lora_path.size());
+        for(size_t i = 0; i < lora_path.size(); ++i) {
+            lora_config.add(ov::genai::Adapter(lora_path[i], i < alpha.size() ? alpha[i] : 0.75f)); // TODO: Consider using default alpha from LoRA file
+        }
+        lora_config.is_dynamic = true;
+        lora_config.fuse = false;
+        #else
+        OPENVINO_ASSERT(lora_path.size() == 1, "Multiple LoRA adapters are not supported");
         Timer t("Loading and multiplying LoRA weights");
-        lora_weights = read_lora_adapters(lora_path, alpha);
+        lora_weights = read_lora_adapters(lora_path[0],  !alpha.empty() ? alpha[0] : 0.75f);
+        #endif
     }
 
     // Text encoder
@@ -154,7 +177,13 @@ StableDiffusionModels compile_models(const std::string& model_path,
         if (!use_dynamic_shapes) {
             reshape_text_encoder(text_encoder_model, batch_size, TOKENIZER_MODEL_MAX_LENGTH);
         }
+        #if GENAI_NEW_LORA
+        if(lora_config) {
+            models.adapter_controller_text_encoder = ov::genai::AdapterController(text_encoder_model, lora_config, "lora_te");
+        }
+        #else
         apply_lora(text_encoder_model, lora_weights["text_encoder"]);
+        #endif
         models.text_encoder = core.compile_model(text_encoder_model, device);
     }
 
@@ -165,7 +194,13 @@ StableDiffusionModels compile_models(const std::string& model_path,
         if (!use_dynamic_shapes) {
             reshape_unet(unet_model, batch_size, height, width, TOKENIZER_MODEL_MAX_LENGTH);
         }
+        #if GENAI_NEW_LORA
+        if(lora_config) {
+            models.adapter_controller_unet = ov::genai::AdapterController(unet_model, lora_config, "lora_unet");
+        }
+        #else
         apply_lora(unet_model, lora_weights["unet"]);
+        #endif
         models.unet = core.compile_model(unet_model, device);
     }
 
@@ -199,6 +234,11 @@ ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt) {
 
     ov::InferRequest tokenizer_req = models.tokenizer.create_infer_request();
     ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
+    #if GENAI_NEW_LORA
+    if(models.adapter_controller_text_encoder) {
+        models.adapter_controller_text_encoder.apply(text_encoder_req);
+    }
+    #endif
 
     ov::Tensor text_embeddings(ov::element::f32, {1, TOKENIZER_MODEL_MAX_LENGTH, HIDDEN_SIZE});
     ov::Tensor input_ids(ov::element::i32, input_ids_shape);
@@ -292,8 +332,8 @@ int32_t main(int32_t argc, char* argv[]) try {
     ("m,modelPath", "Specify path to LCM model IRs", cxxopts::value<std::string>()->default_value("./models/lcm_dreamshaper_v7"))
     ("t,type", "Specify the type of LCM model IRs (e.g., FP32, FP16 or INT8)", cxxopts::value<std::string>()->default_value("FP16"))
     ("dynamic","Specify the model input shape to use dynamic shape",cxxopts::value<bool>()->default_value("false"))
-    ("l,loraPath", "Specify path of LoRA file. (*.safetensors).", cxxopts::value<std::string>()->default_value(""))
-    ("a,alpha", "Specify alpha for LoRA", cxxopts::value<float>()->default_value("0.75"))
+    ("l,loraPath", "Specify path of LoRA file(s). (*.safetensors).", cxxopts::value<std::vector<std::string>>()->default_value("LIST"))
+    ("a,alpha", "alpha(s) for LoRA (0.75 if not set), multiple values correspond to multiple loraPath values", cxxopts::value<std::vector<float>>()->default_value("0.5"))
     ("h,help", "Print usage");
     cxxopts::ParseResult result;
 
@@ -323,8 +363,8 @@ int32_t main(int32_t argc, char* argv[]) try {
     const std::string model_base_path = result["modelPath"].as<std::string>();
     const std::string model_type = result["type"].as<std::string>();
     const bool use_dynamic_shapes = result["dynamic"].as<bool>();
-    const std::string lora_path = result["loraPath"].as<std::string>();
-    const float alpha = result["alpha"].as<float>();
+    const std::vector<std::string> lora_path = result.count("loraPath") ? result["loraPath"].as<std::vector<std::string>>() : std::vector<std::string>();
+    const std::vector<float> alpha = result.count("alpha") ? result["alpha"].as<std::vector<float>>() : std::vector<float>();
 
     OPENVINO_ASSERT(!read_np_latent || (read_np_latent && (num_images == 1)),
         "\"readNPLatent\" option is only supported for one output image. Number of image output was set to: " + std::to_string(num_images));
@@ -351,6 +391,12 @@ int32_t main(int32_t argc, char* argv[]) try {
     StableDiffusionModels models = 
         compile_models(model_path, device, lora_path, alpha, use_cache, use_dynamic_shapes, batch_size, height, width);
     ov::InferRequest unet_infer_request = models.unet.create_infer_request();
+    #if GENAI_NEW_LORA
+    if(models.adapter_controller_text_encoder) {
+        models.adapter_controller_unet.apply(unet_infer_request);
+    }
+    #endif
+
 
     ov::PartialShape sample_shape = models.unet.input("sample").get_partial_shape();
     OPENVINO_ASSERT(sample_shape.is_dynamic() ||

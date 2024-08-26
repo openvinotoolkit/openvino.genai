@@ -175,7 +175,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
         #else
         OPENVINO_ASSERT(lora_path.size() == 1, "Multiple LoRA adapters are not supported");
         Timer t("Loading and multiplying LoRA weights");
-        lora_weights = read_lora_adapters(lora_path[0], alpha[0]);
+        lora_weights = read_lora_adapters(lora_path[0], !alpha.empty() ? alpha[0] : 0.75f);
         #endif
     }
 
@@ -193,7 +193,6 @@ StableDiffusionModels compile_models(const std::string& model_path,
         #else
         apply_lora(text_encoder_model, lora_weights["text_encoder"]);
         #endif
-        text_encoder_model->validate_nodes_and_infer_types();
         models.text_encoder = core.compile_model(text_encoder_model, device);
     }
 
@@ -333,8 +332,8 @@ int32_t main(int32_t argc, char* argv[]) try {
     ("m,modelPath", "Specify path of SD model IRs", cxxopts::value<std::string>()->default_value("./models/dreamlike_anime_1_0_ov"))
     ("t,type", "Specify the type of SD model IRs (FP32, FP16 or INT8)", cxxopts::value<std::string>()->default_value("FP16"))
     ("dynamic", "Specify the model input shape to use dynamic shape", cxxopts::value<bool>()->default_value("false"))
-    ("l,loraPath", "Specify path of LoRA file. (*.safetensors).", cxxopts::value<std::vector<std::string>>()->default_value("LIST"))
-    ("a,alpha", "alpha for LoRA (0.75 if not set)", cxxopts::value<std::vector<float>>()->default_value("0.5"))
+    ("l,loraPath", "Specify path of LoRA file(s). (*.safetensors).", cxxopts::value<std::vector<std::string>>()->default_value("LIST"))
+    ("a,alpha", "alpha(s) for LoRA (0.75 if not set), multiple values correspond to multiple loraPath values", cxxopts::value<std::vector<float>>()->default_value("0.5"))
     ("h,help", "Print usage");
     cxxopts::ParseResult result;
 
