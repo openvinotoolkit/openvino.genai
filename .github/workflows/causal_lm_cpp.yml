@@ -13,9 +13,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16249-d604f1d8b2a/l_openvino_toolkit_ubuntu20_2024.4.0.dev20240805_x86_64.tgz
-  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16249-d604f1d8b2a/m_openvino_toolkit_macos_12_6_2024.4.0.dev20240805_x86_64.tgz
-  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16249-d604f1d8b2a/w_openvino_toolkit_windows_2024.4.0.dev20240805_x86_64.zip
+  l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16449-1f3edda195c/l_openvino_toolkit_ubuntu20_2024.4.0.dev20240823_x86_64.tgz
+  m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16449-1f3edda195c/m_openvino_toolkit_macos_12_6_2024.4.0.dev20240823_x86_64.tgz
+  w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16449-1f3edda195c/w_openvino_toolkit_windows_2024.4.0.dev20240823_x86_64.zip
 jobs:
   cpp-multinomial-greedy_causal_lm-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -41,17 +41,17 @@ jobs:
           cmake --build ./build/ --config Release -j
       - run: >
           . ./ov/setupvars.sh
-          && PYTHONPATH=./build/:$PYTHONPATH timeout 25s
+          && PYTHONPATH=./build/:$PYTHONPATH timeout 50s
           ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
       - run: >
           . ./ov/setupvars.sh
-          && PYTHONPATH=./build/:$PYTHONPATH timeout 25s
+          && PYTHONPATH=./build/:$PYTHONPATH timeout 50s
           ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
       - run: >
           . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
-          && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
-          | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
+          && timeout 50s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
+          | diff <(timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
 
   cpp-beam_search_causal_lm-ubuntu:
     strategy:
