@@ -90,8 +90,8 @@ public:
                 model_dir / "openvino_model.xml", device, device_config
             ).create_infer_request()
         } {}
-    void generate(const PromptImage& pi, const std::function<bool(std::string&&)>& callback);
-    void generate(const PromptImage& pi, const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr);
+    std::string generate(const PromptImage& pi, const std::function<bool(std::string&&)>& callback);
+    std::string generate(const PromptImage& pi, const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr);
     void start_chat() {}
     void finish_chat() {}
     void set_2d_pos_cache(const HeightWidth& max_size);

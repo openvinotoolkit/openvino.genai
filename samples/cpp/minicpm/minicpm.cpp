@@ -6,7 +6,8 @@
 
 namespace {
 bool callback(std::string&& subword) {
-    return !(std::cout << subword);
+    // std::cout << subword << std::flush;
+    return false;
 }
 }
 
@@ -41,11 +42,11 @@ int main(int argc, char* argv[]) try {
     if (!std::getline(std::cin, prompt)) {
         throw std::runtime_error("std::cin failed");
     }
-    pipe.generate({prompt, image}, callback);
-    std::cout << "question:\n";
+    std::cout << pipe.generate({prompt, image}, callback);
+    std::cout << "\nquestion:\n";
     while (std::getline(std::cin, prompt)) {
-        pipe.generate({prompt}, callback);
-        std::cout << "question:\n";
+        std::cout << pipe.generate({prompt}, callback);
+        std::cout << "\nquestion:\n";
     }
 
     std::cout << "input id, input token len, out token len, first token time, average time" << std::endl;

@@ -3,10 +3,10 @@ from pathlib import Path
 import json
 import torch
 from PIL import Image
-from transformers import AutoModel, AutoTokenizer, AutoConfig, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoConfig
 import openvino as ov
 from openvino_tokenizers import convert_tokenizer
-from openvino.runtime import Core, get_version
+from openvino.runtime import get_version
 import math
 from typing import Optional, Tuple, List
 from timm.data import IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD

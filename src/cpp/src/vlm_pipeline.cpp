@@ -579,11 +579,11 @@ VLMPipeline::VLMPipeline(
     ireq{language_model},
     _pos_embeds{get_2d_sincos_pos_embed(this->embed_dim, {70, 70})} {}
 
-void VLMPipeline::generate(const PromptImage& pi, const std::function<bool(std::string&&)>& callback) {
-    generate(pi, std::make_unique<TextCallbackStreamer>(tokenizer, callback));
+std::string VLMPipeline::generate(const PromptImage& pi, const std::function<bool(std::string&&)>& callback) {
+    return generate(pi, std::make_unique<TextCallbackStreamer>(tokenizer, callback));
 }
 
-void VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<StreamerBase>& streamer) {
+std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<StreamerBase>& streamer) {
     if (pi.image) {
         EncodedImage embeds = vision_encoder.encode(pi.image);
         ov::Tensor imgEmbedTensor = get_image_embedding(embeds, tokenizer, this->ireq_embed, *this);
@@ -657,6 +657,7 @@ void VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<Streamer
     ireq_embed.get_tensor("inputs_id").set_shape({ 1, 1 });
 
     int64_t eos_token_id = tokenizer.get_eos_token_id();
+    std::vector<int64_t> generated;
     while (true) {  //(out_token != eos_token_id)
         startTime = Time::now();
 
@@ -693,6 +694,7 @@ void VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<Streamer
         count += 1;
         total_time += duration_ms;
 
+        generated.push_back(out_token);
         if (streamer && streamer->put(out_token)) {
             break;
         }
@@ -713,4 +715,5 @@ void VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<Streamer
         std::cout << "Other Avg inference took total " << total_time << " ms token num " << count << " first " << first_time << " ms " << " avg " << total_time / (count) << " ms" << std::endl;
         perf_records.push_back({ input_len, count, first_time, avg_time });
     }
+    return tokenizer.decode(generated);
 }
