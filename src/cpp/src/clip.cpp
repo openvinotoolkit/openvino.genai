@@ -268,36 +268,10 @@ static std::pair<int, int> select_best_resolution(const std::pair<int, int> & or
     return best_fit;
 }
 
-static std::vector<clip_image_u8*> divide_to_patches_u8(const clip_image_u8 & image, int patch_size) {
-    std::vector<clip_image_u8*> patches;
-    int width = image.nx;
-    int height = image.ny;
-    for (int i = 0; i < height; i += patch_size) {
-        for (int j = 0; j < width; j += patch_size) {
-            clip_image_u8 *patch = clip_image_u8_init();
-            patch->nx = std::min(patch_size, width - j);
-            patch->ny = std::min(patch_size, height - i);
-            patch->buf.resize(3 * patch->nx * patch->ny);
-            for (int y = 0; y < patch->ny; ++y) {
-                for (int x = 0; x < patch->nx; ++x) {
-                    for (int c = 0; c < 3; ++c) {
-                        patch->buf[3 * (y * patch->nx + x) + c] = image.buf[3 * ((i + y) * width + (j + x)) + c];
-                    }
-                }
-            }
-            patches.push_back(patch);
-        }
-    }
-    return patches;
-}
-
-
 // returns the normalized float tensor for llava-1.5, for spatial_unpad with anyres processing for llava-1.6 it returns the normalized image patch tensors as a vector
 // res_imgs memory is being allocated here, previous allocations will be freed if found
-clip_image_f32_batch clip_image_preprocess(clip_ctx& ctx, const clip_image_u8& img) {
+clip_image_f32 clip_image_preprocess(clip_ctx& ctx, const clip_image_u8& img) {
     bool pad_to_square = true;
-
-    clip_image_f32_batch res_imgs;
 
     // the logic below is to pad the shorter side to the longer side with a background color: rgb(122, 116, 104)
     // see https://github.com/haotian-liu/LLaVA/blob/e854a2bf85118c504f6f16bf5c3c7c92f8fa8c6b/llava/conversation.py#L113-L156
@@ -321,7 +295,7 @@ clip_image_f32_batch clip_image_preprocess(clip_ctx& ctx, const clip_image_u8& i
     res.ny = ny2;
     res.buf.resize(3 * nx2 * ny2);
 
-    // const float scale = std::max(nx, ny) / (float)ctx->vision_model.hparams.image_size;
+    // const float scale = std::max(nx, ny) / (float)ctx.vision_model.hparams.image_size;
 
     // const int nx3 = int(nx / scale + 0.5f);
     // const int ny3 = int(ny / scale + 0.5f);
@@ -373,14 +347,7 @@ clip_image_f32_batch clip_image_preprocess(clip_ctx& ctx, const clip_image_u8& i
             }
         }
     }
-
-    res_imgs.data.push_back(std::move(res));
-    return res_imgs;
-}
-
-
-void clip_free(clip_ctx * ctx) {
-    delete ctx;
+    return res;
 }
 
 int clip_n_patches(const struct clip_ctx* ctx) {
@@ -394,27 +361,3 @@ int clip_n_patches(const struct clip_ctx* ctx) {
 
     return n_patches;
 }
-
-ov::Tensor clip_image_encode(clip_ctx& ctx, clip_image_f32& img, std::pair<int, int> load_image_size = { 448, 448 }) {
-    return clip_image_batch_encode(ctx, clip_image_f32_batch{std::vector<clip_image_f32>{img}}, load_image_size);
-}
-
-
-ov::Tensor clip_image_batch_encode(clip_ctx& ctx, const clip_image_f32_batch& imgs, std::pair<int, int> load_image_size = { 448, 448 }) {
-    //don't support multi batch
-    const size_t image_size_width = load_image_size.first;
-    const size_t image_size_height = load_image_size.second;
-    const size_t patch_size = 14;
-    const size_t num_patches = ((image_size_width / patch_size) * (image_size_height / patch_size));
-    const size_t num_positions = num_patches;
-
-    //OpenVINO inference to get vision embedding
-    ov::Shape input_shape = {imgs.data.size(), 3, image_size_height, image_size_width };
-    ov::Tensor input_tensor = ov::Tensor(ov::element::f32, input_shape);
-    std::memcpy(input_tensor.data<float>(), imgs.data[0].buf.data(), input_tensor.get_byte_size());
-
-    ctx.ireq_vision.set_input_tensor(input_tensor);
-    ctx.ireq_vision.infer();
-    return ctx.ireq_vision.get_output_tensor();
-}
-

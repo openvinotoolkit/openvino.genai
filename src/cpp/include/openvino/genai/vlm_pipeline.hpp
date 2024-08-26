@@ -120,14 +120,13 @@ public:
             // CPU only because of 146022.
             model_dir / "openvino_vision.xml", "CPU", device_config
         ).create_infer_request()} {}
-    std::pair<std::vector<std::vector<ov::Tensor>>, std::vector<std::vector<HeightWidth>>> encode(const ov::Tensor image, const Config& config=Config{}) {
+    EncodedImage encode(const ov::Tensor image, const Config& config=Config{}) {
         clip_ctx ctx_clip;
         for (int i = 0; i < 3; ++i) {
             ctx_clip.image_mean[i] = 0.5f;
             ctx_clip.image_std[i] = 0.5f;
         }
-        ctx_clip.ireq_vision = encoder;
-        return llava_image_embed_make_with_bytes_slice(ctx_clip, image, config.max_slice_nums, config.scale_resolution, config.patch_size, config.never_split);
+        return llava_image_embed_make_with_bytes_slice(ctx_clip, image, encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, config.never_split);
     }
 };
 
@@ -342,8 +341,7 @@ public:
         return resampler.get_output_tensor();
     }
 
-    ov::Tensor get_image_embedding(const std::pair<std::vector<std::vector<ov::Tensor>>, std::vector<std::vector<HeightWidth>>>& slices, ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, ov::InferRequest& resampler) {
-        auto [image_embed_slices, ratio] = slices;
+    ov::Tensor get_image_embedding(const EncodedImage& encoded_image, ov::genai::Tokenizer& tokenizer, ov::InferRequest& embedding, ov::InferRequest& resampler) {
         std::string user_prompt;
         size_t embedding_dim;
         size_t embedding_len = 0;
@@ -378,14 +376,17 @@ public:
         constexpr size_t n_img_pos = 64;  // RESAMPLER query_num minicpmv-2 64, minicpmv-2.5 96
         embedding_len += n_img_pos;
 
-        if (image_embed_slices.size() > 1) {
+        const ov::Tensor& slices = encoded_image.slices;
+        const ov::Shape& slices_shape = slices.get_shape();
+        const std::vector<HeightWidth>& sliced_sizes = encoded_image.slices_sizes;
+        if (!sliced_sizes.empty()) {
             embedding_len += 1;
-            for (size_t i = 1; i < image_embed_slices.size(); ++i) {
-                for (size_t j = 0; j < image_embed_slices[i].size(); ++j) {
+            for (size_t i = 0; i < slices_shape.at(0); ++i) {
+                for (size_t j = 0; j < slices_shape.at(1); ++j) {
                     embedding_len += 2;
                     embedding_len += n_img_pos;
 
-                    if (j == image_embed_slices[i].size() - 1) {
+                    if (j == slices_shape.at(1) - 1) {
                         embedding_len += 1;
                     }
                 }
@@ -425,7 +426,7 @@ public:
         std::copy(data + embedding_dim * 2, data + embedding_dim * 3, imgEmbedData);
         imgEmbedData += embedding_dim;
 
-        const ov::Tensor& vision_embded_tensor = resample(image_embed_slices[0][0], {ratio[0][0]});
+        const ov::Tensor& vision_embded_tensor = resample(encoded_image.resized_source, {encoded_image.resized_source_size});
         //fill image_embed_slices[0][0]
         std::copy_n(vision_embded_tensor.data<float>(), vision_embded_tensor.get_size(), imgEmbedData);
         imgEmbedData += n_img_pos * embedding_dim;
@@ -434,28 +435,31 @@ public:
         std::copy(data + embedding_dim * 3, data + embedding_dim * 4, imgEmbedData);
         imgEmbedData += embedding_dim;
 
-        if (image_embed_slices.size() > 1) {
+        if (!sliced_sizes.empty()) {
             //fill "<slice>" embedding
             std::copy(data + embedding_dim * 4, data + embedding_dim * 5, imgEmbedData);
             imgEmbedData += embedding_dim;
 
-            for (size_t i = 1; i < image_embed_slices.size(); ++i) {
-                for (size_t j = 0; j < image_embed_slices[i].size(); ++j) {
+            for (size_t i = 0; i < slices_shape.at(0); ++i) {
+                for (size_t j = 0; j < slices_shape.at(1); ++j) {
                     //fill "<image>" embedding
                     std::copy(data + embedding_dim * 2, data + embedding_dim * 3, imgEmbedData);
                     imgEmbedData += embedding_dim;
 
                     //Resampler inference with OpenVINO
-                    const ov::Tensor& vision_embded_tensor_i_j = resample(image_embed_slices[i][j], {ratio[i][j]});
+                    size_t d2 = slices_shape.at(2);
+                    size_t d3 = slices_shape.at(3);
+                    ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, slices.data<float>() + (i * slices_shape.at(1) + j) * d2 * d3};
+                    const ov::Tensor& vision_embed_tensor_i_j = resample(encoded_view, {sliced_sizes.at(i * slices_shape.at(1) + j)});
                     // fill image_embed_slices[i][j]
-                    std::copy_n(vision_embded_tensor_i_j.data<float>(), vision_embded_tensor_i_j.get_size(), imgEmbedData);
+                    std::copy_n(vision_embed_tensor_i_j.data<float>(), vision_embed_tensor_i_j.get_size(), imgEmbedData);
                     imgEmbedData += n_img_pos * embedding_dim;
 
                     //fill "</image>" embedding
                     std::copy(data + embedding_dim * 3, data + embedding_dim * 4, imgEmbedData);
                     imgEmbedData += embedding_dim;
 
-                    if (j == image_embed_slices[i].size() - 1) {
+                    if (j == slices_shape.at(1) - 1) {
                         //fill "\n" embedding
                         std::copy(data + embedding_dim, data + embedding_dim * 1, imgEmbedData);
                         imgEmbedData += embedding_dim;
@@ -475,7 +479,7 @@ public:
 
     void generate(const PromptImage& pi, const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr) {
         if (pi.image) {
-            std::pair<std::vector<std::vector<ov::Tensor>>, std::vector<std::vector<HeightWidth>>> embeds = vision_encoder.encode(pi.image);
+            EncodedImage embeds = vision_encoder.encode(pi.image);
             ov::Tensor imgEmbedTensor = get_image_embedding(embeds, this->tokenizer, this->ireq_embed, this->resampler);
 
             ov::Shape img_embed_shape = imgEmbedTensor.get_shape();

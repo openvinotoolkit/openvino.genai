@@ -137,42 +137,54 @@ std::vector<std::vector<clip_image_u8>> slice_image(const clip_image_u8& img, co
     return images;
 }
 
-ov::Tensor encode_image_with_clip(clip_ctx& ctx_clip, const clip_image_u8& img) {
-    // std::vector<clip_image_f32*> img_res_v; // format VectN x H x W x RGB (N x 336 x 336 x 3), so interleaved RGB - different to the python implementation which is N x 3 x 336 x 336
-    std::pair<int, int> load_image_size;
-    load_image_size.first = img.nx;
-    load_image_size.second = img.ny;
-    clip_image_f32_batch img_res_v = clip_image_preprocess(ctx_clip, img);
-    return clip_image_encode(ctx_clip, img_res_v.data[0], load_image_size); // image_embd shape is 576 x 4096
-}
-
-std::pair<std::vector<std::vector<ov::Tensor>>, std::vector<std::vector<HeightWidth>>> llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const ov::Tensor& img, int max_slice_nums, int scale_resolution, int patch_size, bool never_split) {
+EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const ov::Tensor& img, ov::InferRequest& encoder, int max_slice_nums, int scale_resolution, size_t patch_size, bool never_split) {
     clip_image_u8 source{int(img.get_shape()[2]), int(img.get_shape()[1]), {img.data<uint8_t>(), img.data<uint8_t>() + img.get_size()}};
-    // clip_image_u8 resized;
-    // bicubic_resize(source, resized, 800, 800);
-
     std::vector<std::vector<clip_image_u8>> imgs = slice_image(source, max_slice_nums, scale_resolution, patch_size, never_split);
     std::vector<std::vector<ov::Tensor>> results;
     std::vector<std::vector<HeightWidth>> sizes;
 
-    for (size_t i = 0; i < imgs.size(); ++i) {
-        results.push_back(std::vector<ov::Tensor>());
-        sizes.push_back(std::vector<HeightWidth>{});
-        for (size_t j = 0; j < imgs[i].size(); ++j) {
-            results[i].push_back(encode_image_with_clip(ctx_clip, imgs[i][j]));
-            sizes.back().push_back({size_t(imgs.at(i).at(j).ny / 14), size_t(imgs.at(i).at(j).nx / 14)});
-        }
-    }
-    return {results, sizes};
-}
+    // std::vector<clip_image_f32*> img_res_v; // format VectN x H x W x RGB (N x 336 x 336 x 3), so interleaved RGB - different to the python implementation which is N x 3 x 336 x 336
+    std::vector<std::vector<clip_image_f32>> preprocessed{imgs.size()};
+    std::transform(imgs.begin(), imgs.end(), preprocessed.begin(), [&ctx_clip](const std::vector<clip_image_u8>& row) {
+        std::vector<clip_image_f32> processed_row{row.size()};
+        std::transform(row.begin(), row.end(), processed_row.begin(), [&ctx_clip](const clip_image_u8& raw) {
+            return clip_image_preprocess(ctx_clip, raw);
+        });
+        return processed_row;
+    });
 
-void llava_image_embed_free_slice(std::vector<std::vector<struct llava_image_embed*>> embed) {
-    for (size_t i = 0; i < embed.size(); ++i) {
-        for (size_t j = 0; j < embed[i].size(); ++j) {
-            free(embed[i][j]->embed);
-            free(embed[i][j]);
+    const clip_image_f32& resized_preprocessed = preprocessed.at(0).at(0);
+    ov::Tensor input_tensor{ov::element::f32, {1, 3, size_t(resized_preprocessed.ny), size_t(resized_preprocessed.nx)}, (void*)(resized_preprocessed.buf.data())};
+    encoder.set_input_tensor(input_tensor);
+    encoder.infer();
+    ov::Tensor output_tensor = encoder.get_output_tensor();
+    ov::Tensor resized_source{output_tensor.get_element_type(), output_tensor.get_shape()};
+    output_tensor.copy_to(resized_source);
+    HeightWidth resized_source_size{resized_preprocessed.ny / patch_size, resized_preprocessed.nx / patch_size};
+
+    HeightWidth size{preprocessed.at(1).at(0).ny, preprocessed.at(1).at(0).nx};
+    ov::Tensor batched{ov::element::f32, {(preprocessed.size() - 1) * preprocessed.at(1).size(), 3, size.height, size.width}};
+    float* batched_data = batched.data<float>();
+    size_t batch_offset = 0;
+    size_t values_in_elem = 3 * size.height * size.width;
+    std::vector<HeightWidth> sliced_sizes;
+    for (size_t row = 1; row < preprocessed.size(); ++row) {
+        for (const clip_image_f32& elem : preprocessed.at(row)) {
+            std::copy_n(elem.buf.begin(), values_in_elem, batched_data + batch_offset);
+            sliced_sizes.push_back({elem.ny / patch_size, elem.nx / patch_size});
+            batch_offset += values_in_elem;
         }
-        embed[i] = std::vector<struct llava_image_embed*>();
     }
-    embed = std::vector<std::vector<struct llava_image_embed*>>();
+    encoder.set_input_tensor(batched);
+    encoder.infer();
+    const ov::Tensor& encoded = encoder.get_output_tensor();
+    const ov::Shape& plain = encoded.get_shape();
+    struct SharedTensorAllocator {
+        const ov::Tensor tensor;
+        void* allocate(size_t bytes, size_t) {return bytes <= tensor.get_byte_size() ? tensor.data() : nullptr;}
+        void deallocate(void*, size_t, size_t) {}
+        bool is_equal(const SharedTensorAllocator& other) const noexcept {return this == &other;}
+    };
+    ov::Tensor reshaped{encoded.get_element_type(), {preprocessed.size() - 1, preprocessed.at(1).size(), plain.at(1), plain.at(2)}, SharedTensorAllocator{encoded}};
+    return {resized_source, resized_source_size, reshaped, sliced_sizes};
 }
