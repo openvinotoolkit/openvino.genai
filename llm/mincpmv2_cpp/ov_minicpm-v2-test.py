@@ -511,7 +511,6 @@ class OVMiniCPMForCausalLM(GenerationMixin):
             image_features = torch.from_numpy(vision_embedding[0])
 
             start = time.perf_counter()
-            breakpoint()
             resampler_feat = self.resample(image_features, tgt_size)
             end = time.perf_counter()
             vision_infer_list.append(((end - start) * 1000))

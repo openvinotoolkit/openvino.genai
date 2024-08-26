@@ -21,7 +21,7 @@
 #include <cinttypes>
 #include <limits>
 
-#include "openvino/genai/clip.hpp"
+#include "clip.hpp"
 
 static std::string format(const char * fmt, ...) {
     va_list ap;

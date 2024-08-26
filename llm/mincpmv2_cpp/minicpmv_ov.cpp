@@ -4,15 +4,17 @@
 #include <openvino/genai/vlm_pipeline.hpp>
 #include <openvino/runtime/intel_gpu/properties.hpp>
 
+namespace {
 bool callback(std::string&& subword) {
     return !(std::cout << subword);
+}
 }
 
 int main(int argc, char* argv[]) try {
     if (3 != argc) {
         throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE>");
     }
-    ov::Tensor image = read_jpg(argv[2]);
+    ov::Tensor image = ov::genai::read_jpg(argv[2]);
 
     std::string device = "CPU";
 
@@ -33,7 +35,7 @@ int main(int argc, char* argv[]) try {
         device_config[ov::hint::enable_cpu_pinning.name()] = true;
         device_config[ov::enable_profiling.name()] = false;
     }
-    VLMPipeline pipe(argv[1], device, device_config);
+    ov::genai::VLMPipeline pipe(argv[1], device, device_config);
     std::string prompt;
     std::cout << "question:\n";
     if (!std::getline(std::cin, prompt)) {
