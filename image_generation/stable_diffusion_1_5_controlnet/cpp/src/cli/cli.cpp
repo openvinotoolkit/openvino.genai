@@ -86,6 +86,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     const std::string model_base_path = result["modelPath"].as<std::string>();
     const std::string input_image_path = result["inputImage"].as<std::string>();
     const std::string output_image_path = result["outputImage"].as<std::string>();
+    // FIXME:
     const std::string np_latent = result["latent"].as<std::string>();
 
     const std::string folder_name = "images";
