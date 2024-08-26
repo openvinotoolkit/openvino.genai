@@ -19,13 +19,13 @@ endif()
 # dependencies
 
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
-add_subdirectory(../../common/imwrite _deps/imwrite)
+add_subdirectory(../../../common/imwrite _deps/imwrite)
 
 # opencv is only for resize now
 find_package(OpenCV 4.9.0 REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
-
+target_compile_features(detectors PRIVATE cxx_std_17)
 target_link_libraries(detectors PUBLIC openvino::runtime imwrite::imwrite ${OpenCV_LIBS})
 
 include(FetchContent)
@@ -48,4 +48,5 @@ FetchContent_Declare(
 
 
 add_executable(detectors_bridge detectors_bridge.cpp)
+target_compile_features(detectors_bridge PRIVATE cxx_std_17)
 target_link_libraries(detectors_bridge PRIVATE detectors)

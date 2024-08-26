@@ -25,7 +25,7 @@ FetchContent_Declare(cxxopts
 
 FetchContent_MakeAvailable(cxxopts)
 
-add_subdirectory(../../common/detectors _deps/detectors)
+add_subdirectory(./detectors _deps/detectors)
 add_subdirectory(../../common/diffusers _deps/diffusers)
 add_subdirectory(../../../thirdparty/openvino_tokenizers/ _deps/tokenizers)
 

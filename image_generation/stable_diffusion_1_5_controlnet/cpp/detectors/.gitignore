@@ -6,3 +6,4 @@ model
 *.xml
 *.bin
 !requirements.txt
+!CMakeLists.txt

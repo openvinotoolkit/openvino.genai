@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <algorithm>
 #include <opencv2/core/types.hpp>
 #include <opencv2/opencv.hpp>
 #include <openvino/core/shape.hpp>
