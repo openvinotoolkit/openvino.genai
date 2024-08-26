@@ -34,7 +34,7 @@ namespace ov {
 namespace genai {
 
 std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& config,
-                                      const std::vector<float>& pcmf32,
+                                      const std::vector<float>& raw_speech_input,
                                       ov::genai::WhisperInitializedModels& models,
                                       const std::shared_ptr<StreamerBase> streamer);
 
@@ -68,7 +68,7 @@ public:
     Impl(const std::filesystem::path& model_path, const std::string& device, const ov::AnyMap& plugin_config)
         : Impl{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
 
-    DecodedResults generate(PCMf32AudioDataInput& inputs,
+    DecodedResults generate(RawSpeechInput& raw_speech_input,
                             OptionalWhisperGenerationConfig generation_config,
                             StreamerVariant streamer) {
         auto start_time = std::chrono::steady_clock::now();
@@ -83,7 +83,7 @@ public:
             streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
         }
 
-        auto tokens = ov::genai::whisper_generate(config, inputs, m_models, streamer_ptr);
+        auto tokens = ov::genai::whisper_generate(config, raw_speech_input, m_models, streamer_ptr);
 
         DecodedResults decoded_results{std::vector{m_tokenizer.decode(tokens)}, std::vector{1.f}};
         return decoded_results;
@@ -94,19 +94,19 @@ public:
 }  // namespace ov
 
 ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(
-    PCMf32AudioDataInput inputs,
+    RawSpeechInput raw_speech_input,
     OptionalWhisperGenerationConfig generation_config,
     StreamerVariant streamer) {
-    return m_impl->generate(inputs, generation_config, streamer);
+    return m_impl->generate(raw_speech_input, generation_config, streamer);
 }
 
-ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(PCMf32AudioDataInput inputs,
+ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(RawSpeechInput raw_speech_input,
                                                                                 const ov::AnyMap& config_map) {
     auto config_arg = get_config_from_map(config_map);
     WhisperGenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
 
-    return m_impl->generate(inputs, config, utils::get_streamer_from_map(config_map));
+    return m_impl->generate(raw_speech_input, config, utils::get_streamer_from_map(config_map));
 }
 
 ov::genai::WhisperSpeechRecognitionPipeline::WhisperSpeechRecognitionPipeline(const std::string& model_path,

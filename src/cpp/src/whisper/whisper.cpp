@@ -7,12 +7,10 @@
 #include <thread>
 
 #include "../utils.hpp"
-#include "audio_processing.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
+#include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
-
-#define AUDIO_CHUNK_SIZE 480000  // 16K sampling X 30 Seconds = 16000 x 30 = 480000
 
 namespace {
 
@@ -162,32 +160,27 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 namespace ov {
 namespace genai {
 std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& config,
-                                      const std::vector<float>& pcmf32,
+                                      const std::vector<float>& input_features,
                                       ov::genai::WhisperInitializedModels& models,
                                       const std::shared_ptr<StreamerBase> streamer) {
-    ov::genai::utils::audio::fill_sin_cos_table();
-
     std::vector<int64_t> output_tokens;
     size_t max_new_tokens = config.get_max_new_tokens();
 
-    // on small chunk sizes (eg 1s) the results are starting to diverge from HF
-    for (size_t chunk_offset = 0; chunk_offset < pcmf32.size(); chunk_offset += AUDIO_CHUNK_SIZE) {
+    WhisperFeatureExtractor feature_extractor;
+
+    for (size_t chunk_offset = 0; chunk_offset < input_features.size(); chunk_offset += feature_extractor.chunk_size) {
         if (output_tokens.size() >= max_new_tokens) {
             break;
         }
 
-        // Split audio data into fixed 30 seconds x 30 seconds window.
-        size_t copy_size = std::min((pcmf32.size() - chunk_offset), size_t(AUDIO_CHUNK_SIZE));
-        std::vector<float> pcmf32_sub_chunk(pcmf32.begin() + chunk_offset, pcmf32.begin() + chunk_offset + copy_size);
+        // Split audio data into fixed feature_extractor.chunk_size windows.
+        size_t copy_size = std::min((input_features.size() - chunk_offset), size_t(feature_extractor.chunk_size));
+        std::vector<float> input_features_sub_chunk(input_features.begin() + chunk_offset,
+                                                    input_features.begin() + chunk_offset + copy_size);
 
-        auto mel_data = ov::genai::utils::audio::mel_spectrogram_convert_audio(
-            pcmf32_sub_chunk,
-            WHISPER_SAMPLE_RATE,
-            WHISPER_N_FFT,
-            WHISPER_HOP_LENGTH,
-            std::min(4, (int32_t)std::thread::hardware_concurrency()));
+        auto input_features = feature_extractor.extract(input_features_sub_chunk);
 
-        ov::Tensor hidden_state_tensor = encode(models.encoder, mel_data);
+        ov::Tensor hidden_state_tensor = encode(models.encoder, input_features);
 
         bool cancelled;
         std::vector<int64_t> chunk_output_tokens;

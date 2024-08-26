@@ -14,7 +14,7 @@
 namespace ov::genai {
 
 using OptionalWhisperGenerationConfig = std::optional<WhisperGenerationConfig>;
-using PCMf32AudioDataInput = std::vector<float>;
+using RawSpeechInput = std::vector<float>;
 
 class OPENVINO_GENAI_EXPORTS WhisperSpeechRecognitionPipeline {
     class Impl;
@@ -62,12 +62,12 @@ public:
     /**
      * @brief High level generate that receives prompts as a string or a vector of strings and returns decoded output.
      *
-     * @param inputs input prompt or a vector of prompts
+     * @param raw_speech_input input prompt or a vector of prompts
      * @param generation_config optional GenerationConfig
      * @param streamer optional streamer
      * @return DecodedResults decoded resulting text
      */
-    DecodedResults generate(PCMf32AudioDataInput inputs,
+    DecodedResults generate(RawSpeechInput raw_speech_input,
                             OptionalWhisperGenerationConfig generation_config = std::nullopt,
                             StreamerVariant streamer = std::monostate());
 
@@ -76,27 +76,27 @@ public:
      * properties can be in any order pipe.generate(..., ov::genai::max_new_tokens(100),
      * ov::genai::streamer(lambda_func)).
      *
-     * @param inputs input prompt or a vector of prompts
+     * @param raw_speech_input input prompt or a vector of prompts
      * @param properties properties
      * @return DecodedResults decoded resulting text
      */
     template <typename... Properties>
-    util::EnableIfAllStringAny<DecodedResults, Properties...> generate(PCMf32AudioDataInput inputs,
+    util::EnableIfAllStringAny<DecodedResults, Properties...> generate(RawSpeechInput raw_speech_input,
                                                                        Properties&&... properties) {
-        return generate(inputs, AnyMap{std::forward<Properties>(properties)...});
+        return generate(raw_speech_input, AnyMap{std::forward<Properties>(properties)...});
     }
-    DecodedResults generate(PCMf32AudioDataInput inputs, const ov::AnyMap& config_map);
+    DecodedResults generate(RawSpeechInput raw_speech_input, const ov::AnyMap& config_map);
 
-    DecodedResults operator()(PCMf32AudioDataInput inputs,
+    DecodedResults operator()(RawSpeechInput raw_speech_input,
                               OptionalWhisperGenerationConfig generation_config = std::nullopt,
                               StreamerVariant streamer = std::monostate()) {
-        return generate(inputs, generation_config, streamer);
+        return generate(raw_speech_input, generation_config, streamer);
     }
 
     template <typename... Properties>
-    util::EnableIfAllStringAny<DecodedResults, Properties...> operator()(PCMf32AudioDataInput inputs,
+    util::EnableIfAllStringAny<DecodedResults, Properties...> operator()(RawSpeechInput raw_speech_input,
                                                                          Properties&&... properties) {
-        return generate(inputs, AnyMap{std::forward<Properties>(properties)...});
+        return generate(raw_speech_input, AnyMap{std::forward<Properties>(properties)...});
     }
 
     ov::genai::Tokenizer get_tokenizer();

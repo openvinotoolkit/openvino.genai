@@ -1,7 +1,13 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "audio_processing.hpp"
+#include "whisper_feature_extractor.hpp"
+
+#include <cstdint>
+#include <cstring>
+#include <vector>
+
+#include "openvino/genai/visibility.hpp"
 
 #ifdef _WIN32
 #    define _USE_MATH_DEFINES
@@ -49,27 +55,27 @@ static bool hann_window(int length, bool periodic, std::vector<float>& output) {
     return true;
 }
 
-#define SIN_COS_N_COUNT WHISPER_N_FFT
-static float sin_vals[SIN_COS_N_COUNT];
-static float cos_vals[SIN_COS_N_COUNT];
-
 // naive Discrete Fourier Transform
 // input is real-valued
 // output is complex-valued
-static void dft(const std::vector<float>& in, std::vector<float>& out) {
+static void dft(const std::vector<float>& in,
+                std::vector<float>& out,
+                const std::vector<float>& sin_vals,
+                const std::vector<float>& cos_vals,
+                size_t n_fft) {
     int N = in.size();
 
     out.resize(N * 2);
-    const int sin_cos_step = SIN_COS_N_COUNT / N;
+    const int sin_cos_step = n_fft / N;
 
     for (int k = 0; k < N; k++) {
         float re = 0;
         float im = 0;
 
         for (int n = 0; n < N; n++) {
-            int idx = (k * n * sin_cos_step) % (SIN_COS_N_COUNT);  // t = 2*M_PI*k*n/N
-            re += in[n] * cos_vals[idx];                           // cos(t)
-            im -= in[n] * sin_vals[idx];                           // sin(t)
+            int idx = (k * n * sin_cos_step) % (n_fft);  // t = 2*M_PI*k*n/N
+            re += in[n] * cos_vals[idx];                 // cos(t)
+            im -= in[n] * sin_vals[idx];                 // sin(t)
         }
 
         out[k * 2 + 0] = re;
@@ -80,7 +86,11 @@ static void dft(const std::vector<float>& in, std::vector<float>& out) {
 // Cooley-Tukey FFT
 // input is real-valued
 // output is complex-valued
-static void fft(const std::vector<float>& in, std::vector<float>& out) {
+static void fft(const std::vector<float>& in,
+                std::vector<float>& out,
+                const std::vector<float>& sin_vals,
+                const std::vector<float>& cos_vals,
+                const size_t n_fft) {
     out.resize(in.size() * 2);
 
     int N = in.size();
@@ -92,7 +102,7 @@ static void fft(const std::vector<float>& in, std::vector<float>& out) {
     }
 
     if (N % 2 == 1) {
-        dft(in, out);
+        dft(in, out, sin_vals, cos_vals, n_fft);
         return;
     }
 
@@ -113,10 +123,10 @@ static void fft(const std::vector<float>& in, std::vector<float>& out) {
     std::vector<float> even_fft;
     std::vector<float> odd_fft;
 
-    fft(even, even_fft);
-    fft(odd, odd_fft);
+    fft(even, even_fft, sin_vals, cos_vals, n_fft);
+    fft(odd, odd_fft, sin_vals, cos_vals, n_fft);
 
-    const int sin_cos_step = SIN_COS_N_COUNT / N;
+    const int sin_cos_step = n_fft / N;
     for (int k = 0; k < N / 2; k++) {
         int idx = k * sin_cos_step;  // t = 2*M_PI*k/N
         float re = cos_vals[idx];    // cos(t)
@@ -141,7 +151,9 @@ static void log_mel_spectrogram_worker_thread(int ith,
                                               int frame_step,
                                               int n_threads,
                                               const whisper_filters& filters,
-                                              whisper_mel& mel) {
+                                              whisper_mel& mel,
+                                              const std::vector<float>& sin_vals,
+                                              const std::vector<float>& cos_vals) {
     std::vector<float> fft_in(frame_size, 0.0);
     std::vector<float> fft_out(2 * frame_size);
     int n_fft = filters.n_fft;
@@ -164,7 +176,7 @@ static void log_mel_spectrogram_worker_thread(int ith,
         }
 
         // FFT
-        fft(fft_in, fft_out);
+        fft(fft_in, fft_out, sin_vals, cos_vals, frame_size);
 
         // Calculate modulus^2 of complex numbers
         // Use pow(fft_out[2 * j + 0], 2) + pow(fft_out[2 * j + 1], 2) causes inference quality problem? Interesting.
@@ -215,13 +227,6 @@ float hertz_to_mel(float hertz) {
 float mel_to_hertz(float mel) {
     return 700 * (std::pow(10, mel / 2595.0) - 1);
 }
-
-}  // namespace
-
-namespace ov {
-namespace genai {
-namespace utils {
-namespace audio {
 
 // num_frequency_bins (`int`):
 //     Number of frequencies used to compute the spectrogram (should be the same as in `stft`).
@@ -275,23 +280,24 @@ std::vector<std::vector<float>> mel_filter_bank(const int64_t num_frequency_bins
 
 // In FFT, we frequently use sine and cosine operations with the same values.
 // We can use precalculated values to speed up the process.
-void fill_sin_cos_table() {
-    static bool is_filled = false;
-    if (is_filled)
-        return;
-    for (int i = 0; i < SIN_COS_N_COUNT; i++) {
-        double theta = (2 * M_PI * i) / SIN_COS_N_COUNT;
+void fill_sin_cos_table(std::vector<float>& sin_vals, std::vector<float>& cos_vals, const size_t n_fft) {
+    sin_vals.resize(n_fft);
+    cos_vals.resize(n_fft);
+
+    for (size_t i = 0; i < n_fft; i++) {
+        double theta = (2 * M_PI * i) / n_fft;
         sin_vals[i] = sinf(theta);
         cos_vals[i] = cosf(theta);
     }
-    is_filled = true;
 }
 
-std::vector<float> mel_spectrogram_convert_audio(const std::vector<float> pcmf32,
+std::vector<float> mel_spectrogram_convert_audio(const std::vector<float>& pcmf32,
                                                  const int sample_rate,
                                                  const int frame_size,
                                                  const int frame_step,
-                                                 const int n_threads) {
+                                                 const int n_threads,
+                                                 const std::vector<float>& sin_vals,
+                                                 const std::vector<float>& cos_vals) {
     const float* samples = pcmf32.data();
     const int n_samples = pcmf32.size();
     whisper_filters filters;
@@ -358,7 +364,9 @@ std::vector<float> mel_spectrogram_convert_audio(const std::vector<float> pcmf32
                                       frame_step,
                                       n_threads,
                                       std::cref(filters),
-                                      std::ref(mel));
+                                      std::ref(mel),
+                                      std::cref(sin_vals),
+                                      std::cref(cos_vals));
         }
 
         // main thread
@@ -370,7 +378,9 @@ std::vector<float> mel_spectrogram_convert_audio(const std::vector<float> pcmf32
                                           frame_step,
                                           n_threads,
                                           filters,
-                                          mel);
+                                          mel,
+                                          sin_vals,
+                                          cos_vals);
 
         for (int iw = 0; iw < n_threads - 1; ++iw) {
             workers[iw].join();
@@ -398,7 +408,19 @@ std::vector<float> mel_spectrogram_convert_audio(const std::vector<float> pcmf32
     return mel.data;
 }
 
-}  // namespace audio
-}  // namespace utils
+}  // namespace
+
+namespace ov {
+namespace genai {
+
+WhisperFeatureExtractor::WhisperFeatureExtractor() {
+    fill_sin_cos_table(sin_vals, cos_vals, n_fft);
+}
+
+std::vector<float> WhisperFeatureExtractor::extract(const std::vector<float>& raw_speech) {
+    size_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
+    return mel_spectrogram_convert_audio(raw_speech, sampling_rate, n_fft, hop_length, n_threads, sin_vals, cos_vals);
+}
+
 }  // namespace genai
 }  // namespace ov
