@@ -85,7 +85,7 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
 int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
                          ov::InferRequest& decoder_with_past,
                          int64_t input_id,
-                         size_t cache_position,
+                         const size_t cache_position,
                          const ov::genai::WhisperGenerationConfig& config) {
     decoder_with_past.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
 
@@ -113,7 +113,7 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
 std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_state,
                                                   const ov::genai::WhisperGenerationConfig& config,
                                                   ov::genai::WhisperInitializedModels& models,
-                                                  size_t max_new_tokens,
+                                                  const size_t max_new_tokens,
                                                   const std::shared_ptr<ov::genai::StreamerBase> streamer) {
     std::vector<int64_t> input_ids = {config.decoder_start_token_id,
                                       config.language_token_id,

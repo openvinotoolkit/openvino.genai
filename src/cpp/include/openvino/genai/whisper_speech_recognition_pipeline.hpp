@@ -33,17 +33,6 @@ public:
                                      const ov::AnyMap& plugin_config = {});
 
     /**
-     * @brief Constructs an LLMPipeline from already existing infer InferRequest and Tokenizer
-     *
-     * @param request infer request of the model
-     * @param tokenizer initialized Tokenizer
-     * @param generation_config optional generation_config, be default will be initialized for greedy decoding
-     */
-    WhisperSpeechRecognitionPipeline(const ov::InferRequest& request,
-                                     const ov::genai::Tokenizer& tokenizer,
-                                     OptionalWhisperGenerationConfig generation_config = std::nullopt);
-
-    /**
      * @brief Constructs a LLMPipeline when ov::genai::Tokenizer is initialized manually using file from the different
      * dirs.
      *
@@ -67,7 +56,7 @@ public:
      * @param streamer optional streamer
      * @return DecodedResults decoded resulting text
      */
-    DecodedResults generate(RawSpeechInput raw_speech_input,
+    DecodedResults generate(RawSpeechInput& raw_speech_input,
                             OptionalWhisperGenerationConfig generation_config = std::nullopt,
                             StreamerVariant streamer = std::monostate());
 
@@ -81,20 +70,20 @@ public:
      * @return DecodedResults decoded resulting text
      */
     template <typename... Properties>
-    util::EnableIfAllStringAny<DecodedResults, Properties...> generate(RawSpeechInput raw_speech_input,
+    util::EnableIfAllStringAny<DecodedResults, Properties...> generate(RawSpeechInput& raw_speech_input,
                                                                        Properties&&... properties) {
         return generate(raw_speech_input, AnyMap{std::forward<Properties>(properties)...});
     }
-    DecodedResults generate(RawSpeechInput raw_speech_input, const ov::AnyMap& config_map);
+    DecodedResults generate(RawSpeechInput& raw_speech_input, const ov::AnyMap& config_map);
 
-    DecodedResults operator()(RawSpeechInput raw_speech_input,
+    DecodedResults operator()(RawSpeechInput& raw_speech_input,
                               OptionalWhisperGenerationConfig generation_config = std::nullopt,
                               StreamerVariant streamer = std::monostate()) {
         return generate(raw_speech_input, generation_config, streamer);
     }
 
     template <typename... Properties>
-    util::EnableIfAllStringAny<DecodedResults, Properties...> operator()(RawSpeechInput raw_speech_input,
+    util::EnableIfAllStringAny<DecodedResults, Properties...> operator()(RawSpeechInput& raw_speech_input,
                                                                          Properties&&... properties) {
         return generate(raw_speech_input, AnyMap{std::forward<Properties>(properties)...});
     }

@@ -16,8 +16,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <openvino/core/except.hpp>
 #include <thread>
@@ -34,14 +32,13 @@ struct whisper_mel {
 };
 
 struct whisper_filters {
-    const int32_t n_mel = 80;
-    const int32_t n_fft = 201;  // 1 + (WHISPER_N_FFT / 2)
-
+    const size_t n_mel;
+    const size_t n_fft;  // 1 + (N_FFT / 2)
     std::vector<float> data;
 };
 
-static bool hann_window(int length, bool periodic, std::vector<float>& output) {
-    if (output.size() < static_cast<size_t>(length)) {
+static bool hann_window(const size_t length, const bool periodic, std::vector<float>& output) {
+    if (output.size() < length) {
         output.resize(length);
     }
     int offset = -1;
@@ -62,7 +59,7 @@ static void dft(const std::vector<float>& in,
                 std::vector<float>& out,
                 const std::vector<float>& sin_vals,
                 const std::vector<float>& cos_vals,
-                size_t n_fft) {
+                const size_t n_fft) {
     int N = in.size();
 
     out.resize(N * 2);
@@ -219,63 +216,105 @@ static void log_mel_spectrogram_worker_thread(int ith,
 
 // python implementation: https://github.com/huggingface/transformers/blob/check_gemma/src/transformers/audio_utils.py
 
-// mel_scale = "htk"
-float hertz_to_mel(float hertz) {
-    return 2595 * std::log10(1 + hertz / 700.0);
+float hertz_to_mel(const float freq) {
+    constexpr float min_log_hertz = 1000.0;
+    constexpr float min_log_mel = 15.0;
+    const float logstep = 27.0 / log(6.4);
+    float mel = 3.0 * freq / 200.0;
+
+    if (freq >= min_log_hertz) {
+        mel = min_log_mel + log(freq / min_log_hertz) * logstep;
+    }
+    return mel;
 }
 
-float mel_to_hertz(float mel) {
-    return 700 * (std::pow(10, mel / 2595.0) - 1);
+float mel_to_hertz(const float mel) {
+    constexpr float min_log_hertz = 1000.0;
+    constexpr float min_log_mel = 15.0;
+    const float logstep = log(6.4) / 27.0;
+    float freq = 200.0 * mel / 3.0;
+
+    if (mel >= min_log_mel) {
+        freq = min_log_hertz * exp(logstep * (mel - min_log_mel));
+    }
+
+    return freq;
 }
 
-// num_frequency_bins (`int`):
-//     Number of frequencies used to compute the spectrogram (should be the same as in `stft`).
-// num_mel_filters (`int`):
-//     Number of mel filters to generate.
-// min_frequency (`float`):
-//     Lowest frequency of interest in Hz.
-// max_frequency (`float`):
-//     Highest frequency of interest in Hz. This should not exceed `sampling_rate / 2`.
-// sampling_rate (`int`):
-//     Sample rate of the audio waveform.
+std::vector<std::vector<float>> create_triangular_filter_bank(const std::vector<float>& fft_freqs,
+                                                              const std::vector<float>& filter_freqs) {
+    std::vector<float> filter_diff(filter_freqs.size() - 1);
+    for (size_t i = 0; i < filter_diff.size(); i++) {
+        filter_diff[i] = filter_freqs[i + 1] - filter_freqs[i];
+    }
+
+    std::vector<std::vector<float>> slopes(fft_freqs.size(), std::vector<float>(filter_freqs.size()));
+    for (size_t row = 0; row < slopes.size(); row++) {
+        for (size_t col = 0; col < slopes[0].size(); col++) {
+            slopes[row][col] = filter_freqs[col] - fft_freqs[row];
+        }
+    }
+
+    std::vector<std::vector<float>> down_slopes(fft_freqs.size(), std::vector<float>(filter_freqs.size() - 2));
+    for (size_t row = 0; row < down_slopes.size(); row++) {
+        for (size_t col = 0; col < down_slopes[0].size(); col++) {
+            down_slopes[row][col] = -slopes[row][col] / filter_diff[col];
+        }
+    }
+
+    std::vector<std::vector<float>> up_slopes(fft_freqs.size(), std::vector<float>(filter_freqs.size() - 2));
+    for (size_t row = 0; row < up_slopes.size(); row++) {
+        for (size_t col = 0; col < up_slopes[0].size(); col++) {
+            up_slopes[row][col] = slopes[row][col + 2] / filter_diff[col + 1];
+        }
+    }
+
+    std::vector<std::vector<float>> result(fft_freqs.size(), std::vector<float>(filter_freqs.size() - 2));
+    for (size_t row = 0; row < result.size(); row++) {
+        for (size_t col = 0; col < result[0].size(); col++) {
+            result[row][col] = std::max(float(0), std::min(down_slopes[row][col], up_slopes[row][col]));
+        }
+    }
+
+    return result;
+}
 
 std::vector<std::vector<float>> mel_filter_bank(const int64_t num_frequency_bins,
                                                 const int64_t num_mel_filters,
                                                 const int64_t sampling_rate,
-                                                const float min_frequency,
-                                                const float max_frequency) {
+                                                const float min_frequency = 0.0f,
+                                                const float max_frequency = 8000.0f) {
     OPENVINO_ASSERT(max_frequency <= (sampling_rate / 2), "max_frequency should be less or equal sampling_rate / 2");
 
-    float mel_min = hertz_to_mel(min_frequency);
-    float mel_max = hertz_to_mel(max_frequency);
+    const float mel_min = hertz_to_mel(min_frequency);
+    const float mel_max = hertz_to_mel(max_frequency);
 
-    float mel_freqs_step = (mel_max - mel_min) / float(num_mel_filters + 1);
-    std::vector<float> mel_freqs(num_mel_filters + 2);
-    for (size_t i = 0; i < (int)mel_freqs.size(); i++) {
-        mel_freqs[i] = mel_min + i * mel_freqs_step;
+    const float mel_freqs_step = (mel_max - mel_min) / float(num_mel_filters + 1);
+    std::vector<float> filter_freqs(num_mel_filters + 2);
+    for (size_t i = 0; i < filter_freqs.size(); i++) {
+        filter_freqs[i] = mel_to_hertz(mel_min + i * mel_freqs_step);
     }
 
-    // our points are in Mels, but we use fft bins, so we have to convert
-    // from mel to Hz to fft bin number
-    for (int i = 0; i < (int)mel_freqs.size(); i++) {
-        // melpoints[i] = round(mel2hz(melpoints[i]) * nfft / samplerate);
-        mel_freqs[i] = floor(mel_to_hertz(mel_freqs[i]) * ((num_frequency_bins - 1) * 2 + 1) / sampling_rate);
+    std::vector<float> fft_freqs(num_frequency_bins);
+    const float fft_freq_step = float(sampling_rate / 2) / float(num_frequency_bins - 1);
+    for (size_t i = 0; i < num_frequency_bins; i++) {
+        fft_freqs[i] = i * fft_freq_step;
     }
 
-    std::vector<std::vector<float>> filterbank(num_mel_filters, std::vector<float>(num_frequency_bins));
-    for (int j = 0; j < num_mel_filters; j++) {
-        // Create first half of triangle
-        for (int i = int(mel_freqs[j]); i < int(mel_freqs[j + 1]); i++) {
-            filterbank[j][i] = (i - mel_freqs[j]) / (mel_freqs[j + 1] - mel_freqs[j]);
+    auto mel_filters = create_triangular_filter_bank(fft_freqs, filter_freqs);
+
+    std::vector<float> enorm(num_mel_filters);
+    for (size_t i = 0; i < enorm.size(); i++) {
+        enorm[i] = 2.0f / (filter_freqs[i + 2] - filter_freqs[i]);
+    }
+
+    for (size_t row = 0; row < mel_filters.size(); row++) {
+        for (size_t col = 0; col < mel_filters[0].size(); col++) {
+            mel_filters[row][col] *= enorm[col];
         }
-
-        // Create second half of triangle
-        for (int i = int(mel_freqs[j + 1]); i < int(mel_freqs[j + 2]); i++) {
-            filterbank[j][i] = (mel_freqs[j + 2] - i) / (mel_freqs[j + 2] - mel_freqs[j + 1]);
-        }
     }
 
-    return filterbank;
+    return mel_filters;
 }
 
 // In FFT, we frequently use sine and cosine operations with the same values.
@@ -291,43 +330,29 @@ void fill_sin_cos_table(std::vector<float>& sin_vals, std::vector<float>& cos_va
     }
 }
 
-std::vector<float> mel_spectrogram_convert_audio(const std::vector<float>& pcmf32,
-                                                 const int sample_rate,
-                                                 const int frame_size,
-                                                 const int frame_step,
-                                                 const int n_threads,
+std::vector<float> mel_spectrogram_convert_audio(const std::vector<float>& raw_speech,
+                                                 const size_t sampling_rate,
+                                                 const size_t feature_size,
+                                                 const size_t n_fft,
+                                                 const size_t hop_length,
+                                                 const size_t n_threads,
+                                                 const std::vector<float>& mel_filter,
                                                  const std::vector<float>& sin_vals,
                                                  const std::vector<float>& cos_vals) {
-    const float* samples = pcmf32.data();
-    const int n_samples = pcmf32.size();
-    whisper_filters filters;
+    const float* samples = raw_speech.data();
+    const int n_samples = raw_speech.size();
+    whisper_filters filters{feature_size, 1 + n_fft / 2, mel_filter};
     whisper_mel mel;
-
-    std::ifstream file_fdata;
-    // todo: handle path. Copy into mel_filters_data.bin into build, install dirs
-    file_fdata.open("./assets/whisper/mel_filters_data.bin", std::ios::binary);
-
-    std::vector<float> filter_data;
-
-    OPENVINO_ASSERT(file_fdata.is_open(), "Failed to open file models/mel_filters_data.bin for reading.");
-
-    size_t numElements = filters.n_fft * filters.n_mel;
-    filter_data.resize(numElements);
-
-    file_fdata.read(reinterpret_cast<char*>(&filter_data[0]), numElements * sizeof(float));
-    file_fdata.close();
-
-    filters.data = filter_data;
 
     // Hanning window (Use cosf to eliminate difference)
     // ref: https://pytorch.org/docs/stable/generated/torch.hann_window.html
     // ref: https://github.com/openai/whisper/blob/main/whisper/audio.py#L147
     std::vector<float> hann;
-    hann_window(frame_size, true, hann);
+    hann_window(n_fft, true, hann);
 
     // Calculate the length of padding
-    int64_t stage_1_pad = sample_rate * 30;
-    int64_t stage_2_pad = frame_size / 2;
+    int64_t stage_1_pad = sampling_rate * 30;
+    int64_t stage_2_pad = n_fft / 2;
 
     // Initialize a vector and copy data from C array to it.
     std::vector<float> samples_padded;
@@ -347,9 +372,9 @@ std::vector<float> mel_spectrogram_convert_audio(const std::vector<float>& pcmf3
     mel.n_mel = filters.n_mel;
     // https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/SpectralOps.cpp#L936
     // Calculate number of frames + remove the last frame
-    mel.n_len = (samples_padded.size() - frame_size) / frame_step;
+    mel.n_len = (samples_padded.size() - n_fft) / hop_length;
     // Calculate semi-padded sample length to ensure compatibility
-    mel.n_len_org = 1 + (n_samples + stage_2_pad - frame_size) / frame_step;
+    mel.n_len_org = 1 + (n_samples + stage_2_pad - n_fft) / hop_length;
     mel.data.resize(mel.n_mel * mel.n_len);
 
     {
@@ -360,8 +385,8 @@ std::vector<float> mel_spectrogram_convert_audio(const std::vector<float>& pcmf3
                                       std::cref(hann),
                                       samples_padded,
                                       n_samples + stage_2_pad,
-                                      frame_size,
-                                      frame_step,
+                                      n_fft,
+                                      hop_length,
                                       n_threads,
                                       std::cref(filters),
                                       std::ref(mel),
@@ -374,8 +399,8 @@ std::vector<float> mel_spectrogram_convert_audio(const std::vector<float>& pcmf3
                                           hann,
                                           samples_padded,
                                           n_samples + stage_2_pad,
-                                          frame_size,
-                                          frame_step,
+                                          n_fft,
+                                          hop_length,
                                           n_threads,
                                           filters,
                                           mel,
@@ -415,11 +440,28 @@ namespace genai {
 
 WhisperFeatureExtractor::WhisperFeatureExtractor() {
     fill_sin_cos_table(sin_vals, cos_vals, n_fft);
+
+    auto mel_data = mel_filter_bank(1 + n_fft / 2, feature_size, sampling_rate);
+    mel_filter.resize(mel_data.size() * mel_data[0].size());
+
+    for (size_t col = 0; col < mel_data[0].size(); col++) {
+        for (size_t row = 0; row < mel_data.size(); row++) {
+            mel_filter[col * mel_data.size() + row] = mel_data[row][col];
+        }
+    }
 }
 
 std::vector<float> WhisperFeatureExtractor::extract(const std::vector<float>& raw_speech) {
     size_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
-    return mel_spectrogram_convert_audio(raw_speech, sampling_rate, n_fft, hop_length, n_threads, sin_vals, cos_vals);
+    return mel_spectrogram_convert_audio(raw_speech,
+                                         sampling_rate,
+                                         feature_size,
+                                         n_fft,
+                                         hop_length,
+                                         n_threads,
+                                         mel_filter,
+                                         sin_vals,
+                                         cos_vals);
 }
 
 }  // namespace genai

@@ -28,6 +28,7 @@ public:
 private:
     std::vector<float> sin_vals;
     std::vector<float> cos_vals;
+    std::vector<float> mel_filter;
 };
 
 }  // namespace genai

@@ -94,13 +94,13 @@ public:
 }  // namespace ov
 
 ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(
-    RawSpeechInput raw_speech_input,
+    RawSpeechInput& raw_speech_input,
     OptionalWhisperGenerationConfig generation_config,
     StreamerVariant streamer) {
     return m_impl->generate(raw_speech_input, generation_config, streamer);
 }
 
-ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(RawSpeechInput raw_speech_input,
+ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(RawSpeechInput& raw_speech_input,
                                                                                 const ov::AnyMap& config_map) {
     auto config_arg = get_config_from_map(config_map);
     WhisperGenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
