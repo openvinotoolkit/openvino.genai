@@ -68,7 +68,7 @@ public:
     Impl(const std::filesystem::path& model_path, const std::string& device, const ov::AnyMap& plugin_config)
         : Impl{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
 
-    DecodedResults generate(RawSpeechInput& raw_speech_input,
+    DecodedResults generate(const RawSpeechInput& raw_speech_input,
                             OptionalWhisperGenerationConfig generation_config,
                             StreamerVariant streamer) {
         auto start_time = std::chrono::steady_clock::now();
@@ -94,13 +94,13 @@ public:
 }  // namespace ov
 
 ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(
-    RawSpeechInput& raw_speech_input,
+    const RawSpeechInput& raw_speech_input,
     OptionalWhisperGenerationConfig generation_config,
     StreamerVariant streamer) {
     return m_impl->generate(raw_speech_input, generation_config, streamer);
 }
 
-ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(RawSpeechInput& raw_speech_input,
+ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(const RawSpeechInput& raw_speech_input,
                                                                                 const ov::AnyMap& config_map) {
     auto config_arg = get_config_from_map(config_map);
     WhisperGenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
