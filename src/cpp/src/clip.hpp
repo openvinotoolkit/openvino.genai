@@ -1,27 +1,11 @@
+// Copyright (C) 2023-2024 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #ifndef CLIP_H
 #define CLIP_H
 
-#include <stddef.h>
-#include <stdint.h>
 #include <vector>
 #include <numeric>
-
-#include <openvino/openvino.hpp>
-#include "openvino/genai/visibility.hpp"
-
-#ifdef LLAMA_SHARED
-#    if defined(_WIN32) && !defined(__MINGW32__)
-#        ifdef LLAMA_BUILD
-#            define CLIP_API __declspec(dllexport)
-#        else
-#            define CLIP_API __declspec(dllimport)
-#        endif
-#    else
-#        define CLIP_API __attribute__ ((visibility ("default")))
-#    endif
-#else
-#    define CLIP_API
-#endif
 
 //#define CLIP_DEBUG_FUNCTIONS
 enum projector_type {
@@ -60,13 +44,11 @@ struct clip_image_f32 {
     std::vector<float> buf;
 };
 
-CLIP_API int clip_n_patches(const struct clip_ctx* ctx);
-
 /** interpret bytes as an image file with length bytes_length, and use the result to populate img */
-OPENVINO_GENAI_EXPORTS bool clip_image_load_from_bytes(const unsigned char * bytes, size_t bytes_length, struct clip_image_u8 * img);
+bool clip_image_load_from_bytes(const unsigned char * bytes, size_t bytes_length, struct clip_image_u8 * img);
 
-CLIP_API bool bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height);
+bool bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height);
 
 /** preprocess img and store the result in res_imgs, pad_to_square may be overriden to false depending on model configuration */
-CLIP_API clip_image_f32 clip_image_preprocess(struct clip_ctx& ctx, const clip_image_u8& img);
+clip_image_f32 clip_image_preprocess(struct clip_ctx& ctx, const clip_image_u8& img);
 #endif // CLIP_H

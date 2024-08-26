@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "stb_image.hpp"
-#include "log.hpp"
 #include "clip.hpp"
 
 #include "vlm_minicpmv.hpp"
-
+#include <chrono>
+#include <cmath>
 
 typedef std::chrono::high_resolution_clock Time;
 typedef std::chrono::nanoseconds ns;

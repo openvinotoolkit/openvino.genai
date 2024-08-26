@@ -1,9 +1,10 @@
+// Copyright (C) 2023-2024 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 // NOTE: This is modified from clip.cpp only for LLaVA,
 // so there might be still unnecessary artifacts hanging around
 // I'll gradually clean and extend it
 // Note: Even when using identical normalized image inputs (see normalize_image_u8_to_f32()) we have a significant difference in resulting embeddings compared to pytorch
-
-#include "log.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.hpp"
@@ -23,21 +24,7 @@
 
 #include "clip.hpp"
 
-static std::string format(const char * fmt, ...) {
-    va_list ap;
-    va_list ap2;
-    va_start(ap, fmt);
-    va_copy(ap2, ap);
-    int size = vsnprintf(NULL, 0, fmt, ap);
-    //GGML_ASSERT(size >= 0 && size < INT_MAX); // NOLINT
-    std::vector<char> buf(size + 1);
-    int size2 = vsnprintf(buf.data(), size + 1, fmt, ap2);
-    //GGML_ASSERT(size2 == size);
-    va_end(ap2);
-    va_end(ap);
-    return std::string(buf.data(), buf.size());
-}
-
+#include <openvino/openvino.hpp>
 
 struct clip_hparams {
     int32_t image_size;
@@ -66,10 +53,7 @@ static void build_clip_img_from_data(const stbi_uc * data, int nx, int ny, clip_
 bool clip_image_load_from_bytes(const unsigned char * bytes, size_t bytes_length, struct clip_image_u8 * img) {
     int nx, ny, nc;
     auto * data = stbi_load_from_memory(bytes, bytes_length, &nx, &ny, &nc, 3);
-    if (!data) {
-        LOG_TEE("%s: failed to decode image bytes\n", __func__);
-        return false;
-    }
+    OPENVINO_ASSERT(data, "failed to decode image bytes");
     build_clip_img_from_data(data, nx, ny, img);
     stbi_image_free(data);
     return true;
@@ -348,16 +332,4 @@ clip_image_f32 clip_image_preprocess(clip_ctx& ctx, const clip_image_u8& img) {
         }
     }
     return res;
-}
-
-int clip_n_patches(const struct clip_ctx* ctx) {
-
-    int n_patches = 1;
-
-    //minicpmv-2 query_num 64, minicpmv-2.5 query_num 96
-    if (ctx->proj_type == PROJECTOR_TYPE_RESAMPLER) {
-        n_patches = 64;
-    }
-
-    return n_patches;
 }

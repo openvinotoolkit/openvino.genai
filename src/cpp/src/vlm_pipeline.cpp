@@ -87,12 +87,7 @@ ov::Tensor process_prompt(Tokenizer& tokenizer, ov::InferRequest& embedding, con
     size_t idx;
     int scale_emb = 12;
 
-    ov::Tensor input_ids = tokenizer.encode(prompt + "<AI>").input_ids;
-    auto input_len = input_ids.get_size();
-
-    ov::Tensor input_tensor = ov::Tensor(ov::element::i64, { 1, input_ids.get_size() }, input_ids.data());
-
-    embedding.set_input_tensor(input_tensor);
+    embedding.set_input_tensor(tokenizer.encode(prompt + "<AI>").input_ids);
     embedding.infer();
 
     const ov::Tensor& embed_output_tensor = embedding.get_output_tensor();
@@ -252,14 +247,12 @@ ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tok
     int scale_emb = 12;
 
     user_prompt = "<用户>";
-    ov::Tensor input_ids = tokenizer.encode(user_prompt).input_ids;
+    const ov::Tensor& input_ids = tokenizer.encode(user_prompt).input_ids;
 
     auto input_len = input_ids.get_size();
     embedding_len += input_len;
 
-    ov::Tensor input_tensor = ov::Tensor(ov::element::i64, { 1, input_ids.get_size() }, input_ids.data());
-
-    embedding.set_input_tensor(input_tensor);
+    embedding.set_input_tensor(input_ids);
     embedding.infer();
 
     const ov::Tensor& embed_output_tensor = embedding.get_output_tensor();
@@ -307,13 +300,7 @@ ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tok
 
     //get special token embedding info
     user_prompt = "\n<image></image><slice></slice>";
-    input_ids = tokenizer.encode(user_prompt).input_ids;
-
-    input_len = input_ids.get_size();
-
-    input_tensor = ov::Tensor(ov::element::i64, { 1, input_ids.get_size() }, input_ids.data());
-
-    embedding.set_input_tensor(input_tensor);
+    embedding.set_input_tensor(tokenizer.encode(user_prompt).input_ids);
     embedding.infer();
 
     const ov::Tensor& embed_spec_tensor = embedding.get_output_tensor();
