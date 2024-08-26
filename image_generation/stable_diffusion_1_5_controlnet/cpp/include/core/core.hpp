@@ -25,7 +25,7 @@ struct StableDiffusionControlnetPipelineParam {
 
 class StableDiffusionControlnetPipeline {
 public:
-    StableDiffusionControlnetPipeline(std::string model_path, std::string device);
+    StableDiffusionControlnetPipeline(std::string model_path, std::string device, bool use_cache = false);
     ov::Tensor Run(StableDiffusionControlnetPipelineParam&);
 
 private:

@@ -108,16 +108,18 @@ int App::Init() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
-    // init ov
-    ov::Core core;
-    state.devices = core.get_available_devices();
-    state.active_device_index = 0;
-
     // init configs settings, we currently onluy support this one
     state.samplers.push_back("LMS");
 
     // init worker
     worker.Start();
+
+    // init ov
+    worker.Request([this] {
+        ov::Core core;
+        state.devices = core.get_available_devices();
+        state.active_device_index = 0;
+    });
 
     return 0;
 }
@@ -322,9 +324,9 @@ void App::RenderRightPanel() {
             } else {
                 state.model_path = model_path;
                 worker.Request([this] {
-                    pipe =
-                        std::make_shared<StableDiffusionControlnetPipeline>(state.model_path,
-                                                                            state.devices[state.active_device_index]);
+                    pipe = std::make_shared<StableDiffusionControlnetPipeline>(state.model_path,
+                                                                               state.devices[state.active_device_index],
+                                                                               true);
                 });
             }
         }
@@ -377,9 +379,9 @@ void App::RenderRightPanel() {
                             std::cout << "Directory does not exist, creating: " << folder_name << std::endl;
                             std::filesystem::create_directory(folder_name);
                         }
-                        imwrite(std::string("./images/seed_") + std::to_string(input_seed) + ".bmp",
-                                result_state.image,
-                                true);
+                        std::string output_name = std::string("./images/seed_") + std::to_string(input_seed) + ".bmp";
+                        imwrite(output_name, result_state.image, true);
+                        result_state.output_name = output_name;
                     } catch (const std::exception& e) {
                         std::cerr << "Failed to create dir" << e.what() << std::endl;
                     }
@@ -400,13 +402,28 @@ void App::RenderRightPanel() {
         ImVec2 preview_size(512 * xscale, 512 * yscale);
 
         if (aspect_ratio > 1.0f) {
-            // Image is wider than tall, limit by width
+            // Image is wider than tall
             preview_size.y = preview_size.x / aspect_ratio;
         } else {
-            // Image is taller than wide, limit by height
             preview_size.x = preview_size.y * aspect_ratio;
         }
+        // ImGui::Image((void*)(intptr_t)result_state.texture, preview_size);
+        ImVec2 padding = {(512.0f * xscale - preview_size.x) * 0.5f, (512.0f * yscale - preview_size.y) * 0.5f};
+        ImVec2 window_pos = ImGui::GetCursorScreenPos();
+
+        // Draw a black background
+        ImGui::GetWindowDrawList()->AddRectFilled(window_pos,
+                                                  ImVec2(window_pos.x + 512 * xscale, window_pos.y + 512 * yscale),
+                                                  IM_COL32(0, 0, 0, 255));
+        ImGui::SetCursorScreenPos(ImVec2(window_pos.x + padding.x, window_pos.y + padding.y));
+        // Draw the texture
         ImGui::Image((void*)(intptr_t)result_state.texture, preview_size);
+        // Reset cursor to the next item after the 512x512 box
+        ImGui::SetCursorScreenPos(ImVec2(window_pos.x, window_pos.y + 512 * yscale));
+        if (!result_state.output_name.empty()) {
+            std::string label = "Saved to: " + result_state.output_name;
+            ImGui::Text(label.c_str());
+        }
     }
 
     ImGui::EndChild();

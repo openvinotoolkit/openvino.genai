@@ -54,8 +54,13 @@ void reshape_text_encoder(std::shared_ptr<ov::Model> model, size_t batch_size, s
     model->reshape(idx_to_shape);
 }
 
-StableDiffusionControlnetPipeline::StableDiffusionControlnetPipeline(std::string model_path, std::string device) {
+StableDiffusionControlnetPipeline::StableDiffusionControlnetPipeline(std::string model_path,
+                                                                     std::string device,
+                                                                     bool use_cache) {
     ov::Core core;
+
+    if (use_cache)
+        core.set_property(ov::cache_dir("./cache_dir"));
 
     core.add_extension(TOKENIZERS_LIBRARY_PATH);
 
@@ -389,8 +394,7 @@ ov::Tensor StableDiffusionControlnetPipeline::Run(StableDiffusionControlnetPipel
     const size_t unet_in_channels = static_cast<size_t>(sample_shape[1].get_length());
 
     // latents are multiplied by 'init_noise_sigma'
-    ov::Shape latent_shape =
-        ov::Shape({1, unet_in_channels, 512 / VAE_SCALE_FACTOR, 512 / VAE_SCALE_FACTOR});
+    ov::Shape latent_shape = ov::Shape({1, unet_in_channels, 512 / VAE_SCALE_FACTOR, 512 / VAE_SCALE_FACTOR});
     ov::Shape latent_model_input_shape = latent_shape;
     ov::Tensor noise = randn_tensor(latent_shape, param.seed);
     latent_model_input_shape[0] = 2;  // Unet accepts batch 2

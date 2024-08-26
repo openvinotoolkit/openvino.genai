@@ -3,7 +3,7 @@ import os
 # os.environ['http_proxy'] = "http://127.0.0.1:20171" 
 # os.environ['https_proxy'] = "http://127.0.0.1:20171" 
 import torch
-from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
+from diffusers import StableDiffusionControlNetPipeline, ControlNetModel, AutoencoderTiny
 from controlnet_aux import OpenposeDetector
 from PIL import Image
 import numpy as np
@@ -31,6 +31,7 @@ def convert():
     pose_estimator = OpenposeDetector.from_pretrained("lllyasviel/ControlNet")
     controlnet = ControlNetModel.from_pretrained("lllyasviel/control_v11p_sd15_openpose", torch_dtype=torch.float32)
     pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet)
+    tae = AutoencoderTiny.from_pretrained("madebyollin/taesd", torch_dtype=torch.float32)
     
     
     # convert openpose body estimator(detector)
@@ -206,6 +207,7 @@ def convert():
 
     # convert vae
     VAE_DECODER_OV_PATH = Path("models/vae_decoder.xml")
+    TAE_DECODER_OV_PATH = Path("models/tae_decoder.xml")
 
     def convert_vae_decoder(vae: torch.nn.Module, ir_path: Path):
         """
@@ -250,6 +252,11 @@ def convert():
         convert_vae_decoder(pipe.vae, VAE_DECODER_OV_PATH)
     else:
         print(f"VAE decoder will be loaded from {VAE_DECODER_OV_PATH}")
+
+    if not TAE_DECODER_OV_PATH.exists():
+        convert_vae_decoder(tae, TAE_DECODER_OV_PATH)
+    else:
+        print(f"TAE decoder will be loaded from {TAE_DECODER_OV_PATH}")
 
 if __name__ == "__main__":
     convert()

@@ -50,6 +50,7 @@ struct ResultState {
     int image_height = 0;
     bool should_render = false;
     ov::Tensor image;
+    std::string output_name = "";
 };
 
 class App {
