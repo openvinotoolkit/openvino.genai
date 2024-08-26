@@ -10,6 +10,7 @@
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/tokenizer.hpp"
 #include "generation_stream.hpp"
 
 namespace ov::genai {
@@ -21,6 +22,7 @@ enum class SequenceStatus {
 };
 
 using TokenIds = std::vector<int64_t>;
+using LogProbs = std::vector<float>;
 class SequenceGroup;
 
 class Sequence {
@@ -31,6 +33,7 @@ class Sequence {
     }
 
     TokenIds m_generated_ids;
+    LogProbs m_generated_log_probs;
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     SequenceStatus m_status = SequenceStatus::RUNNING;
@@ -107,7 +110,19 @@ public:
     // appends new tokens to a generated part
     void append_token(int64_t token_id, float log_prob) {
         m_cumulative_log_prob += log_prob;
-        m_generated_ids.push_back(token_id);     
+        m_generated_log_probs.push_back(log_prob);
+        m_generated_ids.push_back(token_id); 
+    }
+
+    // removes n last tokens and updates cumulative log prob
+    // used to remove stop_string from the output
+    void remove_last_tokens(int n) {
+        OPENVINO_ASSERT(m_generated_ids.size() < n, "Cannot remove more tokens than has been generated");
+        for (int i = 0; i < n; i++) {
+            m_cumulative_log_prob -= m_generated_log_probs.back();
+            m_generated_log_probs.pop_back();
+            m_generated_tokens.pop_back();
+        }
     }
 
     GenerationOutput get_last_generation_output() {
@@ -115,6 +130,7 @@ public:
         OPENVINO_ASSERT(m_generated_ids.size());
         output.score = get_cumulative_log_probs();
         output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};
+        output.generated_token_log_probs = std::vector<int64_t> {m_generated_log_probs.back()};
         output.finish_reason = get_finish_reason();
         return output;
     }
@@ -125,6 +141,10 @@ public:
 
     const TokenIds & get_generated_ids() const {
         return m_generated_ids;
+    }
+
+    const LogProbs & get_generated_log_probs() const {
+        return m_generated_log_probs;
     }
 
     float get_cumulative_log_probs() const {
@@ -175,6 +195,9 @@ class SequenceGroup {
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
 
+    // Required for stop_strings handling. Set independently by include_tokenizer method
+    Tokenizer m_tokenizer;
+
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
@@ -182,6 +205,7 @@ class SequenceGroup {
           m_enable_prefix_caching(enable_prefix_caching) {
             m_generation_stream = GenerationStream::create();    
            }
+
 public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
@@ -210,6 +234,75 @@ public:
         m_sequences.erase(remove_it);
     }
 
+    // Called when sampling params contain stop_strings
+    void include_tokenizer(Tokenizer& tokenizer) {
+        m_tokenizer = tokenizer;
+    }
+
+    // Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
+    int stop_string_hit(const TokenIds & generated_tokens) {
+        /*
+        For catching stop_string hit we run comparisons character-wise to catch cases where stop string 
+        overlaps with part of another token on both sides or is just a part of a single token. 
+        For every stop_string we iterate over generated tokens starting from the last one and going backwards. 
+        Every token is decoded and its characters are compared to the stop_string character at a current_position 
+        (position of a character in the stop_string counting from the last one) - at the begining position is 0.
+        When characters match we increase current_position and check if we have a full match already, if not we continue.
+        If we have already matched some characters (current_position > 0) and next character is not matching 
+        before we reach the full match, then we reset current_position to 0. 
+        */
+        int num_matched_tokens = 0;  
+        for (auto stop_string: m_sampling_params.stop_strings) {
+            int current_position = 0;
+            // Getting reverse iterator to check tokens starting from the last one generated and going backwards
+            auto generated_tokens_rit = generated_tokens.rbegin();
+            while (generated_tokens_rit != generated_tokens.rend()) {
+                num_matched_tokens++;
+                std::string decoded_token = m_tokenizer.decode(std::vector<int64_t>{*generated_tokens_rit});
+                // Checking decoded_token characters starting from the last one
+                for (auto decoded_token_rit = decoded_token.rbegin(); decoded_token_rit != decoded_token.rend(); decoded_token_rit++) {
+                    // On character match increment current_position for the next comparisons
+                    if (*decoded_token_rit == *(stop_string.rbegin() + current_position)) {
+                        current_position++;
+                        // If this is the last character from the stop_string we have a match
+                        if ((stop_string.rbegin() + current_position) == stop_string.rend()) {
+                            return num_matched_tokens;
+                        } 
+                    } else if (current_position) {
+                        // Already found matching characters, but the last one didn't match, so we reset current_position
+                        current_position = 0;
+                    }
+                }
+                generated_tokens_rit++;
+            }
+        }
+        return 0;
+    }
+
+    // Handle stop_token_ids
+    bool stop_token_ids_hit(const TokenIds & generated_tokens) {
+        for (auto & stop_sequence : m_sampling_params.stop_token_ids) {
+            bool stop = true;
+            if (generated_tokens.size() < stop_sequence.size())
+                continue;
+
+            auto stop_sequence_rit = stop_sequence.rbegin();
+            auto generated_tokens_rit = generated_tokens.rbegin();
+            while (stop_sequence_rit != stop_sequence.rend()) 
+            {
+                if(*stop_sequence_rit != *generated_tokens_rit) {
+                    stop = false;
+                    break;
+                }
+                stop_sequence_rit++;
+                generated_tokens_rit++;
+            }
+            if (stop) 
+                return true;
+        }
+        return false;
+    }
+
     std::vector<int64_t> try_finish_generation() {
         std::vector<int64_t> dropped_seq_ids;
         for (auto& running_sequence : get_running_sequences()) {
@@ -226,6 +319,27 @@ public:
                 }
                 
                 dropped_seq_ids.push_back(running_sequence->get_id());
+                continue;
+            }
+
+            if (!m_sampling_params.stop_token_ids.empty()) {
+                if (stop_token_ids_hit(running_sequence->get_generated_ids())) {
+                    running_sequence->set_status(SequenceStatus::FINISHED);
+                    running_sequence->set_finish_reason(GenerationFinishReason::STOP);
+                    dropped_seq_ids.push_back(running_sequence->get_id());
+                    continue;
+                }
+            }
+
+            if (!m_sampling_params.stop_strings.empty()) {
+                int num_matched_last_tokens = stop_string_hit(running_sequence->get_generated_ids());
+                if (num_matched_last_tokens) {
+                    if (!m_sampling_params.include_stop_str_in_output)
+                        running_sequence->remove_last_tokens(num_matched_last_tokens);
+                    running_sequence->set_status(SequenceStatus::FINISHED);
+                    running_sequence->set_finish_reason(GenerationFinishReason::STOP);
+                    dropped_seq_ids.push_back(running_sequence->get_id());
+                }
             }
         }
         return dropped_seq_ids;
@@ -482,6 +596,7 @@ public:
         for (auto& sequence: m_sequences) {
             GenerationOutput output;
             output.generated_token_ids = sequence->get_generated_ids();
+            output.generated_token_log_probs = sequence->get_generated_log_probs();
             output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_probs();
             output.finish_reason = sequence->get_finish_reason();
             outputs.emplace(sequence->get_grouped_id(), output);

@@ -144,6 +144,8 @@ public:
                                                                             m_scheduler->get_config().block_size,
                                                                             m_scheduler->get_config().enable_prefix_caching);
         sequence_group->set_sequence_group_ptr(sequence_group);
+        if (!sampling_params.stop_strings.empty())
+            sequence_group->include_tokenizer(m_tokenizer);
         if (m_scheduler->get_config().enable_prefix_caching) {
             m_scheduler->restore_cached_blocks(sequence_group);
         }

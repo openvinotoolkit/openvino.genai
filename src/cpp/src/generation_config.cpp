@@ -24,6 +24,10 @@ GenerationConfig::GenerationConfig(const std::string& json_path) {
     read_json_param(data, "max_new_tokens", max_new_tokens);
     read_json_param(data, "max_length", max_length);
     // note that ignore_eos is not present in HF GenerationConfig
+    read_json_param(data, "min_new_tokens", min_new_tokens);
+    read_json_param(data, "stop_strings", stop_strings);
+    // note that include_stop_str_in_output is not present in HF GenerationConfig
+    // note that stop_token_ids is not present in HF GenerationConfig
     read_json_param(data, "num_beam_groups", num_beam_groups);
     read_json_param(data, "num_beams", num_beams);
     read_json_param(data, "diversity_penalty", diversity_penalty);
