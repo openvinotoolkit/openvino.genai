@@ -472,7 +472,6 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
 
         std::vector<Beam> candidates;
         candidates.reserve(group_size * 2 * group_size);
-
         for (const Beam& beam : group.ongoing) {
             std::vector<Token> tokens = log_softmax(logits, beam.m_global_beam_idx);
 
@@ -532,19 +531,58 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
 
                 // try to finish candidate
                 try_to_finish_candidate(group, candidate);
-            } else {
-                parent_2_num_childs_map[candidate.m_sequence->get_id()] += 1;
-                child_beams_per_group[group_id].push_back(candidate);
+                continue;
+            }
+            
+            if (!m_parameters.stop_token_ids.empty()) {
+                // We need to include candidate token to already generated tokens to check if stop sequence has been generated
+                // There's probably a better way to do that, than copying whole vector...
+                std::vector<int64_t> token_ids = candidate.m_sequence->get_generated_ids();
+                token_ids.push_back(candidate.m_token_id);
+                if (m_sequence_group->stop_token_ids_hit(token_ids)) {
+                    // If beam_token does not belong to top num_beams tokens, it should not be added
+                    if (cand_idx >= group_size)
+                        continue;
 
-                // if num childs are enough
-                if (child_beams_per_group[group_id].size() == group_size) {
-                    break;
+                    // try to finish candidate
+                    try_to_finish_candidate(group, candidate);
+                    continue;
                 }
+            }
+
+            if (!m_parameters.stop_strings.empty()) {
+                // We need to include candidate token to already generated tokens to check if stop string has been generated
+                // There's probably a better way to do that, than copying whole vector...
+                std::vector<int64_t> token_ids = candidate.m_sequence->get_generated_ids();
+                token_ids.push_back(candidate.m_token_id);
+                if (m_sequence_group->stop_string_hit(token_ids)) {
+                    // If beam_token does not belong to top num_beams tokens, it should not be added
+                    if (cand_idx >= group_size)
+                        continue;
+
+                    // try to finish candidate
+                    try_to_finish_candidate(group, candidate);
+                    continue;
+                }
+            }
+
+            parent_2_num_childs_map[candidate.m_sequence->get_id()] += 1;
+            child_beams_per_group[group_id].push_back(candidate);
+
+            // if num childs are enough
+            if (child_beams_per_group[group_id].size() == group_size) {
+                break;
             }
         }
 
         // check whether group has finished
         group.is_done(m_parameters);
+
+        // group cannot continue if there are no valid child beams
+        if (child_beams_per_group[group_id].size() == 0) {
+            group.done = true;
+        }
+
         if (group.done) {
             // group has finished, group all running sequences
             for (const Beam& beam : group.ongoing) {
