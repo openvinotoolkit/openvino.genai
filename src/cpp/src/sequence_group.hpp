@@ -166,8 +166,6 @@ class SequenceGroup {
     bool m_enable_prefix_caching;
 
     uint64_t m_next_sequence_id = 0;
-
-    bool m_preempted = false;
  
     // amount of processed tokens, e.g. prompt can be processed using multiple consequence inferences
     // so, we need to track which part of the prompt we have already processed
@@ -342,7 +340,6 @@ public:
     void preempt_tokens(size_t num_preempt_tokens) {
         OPENVINO_ASSERT(num_preempt_tokens <= m_num_processed_tokens);
         m_num_processed_tokens -= num_preempt_tokens;
-        m_preempted = true;
     }
 
     // returns context length taking into account scheduled tokens

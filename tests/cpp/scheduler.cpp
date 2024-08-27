@@ -266,6 +266,115 @@ TEST(TestScheduler, test_partial_preemption) {
     }
 }
 
+
+TEST(TestScheduler, test_partial_preemption_beam_search) {
+    std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
+    configs.at(0).num_kv_blocks = 10;
+    configs.at(0).block_size = 4;
+    configs.at(0).dynamic_split_fuse = false;
+    configs.at(1).num_kv_blocks = 10;
+    configs.at(1).block_size = 4;
+    configs.at(1).dynamic_split_fuse = true;
+    for (auto scheduler_config: configs) {
+        std::vector<uint64_t> tokens = {0,1,2,3};
+        int64_t token = 4;
+
+        // create beam search group
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                                ov::genai::beam_search(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+        sequence_group->set_sequence_group_ptr(sequence_group);
+        std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+
+        Scheduler scheduler = Scheduler(scheduler_config);
+        auto out = scheduler.schedule(requests);
+        for (auto sequence: sequence_group->get_not_finished_sequences()) {
+            sequence->append_token(token, 0.7);
+        }
+        sequence_group->finish_iteration();
+
+        // make 2 forked sequence
+        auto sequence_to_fork = sequence_group->get_running_sequences()[0];    
+        for (size_t i = 0; i < 2; ++i) {
+            const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
+            scheduler.fork_sequence(sequence_to_fork->get_id(), forked_sequence->get_id());
+        }
+        size_t num_scheduled_tokens = 4;
+
+        // generate 4 tokens
+        for (size_t i = 0; i < num_scheduled_tokens; i++) {
+            scheduler.schedule(requests);
+            for (auto sequence: sequence_group->get_not_finished_sequences()) {
+                token += 3;
+                sequence->append_token(token, 0.5);
+            }
+            sequence_group->finish_iteration();
+        }
+        // currently sequence occupies 4 blocks (1 shared, 3 not shared) 
+
+        // make another 2 forked sequence
+        for (size_t i = 0; i < 2; ++i) {
+            const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
+            scheduler.fork_sequence(sequence_to_fork->get_id(), forked_sequence->get_id());
+        }
+
+        // generate 4 tokens
+        for (size_t i = 0; i < num_scheduled_tokens; i++) {
+            scheduler.schedule(requests);
+            for (auto sequence: sequence_group->get_not_finished_sequences()) {
+                token += 3;
+                sequence->append_token(token, 0.5);
+            }
+            sequence_group->finish_iteration();
+        }
+        // currently sequence occupies 9 blocks (4 blocks previously created + 5 blocks for each sequence)
+
+        // create group, which requires 1 block
+        SequenceGroup::Ptr sequence_group_greedy = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                                ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+        sequence_group_greedy->set_sequence_group_ptr(sequence_group_greedy);
+
+        // set greedy group at the beginning of list to make it higher priority
+        std::vector<SequenceGroup::Ptr> new_requests = {sequence_group_greedy, sequence_group};
+
+        // process prompt of greedy group, at this point all blocks are used
+        scheduler.schedule(new_requests);
+        sequence_group_greedy->get_sequences()[0]->append_token(token, 0.8);
+        sequence_group_greedy->finish_iteration();
+
+        EXPECT_EQ(sequence_group->get_num_processed_tokens(), 12);
+        EXPECT_EQ(sequence_group->get_context_len(), 12);
+        
+        // beam search group should be partially preempted and 5 blocks should be released 
+        out = scheduler.schedule(new_requests);
+        sequence_group_greedy->get_sequences()[0]->append_token(token, 0.5);
+        sequence_group_greedy->finish_iteration();
+
+        EXPECT_EQ(sequence_group->get_num_processed_tokens(), 8);
+        auto seqs = sequence_group->get_sequences();
+        EXPECT_EQ(scheduler.get_block_table(*seqs[0]).size(), 2);
+        EXPECT_EQ(scheduler.get_block_table(*seqs[1]).size(), 2);
+        EXPECT_EQ(scheduler.get_block_table(*seqs[2]).size(), 2);
+        EXPECT_EQ(scheduler.get_block_table(*seqs[3]).size(), 2);
+        EXPECT_EQ(scheduler.get_block_table(*seqs[4]).size(), 2);
+        
+        // append another 20 tokens to greedy group, this should result in usage of all free blocks and 
+        // another partial preemption of beam search group
+        for (size_t i = 0; i < 20; i++) {
+            out = scheduler.schedule(new_requests);
+            sequence_group_greedy->get_sequences()[0]->append_token(token, 0.5);
+            sequence_group_greedy->finish_iteration();
+        }
+
+        EXPECT_EQ(sequence_group->get_num_processed_tokens(), 4);
+        seqs = sequence_group->get_sequences();
+        EXPECT_EQ(scheduler.get_block_table(*seqs[0]).size(), 1);
+        EXPECT_EQ(scheduler.get_block_table(*seqs[1]).size(), 1);
+        EXPECT_EQ(scheduler.get_block_table(*seqs[2]).size(), 1);
+        EXPECT_EQ(scheduler.get_block_table(*seqs[3]).size(), 1);
+        EXPECT_EQ(scheduler.get_block_table(*seqs[4]).size(), 1);
+    }
+}
+
 TEST(TestScheduler, test_partially_preempted_prompt) {
     std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).max_num_batched_tokens = 32;

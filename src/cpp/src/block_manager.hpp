@@ -228,7 +228,6 @@ public:
     const size_t free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
         size_t blocks_num = std::ceil(num_required_blocks / sequence_group->get_not_finished_sequences().size());
         auto running_sequences = sequence_group->get_not_finished_sequences();
-        std::set<size_t> blocks_released_indices;
         for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
             auto seq_id = running_sequences[idx]->get_id();
             OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
@@ -236,6 +235,34 @@ public:
             free_sequence_partially(seq_id, blocks_num);
         }
         return blocks_num;
+    }
+
+    const size_t free_rightest_blocks(SequenceGroup::Ptr sequence_group) {
+        size_t blocks_released = 0;
+        auto running_sequences = sequence_group->get_not_finished_sequences();
+        for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
+            auto seq_id = running_sequences[idx]->get_id();
+            OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
+            auto block_table = m_block_table[seq_id];
+            if (free_last_block(seq_id)) {
+                blocks_released++;
+            }
+        }
+        return blocks_released;
+    }
+
+    const size_t free_partially_beam_search_group(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
+        size_t physical_blocks_released = 0;
+        size_t logical_blocks_released = 0;
+        while (num_required_blocks > physical_blocks_released) {
+            size_t released_count = free_rightest_blocks(sequence_group);
+            logical_blocks_released ++;
+            if ((int)sequence_group->get_context_len() - logical_blocks_released * m_block_size <= 0) {
+                break;
+            }
+            physical_blocks_released += released_count;
+        }
+        return logical_blocks_released;
     }
 
     const size_t get_number_of_blocks_occupied_by_sequence(SequenceGroup::Ptr sequence_group) {
@@ -249,16 +276,11 @@ public:
             }
            // OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
             auto block_table = m_block_table[seq_id];
-            size_t last_idx = block_table.back()->get_index();
-            if (indices.find(last_idx) != indices.end()) {
-                continue;
-            }
-            else {
-                indices.insert(last_idx);
-                num_blocks += block_table.size();
+            for (const auto& block: block_table) {
+                indices.insert(block->get_index());
             }
         }
-        return num_blocks;
+        return indices.size();
     }
 
     const bool has_block_table(uint64_t seq_id) {
