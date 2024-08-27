@@ -56,6 +56,8 @@ the result of running the command will have the following file structure:
               |-tokenizer.model
               |-special_tokens_map.json
 
+For more information, visit https://docs.openvino.ai/nightly/learn-openvino/llm_inference_guide/llm-inference-hf.html#converting-a-hugging-face-model-to-openvino-ir
+
 ### 3. Benchmarking
 
 Prerequisites:
