@@ -20,8 +20,7 @@ pip install -r requirements.txt
 
 ### 2. Convert a model to OpenVINO IR
    
-The conversion script for preparing benchmarking models,
-`convert.py` allows to reproduce IRs stored on shared drive.
+The optimum-cli tool allows you to convert models from Hugging Face to the OpenVINO IR format. More detailed info about tool usage can be found in [Optimum Intel documentation](https://huggingface.co/docs/optimum/main/en/intel/openvino/export)
 
 Prerequisites:
 install conversion dependencies using `requirements.txt`
@@ -29,22 +28,17 @@ install conversion dependencies using `requirements.txt`
 Usage:
 
 ```bash
-python convert.py --model_id <model_id_or_path> --output_dir <out_dir>
+optimum-cli export openvino --model <MODEL_NAME> --weight-format <PRECISION> <OUTPUT_DIR>
 ```
 
 Paramters:
-* `--model_id` - model_id for downloading from huggngface_hub (https://huggingface.co/models) or path with directory where pytorch model located.
-* `--output_dir` - output directory for saving OpenVINO model
-* `--precision` - (optional, default FP32), precision for model conversion FP32 or FP16
-* `--save_orig` - flag for saving original pytorch model, model will be located in `<output_dir>/pytorch` subdirectory.
-* `--compress_weights` - The weight compression option, INT8 - INT8 weights, 4BIT_DEFAULT - for 4-bit compression with predefined configs with performance-accuracy trade-off, 4BIT_MAXIMUM - for 4-bit compression with predefined configs for the best performance, INT4_SYM - for INT4 compressed weights with symmetric quantization, INT4_ASYM - for INT4 compressed weights with assymetric quantization. You can specify multiple backends separated by a space.
-* `--compress_weights_backends` - (optional, default openvino) backends for weights compression, this option has an effect only with `--compress_weights`. You can specify multiple backends separated by a space.
-* `--ratio` - Compression ratio between primary and backup precision, e.g. INT4/INT8.
-* `--group_size` - Size of the group of weights that share the same quantization parameters
+* `--model <MODEL_NAME>` - <MODEL_NAME> model_id for downloading from huggngface_hub (https://huggingface.co/models) or path with directory where pytorch model located. 
+* `--weight-format` - precision for model conversion fp32, fp16, int8, int4
+* `<OUTPUT_DIR>` - output directory for saving OpenVINO model.
 
 Usage example:
 ```bash
-python convert.py --model_id meta-llama/Llama-2-7b-chat-hf --output_dir models/llama-2-7b-chat
+optimum-cli export openvino --model meta-llama/Llama-2-7b-chat-hf --weight-format fp16 models/llama-2-7b-chat
 ```
 
 the result of running the command will have the following file structure:
@@ -52,11 +46,11 @@ the result of running the command will have the following file structure:
     |-llama-2-7b-chat
       |-pytorch
         |-dldt
-           |-FP32
+           |-FP16
               |-openvino_model.xml
               |-openvino_model.bin
               |-config.json
-              |-added_tokens.json
+              |-generation_config.json
               |-tokenizer_config.json
               |-tokenizer.json
               |-tokenizer.model
