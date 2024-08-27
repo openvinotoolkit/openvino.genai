@@ -20,8 +20,7 @@ pip install -r requirements.txt
 
 ### 2. Convert a model to OpenVINO IR
    
-The optimum-cli tool allows you to convert models from Hugging Face to the OpenVINO IR format. More detailed info about tool usage can be found in Optimum Intel documentation:
-https://huggingface.co/docs/optimum/main/en/intel/openvino/export
+The optimum-cli tool allows you to convert models from Hugging Face to the OpenVINO IR format. More detailed info about tool usage can be found in [Optimum Intel documentation](https://huggingface.co/docs/optimum/main/en/intel/openvino/export)
 
 Prerequisites:
 install conversion dependencies using `requirements.txt`
