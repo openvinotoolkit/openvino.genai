@@ -119,33 +119,50 @@ void copy_with_offset(const ov::Tensor& orig, const int32_t offset, ov::Tensor& 
     std::copy(orig_data, orig_data + orig.get_size(), padded_data + offset);
 }
 
-ov::AnyMap extract_config_or_default(const ov::AnyMap& config, const std::string& config_name) {
-    ov::AnyMap stage_cfg;
-    if (auto it = config.find(config_name); it != config.end()) {
-        stage_cfg = it->second.as<ov::AnyMap>();
-    } else if (config_name == "PREFILL_CONFIG") {
-        std::map<std::string, std::string> prefill_config = {
-			{ "NPU_USE_NPUW", "YES" },
-			{ "NPUW_FOLD", "YES" },
-			{ "NPUW_DCOFF_TYPE", "f16" },
-			{ "NPUW_DCOFF_SCALE",  "YES" },
-			{ "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
-        };
-        stage_cfg.insert(prefill_config.begin(), prefill_config.end());
-    } else if (config_name == "GENERATE_CONFIG") {
-        std::map<std::string, std::string> generate_config = {
-            { "NPU_USE_NPUW", "YES" },
-            { "NPUW_FOLD", "YES" },
-            { "NPUW_DCOFF_TYPE", "f16" },
-            { "NPUW_DCOFF_SCALE", "YES" },
-            { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
-            { "NPUW_PARALLEL_COMPILE", "YES" },
-            { "NPUW_FUNCALL_ASYNC", "YES" },
-            { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
-        };
-        stage_cfg.insert(generate_config.begin(), generate_config.end());
+void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
+    for (const auto& [key, value] : rhs) {
+        // NB: Overwrite the value if key already exists
+        if (auto it = lhs.find(key); it != lhs.end()) {
+            it->second = value;
+        } else {
+            lhs.emplace(key, value);
+        }
     }
-    return stage_cfg;
+}
+
+ov::AnyMap get_default_prefill_config() {
+    std::map<std::string, std::string> config = {
+        { "NPU_USE_NPUW", "YES" },
+        { "NPUW_FOLD", "YES" },
+        { "NPUW_DCOFF_TYPE", "f16" },
+        { "NPUW_DCOFF_SCALE",  "YES" },
+        { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
+    };
+    return { config.begin(), config.end() };
+}
+
+ov::AnyMap get_default_generate_config() {
+    std::map<std::string, std::string> config = {
+        { "NPU_USE_NPUW", "YES" },
+        { "NPUW_FOLD", "YES" },
+        { "NPUW_DCOFF_TYPE", "f16" },
+        { "NPUW_DCOFF_SCALE", "YES" },
+        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
+        { "NPUW_PARALLEL_COMPILE", "YES" },
+        { "NPUW_FUNCALL_ASYNC", "YES" },
+        { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
+    };
+    return { config.begin(), config.end() };
+}
+
+template <typename T>
+T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_value) {
+    if (auto it = config.find(key); it != config.end()) {
+        auto value = it->second;
+        config.erase(it);
+        return value.as<T>();
+    }
+    return default_value;
 }
 
 ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos) {
@@ -154,6 +171,14 @@ ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, si
     ov::Shape end_shape = tensor.get_shape();
     end_shape[dim] = end_pos;
     return ov::Tensor(tensor, start_shape, end_shape);
+}
+
+void drop_cache_dir(ov::AnyMap& config) {
+    if (config.count("NPU_USE_NPUW") != 0u) {
+        if (auto it = config.find("CACHE_DIR"); it != config.end()) {
+            config.erase(it);
+        }
+    }
 }
 
 } // anonymous namespace
@@ -168,6 +193,7 @@ StaticLLMPipeline::StaticLLMPipeline(
     const ov::AnyMap& config
 ) : LLMPipelineImplBase(tokenizer,
                         utils::from_config_json_if_exists(path)) {
+    auto pipeline_config = config;
     /* NB: Static LLM pipeline consists of two models,
        first to process the input prompt (prefill), second to use in generation loop (kvcache)
 
@@ -201,11 +227,19 @@ StaticLLMPipeline::StaticLLMPipeline(
     reshape_to_static(m_prefill_model, max_prompt_size, max_kvcache_size);
     reshape_to_static(m_kvcache_model, 1u, max_kvcache_size);
     // (7) Compile both model
+    auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", get_default_prefill_config());
+    auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", get_default_generate_config());
+    merge_config_with(prefill_config, pipeline_config);
+    merge_config_with(generate_config, pipeline_config);
+    // FIXME: Drop CACHE_DIR option if NPUW is enabled
+    drop_cache_dir(prefill_config);
+    drop_cache_dir(generate_config);
+
     m_prefill_request = core.compile_model(
-        m_prefill_model, device, extract_config_or_default(config, "PREFILL_CONFIG")
+        m_prefill_model, device, prefill_config
     ).create_infer_request();
     m_kvcache_request = core.compile_model(
-        m_kvcache_model, device, extract_config_or_default(config, "GENERATE_CONFIG")
+        m_kvcache_model, device, generate_config
     ).create_infer_request();
     // (8) Initialize tensors
     prepare_for_new_conversation();
