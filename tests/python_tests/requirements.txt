@@ -25,3 +25,6 @@ timm
 tiktoken
 # - microsoft/biogpt
 sacremoses
+# - openai/whisper-tiny.en
+# used to read wav file
+scipy
