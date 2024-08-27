@@ -304,6 +304,20 @@ public:
         auto content_length = sequence->get_generated_len() + prompt_ids.size();
         size_t num_hashed_tokens = block_table.size() * m_block_size;
 
+        if (m_enable_prefix_caching && block_table.size() > 0) {
+            KVCacheBlock::Ptr last_block = block_table.back();
+            auto hash = sequence->get_hash(block_table.size() * m_block_size);
+            auto prev_hash = last_block->get_hash();
+            // If last block was restored from cache by using of a partially filled block,
+            // its hash would correspond to partially filled block.
+            // In this case hash needs to be updated to the hash of fully filled block.
+            if (prev_hash != hash) {
+                last_block->set_hash(hash);
+                cached_blocks.erase(prev_hash);
+                cached_blocks[hash] = last_block;
+            }
+        }
+
         for (size_t i = 0; i < num_blocks; ++i) {
 
             ov::genai::KVCacheBlock::Ptr block = nullptr; 
@@ -502,7 +516,7 @@ public:
             if (block != nullptr) {
                 block->set_timestamp(std::chrono::system_clock::now());
                 m_block_table[seq_id].push_back(block);
-                group->update_processed_tokens_num(content_len);
+                group->update_processed_tokens_num(content_len == prompt_ids.size() ? content_len - 1 : content_len);
             }
             else {
                 // restore partially filled block
@@ -514,15 +528,7 @@ public:
                     auto block = m_allocator.get_cached_block(hash, cached_blocks);
                     if (block != nullptr) {
                         block->set_timestamp(std::chrono::system_clock::now());
-                        group->update_processed_tokens_num(prev_iteration_content_len + i);
-
-                        size_t new_tokens_count_in_block = std::min(content_len, prev_iteration_content_len + block_size);
-                        if (new_tokens_count_in_block > prev_iteration_content_len + i) {
-                            cached_blocks.erase(hash);
-                            auto new_hash = sequence->get_hash(new_tokens_count_in_block);
-                            block->set_hash(new_hash);
-                            cached_blocks[new_hash] = block;
-                        }
+                        group->update_processed_tokens_num(prev_iteration_content_len + i == prompt_ids.size() ? prev_iteration_content_len + i - 1 : prev_iteration_content_len + i);
                         m_block_table[seq_id].push_back(block);
 
                         break;
