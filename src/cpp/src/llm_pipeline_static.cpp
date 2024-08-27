@@ -85,19 +85,35 @@ std::shared_ptr<ov::Model> add_slices_to_kvcache_inputs(const std::shared_ptr<ov
     return std::make_shared<ov::Model>(model->get_results(), ov::SinkVector{}, new_params);
 }
 
+struct KVAxesPosition {
+    uint32_t batch;
+    uint32_t seq_len;
+};
+
+KVAxesPosition get_kv_axes(const std::string& model_type) {
+    if (model_type == "chatglm")
+        return {1, 0};
+    else if (model_type == "Qwen")
+        return {0, 1};
+    else
+        return {0, 2};
+}
+
+std::string get_model_type(const std::filesystem::path& filepath) {
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open file: " + filepath.string());
+    }
+    nlohmann::json config_data = nlohmann::json::parse(file);
+    std::string model_type = config_data["model_type"].get<std::string>();
+    return model_type;
+}
+
 void reshape_to_static(std::shared_ptr<ov::Model> model,
                        const uint32_t input_size,
                        const uint32_t kvcache_size,
                        const std::filesystem::path& path) {
     auto config_file_path = path / "config.json";
-    if (!std::filesystem::exists(config_file_path))
-            return ;
-        std::ifstream file(config_file_path);
-        if (!file.is_open())
-            return ;
-    nlohmann::json config_data = nlohmann::json::parse(file);
-    std::string model_type;
-    model_type = config_data["model_type"].get<std::string>();
     std::map<std::string, ov::PartialShape> new_shapes;
     for (auto input : model->inputs()) {
         const auto& input_name = input.get_any_name();
@@ -110,18 +126,11 @@ void reshape_to_static(std::shared_ptr<ov::Model> model,
             new_shape = ov::PartialShape({1, input_size});
         } else {
             const auto& partial_shape = input.get_partial_shape();
-            if (model_type == "chatglm") {
-                size_t num_kv_heads = partial_shape[0].is_static() ? partial_shape[0].get_length() : 2;
-                new_shape = ov::PartialShape({kvcache_size-input_size,
-                                              1,
-                                              num_kv_heads,
-                                              partial_shape[3].get_length()});
-            }
-            else
-                new_shape = ov::PartialShape({1,
-                                          partial_shape[1].get_length(),
-                                          kvcache_size-input_size,
-                                          partial_shape[3].get_length()});
+            new_shape = partial_shape;
+            std::string model_type = get_model_type(config_file_path.string());
+            KVAxesPosition kv_axes_position = get_kv_axes(model_type);
+            new_shape[kv_axes_position.batch] = 1;
+            new_shape[kv_axes_position.seq_len] = kvcache_size - input_size;
         }
         new_shapes.emplace(input_name, new_shape);
     }
@@ -239,8 +248,15 @@ StaticLLMPipeline::StaticLLMPipeline(
     // (5) Clone the model - this will be prefill
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
-    // FIXME For some models KV-cache dim != 2u
-    m_kvcache_desc = KVCacheDesc { 1024u, 0u, 2u };
+     std::string model_type = get_model_type(path / "config.json");
+    uint32_t kv_dims;
+    if (model_type == "chatglm")
+        kv_dims = 0u;
+    else if (model_type == "Qwen")
+        kv_dims = 1u;
+    else
+        kv_dims = 2u;
+    m_kvcache_desc = KVCacheDesc { 1024u, 0u, kv_dims };
     // (6) Reshape both models to static shape
     const uint32_t max_prompt_size = m_kvcache_desc.total_size;
     const uint32_t max_kvcache_size = m_kvcache_desc.total_size;
