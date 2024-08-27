@@ -11,6 +11,29 @@
 const size_t TOKENIZER_MODEL_MAX_LENGTH = 77;  // 'model_max_length' parameter from 'tokenizer_config.json'
 const size_t VAE_SCALE_FACTOR = 8;
 
+void exportTensorToTxt(const ov::Tensor& tensor, const std::string& filename) {
+    if (tensor.get_element_type() != ov::element::f32) {
+        throw std::runtime_error("Tensor element type is not float32.");
+    }
+
+    std::ofstream outfile(filename);
+    if (!outfile.is_open()) {
+        throw std::runtime_error("Could not open file for writing: " + filename);
+    }
+
+    const float* data = tensor.data<float>();
+    size_t size = tensor.get_size();
+
+    outfile << std::fixed << std::setprecision(8);
+
+    for (size_t i = 0; i < size; ++i) {
+        outfile << data[i] << "\n";
+    }
+
+    outfile.close();
+    std::cout << "Tensor data has been exported to " << filename << std::endl;
+}
+
 class Timer {
     const decltype(std::chrono::steady_clock::now()) m_start;
 

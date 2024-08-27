@@ -7,3 +7,4 @@ model
 *.bin
 !requirements.txt
 !CMakeLists.txt
+*.pth
