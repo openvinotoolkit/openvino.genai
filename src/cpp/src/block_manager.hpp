@@ -252,15 +252,15 @@ public:
     }
 
     const size_t free_partially_beam_search_group(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
-        size_t phisical_blocks_released = 0;
+        size_t physical_blocks_released = 0;
         size_t logical_blocks_released = 0;
-        while (num_required_blocks > phisical_blocks_released) {
+        while (num_required_blocks > physical_blocks_released) {
             size_t released_count = free_rightest_blocks(sequence_group);
             logical_blocks_released ++;
-            if (get_number_of_blocks_occupied_by_sequence(sequence_group) == 0) {
+            if (sequence_group->get_context_len() - logical_blocks_released * m_block_size == 0) {
                 break;
             }
-            phisical_blocks_released += released_count;
+            physical_blocks_released += released_count;
         }
         return logical_blocks_released;
     }
