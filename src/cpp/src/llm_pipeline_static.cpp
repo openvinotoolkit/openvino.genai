@@ -248,7 +248,7 @@ StaticLLMPipeline::StaticLLMPipeline(
     // (5) Clone the model - this will be prefill
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
-     std::string model_type = get_model_type(path / "config.json");
+    std::string model_type = get_model_type(path / "config.json");
     uint32_t kv_dims;
     if (model_type == "chatglm")
         kv_dims = 0u;
