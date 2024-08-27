@@ -20,7 +20,8 @@ pip install -r requirements.txt
 
 ### 2. Convert a model to OpenVINO IR
    
-The optimum-cli tool allows you to convert models from Hugging Face to the OpenVINO IR format
+The optimum-cli tool allows you to convert models from Hugging Face to the OpenVINO IR format. More detailed info about tool usage can be found in Optimum Intel documentation:
+https://huggingface.co/docs/optimum/main/en/intel/openvino/export
 
 Prerequisites:
 install conversion dependencies using `requirements.txt`
@@ -33,7 +34,7 @@ optimum-cli export openvino --model <MODEL_NAME> --weight-format <PRECISION> <NE
 
 Paramters:
 * `--model <MODEL_NAME>` - <MODEL_NAME> model_id for downloading from huggngface_hub (https://huggingface.co/models) or path with directory where pytorch model located. 
-* `--weight-format` - precision for model conversion FP16 or INT8 or INT4
+* `--weight-format` - precision for model conversion fp32, fp16, int8, int4
 * `<NEW_MODEL_NAME>` - output directory for saving OpenVINO model.
 
 Usage example:
@@ -55,8 +56,6 @@ the result of running the command will have the following file structure:
               |-tokenizer.json
               |-tokenizer.model
               |-special_tokens_map.json
-
-For more information, visit https://docs.openvino.ai/nightly/learn-openvino/llm_inference_guide/llm-inference-hf.html#converting-a-hugging-face-model-to-openvino-ir
 
 ### 3. Benchmarking
 
