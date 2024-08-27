@@ -435,3 +435,135 @@ TEST(TestScheduler, prefix_caching_test) {
     }
 
 }
+
+TEST(TestScheduler, prefix_caching_test_two_identical_sequences) {
+    std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
+    configs.at(0).num_kv_blocks = 100;
+    configs.at(0).block_size = 4;
+    configs.at(0).dynamic_split_fuse = false;
+    configs.at(0).enable_prefix_caching = true;
+    configs.at(1).num_kv_blocks = 100;
+    configs.at(1).block_size = 4;
+    configs.at(1).dynamic_split_fuse = true;
+    configs.at(1).enable_prefix_caching = true;
+    for (auto scheduler_config: configs) {
+        std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
+        std::vector<uint64_t> histrory_tokens = {};
+        // schedule prompt
+        Scheduler scheduler = Scheduler(scheduler_config);
+
+        size_t chat_iterations = 10;
+
+        for (size_t chat_iteration = 0; chat_iteration < chat_iterations; chat_iteration++) {
+            std::vector<uint64_t> tokens = histrory_tokens;
+            tokens.insert(tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
+            SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                                    ov::genai::greedy(), scheduler_config.block_size, 
+                                                                                    scheduler_config.enable_prefix_caching);
+
+            SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                                    ov::genai::greedy(), scheduler_config.block_size, 
+                                                                                    scheduler_config.enable_prefix_caching);
+            sequence_group1->set_sequence_group_ptr(sequence_group1);
+            sequence_group2->set_sequence_group_ptr(sequence_group2);
+            std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
+            // restore cached blocks
+            for (auto request: requests) {
+                scheduler.restore_cached_blocks(request);
+            }
+
+            // schedule prompt
+            auto out1 = scheduler.schedule(requests);
+            if (chat_iteration == 0)
+                EXPECT_EQ(out1.m_total_num_scheduled_tokens, prompt_tokens.size() * 2);
+            else 
+                EXPECT_EQ(out1.m_total_num_scheduled_tokens, (prompt_tokens.size() + 1) * 2);
+            for (auto seq: requests) {
+                std::vector<Sequence::Ptr> running_sequences = seq->get_running_sequences();
+                running_sequences[0]->append_token(23, 0.7);
+                seq->finish_iteration();
+            }
+
+            // schedule generate
+            size_t num_generate_tokens = 10;
+            for (size_t i = 0; i < num_generate_tokens; i++) {
+                auto out2 = scheduler.schedule(requests);
+                EXPECT_EQ(out2.m_total_num_scheduled_tokens, 2);
+                for (auto request: requests) {
+                    std::vector<Sequence::Ptr> running_sequences = request->get_running_sequences();
+                    running_sequences[0]->append_token(16, 0.9);
+                    request->finish_iteration();
+                }
+            }
+
+            for (auto request: requests) {
+                // finish sequences
+                auto sequence = request->get_running_sequences()[0];
+                sequence->set_status(SequenceStatus::FINISHED);
+                auto idx0 = sequence->get_id();
+                scheduler.free_sequence(idx0);
+            }
+            auto generated_ids = requests[0]->get_sequences()[0]->get_generated_ids();
+            
+            histrory_tokens.insert(histrory_tokens.end(), prompt_tokens.begin(), prompt_tokens.end());
+            histrory_tokens.insert(histrory_tokens.end(), generated_ids.begin(), generated_ids.end());
+        }
+    }
+
+}
+
+
+TEST(TestScheduler, prefix_caching_with_max_new_tokens_equal_1) {
+    std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
+    configs.at(0).num_kv_blocks = 10;
+    configs.at(0).block_size = 32;
+    configs.at(0).dynamic_split_fuse = false;
+    configs.at(0).enable_prefix_caching = true;
+    configs.at(1).num_kv_blocks = 10;
+    configs.at(1).block_size = 32;
+    configs.at(1).dynamic_split_fuse = true;
+    configs.at(1).enable_prefix_caching = true;
+    for (auto scheduler_config: configs) {
+        std::vector<uint64_t> prompt_tokens = {0,1,2,3,4,5,6,7};
+        // schedule prompt
+        Scheduler scheduler = Scheduler(scheduler_config);
+
+        size_t chat_iterations = 2;
+
+        for (size_t chat_iteration = 0; chat_iteration < chat_iterations; chat_iteration++) {
+            SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {prompt_tokens.size()}, prompt_tokens.data()),
+                                                                                    ov::genai::greedy(), scheduler_config.block_size, 
+                                                                                    scheduler_config.enable_prefix_caching);
+
+            sequence_group->set_sequence_group_ptr(sequence_group);
+            std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+            // restore cached blocks
+            for (auto request: requests) {
+                scheduler.restore_cached_blocks(request);
+            }
+
+            // schedule prompt
+            auto out1 = scheduler.schedule(requests);
+            if (chat_iteration == 0)
+                EXPECT_EQ(out1.m_total_num_scheduled_tokens, prompt_tokens.size());
+            else 
+                EXPECT_EQ(out1.m_total_num_scheduled_tokens, 1);
+            for (auto seq: requests) {
+                std::vector<Sequence::Ptr> running_sequences = seq->get_running_sequences();
+                running_sequences[0]->append_token(23, 0.7);
+                seq->finish_iteration();
+            }
+
+            // In case max_new_tokens == 1 no generate phase happens
+
+            for (auto request: requests) {
+                // finish sequences
+                auto sequence = request->get_running_sequences()[0];
+                sequence->set_status(SequenceStatus::FINISHED);
+                auto idx0 = sequence->get_id();
+                scheduler.free_sequence(idx0);
+            }
+        }
+    }
+
+}
