@@ -257,7 +257,7 @@ public:
         while (num_required_blocks > physical_blocks_released) {
             size_t released_count = free_rightest_blocks(sequence_group);
             logical_blocks_released ++;
-            if (sequence_group->get_context_len() - logical_blocks_released * m_block_size == 0) {
+            if ((int)sequence_group->get_context_len() - logical_blocks_released * m_block_size <= 0) {
                 break;
             }
             physical_blocks_released += released_count;
