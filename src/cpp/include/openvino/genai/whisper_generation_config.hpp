@@ -47,7 +47,7 @@ public:
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
      */
-    void set_eos_token_id(size_t tokenizer_eos_token_id);
+    void set_eos_token_id(int64_t tokenizer_eos_token_id);
     size_t get_max_new_tokens(size_t prompt_length = 0) const;
 
     void update_generation_config(const ov::AnyMap& config_map = {});
@@ -68,15 +68,15 @@ public:
  * pipe(text, ov::genai::max_new_tokens(200), ov::genai::temperature(1.0f),...)
  */
 
-static constexpr ov::Property<std::vector<size_t>> begin_suppress_tokens{"begin_suppress_tokens"};
-static constexpr ov::Property<std::vector<size_t>> suppress_tokens{"suppress_tokens"};
-static constexpr ov::Property<size_t> decoder_start_token_id{"decoder_start_token_id"};
+static constexpr ov::Property<std::vector<int64_t>> begin_suppress_tokens{"begin_suppress_tokens"};
+static constexpr ov::Property<std::vector<int64_t>> suppress_tokens{"suppress_tokens"};
+static constexpr ov::Property<int64_t> decoder_start_token_id{"decoder_start_token_id"};
 
-static constexpr ov::Property<size_t> pad_token_id{"pad_token_id"};
-static constexpr ov::Property<size_t> transcribe_token_id{"transcribe_token_id"};
-static constexpr ov::Property<size_t> translate_token_id{"translate_token_id"};
-static constexpr ov::Property<size_t> no_timestamps_token_id{"no_timestamps_token_id"};
-static constexpr ov::Property<size_t> begin_timestamps_token_id{"begin_timestamps_token_id"};
+static constexpr ov::Property<int64_t> pad_token_id{"pad_token_id"};
+static constexpr ov::Property<int64_t> transcribe_token_id{"transcribe_token_id"};
+static constexpr ov::Property<int64_t> translate_token_id{"translate_token_id"};
+static constexpr ov::Property<int64_t> no_timestamps_token_id{"no_timestamps_token_id"};
+static constexpr ov::Property<int64_t> begin_timestamps_token_id{"begin_timestamps_token_id"};
 
 }  // namespace genai
 }  // namespace ov

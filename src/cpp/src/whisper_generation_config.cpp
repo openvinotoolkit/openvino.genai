@@ -34,7 +34,7 @@ WhisperGenerationConfig::WhisperGenerationConfig(const std::string& json_path) {
     read_json_param(data, "begin_timestamps_token_id", begin_timestamps_token_id);
 }
 
-void WhisperGenerationConfig::set_eos_token_id(size_t tokenizer_eos_token_id) {
+void WhisperGenerationConfig::set_eos_token_id(int64_t tokenizer_eos_token_id) {
     if (eos_token_id < 0) {
         eos_token_id = tokenizer_eos_token_id;
     } else {

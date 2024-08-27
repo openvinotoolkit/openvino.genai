@@ -21,4 +21,6 @@ from .py_generate_pipeline import (
     ContinuousBatchingPipeline,
     GenerationResult,
     SchedulerConfig,
+    WhisperGenerationConfig,
+    WhisperSpeechRecognitionPipeline
 )
