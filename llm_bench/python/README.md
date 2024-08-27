@@ -28,7 +28,7 @@ install conversion dependencies using `requirements.txt`
 Usage:
 
 ```bash
-optimum-cli export openvino --model <MODEL_NAME> --weight-format <PRECISION> <NEW_MODEL_NAME>
+optimum-cli export openvino --model <MODEL_NAME> --weight-format <PRECISION> <OUTPUT_DIR>
 ```
 
 Paramters:
