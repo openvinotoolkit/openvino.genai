@@ -211,6 +211,8 @@ class BlockManager {
     // stores blocks for each sequence (not sequence group)
     // the same block can be seen in multiple block_tables for different sequences
     std::map<uint64_t, std::vector<KVCacheBlock::Ptr>> m_block_table;
+
+    std::mutex m_cached_blocks_map_mutex;
 public:
     BlockManager(int num_blocks, bool enable_prefix_caching, size_t block_size)
         : m_allocator(num_blocks, enable_prefix_caching), m_enable_prefix_caching(enable_prefix_caching), m_block_size(block_size) { }
@@ -496,6 +498,10 @@ public:
 
 
     void restore_cached_blocks(SequenceGroup::Ptr group, size_t block_size) {
+        // When add_request() is executed in multiple threads accessing to cached_blocks causes segfault.
+        // The mutex is needed to prevent such segfaults.
+        const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+
         auto prompt_ids = group->get_prompt_ids(); 
         auto sequences = group->get_not_finished_sequences();
         OPENVINO_ASSERT(sequences.size() == 1);
