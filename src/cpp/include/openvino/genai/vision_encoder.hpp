@@ -23,7 +23,10 @@ public:
     ov::InferRequest m_encoder;
     ProcessorConfig m_processor_config;
 
-    explicit VisionEncoder(const ov::InferRequest& encoder, const ProcessorConfig& processor_config=ProcessorConfig{}) :
+    explicit VisionEncoder(
+        const ov::InferRequest& encoder,
+        const ProcessorConfig& processor_config=ProcessorConfig{}
+    ) :
         m_encoder{encoder}, m_processor_config{processor_config} {}
 
     explicit VisionEncoder(
@@ -38,5 +41,15 @@ public:
     }
 
     EncodedImage encode(const ov::Tensor& image, const ProcessorConfig& config);
+
+    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map);
+
+    template <typename... Properties>
+    util::EnableIfAllStringAny<EncodedImage, Properties...> encode(
+        const ov::Tensor& image,
+        Properties&&... properties
+    ) {
+        return encode(inputs, AnyMap{std::forward<Properties>(properties)...});
+    }
 };
 }

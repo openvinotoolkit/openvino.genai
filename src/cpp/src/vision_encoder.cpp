@@ -205,9 +205,20 @@ VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::
 
 EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ProcessorConfig& config) {
     clip_ctx ctx_clip;
-    for (int i = 0; i < 3; ++i) {
-        ctx_clip.image_mean[i] = config.norm_mean.at(i);
-        ctx_clip.image_std[i] = config.norm_std.at(i);
-    }
+    std::copy(config.norm_mean.begin(), config.norm_mean.end(), ctx_clip.image_mean);
+    std::copy(config.norm_std.begin(), config.norm_std.end(), ctx_clip.image_std);
     return llava_image_embed_make_with_bytes_slice(ctx_clip, image, m_encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
+}
+
+EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    auto iter = config_map.find("processor_config");
+    ProcessorConfig extracted_config = config_map.end() != iter ?
+        iter->second.as<ProcessorConfig>() : m_processor_config;
+    using utils::read_anymap_param;
+    read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
+    read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
+    read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
+    read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
+    read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
+    return encode(image, extracted_config);
 }

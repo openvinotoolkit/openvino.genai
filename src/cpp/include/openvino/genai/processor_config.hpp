@@ -19,6 +19,7 @@ public:
     std::array<float, 3> norm_std{1.0f, 1.0f, 1.0f};
     ProcessorConfig() = default;
     explicit ProcessorConfig(const std::filesystem::path& json_path);
+    ProcessorConfig(const ProcessorConfig&) = default;
 };
 
 /*
