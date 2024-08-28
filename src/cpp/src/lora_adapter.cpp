@@ -238,18 +238,30 @@ struct LoRAParametersByWeightGetter {
         OPENVINO_ASSERT(dynamic_lora_rank, "LoRAParametersByWeightGetter doesn't support static LoRA rank, use dynamic");
         // TODO: To implement known static LoRA rank, need to accumulate ranks from all found weights instead of searching for at least one match:
 
-        auto it = std::find_if(weight_getter.begin(), weight_getter.end(), [node](const LoRAWeightGetter& getter) {
-            return bool(getter(node->get_friendly_name()));
-        });
-        if(weight_getter.end() != it) {
-            LoRAParameters result;
-            result.rank = ov::Dimension();      // FIXME: uncomment dynamic dimension
-            result.type = type;
-            result.fine_grained_alpha = fine_grained_alpha;
-            return result;
+        ov::Dimension rank;
+        if(dynamic_lora_rank) {
+            if(weight_getter.end() ==
+                std::find_if(weight_getter.begin(), weight_getter.end(), [node](const LoRAWeightGetter& getter) {
+                    return bool(getter(node->get_friendly_name()));
+            })) {
+                return std::nullopt;
+            }
         } else {
-            return std::nullopt;
+            rank = std::accumulate(weight_getter.begin(), weight_getter.end(), 0u, [node](unsigned int acc, const LoRAWeightGetter& getter) {
+                if(auto nodes = getter(node->get_friendly_name())) {
+                    return acc + nodes->A->get_output_partial_shape(0)[0].get_length();
+                }
+            });
+            if(rank == 0) {
+                return std::nullopt;
+            }
         }
+
+        LoRAParameters result;
+        result.rank = rank;//ov::Dimension();      // FIXME: uncomment dynamic dimension
+        result.type = type;
+        result.fine_grained_alpha = fine_grained_alpha;
+        return result;
     }
 };
 
@@ -258,8 +270,8 @@ struct LoRAIndices : public LoRAParts<size_t> {
     std::string name;
 };
 
-struct LoRAVarIDs : public LoRAParts<std::string> {
-    std::string name;
+struct LoRAVarIDs : public LoRAParts<ov::op::util::VariableInfo> {
+    std::string name;  // layer name where LoRA with given variables is attached
 };
 
 void deduce_input_output_dims(NodePtr node, ov::Dimension& input_dim, ov::Dimension& output_dim) {
@@ -296,28 +308,28 @@ struct LoRAWeightStateGetter {
 
             // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
             //indices.A = model->get_variables().size();
-            var_ids.A = variable_id_prefix + ".A";
-            result.A = add_variable(
+            var_ids.A = ov::op::util::VariableInfo{
                 ov::PartialShape{params->rank, input_dim},  // Will be used with transpose_b == true
-                params->type,
-                var_ids.A
-            );
+                ov::element::f32,  // params->type,  // FIXME: Do not override type to f32, now it is required due to CPU bug
+                variable_id_prefix + ".A"
+            };
+            result.A = add_variable(var_ids.A);
             // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
             //indices.A = model->get_variables().size();
-            var_ids.alpha = variable_id_prefix + ".alpha";
-            result.alpha = add_variable(
+            var_ids.alpha = ov::op::util::VariableInfo{
                 params->fine_grained_alpha ? ov::PartialShape{1, params->rank} : ov::PartialShape{},
                 ov::element::f32,
-                var_ids.alpha
-            );
+                variable_id_prefix + ".alpha"
+            };
+            result.alpha = add_variable(var_ids.alpha);
             // FIXME: No guarantees on ordering of state in InferRequest makes impossible using indices of variables later, forced to use variable_id instead
             //indices.B = model->get_variables().size();
-            var_ids.B = variable_id_prefix + ".B";
-            result.B = add_variable(
+            var_ids.B = ov::op::util::VariableInfo{
                 ov::PartialShape{output_dim, params->rank},  // Will be used with transpose_b == true
                 params->type,
-                var_ids.B
-            );
+                variable_id_prefix + ".B"
+            };
+            result.B = add_variable(var_ids.B);
             variable_ids.emplace_back(var_ids);
             return result;
         } else {
@@ -325,10 +337,8 @@ struct LoRAWeightStateGetter {
         }
     }
 
-    NodePtr add_variable(const ov::PartialShape& shape, const ov::element::Type& type, const std::string& variable_id) const {
-        auto variable = std::make_shared<ov::op::util::Variable>(ov::op::util::VariableInfo{
-            shape, ov::element::f32, variable_id
-        });
+    NodePtr add_variable(const ov::op::util::VariableInfo& variable_info) const {
+        auto variable = std::make_shared<ov::op::util::Variable>(variable_info);
         model->add_variables({variable});
         #if 0
         // FIXME: CPU plugin fails when there is no initialization expression is given and type is not fp32
@@ -784,18 +794,20 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
 
     struct ConfigChanged {
         bool is_dynamic = false;
+        bool is_dynamic_rank = false;
         bool fuse = false;
         bool alpha = false;
         bool adapter = false;
 
         operator bool() const {
-            return is_dynamic || fuse || alpha || adapter;
+            return is_dynamic || is_dynamic_rank || fuse || alpha || adapter;
         }
     };
 
     ConfigChanged compare_configs(const AdapterConfig& config1, const AdapterConfig& config2) {
         ConfigChanged diff;
         diff.is_dynamic = config1.is_dynamic != config2.is_dynamic;
+        diff.is_dynamic_rank = config1.is_dynamic_rank != config2.is_dynamic_rank;
         diff.fuse = config1.fuse != config2.fuse;
         // TODO: Use `set` from this commented block when the config change tracking is implemented at adapter granularity and will track order of adapters correctly
         // std::set<Adapter>
@@ -831,6 +843,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         DEBUG_PRINT("config.fuse: " << config.fuse);
         DEBUG_PRINT("diff.adapter: " << diff.adapter);
         OPENVINO_ASSERT(!diff.is_dynamic, "AdapterConfig::is_dynamic cannot be changed and should be configured once for a model at the initialization");
+        OPENVINO_ASSERT(!diff.is_dynamic_rank, "AdapterConfig::is_dynamic_rank cannot be changed and should be configured once for a model at the initialization");
         OPENVINO_ASSERT(!diff.fuse, "AdapterConfig::fuse cannot be changed and should be configured once for a model at the initialization");
         OPENVINO_ASSERT(config.is_dynamic || (!diff.alpha && !diff.adapter), "Cannot change adapters and/or the alphas when is_dynamic = false.");
         if(need_full_apply) {
@@ -887,12 +900,12 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         for(const auto& lora_var_ids : variable_ids) {
             // FIXME: Remove this mapping when the order of state will be the same as the order of variables
             LoRAIndices lora_indices;
-            lora_indices.alpha = state_name_to_index.at(lora_var_ids.alpha);
-            lora_indices.A = state_name_to_index.at(lora_var_ids.A);
-            lora_indices.B = state_name_to_index.at(lora_var_ids.B);
-            lora_indices.name = lora_var_ids.name;
+            lora_indices.alpha = state_name_to_index.at(lora_var_ids.alpha.variable_id);
+            lora_indices.A = state_name_to_index.at(lora_var_ids.A.variable_id);
+            lora_indices.B = state_name_to_index.at(lora_var_ids.B.variable_id);
+            lora_indices.name = lora_var_ids.name;  // FIXME: Redundant
 
-            set_lora_tensors(state, lora_indices, weight_getters);
+            set_lora_tensors(state, lora_var_ids, lora_indices, weight_getters);
         }
     }
 
@@ -1042,11 +1055,23 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
 
         // TODO: As ov::Tensor lacks a convenient constructor to fill all elements with the same scalar value, do it via Constant that has such constructor
         // FIXME: It's a huge overhead for setting just a scalar 0
+
+        ov::Shape
+            alpha_shape{1, 1},
+            A_shape{1, outputs.A.get_shape()[1]},
+            B_shape{outputs.B.get_shape()[0], 1};
+
+        DEBUG_PRINT("alpha_shape: " << alpha_shape);
+        DEBUG_PRINT("A_shape: " << A_shape);
+        DEBUG_PRINT("B_shape: " << B_shape);
         
-        std::make_shared<v0::Constant>(outputs.alpha.get_element_type(), ov::Shape{1, 1}, 0)->get_tensor_view().copy_to(outputs.alpha);
+        outputs.alpha.set_shape(alpha_shape);
+        outputs.A.set_shape(A_shape);
+        outputs.B.set_shape(B_shape);
+        std::make_shared<v0::Constant>(outputs.alpha.get_element_type(), alpha_shape, 0)->get_tensor_view().copy_to(outputs.alpha);
         // Element values for A and B don't matter as we are multiplying by 0 in alpha anyway
-        std::make_shared<v0::Constant>(outputs.A.get_element_type(), ov::Shape{1, outputs.A.get_shape()[1]}, 0)->get_tensor_view().copy_to(outputs.A);
-        std::make_shared<v0::Constant>(outputs.B.get_element_type(), ov::Shape{outputs.B.get_shape()[0], 1}, 0)->get_tensor_view().copy_to(outputs.B);
+        std::make_shared<v0::Constant>(outputs.A.get_element_type(), A_shape, 0)->get_tensor_view().copy_to(outputs.A);
+        std::make_shared<v0::Constant>(outputs.B.get_element_type(), B_shape, 0)->get_tensor_view().copy_to(outputs.B);
         //outputs.A.set_shape({0, outputs.A.get_shape()[1]});
         //outputs.B.set_shape({outputs.B.get_shape()[0], 0});
 
@@ -1101,13 +1126,40 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         return outputs;
     }
 
-    void set_lora_tensors(std::vector<VariableState>& state, const LoRAIndices& lora_indices, const std::vector<LoRAWeightGetter>& weight_getters) {
+    ov::Shape dynamic_to_static(const ov::PartialShape& pshape) {
+        ov::Shape shape(pshape.rank().get_length());
+        for(size_t i = 0; i < pshape.rank().get_length(); ++i) {
+            shape[i] = pshape[i].is_dynamic() ? 0 : pshape[i].get_length();
+        }
+        return shape;
+    }
+
+    void set_lora_tensors(std::vector<VariableState>& state, const LoRAVarIDs& lora_var_ids, const LoRAIndices& lora_indices, const std::vector<LoRAWeightGetter>& weight_getters) {
+        // FIXME
+        #define LORA_GPU_GET_STATE_BUG 1
+
+        #if LORA_GPU_GET_STATE_BUG
+        LoRAParts<ov::Tensor> lora_state_tensors{
+            ov::Tensor(lora_var_ids.alpha.data_type, dynamic_to_static(lora_var_ids.alpha.data_shape)), 
+            ov::Tensor(lora_var_ids.A.data_type, dynamic_to_static(lora_var_ids.A.data_shape)), 
+            ov::Tensor(lora_var_ids.B.data_type, dynamic_to_static(lora_var_ids.B.data_shape))
+        };
+        // DEBUG_PRINT("alpha_shape: " << lora_state_tensors.alpha.get_shape());
+        // DEBUG_PRINT("A_shape: " << lora_state_tensors.A.get_shape());
+        // DEBUG_PRINT("B_shape: " << lora_state_tensors.B.get_shape());
+        #else
+        // FIXME: Get state tensors if there is a lazy state tensor repacking is implemented, otherwise it will lead to re-packing of state tensors which
+        // values are not really required to get and they only play a role of the placehodler
         LoRAParts<ov::Tensor> lora_state_tensors(
             state[lora_indices.alpha].get_state(),  
             state[lora_indices.A].get_state(),
             state[lora_indices.B].get_state()
         );
+        #endif
         auto new_tensors = prepare_lora_tensors(lora_indices.name, weight_getters, lora_state_tensors);
+        DEBUG_PRINT("alpha_shape: " << new_tensors.alpha.get_shape());
+        DEBUG_PRINT("A_shape: " << new_tensors.A.get_shape());
+        DEBUG_PRINT("B_shape: " << new_tensors.B.get_shape());
         state[lora_indices.alpha].set_state(new_tensors.alpha);
         state[lora_indices.A].set_state(new_tensors.A);
         state[lora_indices.B].set_state(new_tensors.B);
@@ -1153,7 +1205,42 @@ void AdapterController::force_full_apply(bool full_apply) {
     return m_pimpl->force_full_apply(full_apply);
 }
 
-AdapterConfig::AdapterConfig (const std::vector<Adapter>& adapters, bool is_dynamic) : is_dynamic(is_dynamic), adapters(adapters) {
+void AdapterConfig::decompose_mode () {
+    switch(mode) {
+        case MODE_AUTO:
+            is_dynamic = true;
+            fuse = false;
+            is_dynamic_rank = true;
+        case MODE_DYNAMIC:
+            is_dynamic = true;
+            fuse = false;
+            is_dynamic_rank = true;
+            break;
+        case MODE_STATIC_RANK:
+            is_dynamic = true;
+            fuse = false;
+            is_dynamic_rank = false;
+            break;
+        case MODE_STATIC:
+            is_dynamic = false;
+            fuse = false;
+            is_dynamic_rank = false;
+            break;
+        case MODE_FUSE:
+            is_dynamic = false;
+            fuse = true;
+            is_dynamic_rank = false;
+            break;
+    }
+}
+
+void AdapterConfig::set_mode(Mode _mode) {
+    mode = _mode;
+    decompose_mode();
+}
+
+AdapterConfig::AdapterConfig (const std::vector<Adapter>& adapters, Mode mode) : mode(mode), adapters(adapters) {
+    decompose_mode();
     alphas.reserve(adapters.size());
     for(const auto& adapter: adapters) {
         auto const alpha = adapter.get_default_alpha().value_or(1);
@@ -1162,7 +1249,8 @@ AdapterConfig::AdapterConfig (const std::vector<Adapter>& adapters, bool is_dyna
     }
 }
 
-AdapterConfig::AdapterConfig (const std::vector<std::pair<Adapter, float>>& _adapters, bool is_dynamic) : is_dynamic(is_dynamic) {
+AdapterConfig::AdapterConfig (const std::vector<std::pair<Adapter, float>>& _adapters, Mode mode) : mode(mode) {
+    decompose_mode();
     adapters.reserve(_adapters.size());
     alphas.reserve(_adapters.size());
     for(auto const& adapter_and_alpha: _adapters) {
@@ -1171,6 +1259,11 @@ AdapterConfig::AdapterConfig (const std::vector<std::pair<Adapter, float>>& _ada
         alpha_constants.push_back(alpha_as_constant(adapter_and_alpha.second));
     }
 }
+
+AdapterConfig::AdapterConfig() : mode(MODE_AUTO) {
+    decompose_mode();
+}
+
 
 //AdapterConfig::AdapterConfig (const Adapter& adapter, float alpha, bool is_dynamic) : AdapterConfig(std::vector<std::pair<Adapter, float>>{{adapter, alpha}}, is_dynamic) {}
 

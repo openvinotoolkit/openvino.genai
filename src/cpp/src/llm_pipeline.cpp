@@ -613,6 +613,39 @@ ov::genai::LLMPipeline::LLMPipeline(
     m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
+ov::genai::LLMPipeline::LLMPipeline(
+    const std::string& path, 
+    const std::string& device,
+    const Adapter& adapter,
+    const ov::AnyMap& plugin_config
+) : ov::genai::LLMPipeline::LLMPipeline(path, device, AdapterConfig({adapter}), plugin_config)
+{}
+
+ov::genai::LLMPipeline::LLMPipeline(
+    const std::string& path, 
+    const std::string& device,
+    const std::vector<Adapter>& adapters,
+    const ov::AnyMap& plugin_config
+) : ov::genai::LLMPipeline::LLMPipeline(path, device, AdapterConfig(adapters), plugin_config)
+{}
+
+ov::genai::LLMPipeline::LLMPipeline(
+    const std::string& path, 
+    const std::string& device,
+    const std::initializer_list<Adapter>& adapters,
+    const ov::AnyMap& plugin_config
+) : ov::genai::LLMPipeline::LLMPipeline(path, device, AdapterConfig(adapters), plugin_config)
+{}
+
+ov::genai::LLMPipeline::LLMPipeline(
+    const std::string& path, 
+    const std::string& device,
+    const std::vector<std::pair<Adapter, float>>& adapters,
+    const ov::AnyMap& plugin_config
+) : ov::genai::LLMPipeline::LLMPipeline(path, device, AdapterConfig(adapters), plugin_config)
+{}
+
+
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
     return m_pimpl->m_generation_config;
 }

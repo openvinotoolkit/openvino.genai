@@ -161,8 +161,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
         for(size_t i = 0; i < lora_path.size(); ++i) {
             lora_config.add(ov::genai::Adapter(lora_path[i], i < alpha.size() ? alpha[i] : 0.75f)); // TODO: Consider using default alpha from LoRA file
         }
-        lora_config.is_dynamic = true;
-        lora_config.fuse = false;
+        lora_config.set_mode(ov::genai::AdapterConfig::MODE_STATIC);
         #else
         OPENVINO_ASSERT(lora_path.size() == 1, "Multiple LoRA adapters are not supported");
         Timer t("Loading and multiplying LoRA weights");

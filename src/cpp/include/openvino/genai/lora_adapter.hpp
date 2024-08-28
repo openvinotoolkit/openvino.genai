@@ -47,8 +47,23 @@ bool OPENVINO_GENAI_EXPORTS operator== (const Adapter& a, const Adapter& b);
 class OPENVINO_GENAI_EXPORTS AdapterController;
 
 struct OPENVINO_GENAI_EXPORTS AdapterConfig {
+    // FIXME: This enum should replace the flags below
+    enum Mode {
+        MODE_AUTO,          // Automatically selected the most dynamic mode that work for selected device
+        MODE_DYNAMIC,       // A, B, alpha are fully variable
+        MODE_STATIC_RANK,   // A and B have static shape, alpha is variable // FIXME: WA to unlock experiments, gives a unique perf level
+        MODE_STATIC,        // A, B and alpha are constants
+        MODE_FUSE           // A, B and alpha are constants, fused to main matrix W
+    };
+
+    Mode mode;
+    void set_mode(Mode);
+
+    void decompose_mode();  // FIXME: remove this functioon when the mode flags are eliminated in favor of `mode`
+
     // FIXME: Hide data fields in the private section
     bool is_dynamic = true;    // false -- parameters cannot be changed during inference, this config should match for every generation
+    bool is_dynamic_rank = true;  // false -- ranks are fixed for all LoRA adapters but content of the tensors may change
     bool fuse = false;  // true -- repack original big weight matrix with adapter applied, requires +1x copy of all affected wheights in memory and will unpack int8 to fp32, incompatible with is_dynamic = true
     std::vector<Adapter> adapters;
     std::vector<float> alphas;
@@ -56,11 +71,22 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
     ov::element::Type adapter_element_type = ov::element::dynamic; // optional element type for adapter tensors in case if multiple adapters have various types or they are not known in advance
     std::vector<std::shared_ptr<ov::op::v0::Constant>> alpha_constants;
 
-    AdapterConfig (const std::vector<Adapter>& adapters, bool is_dynamic = true);// : is_dynamic(is_dynamic), adapters(adapters) {}
-    AdapterConfig (const std::vector<std::pair<Adapter, float>>& adapters, bool is_dynamic = true);// : is_dynamic(is_dynamic), adapters(adapters) {}
+    AdapterConfig (const Adapter& adapter, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<Adapter>{adapter}, mode) {}
+    AdapterConfig (const std::vector<Adapter>& adapters, Mode mode = MODE_AUTO);
+    AdapterConfig (const std::vector<std::pair<Adapter, float>>& adapters, Mode mode = MODE_AUTO);
+
+    // TODO: Why template?
+    template <typename T, typename = std::enable_if<std::is_same<T, Adapter>::value, T>>
+    AdapterConfig (const std::initializer_list<T>& adapters, Mode mode = MODE_AUTO) :
+        AdapterConfig(std::vector<Adapter>(adapters), mode) {}
+    
+    // template <typename T>
+    // AdapterConfig (const std::initializer_list<T>& adapters, bool is_dynamic = true) :
+    //     AdapterConfig(std::vector<std::pair<Adapter, float>>(adapters, is_dynamic)) {}
+
     //AdapterConfig (const Adapter& adapter, float alpha, bool is_dynamic = true);
     //AdapterConfig (const Adapter& adapter, bool is_dynamic = true) : AdapterConfig(std::vector<Adapter>{adapter}, is_dynamic) {}
-    AdapterConfig() = default;
+    AdapterConfig();
 
     AdapterConfig& add(const Adapter& adapter, float alpha);
     AdapterConfig& add(const Adapter& adapter);

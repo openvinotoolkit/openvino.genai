@@ -115,6 +115,34 @@ public:
         const ov::AnyMap& plugin_config={}
     );
     
+    LLMPipeline(
+        const std::string& path, 
+        const std::string& device,
+        const std::vector<Adapter>& adapters,
+        const ov::AnyMap& plugin_config={}
+    );
+    
+    LLMPipeline(
+        const std::string& path, 
+        const std::string& device,
+        const std::initializer_list<Adapter>& adapters,
+        const ov::AnyMap& plugin_config={}
+    );
+    
+    LLMPipeline(
+        const std::string& path, 
+        const std::string& device,
+        const Adapter& adapter,
+        const ov::AnyMap& plugin_config={}
+    );
+    
+    LLMPipeline(
+        const std::string& path, 
+        const std::string& device,
+        const std::vector<std::pair<Adapter, float>>& adapters,
+        const ov::AnyMap& plugin_config={}
+    );
+    
     /**
     * @brief Constructs an LLMPipeline from already existing infer InferRequest and Tokenizer
     *
