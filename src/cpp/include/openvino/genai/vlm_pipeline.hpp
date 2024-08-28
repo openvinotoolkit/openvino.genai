@@ -5,41 +5,10 @@
 
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/vision_encoder.hpp"
 #include <openvino/openvino.hpp>
 
 namespace ov::genai {
-OPENVINO_GENAI_EXPORTS ov::Tensor read_jpg(const char* path);
-
-struct HeightWidth {
-    size_t height, width;
-};
-
-struct EncodedImage {
-    ov::Tensor resized_source;
-    HeightWidth resized_source_size;
-    ov::Tensor slices;
-    std::vector<HeightWidth> slices_sizes;
-};
-
-class OPENVINO_GENAI_EXPORTS VisionEncoder {
-public:
-    ov::InferRequest encoder;
-    struct Config {
-        size_t scale_resolution, max_slice_nums, patch_size;
-        bool never_split;
-        // The constructor works around gcc and clang bug of default initialization of a nested struct.
-        Config(size_t scale_resolution=448, size_t max_slice_nums=9, size_t patch_size=14, bool never_split=false) :
-            scale_resolution{scale_resolution}, max_slice_nums{max_slice_nums}, patch_size{patch_size}, never_split{never_split} {}
-    };
-    explicit VisionEncoder(const ov::InferRequest& encoder) : encoder{encoder} {}
-    explicit VisionEncoder(const std::filesystem::path& model_dir, const std::string& device="CPU", const ov::AnyMap device_config={}, ov::Core core=ov::Core{}) :
-    VisionEncoder{core.compile_model(
-        // CPU only because of 146022.
-        model_dir / "openvino_vision.xml", "CPU", device_config
-    ).create_infer_request()} {}
-    EncodedImage encode(const ov::Tensor image, const Config& config=Config{});
-};
-
 struct PromptImage {
     std::string prompt;
     ov::Tensor image;

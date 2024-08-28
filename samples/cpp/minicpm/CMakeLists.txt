@@ -6,8 +6,13 @@ find_package(OpenVINOGenAI REQUIRED PATHS
     ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
 )
 
-add_executable(minicpm minicpm.cpp)
-target_link_libraries(minicpm PRIVATE openvino::genai)
+file(DOWNLOAD
+    https://raw.githubusercontent.com/nothings/stb/f75e8d1cad7d90d72ef7a4661f1b994ef78b4e31/stb_image.h
+    ${CMAKE_BINARY_DIR}/stb_image.h)
+
+add_executable(minicpm minicpm.cpp read_image.cpp)
+target_include_directories(minicpm PRIVATE "${CMAKE_CURRENT_SOUCE_DIR}" "${CMAKE_BINARY_DIR}")
+target_link_libraries(minicpm PRIVATE openvino::genai "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
 set_target_properties(minicpm PROPERTIES
     COMPILE_PDB_NAME chat_sample
     # Ensure out of box LC_RPATH on macOS with SIP

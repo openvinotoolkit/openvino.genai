@@ -155,15 +155,6 @@ ov::Tensor extend_attention(ov::Tensor attention_mask) {
     return new_atten_mask;
 }
 
-ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path) {
-    auto config_file_path = model_path / "generation_config.json";
-    if (std::filesystem::exists(config_file_path)) {
-        return ov::genai::GenerationConfig((config_file_path).string());
-    } else {
-        return ov::genai::GenerationConfig{};
-    }
-}
-
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
     ov::genai::StreamerVariant streamer = std::monostate();
 

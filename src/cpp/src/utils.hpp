@@ -70,7 +70,15 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
 const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 
-ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path);
+template<typename Config=ov::genai::GenerationConfig>
+Config from_config_json_if_exists(const std::filesystem::path& model_path, char config_name[]="generation_config.json") {
+    auto config_file_path = model_path / config_name;
+    if (std::filesystem::exists(config_file_path)) {
+        return Config{(config_file_path).string()};
+    } else {
+        return Config{};
+    }
+}
 
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
 

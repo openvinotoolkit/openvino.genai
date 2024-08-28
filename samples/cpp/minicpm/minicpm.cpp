@@ -1,6 +1,7 @@
 // Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "read_image.hpp"
 #include <openvino/genai/vlm_pipeline.hpp>
 #include <openvino/runtime/intel_gpu/properties.hpp>
 
@@ -14,7 +15,7 @@ int main(int argc, char* argv[]) try {
     if (3 != argc) {
         throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE>");
     }
-    ov::Tensor image = ov::genai::read_jpg(argv[2]);
+    ov::Tensor image = utils::load_image(argv[2]);
 
     std::string device = "CPU";
 
