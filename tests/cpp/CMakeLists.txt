@@ -3,7 +3,7 @@
 #
 
 if(NOT TARGET gtest)
-  set(INSTALL_GTEST OFF)
+  set(INSTALL_GTEST OFF CACHE BOOL "")
 
   FetchContent_Declare(
     googletest
