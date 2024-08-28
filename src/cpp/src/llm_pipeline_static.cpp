@@ -93,7 +93,7 @@ struct KVAxesPosition {
 KVAxesPosition get_kv_axes(const std::string& model_type) {
     if (model_type == "chatglm")
         return {1, 0};
-    else if (model_type == "Qwen")
+    else if (model_type == "qwen" || "qwen2")
         return {0, 1};
     else
         return {0, 2};
@@ -248,13 +248,21 @@ StaticLLMPipeline::StaticLLMPipeline(
     // (5) Clone the model - this will be prefill
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
+    std::string model_type = get_model_type(path / "config.json");
+    uint32_t kv_dims;
+    if (model_type == "chatglm")
+        kv_dims = 0u;
+    else if (model_type == "qwen" || "qwen2")
+        kv_dims = 1u;
+    else
+        kv_dims = 2u;
+    m_kvcache_desc = KVCacheDesc { 1024u, 0u, kv_dims };
     // (6) Reshape both models to static shape
-    const auto kMaxPromptLen = pop_or_default(pipeline_config, "MAX_PROMPT_LEN", 1024u);
-    const auto kMinResponseLen = pop_or_default(pipeline_config, "MIN_RESPONSE_LEN", 150u);
-    // FIXME For some models KV-cache dim != 2u
-    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, 2u };
-    reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size);
-    reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size);
+    const uint32_t max_prompt_size = m_kvcache_desc.total_size;
+    const uint32_t max_kvcache_size = m_kvcache_desc.total_size;
+    reshape_to_static(m_prefill_model, max_prompt_size, max_kvcache_size, path);
+    reshape_to_static(m_kvcache_model, 1u, max_kvcache_size, path);
+
     // (7) Compile both model
     auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", get_default_prefill_config());
     auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", get_default_generate_config());
