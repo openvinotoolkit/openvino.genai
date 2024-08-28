@@ -161,7 +161,10 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     output_tensor.copy_to(resized_source);
     HeightWidth resized_source_size{resized_preprocessed.ny / patch_size, resized_preprocessed.nx / patch_size};
 
-    HeightWidth size{preprocessed.at(1).at(0).ny, preprocessed.at(1).at(0).nx};
+    HeightWidth size{
+        size_t(preprocessed.at(1).at(0).ny),
+        size_t(preprocessed.at(1).at(0).nx)
+    };
     ov::Tensor batched{ov::element::f32, {(preprocessed.size() - 1) * preprocessed.at(1).size(), 3, size.height, size.width}};
     float* batched_data = batched.data<float>();
     size_t batch_offset = 0;

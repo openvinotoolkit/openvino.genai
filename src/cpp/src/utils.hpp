@@ -71,7 +71,7 @@ const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 
 template<typename Config=ov::genai::GenerationConfig>
-Config from_config_json_if_exists(const std::filesystem::path& model_path, char config_name[]="generation_config.json") {
+Config from_config_json_if_exists(const std::filesystem::path& model_path, const char config_name[]="generation_config.json") {
     auto config_file_path = model_path / config_name;
     if (std::filesystem::exists(config_file_path)) {
         return Config{(config_file_path).string()};
