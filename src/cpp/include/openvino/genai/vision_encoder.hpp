@@ -22,17 +22,21 @@ class OPENVINO_GENAI_EXPORTS VisionEncoder {
 public:
     ov::InferRequest m_encoder;
     ProcessorConfig m_processor_config;
+
     explicit VisionEncoder(const ov::InferRequest& encoder, const ProcessorConfig& processor_config=ProcessorConfig{}) :
         m_encoder{encoder}, m_processor_config{processor_config} {}
+
     explicit VisionEncoder(
         const std::filesystem::path& model_dir,
         const std::string& device="CPU",
         const ov::AnyMap device_config={},
         ov::Core core=ov::Core{}
     );
+
     EncodedImage encode(const ov::Tensor& image) {
         return encode(image, m_processor_config);
     }
+
     EncodedImage encode(const ov::Tensor& image, const ProcessorConfig& config);
 };
 }

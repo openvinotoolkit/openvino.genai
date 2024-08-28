@@ -50,7 +50,7 @@ public:
             ov::genai::Tokenizer(model_dir.string(), device_config),
             VisionEncoder(model_dir, device, device_config, core),
             core.compile_model(
-                model_dir / "openvino_resampler.xml", "CPU"
+                model_dir / "openvino_resampler.xml", device, device_config
             ).create_infer_request(),
             core.compile_model(
                 model_dir / "openvino_embedding.xml", device, device_config

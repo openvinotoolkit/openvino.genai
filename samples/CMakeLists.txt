@@ -7,11 +7,11 @@ add_subdirectory(cpp/chat_sample)
 add_subdirectory(cpp/continuous_batching_accuracy)
 add_subdirectory(cpp/continuous_batching_benchmark)
 add_subdirectory(cpp/greedy_causal_lm)
-add_subdirectory(cpp/minicpm)
 add_subdirectory(cpp/multinomial_causal_lm)
 add_subdirectory(cpp/prompt_lookup_decoding_lm)
 add_subdirectory(cpp/speculative_decoding_lm)
 add_subdirectory(cpp/benchmark_genai)
+add_subdirectory(cpp/visual_language_chat)
 
 install(FILES requirements.txt DESTINATION samples
         COMPONENT cpp_samples_genai)
