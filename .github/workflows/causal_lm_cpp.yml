@@ -553,6 +553,7 @@ jobs:
 
   cpp-chat_sample-ubuntu:
     runs-on: ubuntu-20.04
+    if: false  # Skip temporarily until https://github.com/openvinotoolkit/openvino_tokenizers/pull/235 is merged.
     steps:
       - uses: actions/checkout@v4
         with:
@@ -607,7 +608,7 @@ jobs:
           diff pred.txt ref.txt
           echo "Chat sample cpp" passed
           export PYTHONPATH=./build/:$PYTHONPATH
-          timeout 1m ./samples/python/chat_sample/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
+          timeout 30s ./samples/python/chat_sample/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
