@@ -60,6 +60,7 @@ TEST(TestBlockManager, required_blocks_count) {
     EXPECT_TRUE(bm.can_append_slots(sequence_group));
     bm.append_slots(sequence_group);
     EXPECT_EQ(bm.num_free_blocks(), 6);
+    EXPECT_EQ(bm.get_number_of_blocks_occupied_by_sequence(sequence_group), 2);
 
     sequence_group->finish_iteration();
     auto sequence_to_fork = sequence_group->get_running_sequences()[0];    
@@ -67,11 +68,13 @@ TEST(TestBlockManager, required_blocks_count) {
         const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
         bm.fork_sequence(sequence_to_fork->get_id(), forked_sequence->get_id());
     }
+    EXPECT_EQ(bm.get_number_of_blocks_occupied_by_sequence(sequence_group), 2);
     sequence_group->schedule_tokens(1);
     required_blocks = bm.required_blocks_count(sequence_group);
     EXPECT_EQ(required_blocks, 4);
     EXPECT_TRUE(bm.can_append_slots(sequence_group));
     bm.append_slots(sequence_group);
+    EXPECT_EQ(bm.get_number_of_blocks_occupied_by_sequence(sequence_group), 6);
     EXPECT_EQ(bm.num_free_blocks(), 2);
     sequence_group->finish_iteration();
 
