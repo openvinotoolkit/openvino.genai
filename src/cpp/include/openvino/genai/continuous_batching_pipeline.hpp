@@ -5,7 +5,6 @@
 
 #include <memory>
 #include <openvino/openvino.hpp>
-#include <mutex>
 
 #include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
