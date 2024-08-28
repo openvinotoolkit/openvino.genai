@@ -29,7 +29,6 @@ class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
-    std::mutex m_mutex;
 
     // TODO (mzegla): GenerationConfig is request specific object
     // and pipeline only uses default rng_seed. 
@@ -146,9 +145,7 @@ public:
                                                                             m_scheduler->get_config().enable_prefix_caching);
         sequence_group->set_sequence_group_ptr(sequence_group);
         if (m_scheduler->get_config().enable_prefix_caching) {
-            m_mutex.lock();
             m_scheduler->restore_cached_blocks(sequence_group);
-            m_mutex.unlock();
         }
 
         {
