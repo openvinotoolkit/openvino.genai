@@ -9,7 +9,7 @@ find_package(OpenVINOGenAI REQUIRED PATHS
 )
 
 add_executable(speculative_decoding_lm speculative_decoding_lm.cpp)
-target_link_libraries(speculative_decoding_lm PRIVATE openvino::runtime)
+target_link_libraries(speculative_decoding_lm PRIVATE openvino::runtime openvino::threading)
 set_target_properties(speculative_decoding_lm PROPERTIES
     COMPILE_PDB_NAME speculative_decoding_lm
     # Ensure out of box LC_RPATH on macOS with SIP
