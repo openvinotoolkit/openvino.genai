@@ -498,7 +498,10 @@ public:
 
 
     void restore_cached_blocks(SequenceGroup::Ptr group, size_t block_size) {
+        // When add_request() is executed in multiple threads accessing to cached_blocks causes segfault.
+        // The mutex is needed to prevent such segfaults.
         const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+
         auto prompt_ids = group->get_prompt_ids(); 
         auto sequences = group->get_not_finished_sequences();
         OPENVINO_ASSERT(sequences.size() == 1);
