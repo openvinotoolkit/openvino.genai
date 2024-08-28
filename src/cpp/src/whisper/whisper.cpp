@@ -9,6 +9,7 @@
 #include "../utils.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
+#include "openvino/genai/whisper_speech_recognition_pipeline.hpp"
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
 
@@ -160,7 +161,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 namespace ov {
 namespace genai {
 std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& config,
-                                      const std::vector<float>& input_features,
+                                      const RawSpeechInput& raw_speech,
                                       ov::genai::WhisperInitializedModels& models,
                                       const std::shared_ptr<StreamerBase> streamer) {
     std::vector<int64_t> output_tokens;
@@ -168,15 +169,15 @@ std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& 
 
     WhisperFeatureExtractor feature_extractor;
 
-    for (size_t chunk_offset = 0; chunk_offset < input_features.size(); chunk_offset += feature_extractor.chunk_size) {
+    for (size_t chunk_offset = 0; chunk_offset < raw_speech.size(); chunk_offset += feature_extractor.chunk_size) {
         if (output_tokens.size() >= max_new_tokens) {
             break;
         }
 
         // Split audio data into fixed feature_extractor.chunk_size windows.
-        size_t copy_size = std::min((input_features.size() - chunk_offset), size_t(feature_extractor.chunk_size));
-        std::vector<float> input_features_sub_chunk(input_features.begin() + chunk_offset,
-                                                    input_features.begin() + chunk_offset + copy_size);
+        size_t copy_size = std::min((raw_speech.size() - chunk_offset), size_t(feature_extractor.chunk_size));
+        std::vector<float> input_features_sub_chunk(raw_speech.begin() + chunk_offset,
+                                                    raw_speech.begin() + chunk_offset + copy_size);
 
         auto input_features = feature_extractor.extract(input_features_sub_chunk);
 
