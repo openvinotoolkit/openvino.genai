@@ -8,9 +8,6 @@
 
 namespace utils {
 namespace audio {
-bool read_wav(const std::string& fname,
-              std::vector<float>& pcmf32,
-              std::vector<std::vector<float>>& pcmf32s,
-              bool stereo = false);
+std::vector<float> read_wav(const std::string& filename);
 }  // namespace audio
 }  // namespace utils

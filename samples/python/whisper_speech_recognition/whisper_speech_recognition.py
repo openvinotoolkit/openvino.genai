@@ -14,16 +14,20 @@ def main():
     parser.add_argument("wav_file_path")
     args = parser.parse_args()
 
-    device = "CPU"  # GPU can be used as well
-    pipe = openvino_genai.WhisperSpeechRecognitionPipeline(args.model_dir, device)
+    model_dir = args.model_dir
 
-    samplerate, data = wavfile.read(args.wav_file_path)
+    samplerate, raw_speech = wavfile.read(args.wav_file_path)
 
     # normalize to [-1 1] range
-    data = data / np.iinfo(data.dtype).max
+    raw_speech = (raw_speech / np.iinfo(raw_speech.dtype).max).tolist()
 
-    result = pipe.generate(data)
-    print(result)
+    pipe = openvino_genai.WhisperSpeechRecognitionPipeline(model_dir)
+
+    def streamer(word: str) -> bool:
+        print(word, end="")
+        return False
+
+    pipe.generate(raw_speech, streamer=streamer)
 
 
 if "__main__" == __name__:

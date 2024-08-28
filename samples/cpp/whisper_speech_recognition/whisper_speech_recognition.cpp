@@ -12,18 +12,16 @@ int main(int argc, char* argv[]) try {
     std::string model_path = argv[1];
     std::string wav_file_path = argv[2];
 
-    std::vector<float> raw_speech;                 // mono-channel F32 PCM
-    std::vector<std::vector<float>> raw_speech_s;  // stereo-channel F32 PCM
-
-    if (!utils::audio::read_wav(wav_file_path, raw_speech, raw_speech_s)) {
-        throw std::runtime_error("Failed to read WAV file " + wav_file_path);
-    }
+    std::vector<float> raw_speech = utils::audio::read_wav(wav_file_path);
 
     ov::genai::WhisperSpeechRecognitionPipeline pipeline{model_path};
 
-    auto results = pipeline.generate(raw_speech);
+    auto streamer = [](std::string subword) {
+        std::cout << subword << std::flush;
+        return false;
+    };
 
-    std::cout << results << std::endl;
+    pipeline.generate(raw_speech, ov::genai::streamer(streamer));
 
 } catch (const std::exception& error) {
     try {

@@ -49,9 +49,9 @@ public:
     ~WhisperSpeechRecognitionPipeline();
 
     /**
-     * @brief High level generate that receives prompts as a string or a vector of strings and returns decoded output.
+     * @brief High level generate that receives raw speech as a vector of floats and returns decoded output.
      *
-     * @param raw_speech_input input prompt or a vector of prompts
+     * @param raw_speech_input raw speech input
      * @param generation_config optional GenerationConfig
      * @param streamer optional streamer
      * @return DecodedResults decoded resulting text

@@ -36,14 +36,11 @@ namespace audio {
 
 #define COMMON_SAMPLE_RATE 16000
 
-bool read_wav(const std::string& fname,
-              std::vector<float>& pcmf32,
-              std::vector<std::vector<float>>& pcmf32s,
-              bool stereo) {
+std::vector<float> read_wav(const std::string& filename) {
     drwav wav;
     std::vector<uint8_t> wav_data;  // used for pipe input from stdin or ffmpeg decoding output
 
-    if (fname == "-") {
+    if (filename == "-") {
         {
 #ifdef _WIN32
             _setmode(_fileno(stdin), _O_BINARY);
@@ -60,48 +57,35 @@ bool read_wav(const std::string& fname,
         }
 
         if (drwav_init_memory(&wav, wav_data.data(), wav_data.size(), nullptr) == false) {
-            fprintf(stderr, "error: failed to open WAV file from stdin\n");
-            return false;
+            throw std::runtime_error("failed to open WAV file from stdin");
         }
 
         fprintf(stderr, "%s: read %zu bytes from stdin\n", __func__, wav_data.size());
-    } else if (is_wav_buffer(fname)) {
-        if (drwav_init_memory(&wav, fname.c_str(), fname.size(), nullptr) == false) {
-            fprintf(stderr, "error: failed to open WAV file from fname buffer\n");
-            return false;
+    } else if (is_wav_buffer(filename)) {
+        if (drwav_init_memory(&wav, filename.c_str(), filename.size(), nullptr) == false) {
+            throw std::runtime_error("failed to open WAV file from fname buffer");
         }
-    } else if (drwav_init_file(&wav, fname.c_str(), nullptr) == false) {
+    } else if (drwav_init_file(&wav, filename.c_str(), nullptr) == false) {
 #if defined(WHISPER_FFMPEG)
         if (ffmpeg_decode_audio(fname, wav_data) != 0) {
-            fprintf(stderr, "error: failed to ffmpeg decode '%s' \n", fname.c_str());
-            return false;
+            throw std::runtime_error("failed to ffmpeg decode");
         }
         if (drwav_init_memory(&wav, wav_data.data(), wav_data.size(), nullptr) == false) {
-            fprintf(stderr, "error: failed to read wav data as wav \n");
-            return false;
+            throw std::runtime_error("failed to read wav data as wav");
         }
 #else
-        fprintf(stderr, "error: failed to open '%s' as WAV file\n", fname.c_str());
-        return false;
+        throw std::runtime_error("failed to open as WAV file");
 #endif
     }
 
     if (wav.channels != 1 && wav.channels != 2) {
-        fprintf(stderr, "%s: WAV file '%s' must be mono or stereo\n", __func__, fname.c_str());
         drwav_uninit(&wav);
-        return false;
-    }
-
-    if (stereo && wav.channels != 2) {
-        fprintf(stderr, "%s: WAV file '%s' must be stereo for diarization\n", __func__, fname.c_str());
-        drwav_uninit(&wav);
-        return false;
+        throw std::runtime_error("WAV file must be mono or stereo");
     }
 
     if (wav.sampleRate != COMMON_SAMPLE_RATE) {
-        fprintf(stderr, "%s: WAV file '%s' must be %i kHz\n", __func__, fname.c_str(), COMMON_SAMPLE_RATE / 1000);
         drwav_uninit(&wav);
-        return false;
+        throw std::runtime_error("WAV file must be " + std::to_string(COMMON_SAMPLE_RATE / 1000) + " kHz");
     }
 
     const uint64_t n =
@@ -113,6 +97,7 @@ bool read_wav(const std::string& fname,
     drwav_uninit(&wav);
 
     // convert to mono, float
+    std::vector<float> pcmf32;
     pcmf32.resize(n);
     if (wav.channels == 1) {
         for (uint64_t i = 0; i < n; i++) {
@@ -124,19 +109,7 @@ bool read_wav(const std::string& fname,
         }
     }
 
-    if (stereo) {
-        // convert to stereo, float
-        pcmf32s.resize(2);
-
-        pcmf32s[0].resize(n);
-        pcmf32s[1].resize(n);
-        for (uint64_t i = 0; i < n; i++) {
-            pcmf32s[0][i] = float(pcm16[2 * i]) / 32768.0f;
-            pcmf32s[1][i] = float(pcm16[2 * i + 1]) / 32768.0f;
-        }
-    }
-
-    return true;
+    return pcmf32;
 }
 }  // namespace audio
 }  // namespace utils
