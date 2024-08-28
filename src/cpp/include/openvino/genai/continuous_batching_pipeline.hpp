@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <openvino/openvino.hpp>
+#include <mutex>
 
 #include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
@@ -27,6 +28,7 @@ struct PipelineMetrics {
 class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {
     class Impl;
     std::shared_ptr<Impl> m_impl;
+    static std::mutex m_mutex;
 
 public:
     ContinuousBatchingPipeline(const std::string& models_path,
