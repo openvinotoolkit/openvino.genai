@@ -31,13 +31,13 @@ int main(int argc, char* argv[]) try {
     size_t counter = 1;
     while (std::getline(std::cin, prompt)) {
         prompts[counter] = prompt;
+        pipe.generate({prompt}, callback);
+        std::cout << "\n----------\n"
+            "question:\n";
         ++counter;
         if (3 == counter) {
             break;
         }
-        pipe.generate({prompt}, callback);
-        std::cout << "\n----------\n"
-            "question:\n";
     }
     for (size_t limit = 0; ; ++limit) {
         std::cout << limit << '\n';

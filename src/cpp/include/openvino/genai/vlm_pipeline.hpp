@@ -9,6 +9,15 @@
 #include <openvino/openvino.hpp>
 
 namespace ov::genai {
+struct VLMConfig {
+    /// @brief the number of <unk> to insert into the prompt per image slice.
+    size_t query_num = 64;
+    /// @brief multiply embeddings by it. Hardcoded throughout this impl
+    float scale_emb = 12.0f;
+    /// @brief Even though it's the size of embeddings returned by VisionEncoder, this value is in config.json and this it's in VLMConfig.
+    size_t hidden_size = 2304;
+};
+
 struct PromptImage {
     std::string prompt;
     ov::Tensor image;
@@ -16,15 +25,10 @@ struct PromptImage {
 
 class OPENVINO_GENAI_EXPORTS VLMPipeline {
 public:
-    size_t query_num = 64;  // query_num throughput this impl - the number of <unk> to insert into the prompt per image slice.
-    float scale_emb = 12.0f;  // multiply embeddings by it. Hardcoded throughout this impl
-    bool slice_mode = true;  // Don't resize and slice an input image.
-    ov::genai::Tokenizer tokenizer;
+    VLMConfig vlm_config;
+    Tokenizer tokenizer;
     VisionEncoder vision_encoder;
     ov::InferRequest resampler, ireq_embed, ireq;
-    ov::Tensor imgEmbedTensor;
-    ov::Shape img_embed_shape;
-    size_t encoder_embed_dim;  // check that it's the same as embed_dim
     std::vector<float> llm_inputs_embeds;
     // input length, output length, first time, other time
     std::vector<std::tuple<size_t, size_t, double, double>> perf_records;
@@ -34,7 +38,6 @@ public:
     double total_time = 0;
     const size_t BATCH_SIZE = 1;
     HeightWidth max_size{70, 70};
-    size_t embed_dim = 2304;
     ov::Tensor _pos_embeds;
 
     VLMPipeline(

@@ -364,7 +364,7 @@ ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tok
 }
 
 void VLMPipeline::set_2d_pos_cache(const HeightWidth& max_size) {
-    this->_pos_embeds = get_2d_sincos_pos_embed(this->embed_dim, max_size);
+    this->_pos_embeds = get_2d_sincos_pos_embed(this->vlm_config.hidden_size, max_size);
 }
 
 void VLMPipeline::adjust_pos_cache(const std::vector<HeightWidth>& target_sizes) {
@@ -392,7 +392,7 @@ VLMPipeline::VLMPipeline(
     resampler{resampler},
     ireq_embed{embedding},
     ireq{language_model},
-    _pos_embeds{get_2d_sincos_pos_embed(this->embed_dim, {70, 70})} {}
+    _pos_embeds{get_2d_sincos_pos_embed(this->vlm_config.hidden_size, {70, 70})} {}
 
 std::string VLMPipeline::generate(const PromptImage& pi, const std::function<bool(std::string&&)>& callback) {
     return generate(pi, std::make_unique<TextCallbackStreamer>(tokenizer, callback));
@@ -404,12 +404,11 @@ std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<S
         ov::Tensor imgEmbedTensor = get_image_embedding(embeds, tokenizer, this->ireq_embed, *this);
 
         ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
-        size_t encoder_embed_dim = img_embed_shape[2];
+        OPENVINO_ASSERT(
+            vlm_config.hidden_size == img_embed_shape.at(2),
+            "Unexpected embedding size");
 
-        this->imgEmbedTensor = imgEmbedTensor;
-        this->img_embed_shape = img_embed_shape;
-        this->encoder_embed_dim = encoder_embed_dim;
-        this->llm_inputs_embeds.resize((this->max_lenth * encoder_embed_dim));
+        this->llm_inputs_embeds.resize((this->max_lenth * vlm_config.hidden_size));
 
         //<用户> + image embedding + prompt + <AI> LLM first input
         ov::Tensor promtTensor;
@@ -418,26 +417,26 @@ std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<S
 
         //memcpy image embedding buf
         if (embed_lenth > max_lenth) {
-            llm_inputs_embeds.resize((embed_lenth + 256) * img_embed_shape[2]);
+            llm_inputs_embeds.resize((embed_lenth + 256) * vlm_config.hidden_size);
             max_lenth = embed_lenth + 256;
         }
 
         memcpy(llm_inputs_embeds.data(), imgEmbedTensor.data<float>(), imgEmbedTensor.get_byte_size());
-        memcpy(llm_inputs_embeds.data() + img_embed_shape[1] * img_embed_shape[2], promtTensor.data<float>(), promtTensor.get_byte_size());
+        memcpy(llm_inputs_embeds.data() + img_embed_shape[1] * vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
     } else {
         //<用户> + prompt + <AI>  LLM first input
         ov::Tensor promtTensor;
         promtTensor = process_prompt(tokenizer, ireq_embed, "<用户>" + pi.prompt);
 
         if ((embed_lenth + promtTensor.get_shape()[1]) > max_lenth) {
-            llm_inputs_embeds.resize((embed_lenth + 256) * img_embed_shape[2]);
+            llm_inputs_embeds.resize((embed_lenth + 256) * vlm_config.hidden_size);
             max_lenth = embed_lenth + 256;
         }
 
-        memcpy(llm_inputs_embeds.data() + embed_lenth * img_embed_shape[2], promtTensor.data<float>(), promtTensor.get_byte_size());
+        memcpy(llm_inputs_embeds.data() + embed_lenth * vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
         embed_lenth = embed_lenth + promtTensor.get_shape()[1];
     }
-    ov::Tensor llmEmbedTensor = ov::Tensor(ov::element::f32, { 1, embed_lenth, img_embed_shape[2] }, llm_inputs_embeds.data());
+    ov::Tensor llmEmbedTensor = ov::Tensor(ov::element::f32, {1, embed_lenth, vlm_config.hidden_size}, llm_inputs_embeds.data());
     auto input_len = llmEmbedTensor.get_shape()[1];
 
     ireq.set_tensor("inputs_embeds", llmEmbedTensor);
@@ -466,7 +465,7 @@ std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<S
     float* logits = ireq.get_tensor("logits").data<float>() + sequence_len * vocab_size;
     int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
 
-    ireq.get_tensor("inputs_embeds").set_shape({ BATCH_SIZE, 1,  encoder_embed_dim });
+    ireq.get_tensor("inputs_embeds").set_shape({BATCH_SIZE, 1, vlm_config.hidden_size});
     ireq.get_tensor("position_ids").set_shape({ BATCH_SIZE, 1 });
 
     ireq_embed.get_tensor("inputs_id").set_shape({ 1, 1 });
@@ -490,11 +489,11 @@ std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<S
 
         //record answer token info
         if ((embed_lenth + 1) > max_lenth) {
-            llm_inputs_embeds.resize((embed_lenth + 256) * img_embed_shape[2]);
+            llm_inputs_embeds.resize((embed_lenth + 256) * vlm_config.hidden_size);
             max_lenth = embed_lenth + 256;
         }
 
-        memcpy(llm_inputs_embeds.data() + embed_lenth * img_embed_shape[2], embed_prompt_tensor.data<float>(), embed_prompt_tensor.get_byte_size());
+        memcpy(llm_inputs_embeds.data() + embed_lenth * vlm_config.hidden_size, embed_prompt_tensor.data<float>(), embed_prompt_tensor.get_byte_size());
         embed_lenth = embed_lenth + 1;
 
         ireq.set_tensor("inputs_embeds", embed_prompt_tensor);
