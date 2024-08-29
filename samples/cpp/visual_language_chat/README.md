@@ -21,7 +21,7 @@ https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model `llava-hf/llava-v1.6-mistral-7b-hf` can benefit from being run on a dGPU. Modify the source code to change the device for inference to the `GPU`.
 
-See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/SUPPORTED_MODELS.md#visual-language-models for the list of supported models.
+See [SUPPORTED_MODELS.md](../../../src/docs/SUPPORTED_MODELS.md#visual-language-models) for the list of supported models.
 
 ### Troubleshooting
 
