@@ -117,11 +117,11 @@ public:
     // removes n last tokens and updates cumulative log prob
     // used to remove stop_string from the output
     void remove_last_tokens(int n) {
-        OPENVINO_ASSERT(m_generated_ids.size() < n, "Cannot remove more tokens than has been generated");
+        OPENVINO_ASSERT(m_generated_ids.size() >= n, "Cannot remove more tokens than has been generated");
         for (int i = 0; i < n; i++) {
             m_cumulative_log_prob -= m_generated_log_probs.back();
             m_generated_log_probs.pop_back();
-            m_generated_tokens.pop_back();
+            m_generated_ids.pop_back();
         }
     }
 
@@ -129,8 +129,8 @@ public:
         GenerationOutput output;
         OPENVINO_ASSERT(m_generated_ids.size());
         output.score = get_cumulative_log_probs();
-        output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};
-        output.generated_token_log_probs = std::vector<int64_t> {m_generated_log_probs.back()};
+        output.generated_ids = std::vector<int64_t> {m_generated_ids.back()};
+        output.generated_log_probs = std::vector<float> {m_generated_log_probs.back()};
         output.finish_reason = get_finish_reason();
         return output;
     }
@@ -250,10 +250,10 @@ public:
         When characters match we increase current_position and check if we have a full match already, if not we continue.
         If we have already matched some characters (current_position > 0) and next character is not matching 
         before we reach the full match, then we reset current_position to 0. 
-        */
-        int num_matched_tokens = 0;  
+        */ 
         for (auto stop_string: m_sampling_params.stop_strings) {
             int current_position = 0;
+            int num_matched_tokens = 0; 
             // Getting reverse iterator to check tokens starting from the last one generated and going backwards
             auto generated_tokens_rit = generated_tokens.rbegin();
             while (generated_tokens_rit != generated_tokens.rend()) {
@@ -595,8 +595,8 @@ public:
         GenerationOutputs outputs;
         for (auto& sequence: m_sequences) {
             GenerationOutput output;
-            output.generated_token_ids = sequence->get_generated_ids();
-            output.generated_token_log_probs = sequence->get_generated_log_probs();
+            output.generated_ids = sequence->get_generated_ids();
+            output.generated_log_probs = sequence->get_generated_log_probs();
             output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_probs();
             output.finish_reason = sequence->get_finish_reason();
             outputs.emplace(sequence->get_grouped_id(), output);
@@ -627,8 +627,9 @@ public:
                 push_outputs();
             }
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
-            // TO DO: Now we always stream for greedy search for the sake of benchmarking 
-            if (num_total_seqs() == 1) {
+            // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
+            // (after stop string is detected its tokens are already sent) 
+            if (num_total_seqs() == 1 && (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output)) {
                 push_partial_outputs();
             } else if (has_finished() || out_of_memory()) {
                 push_outputs();
