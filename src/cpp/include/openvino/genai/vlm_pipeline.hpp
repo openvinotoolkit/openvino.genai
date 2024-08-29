@@ -6,18 +6,9 @@
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/vision_encoder.hpp"
-#include <openvino/openvino.hpp>
+#include "openvino/genai/vlm_config.hpp"
 
 namespace ov::genai {
-struct VLMConfig {
-    /// @brief the number of <unk> to insert into the prompt per image slice.
-    size_t query_num = 64;
-    /// @brief multiply embeddings by it. Hardcoded throughout this impl
-    float scale_emb = 12.0f;
-    /// @brief Even though it's the size of embeddings returned by VisionEncoder, this value is in config.json and this it's in VLMConfig.
-    size_t hidden_size = 2304;
-};
-
 struct PromptImage {
     std::string prompt;
     ov::Tensor image;
@@ -29,12 +20,9 @@ public:
     Tokenizer tokenizer;
     VisionEncoder vision_encoder;
     ov::InferRequest resampler, ireq_embed, ireq;
-    std::vector<float> llm_inputs_embeds;
-    size_t max_lenth = 2048;
-    size_t embed_lenth = 0;
-    const size_t BATCH_SIZE = 1;
-    HeightWidth max_size{70, 70};
-    ov::Tensor _pos_embeds;
+    std::vector<float> language_embeddings_history;
+    size_t history_length = 0;
+    ov::Tensor pos_embed_cache;
 
     VLMPipeline(
         const ov::genai::Tokenizer& tokenizer,

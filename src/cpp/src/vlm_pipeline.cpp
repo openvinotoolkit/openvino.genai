@@ -15,8 +15,7 @@
 using namespace ov::genai;
 
 namespace {
-typedef std::chrono::high_resolution_clock Time;
-typedef std::chrono::nanoseconds ns;
+constexpr size_t BATCH_SIZE = 1;
 
 struct Args {
     bool do_sample = false;
@@ -133,8 +132,8 @@ ov::Tensor get_1d_sincos_pos_embed_from_grid_new(size_t embed_dim, const ov::Ten
     size_t d2 = embed_dim / 2;
     std::vector<float> omega(d2);
     for (size_t idx = 0; idx < omega.size(); ++idx) {
-        omega.at(idx) = idx / (embed_dim / 2.0);
-        omega.at(idx) = 1.0 / std::pow(10000, omega.at(idx));  // (D/2,)
+        omega.at(idx) = idx / (embed_dim / 2.0f);
+        omega.at(idx) = 1.0f / std::pow(10000.0f, omega.at(idx));  // (D/2,)
     }
     const float* const pos_data = pos.data<float>();
     ov::Tensor out(ov::element::f32, {d0, d1, d2});  // (H, W, D/2), outer product
@@ -203,19 +202,19 @@ ov::Tensor resample(VLMPipeline& pipe, const ov::Tensor& encoded_image, const st
     size_t max_patch_len = *std::max_element(patch_len.begin(), patch_len.end());
     ov::Tensor key_padding_mask(ov::element::boolean, {bs, max_patch_len});
     bool* mask_data = key_padding_mask.data<bool>();
-    size_t embed_len = pipe._pos_embeds.get_shape().at(2);
+    size_t embed_len = pipe.pos_embed_cache.get_shape().at(2);
     ov::Tensor pos_embed(ov::element::f32, {max_patch_len, bs, embed_len});  // BLD => L * B * D
     float* pos_embed_data = pos_embed.data<float>();
-    float* _pos_embed_data = pipe._pos_embeds.data<float>();
-    size_t _d0 = pipe._pos_embeds.get_shape().at(0);
-    size_t _d1 = pipe._pos_embeds.get_shape().at(1);
+    float* cache_data = pipe.pos_embed_cache.data<float>();
+    size_t _d0 = pipe.pos_embed_cache.get_shape().at(0);
+    size_t _d1 = pipe.pos_embed_cache.get_shape().at(1);
     for (size_t i = 0; i < bs; ++i) {
         size_t target_h = target_sizes.at(i).height;
         size_t target_w = target_sizes.at(i).width;
         for (size_t h_idx = 0; h_idx < target_h; ++h_idx) {
             for (size_t w_idx = 0; w_idx < target_w; ++w_idx) {
                 std::copy_n(
-                    _pos_embed_data + h_idx * _d1 + w_idx,
+                    cache_data + h_idx * _d1 + w_idx,
                     embed_len,
                     pos_embed_data + (h_idx * target_w + w_idx) * bs * embed_len + i * embed_len
                 );
@@ -360,7 +359,7 @@ ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tok
 }
 
 void VLMPipeline::set_2d_pos_cache(const HeightWidth& max_size) {
-    this->_pos_embeds = get_2d_sincos_pos_embed(this->vlm_config.hidden_size, max_size);
+    this->pos_embed_cache = get_2d_sincos_pos_embed(this->vlm_config.hidden_size, max_size);
 }
 
 void VLMPipeline::adjust_pos_cache(const std::vector<HeightWidth>& target_sizes) {
@@ -370,9 +369,18 @@ void VLMPipeline::adjust_pos_cache(const std::vector<HeightWidth>& target_sizes)
     size_t max_w = std::max_element(target_sizes.begin(), target_sizes.end(), [](const HeightWidth& left, const HeightWidth& right) {
         return left.width < right.width;
     })->width;
-    if (max_h > this->max_size.height || max_w > this->max_size.width) {
-        this->max_size = {std::max(max_h, this->max_size.height), std::max(max_w, this->max_size.width)};
-        this->set_2d_pos_cache(this->max_size);
+    size_t allocated_height, allocated_width;
+    if (pos_embed_cache) {
+        const ov::Shape& allocated_shape = pos_embed_cache.get_shape();
+        allocated_height = allocated_shape.at(0);
+        allocated_width = allocated_shape.at(1);
+    } else {
+        allocated_height = allocated_width = 70;
+    }
+    if (max_h > allocated_height || max_w > allocated_width) {
+        allocated_height = std::max(max_h, allocated_height);
+        allocated_width = std::max(max_w, allocated_width);
+        this->set_2d_pos_cache({allocated_height, allocated_width});
     }
 }
 
@@ -388,7 +396,8 @@ VLMPipeline::VLMPipeline(
     resampler{resampler},
     ireq_embed{embedding},
     ireq{language_model},
-    _pos_embeds{get_2d_sincos_pos_embed(this->vlm_config.hidden_size, {70, 70})} {}
+    language_embeddings_history(2048),
+    pos_embed_cache{get_2d_sincos_pos_embed(this->vlm_config.hidden_size, {70, 70})} {}
 
 std::string VLMPipeline::generate(const PromptImage& pi, const std::function<bool(std::string&&)>& callback) {
     return generate(pi, std::make_unique<TextCallbackStreamer>(tokenizer, callback));
@@ -404,35 +413,32 @@ std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<S
             vlm_config.hidden_size == img_embed_shape.at(2),
             "Unexpected embedding size");
 
-        this->llm_inputs_embeds.resize((this->max_lenth * vlm_config.hidden_size));
+        this->language_embeddings_history.resize((language_embeddings_history.size() * vlm_config.hidden_size));
 
         //<用户> + image embedding + prompt + <AI> LLM first input
-        ov::Tensor promtTensor;
-        promtTensor = process_prompt(tokenizer, ireq_embed, pi.prompt);
-        embed_lenth = img_embed_shape[1] + promtTensor.get_shape()[1];
+        ov::Tensor promtTensor = process_prompt(tokenizer, ireq_embed, pi.prompt);
+        history_length = img_embed_shape[1] + promtTensor.get_shape()[1];
 
         //memcpy image embedding buf
-        if (embed_lenth > max_lenth) {
-            llm_inputs_embeds.resize((embed_lenth + 256) * vlm_config.hidden_size);
-            max_lenth = embed_lenth + 256;
+        if (history_length > language_embeddings_history.size()) {
+            language_embeddings_history.resize((history_length + 256) * vlm_config.hidden_size);
         }
 
-        memcpy(llm_inputs_embeds.data(), imgEmbedTensor.data<float>(), imgEmbedTensor.get_byte_size());
-        memcpy(llm_inputs_embeds.data() + img_embed_shape[1] * vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
+        memcpy(language_embeddings_history.data(), imgEmbedTensor.data<float>(), imgEmbedTensor.get_byte_size());
+        memcpy(language_embeddings_history.data() + img_embed_shape[1] * vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
     } else {
         //<用户> + prompt + <AI>  LLM first input
         ov::Tensor promtTensor;
         promtTensor = process_prompt(tokenizer, ireq_embed, "<用户>" + pi.prompt);
 
-        if ((embed_lenth + promtTensor.get_shape()[1]) > max_lenth) {
-            llm_inputs_embeds.resize((embed_lenth + 256) * vlm_config.hidden_size);
-            max_lenth = embed_lenth + 256;
+        if ((history_length + promtTensor.get_shape()[1]) > language_embeddings_history.size()) {
+            language_embeddings_history.resize((history_length + 256) * vlm_config.hidden_size);
         }
 
-        memcpy(llm_inputs_embeds.data() + embed_lenth * vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
-        embed_lenth = embed_lenth + promtTensor.get_shape()[1];
+        memcpy(language_embeddings_history.data() + history_length * vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
+        history_length = history_length + promtTensor.get_shape()[1];
     }
-    ov::Tensor llmEmbedTensor = ov::Tensor(ov::element::f32, {1, embed_lenth, vlm_config.hidden_size}, llm_inputs_embeds.data());
+    ov::Tensor llmEmbedTensor = ov::Tensor(ov::element::f32, {1, history_length, vlm_config.hidden_size}, language_embeddings_history.data());
     auto input_len = llmEmbedTensor.get_shape()[1];
 
     ireq.set_tensor("inputs_embeds", llmEmbedTensor);
@@ -447,11 +453,7 @@ std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<S
         state.reset();
     }
 
-    auto startTime = Time::now();
     ireq.infer();
-    auto duration_ms = get_duration_ms_until_now(startTime);
-    std::cout << "First token took " << duration_ms << " ms" << std::endl;
-    auto first_time = duration_ms;
 
     ov::Shape logits_shape = ireq.get_tensor("logits").get_shape();
     auto attention_size = ireq.get_tensor("attention_mask").get_size();
@@ -469,8 +471,6 @@ std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<S
     int64_t eos_token_id = tokenizer.get_eos_token_id();
     std::vector<int64_t> generated;
     while (true) {  //(out_token != eos_token_id)
-        startTime = Time::now();
-
         //out_token embedding
         ireq_embed.get_tensor("inputs_id").data<int64_t>()[0] = out_token;
         ireq_embed.start_async();
@@ -484,13 +484,12 @@ std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<S
         }
 
         //record answer token info
-        if ((embed_lenth + 1) > max_lenth) {
-            llm_inputs_embeds.resize((embed_lenth + 256) * vlm_config.hidden_size);
-            max_lenth = embed_lenth + 256;
+        if ((history_length + 1) > language_embeddings_history.size()) {
+            language_embeddings_history.resize((history_length + 256) * vlm_config.hidden_size);
         }
 
-        memcpy(llm_inputs_embeds.data() + embed_lenth * vlm_config.hidden_size, embed_prompt_tensor.data<float>(), embed_prompt_tensor.get_byte_size());
-        embed_lenth = embed_lenth + 1;
+        memcpy(language_embeddings_history.data() + history_length * vlm_config.hidden_size, embed_prompt_tensor.data<float>(), embed_prompt_tensor.get_byte_size());
+        history_length = history_length + 1;
 
         ireq.set_tensor("inputs_embeds", embed_prompt_tensor);
 
@@ -500,8 +499,6 @@ std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<S
 
         ireq.start_async();
         ireq.wait();
-        duration_ms = get_duration_ms_until_now(startTime);
-        total_time += duration_ms;
 
         generated.push_back(out_token);
         if (streamer && streamer->put(out_token)) {
