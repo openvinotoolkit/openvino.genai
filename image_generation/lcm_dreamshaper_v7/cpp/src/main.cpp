@@ -150,7 +150,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
     // read LoRA weights
     #if GENAI_NEW_LORA
     ov::genai::Adapter lora_adapter;
-    ov::genai::AdapterConfig lora_config;
+    ov::genai::AdapterConfig lora_config(ov::genai::AdapterConfig::MODE_STATIC);
     #else
     std::map<std::string, InsertLoRA::LoRAMap> lora_weights;
     #endif
@@ -161,7 +161,6 @@ StableDiffusionModels compile_models(const std::string& model_path,
         for(size_t i = 0; i < lora_path.size(); ++i) {
             lora_config.add(ov::genai::Adapter(lora_path[i], i < alpha.size() ? alpha[i] : 0.75f)); // TODO: Consider using default alpha from LoRA file
         }
-        lora_config.set_mode(ov::genai::AdapterConfig::MODE_STATIC);
         #else
         OPENVINO_ASSERT(lora_path.size() == 1, "Multiple LoRA adapters are not supported");
         Timer t("Loading and multiplying LoRA weights");

@@ -55,6 +55,7 @@ std::ostream& print_tensor (std::ostream& out, const ov::Tensor& tensor) {
         out << elements[i] << ", ";
     }
     out << "\n";
+    return out;
 }
 
 template <typename T>
@@ -131,7 +132,7 @@ ConstantMap read_safetensors(const std::string& filename) {
     auto buffer = read_file_helper(filename);
     safetensors_File safe_tensors_file = {0};
     OPENVINO_ASSERT(safetensors_file_init(&(*buffer)[0], buffer->size(), &safe_tensors_file) == nullptr, "Cannot parse ", filename, " using safetensors");
-    DEBUG_PRINT("Opened " << filename << " as safetensors file format, it contains " << safe_tensors_file.num_tensors << " tensors");
+    //DEBUG_PRINT("Opened " << filename << " as safetensors file format, it contains " << safe_tensors_file.num_tensors << " tensors");
     for (int i = 0; i < safe_tensors_file.num_tensors; i++) {
         safetensors_TensorDescriptor tensor = safe_tensors_file.tensors[i];
         std::string name(tensor.name.ptr, tensor.name.ptr + tensor.name.len);
@@ -235,10 +236,9 @@ struct LoRAParametersByWeightGetter {
 
     std::optional<LoRAParameters> operator() (NodePtr node) const {
         // If at least one weight_getter gives the weight for the node, then this node should be processed
-        OPENVINO_ASSERT(dynamic_lora_rank, "LoRAParametersByWeightGetter doesn't support static LoRA rank, use dynamic");
         // TODO: To implement known static LoRA rank, need to accumulate ranks from all found weights instead of searching for at least one match:
 
-        ov::Dimension rank;
+        ov::Dimension rank = ov::Dimension::dynamic();
         if(dynamic_lora_rank) {
             if(weight_getter.end() ==
                 std::find_if(weight_getter.begin(), weight_getter.end(), [node](const LoRAWeightGetter& getter) {
@@ -247,14 +247,17 @@ struct LoRAParametersByWeightGetter {
                 return std::nullopt;
             }
         } else {
-            rank = std::accumulate(weight_getter.begin(), weight_getter.end(), 0u, [node](unsigned int acc, const LoRAWeightGetter& getter) {
+            auto size = std::accumulate(weight_getter.begin(), weight_getter.end(), 0u, [node](unsigned int acc, const LoRAWeightGetter& getter) {
                 if(auto nodes = getter(node->get_friendly_name())) {
-                    return acc + nodes->A->get_output_partial_shape(0)[0].get_length();
+                    return static_cast<unsigned int>(acc + nodes->A->get_output_partial_shape(0)[0].get_length());
+                } else {
+                    return acc;
                 }
             });
-            if(rank == 0) {
+            if(size == 0) {
                 return std::nullopt;
             }
+            rank = size;
         }
 
         LoRAParameters result;
@@ -573,7 +576,7 @@ public:
 
     ~LoRAFuseTransform () {
         for(auto signature: compiled_weight_models) {
-            DEBUG_PRINT(signature.first);
+            DEBUG_PRINT("Small model cache signature: " << signature.first);
         }
     }
 };
@@ -774,6 +777,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         ov::pass::Manager pm;
         if(current_config.is_dynamic) {
             // State mode
+            params_getter.dynamic_lora_rank = current_config.is_dynamic_rank;
             pm.register_pass<LoRASeparateTransform>(LoRAWeightStateGetter(params_getter, model, variable_ids));
             //ov::serialize(model, "after_lora.xml");
             // auto variables = model->get_variables();
@@ -815,9 +819,9 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         //     adapters2(config2.adapters.begin(), config2.adapters.end());
         const auto& adapters1 = config1.adapters, adapters2 = config2.adapters;
 
-        DEBUG_PRINT(config1.adapters.size());
-        DEBUG_PRINT(config2.adapters.size());
-        DEBUG_PRINT("adapters1 != adapters2: " << (adapters1 != adapters2));
+        // DEBUG_PRINT(config1.adapters.size());
+        // DEBUG_PRINT(config2.adapters.size());
+        // DEBUG_PRINT("adapters1 != adapters2: " << (adapters1 != adapters2));
         
         if(adapters1 != adapters2) {
             diff.adapter = true;
@@ -839,16 +843,16 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         OPENVINO_ASSERT(!config.is_dynamic || !config.fuse, "Both is_dynamic and fuse modes cannot be set simultaniously in adapter config");
 
         const auto diff = compare_configs(current_config, config);
-        DEBUG_PRINT("config.is_dynamic: " << config.is_dynamic);
-        DEBUG_PRINT("config.fuse: " << config.fuse);
-        DEBUG_PRINT("diff.adapter: " << diff.adapter);
+        // DEBUG_PRINT("config.is_dynamic: " << config.is_dynamic);
+        // DEBUG_PRINT("config.fuse: " << config.fuse);
+        // DEBUG_PRINT("diff.adapter: " << diff.adapter);
         OPENVINO_ASSERT(!diff.is_dynamic, "AdapterConfig::is_dynamic cannot be changed and should be configured once for a model at the initialization");
         OPENVINO_ASSERT(!diff.is_dynamic_rank, "AdapterConfig::is_dynamic_rank cannot be changed and should be configured once for a model at the initialization");
         OPENVINO_ASSERT(!diff.fuse, "AdapterConfig::fuse cannot be changed and should be configured once for a model at the initialization");
         OPENVINO_ASSERT(config.is_dynamic || (!diff.alpha && !diff.adapter), "Cannot change adapters and/or the alphas when is_dynamic = false.");
         if(need_full_apply) {
             need_full_apply = false;
-            DEBUG_PRINT("force apply");
+            //DEBUG_PRINT("force apply");
             set_new_adapter_tensors(infer_request, config);
         } else if(diff) {
             if(diff.adapter) {
@@ -1061,9 +1065,9 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
             A_shape{1, outputs.A.get_shape()[1]},
             B_shape{outputs.B.get_shape()[0], 1};
 
-        DEBUG_PRINT("alpha_shape: " << alpha_shape);
-        DEBUG_PRINT("A_shape: " << A_shape);
-        DEBUG_PRINT("B_shape: " << B_shape);
+        // DEBUG_PRINT("alpha_shape: " << alpha_shape);
+        // DEBUG_PRINT("A_shape: " << A_shape);
+        // DEBUG_PRINT("B_shape: " << B_shape);
         
         outputs.alpha.set_shape(alpha_shape);
         outputs.A.set_shape(A_shape);
@@ -1097,7 +1101,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
                     // TODO: This code should be modified if dynamic LoRA rank is used in the evaluator
                     auto lora_rank = lora_weight.A->get_output_partial_shape(0)[0].get_length();
                     // Broadcast a single alpha element to shape [lora_rank]
-                    auto lora_rank_constant = v0::Constant::create(ov::element::u32, Shape{2}, std::vector<unsigned int>{1, lora_rank});
+                    auto lora_rank_constant = v0::Constant::create(ov::element::u32, Shape{2}, std::vector<decltype(lora_rank)>{1, lora_rank});
                     return std::make_shared<v3::Broadcast>(parameter, lora_rank_constant);
                 });
 
@@ -1157,9 +1161,9 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         );
         #endif
         auto new_tensors = prepare_lora_tensors(lora_indices.name, weight_getters, lora_state_tensors);
-        DEBUG_PRINT("alpha_shape: " << new_tensors.alpha.get_shape());
-        DEBUG_PRINT("A_shape: " << new_tensors.A.get_shape());
-        DEBUG_PRINT("B_shape: " << new_tensors.B.get_shape());
+        // DEBUG_PRINT("alpha_shape: " << new_tensors.alpha.get_shape());
+        // DEBUG_PRINT("A_shape: " << new_tensors.A.get_shape());
+        // DEBUG_PRINT("B_shape: " << new_tensors.B.get_shape());
         state[lora_indices.alpha].set_state(new_tensors.alpha);
         state[lora_indices.A].set_state(new_tensors.A);
         state[lora_indices.B].set_state(new_tensors.B);
@@ -1260,7 +1264,7 @@ AdapterConfig::AdapterConfig (const std::vector<std::pair<Adapter, float>>& _ada
     }
 }
 
-AdapterConfig::AdapterConfig() : mode(MODE_AUTO) {
+AdapterConfig::AdapterConfig(Mode mode) : mode(mode) {
     decompose_mode();
 }
 

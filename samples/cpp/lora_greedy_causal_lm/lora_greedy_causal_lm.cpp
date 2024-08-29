@@ -12,22 +12,46 @@ int main(int argc, char* argv[]) try {
     std::string adapter_path1 = adapter_path;
     std::string adapter_path2 = adapter_path;
     std::string prompt = argv[3];
-    std::string device = "CPU";  // GPU can be used as well
+    std::string device = "GPU";  // GPU can be used as well
 
     std::cout << "Run on devide: " << device << "\n";
 
     using namespace ov::genai;
 
+    std::cout << "MODE_STATIC" << std::endl;
+    {
+        Adapter adapter(adapter_path, 0.75);
+        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, AdapterConfig::MODE_STATIC));
+        std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
+    }
+
+    std::cout << "MODE_STATIC_RANK" << std::endl;
+    {
+        Adapter adapter(adapter_path, 0.75);
+        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, AdapterConfig::MODE_STATIC_RANK));
+        std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
+    }
+
+    std::cout << "MODE_DYNAMIC" << std::endl;
+    {
+        Adapter adapter(adapter_path, 0.75);
+        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, AdapterConfig::MODE_DYNAMIC));
+        std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
+    }
+
+    std::cout << "MODE_AUTO/without alpha" << std::endl;
     {
         LLMPipeline pipe(model_path, device, Adapter(adapter_path));
         std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
     }
 
+    std::cout << "MODE_AUTO/explicit alpha" << std::endl;
     {
         LLMPipeline pipe(model_path, device, Adapter(adapter_path, 0.75));
         std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
     }
 
+    std::cout << "MODE_AUTO/two adapters" << std::endl;
     {
         Adapter adapter1(adapter_path1);
         Adapter adapter2(adapter_path2);
@@ -35,21 +59,24 @@ int main(int argc, char* argv[]) try {
         std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
     }
 
+    std::cout << "MODE_AUTO/blended" << std::endl;
     {
-        Adapter adapter1(adapter_path1, 0.3);
-        Adapter adapter2(adapter_path2, 0.6);
+        Adapter adapter1(adapter_path1, 0.5);
+        Adapter adapter2(adapter_path2, 0.25);
         LLMPipeline pipe(model_path, device, {adapter1, adapter2});
-        std::cout << pipe.generate(prompt, adapters(adapter1)) << std::endl;
-        std::cout << pipe.generate(prompt, adapters(adapter2)) << std::endl;
+        std::cout << pipe.generate(prompt, adapters(adapter1), max_new_tokens(100)) << std::endl;
+        std::cout << pipe.generate(prompt, adapters(adapter2), max_new_tokens(100)) << std::endl;
     }
 
+    std::cout << "MODE_AUTO/blended with late alpha set" << std::endl;
     {
         Adapter adapter1 = Adapter(adapter_path1);
         Adapter adapter2 = Adapter(adapter_path2);
-        LLMPipeline pipe(model_path, device, {{adapter1, 0.2}, {adapter2, 0.5}});
+        LLMPipeline pipe(model_path, device, {{adapter1, 0.5}, {adapter2, 0.25}});
         std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
     }
 
+    std::cout << "MODE_AUTO/blended with late alpha set changed in config" << std::endl;
     {
         Adapter adapter1 = Adapter(adapter_path1);
         Adapter adapter2 = Adapter(adapter_path2);
@@ -61,30 +88,7 @@ int main(int argc, char* argv[]) try {
         std::cout << pipe.generate(prompt, config) << std::endl;
     }
 
-    {
-        Adapter adapter(adapter_path);
-        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, AdapterConfig::MODE_STATIC));
-        std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
-    }
-
-    {
-        Adapter adapter(adapter_path);
-        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, AdapterConfig::MODE_FUSE));
-        std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
-    }
-
-    {
-        Adapter adapter(adapter_path);
-        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, AdapterConfig::MODE_AUTO));
-        std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
-    }
-
-    {
-        Adapter adapter(adapter_path);
-        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, AdapterConfig::MODE_DYNAMIC));
-        std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
-    }
-
+    std::cout << "MODE_STATIC/two pipelines" << std::endl;
     {
         Adapter adapter1 = Adapter(adapter_path);
         Adapter adapter2 = Adapter(adapter_path);
@@ -96,6 +100,13 @@ int main(int argc, char* argv[]) try {
             AdapterConfig({{adapter1, 0.1}, {adapter2, 0.9}}, AdapterConfig::MODE_STATIC)
         );
         std::cout << pipe2.generate(prompt, max_new_tokens(100)) << std::endl;
+    }
+
+    std::cout << "MODE_FUSE" << std::endl;
+    {
+        Adapter adapter(adapter_path);
+        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, AdapterConfig::MODE_FUSE));
+        std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
     }
 
 #if 0

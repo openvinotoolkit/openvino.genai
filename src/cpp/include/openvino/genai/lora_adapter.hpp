@@ -86,7 +86,7 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
 
     //AdapterConfig (const Adapter& adapter, float alpha, bool is_dynamic = true);
     //AdapterConfig (const Adapter& adapter, bool is_dynamic = true) : AdapterConfig(std::vector<Adapter>{adapter}, is_dynamic) {}
-    AdapterConfig();
+    AdapterConfig(Mode mode = MODE_AUTO);
 
     AdapterConfig& add(const Adapter& adapter, float alpha);
     AdapterConfig& add(const Adapter& adapter);
