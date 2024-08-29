@@ -49,7 +49,7 @@ public:
         const ov::Tensor& image,
         Properties&&... properties
     ) {
-        return encode(inputs, AnyMap{std::forward<Properties>(properties)...});
+        return encode(image, AnyMap{std::forward<Properties>(properties)...});
     }
 };
 }

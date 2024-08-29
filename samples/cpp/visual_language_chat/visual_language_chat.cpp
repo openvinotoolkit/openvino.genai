@@ -19,17 +19,31 @@ int main(int argc, char* argv[]) try {
     std::string device = "CPU";  // GPU can be used as well
     ov::genai::VLMPipeline pipe(argv[1], device);
 
+    std::array<std::string, 3> prompts;
     std::string prompt;
     std::cout << "question:\n";
     if (!std::getline(std::cin, prompt)) {
         throw std::runtime_error("std::cin failed");
     }
+    prompts[0] = prompt;
     pipe.generate({prompt, image}, callback);
     std::cout << "\nquestion:\n";
+    size_t counter = 1;
     while (std::getline(std::cin, prompt)) {
+        prompts[counter] = prompt;
+        ++counter;
+        if (3 == counter) {
+            break;
+        }
         pipe.generate({prompt}, callback);
         std::cout << "\n----------\n"
             "question:\n";
+    }
+    for (size_t limit = 0; ; ++limit) {
+        std::cout << limit << '\n';
+        for (size_t i = 0; i < 3; ++i) {
+            pipe.generate({prompts[i]});
+        }
     }
 } catch (const std::exception& error) {
     try {
