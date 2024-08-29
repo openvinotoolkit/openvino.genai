@@ -62,6 +62,11 @@ public:
         return scheduler_output;
     }
 
+    void clean_empty_blocks(std::vector<SequenceGroup::Ptr>& seq_groups) {
+        for (const auto& seq_group : seq_groups)
+            m_block_manager.free_group_partially(seq_group, m_block_manager.num_free_blocks());
+    }
+
     const std::vector<KVCacheBlock::Ptr>& get_block_table(const Sequence& seq) {
         return m_block_manager.get_block_table(seq.get_id());
     }
@@ -318,7 +323,7 @@ private:
                 // prompt phases can have a single running sequence
                 OPENVINO_ASSERT(num_running_seqs == 1);
                 // here we also assume that sequence must be scheduler in a single shot and has no already generated context
-                if (!m_config.enable_prefix_caching)
+                if (!m_config.enable_prefix_caching && sequence_group->get_validation_len() == 0)
                     OPENVINO_ASSERT(sequence_group->get_context_len() == 0);
 
                 size_t num_available_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;

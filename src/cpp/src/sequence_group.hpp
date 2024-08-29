@@ -21,6 +21,7 @@ enum class SequenceStatus {
 };
 
 using TokenIds = std::vector<int64_t>;
+using Probs = std::vector<float>;
 class SequenceGroup;
 
 class Sequence {
@@ -31,6 +32,7 @@ class Sequence {
     }
 
     TokenIds m_generated_ids;
+    Probs m_generated_probs;
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     SequenceStatus m_status = SequenceStatus::RUNNING;
@@ -50,6 +52,7 @@ public:
     // don't use directly
     Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
+        m_generated_probs(seq.m_generated_probs),
         m_grouped_id(id),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob){
@@ -107,7 +110,19 @@ public:
     // appends new tokens to a generated part
     void append_token(int64_t token_id, float log_prob) {
         m_cumulative_log_prob += log_prob;
-        m_generated_ids.push_back(token_id);     
+        m_generated_ids.push_back(token_id);
+        m_generated_probs.push_back(log_prob);  
+    }
+        
+    void remove_last_n_tokens(size_t k) {
+        const size_t generated_token_len = get_generated_len();
+        OPENVINO_ASSERT(k <= generated_token_len);
+        for (size_t i = 0; i < k; ++i) {
+            m_cumulative_log_prob -= m_generated_probs[generated_token_len - 1 - i];
+        }
+        size_t new_length = generated_token_len - k;
+        m_generated_ids.resize(new_length);
+        m_generated_probs.resize(new_length);
     }
 
     GenerationOutput get_last_generation_output() {
@@ -125,6 +140,10 @@ public:
 
     const TokenIds & get_generated_ids() const {
         return m_generated_ids;
+    }
+
+    const Probs & get_log_probs() const {
+        return m_generated_probs;
     }
 
     float get_cumulative_log_probs() const {
@@ -174,6 +193,8 @@ class SequenceGroup {
     size_t m_num_scheduled_tokens = 0;
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
+    // max validation length within a group to check generated tokens
+    size_t m_validation_len = 0;
 
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
         : m_request_id(request_id),
@@ -360,16 +381,40 @@ public:
         m_num_scheduled_tokens = 0;
     }
 
+    void clear_validated_tokens() {
+        m_validation_len = 0;
+    }
+
     bool is_scheduled() const {
         return m_num_scheduled_tokens > 0;
+    }
+
+    void set_validation_len(size_t k) {
+        m_validation_len = k;
+    }
+
+    size_t get_validation_len() {
+        return m_validation_len;
     }
 
     size_t get_num_available_tokens_for_batching() const {
         OPENVINO_ASSERT(!has_finished(), "Internal error: this function cannot be called on finished sequence group");
         OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");
         // if sequence group has not finished, it has at least one token to process
-        size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len);
+        size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len) + m_validation_len;
         return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u);
+    }
+
+    void increase_processed_tokens(size_t token_cnt) {
+        m_num_processed_tokens += token_cnt;
+        m_max_content_len += token_cnt;
+    }
+
+    void decrease_processed_tokens(size_t token_cnt) {
+        OPENVINO_ASSERT(m_num_processed_tokens >= token_cnt);
+        m_num_processed_tokens -= token_cnt;
+        OPENVINO_ASSERT(m_max_content_len >= token_cnt);
+        m_max_content_len -= token_cnt;
     }
 
     // mark current schedule phase as finished and updates internal counters
@@ -378,6 +423,7 @@ public:
         // if some processed tokens were evicted, max content len is greater than number of processed tokens
         m_max_content_len = std::max(m_max_content_len, m_num_processed_tokens);
         clear_scheduled_tokens();
+        clear_validated_tokens();
     }
 
     void update_processed_tokens_num(size_t processed_tokens) {
@@ -513,9 +559,10 @@ public:
             }
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
             // TO DO: Now we always stream for greedy search for the sake of benchmarking 
-            if (num_total_seqs() == 1) {
-                push_partial_outputs();
-            } else if (has_finished() || out_of_memory()) {
+            // if (num_total_seqs() == 1) {
+            //     push_partial_outputs();
+            // } else
+            if (has_finished() || out_of_memory()) {
                 push_outputs();
             }
         }
