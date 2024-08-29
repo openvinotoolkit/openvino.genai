@@ -211,14 +211,7 @@ EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ProcessorConfi
 }
 
 EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    auto iter = config_map.find("processor_config");
-    ProcessorConfig extracted_config = config_map.end() != iter ?
-        iter->second.as<ProcessorConfig>() : m_processor_config;
-    using utils::read_anymap_param;
-    read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
-    read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
-    read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
-    read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
-    read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
-    return encode(image, extracted_config);
+    return encode(image, utils::from_any_map(
+        config_map, m_processor_config
+    ));
 }

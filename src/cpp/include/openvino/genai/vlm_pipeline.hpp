@@ -16,9 +16,9 @@ struct PromptImage {
 
 class OPENVINO_GENAI_EXPORTS VLMPipeline {
 public:
-    VLMConfig vlm_config;
+    VLMConfig m_vlm_config;
     Tokenizer tokenizer;
-    VisionEncoder vision_encoder;
+    VisionEncoder m_vision_encoder;
     ov::InferRequest resampler, ireq_embed, ireq;
     std::vector<float> language_embeddings_history;
     size_t history_length = 0;
@@ -29,25 +29,64 @@ public:
         const VisionEncoder& vision_encoder,
         const ov::InferRequest& resampler,
         const ov::InferRequest& embedding,
-        const ov::InferRequest& language_model
+        const ov::InferRequest& language_model,
+        const VLMConfig& vlm_config=VLMConfig{}
     );
 
-    explicit VLMPipeline(const std::filesystem::path& model_dir, const std::string& device="CPU", const ov::AnyMap device_config={}, ov::Core core=ov::Core{}) :
-        VLMPipeline{
-            ov::genai::Tokenizer(model_dir.string(), device_config),
-            VisionEncoder(model_dir, device, device_config, core),
-            core.compile_model(
-                model_dir / "openvino_resampler.xml", device, device_config
-            ).create_infer_request(),
-            core.compile_model(
-                model_dir / "openvino_embedding.xml", device, device_config
-            ).create_infer_request(),
-            core.compile_model(
-                model_dir / "openvino_model.xml", device, device_config
-            ).create_infer_request()
-        } {}
-    std::string generate(const PromptImage& pi, const std::function<bool(std::string&&)>& callback);
-    std::string generate(const PromptImage& pi, const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr);
+    explicit VLMPipeline(
+        const std::filesystem::path& model_dir,
+        const std::string& device="CPU",
+        const ov::AnyMap device_config={},
+        ov::Core core=ov::Core{}
+    );
+
+    std::string generate(
+        const PromptImage& pair,
+        const ProcessorConfig& processor_config,
+        const VLMConfig& vlm_config,
+        const std::function<bool(std::string&&)>& callback
+    );
+    std::string generate(
+        const PromptImage& pair,
+        const ProcessorConfig& processor_config,
+        const VLMConfig& vlm_config,
+        const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr
+    );
+    std::string generate(
+        const PromptImage& pair,
+        const std::function<bool(std::string&&)>& callback
+    ) {
+        return generate(
+            pair,
+            m_vision_encoder.m_processor_config,
+            m_vlm_config,
+            callback
+        );
+    }
+    std::string generate(
+        const PromptImage& pair,
+        const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr
+    ) {
+        return generate(
+            pair,
+            m_vision_encoder.m_processor_config,
+            m_vlm_config,
+            streamer
+        );
+    }
+    std::string generate(
+        const PromptImage& pair,
+        const ov::AnyMap& config_map
+    );
+    template <typename... Properties>
+    util::EnableIfAllStringAny<PromptImage, Properties...> generate(
+        const PromptImage& pair,
+        Properties&&... properties
+    ) {
+        return generate(pair, AnyMap{
+            std::forward<Properties>(properties)...
+        });
+    }
     void start_chat() {}
     void finish_chat() {}
     void set_2d_pos_cache(const HeightWidth& max_size);

@@ -9,6 +9,7 @@
 #include "clip.hpp"
 #include <openvino/openvino.hpp>
 #include "../src/text_callback_streamer.hpp"
+#include "utils.hpp"
 #include <optional>
 #include <random>
 
@@ -359,7 +360,7 @@ ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tok
 }
 
 void VLMPipeline::set_2d_pos_cache(const HeightWidth& max_size) {
-    this->pos_embed_cache = get_2d_sincos_pos_embed(this->vlm_config.hidden_size, max_size);
+    this->pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, max_size);
 }
 
 void VLMPipeline::adjust_pos_cache(const std::vector<HeightWidth>& target_sizes) {
@@ -389,23 +390,64 @@ VLMPipeline::VLMPipeline(
     const VisionEncoder& vision_encoder,
     const ov::InferRequest& resampler,
     const ov::InferRequest& embedding,
-    const ov::InferRequest& language_model
+    const ov::InferRequest& language_model,
+    const VLMConfig& vlm_config
 ) :
+    m_vlm_config{vlm_config},
     tokenizer{tokenizer},
-    vision_encoder{vision_encoder},
+    m_vision_encoder{vision_encoder},
     resampler{resampler},
     ireq_embed{embedding},
     ireq{language_model},
     language_embeddings_history(2048),
-    pos_embed_cache{get_2d_sincos_pos_embed(this->vlm_config.hidden_size, {70, 70})} {}
+    pos_embed_cache{
+        get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70})
+    } {}
 
-std::string VLMPipeline::generate(const PromptImage& pi, const std::function<bool(std::string&&)>& callback) {
-    return generate(pi, std::make_unique<TextCallbackStreamer>(tokenizer, callback));
+VLMPipeline::VLMPipeline(
+    const std::filesystem::path& model_dir,
+    const std::string& device,
+    const ov::AnyMap device_config,
+    ov::Core core
+) : VLMPipeline{
+    ov::genai::Tokenizer(model_dir.string(), device_config),
+    VisionEncoder(model_dir, device, device_config, core),
+    core.compile_model(
+        model_dir / "openvino_resampler.xml", device, device_config
+    ).create_infer_request(),
+    core.compile_model(
+        model_dir / "openvino_embedding.xml", device, device_config
+    ).create_infer_request(),
+    core.compile_model(
+        model_dir / "openvino_model.xml", device, device_config
+    ).create_infer_request(),
+    utils::from_config_json_if_exists<ov::genai::VLMConfig>(
+        model_dir, "config.json"
+    )
+} {}
+
+std::string VLMPipeline::generate(
+    const PromptImage& pair,
+    const ProcessorConfig& processor_config,
+    const VLMConfig& vlm_config,
+    const std::function<bool(std::string&&)>& callback
+) {
+    return generate(
+        pair,
+        processor_config,
+        vlm_config,
+        std::make_unique<TextCallbackStreamer>(tokenizer, callback)
+    );
 }
 
-std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<StreamerBase>& streamer) {
+std::string VLMPipeline::generate(
+    const PromptImage& pi,
+    const ProcessorConfig& processor_config,
+    const VLMConfig& vlm_config,
+    const std::shared_ptr<StreamerBase>& streamer
+) {
     if (pi.image) {
-        EncodedImage embeds = vision_encoder.encode(pi.image);
+        EncodedImage embeds = m_vision_encoder.encode(pi.image, processor_config);
         ov::Tensor imgEmbedTensor = get_image_embedding(embeds, tokenizer, this->ireq_embed, *this);
 
         ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
@@ -516,4 +558,20 @@ std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<S
         streamer->end();
     }
     return tokenizer.decode(generated);
+}
+
+std::string VLMPipeline::generate(
+    const PromptImage& pair,
+    const ov::AnyMap& config_map
+) {
+    auto iter = config_map.find("vlm_config");
+    VLMConfig extracted_config = config_map.end() != iter ?
+        iter->second.as<VLMConfig>() : m_vlm_config;
+    using utils::read_anymap_param;
+    read_anymap_param(config_map, "hidden_size", extracted_config.hidden_size);
+    read_anymap_param(config_map, "scale_emb", extracted_config.scale_emb);
+    read_anymap_param(config_map, "query_num", extracted_config.query_num);
+    return generate(pair, utils::from_any_map(
+        config_map, m_vision_encoder.m_processor_config
+    ), extracted_config);
 }

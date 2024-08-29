@@ -4,6 +4,7 @@
 #pragma once
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/processor_config.hpp"
 
 #include <openvino/openvino.hpp>
 #include <nlohmann/json.hpp>
@@ -84,6 +85,10 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
 
+ProcessorConfig from_any_map(
+    const ov::AnyMap& config_map,
+    const ProcessorConfig& default
+);
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
