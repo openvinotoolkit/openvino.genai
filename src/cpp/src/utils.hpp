@@ -87,7 +87,7 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
 
 ProcessorConfig from_any_map(
     const ov::AnyMap& config_map,
-    const ProcessorConfig& default
+    const ProcessorConfig& initial
 );
 }  // namespace utils
 }  // namespace genai

@@ -17,12 +17,12 @@ struct PromptImage {
 class OPENVINO_GENAI_EXPORTS VLMPipeline {
 public:
     VLMConfig m_vlm_config;
-    Tokenizer tokenizer;
+    Tokenizer m_tokenizer;
     VisionEncoder m_vision_encoder;
-    ov::InferRequest resampler, ireq_embed, ireq;
-    std::vector<float> language_embeddings_history;
-    size_t history_length = 0;
-    ov::Tensor pos_embed_cache;
+    ov::InferRequest m_resampler, m_embedding, m_language;
+    std::vector<float> m_language_embeddings_history;
+    size_t m_history_length = 0;
+    ov::Tensor m_pos_embed_cache;
 
     VLMPipeline(
         const ov::genai::Tokenizer& tokenizer,

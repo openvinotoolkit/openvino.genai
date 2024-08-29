@@ -178,11 +178,11 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
 
 ProcessorConfig from_any_map(
     const ov::AnyMap& config_map,
-    const ProcessorConfig& default
+    const ProcessorConfig& initial
 ) {
     auto iter = config_map.find("processor_config");
     ProcessorConfig extracted_config = config_map.end() != iter ?
-        iter->second.as<ProcessorConfig>() : default;
+        iter->second.as<ProcessorConfig>() : initial;
     using utils::read_anymap_param;
     read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
     read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
