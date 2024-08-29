@@ -77,10 +77,6 @@ int64_t get_out_token_id(const std::vector<int>& input_ids, float* logits, size_
     return out_token;
 }
 
-static double get_duration_ms_until_now(Time::time_point& startTime) {
-    return std::chrono::duration_cast<ns>(Time::now() - startTime).count() * 0.000001;
-}
-
 ov::Tensor process_prompt(Tokenizer& tokenizer, ov::InferRequest& embedding, const std::string& prompt) {
     std::string user_prompt;
     size_t idx;
@@ -505,7 +501,6 @@ std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<S
         ireq.start_async();
         ireq.wait();
         duration_ms = get_duration_ms_until_now(startTime);
-        count += 1;
         total_time += duration_ms;
 
         generated.push_back(out_token);
@@ -522,12 +517,6 @@ std::string VLMPipeline::generate(const PromptImage& pi, const std::shared_ptr<S
 
     if (streamer) {
         streamer->end();
-    }
-
-    if (count > 0) {
-        double avg_time = total_time / count;
-        std::cout << "Other Avg inference took total " << total_time << " ms token num " << count << " first " << first_time << " ms " << " avg " << total_time / (count) << " ms" << std::endl;
-        perf_records.push_back({ input_len, count, first_time, avg_time });
     }
     return tokenizer.decode(generated);
 }

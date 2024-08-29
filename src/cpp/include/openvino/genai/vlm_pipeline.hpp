@@ -30,12 +30,8 @@ public:
     VisionEncoder vision_encoder;
     ov::InferRequest resampler, ireq_embed, ireq;
     std::vector<float> llm_inputs_embeds;
-    // input length, output length, first time, other time
-    std::vector<std::tuple<size_t, size_t, double, double>> perf_records;
     size_t max_lenth = 2048;
     size_t embed_lenth = 0;
-    int count = 0;
-    double total_time = 0;
     const size_t BATCH_SIZE = 1;
     HeightWidth max_size{70, 70};
     ov::Tensor _pos_embeds;
