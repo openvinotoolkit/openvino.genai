@@ -16,6 +16,7 @@ struct StableDiffusionControlnetPipelineParam {
     std::uint32_t steps;
     std::uint32_t seed;
     std::string latent_path = "";
+    std::string controlnet_input = "";
     float guidance_scale = 7.5;
     float controlnet_conditioning_scale = 1.0;
     int width = 512;

@@ -44,6 +44,9 @@ int32_t main(int32_t argc, char* argv[]) try {
         "Destination image height",
         cxxopts::value<size_t>()->default_value(
             "512"))("width", "Destination image width", cxxopts::value<size_t>()->default_value("512"))(
+        "x,controlnet_input",
+        "Read controlnet input from file",
+        cxxopts::value<std::string>()->default_value(""))(
         "l,latent",
         "Read numpy generated latents from file",
         cxxopts::value<std::string>()->default_value(
@@ -84,6 +87,8 @@ int32_t main(int32_t argc, char* argv[]) try {
     const std::string input_image_path = result["inputImage"].as<std::string>();
     const std::string output_image_path = result["outputImage"].as<std::string>();
     const std::string np_latent = result["latent"].as<std::string>();
+    const std::string controlnet_input = result["controlnet_input"].as<std::string>();
+    
 
     const std::string folder_name = "images";
     try {
@@ -106,8 +111,13 @@ int32_t main(int32_t argc, char* argv[]) try {
     StableDiffusionControlnetPipeline pipeline(model_path, device);
     for (uint32_t n = 0; n < num_images; n++) {
         std::uint32_t seed = num_images == 1 ? user_seed : user_seed + n;
-        StableDiffusionControlnetPipelineParam param =
-            {positive_prompt, negative_prompt, input_image_path, num_inference_steps, seed, np_latent};
+        StableDiffusionControlnetPipelineParam param = {positive_prompt,
+                                                        negative_prompt,
+                                                        input_image_path,
+                                                        num_inference_steps,
+                                                        seed,
+                                                        np_latent,
+                                                        controlnet_input};
         auto decoded_image = pipeline.Run(param);
         auto image = postprocess_image(decoded_image);
         if (output_image_path != "") {

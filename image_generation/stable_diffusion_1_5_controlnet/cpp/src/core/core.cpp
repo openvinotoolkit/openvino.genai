@@ -59,6 +59,26 @@ ov::Tensor concat_twice(const ov::Tensor& input) {
     return output_tensor;
 }
 
+ov::Tensor load_controlnet_input(std::string controlnet_input) {
+    ov::Tensor condition(ov::element::f32, {2, 3, 512, 512});
+    std::ifstream controlnet_copy_file(controlnet_input.c_str(), std::ios::ate);
+    OPENVINO_ASSERT(controlnet_copy_file.is_open(), "Cannot open ", controlnet_input.c_str());
+
+    size_t file_size = controlnet_copy_file.tellg() / sizeof(float);
+    OPENVINO_ASSERT(file_size >= condition.get_size(),
+                    "Cannot generate ",
+                    condition.get_shape(),
+                    " with ",
+                    controlnet_input.c_str(),
+                    ". File size is small");
+
+    controlnet_copy_file.seekg(0, std::ios::beg);
+    for (size_t i = 0; i < condition.get_size(); ++i)
+        controlnet_copy_file >> condition.data<float>()[i];
+
+    return condition;
+}
+
 ov::Tensor randn_tensor(ov::Shape shape, std::string latent_path, uint32_t seed = 42) {
     ov::Tensor noise(ov::element::f32, shape);
     if (latent_path.empty()) {
@@ -428,10 +448,20 @@ ov::Tensor StableDiffusionControlnetPipeline::Run(StableDiffusionControlnetPipel
         }
         controlnet_input_tensor = concat_twice(preprocessed_tensor);
     }
+    if (!param.controlnet_input.empty()) {
+        controlnet_input_tensor = load_controlnet_input(param.controlnet_input);
+    }
 
     std::shared_ptr<Scheduler> scheduler = std::make_shared<LMSDiscreteScheduler>();
     scheduler->set_timesteps(param.steps);
     std::vector<std::int64_t> timesteps = scheduler->get_timesteps();
+
+    std::cout << "timesteps: " << std::endl;
+    for (const auto ts : timesteps) {
+        std::cout << ts << " ";
+    }
+    std::cout << std::endl;
+
 
     const size_t unet_in_channels = static_cast<size_t>(sample_shape[1].get_length());
 

@@ -180,6 +180,7 @@ class OVContrlNetStableDiffusionPipeline(DiffusionPipeline):
         height, width = image.shape[-2:]
         if do_classifier_free_guidance:
             image = np.concatenate(([image] * 2))
+        self.controlnet_input = image
 
         # 4. set timesteps
         self.scheduler.set_timesteps(num_inference_steps)
