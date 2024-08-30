@@ -53,7 +53,7 @@ def get_greedy_with_single_stop_string() -> GenerationConfig:
     generation_config.num_return_sequences = 1
     generation_config.min_new_tokens = 15
     generation_config.max_new_tokens = 50
-    generation_config.stop_strings = ["anag"] # expected match on "manage"
+    generation_config.stop_strings = {"anag"} # expected match on "manage"
     generation_config.include_stop_str_in_output = True
     return generation_config
 
@@ -62,7 +62,7 @@ def get_greedy_with_multiple_stop_strings() -> GenerationConfig:
     generation_config.num_return_sequences = 1
     generation_config.min_new_tokens = 1
     generation_config.max_new_tokens = 50
-    generation_config.stop_strings = [".", "software", "Intel"]
+    generation_config.stop_strings = {".", "software", "Intel"}
     generation_config.include_stop_str_in_output = True
     return generation_config
 
@@ -71,7 +71,7 @@ def get_greedy_with_multiple_stop_strings_no_match() -> GenerationConfig:
     generation_config.num_return_sequences = 1
     generation_config.min_new_tokens = 1
     generation_config.max_new_tokens = 50
-    generation_config.stop_strings = ["Einstein", "sunny", "geothermal"]
+    generation_config.stop_strings = {"Einstein", "sunny", "geothermal"}
     generation_config.include_stop_str_in_output = True
     return generation_config
 
@@ -100,7 +100,7 @@ def get_beam_search_with_single_stop_string() -> GenerationConfig:
     generation_config.num_beams = 6
     generation_config.max_new_tokens = 50
     generation_config.num_return_sequences = generation_config.num_beams
-    generation_config.stop_strings = ["open sour"]  # expected match on "open source"
+    generation_config.stop_strings = {"open sour"}  # expected match on "open source"
     generation_config.include_stop_str_in_output = True
     return generation_config
 
@@ -110,7 +110,7 @@ def get_beam_search_with_multiple_stop_strings() -> GenerationConfig:
     generation_config.num_beams = 6
     generation_config.max_new_tokens = 50
     generation_config.num_return_sequences = generation_config.num_beams
-    generation_config.stop_strings = [".", "software", "Intel"]
+    generation_config.stop_strings = {".", "software", "Intel"}
     generation_config.include_stop_str_in_output = True
     return generation_config
 
@@ -120,7 +120,7 @@ def get_beam_search_with_multiple_stop_strings_no_match() -> GenerationConfig:
     generation_config.num_beams = 6
     generation_config.max_new_tokens = 50
     generation_config.num_return_sequences = generation_config.num_beams
-    generation_config.stop_strings = ["Einstein", "sunny", "geothermal"]
+    generation_config.stop_strings = {"Einstein", "sunny", "geothermal"}
     generation_config.include_stop_str_in_output = True
     return generation_config
 

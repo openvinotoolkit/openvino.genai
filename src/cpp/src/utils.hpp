@@ -46,7 +46,7 @@ template <>
 struct json_type_traits<bool> { static constexpr auto json_value_t = nlohmann::json::value_t::boolean; };
 
 template <>
-struct json_type_traits<std::vector<std::string>> { static constexpr auto json_value_t = nlohmann::json::value_t::array; };
+struct json_type_traits<std::set<std::string>> { static constexpr auto json_value_t = nlohmann::json::value_t::array; };
 
 /// @brief reads value to param if T argument type is aligned with value stores in json
 /// if types are not compatible leave param unchanged

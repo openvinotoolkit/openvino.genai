@@ -108,7 +108,7 @@ auto generation_config_docstring = R"(
     min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
     stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
     include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
-    stop_token_ids: list of token sequences that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+    stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
 
     Beam search specific parameters:
     num_beams:         number of beams for beam search. 1 disables beam search.
