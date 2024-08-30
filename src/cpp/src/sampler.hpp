@@ -84,6 +84,70 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
     return tokens;
 }
 
+// Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
+int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::vector<std::string> & stop_strings) {
+    /*
+    For catching stop_string hit we run comparisons character-wise to catch cases where stop string 
+    overlaps with part of another token on both sides or is just a part of a single token. 
+    For every stop_string we iterate over generated tokens starting from the last one and going backwards. 
+    Every token is decoded and its characters are compared to the stop_string character at a current_position 
+    (position of a character in the stop_string counting from the last one) - at the begining position is 0.
+    When characters match we increase current_position and check if we have a full match already, if not we continue.
+    If we have already matched some characters (current_position > 0) and next character is not matching 
+    before we reach the full match, then we reset current_position to 0. 
+    */ 
+    for (auto stop_string: stop_strings) {
+        int current_position = 0;
+        int num_matched_tokens = 0; 
+        // Getting reverse iterator to check tokens starting from the last one generated and going backwards
+        auto generated_tokens_rit = generated_tokens.rbegin();
+        while (generated_tokens_rit != generated_tokens.rend()) {
+            num_matched_tokens++;
+            std::string decoded_token = tokenizer.decode(std::vector<int64_t>{*generated_tokens_rit});
+            // Checking decoded_token characters starting from the last one
+            for (auto decoded_token_rit = decoded_token.rbegin(); decoded_token_rit != decoded_token.rend(); decoded_token_rit++) {
+                // On character match increment current_position for the next comparisons
+                if (*decoded_token_rit == *(stop_string.rbegin() + current_position)) {
+                    current_position++;
+                    // If this is the last character from the stop_string we have a match
+                    if ((stop_string.rbegin() + current_position) == stop_string.rend()) {
+                        return num_matched_tokens;
+                    } 
+                } else if (current_position) {
+                    // Already found matching characters, but the last one didn't match, so we reset current_position
+                    current_position = 0;
+                }
+            }
+            generated_tokens_rit++;
+        }
+    }
+    return 0;
+}
+
+// Handle stop_token_ids
+bool is_stop_token_ids_hit(const TokenIds & generated_tokens, const std::vector<std::vector<int64_t>> & stop_token_ids) {
+    for (auto & stop_sequence : stop_token_ids) {
+        bool stop = true;
+        if (generated_tokens.size() < stop_sequence.size())
+            continue;
+
+        auto stop_sequence_rit = stop_sequence.rbegin();
+        auto generated_tokens_rit = generated_tokens.rbegin();
+        while (stop_sequence_rit != stop_sequence.rend()) 
+        {
+            if(*stop_sequence_rit != *generated_tokens_rit) {
+                stop = false;
+                break;
+            }
+            stop_sequence_rit++;
+            generated_tokens_rit++;
+        }
+        if (stop) 
+            return true;
+    }
+    return false;
+}
+
 struct Beam {
     Sequence::Ptr m_sequence;
     size_t m_global_beam_idx = 0;
@@ -175,8 +239,9 @@ class GroupBeamSearcher {
     SequenceGroup::Ptr m_sequence_group;
     ov::genai::GenerationConfig m_parameters;
     std::vector<Group> m_groups;
+    Tokenizer m_tokenizer;
 public:
-    explicit GroupBeamSearcher(SequenceGroup::Ptr sequence_group);
+    explicit GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer);
 
     void select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output);
 
@@ -253,6 +318,49 @@ class Sampler {
         return out_tokens;
     }
 
+    std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group) {
+        auto sampling_params = sequence_group->get_sampling_parameters();
+        std::vector<int64_t> dropped_seq_ids;
+        for (auto& running_sequence : sequence_group->get_running_sequences()) {
+            const auto generated_len = running_sequence->get_generated_len();
+            if (sampling_params.max_new_tokens == generated_len ||
+                running_sequence->get_generated_ids().back() == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
+                // stop sequence by max_new_tokens or EOS token
+                running_sequence->set_status(SequenceStatus::FINISHED);
+
+                if (running_sequence->get_generated_ids().back() == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
+                    running_sequence->set_finish_reason(GenerationFinishReason::STOP);
+                } else if (sampling_params.max_new_tokens == generated_len) {
+                    running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
+                }
+                
+                dropped_seq_ids.push_back(running_sequence->get_id());
+                continue;
+            }
+
+            if (!sampling_params.stop_token_ids.empty()) {
+                if (is_stop_token_ids_hit(running_sequence->get_generated_ids(), sampling_params.stop_token_ids)) {
+                    running_sequence->set_status(SequenceStatus::FINISHED);
+                    running_sequence->set_finish_reason(GenerationFinishReason::STOP);
+                    dropped_seq_ids.push_back(running_sequence->get_id());
+                    continue;
+                }
+            }
+
+            if (!sampling_params.stop_strings.empty()) {
+                int num_matched_last_tokens = match_stop_string(m_tokenizer, running_sequence->get_generated_ids(), sampling_params.stop_strings);
+                if (num_matched_last_tokens) {
+                    if (!sampling_params.include_stop_str_in_output)
+                        running_sequence->remove_last_tokens(num_matched_last_tokens);
+                    running_sequence->set_status(SequenceStatus::FINISHED);
+                    running_sequence->set_finish_reason(GenerationFinishReason::STOP);
+                    dropped_seq_ids.push_back(running_sequence->get_id());
+                }
+            }
+        }
+        return dropped_seq_ids;
+    }
+
     // request ID => beam search tracking information
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
 
@@ -260,7 +368,12 @@ class Sampler {
     // { request_id, logit_processor }
     std::map<uint64_t, LogitProcessor> m_logit_processors;
 
+    Tokenizer m_tokenizer;
+
 public:
+
+    Sampler(Tokenizer & tokenizer) : m_tokenizer(tokenizer) {};
+
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits);
 
     void set_seed(size_t seed) { rng_engine.seed(seed); }
@@ -333,7 +446,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                     register_new_token(sampled_token_id, running_sequences[running_sequence_id]);
                 }
                 logit_processor.increment_gen_tokens();
-                for (const auto& dropped_seq_id : sequence_group->try_finish_generation()) {
+                for (const auto& dropped_seq_id : _try_finish_generation(sequence_group)) {
                     sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
                 }
             } else if (sampling_params.is_beam_search()) {
@@ -341,7 +454,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
 
                 // create beam search info if we are on the first generate
                 if (m_beam_search_info.find(request_id) == m_beam_search_info.end()) {
-                    m_beam_search_info.emplace(request_id, GroupBeamSearcher(sequence_group));
+                    m_beam_search_info.emplace(request_id, GroupBeamSearcher(sequence_group, m_tokenizer));
                 }
 
                 // current algorithm already adds new tokens to running sequences and
@@ -373,10 +486,11 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
     return sampler_output;
 }
 
-GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group)
+GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer)
     : m_sequence_group(sequence_group),
         m_parameters{m_sequence_group->get_sampling_parameters()},
-        m_groups{m_parameters.num_beam_groups} {
+        m_groups{m_parameters.num_beam_groups},
+        m_tokenizer(tokenizer) {
     OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1);
     assert(m_parameters.num_beams % m_parameters.num_beam_groups == 0 &&
         "number of beams should be divisible by number of groups");
@@ -426,7 +540,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
         }
     }
 
-    auto try_to_finish_candidate = [&] (Group& group, Beam& candidate) -> void {
+    auto try_to_finish_candidate = [&] (Group& group, Beam& candidate, bool include_candidate_token = true) -> void {
         uint64_t seq_id = candidate.m_sequence->get_id();
         // try to finish candidate
         int64_t preempted_seq_id = group.finish(candidate, m_parameters);
@@ -458,7 +572,8 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
             }
 
             // append token from candidate to actual sequence
-            forked_sequence->append_token(candidate.m_token_id, candidate.m_log_prob);
+            if (include_candidate_token)
+                forked_sequence->append_token(candidate.m_token_id, candidate.m_log_prob);
         }
     };
 
@@ -539,7 +654,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                 // There's probably a better way to do that, than copying whole vector...
                 std::vector<int64_t> token_ids = candidate.m_sequence->get_generated_ids();
                 token_ids.push_back(candidate.m_token_id);
-                if (m_sequence_group->stop_token_ids_hit(token_ids)) {
+                if (is_stop_token_ids_hit(token_ids, m_sequence_group->get_sampling_parameters().stop_token_ids)) {
                     // If beam_token does not belong to top num_beams tokens, it should not be added
                     if (cand_idx >= group_size)
                         continue;
@@ -555,13 +670,19 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                 // There's probably a better way to do that, than copying whole vector...
                 std::vector<int64_t> token_ids = candidate.m_sequence->get_generated_ids();
                 token_ids.push_back(candidate.m_token_id);
-                if (m_sequence_group->stop_string_hit(token_ids)) {
+                int num_last_matched_tokens = match_stop_string(m_tokenizer, token_ids, m_sequence_group->get_sampling_parameters().stop_strings);
+                if (num_last_matched_tokens) {
                     // If beam_token does not belong to top num_beams tokens, it should not be added
                     if (cand_idx >= group_size)
                         continue;
 
+                    if(!m_parameters.include_stop_str_in_output) {
+                        // remove tokens that match stop_string from output (last token is not included in candidate.m_sequence at this point)
+                        candidate.m_sequence->remove_last_tokens(num_last_matched_tokens - 1);
+                    }
+
                     // try to finish candidate
-                    try_to_finish_candidate(group, candidate);
+                    try_to_finish_candidate(group, candidate, m_parameters.include_stop_str_in_output);
                     continue;
                 }
             }

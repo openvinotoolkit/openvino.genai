@@ -195,9 +195,6 @@ class SequenceGroup {
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
 
-    // Required for stop_strings handling. Set independently by include_tokenizer method
-    Tokenizer m_tokenizer;
-
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
@@ -232,117 +229,6 @@ public:
         });
         OPENVINO_ASSERT(remove_it != m_sequences.end(), "Failed to remove sequence with specified ID");
         m_sequences.erase(remove_it);
-    }
-
-    // Called when sampling params contain stop_strings
-    void include_tokenizer(Tokenizer& tokenizer) {
-        m_tokenizer = tokenizer;
-    }
-
-    // Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
-    int stop_string_hit(const TokenIds & generated_tokens) {
-        /*
-        For catching stop_string hit we run comparisons character-wise to catch cases where stop string 
-        overlaps with part of another token on both sides or is just a part of a single token. 
-        For every stop_string we iterate over generated tokens starting from the last one and going backwards. 
-        Every token is decoded and its characters are compared to the stop_string character at a current_position 
-        (position of a character in the stop_string counting from the last one) - at the begining position is 0.
-        When characters match we increase current_position and check if we have a full match already, if not we continue.
-        If we have already matched some characters (current_position > 0) and next character is not matching 
-        before we reach the full match, then we reset current_position to 0. 
-        */ 
-        for (auto stop_string: m_sampling_params.stop_strings) {
-            int current_position = 0;
-            int num_matched_tokens = 0; 
-            // Getting reverse iterator to check tokens starting from the last one generated and going backwards
-            auto generated_tokens_rit = generated_tokens.rbegin();
-            while (generated_tokens_rit != generated_tokens.rend()) {
-                num_matched_tokens++;
-                std::string decoded_token = m_tokenizer.decode(std::vector<int64_t>{*generated_tokens_rit});
-                // Checking decoded_token characters starting from the last one
-                for (auto decoded_token_rit = decoded_token.rbegin(); decoded_token_rit != decoded_token.rend(); decoded_token_rit++) {
-                    // On character match increment current_position for the next comparisons
-                    if (*decoded_token_rit == *(stop_string.rbegin() + current_position)) {
-                        current_position++;
-                        // If this is the last character from the stop_string we have a match
-                        if ((stop_string.rbegin() + current_position) == stop_string.rend()) {
-                            return num_matched_tokens;
-                        } 
-                    } else if (current_position) {
-                        // Already found matching characters, but the last one didn't match, so we reset current_position
-                        current_position = 0;
-                    }
-                }
-                generated_tokens_rit++;
-            }
-        }
-        return 0;
-    }
-
-    // Handle stop_token_ids
-    bool stop_token_ids_hit(const TokenIds & generated_tokens) {
-        for (auto & stop_sequence : m_sampling_params.stop_token_ids) {
-            bool stop = true;
-            if (generated_tokens.size() < stop_sequence.size())
-                continue;
-
-            auto stop_sequence_rit = stop_sequence.rbegin();
-            auto generated_tokens_rit = generated_tokens.rbegin();
-            while (stop_sequence_rit != stop_sequence.rend()) 
-            {
-                if(*stop_sequence_rit != *generated_tokens_rit) {
-                    stop = false;
-                    break;
-                }
-                stop_sequence_rit++;
-                generated_tokens_rit++;
-            }
-            if (stop) 
-                return true;
-        }
-        return false;
-    }
-
-    std::vector<int64_t> try_finish_generation() {
-        std::vector<int64_t> dropped_seq_ids;
-        for (auto& running_sequence : get_running_sequences()) {
-            const auto generated_len = running_sequence->get_generated_len();
-            if (m_sampling_params.max_new_tokens == generated_len ||
-                running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
-                // stop sequence by max_new_tokens or EOS token
-                running_sequence->set_status(SequenceStatus::FINISHED);
-
-                if (running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
-                    running_sequence->set_finish_reason(GenerationFinishReason::STOP);
-                } else if (m_sampling_params.max_new_tokens == generated_len) {
-                    running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
-                }
-                
-                dropped_seq_ids.push_back(running_sequence->get_id());
-                continue;
-            }
-
-            if (!m_sampling_params.stop_token_ids.empty()) {
-                if (stop_token_ids_hit(running_sequence->get_generated_ids())) {
-                    running_sequence->set_status(SequenceStatus::FINISHED);
-                    running_sequence->set_finish_reason(GenerationFinishReason::STOP);
-                    dropped_seq_ids.push_back(running_sequence->get_id());
-                    continue;
-                }
-            }
-
-            if (!m_sampling_params.stop_strings.empty()) {
-                int num_matched_last_tokens = stop_string_hit(running_sequence->get_generated_ids());
-                if (num_matched_last_tokens) {
-                    if (!m_sampling_params.include_stop_str_in_output)
-                        running_sequence->remove_last_tokens(num_matched_last_tokens);
-                    running_sequence->set_status(SequenceStatus::FINISHED);
-                    running_sequence->set_finish_reason(GenerationFinishReason::STOP);
-                    dropped_seq_ids.push_back(running_sequence->get_id());
-                }
-            }
-        }
-        return dropped_seq_ids;
     }
 
     size_t get_prompt_len() const {

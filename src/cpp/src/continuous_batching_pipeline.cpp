@@ -115,7 +115,7 @@ public:
         m_scheduler = std::make_shared<Scheduler>(updated_config);
         // and finally create model runner
         m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
-        m_sampler = std::make_shared<Sampler>();
+        m_sampler = std::make_shared<Sampler>(m_tokenizer);
         m_sampler->set_seed(m_generation_config.rng_seed);
 
         // read default generation config
@@ -144,8 +144,6 @@ public:
                                                                             m_scheduler->get_config().block_size,
                                                                             m_scheduler->get_config().enable_prefix_caching);
         sequence_group->set_sequence_group_ptr(sequence_group);
-        if (!sampling_params.stop_strings.empty())
-            sequence_group->include_tokenizer(m_tokenizer);
         if (m_scheduler->get_config().enable_prefix_caching) {
             m_scheduler->restore_cached_blocks(sequence_group);
         }
