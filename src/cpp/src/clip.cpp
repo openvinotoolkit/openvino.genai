@@ -28,7 +28,6 @@
 
 struct clip_hparams {
     int32_t image_size;
-    int32_t patch_size;
     int32_t hidden_size;
     int32_t n_intermediate;
     int32_t projection_dim;
@@ -42,22 +41,6 @@ struct clip_hparams {
     int32_t image_grid_pinpoints[32];
     int32_t image_crop_resolution;
 };
-
-static void build_clip_img_from_data(const stbi_uc * data, int nx, int ny, clip_image_u8 * img) {
-    img->nx = nx;
-    img->ny = ny;
-    img->buf.resize(3 * nx * ny);
-    memcpy(img->buf.data(), data, img->buf.size());
-}
-
-bool clip_image_load_from_bytes(const unsigned char * bytes, size_t bytes_length, struct clip_image_u8 * img) {
-    int nx, ny, nc;
-    auto * data = stbi_load_from_memory(bytes, bytes_length, &nx, &ny, &nc, 3);
-    OPENVINO_ASSERT(data, "failed to decode image bytes");
-    build_clip_img_from_data(data, nx, ny, img);
-    stbi_image_free(data);
-    return true;
-}
 
 // Linear interpolation between two points
 inline float clip_lerp(float s, float e, float t) {

@@ -18,6 +18,7 @@ int main(int argc, char* argv[]) try {
     ov::Tensor image = utils::load_image(argv[2]);
     std::string device = "CPU";  // GPU can be used as well
     ov::genai::VLMPipeline pipe(argv[1], device);
+    pipe.start_chat();
 
     std::array<std::string, 3> prompts;
     std::string prompt;
@@ -45,6 +46,7 @@ int main(int argc, char* argv[]) try {
             pipe.generate({prompts[i]});
         }
     }
+    pipe.finish_chat();
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';

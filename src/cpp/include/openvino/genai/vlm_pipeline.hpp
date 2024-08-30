@@ -3,14 +3,22 @@
 
 #pragma once
 
+#include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/vision_encoder.hpp"
 #include "openvino/genai/vlm_config.hpp"
 
 namespace ov::genai {
+/// @brief Only batch size one is supported.
+struct EncodedPromptImage {
+    EncodedInputs prompt;
+    ov::Tensor image;
+};
+
+/// @brief Only batch size one is supported.
 struct PromptImage {
-    std::string prompt;
+    StringInputs prompt;
     ov::Tensor image;
 };
 
@@ -23,6 +31,7 @@ public:
     std::vector<float> m_language_embeddings_history;
     size_t m_history_length = 0;
     ov::Tensor m_pos_embed_cache;
+    bool is_chat_conversation = false;
 
     VLMPipeline(
         const ov::genai::Tokenizer& tokenizer,
@@ -39,6 +48,54 @@ public:
         const ov::AnyMap device_config={},
         ov::Core core=ov::Core{}
     );
+
+    EncodedResults generate(
+        const EncodedPromptImage& pair,
+        const ProcessorConfig& processor_config,
+        const VLMConfig& vlm_config,
+        const std::function<bool(std::string&&)>& callback
+    );
+    EncodedResults generate(
+        const EncodedPromptImage& pair,
+        const ProcessorConfig& processor_config,
+        const VLMConfig& vlm_config,
+        const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr
+    );
+    EncodedResults generate(
+        const EncodedPromptImage& pair,
+        const std::function<bool(std::string&&)>& callback
+    ) {
+        return generate(
+            pair,
+            m_vision_encoder.m_processor_config,
+            m_vlm_config,
+            callback
+        );
+    }
+    EncodedResults generate(
+        const EncodedPromptImage& pair,
+        const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr
+    ) {
+        return generate(
+            pair,
+            m_vision_encoder.m_processor_config,
+            m_vlm_config,
+            streamer
+        );
+    }
+    EncodedResults generate(
+        const EncodedPromptImage& pair,
+        const ov::AnyMap& config_map
+    );
+    template <typename... Properties>
+    util::EnableIfAllStringAny<EncodedResults, Properties...> generate(
+        const EncodedPromptImage& pair,
+        Properties&&... properties
+    ) {
+        return generate(pair, AnyMap{
+            std::forward<Properties>(properties)...
+        });
+    }
 
     std::string generate(
         const PromptImage& pair,
@@ -79,7 +136,7 @@ public:
         const ov::AnyMap& config_map
     );
     template <typename... Properties>
-    util::EnableIfAllStringAny<PromptImage, Properties...> generate(
+    util::EnableIfAllStringAny<std::string, Properties...> generate(
         const PromptImage& pair,
         Properties&&... properties
     ) {
@@ -87,9 +144,7 @@ public:
             std::forward<Properties>(properties)...
         });
     }
-    void start_chat() {}
-    void finish_chat() {}
-    void set_2d_pos_cache(const HeightWidth& max_size);
-    void adjust_pos_cache(const std::vector<HeightWidth>& target_sizes);
+    void start_chat() {is_chat_conversation = true;}
+    void finish_chat() {is_chat_conversation = false;}
 };
 }

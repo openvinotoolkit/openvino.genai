@@ -7,6 +7,8 @@
 
 // how to merge it with tokenizer config
 // and ProcessorConfig
+// No much sense to allow encoding prompt outside
+// Sould I always apply chat template
 namespace ov::genai {
 class OPENVINO_GENAI_EXPORTS VLMConfig {
 public:

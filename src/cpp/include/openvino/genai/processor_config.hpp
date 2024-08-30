@@ -9,16 +9,33 @@
 #include <filesystem>
 
 namespace ov::genai {
+/// @brief A Configuration class passed to VLMPipeline and used to
+/// change VLMPipeline's behavior.
 class OPENVINO_GENAI_EXPORTS ProcessorConfig {
 public:
+    /// @brief Dimensions of the smaller, non-overlapping patches that the
+    /// input image is divided into before being fed into the
+    /// transformer model. Used to divide image height and width.
     size_t patch_size = 14;
+    /// @brief A recommended size to resize an input image.
     size_t scale_resolution = 448;
-    /// @brief 0 disables slicing.
+    /// @brief Maximum allowed number of intput image slices.
+    /// 0 disables slicing.
     size_t max_slice_nums = 0;
+    /// @brief RGB values to be subtracted from image pixel values.
+    /// Applied before norm_std.
     std::array<float, 3> norm_mean{0.0f, 0.0f, 0.0f};
+    /// @brief RGB values to divide image pixel values.
+    /// Applied after norm_mean.
     std::array<float, 3> norm_std{1.0f, 1.0f, 1.0f};
+    /// @brief Default constructor
     ProcessorConfig() = default;
+    /// @brief Construct ProcessorConfig from values in json_path.
+    /// Keys in the file must match the ProcessorConfig's members.
+    /// @param json_path A path to a file to extract the values from.
     explicit ProcessorConfig(const std::filesystem::path& json_path);
+    /// @brief Default copy constructor.
+    /// @param A config to copy from.
     ProcessorConfig(const ProcessorConfig&) = default;
 };
 

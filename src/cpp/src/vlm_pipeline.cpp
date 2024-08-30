@@ -16,6 +16,9 @@
 using namespace ov::genai;
 
 namespace {
+template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
 constexpr size_t BATCH_SIZE = 1;
 
 struct Args {
@@ -77,12 +80,8 @@ int64_t get_out_token_id(const std::vector<int>& input_ids, float* logits, size_
     return out_token;
 }
 
-ov::Tensor process_prompt(Tokenizer& tokenizer, ov::InferRequest& embedding, const std::string& prompt) {
-    std::string user_prompt;
-    size_t idx;
-    int scale_emb = 12;
-
-    embedding.set_input_tensor(tokenizer.encode(prompt + "<AI>").input_ids);
+ov::Tensor process_prompt(Tokenizer& tokenizer, ov::InferRequest& embedding, const ov::Tensor& prompt, float scale_emb) {
+    embedding.set_input_tensor(prompt);
     embedding.infer();
 
     const ov::Tensor& embed_output_tensor = embedding.get_output_tensor();
@@ -91,7 +90,7 @@ ov::Tensor process_prompt(Tokenizer& tokenizer, ov::InferRequest& embedding, con
     float* data = embed_output_tensor.data<float>();
 
     //embedding * scale_emb
-    for (idx = 0; idx < embed_output_tensor.get_size(); idx++) {
+    for (size_t idx = 0; idx < embed_output_tensor.get_size(); idx++) {
         data[idx] = data[idx] * scale_emb;
     }
     return embed_output_tensor;
@@ -183,14 +182,42 @@ ov::Tensor get_2d_sincos_pos_embed(size_t embed_dim, const HeightWidth& image_si
     ov::Tensor grid(ov::element::f32, {2, grid_h_size, grid_w_size});
     float* data = grid.data<float>();
     for (size_t y = 0; y < grid_h_size; ++y) {
-        std::iota(data, data + grid_w_size, 0);
+        std::iota(data, data + grid_w_size, 0.0f);
         data += grid_w_size;
     }
-    for (size_t y = 0; y < grid_h_size; ++y) {
+    for (float y = 0.0f; y < grid_h_size; ++y) {
         std::fill(data, data + grid_w_size, y);
         data += grid_w_size;
     }
     return get_2d_sincos_pos_embed_from_grid(embed_dim, grid);
+}
+
+void adjust_pos_cache(
+    const std::vector<HeightWidth>& target_sizes,
+    size_t hidden_size,
+    ov::Tensor& pos_embed_cache
+) {
+    size_t max_h = std::max_element(target_sizes.begin(), target_sizes.end(), [](const HeightWidth& left, const HeightWidth& right) {
+        return left.height < right.height;
+    })->height;
+    size_t max_w = std::max_element(target_sizes.begin(), target_sizes.end(), [](const HeightWidth& left, const HeightWidth& right) {
+        return left.width < right.width;
+    })->width;
+    size_t allocated_height, allocated_width;
+    if (pos_embed_cache) {
+        const ov::Shape& allocated_shape = pos_embed_cache.get_shape();
+        allocated_height = allocated_shape.at(0);
+        allocated_width = allocated_shape.at(1);
+    } else {
+        allocated_height = allocated_width = 70;
+    }
+    if (max_h > allocated_height || max_w > allocated_width) {
+        allocated_height = std::max(max_h, allocated_height);
+        allocated_width = std::max(max_w, allocated_width);
+        pos_embed_cache = get_2d_sincos_pos_embed(
+            hidden_size, {allocated_height, allocated_width}
+        );
+    }
 }
 
 ov::Tensor resample(VLMPipeline& pipe, const ov::Tensor& encoded_image, const std::vector<HeightWidth>& target_sizes) {
@@ -199,7 +226,11 @@ ov::Tensor resample(VLMPipeline& pipe, const ov::Tensor& encoded_image, const st
     std::transform(target_sizes.begin(), target_sizes.end(), patch_len.begin(), [](const HeightWidth& height_width) {
         return height_width.height * height_width.width;
     });
-    pipe.adjust_pos_cache(target_sizes);
+    adjust_pos_cache(
+        target_sizes,
+        pipe.m_vlm_config.hidden_size,
+        pipe.m_pos_embed_cache
+    );
     size_t max_patch_len = *std::max_element(patch_len.begin(), patch_len.end());
     ov::Tensor key_padding_mask(ov::element::boolean, {bs, max_patch_len});
     bool* mask_data = key_padding_mask.data<bool>();
@@ -357,32 +388,22 @@ ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tok
     }
     return imgEmbedding;
 }
-}
 
-void VLMPipeline::set_2d_pos_cache(const HeightWidth& max_size) {
-    m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, max_size);
+VLMConfig from_any_map(
+    const ov::AnyMap& config_map, const VLMConfig& initial
+) {
+    auto iter = config_map.find("vlm_config");
+    VLMConfig extracted_config = config_map.end() != iter ?
+        iter->second.as<VLMConfig>() : initial;
+    using utils::read_anymap_param;
+    read_anymap_param(
+        config_map, "hidden_size", extracted_config.hidden_size);
+    read_anymap_param(
+        config_map, "scale_emb", extracted_config.scale_emb);
+    read_anymap_param(
+        config_map, "query_num", extracted_config.query_num);
+    return extracted_config;
 }
-
-void VLMPipeline::adjust_pos_cache(const std::vector<HeightWidth>& target_sizes) {
-    size_t max_h = std::max_element(target_sizes.begin(), target_sizes.end(), [](const HeightWidth& left, const HeightWidth& right) {
-        return left.height < right.height;
-    })->height;
-    size_t max_w = std::max_element(target_sizes.begin(), target_sizes.end(), [](const HeightWidth& left, const HeightWidth& right) {
-        return left.width < right.width;
-    })->width;
-    size_t allocated_height, allocated_width;
-    if (m_pos_embed_cache) {
-        const ov::Shape& allocated_shape = m_pos_embed_cache.get_shape();
-        allocated_height = allocated_shape.at(0);
-        allocated_width = allocated_shape.at(1);
-    } else {
-        allocated_height = allocated_width = 70;
-    }
-    if (max_h > allocated_height || max_w > allocated_width) {
-        allocated_height = std::max(max_h, allocated_height);
-        allocated_width = std::max(max_w, allocated_width);
-        this->set_2d_pos_cache({allocated_height, allocated_width});
-    }
 }
 
 VLMPipeline::VLMPipeline(
@@ -426,6 +447,33 @@ VLMPipeline::VLMPipeline(
     )
 } {}
 
+EncodedResults VLMPipeline::generate(
+    const EncodedPromptImage& pair,
+    const ov::AnyMap& config_map
+) {
+    return generate(
+        pair,
+        utils::from_any_map(
+            config_map, m_vision_encoder.m_processor_config
+        ),
+        from_any_map(config_map, m_vlm_config)
+    );
+}
+
+EncodedResults VLMPipeline::generate(
+    const EncodedPromptImage& pair,
+    const ProcessorConfig& processor_config,
+    const VLMConfig& vlm_config,
+    const std::function<bool(std::string&&)>& callback
+) {
+    return generate(
+        pair,
+        processor_config,
+        vlm_config,
+        std::make_unique<TextCallbackStreamer>(m_tokenizer, callback)
+    );
+}
+
 std::string VLMPipeline::generate(
     const PromptImage& pair,
     const ProcessorConfig& processor_config,
@@ -441,13 +489,55 @@ std::string VLMPipeline::generate(
 }
 
 std::string VLMPipeline::generate(
-    const PromptImage& pi,
+    const PromptImage& pair,
     const ProcessorConfig& processor_config,
     const VLMConfig& vlm_config,
     const std::shared_ptr<StreamerBase>& streamer
 ) {
-    if (pi.image) {
-        EncodedImage embeds = m_vision_encoder.encode(pi.image, processor_config);
+    std::string prompt = std::visit(overloaded{
+        [](const std::string& single) {
+            return single;
+        },
+        [](const std::vector<std::string>& multiple) {
+            switch (multiple.size()) {
+                case 0: return std::string{};
+                case 1: return multiple.at(0);
+                default: OPENVINO_THROW("Batch isn't supported");
+            }
+        }
+    }, pair.prompt);
+    if (pair.image) {
+        prompt += "<AI>";
+    } else {
+        prompt = "<用户>" + prompt + "<AI>";
+    }
+
+    TokenizedInputs encoded = m_tokenizer.encode(prompt);
+    EncodedResults generated = generate(
+        {encoded, pair.image},
+        processor_config,
+        vlm_config,
+        streamer
+    );
+    return m_tokenizer.decode(generated.tokens.at(0));
+}
+
+EncodedResults VLMPipeline::generate(
+    const EncodedPromptImage& pair,
+    const ProcessorConfig& processor_config,
+    const VLMConfig& vlm_config,
+    const std::shared_ptr<StreamerBase>& streamer
+) {
+    const ov::Tensor& input_ids = std::visit(overloaded{
+        [](const ov::Tensor& single) {
+            return single;
+        },
+        [](const TokenizedInputs& pair) {
+            return pair.input_ids;
+        }
+    }, pair.prompt);
+    if (pair.image) {
+        EncodedImage embeds = m_vision_encoder.encode(pair.image, processor_config);
         ov::Tensor imgEmbedTensor = get_image_embedding(embeds, m_tokenizer, m_embedding, *this);
 
         ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
@@ -458,7 +548,7 @@ std::string VLMPipeline::generate(
         m_language_embeddings_history.resize((m_language_embeddings_history.size() * vlm_config.hidden_size));
 
         //<用户> + image embedding + prompt + <AI> LLM first input
-        ov::Tensor promtTensor = process_prompt(m_tokenizer, m_embedding, pi.prompt);
+        ov::Tensor promtTensor = process_prompt(m_tokenizer, m_embedding, input_ids, m_vlm_config.scale_emb);
         m_history_length = img_embed_shape[1] + promtTensor.get_shape()[1];
 
         //memcpy image embedding buf
@@ -470,8 +560,7 @@ std::string VLMPipeline::generate(
         memcpy(m_language_embeddings_history.data() + img_embed_shape[1] * vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
     } else {
         //<用户> + prompt + <AI>  LLM first input
-        ov::Tensor promtTensor;
-        promtTensor = process_prompt(m_tokenizer, m_embedding, "<用户>" + pi.prompt);
+        ov::Tensor promtTensor = process_prompt(m_tokenizer, m_embedding, input_ids, m_vlm_config.scale_emb);
 
         if ((m_history_length + promtTensor.get_shape()[1]) > m_language_embeddings_history.size()) {
             m_language_embeddings_history.resize((m_history_length + 256) * vlm_config.hidden_size);
@@ -490,10 +579,6 @@ std::string VLMPipeline::generate(
     std::iota(m_language.get_tensor("position_ids").data<int64_t>(), m_language.get_tensor("position_ids").data<int64_t>() + m_language.get_tensor("position_ids").get_size(), 0);
     m_language.get_tensor("beam_idx").set_shape({ BATCH_SIZE });
     m_language.get_tensor("beam_idx").data<int32_t>()[0] = 0;
-
-    for (auto&& state : m_language.query_state()) {
-        state.reset();
-    }
 
     m_language.infer();
 
@@ -556,24 +641,28 @@ std::string VLMPipeline::generate(
     if (streamer) {
         streamer->end();
     }
-    return m_tokenizer.decode(generated);
+
+    for (auto& variable : m_language.query_state()) {
+        variable.reset();
+    }
+    if (!is_chat_conversation) {
+        m_language_embeddings_history.clear();
+        m_history_length = 0;
+    }
+    return EncodedResults{
+        std::vector<std::vector<int64_t>>{std::move(generated)}
+    };
 }
 
 std::string VLMPipeline::generate(
     const PromptImage& pair,
     const ov::AnyMap& config_map
 ) {
-    auto iter = config_map.find("vlm_config");
-    VLMConfig extracted_config = config_map.end() != iter ?
-        iter->second.as<VLMConfig>() : m_vlm_config;
-    using utils::read_anymap_param;
-    read_anymap_param(
-        config_map, "hidden_size", extracted_config.hidden_size);
-    read_anymap_param(
-        config_map, "scale_emb", extracted_config.scale_emb);
-    read_anymap_param(
-        config_map, "query_num", extracted_config.query_num);
-    return generate(pair, utils::from_any_map(
-        config_map, m_vision_encoder.m_processor_config
-    ), extracted_config);
+    return generate(
+        pair,
+        utils::from_any_map(
+            config_map, m_vision_encoder.m_processor_config
+        ),
+        from_any_map(config_map, m_vlm_config)
+    );
 }
