@@ -85,7 +85,7 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
 }
 
 // Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
-int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::vector<std::string> & stop_strings) {
+int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings) {
     /*
     For catching stop_string hit we run comparisons character-wise to catch cases where stop string 
     overlaps with part of another token on both sides or is just a part of a single token. 
@@ -125,24 +125,9 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
 }
 
 // Handle stop_token_ids
-bool is_stop_token_ids_hit(const TokenIds & generated_tokens, const std::vector<std::vector<int64_t>> & stop_token_ids) {
-    for (auto & stop_sequence : stop_token_ids) {
-        bool stop = true;
-        if (generated_tokens.size() < stop_sequence.size())
-            continue;
-
-        auto stop_sequence_rit = stop_sequence.rbegin();
-        auto generated_tokens_rit = generated_tokens.rbegin();
-        while (stop_sequence_rit != stop_sequence.rend()) 
-        {
-            if(*stop_sequence_rit != *generated_tokens_rit) {
-                stop = false;
-                break;
-            }
-            stop_sequence_rit++;
-            generated_tokens_rit++;
-        }
-        if (stop) 
+bool is_stop_token_id_hit(int64_t generated_token, const std::set<int64_t> & stop_token_ids) {
+    for (auto & stop_token_id : stop_token_ids) {
+        if (generated_token == stop_token_id)
             return true;
     }
     return false;
@@ -178,7 +163,7 @@ struct Group {
 
     int64_t finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {
         int64_t preeempted_sequence_id = -1;
-        float generated_len = beam.get_generated_len() + (beam.m_token_id == sampling_params.eos_token_id ? 1 : 0); // HF counts EOS token in generation length
+        float generated_len = beam.get_generated_len() + (is_stop_token_id_hit(beam.m_token_id, sampling_params.stop_token_ids) ? 1 : 0); // HF counts EOS token in generation length
         beam.m_score /= std::pow(generated_len, sampling_params.length_penalty);
 
         min_heap.push_back(beam);
@@ -323,12 +308,12 @@ class Sampler {
         std::vector<int64_t> dropped_seq_ids;
         for (auto& running_sequence : sequence_group->get_running_sequences()) {
             const auto generated_len = running_sequence->get_generated_len();
-            if (sampling_params.max_new_tokens == generated_len ||
-                running_sequence->get_generated_ids().back() == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
-                // stop sequence by max_new_tokens or EOS token
+            if (sampling_params.max_new_tokens == generated_len || 
+                is_stop_token_id_hit(running_sequence->get_generated_ids().back(), sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
+                // stop sequence by max_new_tokens or stop token (eos included)
                 running_sequence->set_status(SequenceStatus::FINISHED);
 
-                if (running_sequence->get_generated_ids().back() == sampling_params.eos_token_id && !sampling_params.ignore_eos) {
+                if (is_stop_token_id_hit(running_sequence->get_generated_ids().back(), sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
                     running_sequence->set_finish_reason(GenerationFinishReason::STOP);
                 } else if (sampling_params.max_new_tokens == generated_len) {
                     running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
@@ -336,15 +321,6 @@ class Sampler {
                 
                 dropped_seq_ids.push_back(running_sequence->get_id());
                 continue;
-            }
-
-            if (!sampling_params.stop_token_ids.empty()) {
-                if (is_stop_token_ids_hit(running_sequence->get_generated_ids(), sampling_params.stop_token_ids)) {
-                    running_sequence->set_status(SequenceStatus::FINISHED);
-                    running_sequence->set_finish_reason(GenerationFinishReason::STOP);
-                    dropped_seq_ids.push_back(running_sequence->get_id());
-                    continue;
-                }
             }
 
             if (!sampling_params.stop_strings.empty()) {
@@ -639,7 +615,7 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
 
         for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
             Beam & candidate = candidates[cand_idx];
-            if (m_parameters.eos_token_id == candidate.m_token_id) {
+            if (is_stop_token_id_hit(candidate.m_token_id, m_sequence_group->get_sampling_parameters().stop_token_ids)) {
                 // If beam_token does not belong to top num_beams tokens, it should not be added
                 if (cand_idx >= group_size)
                     continue;
@@ -647,22 +623,6 @@ void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutp
                 // try to finish candidate
                 try_to_finish_candidate(group, candidate);
                 continue;
-            }
-            
-            if (!m_parameters.stop_token_ids.empty()) {
-                // We need to include candidate token to already generated tokens to check if stop sequence has been generated
-                // There's probably a better way to do that, than copying whole vector...
-                std::vector<int64_t> token_ids = candidate.m_sequence->get_generated_ids();
-                token_ids.push_back(candidate.m_token_id);
-                if (is_stop_token_ids_hit(token_ids, m_sequence_group->get_sampling_parameters().stop_token_ids)) {
-                    // If beam_token does not belong to top num_beams tokens, it should not be added
-                    if (cand_idx >= group_size)
-                        continue;
-
-                    // try to finish candidate
-                    try_to_finish_candidate(group, candidate);
-                    continue;
-                }
             }
 
             if (!m_parameters.stop_strings.empty()) {

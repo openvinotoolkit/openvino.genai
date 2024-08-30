@@ -61,6 +61,8 @@ void GenerationConfig::set_eos_token_id(size_t tokenizer_eos_token_id) {
             "EOS token ID is different in generation config (", eos_token_id, ") and tokenizer (",
             tokenizer_eos_token_id, ")");
     }
+    // Merge user defined stop tokens with model EOS token
+    stop_token_ids.insert(eos_token_id);
 }
 
 void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {

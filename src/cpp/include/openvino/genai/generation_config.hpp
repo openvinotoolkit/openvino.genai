@@ -36,7 +36,7 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * @param min_new_tokens set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
  * @param stop_strings vector of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
  * @param include_stop_str_in_output if set to true stop string that matched generation will be included in generation output (default: false)
- * @param stop_token_ids vector of token sequences that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+ * @param stop_token_ids vector of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
  * 
  * Beam search specific parameters:
  * @param num_beams number of beams for beam search. 1 disables beam search.
@@ -77,10 +77,10 @@ public:
     bool ignore_eos = false;
     size_t min_new_tokens = 0;
     
-    std::vector<std::string> stop_strings;
+    std::set<std::string> stop_strings;
     // Default setting in vLLM (and OpenAI API) is not to include stop string in the output
     bool include_stop_str_in_output = false;
-    std::vector<std::vector<int64_t>> stop_token_ids;
+    std::set<int64_t> stop_token_ids;
 
     // Beam search specific
     size_t num_beam_groups = 1;
