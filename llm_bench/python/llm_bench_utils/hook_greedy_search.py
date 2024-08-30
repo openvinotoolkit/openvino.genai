@@ -363,4 +363,3 @@ class GreedySearchHook:
             model._sample = hook_sample_v43.new_sample.__get__(model, model.__class__)
         else:
             model._sample = hook_sample.new_sample.__get__(model, model.__class__)
-            
