@@ -10,6 +10,8 @@
 
 #include <openvino/pass/stateful_to_stateless.hpp>
 
+#include <fstream>
+
 namespace {
 
 void align_u4_zp_constants(const std::shared_ptr<ov::Model>& model) {
@@ -130,7 +132,7 @@ void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
     }
 }
 
-ov::AnyMap get_default_prefill_config() {
+ov::AnyMap get_default_prefill_config(const bool use_blobs = false) {
     std::map<std::string, std::string> config = {
         { "NPU_USE_NPUW", "YES" },
         { "NPUW_FOLD", "YES" },
@@ -138,10 +140,11 @@ ov::AnyMap get_default_prefill_config() {
         { "NPUW_DCOFF_SCALE",  "YES" },
         { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
     };
-    return { config.begin(), config.end() };
+    return use_blobs ? ov::AnyMap()
+        : ov::AnyMap{ config.begin(), config.end() };
 }
 
-ov::AnyMap get_default_generate_config() {
+ov::AnyMap get_default_generate_config(const bool use_blobs = false) {
     std::map<std::string, std::string> config = {
         { "NPU_USE_NPUW", "YES" },
         { "NPUW_FOLD", "YES" },
@@ -152,7 +155,8 @@ ov::AnyMap get_default_generate_config() {
         { "NPUW_FUNCALL_ASYNC", "YES" },
         { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
     };
-    return { config.begin(), config.end() };
+    return use_blobs ? ov::AnyMap()
+        : ov::AnyMap{ config.begin(), config.end() };
 }
 
 template <typename T>
@@ -195,52 +199,119 @@ StaticLLMPipeline::StaticLLMPipeline(
                         utils::from_config_json_if_exists(path)) {
     auto pipeline_config = config;
     /* NB: Static LLM pipeline consists of two models,
-       first to process the input prompt (prefill), second to use in generation loop (kvcache)
+       first to process the input prompt (prefill),
+       second to use in generation loop (kvcache)
 
-       Initialization assumes multiple steps:
-       1) Read the template model - this will be kvcache model
-       2) Expose KV-cache input and output layers from kvcache model
-       3) Align u4 ZP constants - TODO: get rid of this step in future
-       4) Replace KV-cache tensors for the entire cache to tensors only for new token (before concat)
-       5) Clone the model - this will be prefill
-       6) Reshape both models to static shape
-       7) Compile both models
-       8) Initialize input tensors for kvcache and prefill models
+       There are two ways of how these models can be created
+       and user chooses one or another via configuration option
+       "USE_BLOBS":
+        1. When both models are created from the provided .xml one,
+           that is "USE_BLOBS=NO" default way.
+        2. When both models are directly imported from provided prefill
+           and generation precompiled blobs, that is "USE_BLOBS=YES" way.
+
+       If the first way is chosen, then initialization assumes multiple steps:
+           1) Read the template model - this will be kvcache model
+           2) Expose KV-cache input and output layers from kvcache model
+           3) Align u4 ZP constants - TODO: get rid of this step in future
+           4) Replace KV-cache tensors for the entire cache to tensors only for new token (before concat)
+           5) Clone the model - this will be prefill
+           6) Reshape both models to static shape
+           7) Compile both models
+           8) Initialize input tensors for kvcache and prefill models
+        Else, just import .blobs and initialize input tensors for them:
+           1) Import prefill model from model directory or specified path
+           2) Import generate model from model directory or specified path
+           3) Fill in m_kvcache_desc
+           4) Initialize input tensors for kvcache and prefill models
     */
     ov::Core core;
-    // (1) Read the template model - this will be kvcache model
-    m_kvcache_model = core.read_model(path / "openvino_model.xml");
-    // (2) Expose KV-cache input and output layers from kvcache model
-    ov::pass::StatefulToStateless().run_on_model(m_kvcache_model);
-    // (3) Align u4 ZP constants
-    align_u4_zp_constants(m_kvcache_model);
-    // (4) Replace KV-tensors for the entire cache to tensors only for new token
-    m_kvcache_model = redirect_new_kv_to_output(m_kvcache_model);
-    // (5) Clone the model - this will be prefill
-    m_prefill_model = m_kvcache_model->clone();
-    m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
-    // (6) Reshape both models to static shape
-    const auto kMaxPromptLen = pop_or_default(pipeline_config, "MAX_PROMPT_LEN", 1024u);
-    const auto kMinResponseLen = pop_or_default(pipeline_config, "MIN_RESPONSE_LEN", 150u);
-    // FIXME For some models KV-cache dim != 2u
-    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, 2u };
-    reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size);
-    reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size);
-    // (7) Compile both model
-    auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", get_default_prefill_config());
-    auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", get_default_generate_config());
-    merge_config_with(prefill_config, pipeline_config);
-    merge_config_with(generate_config, pipeline_config);
-    // FIXME: Drop CACHE_DIR option if NPUW is enabled
-    drop_cache_dir(prefill_config);
-    drop_cache_dir(generate_config);
-    m_prefill_request = core.compile_model(
-        m_prefill_model, device, prefill_config
-    ).create_infer_request();
-    m_kvcache_request = core.compile_model(
-        m_kvcache_model, device, generate_config
-    ).create_infer_request();
-    // (8) Initialize tensors
+    const auto use_blobs = pop_or_default(pipeline_config, "USE_BLOBS", false);
+    auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", get_default_prefill_config(use_blobs));
+    auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", get_default_generate_config(use_blobs));
+
+    if (!use_blobs) {
+        // (1) Read the template model - this will be kvcache model
+        m_kvcache_model = core.read_model(path / "openvino_model.xml");
+        // (2) Expose KV-cache input and output layers from kvcache model
+        ov::pass::StatefulToStateless().run_on_model(m_kvcache_model);
+        // (3) Align u4 ZP constants
+        align_u4_zp_constants(m_kvcache_model);
+        // (4) Replace KV-tensors for the entire cache to tensors only for new token
+        m_kvcache_model = redirect_new_kv_to_output(m_kvcache_model);
+        // (5) Clone the model - this will be prefill
+        m_prefill_model = m_kvcache_model->clone();
+        m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
+        // (6) Reshape both models to static shape
+        const auto kMaxPromptLen = pop_or_default(pipeline_config, "MAX_PROMPT_LEN", 1024u);
+        const auto kMinResponseLen = pop_or_default(pipeline_config, "MIN_RESPONSE_LEN", 150u);
+        // FIXME For some models KV-cache dim != 2u
+        m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, 2u };
+        reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size);
+        reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size);
+        // (7) Compile both model
+        // FIXME: Drop CACHE_DIR option if NPUW is enabled
+        merge_config_with(prefill_config, pipeline_config);
+        merge_config_with(generate_config, pipeline_config);
+        drop_cache_dir(prefill_config);
+        drop_cache_dir(generate_config);
+        m_prefill_request = core.compile_model(
+            m_prefill_model, device, prefill_config
+        ).create_infer_request();
+        m_kvcache_request = core.compile_model(
+            m_kvcache_model, device, generate_config
+        ).create_infer_request();
+    } else {
+        auto import_blob = [this, 
+                            &path,
+                            &pipeline_config,
+                            &core,
+                            &device](const std::string& model_name,
+                                     ov::AnyMap& model_config) {
+            auto blob_path = pop_or_default(model_config, "BLOB_PATH", std::string{});
+
+            if (blob_path.empty()) {
+                blob_path = (path /
+                    (std::string("openvino_") + model_name + ".blob")).generic_string();
+            }
+
+            if (!std::filesystem::exists(blob_path)) {
+                OPENVINO_THROW("Blob for " + model_name + " model is not found at: "
+                    + blob_path);
+            }
+
+            merge_config_with(model_config, pipeline_config);
+
+            std::fstream fs(blob_path, std::ios::in | std::ios::binary);
+
+            return core.import_model(
+                fs, device, model_config);
+
+        };
+
+        auto get_kvcache_size = [](ov::CompiledModel& model) {
+            for (auto input : model.inputs()) {
+                const auto& input_name = input.get_any_name();
+                if (input_name.find("attention_mask") != std::string::npos) {
+                    return input.get_shape()[1];
+                }
+            }
+            return uint64_t(0);
+        };
+
+        // (1) Import prefill model from model directory or specified path
+        auto prefill_model = import_blob("prefill", prefill_config);
+        m_prefill_request = prefill_model.create_infer_request();
+        // (2) Import generate model from model directory or specified path
+        auto generate_model = import_blob("generate", generate_config);
+        m_kvcache_request = generate_model.create_infer_request();
+        // (3) Fill in m_kvcache_desc
+        const uint32_t kMaxPromptLen = uint32_t(get_kvcache_size(prefill_model));
+        const uint32_t kMinResponseLen = uint32_t(get_kvcache_size(generate_model)) - kMaxPromptLen;
+        // FIXME For some models KV-cache dim != 2u   
+        m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, 2u };
+    }
+    // (last) Initialize tensors
     prepare_for_new_conversation();
 };
 
@@ -360,7 +431,7 @@ EncodedResults StaticLLMPipeline::generate(
 
     auto padded_input_ids = m_prefill_request.get_tensor("input_ids");
     const size_t offset = padded_input_ids.get_size() - input_ids.get_size();
-    copy_with_offset(input_ids, offset, padded_input_ids);
+    copy_with_offset(input_ids, int32_t(offset), padded_input_ids);
 
     auto padded_attention_mask = m_prefill_request.get_tensor("attention_mask");
     fill_tensor(padded_attention_mask, 1u, offset);
@@ -372,7 +443,7 @@ EncodedResults StaticLLMPipeline::generate(
     m_prefill_request.infer();
 
     // NB: Now there are prompt_len tokens in KV-cache
-    m_kvcache_desc.num_stored_tokens += prompt_len;
+    m_kvcache_desc.num_stored_tokens += uint32_t(prompt_len);
     int64_t last_token = utils::argmax(m_prefill_request.get_tensor("logits"), 0);
     results.tokens[0].push_back(last_token);
     if (streamer_ptr && streamer_ptr->put(last_token)) {
