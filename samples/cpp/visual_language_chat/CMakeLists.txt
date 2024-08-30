@@ -12,7 +12,7 @@ file(DOWNLOAD
 
 add_executable(visual_language_chat visual_language_chat.cpp read_image.cpp)
 target_include_directories(visual_language_chat PRIVATE "${CMAKE_CURRENT_SOUCE_DIR}" "${CMAKE_BINARY_DIR}")
-target_link_libraries(visual_language_chat PRIVATE openvino::genai "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
+target_link_libraries(visual_language_chat PRIVATE openvino::genai)
 set_target_properties(visual_language_chat PROPERTIES
     COMPILE_PDB_NAME chat_sample
     # Ensure out of box LC_RPATH on macOS with SIP
