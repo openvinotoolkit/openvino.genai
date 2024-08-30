@@ -64,7 +64,7 @@ public:
 
     void clean_empty_blocks(std::vector<SequenceGroup::Ptr>& seq_groups) {
         for (const auto& seq_group : seq_groups)
-            m_block_manager.free_group_partially(seq_group, m_block_manager.num_free_blocks());
+            m_block_manager.free_empty_physical_blocks(seq_group);
     }
 
     const std::vector<KVCacheBlock::Ptr>& get_block_table(const Sequence& seq) {

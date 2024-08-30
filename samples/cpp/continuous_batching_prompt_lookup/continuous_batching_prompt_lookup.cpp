@@ -5,7 +5,8 @@
 #include <cxxopts.hpp>
 
 #include "openvino/genai/generation_config.hpp"
-#include "speculative_decoding_pipeline.hpp"
+
+#include "prompt_lookup_pipeline.hpp"
 
 void print_generation_result(const ov::genai::GenerationResult& generation_result) {
     for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
@@ -22,8 +23,8 @@ int main(int argc, char* argv[]) try {
     ("n,num_prompts", "A number of prompts", cxxopts::value<size_t>()->default_value("1"))
     ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("false"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
-    ("a,assisting_model", "Path to assisting model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
     ("k,candidates_number", "candidates_number", cxxopts::value<size_t>()->default_value("5"))
+    ("ngram", "Ngram", cxxopts::value<size_t>()->default_value("5"))
     ("g,generated_len", "generated_len", cxxopts::value<size_t>()->default_value("30"))
     ("h,help", "Print usage");
 
@@ -44,16 +45,16 @@ int main(int argc, char* argv[]) try {
     const size_t num_prompts = result["num_prompts"].as<size_t>();
     const bool dynamic_split_fuse = result["dynamic_split_fuse"].as<bool>();
     const std::string models_path = result["model"].as<std::string>();
-    const std::string assisting_models_path = result["assisting_model"].as<std::string>();
     const size_t k = result["candidates_number"].as<size_t>();
     const size_t g = result["generated_len"].as<size_t>();
+    const size_t n = result["ngram"].as<size_t>();
 
     // create dataset
 
     std::vector<std::string> prompt_examples = {
-        "What is OpenVINO?",
-        "How are you?",
-        "What is your name?",
+        // "What is OpenVINO?",
+        // "How are you?",
+        "code: ```for (const auto& a : b) { std::cout << a << std::endl; }```",
         "Tell me something about Canada",
         "What is OpenVINO?",
     };
@@ -79,7 +80,7 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::SchedulerConfig scheduler_config;
     // batch size
-    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.max_num_batched_tokens = 256;
     // cache params
     scheduler_config.num_kv_blocks = 364;
     scheduler_config.block_size = 32;
@@ -90,7 +91,7 @@ int main(int argc, char* argv[]) try {
 
     // It's possible to construct a Tokenizer from a different path.
     // If the Tokenizer isn't specified, it's loaded from the same folder.
-    SpeculativeDecodingPipeline pipe(models_path, assisting_models_path, k, scheduler_config, "CPU");
+    PromptLookupPipeline pipe(models_path, k, n, ov::genai::Tokenizer{models_path}, scheduler_config, "CPU");
     auto start_time = std::chrono::system_clock::now();
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, sampling_params);
 
@@ -125,12 +126,9 @@ int main(int argc, char* argv[]) try {
     std::chrono::duration<double> duration = end_time - start_time;
     std::cout << std::endl;
     std::cout << "Duration: " << duration.count() << std::endl;
-    std::cout << "Infer number: " << pipe.m_matches_info.size() << std::endl;
-    std::cout << "MAX matches number: " << pipe.m_max_matches << std::endl;
-    auto a = std::accumulate(pipe.m_matches_info.begin(), pipe.m_matches_info.end(), 0);
-    std::cout << "AVG matches number: " << (float(a) / pipe.m_matches_info.size()) << std::endl;
-    double c = double(pipe.m_speculative_model_duration) * 100 / std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
-    std::cout << "Speculative model time duration: " << pipe.m_speculative_model_duration * 1e-9 << " in %: " << c << std::endl;
+    std::cout << "Infer number: " << pipe.infer_cnt << std::endl;
+    std::cout << "MAX matches number: " << pipe.max_matches << std::endl;
+    std::cout << "AVG matches number: " << (float(pipe.avg_matches) / pipe.infer_cnt) << std::endl;
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return EXIT_FAILURE;

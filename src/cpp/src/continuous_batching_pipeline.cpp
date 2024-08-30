@@ -21,7 +21,15 @@ using namespace ov::genai;
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
+void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model);
+void set_type_and_shape_to_kv_cache(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
+
+std::shared_ptr<ov::Model>
+ov::genai::read_model_and_apply_paged_attention(const std::string& models_path, ov::Core& core) {
+    auto model = core.read_model(models_path + "/openvino_model.xml");
+    apply_paged_attention_transformations(model);
+    return model;
+}
 
 class ContinuousBatchingPipeline::Impl {
     ov::genai::Tokenizer m_tokenizer;
@@ -29,6 +37,7 @@ class ContinuousBatchingPipeline::Impl {
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
     std::shared_ptr<Sampler> m_sampler;
+    bool m_is_validation_mode_enabled = false;
 
     // TODO (mzegla): GenerationConfig is request specific object
     // and pipeline only uses default rng_seed. 
@@ -85,17 +94,14 @@ class ContinuousBatchingPipeline::Impl {
         }
     }
 
-public:
-    Impl(const std::string& models_path, const Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& plugin_config) :
-            m_tokenizer{tokenizer} {
-        ov::Core core;
-
-        // The model can be compiled for GPU as well
-        std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
-
-        DeviceConfig device_config(core, scheduler_config, device, plugin_config);
-
-        apply_paged_attention_transformations(model, device_config);
+    inline void
+    compile_model(std::shared_ptr<ov::Model> model,
+                  const SchedulerConfig& scheduler_config,
+                  const ov::AnyMap& plugin_config,
+                  const std::string& device,
+                  ov::Core& core) {
+        DeviceConfig device_config(core, scheduler_config, device);
+        set_type_and_shape_to_kv_cache(model, device_config);
 
         ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
 
@@ -105,24 +111,49 @@ public:
             infer_request.set_input_tensor(2 + decoder_layer_id * 2, m_cache_manager->get_key_cache(decoder_layer_id));
             infer_request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager->get_value_cache(decoder_layer_id));
         }
-
         SchedulerConfig updated_config = scheduler_config;
         // update KV number in scheduler config
         if (scheduler_config.num_kv_blocks != device_config.get_num_kv_blocks()) {
             updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
         }
-
         m_scheduler = std::make_shared<Scheduler>(updated_config);
         // and finally create model runner
         m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
         m_sampler = std::make_shared<Sampler>();
         m_sampler->set_seed(m_generation_config.rng_seed);
+        m_sampler->set_seed(0);
 
         // read default generation config
     }
 
+    inline void pull_awaiting_requests() {
+        if (m_requests.empty()) {
+            // Pull awaiting requests
+            if (!m_awaiting_requests.empty()) {
+                std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+                m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
+                m_awaiting_requests.clear();
+            }
+        }
+    }
+
+public:
+    Impl(const std::string& models_path, const Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& plugin_config) :
+        m_tokenizer{tokenizer} {
+        ov::Core core;
+        // The model can be compiled for GPU as well
+        std::shared_ptr<ov::Model> model = read_model_and_apply_paged_attention(models_path, core);
+        compile_model(model, scheduler_config, plugin_config, device, core);
+    }
+
     Impl(const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& llm_plugin_config, const ov::AnyMap& tokenizer_plugin_config)
         : Impl{models_path, Tokenizer(models_path, tokenizer_plugin_config), scheduler_config, device, llm_plugin_config} {}
+    
+    Impl(ov::Core& core, std::shared_ptr<ov::Model> model, const Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& plugin_config, bool is_validation_mode = false) :
+        m_is_validation_mode_enabled(is_validation_mode),
+        m_tokenizer{tokenizer} {
+        compile_model(model, scheduler_config, plugin_config, device, core);
+    }
 
     ov::genai::GenerationConfig get_config() const {
         return m_generation_config;
@@ -167,18 +198,15 @@ public:
         static ManualTimer step_timer("step()");
         step_timer.start();
 
-        // Pull awaiting requests
-        {
-            std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
-            m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
-            m_awaiting_requests.clear();
-        }
+        pull_awaiting_requests();
 
         m_pipeline_metrics.requests = m_requests.size();
         Scheduler::Output scheduler_output;
         {
             static ManualTimer timer("scheduling");
             timer.start();
+            // todo: iefode: to move to other place?
+            m_scheduler->clean_empty_blocks(m_requests);
             scheduler_output = m_scheduler->schedule(m_requests);
             m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
             m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
@@ -221,7 +249,7 @@ public:
         {
             static ManualTimer timer("sample");
             timer.start();
-            sampler_output = m_sampler->sample(m_requests, logits);
+            sampler_output = m_sampler->sample(m_requests, logits, m_is_validation_mode_enabled);
             timer.end();
         }
 
@@ -382,6 +410,113 @@ public:
         m_is_chat_conversation = false;
         m_history.clear();
     };
+
+    void finish_all_requests() {
+        while (!m_requests.empty()) {
+            const auto& request = *m_requests.rbegin();
+            for (const auto& sequence : request->get_sequences()) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+            m_sampler->clear_beam_search_info(request->get_request_id());
+            m_requests.pop_back();
+        }
+    }
+
+    std::vector<ContinuousBatchingPipeline::GeneratedSequence> get_generated_sequences() {
+        pull_awaiting_requests();
+        std::vector<ContinuousBatchingPipeline::GeneratedSequence> result;
+        for (const auto& request : m_requests) {
+            const auto request_id = request->get_request_id();
+            for (const auto& sequence : request->get_sequences()) {
+                auto generated_ids = sequence->get_generated_ids();
+                auto log_probs = sequence->get_log_probs();
+                result.emplace_back(request_id, sequence->get_grouped_id(), generated_ids, log_probs);
+            }
+        }
+        return result;
+
+    }
+
+    ContinuousBatchingPipeline::UpdateSeqResult
+    update_generated_sequence(const ContinuousBatchingPipeline::GeneratedSequence& candidate_sequence) {
+        pull_awaiting_requests();
+        bool is_empty_generated_tokens = false;
+        for (auto& request : m_requests) {
+            if (candidate_sequence.request_id == request->get_request_id()) {
+                bool is_seq_exists = false;
+                // todo: iefode: multiseq
+                size_t to_remove_tokens = 0, to_insert_tokens = 0;
+                for (auto& sequence : request->get_sequences()) {
+                    if (candidate_sequence.sequence_id == sequence->get_grouped_id()) {
+                        is_seq_exists = true;
+                        auto present_ids = sequence->get_generated_ids();
+                        const auto& candidate_ids = candidate_sequence.token_ids;
+
+                        // remove extra tokens from sequence
+                        {
+                            auto token_idx = std::min(present_ids.size(), candidate_ids.size());
+                            if (token_idx) {
+                                while (token_idx-- > 0) {
+                                    if (present_ids[token_idx] == candidate_ids[token_idx]) {
+                                        break;
+                                    }
+                                }
+                                to_remove_tokens = present_ids.size() - (token_idx + 1);
+                                if (to_remove_tokens > 0) {
+                                    const auto gen_ids_before = sequence->get_generated_ids();
+                                    sequence->remove_last_n_tokens(to_remove_tokens);
+                                    present_ids = sequence->get_generated_ids();
+                                    const size_t gen_len_before = gen_ids_before.size(),
+                                                 gen_len_after = present_ids.size();
+                                    if (gen_len_after == 0) {
+                                        is_empty_generated_tokens = true;
+                                    }
+                                    OPENVINO_ASSERT(gen_len_after < gen_len_before);
+                                    for (size_t i = gen_len_after; i < gen_len_before; ++i) {
+                                        m_sampler->update_logit_processor(request->get_request_id(), gen_ids_before[i]);
+                                    }
+                                }
+                            }
+                        }
+                        // insert new tokens to sequence
+                        {
+                            OPENVINO_ASSERT(candidate_ids.size() >= present_ids.size());
+                            const auto& candidate_log_probs = candidate_sequence.log_probs;
+                            const size_t start_id = std::min(present_ids.size(), candidate_ids.size()),
+                                         stop_id = std::max(present_ids.size(), candidate_ids.size());
+                            to_insert_tokens = stop_id - start_id;
+                            for (size_t i = start_id; i < stop_id; ++i) {
+                                sequence->append_token(candidate_ids[i],  i < candidate_log_probs.size() ? candidate_log_probs[i] : 0.f);
+                            }
+                        }
+                    }
+                    break;
+                }
+                if (!is_seq_exists) {
+                    Sequence::Ptr new_sequence(new Sequence(candidate_sequence.sequence_id));
+                    const auto& generated_tokens = candidate_sequence.token_ids;
+                    const auto& generated_log_probs = candidate_sequence.log_probs;
+                    for (size_t i = 0; i < generated_tokens.size(); ++i) {
+                        new_sequence->append_token(generated_tokens[i], generated_log_probs[i]);
+                    }
+                    request->add_sequence(new_sequence);
+                }
+                if (!is_empty_generated_tokens) {
+                    // in case of non-prompt we need to take prev tokens + token to validate
+                    if (request->get_num_processed_tokens())
+                        ++to_insert_tokens;
+                    if (to_remove_tokens > 0) {
+                        request->decrease_processed_tokens(to_remove_tokens);
+                    }
+                    // to validate tokens/extend kv-cache before generation
+                    request->set_validation_len(to_insert_tokens);
+                } else if (to_remove_tokens > 0) {
+                    request->update_processed_tokens_num(request->get_prompt_len());
+                }
+                return ContinuousBatchingPipeline::UpdateSeqResult(to_insert_tokens, to_remove_tokens);
+            }
+        }
+    }
 };
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::string& models_path,
@@ -399,6 +534,16 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const std::string& device,
     const ov::AnyMap& plugin_config
 ) : m_impl{std::make_shared<Impl>(model_path, tokenizer, scheduler_config, device, plugin_config)} {}
+
+ContinuousBatchingPipeline::ContinuousBatchingPipeline(
+    ov::Core& core,
+    const std::shared_ptr<ov::Model>& model,
+    const ov::genai::Tokenizer& tokenizer,
+    const SchedulerConfig& scheduler_config,
+    const std::string& device,
+    const ov::AnyMap& plugin_config,
+    bool is_enable_validation_mode
+) : m_impl{std::make_shared<Impl>(core, model, tokenizer, scheduler_config, device, plugin_config, is_enable_validation_mode)} {}
 
 ov::genai::Tokenizer ContinuousBatchingPipeline::get_tokenizer() {
     return m_impl->get_tokenizer();
@@ -443,3 +588,16 @@ void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
 void ContinuousBatchingPipeline::finish_chat() {
     m_impl->finish_chat();
 };
+void ContinuousBatchingPipeline::finish_all_requests() {
+    m_impl->finish_all_requests();
+}
+
+std::vector<ContinuousBatchingPipeline::GeneratedSequence> 
+ContinuousBatchingPipeline::get_generated_sequences() {
+    return m_impl->get_generated_sequences();
+}
+
+ContinuousBatchingPipeline::UpdateSeqResult
+ContinuousBatchingPipeline::update_generated_sequence(const ContinuousBatchingPipeline::GeneratedSequence& new_sequence) {
+    return m_impl->update_generated_sequence(new_sequence);
+}

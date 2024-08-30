@@ -232,6 +232,9 @@ public:
         auto running_sequences = sequence_group->get_not_finished_sequences();
         for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
             auto seq_id = running_sequences[idx]->get_id();
+            if (m_block_table.count(seq_id) == 0) {
+                continue;
+            }
             OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
             auto block_table = m_block_table[seq_id];
             free_sequence_partially(seq_id, blocks_num);
@@ -442,6 +445,18 @@ public:
             }
         }
         return blocks_count;
+    }
+
+    void free_empty_physical_blocks(SequenceGroup::Ptr seq_group) {
+        size_t num_logical_blocks = seq_group->get_num_logical_blocks();
+        for (const auto& sequence : seq_group->get_running_sequences()) {
+            auto seq_id = sequence->get_id();
+            auto& block_table = m_block_table[seq_id];
+            size_t num_physical_blocks = block_table.size();
+            if (num_physical_blocks > num_logical_blocks) {
+                free_sequence_partially(seq_id, num_physical_blocks - num_logical_blocks);
+            }
+        }
     }
 
     std::map<size_t, std::list<size_t>> append_slots(SequenceGroup::Ptr seq_group) {
