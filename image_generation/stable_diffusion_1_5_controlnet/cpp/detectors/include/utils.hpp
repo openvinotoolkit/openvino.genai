@@ -26,6 +26,11 @@ ov::Tensor smart_resize(const ov::Tensor& input_tensor, int Ht, int Wt);
 
 ov::Tensor smart_resize_k(const ov::Tensor& input_tensor, float fx, float fy);
 
+template <typename T>
+ov::Tensor lanczos_resize(const ov::Tensor& input_tensor, float Ht, float Wt);
+
+ov::Tensor lanczos_resize(const ov::Tensor& input_tensor, int Ht, int Wt);
+
 // Function to pad the tensor
 std::pair<ov::Tensor, std::vector<int>> pad_right_down_corner(const ov::Tensor& img, int stride, uint8_t pad_val);
 

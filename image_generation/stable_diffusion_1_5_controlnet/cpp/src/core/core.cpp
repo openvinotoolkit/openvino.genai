@@ -212,7 +212,7 @@ ov::Tensor StableDiffusionControlnetPipeline::Preprocess(ov::Tensor pose, int* p
     *pad_width = 512 - result_width;
     *pad_height = 512 - result_height;
 
-    auto resized_tensor = smart_resize(pose, result_height, result_width);
+    auto resized_tensor = lanczos_resize(pose, result_height, result_width);
 
     std::cout << "image_width: " << image_width << ", image_height" << image_height << std::endl;
     std::cout << "pad_width: " << *pad_width << ", pad_height" << *pad_height << std::endl;

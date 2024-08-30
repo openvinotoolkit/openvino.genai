@@ -98,6 +98,54 @@ ov::Tensor smart_resize_k(const ov::Tensor& input_tensor, float fx, float fy) {
     return smart_resize(input_tensor, Ht, Wt);
 }
 
+template <typename T>
+ov::Tensor lanczos_resize(const ov::Tensor& input_tensor, int Ht, int Wt) {
+    // Get input tensor dimensions (NHWC)
+    auto input_shape = input_tensor.get_shape();
+    auto N = input_shape[0];
+    auto Ho = input_shape[1];
+    auto Wo = input_shape[2];
+    auto Co = input_shape[3];
+
+    // Prepare the output tensor
+    ov::Shape output_shape = {N, static_cast<unsigned long>(Ht), static_cast<unsigned long>(Wt), Co};
+    ov::Tensor output_tensor(ov::element::from<T>(), output_shape);
+    T* output_data = output_tensor.data<T>();
+    const T* input_data = input_tensor.data<T>();
+
+    // Process each channel separately
+    for (int c = 0; c < Co; ++c) {
+        // Extract single channel
+        cv::Mat channel(Ho, Wo, cv::DataType<T>::type);
+        for (int h = 0; h < Ho; ++h) {
+            for (int w = 0; w < Wo; ++w) {
+                channel.at<T>(h, w) = input_data[h * Wo * Co + w * Co + c];
+            }
+        }
+        // Resize the single channel
+        cv::Mat resized_channel = resize_single_channel(channel, Ht, Wt, 1);
+
+        // Copy resized channel back to the output tensor
+        for (int h = 0; h < Ht; ++h) {
+            for (int w = 0; w < Wt; ++w) {
+                output_data[h * Wt * Co + w * Co + c] = resized_channel.at<T>(h, w);
+            }
+        }
+    }
+
+    return output_tensor;
+}
+
+ov::Tensor lanczos_resize(const ov::Tensor& input_tensor, int Ht, int Wt) {
+    if (input_tensor.get_element_type() == ov::element::u8) {
+        return lanczos_resize<uint8_t>(input_tensor, Ht, Wt);
+    } else if (input_tensor.get_element_type() == ov::element::f32) {
+        return lanczos_resize<float>(input_tensor, Ht, Wt);
+    } else {
+        throw std::runtime_error("Unsupported tensor type");
+    }
+}
+
 // Function to pad the tensor
 std::pair<ov::Tensor, std::vector<int>> pad_right_down_corner(const ov::Tensor& img, int stride, uint8_t pad_val) {
     // Get input tensor dimensions (NHWC)
