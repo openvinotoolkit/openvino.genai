@@ -476,7 +476,7 @@ EncodedResults StaticLLMPipeline::generate(
     auto stop_time = std::chrono::steady_clock::now();
     // If is called without tokenization then that stat will not be reported.
     auto& metrics = results.perf_metrics;
-    metrics.num_input_tokens = 1 * input_ids.get_shape().at(1);
+    metrics.num_input_tokens = batch_size * input_ids.get_shape().at(1);
     metrics.load_time = this->m_load_time_ms;
     metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
     metrics.evaluate_statistics(start_time);
