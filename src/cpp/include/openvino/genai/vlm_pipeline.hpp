@@ -30,6 +30,30 @@ struct PromptImage {
 /// prompt and an image.
 class OPENVINO_GENAI_EXPORTS VLMPipeline {
 public:
+    // A config to follow.
+    VLMConfig m_vlm_config;
+    // A tokenizer encoding a prompt.
+    Tokenizer m_tokenizer;
+    // An encoder to infer embeddings of an image.
+    VisionEncoder m_vision_encoder;
+    // A resampler model to resample image embeddings.
+    ov::InferRequest m_resampler;
+    // A model to compute token embeddings.
+    ov::InferRequest m_embedding;
+    // A language model used to generate a response.
+    ov::InferRequest m_language;
+    // Conversation history represented as embeddings.
+    std::vector<float> m_language_embeddings_history;
+    // The actual size of m_language_embeddings_history.
+    // m_language_embeddings_history is allocated in chunks and its
+    // tail can be uninitialized.
+    size_t m_history_length;
+    // Precomputed positional embeddings for the resampler.
+    ov::Tensor m_pos_embed_cache;
+    // True if chat mode is activated to save conversation
+    // history between generate() calls.
+    bool is_chat_conversation;
+
     VLMPipeline(
         const ov::genai::Tokenizer& tokenizer,
         const VisionEncoder& vision_encoder,
@@ -144,30 +168,5 @@ public:
     }
     void start_chat() {is_chat_conversation = true;}
     void finish_chat() {is_chat_conversation = false;}
-private:
-    // A config to follow.
-    VLMConfig m_vlm_config;
-    // A tokenizer encoding a prompt.
-    Tokenizer m_tokenizer;
-    // An encoder to infer embeddings of an image.
-    VisionEncoder m_vision_encoder;
-    // A resampler model to resample image embeddings.
-    ov::InferRequest m_resampler;
-    // A model to compute token embeddings.
-    ov::InferRequest m_embedding;
-    // A language model used to generate a response.
-    ov::InferRequest m_language;
-    // Conversation history represented as embeddings.
-    std::vector<float> m_language_embeddings_history;
-    // The actual size of m_language_embeddings_history.
-    // m_language_embeddings_history is allocated in chunks and its
-    // tail can be uninitialized.
-    size_t m_history_length;
-    // Precomputed positional embeddings for the resampler.
-    ov::Tensor m_pos_embed_cache;
-    // True if chat mode is activated to save conversation
-    // history between generate() calls.
-    bool is_chat_conversation;
-
 };
 }
