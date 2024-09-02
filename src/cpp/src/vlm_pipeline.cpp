@@ -421,9 +421,11 @@ VLMPipeline::VLMPipeline(
     m_embedding{embedding},
     m_language{language_model},
     m_language_embeddings_history(2048),
+    m_history_length{0},
     m_pos_embed_cache{
         get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70})
-    } {}
+    },
+    is_chat_conversation{false} {}
 
 VLMPipeline::VLMPipeline(
     const std::filesystem::path& model_dir,
@@ -512,9 +514,12 @@ std::string VLMPipeline::generate(
         prompt = "<用户>" + prompt + "<AI>";
     }
 
+    EncodedImage embeds = pair.image ?
+        m_vision_encoder.encode( pair.image, processor_config) :
+            EncodedImage{};
     TokenizedInputs encoded = m_tokenizer.encode(prompt);
     EncodedResults generated = generate(
-        {encoded, pair.image},
+        {encoded, embeds},
         processor_config,
         vlm_config,
         streamer
@@ -536,9 +541,8 @@ EncodedResults VLMPipeline::generate(
             return pair.input_ids;
         }
     }, pair.prompt);
-    if (pair.image) {
-        EncodedImage embeds = m_vision_encoder.encode(pair.image, processor_config);
-        ov::Tensor imgEmbedTensor = get_image_embedding(embeds, m_tokenizer, m_embedding, *this);
+    if (pair.image.resized_source) {
+        ov::Tensor imgEmbedTensor = get_image_embedding(pair.image, m_tokenizer, m_embedding, *this);
 
         ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
         OPENVINO_ASSERT(

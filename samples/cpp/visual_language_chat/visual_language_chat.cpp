@@ -17,7 +17,8 @@ int main(int argc, char* argv[]) try {
     }
     ov::Tensor image = utils::load_image(argv[2]);
     std::string device = "CPU";  // GPU can be used as well
-    ov::genai::VLMPipeline pipe(argv[1], device);
+    ov::AnyMap enable_compile_cache = {ov::cache_dir("vlm_cache")};
+    ov::genai::VLMPipeline pipe(argv[1], device, enable_compile_cache);
     pipe.start_chat();
 
     std::array<std::string, 3> prompts;

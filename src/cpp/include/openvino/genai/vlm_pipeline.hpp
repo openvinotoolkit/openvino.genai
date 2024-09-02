@@ -13,7 +13,7 @@ namespace ov::genai {
 /// @brief Only batch size one is supported.
 struct EncodedPromptImage {
     EncodedInputs prompt;
-    ov::Tensor image;
+    EncodedImage image;
 };
 
 /// @brief Only batch size one is supported.
@@ -29,9 +29,9 @@ public:
     VisionEncoder m_vision_encoder;
     ov::InferRequest m_resampler, m_embedding, m_language;
     std::vector<float> m_language_embeddings_history;
-    size_t m_history_length = 0;
+    size_t m_history_length;
     ov::Tensor m_pos_embed_cache;
-    bool is_chat_conversation = false;
+    bool is_chat_conversation;
 
     VLMPipeline(
         const ov::genai::Tokenizer& tokenizer,
