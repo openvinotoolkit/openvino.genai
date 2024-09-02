@@ -437,7 +437,6 @@ int main(int argc, char* argv[]) try {
     ("cache_size", "Size of memory used for KV cache in GB. Default: 16", cxxopts::value<size_t>()->default_value("16"))
     ("device", "Target device to run the model. Default: CPU", cxxopts::value<std::string>()->default_value("CPU"))
     ("device_config", "Plugin configuration JSON. Example: '{\"MODEL_DISTRIBUTION_POLICY\":\"TENSOR_PARALLEL\",\"PERF_COUNT\":true}' Default: {\"PERF_COUNT\":true}", cxxopts::value<std::string>()->default_value("{\"PERF_COUNT\":true}"))
-    ("full_log", "Whether to enable logging of additional information, like model configuration. Use --full_log=false to disable", cxxopts::value<bool>()->default_value("true"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -465,7 +464,6 @@ int main(int argc, char* argv[]) try {
     const std::string device = result["device"].as<std::string>();
     const std::string device_config = result["device_config"].as<std::string>();
     const size_t cache_size = result["cache_size"].as<size_t>();
-    const bool full_log = result["full_log"].as<bool>();
 
     // Create requests for generation
     Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
@@ -478,6 +476,7 @@ int main(int argc, char* argv[]) try {
     scheduler_config.dynamic_split_fuse = dynamic_split_fuse,
     scheduler_config.max_num_seqs = 256, // not used if dynamic_split_fuse=True
 
+    std::cout << "To enable logging of additional information, like model configuration set environment variable OV_CB_FULL_LOG=1.";
     std::cout << "Benchmarking parameters: " << std::endl;
     std::cout << "\tMax number of batched tokens: " << scheduler_config.max_num_batched_tokens << std::endl;
     std::cout << "\tScheduling type: " << (scheduler_config.dynamic_split_fuse ? "dynamic split-fuse" : "vLLM") << std::endl;
@@ -490,7 +489,6 @@ int main(int argc, char* argv[]) try {
     std::cout << "\tMax output length: " << max_output_len << std::endl;
     std::cout << "\tTarget device: " << device << std::endl;
     std::cout << "\tPlugin configuration JSON: " << device_config << std::endl;
-    std::cout << "\tFull logging set to: " << full_log << std::endl;
 
     ov::AnyMap device_config_map = {};
     if (!parse_plugin_config_string(device_config, device_config_map)) {
@@ -500,9 +498,17 @@ int main(int argc, char* argv[]) try {
     
     // Benchmarking
     std::cout << "Loading models, creating pipelines, preparing environment..." << std::endl;
-    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map, {}, full_log);
+    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map, {});
 
-    std::cout << "Model configuration: " << std::endl << pipe.get_model_configuration_string();
+    // Enabled with env OV_CB_FULL_LOG=1
+    std::string print_values = "";
+    for (auto prop : pipe.get_model_configuration()) {
+        print_values = print_values + "\t" + prop + "\n";
+    }
+    if (!print_values.empty())
+    {
+        std::cout << "Model configuration: " << std::endl << print_values;
+    }
 
     std::cout << "Setup finished, launching LLM executor, traffic simulation and statistics reporter threads" << std::endl;
 

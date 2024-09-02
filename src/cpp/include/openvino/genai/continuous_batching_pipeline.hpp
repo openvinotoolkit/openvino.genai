@@ -33,8 +33,7 @@ public:
                                const SchedulerConfig& scheduler_config,
                                const std::string& device = "CPU",
                                const ov::AnyMap& llm_plugin_config = {},
-                               const ov::AnyMap& tokenizer_plugin_config = {},
-                               const bool full_log = false);
+                               const ov::AnyMap& tokenizer_plugin_config = {});
 
     /**
     * @brief Constructs a ContinuousBatchingPipeline when ov::genai::Tokenizer is initialized manually using file from the different dirs.
@@ -50,8 +49,7 @@ public:
         const ov::genai::Tokenizer& tokenizer,
         const SchedulerConfig& scheduler_config,
         const std::string& device="CPU",
-        const ov::AnyMap& plugin_config={},
-        const bool full_log = false
+        const ov::AnyMap& plugin_config={}
     );
 
     ov::genai::Tokenizer get_tokenizer();
@@ -63,7 +61,7 @@ public:
     GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params);
 
-    std::string get_model_configuration_string();
+    std::vector<std::string> get_model_configuration();
 
     void step();
 

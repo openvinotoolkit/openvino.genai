@@ -88,7 +88,7 @@ class ContinuousBatchingPipeline::Impl {
     }
 
 public:
-    Impl(const std::string& models_path, const Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& plugin_config, const bool full_log) :
+    Impl(const std::string& models_path, const Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& plugin_config) :
             m_tokenizer{tokenizer} {
         ov::Core core;
 
@@ -101,11 +101,9 @@ public:
 
         auto compiled_model = core.compile_model(model, device_config.get_device(), plugin_config);
 
-        if (full_log) {
-            ov::genai::utils::read_properties([compiled_model](const std::string& key) {
-                return compiled_model.get_property(key); },
-                m_model_config_namevalues);
-        }
+        ov::genai::utils::read_properties([compiled_model](const std::string& key) {
+            return compiled_model.get_property(key); },
+            m_model_config_namevalues);
 
         ov::InferRequest infer_request = compiled_model.create_infer_request();
 
@@ -131,8 +129,8 @@ public:
         // read default generation config
     }
 
-    Impl(const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& llm_plugin_config, const ov::AnyMap& tokenizer_plugin_config, const bool full_log)
-        : Impl{models_path, Tokenizer(models_path, tokenizer_plugin_config), scheduler_config, device, llm_plugin_config, full_log} {}
+    Impl(const std::string& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const ov::AnyMap& llm_plugin_config, const ov::AnyMap& tokenizer_plugin_config)
+        : Impl{models_path, Tokenizer(models_path, tokenizer_plugin_config), scheduler_config, device, llm_plugin_config} {}
 
     ov::genai::GenerationConfig get_config() const {
         return m_generation_config;
@@ -142,12 +140,11 @@ public:
         return m_pipeline_metrics;
     }
 
-    std::string get_model_configuration_string() {
-        std::string print_values = "";
-        for( auto prop : m_model_config_namevalues) {
-            print_values = print_values + "\t" + prop + "\n";
-        }
-        return print_values;
+    std::vector<std::string> get_model_configuration() {
+        if (ov::genai::utils::is_full_log_env_enabled())
+            return m_model_config_namevalues;
+
+        return std::vector<std::string>();
     }
 
     ov::genai::Tokenizer get_tokenizer() {
@@ -406,10 +403,9 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::string& model
                                                         const SchedulerConfig& scheduler_config,
                                                         const std::string& device,
                                                         const ov::AnyMap& llm_plugin_config,
-                                                        const ov::AnyMap& tokenizer_plugin_config,
-                                                        const bool full_log
+                                                        const ov::AnyMap& tokenizer_plugin_config
                                                         ) {
-    m_impl = std::make_shared<Impl>(models_path, scheduler_config, device, llm_plugin_config, tokenizer_plugin_config, full_log);
+    m_impl = std::make_shared<Impl>(models_path, scheduler_config, device, llm_plugin_config, tokenizer_plugin_config);
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingPipeline(
@@ -417,9 +413,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& plugin_config,
-    const bool full_log
-) : m_impl{std::make_shared<Impl>(model_path, tokenizer, scheduler_config, device, plugin_config, full_log)} {}
+    const ov::AnyMap& plugin_config
+) : m_impl{std::make_shared<Impl>(model_path, tokenizer, scheduler_config, device, plugin_config)} {}
 
 ov::genai::Tokenizer ContinuousBatchingPipeline::get_tokenizer() {
     return m_impl->get_tokenizer();
@@ -433,8 +428,8 @@ PipelineMetrics ContinuousBatchingPipeline::get_metrics() const{
     return m_impl->get_metrics();
 }
 
-std::string ContinuousBatchingPipeline::get_model_configuration_string() {
-    return m_impl->get_model_configuration_string();
+std::vector<std::string> ContinuousBatchingPipeline::get_model_configuration() {
+    return m_impl->get_model_configuration();
 }
 
 GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params) {

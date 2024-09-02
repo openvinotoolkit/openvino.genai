@@ -78,6 +78,8 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
 
 std::string join(const std::vector<std::string>& listOfStrings, const std::string delimiter);
 
+bool is_full_log_env_enabled();
+
 template <typename PropertyExtractor>
 static void read_properties(PropertyExtractor&& property_extractor, std::vector<std::string>& output_configuration_values) {
     auto key = std::string("SUPPORTED_PROPERTIES");  // ov::supported_properties;
