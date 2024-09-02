@@ -4,13 +4,14 @@
 #pragma once
 
 #include "openvino/genai/visibility.hpp"
-#include <openvino/runtime/compiled_model.hpp>
+#include <openvino/runtime/properties.hpp>
 #include <array>
 #include <filesystem>
 
 namespace ov::genai {
-/// @brief A Configuration class passed to VLMPipeline and used to
-/// change VLMPipeline's behavior.
+/// @brief A Configuration class passed to VisionEncoder and used to
+/// change VisionEncoder's behavior. Corresponds to
+/// preprocessor_config.json.
 class OPENVINO_GENAI_EXPORTS ProcessorConfig {
 public:
     /// @brief Dimensions of the smaller, non-overlapping patches that the
@@ -44,6 +45,7 @@ public:
  * pipe.generate(input_ids, ov::genai::scale_resolution(448), ...)
  * pipe(input_ids, ov::genai::scale_resolution(448), ...)
 */
+static constexpr ov::Property<ProcessorConfig> processor_config{"processor_config"};
 static constexpr ov::Property<size_t> patch_size{"patch_size"};
 static constexpr ov::Property<size_t> scale_resolution{"scale_resolution"};
 static constexpr ov::Property<size_t> max_slice_nums{"max_slice_nums"};

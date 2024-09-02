@@ -10,29 +10,26 @@
 #include "openvino/genai/vlm_config.hpp"
 
 namespace ov::genai {
-/// @brief Only batch size one is supported.
+/// @brief An already encoded prompt and an image.
 struct EncodedPromptImage {
+    /// @brief An encoded prompt obtained from Tokenizer::encode().
     EncodedInputs prompt;
+    /// @brief An encoded image obtained from VisionEncoder::encode().
     EncodedImage image;
 };
 
-/// @brief Only batch size one is supported.
+/// @brief A string prompt and source image.
 struct PromptImage {
+    /// @brief A prompt represented as std::string.
     StringInputs prompt;
+    /// @brief An image represented as ov::Tensor.
     ov::Tensor image;
 };
 
+/// @brief A class used to generate a response or run a chat given a
+/// prompt and an image.
 class OPENVINO_GENAI_EXPORTS VLMPipeline {
 public:
-    VLMConfig m_vlm_config;
-    Tokenizer m_tokenizer;
-    VisionEncoder m_vision_encoder;
-    ov::InferRequest m_resampler, m_embedding, m_language;
-    std::vector<float> m_language_embeddings_history;
-    size_t m_history_length;
-    ov::Tensor m_pos_embed_cache;
-    bool is_chat_conversation;
-
     VLMPipeline(
         const ov::genai::Tokenizer& tokenizer,
         const VisionEncoder& vision_encoder,
@@ -49,6 +46,7 @@ public:
         ov::Core core=ov::Core{}
     );
 
+    /// @brief Only batch size one is supported.
     EncodedResults generate(
         const EncodedPromptImage& pair,
         const ProcessorConfig& processor_config,
@@ -146,5 +144,30 @@ public:
     }
     void start_chat() {is_chat_conversation = true;}
     void finish_chat() {is_chat_conversation = false;}
+private:
+    // A config to follow.
+    VLMConfig m_vlm_config;
+    // A tokenizer encoding a prompt.
+    Tokenizer m_tokenizer;
+    // An encoder to infer embeddings of an image.
+    VisionEncoder m_vision_encoder;
+    // A resampler model to resample image embeddings.
+    ov::InferRequest m_resampler;
+    // A model to compute token embeddings.
+    ov::InferRequest m_embedding;
+    // A language model used to generate a response.
+    ov::InferRequest m_language;
+    // Conversation history represented as embeddings.
+    std::vector<float> m_language_embeddings_history;
+    // The actual size of m_language_embeddings_history.
+    // m_language_embeddings_history is allocated in chunks and its
+    // tail can be uninitialized.
+    size_t m_history_length;
+    // Precomputed positional embeddings for the resampler.
+    ov::Tensor m_pos_embed_cache;
+    // True if chat mode is activated to save conversation
+    // history between generate() calls.
+    bool is_chat_conversation;
+
 };
 }

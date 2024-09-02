@@ -266,13 +266,9 @@ ov::Tensor resample(VLMPipeline& pipe, const ov::Tensor& encoded_image, const st
 }
 
 ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tokenizer, ov::InferRequest& embedding, VLMPipeline& pipe) {
-    std::string user_prompt;
-    size_t embedding_dim;
     size_t embedding_len = 0;
-    size_t idx;
-    int scale_emb = 12;
 
-    user_prompt = "<用户>";
+    std::string user_prompt = "<用户>";
     const ov::Tensor& input_ids = tokenizer.encode(user_prompt).input_ids;
 
     auto input_len = input_ids.get_size();
@@ -286,11 +282,10 @@ ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tok
     ov::Shape out_shape = embed_output_tensor.get_shape();
     float* data = embed_output_tensor.data<float>();
 
-    embedding_dim = out_shape[out_shape.size() - 1];
+    size_t embedding_dim = out_shape[out_shape.size() - 1];
 
-    //input ids embed * config.scale_emb(12)
-    for (idx = 0; idx < embed_output_tensor.get_size(); idx++) {
-        data[idx] = data[idx] * scale_emb;
+    for (size_t idx = 0; idx < embed_output_tensor.get_size(); idx++) {
+        data[idx] = data[idx] * pipe.m_vlm_config.scale_emb;
     }
 
     //compute inputs_embedding length
@@ -332,9 +327,8 @@ ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tok
     const ov::Tensor& embed_spec_tensor = embedding.get_output_tensor();
     data = embed_spec_tensor.data<float>();
 
-    //input ids embed * config.scale_emb(12)
-    for (idx = embedding_dim; idx < embed_spec_tensor.get_size(); idx++) {
-        data[idx] = data[idx] * scale_emb;
+    for (size_t idx = embedding_dim; idx < embed_spec_tensor.get_size(); idx++) {
+        data[idx] = data[idx] * pipe.m_vlm_config.scale_emb;
     }
 
 
@@ -610,7 +604,7 @@ EncodedResults VLMPipeline::generate(
 
         //input_ids * config.scale_emb
         for (auto idx = 0; idx < embed_prompt_tensor.get_size(); idx++) {
-            embed_data[idx] = embed_data[idx] * 12;
+            embed_data[idx] = embed_data[idx] * m_vlm_config.scale_emb;
         }
 
         //record answer token info
