@@ -15,7 +15,7 @@ set(CMAKE_BUILD_TYPE "Release" CACHE STRING "CMake build type")
 
 # dependencies
 
-find_package(OpenVINO REQUIRED COMPONENTS Runtime Threading)
+find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 
 include(FetchContent)
 
