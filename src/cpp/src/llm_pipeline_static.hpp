@@ -23,6 +23,16 @@ public:
         const ov::AnyMap& config
     );
 
+    void setupAndCompileModels(
+        const std::filesystem::path& path,
+        const std::string& device,
+        ov::AnyMap& pipeline_config);
+
+    void setupAndImportModels(
+        const std::filesystem::path& path,
+        const std::string& device,
+        ov::AnyMap& pipeline_config);
+
     DecodedResults generate(
         StringInputs inputs,
         OptionalGenerationConfig generation_config,
