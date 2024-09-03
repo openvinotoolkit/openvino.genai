@@ -4,8 +4,12 @@
 
 import argparse
 import openvino_genai
-from scipy.io import wavfile
-import numpy as np
+import librosa
+
+
+def read_wav(filepath):
+    raw_speech, samplerate = librosa.load(filepath, sr=16000)
+    return raw_speech.tolist()
 
 
 def main():
@@ -14,14 +18,9 @@ def main():
     parser.add_argument("wav_file_path")
     args = parser.parse_args()
 
-    model_dir = args.model_dir
+    raw_speech = read_wav(args.wav_file_path)
 
-    samplerate, raw_speech = wavfile.read(args.wav_file_path)
-
-    # normalize to [-1 1] range
-    raw_speech = (raw_speech / np.iinfo(raw_speech.dtype).max).tolist()
-
-    pipe = openvino_genai.WhisperSpeechRecognitionPipeline(model_dir)
+    pipe = openvino_genai.WhisperSpeechRecognitionPipeline(args.model_dir)
 
     def streamer(word: str) -> bool:
         print(word, end="")

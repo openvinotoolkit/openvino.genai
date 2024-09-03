@@ -65,6 +65,20 @@ public:
         }
     }
 
+    Impl(const ov::InferRequest& encoder_request,
+         const ov::InferRequest& decoder_request,
+         const ov::InferRequest& decoder_with_past_request,
+         const ov::genai::Tokenizer& tokenizer,
+         OptionalWhisperGenerationConfig generation_config = std::nullopt)
+        : m_tokenizer{tokenizer} {
+        WhisperGenerationConfig default_config;
+        m_generation_config = (generation_config.has_value()) ? *generation_config : default_config;
+
+        m_models.encoder = encoder_request;
+        m_models.decoder = decoder_request;
+        m_models.decoder_with_past = decoder_with_past_request;
+    }
+
     Impl(const std::filesystem::path& model_path, const std::string& device, const ov::AnyMap& plugin_config)
         : Impl{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
 
@@ -115,6 +129,22 @@ ov::genai::WhisperSpeechRecognitionPipeline::WhisperSpeechRecognitionPipeline(co
                                                                               const ov::AnyMap& plugin_config) {
     auto start_time = std::chrono::steady_clock::now();
     m_impl = std::make_unique<WhisperSpeechRecognitionPipeline::Impl>(model_path, tokenizer, device, plugin_config);
+    auto stop_time = std::chrono::steady_clock::now();
+    m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+}
+
+ov::genai::WhisperSpeechRecognitionPipeline::WhisperSpeechRecognitionPipeline(
+    const ov::InferRequest& encoder_request,
+    const ov::InferRequest& decoder_request,
+    const ov::InferRequest& decoder_with_past_request,
+    const ov::genai::Tokenizer& tokenizer,
+    OptionalWhisperGenerationConfig generation_config) {
+    auto start_time = std::chrono::steady_clock::now();
+    m_impl = std::make_unique<WhisperSpeechRecognitionPipeline::Impl>(encoder_request,
+                                                                      decoder_request,
+                                                                      decoder_with_past_request,
+                                                                      tokenizer,
+                                                                      generation_config);
     auto stop_time = std::chrono::steady_clock::now();
     m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }

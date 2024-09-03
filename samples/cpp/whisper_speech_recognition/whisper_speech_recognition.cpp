@@ -16,12 +16,12 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::WhisperSpeechRecognitionPipeline pipeline{model_path};
 
-    auto streamer = [](std::string subword) {
-        std::cout << subword << std::flush;
-        return false;
-    };
+    ov::genai::WhisperGenerationConfig config{model_path + "/generation_config.json"};
+    config.max_length = 100;
 
-    pipeline.generate(raw_speech, ov::genai::streamer(streamer));
+    std::vector<std::string> result = pipeline.generate(raw_speech);
+
+    std::cout << result[0] << std::endl;
 
 } catch (const std::exception& error) {
     try {

@@ -14,6 +14,7 @@
 namespace ov::genai {
 
 using OptionalWhisperGenerationConfig = std::optional<WhisperGenerationConfig>;
+
 using RawSpeechInput = std::vector<float>;
 
 class OPENVINO_GENAI_EXPORTS WhisperSpeechRecognitionPipeline {
@@ -22,19 +23,35 @@ class OPENVINO_GENAI_EXPORTS WhisperSpeechRecognitionPipeline {
 
 public:
     /**
-     * @brief Constructs an LLMPipeline from xml/bin files, tokenizers and configuration in the same dir.
+     * @brief Constructs an WhisperSpeechRecognitionPipeline from xml/bin files, tokenizers and configuration in the
+     * same dir.
      *
      * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
      * @param device optional device
      * @param plugin_config optional plugin_config
      */
-    WhisperSpeechRecognitionPipeline(const std::string& path,
+    WhisperSpeechRecognitionPipeline(const std::string& model_path,
                                      const std::string& device = "CPU",
                                      const ov::AnyMap& plugin_config = {});
 
     /**
-     * @brief Constructs a LLMPipeline when ov::genai::Tokenizer is initialized manually using file from the different
-     * dirs.
+     * @brief Constructs an WhisperSpeechRecognitionPipeline from already existing infer InferRequests and Tokenizer
+     *
+     * @param encoder_request infer request of the encoder model
+     * @param decoder_request infer request of the decoder model
+     * @param decoder_with_past_request infer request of the decoder_with_past model
+     * @param tokenizer initialized Tokenizer
+     * @param generation_config optional generation_config, be default will be initialized for greedy decoding
+     */
+    WhisperSpeechRecognitionPipeline(const ov::InferRequest& encoder_request,
+                                     const ov::InferRequest& decoder_request,
+                                     const ov::InferRequest& decoder_with_past_request,
+                                     const ov::genai::Tokenizer& tokenizer,
+                                     OptionalWhisperGenerationConfig generation_config = std::nullopt);
+
+    /**
+     * @brief Constructs a WhisperSpeechRecognitionPipeline when ov::genai::Tokenizer is initialized manually using file
+     * from the different dirs.
      *
      * @param model_path Path to the dir with model, tokenizer .xml/.bin files, and generation_configs.json
      * @param tokenizer manually initialized ov::genai::Tokenizer
@@ -61,11 +78,11 @@ public:
                             StreamerVariant streamer = std::monostate());
 
     /**
-     * @brief High level generate that receives prompts as a string or a vector of strings and returns decoded output.
+     * @brief High level generate that receives raw speech as a vector of floats and returns decoded output.
      * properties can be in any order pipe.generate(..., ov::genai::max_new_tokens(100),
      * ov::genai::streamer(lambda_func)).
      *
-     * @param raw_speech_input input prompt or a vector of prompts
+     * @param raw_speech_input raw speech input
      * @param properties properties
      * @return DecodedResults decoded resulting text
      */
