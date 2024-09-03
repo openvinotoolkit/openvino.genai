@@ -101,7 +101,7 @@ KVAxesPosition get_kv_axes(const std::string& model_type) {
         axes.seq_len = 1u;
     } else {
         axes.batch = 0u;
-        axes.batch = 2u;
+        axes.seq_len = 2u;
     }
     return axes;
 }
