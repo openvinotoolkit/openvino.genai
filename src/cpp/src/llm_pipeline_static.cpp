@@ -90,16 +90,27 @@ struct KVAxesPosition {
     uint32_t seq_len;
 };
 
-KVAxesPosition get_kv_axes(const std::string& model_type) {
-    if (model_type == "chatglm")
-        return {1u, 0u};
-    else if (model_type == "qwen" || model_type == "qwen2")
-        return {0u, 1u};
-    else
-        return {0u, 2u};
+bool startswith(const std::string& str, const std::string& prefix) {
+    return str.rfind(prefix) == 0;
 }
 
-std::string get_model_type(const std::filesystem::path& filepath) {
+KVAxesPosition get_kv_axes(const std::string& model_type) {
+    KVAxesPosition axes;
+    if (startswith(model_type, "chatglm")) {
+        std::cout<<"BBB"<<std::endl;
+        axes.batch = 1u;
+        axes.seq_len = 0u;
+    } else if (startswith(model_type, "qwen")) {
+        axes.batch = 0u;
+        axes.seq_len = 1u;
+    } else {
+        axes.batch = 0u;
+        axes.batch = 2u;
+    }
+    return axes;
+}
+
+std::string get_model_type_from_json(const std::filesystem::path& filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
         throw std::runtime_error("Could not open file: " + filepath.string());
@@ -248,12 +259,10 @@ StaticLLMPipeline::StaticLLMPipeline(
     // (6) Reshape both models to static shape
     const auto kMaxPromptLen = pop_or_default(pipeline_config, "MAX_PROMPT_LEN", 1024u);
     const auto kMinResponseLen = pop_or_default(pipeline_config, "MIN_RESPONSE_LEN", 150u);
-    std::string model_type = get_model_type(path / "config.json");
-    KVAxesPosition kv_axes_position = get_kv_axes(model_type);
-    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, kv_axes_position.seq_len };
-    auto config_file_path = path / "config.json";
-    reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, kv_axes_position);
-    reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, kv_axes_position);
+    KVAxesPosition axes = get_kv_axes(get_model_type_from_json(path / "config.json"));
+    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len };
+    reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
+    reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
     // (7) Compile both model
     auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", get_default_prefill_config());
     auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", get_default_generate_config());
