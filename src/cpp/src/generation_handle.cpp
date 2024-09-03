@@ -45,6 +45,7 @@ void add_partial_result(std::unordered_map<uint64_t, GenerationOutput>& partial_
             partial_results.emplace(iteration_result.first, iteration_result.second);
         } else {
             partial_result_iter->second.generated_ids.push_back(iteration_result.second.generated_ids[0]);
+            partial_result_iter->second.generated_log_probs.push_back(iteration_result.second.generated_log_probs[0]);
             partial_result_iter->second.score = iteration_result.second.score;
             partial_result_iter->second.finish_reason = iteration_result.second.finish_reason;
         }
