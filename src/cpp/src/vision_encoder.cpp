@@ -195,8 +195,7 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap device_config, ov::Core core) :
     VisionEncoder{
         core.compile_model(
-            // CPU only because of 146022.
-            model_dir / "openvino_vision.xml", "CPU", device_config
+            model_dir / "openvino_vision.xml", device, device_config
         ).create_infer_request(),
         ov::genai::utils::from_config_json_if_exists<ov::genai::ProcessorConfig>(
             model_dir, "preprocessor_config.json"
