@@ -97,7 +97,6 @@ bool startswith(const std::string& str, const std::string& prefix) {
 KVAxesPosition get_kv_axes(const std::string& model_type) {
     KVAxesPosition axes;
     if (startswith(model_type, "chatglm")) {
-        std::cout<<"BBB"<<std::endl;
         axes.batch = 1u;
         axes.seq_len = 0u;
     } else if (startswith(model_type, "qwen")) {
