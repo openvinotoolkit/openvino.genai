@@ -90,16 +90,13 @@ struct KVAxesPosition {
     uint32_t seq_len;
 };
 
-bool startswith(const std::string& str, const std::string& prefix) {
-    return str.rfind(prefix) == 0;
-}
-
 KVAxesPosition get_kv_axes(const std::string& model_type) {
     KVAxesPosition axes;
-    if (startswith(model_type, "chatglm")) {
+    if (model_type == "chatglm") {
         axes.batch = 1u;
         axes.seq_len = 0u;
-    } else if (startswith(model_type, "qwen")) {
+    } else if (model_type == "qwen") {
+        // Note, qwen2 does not fall into this category and conforms to default layout
         axes.batch = 0u;
         axes.seq_len = 1u;
     } else {
