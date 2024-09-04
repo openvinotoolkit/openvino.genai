@@ -69,7 +69,7 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
         run: |
           source openvino_sd_cpp/bin/activate
-          optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
+          optimum-cli export openvino --model botp/stable-diffusion-v1-5 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
 
       - name: Run app
         working-directory: ${{ env.WORKING_DIRECTORY }}
@@ -124,7 +124,7 @@ jobs:
           working-directory: ${{ env.WORKING_DIRECTORY }}
           run: |
             . "./openvino_sd_cpp/Scripts/Activate.ps1"
-            optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
+            optimum-cli export openvino --model botp/stable-diffusion-v1-5 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
 
         - name: Run app
           working-directory: ${{ env.WORKING_DIRECTORY }}

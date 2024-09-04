@@ -57,7 +57,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
 2. Download the model from Huggingface and convert it to OpenVINO IR via [optimum-intel CLI](https://github.com/huggingface/optimum-intel).
 
     Example models to download:
-    - [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5)
+    - [botp/stable-diffusion-v1-5](https://huggingface.co/botp/stable-diffusion-v1-5)
     - [dreamlike-art/dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0)
 
     Example command for downloading [dreamlike-art/dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0) model and exporting it with FP16 precision:
