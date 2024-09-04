@@ -19,10 +19,14 @@ int main(int argc, char* argv[]) try {
     ov::genai::WhisperGenerationConfig config{model_path + "/generation_config.json"};
     config.max_length = 100;
 
-    std::vector<std::string> result = pipeline.generate(raw_speech);
+    auto streamer = [](std::string word) {
+        std::cout << word;
+        return false;
+    };
 
-    std::cout << result[0] << std::endl;
+    pipeline.generate(raw_speech, ov::genai::streamer(streamer));
 
+    std::cout << std::endl;
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
