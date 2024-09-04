@@ -1,7 +1,7 @@
 // Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "read_image.hpp"
+#include "load_image.hpp"
 #include <openvino/genai/vlm_pipeline.hpp>
 #include <openvino/runtime/intel_gpu/properties.hpp>
 
@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) try {
     }
     ov::Tensor image = utils::load_image(argv[2]);
     std::string device = "CPU";  // GPU can be used as well
-    ov::AnyMap enable_compile_cache = {ov::cache_dir("vlm_cache")};
+    ov::AnyMap enable_compile_cache;// = {ov::cache_dir("vlm_cache")};
     ov::genai::VLMPipeline pipe(argv[1], device, enable_compile_cache);
     pipe.start_chat();
 

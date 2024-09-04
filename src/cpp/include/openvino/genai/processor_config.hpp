@@ -19,15 +19,19 @@ public:
     /// transformer model. Used to divide image height and width.
     size_t patch_size = 14;
     /// @brief A recommended size to resize an input image.
+    /// llava calls it crop_size[height, width].
     size_t scale_resolution = 448;
     /// @brief Maximum allowed number of intput image slices.
     /// 0 disables slicing.
+    /// llava has image_grid_pinpoints instead.
     size_t max_slice_nums = 0;
     /// @brief RGB values to be subtracted from image pixel values.
     /// Applied before norm_std.
+    /// llava calls it image_mean.
     std::array<float, 3> norm_mean{0.0f, 0.0f, 0.0f};
     /// @brief RGB values to divide image pixel values.
     /// Applied after norm_mean.
+    /// llava calls it image_std.
     std::array<float, 3> norm_std{1.0f, 1.0f, 1.0f};
     /// @brief Default constructor
     ProcessorConfig() = default;

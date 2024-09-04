@@ -12,8 +12,8 @@ namespace ov::genai {
 /// change VLMPipeline's behavior. Corresponds to config.json.
 class OPENVINO_GENAI_EXPORTS VLMConfig {
 public:
-    /// @brief The size of a single embedding returned by VisionEncoder.
-    /// Used to initialize m_pos_embed_cache.
+    /// @brief The size of a single embedding returned by a resampler.
+    /// Used to initialize positional embeddings for resampler input.
     size_t hidden_size = 2304;
     /// @brief multiply embeddings by this value.
     float scale_emb = 12.0f;

@@ -10,7 +10,7 @@ file(DOWNLOAD
     https://raw.githubusercontent.com/nothings/stb/f75e8d1cad7d90d72ef7a4661f1b994ef78b4e31/stb_image.h
     ${CMAKE_BINARY_DIR}/stb_image.h)
 
-add_executable(visual_language_chat visual_language_chat.cpp read_image.cpp)
+add_executable(visual_language_chat visual_language_chat.cpp load_image.cpp)
 target_include_directories(visual_language_chat PRIVATE "${CMAKE_CURRENT_SOUCE_DIR}" "${CMAKE_BINARY_DIR}")
 target_link_libraries(visual_language_chat PRIVATE openvino::genai)
 set_target_properties(visual_language_chat PROPERTIES

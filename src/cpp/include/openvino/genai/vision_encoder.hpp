@@ -20,7 +20,8 @@ struct HeightWidth {
 struct EncodedImage {
     /// @brief Embeddings of a resized image based on ProcessorConfig's
     /// scale_resolution. The tensor's shape is
-    /// [1, number_of_embeddings, embedding_size].
+    /// [N, H*W, hidden_size]. [N, 1014, 1152] is a possible example for
+    /// openbmb/MiniCPM-V-2. Only batch 1 is supported.
     ov::Tensor resized_source;
     /// @brief A size of an image used to compute embeddings for
     /// divided by ProcessorConfig's patch_size.
@@ -68,7 +69,7 @@ public:
     );
 
     /// @brief Compute embeddings of an image.
-    /// @param image An image to infer embeddings for. image shape must be
+    /// @param image An image to infer embeddings for. Image shape must be
     /// [1CHW]. Only batch 1 is supported.
     /// @return Resulting embeddings for the resized source image and
     /// its slices.
@@ -77,7 +78,7 @@ public:
     }
 
     /// @brief Compute embeddings of an image given ProcessorConfig.
-    /// @param image An image to infer embeddings for. image shape must be
+    /// @param image An image to infer embeddings for. Image shape must be
     /// [1CHW]. Only batch 1 is supported.
     /// @param config A config to follow instead of the config obtained
     /// in constructors.
@@ -89,7 +90,7 @@ public:
 
     /// @brief Compute embeddings of an image given
     /// ProcessorConfig members.
-    /// @param image An image to infer embeddings for. image shape must be
+    /// @param image An image to infer embeddings for. Image shape must be
     /// [1CHW]. Only batch 1 is supported.
     /// @param config_map A config or its members values to follow
     /// instead of the config obtained in constructors.
@@ -101,7 +102,7 @@ public:
 
     /// @brief Compute embeddings of an image given
     /// ProcessorConfig members.
-    /// @param image An image to infer embeddings for. image shape must be
+    /// @param image An image to infer embeddings for. Image shape must be
     /// [1CHW]. Only batch 1 is supported.
     /// @param ...properties A config or its members values to follow
     /// instead of the config obtained in constructors.

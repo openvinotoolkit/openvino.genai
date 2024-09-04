@@ -6,7 +6,7 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-#include "read_image.hpp"
+#include "load_image.hpp"
 
 ov::Tensor utils::load_image(const std::filesystem::path& image_path) {
     int x = 0, y = 0, channels_in_file = 0;

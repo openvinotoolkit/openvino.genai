@@ -26,8 +26,8 @@ struct PromptImage {
     ov::Tensor image;
 };
 
-/// @brief A class used to generate a response or run a chat given a
-/// prompt and an image.
+/// @brief A Visual language modeling pipeline class used to generate a
+/// response or run a chat given a prompt and an image.
 class OPENVINO_GENAI_EXPORTS VLMPipeline {
 public:
     // A config to follow.
@@ -37,10 +37,17 @@ public:
     // An encoder to infer embeddings of an image.
     VisionEncoder m_vision_encoder;
     // A resampler model to resample image embeddings.
+    // [N, H*W, old_hidden_size] is the input shape.
+    // [N, query_num, hidden_size] is the output shape.
     ov::InferRequest m_resampler;
     // A model to compute token embeddings.
+    // Input shape: [N, conversation length].
+    // Output shape: [1, conversation length, hidden_size].
     ov::InferRequest m_embedding;
     // A language model used to generate a response.
+    // Input shapes: inputs_embeds[N, conversation length, hidden_size],
+    // position_ids[N, conversation length], beam_idx[N].
+    // Output shape: logits[N, conversation length, vocab_size].
     ov::InferRequest m_language;
     // Conversation history represented as embeddings.
     std::vector<float> m_language_embeddings_history;
@@ -49,6 +56,8 @@ public:
     // tail can be uninitialized.
     size_t m_history_length;
     // Precomputed positional embeddings for the resampler.
+    // [70, 70, hidden_size]. 70 is the initial guess of the image
+    // height and width after dividing by patch_size.
     ov::Tensor m_pos_embed_cache;
     // True if chat mode is activated to save conversation
     // history between generate() calls.

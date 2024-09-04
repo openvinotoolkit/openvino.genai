@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/vlm_pipeline.hpp"
+#include "openvino/genai/tokenizer.hpp"
 #include "vlm_sampling.hpp"
 #include "clip.hpp"
 #include <openvino/openvino.hpp>
@@ -258,11 +258,11 @@ ov::Tensor resample(VLMPipeline& pipe, const ov::Tensor& encoded_image, const st
         std::fill_n(mask_data + i * max_patch_len, patch_len[i], false);
         std::fill_n(mask_data + i * max_patch_len + patch_len[i], max_patch_len - patch_len[i], true);
     }
-    pipe.m_resampler.set_tensor("x", encoded_image);
-    pipe.m_resampler.set_tensor("pos_embed", pos_embed);
-    pipe.m_resampler.set_tensor("key_padding_mask", key_padding_mask);
+    pipe.m_resampler.set_tensor("x", encoded_image);  // [N, H*W, old_hidden_size]
+    pipe.m_resampler.set_tensor("pos_embed", pos_embed);  // [H*W, N, new_hidden_size]
+    pipe.m_resampler.set_tensor("key_padding_mask", key_padding_mask);  // [N, H*W]
     pipe.m_resampler.infer();
-    return pipe.m_resampler.get_output_tensor();
+    return pipe.m_resampler.get_output_tensor();  // [N, query_num, new_hidden_size]
 }
 
 ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tokenizer, ov::InferRequest& embedding, VLMPipeline& pipe) {
