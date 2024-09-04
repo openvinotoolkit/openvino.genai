@@ -783,7 +783,10 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
     py::class_<MeanStdPair>(m, "MeanStdPair")
         .def(py::init<>())
         .def_readonly("mean", &MeanStdPair::mean)
-        .def_readonly("std", &MeanStdPair::std);
+        .def_readonly("std", &MeanStdPair::std)
+        .def("__iter__", [](const MeanStdPair &self) {
+            return py::make_iterator(&self.mean, &self.std + 1);
+        }, py::keep_alive<0, 1>());  // Keep object alive while the iterator is used;
 
     py::class_<PerfMetrics>(m, "PerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
