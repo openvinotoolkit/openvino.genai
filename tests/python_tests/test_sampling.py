@@ -81,7 +81,7 @@ def test_eos_greedy(tmp_path):
 @pytest.mark.precommit
 @pytest.mark.parametrize("generation_config", [get_greedy(), get_greedy_with_min_and_max_tokens(), get_greedy_with_repetition_penalty(), get_greedy_with_single_stop_string(),
                                                get_greedy_with_multiple_stop_strings(), get_greedy_with_multiple_stop_strings_no_match(), 
-                                               get_beam_search(), get_beam_search_min_and_max_tokens(),],
+                                               get_beam_search(), get_beam_search_min_and_max_tokens(), get_beam_search_with_multiple_stop_strings_no_match(), ],
         ids=[
             "greedy",
             "greedy_with_min_and_max_tokens",
@@ -91,6 +91,7 @@ def test_eos_greedy(tmp_path):
             "greedy_with_multiple_stop_strings_no_match",
             "beam",
             "beam_search_min_and_max_tokens",
+            "beam_search_with_multiple_stop_strings_no_match",
             ])
 def test_individual_generation_configs_deterministic(tmp_path, generation_config):
     prompts = [
@@ -101,12 +102,15 @@ def test_individual_generation_configs_deterministic(tmp_path, generation_config
     generate_and_compare_with_hf(model_id, prompts, generation_configs, DEFAULT_SCHEDULER_CONFIG, tmp_path)
 
 @pytest.mark.precommit
-@pytest.mark.skip(reason="Stop strings do not seem to work as expected with beam search in HF, so comparison will fail. If it changes, these cases shall be merged to the test above.")
-@pytest.mark.parametrize("generation_config", [get_beam_search_with_single_stop_string(), get_beam_search_with_multiple_stop_strings(), get_beam_search_with_multiple_stop_strings_no_match()],
+@pytest.mark.xfail(
+    raises=AssertionError,
+    reason="Stop strings do not seem to work as expected with beam search in HF, so comparison will fail. If it changes, these cases shall be merged to the test above.",
+    strict=True,
+)
+@pytest.mark.parametrize("generation_config", [get_beam_search_with_single_stop_string(), get_beam_search_with_multiple_stop_strings(),],
         ids=[
             "beam_search_with_single_stop_string",
             "beam_search_with_multiple_stop_strings",
-            "beam_search_with_multiple_stop_strings_no_match",
             ])
 def test_beam_search_with_stop_string(tmp_path, generation_config):
     prompts = [
