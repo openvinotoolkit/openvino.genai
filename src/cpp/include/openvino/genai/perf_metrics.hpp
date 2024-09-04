@@ -110,7 +110,7 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     float get_load_time();         // Load time in ms.
     size_t get_num_generated_tokens();
     size_t get_num_input_tokens();
-    MeanStdPair get_ttft();         // Time to the first token (in ms) (TTTFT).
+    MeanStdPair get_ttft();         // Time to the first token (in ms) (TTFT).
     MeanStdPair get_tpot();        // Time (in ms) per output token (TPOT).
     MeanStdPair get_throughput();  // Tokens per second.
     
