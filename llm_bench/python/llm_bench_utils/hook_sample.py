@@ -151,6 +151,7 @@ def new_sample(
             next_token_logits = outputs.logits[:, -1, :]
 
             # pre-process distribution
+            time.sleep(0.001)
             next_token_scores = logits_processor(input_ids, next_token_logits)
             if do_sample:
                 next_token_scores = logits_warper(input_ids, next_token_scores)
