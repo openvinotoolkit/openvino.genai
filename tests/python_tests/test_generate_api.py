@@ -724,7 +724,7 @@ def test_cb_streamer_vs_return_vs_stateful(prompt):
     assert generated == "".join(streamed)
     assert "".join(streamed) == reference
 
-def run_perf_metrics_collection(model_descr, generation_config: Dict, prompt: str) -> ov_genai.DecodedResults:
+def run_perf_metrics_collection(model_descr, generation_config: Dict, prompt: str) -> ov_genai.PerfMetrics:
     model_id, path, tokenizer, model, pipe = model_descr
 
     config = generation_config.copy()  # to avoid side effects
@@ -736,7 +736,7 @@ def run_perf_metrics_collection(model_descr, generation_config: Dict, prompt: st
         # Do not apply 'repetition_penalty' if sampling is not used.
         config['do_sample'] = False
         config['repetition_penalty'] = None
-    return pipe.generate([prompt], **config)
+    return pipe.generate([prompt], **config).perf_metrics
 
 
 test_cases = [
@@ -749,12 +749,9 @@ test_cases = [
 def test_perf_metrics(model_descr, generation_config, prompt):
     import time
     start_time = time.perf_counter()
-    decoded_results = run_perf_metrics_collection(read_model(model_descr), generation_config, prompt)
+    perf_metrics = run_perf_metrics_collection(read_model(model_descr), generation_config, prompt)
     total_time = (time.perf_counter() - start_time) * 1000
     
-    perf_metrics = decoded_results.perf_metrics
-    raw_metrics = perf_metrics.raw_metrics
-
     # Check that load time is adequate.
     load_time = perf_metrics.get_load_time()
     assert load_time > 0 and load_time < 1000.0  
@@ -792,7 +789,9 @@ def test_perf_metrics(model_descr, generation_config, prompt):
     assert (mean_detok_duration, std_detok_duration) == (perf_metrics.get_detokenization_duration().mean, perf_metrics.get_detokenization_duration().std)
     assert mean_detok_duration > 0 and mean_detok_duration < mean_gen_duration
     assert std_detok_duration == 0
-
+    
+    # assert that calculating statistics manually from the raw counters we get the same restults as from PerfMetrics
+    raw_metrics = perf_metrics.raw_metrics
     raw_dur = np.array(raw_metrics.generate_durations) / 1000
     assert np.allclose(mean_gen_duration, np.mean(raw_dur))
     assert np.allclose(std_gen_duration, np.std(raw_dur))
