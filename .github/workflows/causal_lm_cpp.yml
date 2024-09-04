@@ -554,7 +554,6 @@ jobs:
 
   cpp-chat_sample-ubuntu:
     runs-on: ubuntu-20.04
-    if: false  # Skip temporarily until https://github.com/openvinotoolkit/openvino_tokenizers/pull/235 is merged.
     steps:
       - uses: actions/checkout@v4
         with:
