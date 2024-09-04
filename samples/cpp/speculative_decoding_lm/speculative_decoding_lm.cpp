@@ -272,7 +272,7 @@ int main(int argc, char* argv[]) try {
 
     ov::InferRequest draft_model = core.compile_model(ov_draft_model, "CPU").create_infer_request();
 
-    uint64_t seq_len = input_ids.get_shape()[1];
+    size_t seq_len = input_ids.get_shape()[1];
 
     // main model (which is bigger, more accurate but slower)
     std::shared_ptr<ov::Model> ov_main_model = core.read_model(std::string{argv[2]} + "/openvino_model.xml");
