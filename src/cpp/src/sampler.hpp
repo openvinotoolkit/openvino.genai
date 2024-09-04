@@ -85,7 +85,7 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
 }
 
 // Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
-int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings) {
+int match_stop_string2(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings) {
     /*
     For catching stop_string hit we run comparisons character-wise to catch cases where stop string 
     overlaps with part of another token on both sides or is just a part of a single token. 
@@ -121,6 +121,37 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
             generated_tokens_rit++;
         }
     }
+    return 0;
+}
+
+// Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
+// Number of tokens might not be exact as if there's no direct token match, we decode generated tokens incrementally expanding decoding scope
+// with 4 next tokens with each iteration until we check all tokens.
+int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings) {
+    for (auto stop_string: stop_strings) {
+        auto stop_tokens_ov = tokenizer.encode(stop_string).input_ids;
+        size_t num_tokens = stop_tokens_ov.get_size();
+        if(num_tokens > generated_tokens.size())
+            continue;
+
+        // Check direct token match
+        std::vector<int64_t> stop_tokens(stop_tokens_ov.data<int64_t>(), stop_tokens_ov.data<int64_t>() + num_tokens);
+        std::vector<int64_t> last_generated_tokens(generated_tokens.end()-num_tokens, generated_tokens.end());
+        if (stop_tokens == last_generated_tokens)
+            return num_tokens;
+        
+        // Continue checking chunks of 4 tokens
+        num_tokens += 4;
+        while (num_tokens <= generated_tokens.size()) {
+            std::vector<int64_t> last_generated_tokens(generated_tokens.end()-num_tokens, generated_tokens.end());
+            std::string decoded_last_tokens = tokenizer.decode(last_generated_tokens);
+            if (decoded_last_tokens.find(stop_string) != std::string::npos) {
+                return num_tokens;
+            }
+            num_tokens += 4;
+        }
+    }
+
     return 0;
 }
 
