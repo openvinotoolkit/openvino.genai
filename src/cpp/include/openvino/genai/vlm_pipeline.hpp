@@ -64,12 +64,12 @@ public:
     bool is_chat_conversation;
 
     VLMPipeline(
+        const std::filesystem::path& model_dir,
         const ov::genai::Tokenizer& tokenizer,
         const VisionEncoder& vision_encoder,
-        const ov::InferRequest& resampler,
-        const ov::InferRequest& embedding,
-        const ov::InferRequest& language_model,
-        const VLMConfig& vlm_config=VLMConfig{}
+        const std::string& device="CPU",
+        const ov::AnyMap device_config={},
+        ov::Core core=ov::Core{}
     );
 
     explicit VLMPipeline(
@@ -114,19 +114,6 @@ public:
             streamer
         );
     }
-    EncodedResults generate(
-        const EncodedPromptImage& pair,
-        const ov::AnyMap& config_map
-    );
-    template <typename... Properties>
-    util::EnableIfAllStringAny<EncodedResults, Properties...> generate(
-        const EncodedPromptImage& pair,
-        Properties&&... properties
-    ) {
-        return generate(pair, AnyMap{
-            std::forward<Properties>(properties)...
-        });
-    }
 
     std::string generate(
         const PromptImage& pair,
@@ -161,19 +148,6 @@ public:
             m_vlm_config,
             streamer
         );
-    }
-    std::string generate(
-        const PromptImage& pair,
-        const ov::AnyMap& config_map
-    );
-    template <typename... Properties>
-    util::EnableIfAllStringAny<std::string, Properties...> generate(
-        const PromptImage& pair,
-        Properties&&... properties
-    ) {
-        return generate(pair, AnyMap{
-            std::forward<Properties>(properties)...
-        });
     }
     void start_chat() {is_chat_conversation = true;}
     void finish_chat() {is_chat_conversation = false;}

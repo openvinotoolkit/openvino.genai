@@ -30,13 +30,4 @@ public:
     /// @param A config to copy from.
     VLMConfig(const VLMConfig&) = default;
 };
-/*
- * Utils that allow to use generate() and operator()() in the following way:
- * pipe.generate(input_ids, ov::genai::scale_resolution(448), ...)
- * pipe(input_ids, ov::genai::scale_resolution(448), ...)
-*/
-static constexpr ov::Property<VLMConfig> vlm_config{"vlm_config"};
-static constexpr ov::Property<size_t> hidden_size{"hidden_size"};
-static constexpr ov::Property<size_t> scale_emb{"scale_emb"};
-static constexpr ov::Property<size_t> query_num{"query_num"};
 }  // namespace ov::genai

@@ -382,38 +382,32 @@ ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tok
     }
     return imgEmbedding;
 }
-
-VLMConfig from_any_map(
-    const ov::AnyMap& config_map, const VLMConfig& initial
-) {
-    auto iter = config_map.find("vlm_config");
-    VLMConfig extracted_config = config_map.end() != iter ?
-        iter->second.as<VLMConfig>() : initial;
-    using utils::read_anymap_param;
-    read_anymap_param(
-        config_map, "hidden_size", extracted_config.hidden_size);
-    read_anymap_param(
-        config_map, "scale_emb", extracted_config.scale_emb);
-    read_anymap_param(
-        config_map, "query_num", extracted_config.query_num);
-    return extracted_config;
-}
 }
 
 VLMPipeline::VLMPipeline(
+    const std::filesystem::path& model_dir,
     const Tokenizer& tokenizer,
     const VisionEncoder& vision_encoder,
-    const ov::InferRequest& resampler,
-    const ov::InferRequest& embedding,
-    const ov::InferRequest& language_model,
-    const VLMConfig& vlm_config
+    const std::string& device,
+    const ov::AnyMap device_config,
+    ov::Core core
 ) :
-    m_vlm_config{vlm_config},
+    m_vlm_config{
+        utils::from_config_json_if_exists<ov::genai::VLMConfig>(
+            model_dir, "config.json"
+        )
+    },
     m_tokenizer{tokenizer},
     m_vision_encoder{vision_encoder},
-    m_resampler{resampler},
-    m_embedding{embedding},
-    m_language{language_model},
+    m_resampler{core.compile_model(
+        model_dir / "openvino_resampler.xml", device, device_config
+    ).create_infer_request()},
+    m_embedding{core.compile_model(
+        model_dir / "openvino_embedding.xml", device, device_config
+    ).create_infer_request()},
+    m_language{core.compile_model(
+        model_dir / "openvino_model.xml", device, device_config
+    ).create_infer_request()},
     m_language_embeddings_history(2048),
     m_history_length{0},
     m_pos_embed_cache{
@@ -427,34 +421,13 @@ VLMPipeline::VLMPipeline(
     const ov::AnyMap device_config,
     ov::Core core
 ) : VLMPipeline{
-    ov::genai::Tokenizer(model_dir.string(), device_config),
+    model_dir,
+    Tokenizer(model_dir.string(), device_config),
     VisionEncoder(model_dir, device, device_config, core),
-    core.compile_model(
-        model_dir / "openvino_resampler.xml", device, device_config
-    ).create_infer_request(),
-    core.compile_model(
-        model_dir / "openvino_embedding.xml", device, device_config
-    ).create_infer_request(),
-    core.compile_model(
-        model_dir / "openvino_model.xml", device, device_config
-    ).create_infer_request(),
-    utils::from_config_json_if_exists<ov::genai::VLMConfig>(
-        model_dir, "config.json"
-    )
+    device,
+    device_config,
+    core
 } {}
-
-EncodedResults VLMPipeline::generate(
-    const EncodedPromptImage& pair,
-    const ov::AnyMap& config_map
-) {
-    return generate(
-        pair,
-        utils::from_any_map(
-            config_map, m_vision_encoder.m_processor_config
-        ),
-        from_any_map(config_map, m_vlm_config)
-    );
-}
 
 EncodedResults VLMPipeline::generate(
     const EncodedPromptImage& pair,
@@ -650,17 +623,4 @@ EncodedResults VLMPipeline::generate(
     return EncodedResults{
         std::vector<std::vector<int64_t>>{std::move(generated)}
     };
-}
-
-std::string VLMPipeline::generate(
-    const PromptImage& pair,
-    const ov::AnyMap& config_map
-) {
-    return generate(
-        pair,
-        utils::from_any_map(
-            config_map, m_vision_encoder.m_processor_config
-        ),
-        from_any_map(config_map, m_vlm_config)
-    );
 }

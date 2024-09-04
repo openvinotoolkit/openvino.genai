@@ -43,16 +43,4 @@ public:
     /// @param A config to copy from.
     ProcessorConfig(const ProcessorConfig&) = default;
 };
-
-/*
- * Utils that allow to use encode(), generate() and operator()() in the following way:
- * pipe.generate(input_ids, ov::genai::scale_resolution(448), ...)
- * pipe(input_ids, ov::genai::scale_resolution(448), ...)
-*/
-static constexpr ov::Property<ProcessorConfig> processor_config{"processor_config"};
-static constexpr ov::Property<size_t> patch_size{"patch_size"};
-static constexpr ov::Property<size_t> scale_resolution{"scale_resolution"};
-static constexpr ov::Property<size_t> max_slice_nums{"max_slice_nums"};
-static constexpr ov::Property<std::array<float, 3>> norm_mean{"norm_mean"};
-static constexpr ov::Property<std::array<float, 3>> norm_std{"norm_std"};
 }  // namespace ov::genai
