@@ -37,9 +37,6 @@ struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<TimePoint> m_new_token_times;
     std::vector<size_t> m_batch_sizes;
     std::vector<MicroSeconds> m_durations;
-
-    size_t num_generated_tokens;
-    size_t num_input_tokens;
 };
 
 /**
@@ -111,8 +108,8 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     size_t num_input_tokens;
     
     float get_load_time();         // Load time in ms.
-    float get_num_generated_tokens();
-    float get_num_input_tokens();
+    size_t get_num_generated_tokens();
+    size_t get_num_input_tokens();
     MeanStdPair get_ttft();         // Time to the first token (in ms) (TTTFT).
     MeanStdPair get_tpot();        // Time (in ms) per output token (TPOT).
     MeanStdPair get_throughput();  // Tokens per second.

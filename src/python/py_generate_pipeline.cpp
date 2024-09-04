@@ -247,22 +247,22 @@ auto perf_metrics_docstring = R"(
     :param get_num_input_tokens: Returns the number of tokens in the input prompt.
     :type get_num_input_tokens: int
 
-    :param get_ttft: Returns the mean and standard deviation of TTFT.
+    :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
     :type get_ttft: MeanStdPair
 
-    :param get_tpot: Returns the mean and standard deviation of TPOT.
+    :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
     :type get_tpot: MeanStdPair
 
-    :param get_throughput: Returns the mean and standard deviation of throughput.
+    :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
     :type get_throughput: MeanStdPair
 
-    :param get_generate_duration: Returns the mean and standard deviation of generate duration.
+    :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
     :type get_generate_duration: MeanStdPair
 
-    :param get_tokenization_duration: Returns the mean and standard deviation of tokenization duration.
+    :param get_tokenization_duration: Returns the mean and standard deviation of tokenization durations in milliseconds.
     :type get_tokenization_duration: MeanStdPair
 
-    :param get_detokenization_duration: Returns the mean and standard deviation of detokenization duration.
+    :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
     :type get_detokenization_duration: MeanStdPair
 
     :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
@@ -763,10 +763,12 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
     py::class_<RawPerfMetrics>(m, "RawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())
-        .def_readonly("generate_durations", &RawPerfMetrics::generate_durations)
+        .def_property_readonly("generate_durations", [](const RawPerfMetrics &rw) {
+            return get_ms(rw, &RawPerfMetrics::generate_durations);
+        })
         .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) { 
             return get_ms(rw, &RawPerfMetrics::tokenization_durations);
-         })
+        })
         .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) { 
             return get_ms(rw, &RawPerfMetrics::detokenization_durations); 
         })
@@ -776,9 +778,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_property_readonly("m_durations", [](const RawPerfMetrics &rw) { 
             return get_ms(rw, &RawPerfMetrics::m_durations); 
         })
-        .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes)
-        .def_readonly("num_generated_tokens", &RawPerfMetrics::num_generated_tokens)
-        .def_readonly("num_input_tokens", &RawPerfMetrics::num_input_tokens);
+        .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes);
 
     py::class_<MeanStdPair>(m, "MeanStdPair")
         .def(py::init<>())
@@ -787,13 +787,15 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
     py::class_<PerfMetrics>(m, "PerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
+        .def("get_load_time", &PerfMetrics::get_load_time)
+        .def("get_num_generated_tokens", &PerfMetrics::get_num_generated_tokens)
+        .def("get_num_input_tokens", &PerfMetrics::get_num_input_tokens)
+        .def("get_ttft", &PerfMetrics::get_ttft)
+        .def("get_tpot", &PerfMetrics::get_tpot)
+        .def("get_throughput", &PerfMetrics::get_throughput)
         .def("get_generate_duration", &PerfMetrics::get_generate_duration)
         .def("get_tokenization_duration", &PerfMetrics::get_tokenization_duration)
         .def("get_detokenization_duration", &PerfMetrics::get_detokenization_duration)
-        .def("get_throughput", &PerfMetrics::get_throughput)
-        .def("get_tpot", &PerfMetrics::get_tpot)
-        .def("get_ttft", &PerfMetrics::get_ttft)
-        .def("get_load_time", &PerfMetrics::get_load_time)
         .def("__add__", &PerfMetrics::operator+)
         .def("__iadd__", &PerfMetrics::operator+=)
         .def_readonly("raw_metrics", &PerfMetrics::raw_metrics);
