@@ -29,12 +29,12 @@ int main(int argc, char* argv[]) try {
     if (!std::getline(std::cin, prompt)) {
         throw std::runtime_error("std::cin failed");
     }
-    pipe.generate({prompt, image}, callback);
+    pipe.generate({std::move(prompt), std::move(image)}, callback);
     std::cout << "\n----------\n"
         "question:\n";
     size_t counter = 1;
     while (std::getline(std::cin, prompt)) {
-        pipe.generate({prompt}, callback);
+        pipe.generate({std::move(prompt)}, callback);
         std::cout << "\n----------\n"
             "question:\n";
     }
