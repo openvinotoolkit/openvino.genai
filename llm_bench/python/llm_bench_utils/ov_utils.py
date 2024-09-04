@@ -144,9 +144,7 @@ def create_text_gen_model(model_path, device, **kwargs):
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
         if kwargs.get("genai", False) and is_genai_available(log_msg=True):
-            if kwargs["batch_size"] > 1 or kwargs["num_beams"] > 1:
-                log.warning("OpenVINO GenAI based benchmarking implmented only for batch_size == 1 and num_beams == 1")
-            elif model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type], OV_MODEL_CLASSES_MAPPING["mpt"]]:
+            if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type], OV_MODEL_CLASSES_MAPPING["mpt"]]:
                 log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
             else:
                 return create_genai_text_gen_model(model_path, device, ov_config, **kwargs)
