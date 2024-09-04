@@ -108,9 +108,7 @@ KVAxesPosition get_kv_axes(const std::string& model_type) {
 
 std::string get_model_type_from_json(const std::filesystem::path& filepath) {
     std::ifstream file(filepath);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open file: " + filepath.string());
-    }
+    OPENVINO_ASSERT(file.is_open(), "Could not open file: " + filepath.string());
     nlohmann::json config_data = nlohmann::json::parse(file);
     std::string model_type = config_data["model_type"].get<std::string>();
     return model_type;
