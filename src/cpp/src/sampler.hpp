@@ -19,6 +19,7 @@
 #include "logit_processor.hpp"
 #include "scheduler.hpp"
 #include "sequence_group.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
 // Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
@@ -85,7 +86,7 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
 }
 
 // Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
-int match_stop_string2(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings) {
+int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings) {
     /*
     For catching stop_string hit we run comparisons character-wise to catch cases where stop string 
     overlaps with part of another token on both sides or is just a part of a single token. 
@@ -101,13 +102,21 @@ int match_stop_string2(Tokenizer & tokenizer, const TokenIds & generated_tokens,
         int num_matched_tokens = 0; 
         // Getting reverse iterator to check tokens starting from the last one generated and going backwards
         auto generated_tokens_rit = generated_tokens.rbegin();
+        std::vector<int64_t> tokens_buffer;
         while (generated_tokens_rit != generated_tokens.rend()) {
             num_matched_tokens++;
-            std::string decoded_token = tokenizer.decode(std::vector<int64_t>{*generated_tokens_rit});
+            tokens_buffer.push_back(*generated_tokens_rit);
+            std::string decoded_tokens = tokenizer.decode(std::vector<int64_t>{tokens_buffer});
+            if (utils::is_valid_utf8(decoded_tokens)) { // if decoded tokens are valid UTF-8 we can clear the buffer
+                tokens_buffer.clear();
+            } else { // otherwise move to the next token
+                generated_tokens_rit++;
+                continue;
+            }
             // Checking decoded_token characters starting from the last one
-            for (auto decoded_token_rit = decoded_token.rbegin(); decoded_token_rit != decoded_token.rend(); decoded_token_rit++) {
+            for (auto decoded_tokens_rit = decoded_tokens.rbegin(); decoded_tokens_rit != decoded_tokens.rend(); decoded_tokens_rit++) {
                 // On character match increment current_position for the next comparisons
-                if (*decoded_token_rit == *(stop_string.rbegin() + current_position)) {
+                if (*decoded_tokens_rit == *(stop_string.rbegin() + current_position)) {
                     current_position++;
                     // If this is the last character from the stop_string we have a match
                     if ((stop_string.rbegin() + current_position) == stop_string.rend()) {
@@ -127,7 +136,7 @@ int match_stop_string2(Tokenizer & tokenizer, const TokenIds & generated_tokens,
 // Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
 // Number of tokens might not be exact as if there's no direct token match, we decode generated tokens incrementally expanding decoding scope
 // with 4 next tokens with each iteration until we check all tokens.
-int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings) {
+int match_stop_string2(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings) {
     for (auto stop_string: stop_strings) {
         auto stop_tokens_ov = tokenizer.encode(stop_string).input_ids;
         size_t num_tokens = stop_tokens_ov.get_size();

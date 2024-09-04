@@ -82,6 +82,8 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
 
+bool is_valid_utf8(const std::string& text);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
