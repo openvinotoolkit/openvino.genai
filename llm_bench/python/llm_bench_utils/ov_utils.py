@@ -181,34 +181,6 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     import openvino_genai
     from transformers import AutoTokenizer
 
-    class TokenStreamer(openvino_genai.StreamerBase):
-        def __init__(self, tokenizer):
-            openvino_genai.StreamerBase.__init__(self)
-            self.tokenizer = tokenizer
-            self.token_generation_time = []
-            self.generated_tokens = []
-            self.start_time = time.perf_counter()
-
-        def put(self, token_id):
-            self.token_generation_time.append(time.perf_counter() - self.start_time)
-            self.generated_tokens.append(token_id)
-            self.start_time = time.perf_counter()
-            return False
-
-        def reset(self):
-            self.token_generation_time = []
-            self.generated_tokens = []
-            self.start_time = time.perf_counter()
-
-        def end(self):
-            pass
-
-        def get_tokens(self):
-            return self.generated_tokens
-
-        def get_time_list(self):
-            return self.token_generation_time
-
     if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
         convert_ov_tokenizer(model_path)
 
@@ -218,9 +190,8 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     llm_pipe = openvino_genai.LLMPipeline(str(model_path), device.upper(), ov_config)
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
-    streamer = TokenStreamer(llm_pipe.get_tokenizer())
 
-    return llm_pipe, tokenizer, end - start, streamer, True
+    return llm_pipe, tokenizer, end - start, None, True
 
 
 def convert_ov_tokenizer(tokenizer_path):

@@ -224,7 +224,6 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
     pt_inputs = tokenizer(input_text_list, return_tensors="pt")
     input_token_size = pt_inputs.input_ids.shape[1]
-    pipe_tokenizer = model.get_tokenizer()
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
         out_str += " Batch_size={}, ".format(args['batch_size'])
@@ -239,20 +238,19 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
-    streamer.reset()
     start = time.perf_counter()
     generation_result = model.generate(input_text_list, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"])
     end = time.perf_counter()
     generated_text = generation_result.texts
     perf_metrics = generation_result.perf_metrics
-    
+
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
 
     generation_time = end - start
-    generated_tokens =[tokenizer(text).input_ids for text in generated_text]
+    generated_tokens = [tokenizer(text).input_ids for text in generated_text]
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
@@ -273,7 +271,10 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     tm_list = np.array(perf_metrics.raw_metrics.m_durations) / 1000 / 1000
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
-    tokenization_time=(np.mean(perf_metrics.raw_metrics.tokenization_durations) / 1000, np.mean(perf_metrics.raw_metrics.detokenization_durations) / 1000)
+    tokenization_time = (
+        np.mean(perf_metrics.raw_metrics.tokenization_durations) / 1000,
+        np.mean(perf_metrics.raw_metrics.detokenization_durations) / 1000
+    )
     iter_data = gen_iterate_data(
         num,
         input_token_size * args['batch_size'],
@@ -317,7 +318,6 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
                 assert (result_md5_list == prev_md5)
     else:
         llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
-    streamer.reset()
 
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
