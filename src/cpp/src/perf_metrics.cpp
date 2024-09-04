@@ -46,7 +46,7 @@ size_t PerfMetrics::get_num_generated_tokens() {
 
 size_t PerfMetrics::get_num_input_tokens() {
     evaluate_statistics();
-    return num_generated_tokens;
+    return num_input_tokens;
 }
 
 MeanStdPair PerfMetrics::get_ttft() {
