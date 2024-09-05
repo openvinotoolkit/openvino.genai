@@ -726,7 +726,8 @@ CASE_TO_BENCH = {
 
 
 def main():
-    log.basicConfig(format='[ %(levelname)s ] %(message)s', level=os.environ.get("LOGLEVEL", log.INFO), stream=sys.stdout, encoding="utf-8")
+    logging_kwargs = {"encoding": "utf-8"} if sys.version_info[1] > 8 else {}
+    log.basicConfig(format='[ %(levelname)s ] %(message)s', level=os.environ.get("LOGLEVEL", log.INFO), stream=sys.stdout, **logging_kwargs)
     args = get_argprser()
     model_path, framework, model_args, model_name = llm_bench_utils.model_utils.analyze_args(args)
 

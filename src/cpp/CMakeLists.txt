@@ -31,6 +31,9 @@ function(ov_genai_build_jinja2cpp)
         set(JINJA2CPP_STRICT_WARNINGS OFF CACHE BOOL "")
         set(JINJA2CPP_PIC ON CACHE BOOL "")
 
+        # TMP WA:
+        set(RapidJSON_DIR "${CMAKE_BINARY_DIR}/_deps/rapidjson-build")
+
         # options for Jinja2Cpp dependencies
         option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
 
