@@ -64,7 +64,7 @@ def read_whisper_model(params, **tokenizer_kwargs):
         model_id,
         path,
         opt_pipe,
-        ov_genai.WhisperSpeechRecognitionPipeline(
+        ov_genai.WhisperPipeline(
             str(path), device="CPU", config={"ENABLE_MMAP": False}
         ),
     )
@@ -84,12 +84,12 @@ def compare_genai_and_opt_pipelines(opt_pipe, genai_pipe, dataset_id):
         audio_sample = ds_row["audio"]
 
         start = time.time()
-        result = opt_pipe(audio_sample)
-        opt_infer_time += time.time() - start
-
-        start = time.time()
         genai_result = genai_pipe.generate(audio_sample["array"].tolist())
         genai_infer_time += time.time() - start
+
+        start = time.time()
+        result = opt_pipe(audio_sample)
+        opt_infer_time += time.time() - start
 
         assert genai_result.texts[0] == result["text"]
     print(f"Inference time\nOpt: {opt_infer_time}\nGenAI: {genai_infer_time}")
@@ -146,21 +146,19 @@ def test_whisper_constructors(model_descr, test_sample):
 
     expected = opt_pipe(test_sample)["text"]
 
-    genai_result = ov_genai.WhisperSpeechRecognitionPipeline(
+    genai_result = ov_genai.WhisperPipeline(
         str(path), device="CPU", config={"ENABLE_MMAP": False}
     ).generate(test_sample)
 
     assert genai_result.texts[0] == expected
 
-    genai_result = ov_genai.WhisperSpeechRecognitionPipeline(str(path)).generate(
-        test_sample
-    )
+    genai_result = ov_genai.WhisperPipeline(str(path)).generate(test_sample)
 
     assert genai_result.texts[0] == expected
 
     tokenizer = ov_genai.Tokenizer(str(path))
 
-    genai_result = ov_genai.WhisperSpeechRecognitionPipeline(
+    genai_result = ov_genai.WhisperPipeline(
         str(path), tokenizer=tokenizer, device="CPU", config={"ENABLE_MMAP": False}
     ).generate(test_sample)
 
