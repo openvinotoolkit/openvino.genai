@@ -85,15 +85,21 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
     return tokens;
 }
 
-std::vector<int64_t> wrap_tokens(const std::vector<int64_t>& tokens, const std::vector<int64_t>& prefix_tokens) {
+std::vector<int64_t> wrap_tokens(const std::vector<int64_t>& tokens, const std::vector<int64_t>& prefix_tokens, const std::vector<int64_t>& suffix_tokens) {
     std::vector<int64_t> all_tokens = prefix_tokens;
     all_tokens.insert(all_tokens.end(), tokens.begin(), tokens.end());
+    all_tokens.insert(all_tokens.end(), suffix_tokens.begin(), suffix_tokens.end());
     return all_tokens;
 }
 
-std::string clean_wrapped_text(const std::string& wrapped_text, const std::string& prefix) {
+std::string clean_wrapped_text(const std::string& wrapped_text, const std::string& prefix, const std::string& suffix) {
     auto prefix_pos = wrapped_text.find(prefix);
-    std::string clean_text = wrapped_text.substr(prefix_pos + prefix.size());
+    OPENVINO_ASSERT(prefix_pos != std::string::npos);
+    auto suffix_pos = wrapped_text.rfind(suffix);
+    OPENVINO_ASSERT(suffix_pos != std::string::npos);
+    auto clean_text_start = prefix_pos + prefix.size();
+    auto clean_text_length = suffix_pos - clean_text_start;
+    std::string clean_text = wrapped_text.substr(clean_text_start, clean_text_length);
     return clean_text;
 }
 
@@ -114,6 +120,9 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
     std::string prefix = "a";
     auto prefix_ov = tokenizer.encode(prefix).input_ids;
     std::vector<int64_t> prefix_tokens(prefix_ov.data<int64_t>(), prefix_ov.data<int64_t>() + prefix_ov.get_size());
+    std::string suffix = "b";
+    auto suffix_ov = tokenizer.encode(suffix).input_ids;
+    std::vector<int64_t> suffix_tokens(suffix_ov.data<int64_t>(), suffix_ov.data<int64_t>() + suffix_ov.get_size());
     
     for (auto stop_string: stop_strings) {
         int current_position = 0;
@@ -125,9 +134,9 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
             num_matched_tokens++;
             tokens_buffer.insert(tokens_buffer.begin(), *generated_tokens_rit);
 
-            std::vector<int64_t> wrapped_tokens = wrap_tokens(tokens_buffer, prefix_tokens);
+            std::vector<int64_t> wrapped_tokens = wrap_tokens(tokens_buffer, prefix_tokens, suffix_tokens);
             std::string wrapped_text = tokenizer.decode(wrapped_tokens);
-            std::string clean_text = clean_wrapped_text(wrapped_text, prefix);
+            std::string clean_text = clean_wrapped_text(wrapped_text, prefix, suffix);
 
             if (clean_text == "" || (clean_text.size() >= 3 && (clean_text.compare(clean_text.size() - 3, 3, "�") == 0))) { 
                 generated_tokens_rit++;
