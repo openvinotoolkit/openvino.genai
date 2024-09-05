@@ -85,19 +85,16 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
     return tokens;
 }
 
-std::vector<int64_t> wrap_tokens(const std::vector<int64_t>& tokens, const std::vector<int64_t>& prefix_tokens, const std::vector<int64_t>& suffix_tokens) {
+std::vector<int64_t> wrap_tokens(const std::vector<int64_t>& tokens, const std::vector<int64_t>& prefix_tokens) {
     std::vector<int64_t> all_tokens = prefix_tokens;
     all_tokens.insert(all_tokens.end(), tokens.begin(), tokens.end());
-    all_tokens.insert(all_tokens.end(), suffix_tokens.begin(), suffix_tokens.end());
     return all_tokens;
 }
 
-std::string clean_wrapped_text(const std::string& wrapped_text, const std::string& prefix, const std::string& suffix) {
+std::string clean_wrapped_text(const std::string& wrapped_text, const std::string& prefix) {
     auto prefix_pos = wrapped_text.find(prefix);
-    OPENVINO_ASSERT(wrapped_text.begin() + prefix_pos == wrapped_text.begin());
-    auto suffix_pos = wrapped_text.rfind(suffix);
-    OPENVINO_ASSERT(wrapped_text.begin() + suffix_pos == wrapped_text.end() - suffix.size());
-    std::string clean_text = wrapped_text.substr(prefix.size(), wrapped_text.size() - suffix.size());
+    OPENVINO_ASSERT(prefix_pos == 0);
+    std::string clean_text = wrapped_text.substr(prefix.size());
     return clean_text;
 }
 
@@ -107,19 +104,17 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
     For catching stop_string hit we run comparisons character-wise to catch cases where stop string 
     overlaps with part of another token on both sides or is just a part of a single token. 
     For every stop_string we iterate over generated tokens starting from the last one and going backwards. 
-    Every token is wrapped with prefix and suffix tokens to ensure tokenizer doesn't remove whitespaces.
-    After that prefix and suffix are removed from the decoded text, so we end up with decoded token.
+    Every token is wrapped with prefix tokens to ensure tokenizer doesn't remove prefix whitespace of the actual token.
+    After that all tokens are decoded and prefix is removed from the decoded text, so we end up with decoded token.
     Its characters are compared to the stop_string character at a current_position 
     (position of a character in the stop_string counting from the last one) - at the begining position is 0.
     When characters match we increase current_position and check if we have a full match already, if not we continue.
     If we have already matched some characters (current_position > 0) and next character is not matching 
     before we reach the full match, then we reset current_position to 0. 
     */ 
-    std::string prefix = "abcd", suffix = "efgh";
+    std::string prefix = "abcd";
     auto prefix_ov = tokenizer.encode(prefix).input_ids;
     std::vector<int64_t> prefix_tokens(prefix_ov.data<int64_t>(), prefix_ov.data<int64_t>() + prefix_ov.get_size());
-    auto suffix_ov = tokenizer.encode(suffix).input_ids;
-    std::vector<int64_t> suffix_tokens(suffix_ov.data<int64_t>(), suffix_ov.data<int64_t>() + suffix_ov.get_size());
     
     for (auto stop_string: stop_strings) {
         int current_position = 0;
@@ -131,9 +126,9 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
             num_matched_tokens++;
             tokens_buffer.push_back(*generated_tokens_rit);
 
-            std::vector<int64_t> wrapped_tokens = wrap_tokens(tokens_buffer, prefix_tokens, suffix_tokens);
+            std::vector<int64_t> wrapped_tokens = wrap_tokens(tokens_buffer, prefix_tokens);
             std::string wrapped_text = tokenizer.decode(wrapped_tokens);
-            std::string clean_text = clean_wrapped_text(wrapped_text, prefix, suffix);
+            std::string clean_text = clean_wrapped_text(wrapped_text, prefix);
 
             if (clean_text == "" || clean_text == "�") { 
                 generated_tokens_rit++;
