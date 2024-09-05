@@ -52,8 +52,21 @@ public:
                 const auto kv_cache_precision = kv_cache_precision_it->second.as<ov::element::Type>();
                 m_kv_cache_type = kv_cache_precision;
             }
-        } else if (m_device == "GPU") {
-            OPENVINO_ASSERT("GPU is not currently supported. Please, remove this assert and fill configuration");
+        } else if (m_device.find("GPU") != std::string::npos) {
+            auto inference_precision = core.get_property(device, ov::hint::inference_precision);
+            m_kv_cache_type = inference_precision == ov::element::f16 ? ov::element::f16 : ov::element::f32;
+
+            // if user sets precision hint, kv cache type should be changed
+            const auto inference_precision_it = plugin_config.find(ov::hint::inference_precision.name());
+            if (inference_precision_it != plugin_config.end()) {
+                const auto inference_precision = inference_precision_it->second.as<ov::element::Type>();
+                if (inference_precision == ov::element::f16) {
+                    m_kv_cache_type = ov::element::f16;
+                } else {
+                    // use default f32
+                    m_kv_cache_type = ov::element::f32;
+                }
+            }
         } else {
             OPENVINO_THROW(m_device, " is not supported by OpenVINO Continuous Batching");
         }
@@ -92,6 +105,14 @@ public:
                                                             m_num_kv_heads,
                                                             m_block_size,
                                                             m_head_size};
+
+        if (m_device.find("GPU") != std::string::npos) {
+            // Update key shape, as the key's shape is different from the value's shape
+            m_key_cache_shape = ov::Shape{m_num_kv_blocks,
+                                          m_num_kv_heads,
+                                          m_head_size,
+                                          m_block_size};
+        }
     }
 
     std::string get_device() const {
