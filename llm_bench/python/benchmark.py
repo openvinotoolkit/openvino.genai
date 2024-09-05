@@ -288,7 +288,6 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         max_uss_mem=max_uss_mem_consumption,
         prompt_idx=prompt_index,
         tokenization_time=tokenization_time
-       
     )
     iter_data_list.append(iter_data)
     llm_bench_utils.metrics_print.print_metrics(
