@@ -10,6 +10,9 @@
 namespace {
 
 ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSeconds>& durations) {
+    if (durations.size() == 0) {
+        return {-1, -1};
+    }
     // Accepts time durations in microseconds and returns standard deviation and mean in milliseconds.
     float mean = std::accumulate(durations.begin(), durations.end(), 0.0f, 
         [](const float& acc, const ov::genai::MicroSeconds& duration) -> float {
@@ -36,14 +39,14 @@ float PerfMetrics::get_load_time() {
     return load_time;
 }
 
-float PerfMetrics::get_num_generated_tokens() {
+size_t PerfMetrics::get_num_generated_tokens() {
     evaluate_statistics();
     return num_generated_tokens;
 }
 
-float PerfMetrics::get_num_input_tokens() {
+size_t PerfMetrics::get_num_input_tokens() {
     evaluate_statistics();
-    return num_generated_tokens;
+    return num_input_tokens;
 }
 
 MeanStdPair PerfMetrics::get_ttft() {

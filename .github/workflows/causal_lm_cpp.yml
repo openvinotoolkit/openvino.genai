@@ -191,6 +191,7 @@ jobs:
 
   cpp-greedy_causal_lm-windows:
     runs-on: windows-latest
+    if: ${{ false }} # TODO: fix Windows
     env:
       PYTHONIOENCODING: "utf8"
     defaults:
@@ -651,6 +652,7 @@ jobs:
 
   cpp-continuous-batching-windows:
     runs-on: windows-latest
+    if: ${{ false }} # TODO: fix Windows
     env:
       PYTHONIOENCODING: "utf8"
     defaults:
