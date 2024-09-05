@@ -106,12 +106,12 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
         while (generated_tokens_rit != generated_tokens.rend()) {
             num_matched_tokens++;
             tokens_buffer.push_back(*generated_tokens_rit);
-            std::string decoded_tokens = tokenizer.decode(std::vector<int64_t>{tokens_buffer});
-            if (utils::is_valid_utf8(decoded_tokens)) { // if decoded tokens are valid UTF-8 we can clear the buffer
-                tokens_buffer.clear();
-            } else { // otherwise move to the next token
+            std::string decoded_tokens = tokenizer.decode(tokens_buffer);
+            if (decoded_tokens == "" || decoded_tokens == "�") { 
                 generated_tokens_rit++;
                 continue;
+            } else {
+                tokens_buffer.clear();
             }
             // Checking decoded_token characters starting from the last one
             for (auto decoded_tokens_rit = decoded_tokens.rbegin(); decoded_tokens_rit != decoded_tokens.rend(); decoded_tokens_rit++) {
@@ -125,6 +125,8 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
                 } else if (current_position) {
                     // Already found matching characters, but the last one didn't match, so we reset current_position
                     current_position = 0;
+                    // Looking for the match will start over from this character so we decrement iterator
+                    decoded_tokens_rit--;
                 }
             }
             generated_tokens_rit++;
