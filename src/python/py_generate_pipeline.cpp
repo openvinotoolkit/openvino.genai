@@ -949,6 +949,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("translate_token_id", &WhisperGenerationConfig::translate_token_id)
         .def_readwrite("transcribe_token_id", &WhisperGenerationConfig::transcribe_token_id)
         .def_readwrite("begin_timestamps_token_id", &WhisperGenerationConfig::begin_timestamps_token_id)
+        .def_readwrite("no_timestamps_token_id", &WhisperGenerationConfig::no_timestamps_token_id)
         .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id);
 
 
@@ -970,10 +971,18 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
         )")
 
-        .def(py::init<const std::string, const Tokenizer&, const std::string>(), 
+        .def(py::init([](
+            const std::string& model_path, 
+            const Tokenizer& tokenizer,
+            const std::string& device,
+            const std::map<std::string, py::object>& config
+        ) {
+            return std::make_unique<WhisperSpeechRecognitionPipeline>(model_path, tokenizer, device, properties_to_any_map(config));
+        }),
         py::arg("model_path"),
         py::arg("tokenizer"),
         py::arg("device") = "CPU",
+        py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
             WhisperSpeechRecognitionPipeline class constructor for manualy created openvino_genai.Tokenizer.
             model_path (str): Path to the model file.

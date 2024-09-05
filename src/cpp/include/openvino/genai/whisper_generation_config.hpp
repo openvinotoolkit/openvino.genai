@@ -22,9 +22,8 @@ namespace genai {
  */
 class OPENVINO_GENAI_EXPORTS WhisperGenerationConfig {
 public:
-    // todo: default constructor to be removed due to supress tokens initialization
-    // or set default supress tokens
     WhisperGenerationConfig() = default;
+    // todo: accept path
     explicit WhisperGenerationConfig(const std::string& json_path);
 
     // Generic
