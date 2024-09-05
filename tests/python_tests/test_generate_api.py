@@ -723,3 +723,87 @@ def test_cb_streamer_vs_return_vs_stateful(prompt):
     reference = stateful.generate(prompt, max_new_tokens=20)
     assert generated == "".join(streamed)
     assert "".join(streamed) == reference
+
+def run_perf_metrics_collection(model_descr, generation_config: Dict, prompt: str) -> ov_genai.PerfMetrics:
+    model_id, path, tokenizer, model, pipe = model_descr
+
+    config = generation_config.copy()  # to avoid side effects
+
+    if 'do_sample' not in config:
+        # Some HF models have default do_sample = True, and if we set beam search generation config 
+        # it conflicts with `diversity_penalty` and/or `num_beam_groups`.
+        # Need to set explicitly to False, but only if test arguments omitted this arg.
+        # Do not apply 'repetition_penalty' if sampling is not used.
+        config['do_sample'] = False
+        config['repetition_penalty'] = None
+    return pipe.generate([prompt], **config).perf_metrics
+
+
+test_cases = [
+    (dict(max_new_tokens=20), 'table is made of'),
+]
+@pytest.mark.parametrize("generation_config,prompt", test_cases)
+@pytest.mark.parametrize("model_descr", get_models_list())
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_perf_metrics(model_descr, generation_config, prompt):
+    import time
+    start_time = time.perf_counter()
+    perf_metrics = run_perf_metrics_collection(read_model(model_descr), generation_config, prompt)
+    total_time = (time.perf_counter() - start_time) * 1000
+    
+    # Check that load time is adequate.
+    load_time = perf_metrics.get_load_time()
+    assert load_time > 0 and load_time < 1000.0  
+    
+    # Check that num input and generated tokens are adequate.
+    num_generated_tokens = perf_metrics.get_num_generated_tokens()
+    assert num_generated_tokens > 0 and num_generated_tokens <= generation_config['max_new_tokens']  
+    
+    num_input_tokens = perf_metrics.get_num_input_tokens()
+    assert num_input_tokens > 0 and num_input_tokens <= len(prompt)
+
+    mean_ttft, std_ttft = perf_metrics.get_ttft()
+    assert (mean_ttft, std_ttft) == (perf_metrics.get_ttft().mean, perf_metrics.get_ttft().std)
+    assert mean_ttft > 0 and mean_ttft < 1000.0
+
+    mean_tpot, std_tpot = perf_metrics.get_tpot()
+    assert (mean_tpot, std_tpot) == (perf_metrics.get_tpot().mean, perf_metrics.get_tpot().std)
+    assert mean_tpot > 0 and mean_ttft < 1000.0
+
+    mean_throughput, std_throughput = perf_metrics.get_throughput()
+    assert (mean_throughput, std_throughput) == (perf_metrics.get_throughput().mean, perf_metrics.get_throughput().std)
+    assert mean_throughput > 0 and mean_throughput < 20000.0
+    
+    mean_gen_duration, std_gen_duration = perf_metrics.get_generate_duration()
+    assert (mean_gen_duration, std_gen_duration) == (perf_metrics.get_generate_duration().mean, perf_metrics.get_generate_duration().std)
+    assert mean_gen_duration > 0 and load_time + mean_gen_duration < total_time
+    assert std_gen_duration == 0
+
+    mean_tok_duration, std_tok_duration = perf_metrics.get_tokenization_duration()
+    assert (mean_tok_duration, std_tok_duration) == (perf_metrics.get_tokenization_duration().mean, perf_metrics.get_tokenization_duration().std)
+    assert mean_tok_duration > 0 and mean_tok_duration < mean_gen_duration
+    assert std_tok_duration == 0
+
+    mean_detok_duration, std_detok_duration = perf_metrics.get_detokenization_duration()
+    assert (mean_detok_duration, std_detok_duration) == (perf_metrics.get_detokenization_duration().mean, perf_metrics.get_detokenization_duration().std)
+    assert mean_detok_duration > 0 and mean_detok_duration < mean_gen_duration
+    assert std_detok_duration == 0
+    
+    # assert that calculating statistics manually from the raw counters we get the same restults as from PerfMetrics
+    raw_metrics = perf_metrics.raw_metrics
+    raw_dur = np.array(raw_metrics.generate_durations) / 1000
+    assert np.allclose(mean_gen_duration, np.mean(raw_dur))
+    assert np.allclose(std_gen_duration, np.std(raw_dur))
+
+    raw_dur = np.array(raw_metrics.tokenization_durations) / 1000
+    assert np.allclose(mean_tok_duration, np.mean(raw_dur))
+    assert np.allclose(std_tok_duration, np.std(raw_dur))
+
+    raw_dur = np.array(raw_metrics.detokenization_durations) / 1000
+    assert np.allclose(mean_detok_duration, np.mean(raw_dur))
+    assert np.allclose(std_detok_duration, np.std(raw_dur))
+
+    assert len(raw_metrics.m_times_to_first_token) > 0
+    assert len(raw_metrics.m_batch_sizes) > 0
+    assert len(raw_metrics.m_durations) > 0
