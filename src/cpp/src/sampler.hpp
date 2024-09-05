@@ -129,7 +129,7 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
             std::string wrapped_text = tokenizer.decode(wrapped_tokens);
             std::string clean_text = clean_wrapped_text(wrapped_text, prefix);
 
-            if (clean_text == "" || clean_text == "�") { 
+            if (clean_text == "" || (clean_text.size() >= 3 && (clean_text.compare(clean_text.size() - 3, 3, "�") == 0))) { 
                 generated_tokens_rit++;
                 continue;
             } else {
