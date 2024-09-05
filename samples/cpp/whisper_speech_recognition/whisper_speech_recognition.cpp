@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "audio_utils.hpp"
-#include "openvino/genai/whisper_speech_recognition_pipeline.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
     if (3 > argc) {
@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) try {
 
     std::vector<float> raw_speech = utils::audio::read_wav(wav_file_path);
 
-    ov::genai::WhisperSpeechRecognitionPipeline pipeline{model_path};
+    ov::genai::WhisperPipeline pipeline{model_path};
 
     ov::genai::WhisperGenerationConfig config{model_path + "/generation_config.json"};
     config.max_length = 100;

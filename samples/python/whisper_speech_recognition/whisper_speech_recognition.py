@@ -20,7 +20,7 @@ def main():
 
     raw_speech = read_wav(args.wav_file_path)
 
-    pipe = openvino_genai.WhisperSpeechRecognitionPipeline(args.model_dir)
+    pipe = openvino_genai.WhisperPipeline(args.model_dir)
 
     def streamer(word: str) -> bool:
         print(word, end="")

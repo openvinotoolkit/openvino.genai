@@ -9,7 +9,7 @@
 #include "../utils.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
-#include "openvino/genai/whisper_speech_recognition_pipeline.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
 

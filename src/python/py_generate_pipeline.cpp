@@ -11,8 +11,7 @@
 #include <openvino/runtime/auto/properties.hpp>
 #include "../cpp/src/tokenizers_path.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
-#include "openvino/genai/whisper_speech_recognition_pipeline.hpp"
-#include "openvino/genai/whisper_speech_recognition_pipeline.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
 
 namespace py = pybind11;
 using ov::genai::ChatHistory;
@@ -36,7 +35,7 @@ using ov::genai::TokenizedInputs;
 using ov::genai::Tokenizer;
 using ov::genai::WhisperGenerationConfig;
 using ov::genai::OptionalWhisperGenerationConfig;
-using ov::genai::WhisperSpeechRecognitionPipeline;
+using ov::genai::WhisperPipeline;
 using ov::genai::RawSpeechInput;
 
 // When StreamerVariant is used utf-8 decoding is done by pybind and can lead to exception on incomplete texts.
@@ -594,7 +593,7 @@ std::ostream& operator << (std::ostream& stream, const GenerationResult& generat
 }
 
 py::object call_whisper_common_generate(
-    WhisperSpeechRecognitionPipeline& pipe,
+    WhisperPipeline& pipe,
     const RawSpeechInput& raw_speech_input,
     const OptionalWhisperGenerationConfig& config,
     const PyBindStreamerVariant& py_streamer,
@@ -953,20 +952,20 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id);
 
 
-    py::class_<WhisperSpeechRecognitionPipeline>(m, "WhisperSpeechRecognitionPipeline")
+    py::class_<WhisperPipeline>(m, "WhisperPipeline")
         .def(py::init([](
             const std::string& model_path, 
             const std::string& device,
             const std::map<std::string, py::object>& config
         ) {
             ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<WhisperSpeechRecognitionPipeline>(model_path, device, properties_to_any_map(config));
+            return std::make_unique<WhisperPipeline>(model_path, device, properties_to_any_map(config));
         }),
         py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
         py::arg("device") = "CPU", "device on which inference will be done",
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
-            WhisperSpeechRecognitionPipeline class constructor.
+            WhisperPipeline class constructor.
             model_path (str): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
         )")
@@ -977,14 +976,14 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             const std::string& device,
             const std::map<std::string, py::object>& config
         ) {
-            return std::make_unique<WhisperSpeechRecognitionPipeline>(model_path, tokenizer, device, properties_to_any_map(config));
+            return std::make_unique<WhisperPipeline>(model_path, tokenizer, device, properties_to_any_map(config));
         }),
         py::arg("model_path"),
         py::arg("tokenizer"),
         py::arg("device") = "CPU",
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
-            WhisperSpeechRecognitionPipeline class constructor for manualy created openvino_genai.Tokenizer.
+            WhisperPipeline class constructor for manualy created openvino_genai.Tokenizer.
             model_path (str): Path to the model file.
             tokenizer (openvino_genai.Tokenizer): tokenizer object.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
@@ -992,7 +991,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
         .def(
             "generate", 
-            [](WhisperSpeechRecognitionPipeline& pipe,
+            [](WhisperPipeline& pipe,
                 const RawSpeechInput& raw_speech_input,
                 const OptionalWhisperGenerationConfig& generation_config,
                 const PyBindStreamerVariant& streamer,
@@ -1008,7 +1007,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
         .def(
             "__call__", 
-            [](WhisperSpeechRecognitionPipeline& pipe,
+            [](WhisperPipeline& pipe,
                 const RawSpeechInput& raw_speech_input,
                 const OptionalWhisperGenerationConfig& generation_config,
                 const PyBindStreamerVariant& streamer,
@@ -1022,7 +1021,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             (whisper_generate_docstring + std::string(" \n ") + whisper_generation_config_docstring).c_str()
         )
 
-        .def("get_tokenizer", &WhisperSpeechRecognitionPipeline::get_tokenizer)
-        .def("get_generation_config", &WhisperSpeechRecognitionPipeline::get_generation_config, py::return_value_policy::copy)
-        .def("set_generation_config", &WhisperSpeechRecognitionPipeline::set_generation_config);
+        .def("get_tokenizer", &WhisperPipeline::get_tokenizer)
+        .def("get_generation_config", &WhisperPipeline::get_generation_config, py::return_value_policy::copy)
+        .def("set_generation_config", &WhisperPipeline::set_generation_config);
 }

@@ -6,7 +6,7 @@
 #include <openvino/openvino.hpp>
 #include <variant>
 
-#include "openvino/genai/whisper_speech_recognition_pipeline.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
 #include "whisper/whisper_models.hpp"
@@ -38,7 +38,7 @@ std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& 
                                       ov::genai::WhisperInitializedModels& models,
                                       const std::shared_ptr<StreamerBase> streamer);
 
-class WhisperSpeechRecognitionPipeline::Impl {
+class WhisperPipeline::Impl {
 public:
     ov::genai::WhisperGenerationConfig m_generation_config;
     ov::genai::WhisperInitializedModels m_models;
@@ -107,15 +107,14 @@ public:
 }  // namespace genai
 }  // namespace ov
 
-ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(
-    const RawSpeechInput& raw_speech_input,
-    OptionalWhisperGenerationConfig generation_config,
-    StreamerVariant streamer) {
+ov::genai::DecodedResults ov::genai::WhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
+                                                               OptionalWhisperGenerationConfig generation_config,
+                                                               StreamerVariant streamer) {
     return m_impl->generate(raw_speech_input, generation_config, streamer);
 }
 
-ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(const RawSpeechInput& raw_speech_input,
-                                                                                const ov::AnyMap& config_map) {
+ov::genai::DecodedResults ov::genai::WhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
+                                                               const ov::AnyMap& config_map) {
     auto config_arg = get_config_from_map(config_map);
     WhisperGenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
@@ -123,50 +122,34 @@ ov::genai::DecodedResults ov::genai::WhisperSpeechRecognitionPipeline::generate(
     return m_impl->generate(raw_speech_input, config, utils::get_streamer_from_map(config_map));
 }
 
-ov::genai::WhisperSpeechRecognitionPipeline::WhisperSpeechRecognitionPipeline(const std::string& model_path,
-                                                                              const ov::genai::Tokenizer& tokenizer,
-                                                                              const std::string& device,
-                                                                              const ov::AnyMap& plugin_config) {
+ov::genai::WhisperPipeline::WhisperPipeline(const std::string& model_path,
+                                            const ov::genai::Tokenizer& tokenizer,
+                                            const std::string& device,
+                                            const ov::AnyMap& plugin_config) {
     auto start_time = std::chrono::steady_clock::now();
-    m_impl = std::make_unique<WhisperSpeechRecognitionPipeline::Impl>(model_path, tokenizer, device, plugin_config);
+    m_impl = std::make_unique<WhisperPipeline::Impl>(model_path, tokenizer, device, plugin_config);
     auto stop_time = std::chrono::steady_clock::now();
     m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
-ov::genai::WhisperSpeechRecognitionPipeline::WhisperSpeechRecognitionPipeline(
-    const ov::InferRequest& encoder_request,
-    const ov::InferRequest& decoder_request,
-    const ov::InferRequest& decoder_with_past_request,
-    const ov::genai::Tokenizer& tokenizer,
-    OptionalWhisperGenerationConfig generation_config) {
+ov::genai::WhisperPipeline::WhisperPipeline(const std::string& path,
+                                            const std::string& device,
+                                            const ov::AnyMap& config) {
     auto start_time = std::chrono::steady_clock::now();
-    m_impl = std::make_unique<WhisperSpeechRecognitionPipeline::Impl>(encoder_request,
-                                                                      decoder_request,
-                                                                      decoder_with_past_request,
-                                                                      tokenizer,
-                                                                      generation_config);
+    m_impl = std::make_unique<WhisperPipeline::Impl>(path, device, config);
     auto stop_time = std::chrono::steady_clock::now();
     m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
-ov::genai::WhisperSpeechRecognitionPipeline::WhisperSpeechRecognitionPipeline(const std::string& path,
-                                                                              const std::string& device,
-                                                                              const ov::AnyMap& config) {
-    auto start_time = std::chrono::steady_clock::now();
-    m_impl = std::make_unique<WhisperSpeechRecognitionPipeline::Impl>(path, device, config);
-    auto stop_time = std::chrono::steady_clock::now();
-    m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
-}
-
-ov::genai::WhisperGenerationConfig ov::genai::WhisperSpeechRecognitionPipeline::get_generation_config() const {
+ov::genai::WhisperGenerationConfig ov::genai::WhisperPipeline::get_generation_config() const {
     return m_impl->m_generation_config;
 }
 
-ov::genai::Tokenizer ov::genai::WhisperSpeechRecognitionPipeline::get_tokenizer() {
+ov::genai::Tokenizer ov::genai::WhisperPipeline::get_tokenizer() {
     return m_impl->m_tokenizer;
 }
 
-void ov::genai::WhisperSpeechRecognitionPipeline::set_generation_config(const WhisperGenerationConfig& config) {
+void ov::genai::WhisperPipeline::set_generation_config(const WhisperGenerationConfig& config) {
     int64_t default_eos_token_id = m_impl->m_generation_config.eos_token_id;
     m_impl->m_generation_config = config;
     // if eos_token_id was not provided in config forward from default config
@@ -176,4 +159,4 @@ void ov::genai::WhisperSpeechRecognitionPipeline::set_generation_config(const Wh
     m_impl->m_generation_config.validate();
 }
 
-ov::genai::WhisperSpeechRecognitionPipeline::~WhisperSpeechRecognitionPipeline() = default;
+ov::genai::WhisperPipeline::~WhisperPipeline() = default;

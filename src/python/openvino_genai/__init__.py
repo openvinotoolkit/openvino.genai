@@ -22,5 +22,5 @@ from .py_generate_pipeline import (
     GenerationResult,
     SchedulerConfig,
     WhisperGenerationConfig,
-    WhisperSpeechRecognitionPipeline
+    WhisperPipeline
 )
