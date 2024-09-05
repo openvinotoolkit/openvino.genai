@@ -93,8 +93,7 @@ std::vector<int64_t> wrap_tokens(const std::vector<int64_t>& tokens, const std::
 
 std::string clean_wrapped_text(const std::string& wrapped_text, const std::string& prefix) {
     auto prefix_pos = wrapped_text.find(prefix);
-    OPENVINO_ASSERT(prefix_pos == 0);
-    std::string clean_text = wrapped_text.substr(prefix.size());
+    std::string clean_text = wrapped_text.substr(prefix_pos + prefix.size());
     return clean_text;
 }
 
@@ -112,7 +111,7 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
     If we have already matched some characters (current_position > 0) and next character is not matching 
     before we reach the full match, then we reset current_position to 0. 
     */ 
-    std::string prefix = "abcd";
+    std::string prefix = "a";
     auto prefix_ov = tokenizer.encode(prefix).input_ids;
     std::vector<int64_t> prefix_tokens(prefix_ov.data<int64_t>(), prefix_ov.data<int64_t>() + prefix_ov.get_size());
     
