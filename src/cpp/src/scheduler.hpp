@@ -321,7 +321,7 @@ private:
                 if (!m_config.enable_prefix_caching)
                     OPENVINO_ASSERT(sequence_group->get_context_len() == 0);
 
-                size_t num_available_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
+                int64_t num_available_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;
                 size_t sequence_len = sequence_group->get_num_available_tokens_for_batching();
                 max_sequence_len = std::max(max_sequence_len, sequence_len);
 
@@ -334,7 +334,7 @@ private:
                     break;
 
                 // apply max num batched tokens limitation
-                if (num_available_tokens_in_megabatch < max_sequence_len)
+                if (num_available_tokens_in_megabatch < static_cast<int64_t>(max_sequence_len))
                     break;
 
                 // apply KV cache limitations
