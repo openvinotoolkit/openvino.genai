@@ -123,6 +123,14 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
     std::string suffix = "b";
     auto suffix_ov = tokenizer.encode(suffix).input_ids;
     std::vector<int64_t> suffix_tokens(suffix_ov.data<int64_t>(), suffix_ov.data<int64_t>() + suffix_ov.get_size());
+
+    // Since whitespace can be added at the beginning of the suffix we also try to capture that behavior here
+    // and get suffix string that will actually be part of the decoded string so we can remove it correctly
+    auto wrapped_suffix_tokens = suffix_tokens;
+    wrapped_suffix_tokens.insert(wrapped_suffix_tokens.begin(), prefix_tokens.begin(), prefix_tokens.end());
+    std::string wrapped_suffix = tokenizer.decode(wrapped_suffix_tokens);
+    auto wrapper_pos = wrapped_suffix.find(prefix);
+    suffix = wrapped_suffix.substr(wrapper_pos + prefix.size());
     
     for (auto stop_string: stop_strings) {
         int current_position = 0;
