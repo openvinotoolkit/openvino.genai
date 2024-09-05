@@ -85,18 +85,42 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
     return tokens;
 }
 
+std::vector<int64_t> wrap_tokens(const std::vector<int64_t>& tokens, const std::vector<int64_t>& prefix_tokens, const std::vector<int64_t>& suffix_tokens) {
+    std::vector<int64_t> all_tokens = prefix_tokens;
+    all_tokens.insert(all_tokens.end(), tokens.begin(), tokens.end());
+    all_tokens.insert(all_tokens.end(), suffix_tokens.begin(), suffix_tokens.end());
+    return all_tokens;
+}
+
+std::string clean_wrapped_text(const std::string& wrapped_text, const std::string& prefix, const std::string& suffix) {
+    auto prefix_pos = wrapped_text.find(prefix);
+    OPENVINO_ASSERT(wrapped_text.begin() + prefix_pos == wrapped_text.begin());
+    auto suffix_pos = wrapped_text.rfind(suffix);
+    OPENVINO_ASSERT(wrapped_text.begin() + suffix_pos == wrapped_text.end() - suffix.size());
+    std::string clean_text = wrapped_text.substr(prefix.size(), wrapped_text.size() - suffix.size());
+    return clean_text;
+}
+
 // Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
 int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings) {
     /*
     For catching stop_string hit we run comparisons character-wise to catch cases where stop string 
     overlaps with part of another token on both sides or is just a part of a single token. 
     For every stop_string we iterate over generated tokens starting from the last one and going backwards. 
-    Every token is decoded and its characters are compared to the stop_string character at a current_position 
+    Every token is wrapped with prefix and suffix tokens to ensure tokenizer doesn't remove whitespaces.
+    After that prefix and suffix are removed from the decoded text, so we end up with decoded token.
+    Its characters are compared to the stop_string character at a current_position 
     (position of a character in the stop_string counting from the last one) - at the begining position is 0.
     When characters match we increase current_position and check if we have a full match already, if not we continue.
     If we have already matched some characters (current_position > 0) and next character is not matching 
     before we reach the full match, then we reset current_position to 0. 
     */ 
+    std::string prefix = "abcd", suffix = "efgh";
+    auto prefix_ov = tokenizer.encode(prefix).input_ids;
+    std::vector<int64_t> prefix_tokens(prefix_ov.data<int64_t>(), prefix_ov.data<int64_t>() + prefix_ov.get_size());
+    auto suffix_ov = tokenizer.encode(suffix).input_ids;
+    std::vector<int64_t> suffix_tokens(suffix_ov.data<int64_t>(), suffix_ov.data<int64_t>() + suffix_ov.get_size());
+    
     for (auto stop_string: stop_strings) {
         int current_position = 0;
         int num_matched_tokens = 0; 
@@ -106,17 +130,21 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
         while (generated_tokens_rit != generated_tokens.rend()) {
             num_matched_tokens++;
             tokens_buffer.push_back(*generated_tokens_rit);
-            std::string decoded_tokens = tokenizer.decode(tokens_buffer);
-            if (decoded_tokens == "" || decoded_tokens == "�") { 
+
+            std::vector<int64_t> wrapped_tokens = wrap_tokens(tokens_buffer, prefix_tokens, suffix_tokens);
+            std::string wrapped_text = tokenizer.decode(wrapped_tokens);
+            std::string clean_text = clean_wrapped_text(wrapped_text, prefix, suffix);
+
+            if (clean_text == "" || clean_text == "�") { 
                 generated_tokens_rit++;
                 continue;
             } else {
                 tokens_buffer.clear();
             }
-            // Checking decoded_token characters starting from the last one
-            for (auto decoded_tokens_rit = decoded_tokens.rbegin(); decoded_tokens_rit != decoded_tokens.rend(); decoded_tokens_rit++) {
+            // Checking clean_text characters starting from the last one
+            for (auto clean_text_rit = clean_text.rbegin(); clean_text_rit != clean_text.rend(); clean_text_rit++) {
                 // On character match increment current_position for the next comparisons
-                if (*decoded_tokens_rit == *(stop_string.rbegin() + current_position)) {
+                if (*clean_text_rit == *(stop_string.rbegin() + current_position)) {
                     current_position++;
                     // If this is the last character from the stop_string we have a match
                     if ((stop_string.rbegin() + current_position) == stop_string.rend()) {
@@ -126,7 +154,7 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
                     // Already found matching characters, but the last one didn't match, so we reset current_position
                     current_position = 0;
                     // Looking for the match will start over from this character so we decrement iterator
-                    decoded_tokens_rit--;
+                    clean_text_rit--;
                 }
             }
             generated_tokens_rit++;
