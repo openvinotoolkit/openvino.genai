@@ -57,7 +57,7 @@ std::string get_ov_genai_library_path() {
 }
 
 std::filesystem::path with_openvino_tokenizers(const std::filesystem::path& path) {
-#if defined(_DEBUG) && (defined(__APPLE__) || defined(_WIN32))
+#if !defined(NDEBUG) && (defined(__APPLE__) || defined(_WIN32))
 # define LIB_POSTFIX "d"
 #else
 # define LIB_POSTFIX ""
