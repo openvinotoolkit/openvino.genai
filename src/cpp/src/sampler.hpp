@@ -123,7 +123,7 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
         std::vector<int64_t> tokens_buffer;
         while (generated_tokens_rit != generated_tokens.rend()) {
             num_matched_tokens++;
-            tokens_buffer.push_back(*generated_tokens_rit);
+            tokens_buffer.insert(tokens_buffer.begin(), *generated_tokens_rit);
 
             std::vector<int64_t> wrapped_tokens = wrap_tokens(tokens_buffer, prefix_tokens);
             std::string wrapped_text = tokenizer.decode(wrapped_tokens);
