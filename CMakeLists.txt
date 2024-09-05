@@ -56,6 +56,10 @@ if(ENABLE_PYTHON)
     endif()
 endif()
 
+if(WIN32 OR APPLE)
+  set(CMAKE_DEBUG_POSTFIX "d")
+endif()
+
 add_subdirectory(thirdparty)
 add_subdirectory(src)
 add_subdirectory(samples)
