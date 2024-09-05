@@ -85,7 +85,7 @@ std::vector<float> read_wav(const std::string& filename) {
 
     if (wav.sampleRate != COMMON_SAMPLE_RATE) {
         drwav_uninit(&wav);
-        throw std::runtime_error("WAV file must be " + std::to_string(COMMON_SAMPLE_RATE / 1000) + " kHz");
+        throw std::runtime_error("WAV file must be " + std::string{COMMON_SAMPLE_RATE / 1000} + " kHz");
     }
 
     const uint64_t n =
