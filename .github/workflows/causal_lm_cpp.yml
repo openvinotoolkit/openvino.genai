@@ -158,6 +158,7 @@ jobs:
           echo "return 0" passed
 
           timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "你好！ 你好嗎？" > ./pred.txt
+          cat pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r', errors='replace') as file:
@@ -174,6 +175,7 @@ jobs:
           echo "你好！ 你好嗎？" passed
 
           timeout 1m ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
+          cat pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r', errors='replace') as file:
