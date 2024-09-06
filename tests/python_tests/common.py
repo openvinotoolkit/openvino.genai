@@ -118,7 +118,7 @@ def get_beam_search_with_multiple_stop_strings_no_match() -> GenerationConfig:
     generation_config = GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
-    generation_config.max_new_tokens = 50
+    generation_config.max_new_tokens = 30
     generation_config.num_return_sequences = generation_config.num_beams
     generation_config.stop_strings = {"Einstein", "sunny", "geothermal"}
     generation_config.include_stop_str_in_output = True
