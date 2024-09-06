@@ -331,7 +331,6 @@ ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tok
         data[idx] = data[idx] * pipe.m_vlm_config.scale_emb;
     }
 
-
     //fill "<image>" embedding
     std::copy(data + embedding_dim * 2, data + embedding_dim * 3, imgEmbedData);
     imgEmbedData += embedding_dim;
@@ -387,7 +386,6 @@ ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tok
 VLMPipeline::VLMPipeline(
     const std::filesystem::path& model_dir,
     const Tokenizer& tokenizer,
-    const VisionEncoder& vision_encoder,
     const std::string& device,
     const ov::AnyMap device_config,
     ov::Core core
@@ -398,7 +396,7 @@ VLMPipeline::VLMPipeline(
         )
     },
     m_tokenizer{tokenizer},
-    m_vision_encoder{vision_encoder},
+    m_vision_encoder(model_dir, device, device_config, core),
     m_resampler{core.compile_model(
         model_dir / "openvino_resampler.xml", device, device_config
     ).create_infer_request()},
@@ -415,90 +413,67 @@ VLMPipeline::VLMPipeline(
     },
     is_chat_conversation{false} {}
 
-VLMPipeline::VLMPipeline(
-    const std::filesystem::path& model_dir,
-    const std::string& device,
-    const ov::AnyMap device_config,
-    ov::Core core
-) : VLMPipeline{
-    model_dir,
-    Tokenizer(model_dir.string(), device_config),
-    VisionEncoder(model_dir, device, device_config, core),
-    device,
-    device_config,
-    core
-} {}
-
-EncodedResults VLMPipeline::generate(
-    const EncodedPromptImage& pair,
+std::string VLMPipeline::generate(
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
     const ProcessorConfig& processor_config,
-    const VLMConfig& vlm_config,
+    const GenerationConfig& generation_config,
     const std::function<bool(std::string&&)>& callback
 ) {
     return generate(
-        pair,
+        prompt,
+        images,
         processor_config,
-        vlm_config,
-        std::make_unique<TextCallbackStreamer>(m_tokenizer, callback)
+        generation_config,
+        std::make_shared<TextCallbackStreamer>(m_tokenizer, callback)
     );
 }
 
 std::string VLMPipeline::generate(
-    const PromptImage& pair,
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
     const ProcessorConfig& processor_config,
-    const VLMConfig& vlm_config,
-    const std::function<bool(std::string&&)>& callback
+    const GenerationConfig& generation_config,
+    const std::shared_ptr<ov::genai::StreamerBase>& streamer
 ) {
-    return generate(
-        pair,
-        processor_config,
-        vlm_config,
-        std::make_unique<TextCallbackStreamer>(m_tokenizer, callback)
+    OPENVINO_ASSERT(
+        images.empty() || 1 == images.size(), "one image only"
     );
-}
-
-std::string VLMPipeline::generate(
-    const PromptImage& pair,
-    const ProcessorConfig& processor_config,
-    const VLMConfig& vlm_config,
-    const std::shared_ptr<StreamerBase>& streamer
-) {
-    std::string prompt = std::visit(overloaded{
-        [](const std::string& single) {
-            return single;
-        },
-        [](const std::vector<std::string>& multiple) {
-            switch (multiple.size()) {
-                case 0: return std::string{};
-                case 1: return multiple.at(0);
-                default: OPENVINO_THROW("Batch isn't supported");
-            }
-        }
-    }, pair.prompt);
-    if (pair.image) {
-        prompt += "<AI>";
-    } else {
-        prompt = "<用户>" + prompt + "<AI>";
-    }
-
-    EncodedImage embeds = pair.image ?
-        m_vision_encoder.encode( pair.image, processor_config) :
-            EncodedImage{};
+    std::string wrapped = images.empty() ?
+        "<用户>" + prompt + "<AI>" : prompt + "<AI>";
     TokenizedInputs encoded = m_tokenizer.encode(prompt);
     EncodedResults generated = generate(
-        {encoded, embeds},
+        encoded,
+        images,
         processor_config,
-        vlm_config,
+        generation_config,
         streamer
     );
     return m_tokenizer.decode(generated.tokens.at(0));
 }
 
 EncodedResults VLMPipeline::generate(
-    const EncodedPromptImage& pair,
+    const EncodedInputs& prompt,
+    const std::vector<ov::Tensor>& images,
     const ProcessorConfig& processor_config,
-    const VLMConfig& vlm_config,
-    const std::shared_ptr<StreamerBase>& streamer
+    const GenerationConfig& generation_config,
+    const std::function<bool(std::string&&)>& callback
+) {
+    return generate(
+        prompt,
+        images,
+        processor_config,
+        generation_config,
+        std::make_shared<TextCallbackStreamer>(m_tokenizer, callback)
+    );
+}
+
+EncodedResults VLMPipeline::generate(
+    const EncodedInputs& prompt,
+    const std::vector<ov::Tensor>& images,
+    const ProcessorConfig& processor_config,
+    const GenerationConfig& generation_config,
+    const std::shared_ptr<ov::genai::StreamerBase>& streamer
 ) {
     const ov::Tensor& input_ids = std::visit(overloaded{
         [](const ov::Tensor& single) {
@@ -507,16 +482,28 @@ EncodedResults VLMPipeline::generate(
         [](const TokenizedInputs& pair) {
             return pair.input_ids;
         }
-    }, pair.prompt);
-    if (pair.image.resized_source) {
-        ov::Tensor imgEmbedTensor = get_image_embedding(pair.image, m_tokenizer, m_embedding, *this);
+    }, prompt);
+    if (images.empty()) {
+        //<用户> + prompt + <AI>  LLM first input
+        ov::Tensor promtTensor = process_prompt(m_tokenizer, m_embedding, input_ids, m_vlm_config.scale_emb);
+
+        if ((m_history_length + promtTensor.get_shape()[1]) > m_language_embeddings_history.size()) {
+            m_language_embeddings_history.resize((m_history_length + 256) * m_vlm_config.hidden_size);
+        }
+
+        memcpy(m_language_embeddings_history.data() + m_history_length * m_vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
+        m_history_length = m_history_length + promtTensor.get_shape()[1];
+    } else {
+        OPENVINO_ASSERT(1 == images.size(), "Only a single image allowd");
+        EncodedImage embeds = m_vision_encoder.encode(images.at(0), processor_config);
+        ov::Tensor imgEmbedTensor = get_image_embedding(embeds, m_tokenizer, m_embedding, *this);
 
         ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
         OPENVINO_ASSERT(
-            vlm_config.hidden_size == img_embed_shape.at(2),
+            m_vlm_config.hidden_size == img_embed_shape.at(2),
             "Unexpected embedding size");
 
-        m_language_embeddings_history.resize((m_language_embeddings_history.size() * vlm_config.hidden_size));
+        m_language_embeddings_history.resize((m_language_embeddings_history.size() * m_vlm_config.hidden_size));
 
         //<用户> + image embedding + prompt + <AI> LLM first input
         ov::Tensor promtTensor = process_prompt(m_tokenizer, m_embedding, input_ids, m_vlm_config.scale_emb);
@@ -524,23 +511,13 @@ EncodedResults VLMPipeline::generate(
 
         //memcpy image embedding buf
         if (m_history_length > m_language_embeddings_history.size()) {
-            m_language_embeddings_history.resize((m_history_length + 256) * vlm_config.hidden_size);
+            m_language_embeddings_history.resize((m_history_length + 256) * m_vlm_config.hidden_size);
         }
 
         memcpy(m_language_embeddings_history.data(), imgEmbedTensor.data<float>(), imgEmbedTensor.get_byte_size());
-        memcpy(m_language_embeddings_history.data() + img_embed_shape[1] * vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
-    } else {
-        //<用户> + prompt + <AI>  LLM first input
-        ov::Tensor promtTensor = process_prompt(m_tokenizer, m_embedding, input_ids, m_vlm_config.scale_emb);
-
-        if ((m_history_length + promtTensor.get_shape()[1]) > m_language_embeddings_history.size()) {
-            m_language_embeddings_history.resize((m_history_length + 256) * vlm_config.hidden_size);
-        }
-
-        memcpy(m_language_embeddings_history.data() + m_history_length * vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
-        m_history_length = m_history_length + promtTensor.get_shape()[1];
+        memcpy(m_language_embeddings_history.data() + img_embed_shape[1] * m_vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
     }
-    ov::Tensor llmEmbedTensor = ov::Tensor(ov::element::f32, {1, m_history_length, vlm_config.hidden_size}, m_language_embeddings_history.data());
+    ov::Tensor llmEmbedTensor = ov::Tensor(ov::element::f32, {1, m_history_length, m_vlm_config.hidden_size}, m_language_embeddings_history.data());
     auto input_len = llmEmbedTensor.get_shape()[1];
 
     m_language.set_tensor("inputs_embeds", llmEmbedTensor);
@@ -561,7 +538,7 @@ EncodedResults VLMPipeline::generate(
     float* logits = m_language.get_tensor("logits").data<float>() + sequence_len * vocab_size;
     int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
 
-    m_language.get_tensor("inputs_embeds").set_shape({BATCH_SIZE, 1, vlm_config.hidden_size});
+    m_language.get_tensor("inputs_embeds").set_shape({BATCH_SIZE, 1, m_vlm_config.hidden_size});
     m_language.get_tensor("position_ids").set_shape({ BATCH_SIZE, 1 });
 
     m_embedding.get_tensor("inputs_id").set_shape({ 1, 1 });
@@ -582,10 +559,10 @@ EncodedResults VLMPipeline::generate(
 
         //record answer token info
         if ((m_history_length + 1) > m_language_embeddings_history.size()) {
-            m_language_embeddings_history.resize((m_history_length + 256) * vlm_config.hidden_size);
+            m_language_embeddings_history.resize((m_history_length + 256) * m_vlm_config.hidden_size);
         }
 
-        memcpy(m_language_embeddings_history.data() + m_history_length * vlm_config.hidden_size, embed_prompt_tensor.data<float>(), embed_prompt_tensor.get_byte_size());
+        memcpy(m_language_embeddings_history.data() + m_history_length * m_vlm_config.hidden_size, embed_prompt_tensor.data<float>(), embed_prompt_tensor.get_byte_size());
         m_history_length = m_history_length + 1;
 
         m_language.set_tensor("inputs_embeds", embed_prompt_tensor);
@@ -623,4 +600,29 @@ EncodedResults VLMPipeline::generate(
     return EncodedResults{
         std::vector<std::vector<int64_t>>{std::move(generated)}
     };
+}
+
+std::string VLMPipeline::generate(
+    const std::string& prompt,
+    const ov::AnyMap& kwargs
+) {
+    auto image = kwargs.find(ov::genai::image.name());
+    auto callback = kwargs.find(ov::genai::callback.name());
+    if (kwargs.end() == callback) {
+        return generate(
+            prompt,
+            kwargs.end() == image ? std::vector<ov::Tensor>{}
+                : std::vector{image->second.as<ov::Tensor>()},
+            m_vision_encoder.m_processor_config,
+            m_generation_config
+        );
+    }
+    return generate(
+        prompt,
+        kwargs.end() == image ? std::vector<ov::Tensor>{}
+            : std::vector{image->second.as<ov::Tensor>()},
+        m_vision_encoder.m_processor_config,
+        m_generation_config,
+        callback->second.as<std::function<bool(std::string&&)>>()
+    );
 }

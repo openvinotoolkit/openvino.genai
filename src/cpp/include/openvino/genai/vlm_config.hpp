@@ -20,6 +20,16 @@ public:
     /// @brief the number of <unk> to insert into the prompt per image
     /// slice.
     size_t query_num = 64;
+    /// @brief A string denoting start of image embeddings for LLM.
+    std::string image_start_token = "<image>";
+    /// @brief A string denoting end of image embeddings for LLM.
+    std::string image_end_token = "</image>";
+    /// @brief A string denoting start of image slices row embeddings
+    /// for LLM.
+    std::string image_slice_start_token = "<slice>";
+    /// @brief A string denoting end of image slices row embeddings
+    /// for LLM.
+    std::string image_slice_end_token = "</slice>";
     /// @brief Default constructor.
     VLMConfig() = default;
     /// @brief Construct VLMConfig from values in json_path.

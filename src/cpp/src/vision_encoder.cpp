@@ -51,9 +51,9 @@ std::vector<std::vector<clip_image_u8>> slice_image(const clip_image_u8& img, co
     const std::pair<int, int> original_size{img.nx, img.ny};
     const int original_width = img.nx;
     const int original_height = img.ny;
-    const float log_ratio = log(1.0 * original_width / original_height);
-    const float ratio = 1.0 * original_width * original_height / (scale_resolution * scale_resolution);
-    const int multiple = fmin(ceil(ratio), max_slice_nums);
+    const float log_ratio = log(1.0f * original_width / original_height);
+    const float ratio = 1.0f * original_width * original_height / (scale_resolution * scale_resolution);
+    const int multiple = std::min(int(ceil(ratio)), max_slice_nums);
 
     std::vector<std::vector<clip_image_u8>> images;
     images.push_back(std::vector<clip_image_u8>{});

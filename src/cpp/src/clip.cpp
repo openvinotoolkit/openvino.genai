@@ -93,7 +93,8 @@ static void normalize_image_u8_to_f32(const clip_image_u8* src, clip_image_f32* 
     }
 }
 
-inline float clip(float x, float lower, float upper) {
+template<typename NUM>
+NUM clip(NUM x, NUM lower, NUM upper) {
     return std::max(lower, std::min(x, upper));
 }
 

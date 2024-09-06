@@ -5,7 +5,7 @@
 #include <openvino/genai/vlm_pipeline.hpp>
 #include <openvino/runtime/intel_gpu/properties.hpp>
 
-bool callback(std::string&& subword) {
+bool print_subword(std::string&& subword) {
     return !(std::cout << subword);
 }
 
@@ -17,8 +17,8 @@ int main(int argc, char* argv[]) try {
     std::string device = "CPU";  // GPU can be used as well
     ov::AnyMap enable_compile_cache;
     if ("GPU" == device) {
-        // Cache compile models on disks for GPU to save time on the
-        // next run. It's not beneficial for CPU.
+        // Cache compile models on disk for GPU to save time on the next
+        // run. It's not beneficial for CPU.
         enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
     }
     ov::genai::VLMPipeline pipe(argv[1], device, enable_compile_cache);
@@ -29,12 +29,15 @@ int main(int argc, char* argv[]) try {
     if (!std::getline(std::cin, prompt)) {
         throw std::runtime_error("std::cin failed");
     }
-    pipe.generate({std::move(prompt), std::move(image)}, callback);
+    pipe.generate(
+        prompt,
+        ov::genai::image(std::move(image)),
+        ov::genai::callback(print_subword)
+    );
     std::cout << "\n----------\n"
         "question:\n";
-    size_t counter = 1;
     while (std::getline(std::cin, prompt)) {
-        pipe.generate({std::move(prompt)}, callback);
+        pipe.generate(prompt, ov::genai::callback(print_subword));
         std::cout << "\n----------\n"
             "question:\n";
     }
