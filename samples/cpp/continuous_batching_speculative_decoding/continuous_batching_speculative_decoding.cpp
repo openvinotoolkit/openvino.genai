@@ -51,6 +51,7 @@ int main(int argc, char* argv[]) try {
     // create dataset
 
     std::vector<std::string> prompt_examples = {
+        "The United Arab Emirates[c] (UAE), or simply the Emirates,[d] is a country in West Asia, in the Middle East, at the eastern end of the Arabian Peninsula. It is a federal, elective monarchy composed of seven emirates, with Abu Dhabi as its capital.[13] It shares land borders with Oman to the east and northwest, and with Saudi Arabia to the southwest; as well as maritime borders in the Persian Gulf with Qatar and Iran, and with Oman in the Gulf of Oman.",
         "What is OpenVINO?",
         "How are you?",
         "What is your name?",
