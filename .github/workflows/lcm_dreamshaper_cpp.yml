@@ -1,15 +1,13 @@
 name: lcm_dreamshaper
 
 on:
+  workflow_dispatch:
   pull_request:
-    paths:
-      - image_generation/lcm_dreamshaper_v7/cpp/**
-      - image_generation/common/**
-      - image_generation/requirements.txt
-      - samples/requirements.txt
-      - .github/workflows/lcm_dreamshaper_cpp.yml
-      - thirdparty/openvino_tokenizers
-      - "!**.md"
+  merge_group:
+  push:
+    branches:
+      - master
+      - 'releases/**'
 
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
@@ -131,3 +129,17 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           ./build/Release/lcm_dreamshaper.exe -r --dynamic
+
+  Overall_Status:
+    name: ci/gha_overall_status_lcm
+    needs: [lcm_dreamshaper_v7_cpp-linux, lcm_dreamshaper_v7_cpp-windows]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status of all jobs
+        if: >-
+          ${{
+            contains(needs.*.result, 'failure') ||
+            contains(needs.*.result, 'cancelled')
+          }}
+        run: exit 1

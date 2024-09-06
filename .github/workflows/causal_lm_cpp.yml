@@ -1,12 +1,12 @@
 name: causal_lm_cpp
 on:
+  workflow_dispatch:
   pull_request:
-    paths:
-      - .github/workflows/causal_lm_cpp.yml
-      - src/**
-      - samples/**
-      - thirdparty/openvino_tokenizers
-      - "!**.md"
+  merge_group:
+  push:
+    branches:
+      - master
+      - 'releases/**'
 permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -816,3 +816,21 @@ jobs:
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
           source ./ov/setupvars.sh
           ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 5 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
+
+  Overall_Status:
+    name: ci/gha_overall_status_causal_lm
+    needs: [cpp-multinomial-greedy_causal_lm-ubuntu, cpp-beam_search_causal_lm-ubuntu, cpp-greedy_causal_lm-windows,
+            cpp-beam_search_causal_lm-Qwen-7B-Chat, cpp-beam_search_causal_lm-Qwen1_5-7B-Chat, cpp-beam_search_causal_lm-Phi-2,
+            cpp-beam_search_causal_lm-notus-7b-v1, cpp-speculative_decoding_lm-ubuntu, cpp-prompt_lookup_decoding_lm-ubuntu,
+            cpp-Phi-1_5, cpp-greedy_causal_lm-redpajama-3b-chat, cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu,
+            cpp-continuous-batching-windows, cpp-continuous-batching-macos]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status of all jobs
+        if: >-
+          ${{
+            contains(needs.*.result, 'failure') ||
+            contains(needs.*.result, 'cancelled')
+          }}
+        run: exit 1
