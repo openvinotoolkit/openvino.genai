@@ -33,6 +33,7 @@ SpeculativeDecodingPipeline::SpeculativeDecodingPipeline(
     ov::genai::SchedulerConfig model_scheduler_config = scheduler_config,
                                assisting_scheduler_config = scheduler_config;
     if (m_is_speculative_mode) {
+        // split KV cache to 2 caches for speculative and base parts
         size_t model_cache_size = get_kv_cache_size(model),
                assisting_cache_size = get_kv_cache_size(assisting_model);
         auto k = float(assisting_cache_size) / (model_cache_size + assisting_cache_size);
@@ -45,38 +46,25 @@ SpeculativeDecodingPipeline::SpeculativeDecodingPipeline(
     }
 
     m_pipeline = ov::genai::ContinuousBatchingPipeline(core, model, m_tokenizer, model_scheduler_config, device, plugin_config, true);
-
 }
 
 void SpeculativeDecodingPipeline::step() {
-    // std::cout << "=======STEP==================" << std::endl;
     std::vector<ov::genai::ContinuousBatchingPipeline::GeneratedSequence> candidate_sequences;
     if (m_is_speculative_mode) {
-        // generate candidates using small model
-        // std::cout << "num_candidates: " << candidates_number << std::endl;
-        for (size_t i = 0; i < m_candidates_num; ++i) {
-            auto start_time = std::chrono::system_clock::now();
+        // find minimum(candidates_number, seq_len) to generate candidates
+        size_t min_candidates_number = m_candidates_num;
+        for (auto& request : m_to_generate_length) {
+            if (request.second < min_candidates_number && request.second > 0) {
+                min_candidates_number = request.second;
+            }
+        }
+        // generate candidates by speculative model
+        for (size_t i = 0; i < min_candidates_number; ++i) {
             m_speculative_pipeline.step();
-            auto end_time = std::chrono::system_clock::now();
-            m_speculative_model_duration += std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count();
         }
 
-        // put candidates to model cache
+        // put candidates to model KV cache
         candidate_sequences = m_speculative_pipeline.get_generated_sequences();
-        // todo: remove debug code
-        // for (const auto& s : candidate_sequences) {
-        //     std::cout << "ASSISTANT: ";
-        //     for (const auto& d : s.token_ids) {
-        //         std::cout << d << " ";
-        //     }
-        //     std::cout << std::endl;
-            // for (const auto& d : s.log_probs) {
-            //     std::cout << d << " ";
-            // }
-            // std::cout << std::endl;
-            // std::cout << decode(s.token_ids) << std::endl;
-        // }
-
         for (const auto& candidate : candidate_sequences) {
             m_pipeline.update_generated_sequence(candidate);
         }
@@ -86,34 +74,25 @@ void SpeculativeDecodingPipeline::step() {
     m_pipeline.step();
 
     if (m_is_speculative_mode) {
-        // todo: iefode: remove debug prints
         auto checked_sequences = m_pipeline.get_generated_sequences();
-        // todo: remove debug code
-        // for (const auto& s : checked_sequences) {
-        //     std::cout << "MODEL:     ";
-        //     for (const auto& d : s.token_ids) {
-        //         std::cout << d << " ";
-        //     }
-        //     std::cout << std::endl;
-            // for (const auto& d : s.log_probs) {
-            //     std::cout << d << " ";
-            // }
-            // std::cout << std::endl;
-            // std::cout << decode(s.token_ids) << std::endl;
-            // std::cout << std::endl;
-        // }
-
-        ov::genai::ContinuousBatchingPipeline::UpdateSeqResult update_result;
+        size_t max_removed_token_cnt = 0;
         for (const auto& checked_sequence : checked_sequences) {
-            update_result = m_speculative_pipeline.update_generated_sequence(checked_sequence);
+            auto update_result = m_speculative_pipeline.update_generated_sequence(checked_sequence);
+            max_removed_token_cnt = std::max(max_removed_token_cnt, update_result.to_remove);
         }
+        OPENVINO_ASSERT(m_candidates_num >= max_removed_token_cnt);
+        auto num_matches = m_candidates_num - max_removed_token_cnt;
+        update_strategy(num_matches);
 
-        OPENVINO_ASSERT(m_candidates_num >= update_result.to_remove);
-        // if (update_result.to_remove) {
-        //     std::cout << "to_remove: " << update_result.to_remove << std::endl;
-        // }
-        update_strategy(m_candidates_num - update_result.to_remove);
-        // std::cout << "=========================" << std::endl;
+        // update to generate tokens
+        for (auto& request : m_to_generate_length) {
+            if (request.second > num_matches) {
+                request.second -= (num_matches + 1);
+            } else {
+                request.second = 0;
+                m_speculative_pipeline.finish_request(request.first);
+            }
+        }
     }
 }
 
@@ -126,6 +105,7 @@ SpeculativeDecodingPipeline::generate(const std::vector<std::string>& prompts,
     std::vector<ov::genai::GenerationHandle> generations, speculative_generations;
     for (size_t request_id = 0; request_id < prompts.size(); ++request_id) {
         generations.push_back(m_pipeline.add_request(request_id, prompts[request_id], sampling_params[request_id]));
+        m_to_generate_length.insert({ request_id, sampling_params[request_id].max_new_tokens });
         if (m_is_speculative_mode) {
             auto assisting_sampling_params = sampling_params[request_id];
             assisting_sampling_params.max_new_tokens += m_max_candidates_num;
@@ -138,7 +118,8 @@ SpeculativeDecodingPipeline::generate(const std::vector<std::string>& prompts,
         step();
     }
     if (m_is_speculative_mode) {
-        m_speculative_pipeline.finish_all_requests();
+        // finish all speculative requests
+        m_speculative_pipeline.finish_request(-1);
     }
 
     std::vector<ov::genai::EncodedGenerationResult> encoded_results;
@@ -180,38 +161,16 @@ SpeculativeDecodingPipeline::generate(const std::vector<std::string>& prompts,
     return decoded_results;
 }
 
-inline size_t get_median(std::vector<size_t> values) {
-    const auto size = values.size();
-    if (size == 0) {
-        return 0;
-    }
-    size_t offset = values.size() / 2;
-
-    auto it = values.begin() + offset;
-    std::nth_element(values.begin(), it, values.end());
-
-    if (size % 2 != 0) {
-        return *it;
-    }
-    auto it_1 = values.begin() + offset - 1;
-    std::nth_element(values.begin(), it_1, values.end());
-    return (*it + *it_1) / 2;
-}
-
-
-void SpeculativeDecodingPipeline::update_strategy(size_t num_matches) {
-    // std::cout << "num_matches: " << num_matches << " m_candidates_num: " << m_candidates_num << std::endl;
+void SpeculativeDecodingPipeline::update_strategy(const size_t num_matches) {
+    // dynamically adjust number of generated candidates based on number of matches
+    // we want to balance the benefits of getting candidates tokens correct with the
+    // cost of forecasting incorrect candidates tokens.
     if (m_max_candidates_num == 0) {
         return;
     }
-
-    if (m_max_matches < num_matches) {
-        m_max_matches = num_matches;
-    }
     if (num_matches == m_candidates_num) {
-        m_candidates_num = std::min(std::max(m_candidates_num + 1, m_max_matches), m_max_candidates_num);
+        m_candidates_num = std::min(m_candidates_num + 2, m_max_candidates_num);
     } else {
-        m_candidates_num = num_matches > 0 ? num_matches : std::max(get_median(m_matches_info), size_t(1));
+        m_candidates_num = std::max(int64_t(m_candidates_num) - 1, int64_t(1));
     }
-    m_matches_info.push_back(num_matches);
 }

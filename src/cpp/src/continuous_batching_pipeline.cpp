@@ -411,14 +411,29 @@ public:
         m_history.clear();
     };
 
-    void finish_all_requests() {
-        while (!m_requests.empty()) {
-            const auto& request = *m_requests.rbegin();
-            for (const auto& sequence : request->get_sequences()) {
-                m_scheduler->free_sequence(sequence->get_id());
+    void finish_request(int64_t request_id) {
+        if (request_id == -1) {
+            while (!m_requests.empty()) {
+                const auto& request = *m_requests.rbegin();
+                for (const auto& sequence : request->get_sequences()) {
+                    m_scheduler->free_sequence(sequence->get_id());
+                }
+                m_sampler->clear_beam_search_info(request->get_request_id());
+                m_requests.pop_back();
             }
-            m_sampler->clear_beam_search_info(request->get_request_id());
-            m_requests.pop_back();
+        } else {
+            for (size_t i = 0; i < m_requests.size(); ++i) {
+                auto& request = m_requests[i];
+                if (request->get_request_id() != request_id) {
+                    continue;
+                }
+                for (const auto& sequence : request->get_sequences()) {
+                    m_scheduler->free_sequence(sequence->get_id());
+                }
+                m_sampler->clear_beam_search_info(request->get_request_id());
+                m_requests.erase(m_requests.begin() + i);
+                break;
+            }
         }
     }
 
@@ -467,7 +482,7 @@ public:
                                     sequence->remove_last_n_tokens(to_remove_tokens);
                                     present_ids = sequence->get_generated_ids();
                                     const size_t gen_len_before = gen_ids_before.size(),
-                                                 gen_len_after = present_ids.size();
+                                                gen_len_after = present_ids.size();
                                     if (gen_len_after == 0) {
                                         is_empty_generated_tokens = true;
                                     }
@@ -516,6 +531,7 @@ public:
                 return ContinuousBatchingPipeline::UpdateSeqResult(to_insert_tokens, to_remove_tokens);
             }
         }
+        return {0, 0};
     }
 };
 
@@ -588,8 +604,8 @@ void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
 void ContinuousBatchingPipeline::finish_chat() {
     m_impl->finish_chat();
 };
-void ContinuousBatchingPipeline::finish_all_requests() {
-    m_impl->finish_all_requests();
+void ContinuousBatchingPipeline::finish_request(int64_t request_id) {
+    m_impl->finish_request(request_id);
 }
 
 std::vector<ContinuousBatchingPipeline::GeneratedSequence> 

@@ -147,6 +147,10 @@ private:
     size_t draft_model_seq_length = 0;
 
 public:
+    size_t max_match = 0, avg_match = 0;
+    int64_t m_speculative_model_duration = 0;
+    std::vector<size_t> m_matches_info;
+
     AssistedCandidateGenerator(ov::InferRequest draft_model,
                                const size_t max_seq_length,
                                const size_t num_pred_tokens,
@@ -174,8 +178,10 @@ public:
 
         draft_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
         draft_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
-
+        auto start_time = std::chrono::system_clock::now();
         draft_model.infer();
+        auto end_time = std::chrono::system_clock::now();
+        m_speculative_model_duration += std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count();
 
         auto logits = draft_model.get_tensor("logits");
         size_t vocab_size = logits.get_shape().back();
@@ -220,7 +226,48 @@ public:
         } else {
             num_pred_tokens = std::max(int64_t(num_pred_tokens) - 1, int64_t(1));
         }
+        // std::cout << "num_matches: " << num_matches << " m_candidates_num: " << num_pred_tokens << std::endl;
+        max_match = std::max(num_matches, max_match);
+        avg_match += num_matches;
     }
+
+    
+// inline size_t get_median(std::vector<size_t> values) {
+//     const auto size = values.size();
+//     if (size == 0) {
+//         return 0;
+//     }
+//     size_t offset = values.size() / 2;
+
+//     auto it = values.begin() + offset;
+//     std::nth_element(values.begin(), it, values.end());
+
+//     if (size % 2 != 0) {
+//         return *it;
+//     }
+//     auto it_1 = values.begin() + offset - 1;
+//     std::nth_element(values.begin(), it_1, values.end());
+//     return (*it + *it_1) / 2;
+// }
+
+
+// void update_candidate_strategy(size_t num_matches) {
+//     // std::cout << "num_matches: " << num_matches << " m_candidates_num: " << m_candidates_num << std::endl;
+//     if (max_pred_tokens == 0) {
+//         return;
+//     }
+
+//     if (max_match < num_matches) {
+//         max_match = num_matches;
+//     }
+//     if (num_matches == num_pred_tokens) {
+//         num_pred_tokens = std::min(std::max(num_pred_tokens + 1, max_match), max_pred_tokens);
+//     } else {
+//         num_pred_tokens = num_matches > 0 ? num_matches : std::max(get_median(m_matches_info), size_t(1));
+//     }
+//     m_matches_info.push_back(num_matches);
+//     avg_match += num_matches;
+// }
 
     void update_kv_cache(const size_t seq_length) {
         // this is the case when main model accepted all candidates from draft model
@@ -250,8 +297,8 @@ int64_t get_eos_token(const std::shared_ptr<ov::Model> tokenizer) {
 }  // namespace
 
 int main(int argc, char* argv[]) try {
-    if (argc != 4) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <DRAFT MODEL_DIR> <MAIN MODEL_DIR> '<PROMPT>'");
+    if (argc != 4 + 2) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <DRAFT MODEL_DIR> <MAIN MODEL_DIR> '<PROMPT>' <CANDIDATES_NUM> <GENERATED_LEN>");
     }
 
     // tokenizer model
@@ -281,9 +328,9 @@ int main(int argc, char* argv[]) try {
 
     ov::InferRequest main_model = core.compile_model(ov_main_model, "CPU").create_infer_request();
 
-    size_t max_sequence_length = 100;
+    size_t max_sequence_length = std::stoi(std::string{argv[5]});
 
-    AssistedCandidateGenerator candidateGenerator{draft_model, max_sequence_length, 5, draft_model_seq_len_axis};
+    AssistedCandidateGenerator candidateGenerator{draft_model, max_sequence_length, std::stoi(std::string{argv[4]}), draft_model_seq_len_axis};
 
     main_model.set_tensor("input_ids", input_ids);
     main_model.set_tensor("attention_mask", attention_mask);
@@ -296,11 +343,15 @@ int main(int argc, char* argv[]) try {
     main_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
     main_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
+    auto start_time = std::chrono::system_clock::now();
+    size_t iteration_cnt = 0;
+
     // To coollect kv-cache for the <PROMPT> and to get the next token run the very first infer request
     candidateGenerator.generate_next_token(
         std::vector<int64_t>(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size()));
 
     main_model.infer();
+    ++iteration_cnt;
 
     size_t vocab_size = draft_model.get_tensor("logits").get_shape().back();
     OPENVINO_ASSERT(vocab_size == main_model.get_tensor("logits").get_shape().back(),
@@ -332,6 +383,10 @@ int main(int argc, char* argv[]) try {
     while (out_token != EOS_TOKEN && seq_len < max_sequence_length) {
         // generate candidates from the draft model
         std::vector<int64_t> candidates = candidateGenerator.generate_candidates(out_token);
+        // std::cout << "ASIISTING MODEL: " << std::endl;
+        // for (size_t i = 0; i < candidates.size(); ++i) {
+        //     std::cout << "N max_sampled_tokens: " << candidates[i] << std::endl;
+        // } 
         size_t candidates_size = candidates.size();
 
         // For the main network, candidates_size + 1 tokens will be fed at once in a single infer request.
@@ -349,6 +404,7 @@ int main(int argc, char* argv[]) try {
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), seq_len);
 
         main_model.infer();
+        ++iteration_cnt;
 
         data_logits = logits.data<float>();  // [BATCH_SIZE, K, vocab_size]
 
@@ -359,18 +415,19 @@ int main(int argc, char* argv[]) try {
         //      2.2 it it's mismatch, stop iteration but still accept current token as it was last token generated by
         //      model from a valid sequence.
         size_t accepted_tokens_number = 0;
+        // std::cout << "MODEL: " << std::endl;
         for (size_t i = 0; i < candidates_size + 1; i++) {
             auto start = data_logits + vocab_size * i;
             auto stop = data_logits + vocab_size * (i + 1);
             out_token = std::max_element(start, stop) - start;
 
+            // std::cout << "N max_sampled_tokens: " << out_token << std::endl;
             if (out_token == EOS_TOKEN) {
                 break;
             }
 
-            text_streamer.put(out_token);
             accepted_tokens_number++;
-
+            text_streamer.put(out_token);
             if (i == candidates_size || out_token != candidates[i]) {
                 break;
             }
@@ -384,6 +441,7 @@ int main(int argc, char* argv[]) try {
         if (accepted_tokens_number > 0) {
             candidateGenerator.update_candidate_strategy(accepted_tokens_number - 1);
         }
+        // std::cout << "=========================" << std::endl;
 
         candidateGenerator.update_kv_cache(seq_len);
         update_kv_cache(main_model, main_model_seq_len_axis, seq_len);
@@ -398,6 +456,17 @@ int main(int argc, char* argv[]) try {
     // it is called for education purposes:
     draft_model.reset_state();
     main_model.reset_state();
+
+    auto end_time = std::chrono::system_clock::now();
+    std::chrono::duration<double> duration = end_time - start_time;
+    std::cout << std::endl;
+    std::cout << "Duration: " << duration.count() << std::endl;
+    std::cout << "Infer number: " << iteration_cnt << std::endl;
+    std::cout << "MAX matches number: " << candidateGenerator.max_match << std::endl;
+    // auto a = std::accumulate(pipe.m_matches_info.begin(), pipe.m_matches_info.end(), 0);
+    std::cout << "AVG matches number: " << float(candidateGenerator.avg_match) / iteration_cnt << std::endl;
+    double c = double(candidateGenerator.m_speculative_model_duration) * 100 / std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+    std::cout << "Speculative model time duration in %: " << c << std::endl;
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';

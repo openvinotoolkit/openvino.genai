@@ -16,6 +16,7 @@ protected:
 
     bool m_is_speculative_mode = false;
     size_t m_max_candidates_num = 0, m_candidates_num = 0;
+    std::map<int64_t, size_t> m_to_generate_length;
 
     void update_strategy(size_t num_matches);
 
@@ -28,10 +29,6 @@ public:
                                 const ov::AnyMap& plugin_config = {});
 
     void step();
-
-    std::vector<ov::genai::GenerationResult> generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params);
-
-    size_t m_max_matches = 0;
-    std::vector<size_t> m_matches_info;
-    int64_t m_speculative_model_duration = 0;
+    std::vector<ov::genai::GenerationResult>
+    generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params);
 };

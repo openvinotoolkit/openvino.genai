@@ -161,9 +161,9 @@ GenerationConfig greedy() {
     greedy_config.temperature = 0.0f;
     greedy_config.ignore_eos = true;
     greedy_config.num_return_sequences = 1;
-    greedy_config.repetition_penalty = 3.0f;
-    greedy_config.presence_penalty = 0.1f;
-    greedy_config.frequency_penalty = 0.01f;
+    // greedy_config.repetition_penalty = 3.0f;
+    // greedy_config.presence_penalty = 0.1f;
+    // greedy_config.frequency_penalty = 0.01f;
     greedy_config.max_new_tokens = 30;
     return greedy_config;
 }

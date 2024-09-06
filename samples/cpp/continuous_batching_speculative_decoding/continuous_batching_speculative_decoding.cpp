@@ -91,7 +91,6 @@ int main(int argc, char* argv[]) try {
     // It's possible to construct a Tokenizer from a different path.
     // If the Tokenizer isn't specified, it's loaded from the same folder.
     SpeculativeDecodingPipeline pipe(models_path, assisting_models_path, k, scheduler_config, "CPU");
-    auto start_time = std::chrono::system_clock::now();
     std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, sampling_params);
 
     for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
@@ -121,16 +120,6 @@ int main(int argc, char* argv[]) try {
         }
         std::cout << std::endl;
     }
-    auto end_time = std::chrono::system_clock::now();
-    std::chrono::duration<double> duration = end_time - start_time;
-    std::cout << std::endl;
-    std::cout << "Duration: " << duration.count() << std::endl;
-    std::cout << "Infer number: " << pipe.m_matches_info.size() << std::endl;
-    std::cout << "MAX matches number: " << pipe.m_max_matches << std::endl;
-    auto a = std::accumulate(pipe.m_matches_info.begin(), pipe.m_matches_info.end(), 0);
-    std::cout << "AVG matches number: " << (float(a) / pipe.m_matches_info.size()) << std::endl;
-    double c = double(pipe.m_speculative_model_duration) * 100 / std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
-    std::cout << "Speculative model time duration: " << pipe.m_speculative_model_duration * 1e-9 << " in %: " << c << std::endl;
 } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return EXIT_FAILURE;

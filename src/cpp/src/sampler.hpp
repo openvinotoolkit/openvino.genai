@@ -229,15 +229,6 @@ class Sampler {
                 max_index = i;
             }
         }
-        // todo: remove: to print: 
-        // std::vector<Token> logit_vector_copy(logits.m_size);
-        // logit_vector_copy = logits.m_size.m_data;
-        // std::sort(logit_vector_copy.begin(), logit_vector_copy.end(), [](Token& lhs, Token& rhs){ return lhs.m_log_prob > rhs.m_log_prob; });
-        // std::cout << "N max_sampled_tokens: ";
-        // for (size_t i = 0; i < 5; ++i) {
-        //     std::cout << logit_vector_copy[i].m_index << " ";
-        // }
-        // std::cout << std::endl;
         return Token(logits.m_data[max_index], max_index);
     }
 
@@ -328,11 +319,14 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                 auto register_new_token = [&](const Token& sampled_token_id, size_t running_sequence_id, bool is_extend_sequence = true) {
                     logit_processor.register_new_generated_token(sampled_token_id.m_index);
                     // increment seq len only for one sequence in sequence group to sync them
-                    if (running_sequence_id == num_running_sequences - 1) {
-                        logit_processor.increment_gen_tokens();
-                    }
                     if (is_extend_sequence) {
                         running_sequences[running_sequence_id]->append_token(sampled_token_id.m_index, sampled_token_id.m_log_prob);
+                    } else {
+                        OPENVINO_ASSERT(logit_processor.get_gen_token_len() < running_sequences[running_sequence_id]->get_generated_len());
+                        running_sequences[running_sequence_id]->update_log_prob(sampled_token_id.m_log_prob, logit_processor.get_gen_token_len());
+                    }
+                    if (running_sequence_id == num_running_sequences - 1) {
+                        logit_processor.increment_gen_tokens();
                     }
                 };
                 for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
@@ -390,7 +384,6 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                                 sampled_token_id.m_index = *it;
                             }
                         }
-                        
                         register_new_token(sampled_token_id, running_sequence_id, is_extend_sequence);
                         if (token_id_per_seq == 0) {
                             break;

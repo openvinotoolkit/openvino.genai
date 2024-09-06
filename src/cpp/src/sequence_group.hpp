@@ -146,6 +146,11 @@ public:
         return m_generated_probs;
     }
 
+    void update_log_prob(float new_log_prob, size_t idx) {
+        OPENVINO_ASSERT(idx <= m_generated_probs.size());
+        m_generated_probs[idx] = new_log_prob;
+    }
+
     float get_cumulative_log_probs() const {
         return m_cumulative_log_prob;
     }

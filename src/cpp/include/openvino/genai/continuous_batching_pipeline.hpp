@@ -94,7 +94,7 @@ public:
     void finish_chat();
 
     // for speculative decoding
-    void finish_all_requests();
+    void finish_request(int64_t request_id = -1);
 
     struct GeneratedSequence {
         uint64_t request_id = 0, sequence_id = 0;
