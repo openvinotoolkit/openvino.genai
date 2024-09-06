@@ -167,7 +167,7 @@ jobs:
           timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
-          with open('pred.txt', 'r') as file:
+          with open('pred.txt', 'r', errors='replace') as file:
               predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           tokenized = tokenizer('你好！ 你好嗎？', return_tensors='pt')
@@ -183,7 +183,7 @@ jobs:
           timeout 1m ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
-          with open('pred.txt', 'r') as file:
+          with open('pred.txt', 'r', errors='replace') as file:
               predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           prompts = [
