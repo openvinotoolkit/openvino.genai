@@ -307,28 +307,46 @@ DecodedResults StaticLLMPipeline::generate(
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
 ) {
+    auto start_time = std::chrono::steady_clock::now();
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-    if (std::holds_alternative<std::vector<std::string>>(inputs)) {
-        OPENVINO_THROW("Currently only batch size=1 is supported");
+    TokenizedInputs tokenized_input;
+    if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
+        // OPENVINO_ASSERT(!m_is_chat_conversation, "Can't chat with multiple prompts");
+        auto& strings = std::get<std::vector<std::string>>(inputs);
+        if (strings.size() != 1) {
+            OPENVINO_THROW("Currently only batch size=1 is supported");
+        } else {
+            tokenized_input = m_tokenizer.encode(*input_vector);
+        }
+    } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
+        std::string& prompt = *input_prompt;
+        if (m_is_chat_conversation) {
+            m_history.push_back({{"role", "user"}, {"content", prompt}});
+            constexpr bool add_generation_prompt = true;
+            prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        }
+        tokenized_input = m_tokenizer.encode(prompt);
     }
 
-    OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
-    auto& prompt = std::get<std::string>(inputs);
-
-    if (m_is_chat_conversation) {
-        m_history.push_back({{"role", "user"}, {"content", prompt}});
-        constexpr bool add_generation_prompt = true;
-        prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-    }
-
-    auto tokenized_input = m_tokenizer.encode(prompt);
+    auto encode_stop_time =  std::chrono::steady_clock::now();
     auto encoded_results = generate(tokenized_input, config, streamer);
+    auto decode_start_time =  std::chrono::steady_clock::now();
     DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
 
+    auto decode_stop_time =  std::chrono::steady_clock::now();
     if (m_is_chat_conversation) {
         auto answer = decoded_results.texts[0];
         m_history.push_back({{"role", "assistant"}, {"content", answer}});
     }
+    // generate_durations
+    decoded_results.perf_metrics = encoded_results.perf_metrics;
+    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
+    auto stop_time = std::chrono::steady_clock::now();
+    raw_counters.generate_durations = std::vector<MicroSeconds>();
+    raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
+    decoded_results.perf_metrics.evaluate_statistics(start_time);
     return decoded_results;
 }
 
@@ -337,6 +355,7 @@ EncodedResults StaticLLMPipeline::generate(
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
 ) {
+    auto start_time = std::chrono::steady_clock::now();
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
 
@@ -371,7 +390,10 @@ EncodedResults StaticLLMPipeline::generate(
         OPENVINO_THROW("Currently only greedy decoding is supported");
     }
 
+    ov::Shape prompts_shape = input_ids.get_shape();
+    const size_t batch_size = prompts_shape[0];
     ov::genai::EncodedResults results;
+    auto& raw_perf_counters = results.perf_metrics.raw_metrics;
     // NB: Only batch=1 is supported now
     results.scores.resize(1u);
     results.scores[0] = 0u;
@@ -401,6 +423,8 @@ EncodedResults StaticLLMPipeline::generate(
     std::iota(padded_pos_data + offset, padded_pos_data + padded_position_ids.get_size(), 0u);
 
     m_prefill_request.infer();
+    raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+    raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
     // NB: Now there are prompt_len tokens in KV-cache
     m_kvcache_desc.num_stored_tokens += prompt_len;
@@ -454,6 +478,8 @@ EncodedResults StaticLLMPipeline::generate(
         last_token = utils::argmax(m_kvcache_request.get_tensor("logits"), 0);
         results.tokens[0].push_back(last_token);
 
+        raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+        raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
         if (streamer_ptr && streamer_ptr->put(last_token)) {
             break;
         }
@@ -478,6 +504,13 @@ EncodedResults StaticLLMPipeline::generate(
             m_kvcache_request.get_tensor(output_name).copy_to(kvcache_in_slice);
         }
     }
+    auto stop_time = std::chrono::steady_clock::now();
+    // If is called without tokenization then that stat will not be reported.
+    auto& metrics = results.perf_metrics;
+    metrics.num_input_tokens = batch_size * input_ids.get_shape().at(1);
+    metrics.load_time = this->m_load_time_ms;
+    metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+    metrics.evaluate_statistics(start_time);
     return results;
 }
 
