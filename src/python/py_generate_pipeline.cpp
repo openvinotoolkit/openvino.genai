@@ -759,7 +759,17 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_property_readonly("texts", [](const DecodedResults &dr) { return handle_utf8_results(dr); })
         .def_readonly("scores", &DecodedResults::scores)
         .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
-        .def("__str__", &DecodedResults::operator std::string);
+        .def("__str__", [](const DecodedResults &dr) -> py::str {
+            auto valid_utf8_strings = handle_utf8_results(dr);
+            py::str res;
+            if (valid_utf8_strings.size() == 1)
+                return valid_utf8_strings[0];
+            
+            for (size_t i = 0; i < valid_utf8_strings.size(); i++) {
+                res += py::str(std::to_string(dr.scores[i])) + py::str(": ") + valid_utf8_strings[i] + py::str("\n");
+            }
+            return res;
+        });
 
     py::class_<RawPerfMetrics>(m, "RawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())
