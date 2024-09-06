@@ -1,15 +1,17 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-find_package(OpenVINOGenAI REQUIRED PATHS
-    "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
-    ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+find_package(OpenVINO REQUIRED COMPONENTS Runtime Threading)
+
+find_package(OpenVINOGenAI REQUIRED
+    PATHS
+        "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
+        ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+    NO_CMAKE_FIND_ROOT_PATH
 )
 
-find_package(TBB REQUIRED COMPONENTS tbb)
-
 add_executable(speculative_decoding_lm speculative_decoding_lm.cpp)
-target_link_libraries(speculative_decoding_lm PRIVATE openvino::runtime TBB::tbb)
+target_link_libraries(speculative_decoding_lm PRIVATE openvino::runtime openvino::threading)
 set_target_properties(speculative_decoding_lm PROPERTIES
     COMPILE_PDB_NAME speculative_decoding_lm
     # Ensure out of box LC_RPATH on macOS with SIP

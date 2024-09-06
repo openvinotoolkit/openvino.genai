@@ -1,9 +1,11 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-find_package(OpenVINOGenAI REQUIRED PATHS
-    "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
-    ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+find_package(OpenVINOGenAI REQUIRED
+    PATHS
+        "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
+        ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+    NO_CMAKE_FIND_ROOT_PATH
 )
 
 add_executable(chat_sample chat_sample.cpp)
