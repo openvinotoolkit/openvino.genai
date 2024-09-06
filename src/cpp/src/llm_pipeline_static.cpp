@@ -9,6 +9,8 @@
 #include "utils.hpp"
 
 #include <openvino/pass/stateful_to_stateless.hpp>
+#include <jinja2cpp/user_callable.h>
+#include <fstream>
 
 namespace {
 
@@ -83,9 +85,39 @@ std::shared_ptr<ov::Model> add_slices_to_kvcache_inputs(const std::shared_ptr<ov
     return std::make_shared<ov::Model>(model->get_results(), ov::SinkVector{}, new_params);
 }
 
+struct KVAxesPosition {
+    uint32_t batch;
+    uint32_t seq_len;
+};
+
+KVAxesPosition get_kv_axes(const std::string& model_type) {
+    KVAxesPosition axes;
+    if (model_type == "chatglm") {
+        axes.batch = 1u;
+        axes.seq_len = 0u;
+    } else if (model_type == "qwen") {
+        // Note, qwen2 does not fall into this category and conforms to default layout
+        axes.batch = 0u;
+        axes.seq_len = 1u;
+    } else {
+        axes.batch = 0u;
+        axes.seq_len = 2u;
+    }
+    return axes;
+}
+
+std::string get_model_type_from_json(const std::filesystem::path& filepath) {
+    std::ifstream file(filepath);
+    OPENVINO_ASSERT(file.is_open(), "Could not open file: " + filepath.string());
+    nlohmann::json config_data = nlohmann::json::parse(file);
+    std::string model_type = config_data["model_type"].get<std::string>();
+    return model_type;
+}
+
 void reshape_to_static(std::shared_ptr<ov::Model> model,
                        const uint32_t input_size,
-                       const uint32_t kvcache_size) {
+                       const uint32_t kvcache_size,
+                       const KVAxesPosition& kv_axes_position) {
     std::map<std::string, ov::PartialShape> new_shapes;
     for (auto input : model->inputs()) {
         const auto& input_name = input.get_any_name();
@@ -98,10 +130,9 @@ void reshape_to_static(std::shared_ptr<ov::Model> model,
             new_shape = ov::PartialShape({1, input_size});
         } else {
             const auto& partial_shape = input.get_partial_shape();
-            new_shape = ov::PartialShape({1,
-                                          partial_shape[1].get_length(),
-                                          kvcache_size-input_size,
-                                          partial_shape[3].get_length()});
+            new_shape = partial_shape;
+            new_shape[kv_axes_position.batch] = 1;
+            new_shape[kv_axes_position.seq_len] = kvcache_size - input_size;
         }
         new_shapes.emplace(input_name, new_shape);
     }
@@ -222,10 +253,10 @@ StaticLLMPipeline::StaticLLMPipeline(
     // (6) Reshape both models to static shape
     const auto kMaxPromptLen = pop_or_default(pipeline_config, "MAX_PROMPT_LEN", 1024u);
     const auto kMinResponseLen = pop_or_default(pipeline_config, "MIN_RESPONSE_LEN", 150u);
-    // FIXME For some models KV-cache dim != 2u
-    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, 2u };
-    reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size);
-    reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size);
+    KVAxesPosition axes = get_kv_axes(get_model_type_from_json(path / "config.json"));
+    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len };
+    reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
+    reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
     // (7) Compile both model
     auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", get_default_prefill_config());
     auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", get_default_generate_config());
