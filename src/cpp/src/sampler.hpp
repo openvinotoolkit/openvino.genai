@@ -19,7 +19,6 @@
 #include "logit_processor.hpp"
 #include "scheduler.hpp"
 #include "sequence_group.hpp"
-#include "utils.hpp"
 
 namespace ov::genai {
 // Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
