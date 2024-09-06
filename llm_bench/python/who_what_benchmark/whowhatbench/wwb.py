@@ -23,7 +23,7 @@ def load_model(model_id, device="CPU", ov_config=None):
         with open(ov_config) as f:
             ov_options = json.load(f)
     else:
-        ov_options = None   
+        ov_options = None
     try:
         model = OVModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device=device, ov_config=ov_options)
     except ValueError:
