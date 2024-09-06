@@ -68,7 +68,6 @@ jobs:
             python ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py,
           ]
     runs-on: ubuntu-20.04
-    if: ${{ false }} # fails because of UNICODE output
     defaults:
       run:
         shell: bash
