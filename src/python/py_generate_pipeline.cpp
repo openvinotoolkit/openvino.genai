@@ -765,9 +765,10 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             if (valid_utf8_strings.size() == 1)
                 return valid_utf8_strings[0];
             
-            for (size_t i = 0; i < valid_utf8_strings.size(); i++) {
+            for (size_t i = 0; i < valid_utf8_strings.size() - 1; i++) {
                 res += py::str(std::to_string(dr.scores[i])) + py::str(": ") + valid_utf8_strings[i] + py::str("\n");
             }
+            res += py::str(std::to_string(dr.scores.back())) + py::str(": ") + valid_utf8_strings[valid_utf8_strings.size() - 1];
             return res;
         });
 
