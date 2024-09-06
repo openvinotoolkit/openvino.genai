@@ -165,16 +165,15 @@ jobs:
           echo "return 0" passed
 
           timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "你好！ 你好嗎？" > ./pred.txt
-          cat pred.txt
           python -c "
           import transformers
-          with open('pred.txt', 'r', errors='replace') as file:
+          with open('pred.txt', 'r', errors='ignore') as file:
               predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           tokenized = tokenizer('你好！ 你好嗎？', return_tensors='pt')
           for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
               ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
-              idx = predictions.find(ref)
+              idx = predictions.find(ref.replace('�', ''))
               if -1 == idx:
                   raise RuntimeError(f'Missing "{ref=}" from predictions')
               predictions = predictions[:idx] + predictions[idx + len(ref):]
@@ -182,10 +181,9 @@ jobs:
           echo "你好！ 你好嗎？" passed
 
           timeout 1m ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
-          cat pred.txt
           python -c "
           import transformers
-          with open('pred.txt', 'r', errors='replace') as file:
+          with open('pred.txt', 'r', errors='ignore') as file:
               predictions = file.read()
           tokenizer = transformers.LlamaTokenizer.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0')
           prompts = [
@@ -197,7 +195,7 @@ jobs:
             tokenized = tokenizer(prompt, return_tensors='pt')
             for beam in transformers.LlamaForCausalLM.from_pretrained('TinyLlama/TinyLlama-1.1B-Chat-v1.0').generate(**tokenized, num_beam_groups=3, num_beams=15, num_return_sequences=15, diversity_penalty=1.0, max_new_tokens=20, early_stopping=False, length_penalty=1.0, no_repeat_ngram_size=9**9, do_sample=False):
                 ref = ': ' + tokenizer.decode(beam[tokenized['input_ids'].numel():], skip_special_tokens=True)
-                idx = predictions.find(ref)
+                idx = predictions.find(ref.replace('�', ''))
                 if -1 == idx:
                     raise RuntimeError(f'Missing "{ref=}" from predictions')
                 predictions = predictions[:idx] + predictions[idx + len(ref):]
