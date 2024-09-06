@@ -26,18 +26,18 @@ if(POLICY CMP0169)
 endif()
 
 project(OpenVINOGenAI
-        VERSION 2024.4.0.0
+        VERSION 2024.5.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX)
 
 # Find OpenVINODeveloperPackage first to compile with SDL flags
 find_package(OpenVINODeveloperPackage ${OpenVINOGenAI_VERSION} QUIET
-             COMPONENTS Runtime Threading
+             COMPONENTS Runtime
              PATHS "${OpenVINO_DIR}")
 if(NOT OpenVINODeveloperPackage_FOUND)
     find_package(OpenVINO ${OpenVINOGenAI_VERSION} REQUIRED
-                 COMPONENTS Runtime Threading)
+                 COMPONENTS Runtime)
 endif()
 
 include(cmake/features.cmake)
@@ -54,6 +54,10 @@ if(ENABLE_PYTHON)
             find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
         endif()
     endif()
+endif()
+
+if(WIN32 OR APPLE)
+  set(CMAKE_DEBUG_POSTFIX "d")
 endif()
 
 add_subdirectory(thirdparty)

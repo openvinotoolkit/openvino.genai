@@ -3,9 +3,11 @@
 
 find_package(OpenVINO REQUIRED COMPONENTS Runtime Threading)
 
-find_package(OpenVINOGenAI REQUIRED PATHS
-    "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
-    ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+find_package(OpenVINOGenAI REQUIRED
+    PATHS
+        "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
+        ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+    NO_CMAKE_FIND_ROOT_PATH
 )
 
 add_executable(speculative_decoding_lm speculative_decoding_lm.cpp)
