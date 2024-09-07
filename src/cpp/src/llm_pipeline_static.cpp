@@ -9,6 +9,8 @@
 #include "utils.hpp"
 
 #include <openvino/pass/stateful_to_stateless.hpp>
+#include <jinja2cpp/user_callable.h>
+#include <fstream>
 
 namespace {
 
@@ -83,9 +85,39 @@ std::shared_ptr<ov::Model> add_slices_to_kvcache_inputs(const std::shared_ptr<ov
     return std::make_shared<ov::Model>(model->get_results(), ov::SinkVector{}, new_params);
 }
 
+struct KVAxesPosition {
+    uint32_t batch;
+    uint32_t seq_len;
+};
+
+KVAxesPosition get_kv_axes(const std::string& model_type) {
+    KVAxesPosition axes;
+    if (model_type == "chatglm") {
+        axes.batch = 1u;
+        axes.seq_len = 0u;
+    } else if (model_type == "qwen") {
+        // Note, qwen2 does not fall into this category and conforms to default layout
+        axes.batch = 0u;
+        axes.seq_len = 1u;
+    } else {
+        axes.batch = 0u;
+        axes.seq_len = 2u;
+    }
+    return axes;
+}
+
+std::string get_model_type_from_json(const std::filesystem::path& filepath) {
+    std::ifstream file(filepath);
+    OPENVINO_ASSERT(file.is_open(), "Could not open file: " + filepath.string());
+    nlohmann::json config_data = nlohmann::json::parse(file);
+    std::string model_type = config_data["model_type"].get<std::string>();
+    return model_type;
+}
+
 void reshape_to_static(std::shared_ptr<ov::Model> model,
                        const uint32_t input_size,
-                       const uint32_t kvcache_size) {
+                       const uint32_t kvcache_size,
+                       const KVAxesPosition& kv_axes_position) {
     std::map<std::string, ov::PartialShape> new_shapes;
     for (auto input : model->inputs()) {
         const auto& input_name = input.get_any_name();
@@ -98,10 +130,9 @@ void reshape_to_static(std::shared_ptr<ov::Model> model,
             new_shape = ov::PartialShape({1, input_size});
         } else {
             const auto& partial_shape = input.get_partial_shape();
-            new_shape = ov::PartialShape({1,
-                                          partial_shape[1].get_length(),
-                                          kvcache_size-input_size,
-                                          partial_shape[3].get_length()});
+            new_shape = partial_shape;
+            new_shape[kv_axes_position.batch] = 1;
+            new_shape[kv_axes_position.seq_len] = kvcache_size - input_size;
         }
         new_shapes.emplace(input_name, new_shape);
     }
@@ -222,10 +253,10 @@ StaticLLMPipeline::StaticLLMPipeline(
     // (6) Reshape both models to static shape
     const auto kMaxPromptLen = pop_or_default(pipeline_config, "MAX_PROMPT_LEN", 1024u);
     const auto kMinResponseLen = pop_or_default(pipeline_config, "MIN_RESPONSE_LEN", 150u);
-    // FIXME For some models KV-cache dim != 2u
-    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, 2u };
-    reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size);
-    reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size);
+    KVAxesPosition axes = get_kv_axes(get_model_type_from_json(path / "config.json"));
+    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len };
+    reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
+    reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
     // (7) Compile both model
     auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", get_default_prefill_config());
     auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", get_default_generate_config());
@@ -276,28 +307,46 @@ DecodedResults StaticLLMPipeline::generate(
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
 ) {
+    auto start_time = std::chrono::steady_clock::now();
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-    if (std::holds_alternative<std::vector<std::string>>(inputs)) {
-        OPENVINO_THROW("Currently only batch size=1 is supported");
+    TokenizedInputs tokenized_input;
+    if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
+        // OPENVINO_ASSERT(!m_is_chat_conversation, "Can't chat with multiple prompts");
+        auto& strings = std::get<std::vector<std::string>>(inputs);
+        if (strings.size() != 1) {
+            OPENVINO_THROW("Currently only batch size=1 is supported");
+        } else {
+            tokenized_input = m_tokenizer.encode(*input_vector);
+        }
+    } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
+        std::string& prompt = *input_prompt;
+        if (m_is_chat_conversation) {
+            m_history.push_back({{"role", "user"}, {"content", prompt}});
+            constexpr bool add_generation_prompt = true;
+            prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        }
+        tokenized_input = m_tokenizer.encode(prompt);
     }
 
-    OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
-    auto& prompt = std::get<std::string>(inputs);
-
-    if (m_is_chat_conversation) {
-        m_history.push_back({{"role", "user"}, {"content", prompt}});
-        constexpr bool add_generation_prompt = true;
-        prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-    }
-
-    auto tokenized_input = m_tokenizer.encode(prompt);
+    auto encode_stop_time =  std::chrono::steady_clock::now();
     auto encoded_results = generate(tokenized_input, config, streamer);
+    auto decode_start_time =  std::chrono::steady_clock::now();
     DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
 
+    auto decode_stop_time =  std::chrono::steady_clock::now();
     if (m_is_chat_conversation) {
         auto answer = decoded_results.texts[0];
         m_history.push_back({{"role", "assistant"}, {"content", answer}});
     }
+    // generate_durations
+    decoded_results.perf_metrics = encoded_results.perf_metrics;
+    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
+    auto stop_time = std::chrono::steady_clock::now();
+    raw_counters.generate_durations = std::vector<MicroSeconds>();
+    raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
+    decoded_results.perf_metrics.evaluate_statistics(start_time);
     return decoded_results;
 }
 
@@ -306,6 +355,7 @@ EncodedResults StaticLLMPipeline::generate(
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
 ) {
+    auto start_time = std::chrono::steady_clock::now();
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
 
@@ -340,7 +390,10 @@ EncodedResults StaticLLMPipeline::generate(
         OPENVINO_THROW("Currently only greedy decoding is supported");
     }
 
+    ov::Shape prompts_shape = input_ids.get_shape();
+    const size_t batch_size = prompts_shape[0];
     ov::genai::EncodedResults results;
+    auto& raw_perf_counters = results.perf_metrics.raw_metrics;
     // NB: Only batch=1 is supported now
     results.scores.resize(1u);
     results.scores[0] = 0u;
@@ -370,6 +423,8 @@ EncodedResults StaticLLMPipeline::generate(
     std::iota(padded_pos_data + offset, padded_pos_data + padded_position_ids.get_size(), 0u);
 
     m_prefill_request.infer();
+    raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+    raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
     // NB: Now there are prompt_len tokens in KV-cache
     m_kvcache_desc.num_stored_tokens += prompt_len;
@@ -423,6 +478,8 @@ EncodedResults StaticLLMPipeline::generate(
         last_token = utils::argmax(m_kvcache_request.get_tensor("logits"), 0);
         results.tokens[0].push_back(last_token);
 
+        raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+        raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
         if (streamer_ptr && streamer_ptr->put(last_token)) {
             break;
         }
@@ -447,6 +504,13 @@ EncodedResults StaticLLMPipeline::generate(
             m_kvcache_request.get_tensor(output_name).copy_to(kvcache_in_slice);
         }
     }
+    auto stop_time = std::chrono::steady_clock::now();
+    // If is called without tokenization then that stat will not be reported.
+    auto& metrics = results.perf_metrics;
+    metrics.num_input_tokens = batch_size * input_ids.get_shape().at(1);
+    metrics.load_time = this->m_load_time_ms;
+    metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+    metrics.evaluate_statistics(start_time);
     return results;
 }
 

@@ -75,6 +75,9 @@ wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv
 # run comparison with compressed model on internal set of questions
 wwb --target-model /home/user/models/Llama_2_7b_chat_hf_int8 --gt-data llama_2_7b_wwb_gt.csv
 
+# run OpenVINO model on a GPU with custom runtime configuration
+wwb --target-model /home/user/models/Llama_2_7b_chat_hf_int8 --gt-data llama_2_7b_wwb_gt.csv --device=GPU --ov-config=ov_config.json
+
 done
 ```
 

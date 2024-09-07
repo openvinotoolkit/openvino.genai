@@ -1,15 +1,13 @@
 name: stable_diffusion_1_5_cpp
 
 on:
+  workflow_dispatch:
   pull_request:
-    paths:
-      - image_generation/stable_diffusion_1_5/cpp/**
-      - image_generation/common/**
-      - image_generation/requirements.txt
-      - samples/requirements.txt
-      - .github/workflows/stable_diffusion_1_5_cpp.yml
-      - thirdparty/openvino_tokenizers
-      - "!**.md"
+  merge_group:
+  push:
+    branches:
+      - master
+      - 'releases/**'
 
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
@@ -131,3 +129,17 @@ jobs:
           run: |
             . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
             ./build/Release/stable_diffusion.exe -m ./models/stable_diffusion_v1_5_ov -t FP16 --dynamic
+
+  Overall_Status:
+    name: ci/gha_overall_status_stable_diffusion
+    needs: [stable_diffusion_1_5_cpp-linux, stable_diffusion_1_5_cpp-windows]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status of all jobs
+        if: >-
+          ${{
+            contains(needs.*.result, 'failure') ||
+            contains(needs.*.result, 'cancelled')
+          }}
+        run: exit 1
