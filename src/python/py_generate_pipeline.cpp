@@ -1005,22 +1005,6 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             (whisper_generate_docstring + std::string(" \n ") + whisper_generation_config_docstring).c_str()
         )
 
-        .def(
-            "__call__", 
-            [](WhisperPipeline& pipe,
-                const RawSpeechInput& raw_speech_input,
-                const OptionalWhisperGenerationConfig& generation_config,
-                const PyBindStreamerVariant& streamer,
-                const py::kwargs& kwargs
-            ) {
-                return call_whisper_common_generate(pipe, raw_speech_input, generation_config, streamer, kwargs);
-            },
-            py::arg("raw_speech_input"), "List of floats representing raw speech audio",
-            py::arg("generation_config") = std::nullopt, "generation_config",
-            py::arg("streamer") = std::monostate(), "streamer",
-            (whisper_generate_docstring + std::string(" \n ") + whisper_generation_config_docstring).c_str()
-        )
-
         .def("get_tokenizer", &WhisperPipeline::get_tokenizer)
         .def("get_generation_config", &WhisperPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &WhisperPipeline::set_generation_config);

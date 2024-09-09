@@ -78,18 +78,6 @@ public:
     }
     DecodedResults generate(const RawSpeechInput& raw_speech_input, const ov::AnyMap& config_map);
 
-    DecodedResults operator()(const RawSpeechInput& raw_speech_input,
-                              OptionalWhisperGenerationConfig generation_config = std::nullopt,
-                              StreamerVariant streamer = std::monostate()) {
-        return generate(raw_speech_input, generation_config, streamer);
-    }
-
-    template <typename... Properties>
-    util::EnableIfAllStringAny<DecodedResults, Properties...> operator()(const RawSpeechInput& raw_speech_input,
-                                                                         Properties&&... properties) {
-        return generate(raw_speech_input, AnyMap{std::forward<Properties>(properties)...});
-    }
-
     ov::genai::Tokenizer get_tokenizer();
     WhisperGenerationConfig get_generation_config() const;
     void set_generation_config(const WhisperGenerationConfig& config);
