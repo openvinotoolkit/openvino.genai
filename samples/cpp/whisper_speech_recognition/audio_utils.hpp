@@ -6,8 +6,10 @@
 #include <iostream>
 #include <vector>
 
+#include "openvino/genai/whisper_pipeline.hpp"
+
 namespace utils {
 namespace audio {
-std::vector<float> read_wav(const std::string& filename);
+ov::genai::RawSpeechInput read_wav(const std::string& filename);
 }  // namespace audio
 }  // namespace utils

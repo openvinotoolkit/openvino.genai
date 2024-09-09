@@ -6,6 +6,8 @@
 #include <iostream>
 #include <vector>
 
+#include "openvino/genai/whisper_pipeline.hpp"
+
 #define DR_WAV_IMPLEMENTATION
 #include <dr_wav.h>
 
@@ -36,7 +38,7 @@ namespace audio {
 
 #define COMMON_SAMPLE_RATE 16000
 
-std::vector<float> read_wav(const std::string& filename) {
+ov::genai::RawSpeechInput read_wav(const std::string& filename) {
     drwav wav;
     std::vector<uint8_t> wav_data;  // used for pipe input from stdin or ffmpeg decoding output
 
@@ -56,23 +58,19 @@ std::vector<float> read_wav(const std::string& filename) {
             }
         }
 
-        if (drwav_init_memory(&wav, wav_data.data(), wav_data.size(), nullptr) == false) {
-            throw std::runtime_error("failed to open WAV file from stdin");
-        }
+        OPENVINO_ASSERT(drwav_init_memory(&wav, wav_data.data(), wav_data.size(), nullptr),
+                        "Failed to open WAV file from stdin");
 
         fprintf(stderr, "%s: read %zu bytes from stdin\n", __func__, wav_data.size());
     } else if (is_wav_buffer(filename)) {
-        if (drwav_init_memory(&wav, filename.c_str(), filename.size(), nullptr) == false) {
-            throw std::runtime_error("failed to open WAV file from fname buffer");
-        }
-    } else if (drwav_init_file(&wav, filename.c_str(), nullptr) == false) {
+        OPENVINO_ASSERT(drwav_init_memory(&wav, filename.c_str(), filename.size(), nullptr),
+                        "Failed to open WAV file from fname buffer");
+    } else if (!drwav_init_file(&wav, filename.c_str(), nullptr)) {
 #if defined(WHISPER_FFMPEG)
-        if (ffmpeg_decode_audio(fname, wav_data) != 0) {
-            throw std::runtime_error("failed to ffmpeg decode");
-        }
-        if (drwav_init_memory(&wav, wav_data.data(), wav_data.size(), nullptr) == false) {
-            throw std::runtime_error("failed to read wav data as wav");
-        }
+        OPENVINO_ASSERT(ffmpeg_decode_audio(fname, wav_data) == 0, "Failed to ffmpeg decode")
+
+        OPENVINO_ASSERT(drwav_init_memory(&wav, wav_data.data(), wav_data.size(), nullptr),
+                        "Failed to read wav data as wav")
 #else
         throw std::runtime_error("failed to open as WAV file");
 #endif

@@ -12,7 +12,7 @@ int main(int argc, char* argv[]) try {
     std::string model_path = argv[1];
     std::string wav_file_path = argv[2];
 
-    std::vector<float> raw_speech = utils::audio::read_wav(wav_file_path);
+    ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
 
     ov::genai::WhisperPipeline pipeline{model_path};
 
