@@ -39,7 +39,7 @@ ov::Tensor encode(ov::InferRequest& request, std::vector<float>& mel_data) {
     request.infer();
 
     // reset input tensor
-    request.set_tensor("input_features", ov::Tensor(ov::element::f32, input_shape));
+    request.set_tensor("input_features", ov::Tensor(ov::element::f32, {0, 80, 3000}));
 
     return request.get_tensor("last_hidden_state");
 }
