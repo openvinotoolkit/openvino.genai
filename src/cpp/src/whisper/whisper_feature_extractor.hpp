@@ -12,7 +12,7 @@
 namespace ov {
 namespace genai {
 
-class OPENVINO_GENAI_EXPORTS WhisperFeatureExtractor {
+class WhisperFeatureExtractor {
 public:
     static constexpr size_t feature_size = 80;
     static constexpr size_t sampling_rate = 16000;
