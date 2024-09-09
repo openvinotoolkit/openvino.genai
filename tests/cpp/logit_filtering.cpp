@@ -306,7 +306,7 @@ TEST(PresencePenaltyTransformInitializationTest, ThrowsForInvalidInputIds) {
 struct EOSPenaltyTransformTestStruct {
     static inline const size_t size = 3;
 
-    size_t eos_token_id;
+    std::set<int64_t> stop_token_ids;
     float input[size];
     float expected_output[size];
 };
@@ -316,7 +316,7 @@ using EOSPenaltyTransformTest = testing::TestWithParam<EOSPenaltyTransformTestSt
 TEST_P(EOSPenaltyTransformTest, TransformResultEqualToReference) {
     auto test_struct = GetParam();
     auto logits = Logits(test_struct.input, EOSPenaltyTransformTestStruct::size);
-    auto transform = EOSPenaltyTransform(test_struct.eos_token_id, std::numeric_limits<size_t>::max());
+    auto transform = EOSPenaltyTransform(test_struct.stop_token_ids, std::numeric_limits<size_t>::max());
     transform.apply(logits);
     ASSERT_FALSE(logits.is_vector_initialized());
     ASSERT_EQ(logits.m_size, EOSPenaltyTransformTestStruct::size); // penalty transfrom should not change buffer size
@@ -328,9 +328,14 @@ TEST_P(EOSPenaltyTransformTest, TransformResultEqualToReference) {
 
 const std::vector<EOSPenaltyTransformTestStruct> EOS_PENALTY_TRANSFORM_TEST_CASES = {
     EOSPenaltyTransformTestStruct{ // basic case, indices are applied, order is left as-is
-        1,
+        { 1 },
         { 1.0f, 2.0f, 3.0f },
         { 1.0f, 0.0f, 3.0f },
+    },
+    EOSPenaltyTransformTestStruct{
+        { 1, 0 },
+        { 1.0f, 2.0f, 3.0f },
+        { 0.0f, 0.0f, 3.0f },
     },
 };
 
