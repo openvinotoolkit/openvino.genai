@@ -15,10 +15,18 @@
 
 namespace {
 
-void suppress_tokens(ov::Tensor& logits, const std::vector<int64_t>& suppress_tokens) {
-    auto data = logits.data<float>();
+void suppress_tokens(ov::Tensor& logits, const size_t batch_idx, const std::vector<int64_t>& suppress_tokens) {
+    if (logits.get_shape()[0] <= batch_idx) {
+        OPENVINO_THROW("logits batch size doesn't match the number of beams");
+    }
+
+    size_t vocab_size = logits.get_shape().back();
+    size_t batch_offset = batch_idx * logits.get_shape()[1] * vocab_size;
+    size_t sequence_offset = (logits.get_shape()[1] - 1) * vocab_size;
+    float* logits_data = logits.data<float>() + batch_offset + sequence_offset;
+
     for (auto supress_token : suppress_tokens) {
-        data[supress_token] = -std::numeric_limits<float>::infinity();
+        logits_data[supress_token] = -std::numeric_limits<float>::infinity();
     }
 }
 
@@ -76,7 +84,8 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
 
     auto output_tensor = decoder.get_tensor("logits");
 
-    suppress_tokens(output_tensor, config.begin_suppress_tokens);
+    suppress_tokens(output_tensor, 0, config.begin_suppress_tokens);
+    suppress_tokens(output_tensor, 0, config.suppress_tokens);
 
     int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
 
@@ -102,7 +111,7 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
 
     auto output_tensor = decoder_with_past.get_tensor("logits");
 
-    suppress_tokens(output_tensor, config.suppress_tokens);
+    suppress_tokens(output_tensor, 0, config.suppress_tokens);
 
     int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
 
@@ -160,6 +169,21 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 
 namespace ov {
 namespace genai {
+// hf hash 2 algos for handling long (>30s) audios https://huggingface.co/openai/whisper-large-v3#chunked-long-form
+// Sequential: uses a "sliding window" for buffered inference, transcribing 30-second slices one after the other
+// Chunked: splits long audio files into shorter ones (with a small overlap between segments), transcribes each segment
+// independently, and stitches the resulting transcriptions at the boundaries
+
+// By default, Transformers uses the sequential algorithm. To enable the chunked algorithm, pass the chunk_length_s
+// parameter to the pipeline. A chunk length of 30-seconds is optimal. Sequential algo:
+// 1. Process whole raw speech into mel spectrogram
+// 2. Chunk mel spectrogram into 30s
+// 3. Enable timestamps
+// 4. Process each chunk sequentially.
+// 5. For each chunk stop at first eos token. Start next window from last timestamp found.
+//          remove eos tokens if not finished yet
+//          remove pad tokens
+// 7. Concatenate output tokens
 std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& config,
                                       const RawSpeechInput& raw_speech,
                                       ov::genai::WhisperInitializedModels& models,

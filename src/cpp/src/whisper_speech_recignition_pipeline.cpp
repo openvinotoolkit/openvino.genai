@@ -34,7 +34,7 @@ namespace ov {
 namespace genai {
 
 std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& config,
-                                      const RawSpeechInput& input_features,
+                                      const RawSpeechInput& raw_speech,
                                       ov::genai::WhisperInitializedModels& models,
                                       const std::shared_ptr<StreamerBase> streamer);
 
