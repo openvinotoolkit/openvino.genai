@@ -18,8 +18,8 @@ include(FetchContent)
 
 if(NOT TARGET dr_libs)
     FetchContent_Declare(dr_libs
-        GIT_REPOSITORY https://github.com/mackron/dr_libs.git
-        GIT_TAG da35f9d6c7374a95353fd1df1d394d44ab66cf01)
+        URL https://github.com/mackron/dr_libs/archive/da35f9d6c7374a95353fd1df1d394d44ab66cf01.tar.gz
+        URL_HASH SHA256=2704d347f480ca1bc92233fb01747e4550cc8031735b6ea62ca9990ebb8851ae)
     FetchContent_MakeAvailable(dr_libs)
 endif()
 
