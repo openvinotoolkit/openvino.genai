@@ -44,29 +44,29 @@ ov::Tensor encode(ov::InferRequest& request, std::vector<float>& mel_data) {
     return request.get_tensor("last_hidden_state");
 }
 
-void set_past_kev_value(ov::InferRequest& source, ov::InferRequest& dest) {
+void set_past_key_value(ov::InferRequest& source, ov::InferRequest& dest) {
     // source outputs:
     // present.0.decoder.key
     // present.0.decoder.value
     // present.0.encoder.key
     // present.0.encoder.value
 
-    // dest imputs:
+    // dest inputs:
     // past_key_values.0.decoder.key
     // past_key_values.0.decoder.value
     // past_key_values.0.encoder.key
     // past_key_values.0.encoder.value
 
-    for (auto& dec_output : source.get_compiled_model().outputs()) {
-        std::string dec_output_name = dec_output.get_any_name();
-        if (dec_output_name.find("logits") != std::string::npos) {
+    for (auto& source_output : source.get_compiled_model().outputs()) {
+        std::string source_output_name = source_output.get_any_name();
+        if (source_output_name.find("logits") != std::string::npos) {
             continue;
         }
 
         std::string with_past_input_name =
-            std::regex_replace(dec_output_name, std::regex("present"), "past_key_values");
+            std::regex_replace(source_output_name, std::regex("present"), "past_key_values");
 
-        auto kv_tensor = source.get_tensor(dec_output_name);
+        auto kv_tensor = source.get_tensor(source_output_name);
         dest.set_tensor(with_past_input_name, ov::Tensor{kv_tensor});
     }
 }
@@ -115,8 +115,6 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
 
     int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
 
-    set_past_kev_value(decoder_with_past, decoder_with_past);
-
     return output_token;
 }
 
@@ -142,7 +140,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
         return {false, output_tokens};
     }
 
-    set_past_kev_value(models.decoder, models.decoder_with_past);
+    set_past_key_value(models.decoder, models.decoder_with_past);
 
     for (size_t i = 0; i < max_new_tokens - 1; i++) {
         auto output_token = decode_with_past(encoder_hidden_state,
@@ -150,6 +148,10 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
                                              output_tokens.back(),
                                              input_ids.size() + output_tokens.size() - 1,
                                              config);
+
+        if (i == 0) {
+            set_past_key_value(models.decoder_with_past, models.decoder_with_past);
+        }
 
         if (output_token == config.eos_token_id) {
             break;
