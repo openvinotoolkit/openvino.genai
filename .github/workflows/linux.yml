@@ -16,7 +16,7 @@ concurrency:
 env:
   PYTHON_VERSION: '3.8'
   OV_BRANCH: 'releases/2024/4'
-  OV_TARBALL: ''
+  OV_TARBALL: 'https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.4.0rc2/linux/l_openvino_toolkit_ubuntu20_2024.4.0.dev20240905_x86_64.tgz'
 
 permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
@@ -250,25 +250,33 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ccache-genai-release
 
-      - name: Build genai
+      - name: Build & install genai
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake -DCMAKE_INSTALL_PREFIX=${OV_INSTALL_DIR} -S ./ -B ./build/
+          cmake --build ./build/ --config Release --parallel
+          cmake --install ./build/ --config Release
 
-      - name: Test bindings
+      - name: Test bindings (archive)
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/tools --upgrade-strategy eager
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          python -m pip install -r ./tests/python_tests/requirements.txt
           python -m pytest ./tests/python_tests
         env:
-          PYTHONPATH: "./build/:$PYTHONPATH"
+          PIP_PRE: 1
+          PIP_PLATFORM: manylinux_2_27_x86_64
+          PIP_EXTRA_INDEX_URL: https://storage.openvinotoolkit.org/simple/wheels/pre-release
 
       - name: Test bindings (wheel)
         run: |
-          source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
+          python -m pip install . --verbose
+          python -c "from openvino_genai import LLMPipeline"
           python -m pytest ./tests/python_tests
+        env:
+          PIP_PRE: 1
+          PIP_PLATFORM: manylinux_2_27_x86_64
+          PIP_EXTRA_INDEX_URL: https://storage.openvinotoolkit.org/simple/wheels/pre-release
 
   genai_package:
     name: OpenVINO genai extension (install to OpenVINO package)
@@ -341,14 +349,17 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
-          cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+          cmake --build ./build/ --config ${{ matrix.build-type }} --target package --parallel
 
       - name: Build and Install dependencies
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${OV_INSTALL_DIR}/tools
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${OV_INSTALL_DIR}/tools
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+        env:
+          PIP_PRE: 1
+          PIP_EXTRA_INDEX_URL: https://storage.openvinotoolkit.org/simple/wheels/pre-release
 
       - name: Install samples
         run: |

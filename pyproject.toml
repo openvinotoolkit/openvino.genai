@@ -1,5 +1,5 @@
 [project]
-name = "openvino_genai"
+name = "openvino-genai"
 version = "2024.4.0.0"
 description = "Python bindings for https://github.com/openvinotoolkit/openvino.genai"
 requires-python = ">=3.8"

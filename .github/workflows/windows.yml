@@ -16,7 +16,7 @@ concurrency:
 env:
   PYTHON_VERSION: '3.11'
   OV_BRANCH: 'releases/2024/4'
-  OV_TARBALL: ''
+  OV_TARBALL: 'https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.4.0rc2/windows/w_openvino_toolkit_windows_2024.4.0.dev20240905_x86_64.zip'
 
 permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
@@ -227,25 +227,31 @@ jobs:
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
 
-      - name: Build genai libs
+      - name: Build & install genai
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release -j
+          cmake -DCMAKE_INSTALL_PREFIX=${OV_INSTALL_DIR} -S ./ -B ./build/
+          cmake --build ./build/ --config Release --parallel
+          cmake --install ./build/ --config Release
 
-      - name: Test bindings
+      - name: Test bindings (archive)
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/tools --upgrade-strategy eager
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          python -m pip install -r ./tests/python_tests/requirements.txt
           python -m pytest ./tests/python_tests/
         env:
-          PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
+          PIP_PRE: 1
+          PIP_EXTRA_INDEX_URL: https://storage.openvinotoolkit.org/simple/wheels/pre-release
 
       - name: Test bindings (wheel)
         run: |
-          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose
+          python -c "from openvino_genai import LLMPipeline"
           python -m pytest ./tests/python_tests/
+        env:
+          PIP_PRE: 1
+          PIP_EXTRA_INDEX_URL: https://storage.openvinotoolkit.org/simple/wheels/pre-release
 
   genai_package:
     name: OpenVINO genai extension (install to OpenVINO package)
@@ -303,9 +309,12 @@ jobs:
       - name: Build and Install dependencies
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${env:OV_INSTALL_DIR}/tools
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${env:OV_INSTALL_DIR}/tools
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers]
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
+        env:
+          PIP_PRE: 1
+          PIP_EXTRA_INDEX_URL: https://storage.openvinotoolkit.org/simple/wheels/pre-release
 
       - name: Install samples
         run: |
