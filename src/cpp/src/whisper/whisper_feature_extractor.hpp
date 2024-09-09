@@ -23,6 +23,12 @@ public:
 
     WhisperFeatureExtractor();
 
+    /**
+     * @brief Create 2d log-mel spectrogram from raw speech data
+     *
+     * @see [huggingface introduction to audio
+     * data](https://huggingface.co/learn/audio-course/chapter1/audio_data#mel-spectrogram)
+     */
     std::vector<float> extract(const std::vector<float>& raw_speech);
 
 private:
