@@ -277,12 +277,18 @@ DecodedResults StaticLLMPipeline::generate(
     StreamerVariant streamer
 ) {
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-    if (std::holds_alternative<std::vector<std::string>>(inputs)) {
-        OPENVINO_THROW("Currently only batch size=1 is supported");
-    }
 
-    OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
-    auto& prompt = std::get<std::string>(inputs);
+    std::string prompt;
+    if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
+        if (input_vector->size() > 1u) {
+            OPENVINO_THROW("Currently only batch size=1 is supported");
+        }
+        OPENVINO_ASSERT(!input_vector->empty());
+        prompt = std::move(input_vector->front());
+    } else {
+        OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
+        prompt = std::get<std::string>(inputs);
+    }
 
     if (m_is_chat_conversation) {
         m_history.push_back({{"role", "user"}, {"content", prompt}});
