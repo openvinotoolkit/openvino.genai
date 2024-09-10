@@ -328,7 +328,7 @@ def new_beam_search(
                     output_hidden_states=output_hidden_states,
                 )
             tm_infer_list.append(time.perf_counter() - tic_infer)
-            torch.set_num_threads(1)
+            torch.set_num_threads(num_beams)
             if synced_gpus and this_peer_finished:
                 cur_len = cur_len + 1
                 continue  # don't waste resources running the code we don't need
