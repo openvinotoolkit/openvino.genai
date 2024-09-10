@@ -270,56 +270,54 @@ def patch_model_code(orig_model_dir):
 
 def convert_llm(model, model_dir):
     model.llm.config.save_pretrained(model_dir / text_emb_path.parent)
-    if not (model_dir / text_emb_path).exists():
-        print("⌛ Convert Input embedding model")
-        ov_model = ov.convert_model(model.llm.model.embed_tokens, example_input=torch.ones([1, 10], dtype=torch.long))
+    print("⌛ Convert Input embedding model")
+    ov_model = ov.convert_model(model.llm.model.embed_tokens, example_input=torch.ones([1, 10], dtype=torch.long))
 
-        ov.save_model(ov_model, model_dir / text_emb_path)
-        del ov_model
-        cleanup_torchscript_cache()
-        gc.collect()
-        print("✅ Input embedding model successfully converted")
+    ov.save_model(ov_model, model_dir / text_emb_path)
+    del ov_model
+    cleanup_torchscript_cache()
+    gc.collect()
+    print("✅ Input embedding model successfully converted")
 
-    if not (model_dir / llm_path).exists():
-        print("⌛ Convert Language model")
-        hidden_size = model.llm.config.hidden_size
-        num_pkv = model.llm.config.num_hidden_layers
-        pkv_shape = (2, model.llm.config.num_key_value_heads, 2, hidden_size // model.llm.config.num_attention_heads)
+    print("⌛ Convert Language model")
+    hidden_size = model.llm.config.hidden_size
+    num_pkv = model.llm.config.num_hidden_layers
+    pkv_shape = (2, model.llm.config.num_key_value_heads, 2, hidden_size // model.llm.config.num_attention_heads)
 
-        input_embeds = torch.randn((2, 2, hidden_size))
-        attention_mask = torch.ones([2, 4], dtype=torch.long)
-        position_ids = torch.tensor([[2, 3], [2, 3]], dtype=torch.long)
-        input_names = ["attention_mask", "position_ids"]
-        output_names = ["logits"]
+    input_embeds = torch.randn((2, 2, hidden_size))
+    attention_mask = torch.ones([2, 4], dtype=torch.long)
+    position_ids = torch.tensor([[2, 3], [2, 3]], dtype=torch.long)
+    input_names = ["attention_mask", "position_ids"]
+    output_names = ["logits"]
 
-        past_key_values = []
-        for i in range(num_pkv):
-            kv = [torch.randn(pkv_shape) for _ in range(2)]
-            past_key_values.append(kv)
-            input_names.extend([f"past_key_values.{i}.key", f"past_key_values.{i}.value"])
-            output_names.extend([f"present.{i}.key", f"present.{i}.value"])
-        input_names.append("inputs_embeds")
+    past_key_values = []
+    for i in range(num_pkv):
+        kv = [torch.randn(pkv_shape) for _ in range(2)]
+        past_key_values.append(kv)
+        input_names.extend([f"past_key_values.{i}.key", f"past_key_values.{i}.value"])
+        output_names.extend([f"present.{i}.key", f"present.{i}.value"])
+    input_names.append("inputs_embeds")
 
-        example_input = {"inputs_embeds": input_embeds, "attention_mask": attention_mask, "position_ids": position_ids, "past_key_values": past_key_values}
+    example_input = {"inputs_embeds": input_embeds, "attention_mask": attention_mask, "position_ids": position_ids, "past_key_values": past_key_values}
 
-        model.llm.config.torchscript = True
+    model.llm.config.torchscript = True
 
-        ov_model = ov.convert_model(model.llm, example_input=example_input)
+    ov_model = ov.convert_model(model.llm, example_input=example_input)
 
-        for out, out_name in zip(ov_model.outputs, output_names):
-            out.get_tensor().set_names({out_name})
+    for out, out_name in zip(ov_model.outputs, output_names):
+        out.get_tensor().set_names({out_name})
 
-        for inp, inp_name in zip(ov_model.inputs, input_names):
-            inp.get_tensor().set_names({inp_name})
+    for inp, inp_name in zip(ov_model.inputs, input_names):
+        inp.get_tensor().set_names({inp_name})
 
-        patch_stateful(ov_model)
+    patch_stateful(ov_model)
 
-        ov.save_model(ov_model, model_dir / llm_path)
-        del ov_model
+    ov.save_model(ov_model, model_dir / llm_path)
+    del ov_model
 
-        cleanup_torchscript_cache()
-        gc.collect()
-        print("✅ Language model successfully converted")
+    cleanup_torchscript_cache()
+    gc.collect()
+    print("✅ Language model successfully converted")
 
 
 def convert_vision_encoder(model, model_dir):
@@ -661,12 +659,12 @@ class OvMiniCPMV:
 
                 vision_batch_size = 1
                 all_pixel_values = all_pixel_values
-                breakpoint()
                 if B > vision_batch_size:
                     hs = []
                     for i in range(0, B, vision_batch_size):
                         start_idx = i
                         end_idx = i + vision_batch_size
+                        breakpoint()
                         tmp_hs = torch.from_numpy(
                             self.vpm([all_pixel_values[start_idx:end_idx], patch_attn_mask[start_idx:end_idx], tgt_sizes[start_idx:end_idx]])[0]
                         )
@@ -939,27 +937,27 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_dir', type=Path)
     model_dir = parser.parse_args().model_dir
-    # model_id = "openbmb/MiniCPM-V-2_6"
-    # ckpt = model_dir / "ckpt"
-    # if not ckpt.exists():
-    #     snapshot_download(model_id, local_dir=ckpt, force_download=True)
-    #     patch_model_code(ckpt)
-    # model = AutoModel.from_pretrained(ckpt, trust_remote_code=True)
-    # model.eval()
-    # model.config.save_pretrained(model_dir)
-    # tokenizer = AutoTokenizer.from_pretrained(ckpt, trust_remote_code=True)
-    # tokenizer.save_pretrained(model_dir)
-    # ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
-    # ov.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
-    # ov.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
-    # processor = AutoProcessor.from_pretrained(ckpt, trust_remote_code=True)
-    # processor.save_pretrained(model_dir)
+    model_id = "openbmb/MiniCPM-V-2_6"
+    ckpt = model_dir / "ckpt"
+    if not ckpt.exists():
+        snapshot_download(model_id, local_dir=ckpt, force_download=True)
+        patch_model_code(ckpt)
+    model = AutoModel.from_pretrained(ckpt, trust_remote_code=True)
+    model.eval()
+    model.config.save_pretrained(model_dir)
+    tokenizer = AutoTokenizer.from_pretrained(ckpt, trust_remote_code=True)
+    tokenizer.save_pretrained(model_dir)
+    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
+    ov.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
+    ov.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
+    processor = AutoProcessor.from_pretrained(ckpt, trust_remote_code=True)
+    processor.save_pretrained(model_dir)
 
-    # convert_llm(model, model_dir)
-    # del model.llm
-    # gc.collect()
+    convert_llm(model, model_dir)
+    del model.llm
+    gc.collect()
 
-    # convert_vision_encoder(model, model_dir)
+    convert_vision_encoder(model, model_dir)
     ov_cpm = init_model(model_dir, "CPU")
     print(ov_cpm.chat(Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
 

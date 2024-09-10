@@ -10,20 +10,12 @@
 #include "openvino/genai/vlm_config.hpp"
 
 namespace ov::genai {
-/// @brief An already encoded prompt and an image.
-struct EncodedPromptImage {
-    /// @brief An encoded prompt obtained from Tokenizer::encode().
-    EncodedInputs prompt;
-    /// @brief An encoded image obtained from VisionEncoder::encode().
-    EncodedImage image;
-};
-
 /// @brief A string prompt and source image.
-struct PromptImage {
+struct PromptImages {
     /// @brief A prompt represented as std::string.
-    StringInputs prompt;
+    std::string prompt;
     /// @brief An image represented as ov::Tensor.
-    ov::Tensor image;
+    std::vector<ov::Tensor> images;
 };
 
 /// @brief A Visual language modeling pipeline class used to generate a
@@ -86,41 +78,18 @@ public:
         ov::Core core=ov::Core{}
     );
 
-    std::string generate(
+    DecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
-        const ProcessorConfig& processor_config,
         const GenerationConfig& generation_config,
-        const std::function<bool(std::string&&)>& callback
+        const StreamerVariant& streamer
     );
-    std::string generate(
-        const std::string& prompt,
-        const std::vector<ov::Tensor>& images,
-        const ProcessorConfig& processor_config,
-        const GenerationConfig& generation_config,
-        const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr
-    );
-    // Only batch size 1.
-    EncodedResults generate(
-        const EncodedInputs& prompt,
-        const std::vector<ov::Tensor>& images,
-        const ProcessorConfig& processor_config,
-        const GenerationConfig& generation_config,
-        const std::function<bool(std::string&&)>& callback
-    );
-    EncodedResults generate(
-        const EncodedInputs& prompt,
-        const std::vector<ov::Tensor>& images,
-        const ProcessorConfig& processor_config,
-        const GenerationConfig& generation_config,
-        const std::shared_ptr<ov::genai::StreamerBase>& streamer=nullptr
-    );
-    std::string generate(
+    DecodedResults generate(
         const std::string& prompt,
         const ov::AnyMap& config_map
     );
     template <typename... Properties>
-    util::EnableIfAllStringAny<std::string, Properties...> generate(
+    util::EnableIfAllStringAny<DecodedResults, Properties...> generate(
         const std::string& prompt,
         Properties&&... properties
     ) {
@@ -130,11 +99,13 @@ public:
     }
     void start_chat() {is_chat_conversation = true;}
     void finish_chat() {is_chat_conversation = false;}
+    GenerationConfig& get_generation_config();
+    const GenerationConfig& get_generation_config() const;
 };
 /*
  * utils that allow to use generate() in the following way:
  * pipe.generate(prompt, ov::genai::image(std::move(image_tensor))).
 */
 static constexpr ov::Property<ov::Tensor> image{"image"};
-static constexpr ov::Property<std::function<bool(std::string&&)>> callback{"callback"};
+static constexpr ov::Property<std::vector<ov::Tensor>> images{"images"};
 }

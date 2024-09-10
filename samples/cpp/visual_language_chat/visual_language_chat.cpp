@@ -22,9 +22,9 @@ int main(int argc, char* argv[]) try {
         enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
     }
     ov::genai::VLMPipeline pipe(argv[1], device, enable_compile_cache);
-    pipe.start_chat();
-
     std::string prompt;
+
+    pipe.start_chat();
     std::cout << "question:\n";
     if (!std::getline(std::cin, prompt)) {
         throw std::runtime_error("std::cin failed");
@@ -32,12 +32,12 @@ int main(int argc, char* argv[]) try {
     pipe.generate(
         prompt,
         ov::genai::image(std::move(image)),
-        ov::genai::callback(print_subword)
+        ov::genai::streamer(print_subword)
     );
     std::cout << "\n----------\n"
         "question:\n";
     while (std::getline(std::cin, prompt)) {
-        pipe.generate(prompt, ov::genai::callback(print_subword));
+        pipe.generate(prompt, ov::genai::streamer(print_subword));
         std::cout << "\n----------\n"
             "question:\n";
     }

@@ -413,76 +413,17 @@ VLMPipeline::VLMPipeline(
     },
     is_chat_conversation{false} {}
 
-std::string VLMPipeline::generate(
+DecodedResults VLMPipeline::generate(
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
-    const ProcessorConfig& processor_config,
     const GenerationConfig& generation_config,
-    const std::function<bool(std::string&&)>& callback
+    const StreamerVariant& streamer
 ) {
-    return generate(
-        prompt,
-        images,
-        processor_config,
-        generation_config,
-        std::make_shared<TextCallbackStreamer>(m_tokenizer, callback)
-    );
-}
-
-std::string VLMPipeline::generate(
-    const std::string& prompt,
-    const std::vector<ov::Tensor>& images,
-    const ProcessorConfig& processor_config,
-    const GenerationConfig& generation_config,
-    const std::shared_ptr<ov::genai::StreamerBase>& streamer
-) {
-    OPENVINO_ASSERT(
-        images.empty() || 1 == images.size(), "one image only"
-    );
+    OPENVINO_ASSERT(1 == batch.size());
+    const auto& [prompt, images] = batch.at(0);
     std::string wrapped = images.empty() ?
         "<用户>" + prompt + "<AI>" : prompt + "<AI>";
-    TokenizedInputs encoded = m_tokenizer.encode(prompt);
-    EncodedResults generated = generate(
-        encoded,
-        images,
-        processor_config,
-        generation_config,
-        streamer
-    );
-    return m_tokenizer.decode(generated.tokens.at(0));
-}
-
-EncodedResults VLMPipeline::generate(
-    const EncodedInputs& prompt,
-    const std::vector<ov::Tensor>& images,
-    const ProcessorConfig& processor_config,
-    const GenerationConfig& generation_config,
-    const std::function<bool(std::string&&)>& callback
-) {
-    return generate(
-        prompt,
-        images,
-        processor_config,
-        generation_config,
-        std::make_shared<TextCallbackStreamer>(m_tokenizer, callback)
-    );
-}
-
-EncodedResults VLMPipeline::generate(
-    const EncodedInputs& prompt,
-    const std::vector<ov::Tensor>& images,
-    const ProcessorConfig& processor_config,
-    const GenerationConfig& generation_config,
-    const std::shared_ptr<ov::genai::StreamerBase>& streamer
-) {
-    const ov::Tensor& input_ids = std::visit(overloaded{
-        [](const ov::Tensor& single) {
-            return single;
-        },
-        [](const TokenizedInputs& pair) {
-            return pair.input_ids;
-        }
-    }, prompt);
+    ov::Tensor input_ids = m_tokenizer.encode(prompt).input_ids;
     if (images.empty()) {
         //<用户> + prompt + <AI>  LLM first input
         ov::Tensor promtTensor = process_prompt(m_tokenizer, m_embedding, input_ids, m_vlm_config.scale_emb);
@@ -494,8 +435,8 @@ EncodedResults VLMPipeline::generate(
         memcpy(m_language_embeddings_history.data() + m_history_length * m_vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
         m_history_length = m_history_length + promtTensor.get_shape()[1];
     } else {
-        OPENVINO_ASSERT(1 == images.size(), "Only a single image allowd");
-        EncodedImage embeds = m_vision_encoder.encode(images.at(0), processor_config);
+        OPENVINO_ASSERT(1 == images.size(), "Only a single image allowed");
+        EncodedImage embeds = m_vision_encoder.encode(images.at(0));
         ov::Tensor imgEmbedTensor = get_image_embedding(embeds, m_tokenizer, m_embedding, *this);
 
         ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
@@ -544,6 +485,19 @@ EncodedResults VLMPipeline::generate(
     m_embedding.get_tensor("inputs_id").set_shape({ 1, 1 });
 
     int64_t eos_token_id = m_tokenizer.get_eos_token_id();
+    std::shared_ptr<StreamerBase> streamer_ptr = std::visit(overloaded{
+        [&m_tokenizer = m_tokenizer](
+            const std::function<bool(std::string)>& callback
+        ) -> std::shared_ptr<StreamerBase> {
+            return std::make_shared<TextCallbackStreamer>(m_tokenizer, callback);
+        },
+        [](const std::shared_ptr<StreamerBase>& ptr) {
+            return ptr;
+        },
+        [](std::monostate) {
+            return std::shared_ptr<StreamerBase>{nullptr};
+        },
+    }, streamer);
     std::vector<int64_t> generated;
     while (true) {  //(out_token != eos_token_id)
         //out_token embedding
@@ -575,7 +529,7 @@ EncodedResults VLMPipeline::generate(
         m_language.wait();
 
         generated.push_back(out_token);
-        if (streamer && streamer->put(out_token)) {
+        if (streamer_ptr && streamer_ptr->put(out_token)) {
             break;
         }
         logits = m_language.get_tensor("logits").data<float>();
@@ -586,8 +540,8 @@ EncodedResults VLMPipeline::generate(
         }
     }
 
-    if (streamer) {
-        streamer->end();
+    if (streamer_ptr) {
+        streamer_ptr->end();
     }
 
     for (auto& variable : m_language.query_state()) {
@@ -597,32 +551,47 @@ EncodedResults VLMPipeline::generate(
         m_language_embeddings_history.clear();
         m_history_length = 0;
     }
-    return EncodedResults{
-        std::vector<std::vector<int64_t>>{std::move(generated)}
-    };
+    return {{m_tokenizer.decode(generated)}};
 }
 
-std::string VLMPipeline::generate(
-    const std::string& prompt,
-    const ov::AnyMap& kwargs
+DecodedResults VLMPipeline::generate(
+    const std::vector<std::string>& prompts,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer
 ) {
-    auto image = kwargs.find(ov::genai::image.name());
-    auto callback = kwargs.find(ov::genai::callback.name());
-    if (kwargs.end() == callback) {
-        return generate(
-            prompt,
-            kwargs.end() == image ? std::vector<ov::Tensor>{}
-                : std::vector{image->second.as<ov::Tensor>()},
-            m_vision_encoder.m_processor_config,
-            m_generation_config
-        );
-    }
-    return generate(
-        prompt,
-        kwargs.end() == image ? std::vector<ov::Tensor>{}
-            : std::vector{image->second.as<ov::Tensor>()},
-        m_vision_encoder.m_processor_config,
-        m_generation_config,
-        callback->second.as<std::function<bool(std::string&&)>>()
+    std::vector<PromptImages> batch(prompts.size());
+    std::transform(
+        prompts.begin(), prompts.end(), batch.begin(),
+        [](const std::string& prompt) {
+            return PromptImages{prompt};
+        }
     );
+    return generate(batch, generation_config, streamer);
+}
+
+DecodedResults VLMPipeline::generate(
+    const std::string& prompt,
+    const ov::AnyMap& config_map
+) {
+    auto image = config_map.find(ov::genai::image.name());
+    ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
+    GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
+    config.update_generation_config(config_map);
+    return generate(
+        std::vector<PromptImages>{PromptImages{
+            prompt,
+            config_map.end() == image ? std::vector<ov::Tensor>{}
+                : std::vector{image->second.as<ov::Tensor>()}
+        }},
+        config,
+        utils::get_streamer_from_map(config_map)
+    );
+}
+
+GenerationConfig& VLMPipeline::get_generation_config() {
+    return m_generation_config;
+}
+
+const GenerationConfig& VLMPipeline::get_generation_config() const {
+    return m_generation_config;
 }
