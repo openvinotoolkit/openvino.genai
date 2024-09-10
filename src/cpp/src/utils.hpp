@@ -51,7 +51,7 @@ template <typename T>
 void read_json_param(const nlohmann::json& data, const std::string& name, T& param) {
     if (data.contains(name)) {
         if constexpr (std::is_integral_v<T>) {
-            if (data[name].is_number_integer() || data[name].is_number_unsigned()) {
+            if (data[name].is_number_integer() || data[name].is_number_unsigned() || data[name].is_boolean()) {
                 param = data[name].get<T>();
             }
         } else if (data[name].type() == json_type_traits<T>::json_value_t) {
