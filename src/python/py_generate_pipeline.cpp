@@ -10,8 +10,6 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include <openvino/runtime/auto/properties.hpp>
 #include "../cpp/src/tokenizers_path.hpp"
-#include "openvino/genai/whisper_generation_config.hpp"
-#include "openvino/genai/whisper_pipeline.hpp"
 
 #include "./utils.hpp"
 
@@ -36,7 +34,6 @@ using ov::genai::StreamerVariant;
 using ov::genai::StringInputs;
 using ov::genai::TokenizedInputs;
 using ov::genai::Tokenizer;
-using ov::genai::RawSpeechInput;
 
 template <typename T, typename U>
 std::vector<float> get_ms(const T& instance, U T::*member) {
