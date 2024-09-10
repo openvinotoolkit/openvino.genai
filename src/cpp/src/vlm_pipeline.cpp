@@ -398,13 +398,13 @@ VLMPipeline::VLMPipeline(
     m_tokenizer{tokenizer},
     m_vision_encoder(model_dir, device, device_config, core),
     m_resampler{core.compile_model(
-        model_dir / "openvino_resampler.xml", device, device_config
+        model_dir / "resampler.xml", device, device_config
     ).create_infer_request()},
     m_embedding{core.compile_model(
-        model_dir / "openvino_embedding.xml", device, device_config
+        model_dir / "embed_tokens.xml", device, device_config
     ).create_infer_request()},
     m_language{core.compile_model(
-        model_dir / "openvino_model.xml", device, device_config
+        model_dir / "language_model.xml", device, device_config
     ).create_infer_request()},
     m_language_embeddings_history(2048),
     m_history_length{0},

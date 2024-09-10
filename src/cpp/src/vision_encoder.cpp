@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "openvino/genai/vision_encoder.hpp"
+#include <openvino/genai/vision_encoder.hpp>
 #include "clip.hpp"
 #include "utils.hpp"
 
@@ -132,6 +132,57 @@ std::vector<std::vector<clip_image_u8>> slice_image(const clip_image_u8& img, co
     return images;
 }
 
+// Reimplemented https://pytorch.org/docs/stable/generated/torch.nn.Unfold.html#torch.nn.Unfold
+// in shape [NCHW], out shape: [N, C*kernel*kernel, H*W/kernel/kernel]
+ov::Tensor unfold(const ov::Tensor& images_tensor, size_t kernel) {
+    ov::Shape images_shape = images_tensor.get_shape();
+    OPENVINO_ASSERT(4 == images_shape.size());
+    const size_t bs = images_shape.at(0), images_c = images_shape.at(1),
+        images_h = images_shape.at(2), images_w = images_shape.at(3),
+        new_c = images_c * kernel * kernel,
+        kernels_per_plane = images_h * images_w / kernel / kernel,
+        plane_size = images_h * images_w,
+        elem_size = images_c * plane_size,
+        kernels_per_row = images_w / kernel;
+    ov::Tensor unfolded_tensor(ov::element::f32, {bs, new_c, kernels_per_plane});
+    const float* images = images_tensor.data<float>();
+    float* unfolded = unfolded_tensor.data<float>();
+    for (size_t batch_idx = 0; batch_idx < bs; ++batch_idx) {
+        for (size_t c_idx = 0; c_idx < images_c; ++c_idx) {
+            for (size_t h_idx = 0; h_idx < images_h; ++h_idx) {
+                for (size_t w_idx = 0; w_idx < images_w; ++w_idx) {
+                    size_t kernel_id = h_idx / kernel * kernels_per_row + w_idx / kernel;
+                    unfolded[batch_idx * new_c * kernels_per_plane + c_idx * kernel * kernel * kernels_per_plane + (images_h % kernel * kernel + images_w % kernel) * kernels_per_plane + kernel_id]
+                        = images[batch_idx * elem_size + c_idx * plane_size + h_idx * images_w + w_idx];
+                }
+            }
+        }
+    }
+    return unfolded_tensor;
+}
+
+ov::Tensor preprocess_for_encoder(const ov::Tensor& images, size_t kernel) {
+    ov::Shape images_shape = images.get_shape();
+    OPENVINO_ASSERT(4 == images_shape.size());
+    const size_t bs = images_shape.at(0), channels = images_shape.at(1);
+    ov::Tensor unfolded_tensor = unfold(images, kernel);
+    const ov::Shape& unfolded_shape = unfolded_tensor.get_shape();  // [N, C*kernel*kernel, H*W/kernel/kernel]
+    const size_t d1 = unfolded_shape.at(1), d2 = unfolded_shape.at(2);
+    ov::Tensor permuted_tensor{ov::element::f32, {bs, channels, kernel, unfolded_shape.at(2) * kernel}};  // [N, C, kernel, H*W/kernel]
+    const size_t new_len = permuted_tensor.get_shape().at(3);
+    const float* unfolded = unfolded_tensor.data<float>();
+    float* permuted = permuted_tensor.data<float>();
+    for (size_t b_idx = 0; b_idx < bs; ++b_idx) {
+        for (size_t d1_idx = 0; d1_idx < d1; ++d1_idx) {
+            for (size_t d2_idx = 0; d2_idx < d2; ++d2_idx) {
+                permuted[b_idx * channels * kernel * new_len + d1_idx / channels * kernel * new_len + d1_idx / kernel * new_len + d1_idx * kernel + d1_idx % kernel]
+                    = unfolded[b_idx * d1 * d2 + d1_idx * d2 * d2_idx];
+            }
+        }
+    }
+    return permuted_tensor;
+}
+
 EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const ov::Tensor& img, ov::InferRequest& encoder, int max_slice_nums, int scale_resolution, size_t patch_size, bool never_split) {
     clip_image_u8 source{
         int(img.get_shape().at(3)),
@@ -142,7 +193,7 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     std::vector<std::vector<ov::Tensor>> results;
     std::vector<std::vector<HeightWidth>> sizes;
 
-    // std::vector<clip_image_f32*> img_res_v; // format VectN x H x W x RGB (N x 336 x 336 x 3), so interleaved RGB - different to the python implementation which is N x 3 x 336 x 336
+    // std::vector<clip_image_f32*> img_res_v; // format N x H x W x RGB (N x 336 x 336 x 3), so interleaved RGB - different to the python implementation which is N x 3 x 336 x 336
     std::vector<std::vector<clip_image_f32>> preprocessed{imgs.size()};
     std::transform(imgs.begin(), imgs.end(), preprocessed.begin(), [&ctx_clip](const std::vector<clip_image_u8>& row) {
         std::vector<clip_image_f32> processed_row{row.size()};
@@ -153,13 +204,23 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     });
 
     const clip_image_f32& resized_preprocessed = preprocessed.at(0).at(0);
+    HeightWidth resized_source_size{resized_preprocessed.ny / patch_size, resized_preprocessed.nx / patch_size};
     ov::Tensor input_tensor{ov::element::f32, {1, 3, size_t(resized_preprocessed.ny), size_t(resized_preprocessed.nx)}, (void*)(resized_preprocessed.buf.data())};
+    ov::Tensor pixel_values = preprocess_for_encoder(input_tensor, patch_size);
+    encoder.set_tensor("pixel_values", pixel_values);
+    ov::Tensor patch_attn_mask{ov::element::boolean, {pixel_values.get_shape().at(0), 1, resized_source_size.height * resized_source_size.width}};
+    std::fill_n(patch_attn_mask.data<bool>(), patch_attn_mask.get_size(), true);
+    encoder.set_tensor("patch_attn_mask", patch_attn_mask);
+    ov::Tensor tgt_sizes{ov::element::i32, {1, 2}};
+    int32_t* tgt_sizes_data = tgt_sizes.data<int32_t>();
+    tgt_sizes_data[0] = resized_source_size.height;
+    tgt_sizes_data[1] = resized_source_size.width;
+    encoder.set_tensor("tgt_sizes", tgt_sizes);
     encoder.set_input_tensor(input_tensor);
     encoder.infer();
     ov::Tensor output_tensor = encoder.get_output_tensor();
     ov::Tensor resized_source{output_tensor.get_element_type(), output_tensor.get_shape()};
     output_tensor.copy_to(resized_source);
-    HeightWidth resized_source_size{resized_preprocessed.ny / patch_size, resized_preprocessed.nx / patch_size};
 
     HeightWidth size{
         size_t(preprocessed.at(1).at(0).ny),
@@ -177,6 +238,18 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
             batch_offset += values_in_elem;
         }
     }
+    ov::Tensor b_pixel_values = preprocess_for_encoder(batched, patch_size);
+    encoder.set_tensor("pixel_values", b_pixel_values);
+    ov::Tensor b_patch_attn_mask{ov::element::boolean, {b_pixel_values.get_shape().at(0), 1, sliced_sizes.at(0).height * sliced_sizes.at(0).width}};
+    std::fill_n(b_patch_attn_mask.data<bool>(), b_patch_attn_mask.get_size(), true);
+    encoder.set_tensor("patch_attn_mask", b_patch_attn_mask);
+    ov::Tensor b_tgt_sizes{ov::element::i32, {b_pixel_values.get_shape().at(0), 2}};
+    int32_t* b_tgt_sizes_data = b_tgt_sizes.data<int32_t>();
+    for (size_t idx = 0; idx < sliced_sizes.size(); ++idx) {
+        b_tgt_sizes_data[idx * 2] = sliced_sizes.at(idx).height;
+        b_tgt_sizes_data[idx * 2 + 1] = sliced_sizes.at(idx).width;
+    }
+    encoder.set_tensor("tgt_sizes", b_tgt_sizes);
     encoder.set_input_tensor(batched);
     encoder.infer();
     const ov::Tensor& encoded = encoder.get_output_tensor();
@@ -195,7 +268,7 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap device_config, ov::Core core) :
     VisionEncoder{
         core.compile_model(
-            model_dir / "openvino_vision.xml", device, device_config
+            model_dir / "image_encoder.xml", device, device_config
         ).create_infer_request(),
         ov::genai::utils::from_config_json_if_exists<ov::genai::ProcessorConfig>(
             model_dir, "preprocessor_config.json"

@@ -48,6 +48,7 @@ file(GLOB PUBLIC_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/include/openvino/genai/*.h
 
 set(TARGET_NAME openvino_genai)
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES} ${HEADERS} ${PUBLIC_HEADERS})
+add_dependencies(${TARGET_NAME} openvino_tokenizers)
 add_library(openvino::genai ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME}
