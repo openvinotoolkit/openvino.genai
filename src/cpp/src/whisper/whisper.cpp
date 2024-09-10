@@ -31,15 +31,25 @@ void suppress_tokens(ov::Tensor& logits, const size_t batch_idx, const std::vect
 }
 
 ov::Tensor encode(ov::InferRequest& request, std::vector<float>& mel_data) {
-    ov::Shape input_shape = {1, 80, 3000};
-    ov::Tensor input_tensor(ov::element::f32, input_shape, mel_data.data());
+    auto shape = request.get_tensor("input_features").get_shape();
+
+    OPENVINO_ASSERT(mel_data.size() == shape[1] * shape[2],
+                    "Mel spectrogram required size: ",
+                    shape[1],
+                    " * ",
+                    shape[2],
+                    ". Actual size: ",
+                    mel_data.size(),
+                    ".");
+
+    ov::Tensor input_tensor(ov::element::f32, {1, shape[1], shape[2]}, mel_data.data());
 
     request.set_tensor("input_features", input_tensor);
 
     request.infer();
 
     // reset input tensor
-    request.set_tensor("input_features", ov::Tensor(ov::element::f32, {0, 80, 3000}));
+    request.set_tensor("input_features", ov::Tensor(ov::element::f32, {0, shape[1], shape[2]}));
 
     return request.get_tensor("last_hidden_state");
 }
