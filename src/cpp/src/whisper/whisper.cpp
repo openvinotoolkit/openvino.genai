@@ -189,19 +189,18 @@ namespace genai {
 std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& config,
                                       const RawSpeechInput& raw_speech,
                                       ov::genai::WhisperInitializedModels& models,
+                                      WhisperFeatureExtractor& feature_extractor,
                                       const std::shared_ptr<StreamerBase> streamer) {
     std::vector<int64_t> output_tokens;
     size_t max_new_tokens = config.get_max_new_tokens();
 
-    WhisperFeatureExtractor feature_extractor;
-
-    for (size_t chunk_offset = 0; chunk_offset < raw_speech.size(); chunk_offset += feature_extractor.chunk_size) {
+    for (size_t chunk_offset = 0; chunk_offset < raw_speech.size(); chunk_offset += feature_extractor.n_samples) {
         if (output_tokens.size() >= max_new_tokens) {
             break;
         }
 
         // Split audio data into fixed feature_extractor.chunk_size windows.
-        size_t copy_size = std::min((raw_speech.size() - chunk_offset), size_t(feature_extractor.chunk_size));
+        size_t copy_size = std::min((raw_speech.size() - chunk_offset), size_t(feature_extractor.n_samples));
         std::vector<float> input_features_sub_chunk(raw_speech.begin() + chunk_offset,
                                                     raw_speech.begin() + chunk_offset + copy_size);
 

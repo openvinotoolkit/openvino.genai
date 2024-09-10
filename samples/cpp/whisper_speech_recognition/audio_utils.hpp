@@ -3,9 +3,6 @@
 
 #pragma once
 
-#include <iostream>
-#include <vector>
-
 #include "openvino/genai/whisper_pipeline.hpp"
 
 namespace utils {

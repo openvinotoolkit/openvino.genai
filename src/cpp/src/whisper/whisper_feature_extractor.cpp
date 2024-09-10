@@ -3,8 +3,7 @@
 
 #include "whisper_feature_extractor.hpp"
 
-#include <cstdint>
-#include <cstring>
+#include <string>
 #include <vector>
 
 #include "openvino/genai/visibility.hpp"
@@ -16,10 +15,14 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <fstream>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <openvino/core/except.hpp>
 #include <thread>
 #include <vector>
+
+#include "../utils.hpp"
 
 namespace {
 
@@ -438,9 +441,34 @@ std::vector<float> mel_spectrogram_convert_audio(const std::vector<float>& raw_s
 namespace ov {
 namespace genai {
 
-WhisperFeatureExtractor::WhisperFeatureExtractor() {
+WhisperFeatureExtractor::WhisperFeatureExtractor(const std::string& preprocessor_json_path) {
+    init_parameters(preprocessor_json_path);
     fill_sin_cos_table(sin_vals, cos_vals, n_fft);
+    init_mel_filter();
+}
 
+void WhisperFeatureExtractor::init_parameters(const std::string& preprocessor_json_path) {
+    // preprocessor_config.json not found. Skip parameters initialization from file, use defaults.
+    if (!std::filesystem::exists(preprocessor_json_path)) {
+        return;
+    }
+
+    using ov::genai::utils::read_json_param;
+
+    std::ifstream f(preprocessor_json_path);
+    OPENVINO_ASSERT(f.is_open(), "Failed to open '" + preprocessor_json_path + "' with preprocessor config");
+
+    nlohmann::json data = nlohmann::json::parse(f);
+
+    read_json_param(data, "feature_size", feature_size);
+    read_json_param(data, "sampling_rate", sampling_rate);
+    read_json_param(data, "hop_length", hop_length);
+    read_json_param(data, "n_fft", n_fft);
+    read_json_param(data, "chunk_length", chunk_length);
+    read_json_param(data, "n_samples", n_samples);
+};
+
+void WhisperFeatureExtractor::init_mel_filter() {
     auto mel_data = mel_filter_bank(1 + n_fft / 2, feature_size, sampling_rate);
     mel_filter.resize(mel_data.size() * mel_data[0].size());
 

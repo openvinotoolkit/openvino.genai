@@ -3,8 +3,7 @@
 
 #pragma once
 
-#include <cstdint>
-#include <cstring>
+#include <string>
 #include <vector>
 
 #include "openvino/genai/visibility.hpp"
@@ -14,14 +13,14 @@ namespace genai {
 
 class WhisperFeatureExtractor {
 public:
-    static constexpr size_t feature_size = 80;
-    static constexpr size_t sampling_rate = 16000;
-    static constexpr size_t hop_length = 160;
-    static constexpr size_t n_fft = 400;
-    static constexpr size_t chunk_length = 30;
-    static constexpr size_t chunk_size = sampling_rate * chunk_length;
+    size_t feature_size = 80;
+    size_t sampling_rate = 16000;
+    size_t hop_length = 160;
+    size_t n_fft = 400;
+    size_t chunk_length = 30;
+    size_t n_samples = 480000;
 
-    WhisperFeatureExtractor();
+    explicit WhisperFeatureExtractor(const std::string& preprocessor_json_path);
 
     /**
      * @brief Create 2d log-mel spectrogram from raw speech data
@@ -35,6 +34,9 @@ private:
     std::vector<float> sin_vals;
     std::vector<float> cos_vals;
     std::vector<float> mel_filter;
+
+    void init_mel_filter();
+    void init_parameters(const std::string& preprocessor_json_path);
 };
 
 }  // namespace genai
