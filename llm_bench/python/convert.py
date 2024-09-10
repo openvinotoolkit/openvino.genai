@@ -1446,10 +1446,7 @@ def main():
     compression_group.add_argument(
         "--dataset",
         help=(
-            "Dataset parameters for data-aware compression in format path,name,split,item_name "
-            "(for example \"wikitext,wikitext-2-v1,train[:1000],text\") "
-            "path,name,split - parameters for load_dataset from datasets "
-            "and item_name is field name in dataset with text."
+            "Dataset name for data-aware compression. Must be one of ['wikitext2', 'c4', 'c4-new']."
         ),
         default=None,
         type=str,

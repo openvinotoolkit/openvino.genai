@@ -99,11 +99,9 @@ private:
 
 
     bool _preempt_by_recompute(SequenceGroup::Ptr sequence_group, size_t blocks_needed) {
-        size_t total_num_released_blocks = 0;
         size_t processed_tokens = sequence_group->get_num_processed_tokens();
         size_t block_size = m_config.block_size;
         size_t prev_blocks_count = m_block_manager.num_free_blocks();
-        size_t num_running_sequences = sequence_group->num_running_seqs();
         size_t preempted_tokens = 0;
         size_t num_blocks_occupied_by_sequence = m_block_manager.get_number_of_blocks_occupied_by_sequence(sequence_group);
 
@@ -117,8 +115,14 @@ private:
             sequence_group->set_waiting();
             return m_block_manager.num_free_blocks() > prev_blocks_count;
         }
-
-        size_t logical_blocks_released = m_block_manager.free_group_partially(sequence_group, blocks_needed);
+        
+        size_t logical_blocks_released;
+        if (sequence_group->get_sampling_parameters().is_beam_search()) {
+            logical_blocks_released = m_block_manager.free_partially_beam_search_group(sequence_group, blocks_needed);
+        }
+        else {
+            logical_blocks_released = m_block_manager.free_group_partially(sequence_group, blocks_needed);
+        }
 
         // calculate the number of preempted tokens
         auto tokens_in_last_block = processed_tokens % block_size;
@@ -131,12 +135,14 @@ private:
         if (!m_config.dynamic_split_fuse && processed_tokens - preempted_tokens < sequence_group->get_prompt_len()) {
             // preempt prompt fully to not leave partially generated prompt
             preempted_tokens = processed_tokens;
-            auto seq_id = (*sequence_group)[0]->get_id();
-            m_block_manager.free_sequence(seq_id);
+            for (auto sequence: sequence_group->get_not_finished_sequences()) {
+                auto seq_id = sequence->get_id();
+                m_block_manager.free_sequence(seq_id);
+            }
         }
         sequence_group->preempt_tokens(preempted_tokens);
         sequence_group->set_waiting();
-        return total_num_released_blocks > 0;
+        return m_block_manager.num_free_blocks() > prev_blocks_count;
     }
 
     static size_t _get_low_priority_sequence_group_id(const std::vector<SequenceGroup::Ptr>& sequence_groups) {

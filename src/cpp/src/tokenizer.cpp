@@ -120,7 +120,8 @@ public:
         // Initialize tokenizer's cache to save time later.
         // infer_special_tokens_if_necessary() already could do that
         // but it didn't run decode() for sure.
-        decode(encode("").input_ids);
+        // TODO CVS-150630: Empty strings sporadically can fail, therefore use nonempty string for warmup.
+        decode(encode("non empty string").input_ids);
     }
 
     // load special tokens ids from config.json
