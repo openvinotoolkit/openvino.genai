@@ -143,7 +143,7 @@ conversation = [
     {'role': 'user', 'content': '1+1='},
     {'role': 'assistant', 'content': '1 + 1 = 2'},
     {'role': 'user', 'content': 'What is the previous answer?'},
-    {'role': 'assistant', 'content': 'The previous answer was: 1 + 1 = 2. \n Please ask me your next question.'},
+    {'role': 'assistant', 'content': 'The previous answer was: 1 + 1 = 2. Please ask me your next question.'},
     {'role': 'user', 'content': 'Why is the sun yellow?'},
     {'role': 'assistant', 'content': 'Because it emits yeloow light.'},
     {'role': 'user', 'content': 'What was my first question?'},
@@ -159,7 +159,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
     model_id, path, tokenizer, opt_model, pipe = read_model(get_models_list()[0])
     
     full_history_str_hf = tokenizer.apply_chat_template(conversation, 
-        add_generation_prompt=False, 
+        add_generation_prompt=False,
         tokenize=False,
         **tokenizer_config)
     
