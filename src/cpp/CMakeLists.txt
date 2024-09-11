@@ -15,8 +15,8 @@ endif()
 
 function(ov_genai_build_jinja2cpp)
     FetchContent_Declare(jinja2cpp
-        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/bcc0e30f17f17f738ec2a7a31316d6efbe78a0e0.tar.gz
-        URL_HASH SHA256=f76547deb323240e7d181ecda6f658757ea5eb07ce772cf39e8bd20467412164)
+        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/b32fbde7d98d13c34784c332c4a24a6f92c76e38.tar.gz
+        URL_HASH SHA256=7cc25ddbc438a5c874d404e100b4eccd8a331c195417f5487c48aebcf4b9e7fb)
 
     FetchContent_GetProperties(jinja2cpp)
     if(NOT jinja2cpp_POPULATED)

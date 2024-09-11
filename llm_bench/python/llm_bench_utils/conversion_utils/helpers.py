@@ -1,20 +1,22 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-
+import copy
+import json
 from enum import Enum
-from functools import partial
 import logging as log
 from pathlib import Path
-from datasets import load_dataset
+from typing import Optional, List, Dict
+
 import torch
 import numpy as np
 from nncf import compress_weights
 from nncf import Dataset
 from openvino import save_model
 import nncf
-from ..nncf_utils import COMPRESSION_OPTIONS, INT4_MODEL_CONFIGURATION
-from optimum.intel.openvino.configuration import _check_default_4bit_configs
+from ..nncf_utils import COMPRESSION_OPTIONS
+from optimum.gptq.data import get_dataset, prepare_dataset
+from optimum.intel.openvino.configuration import _check_default_4bit_configs, OVQuantizationMethod, _DEFAULT_4BIT_CONFIG
 import warnings
 
 
@@ -94,27 +96,31 @@ def save_tokenizer(tokenizer, out_dir):
         log.error(f'tokenizer loading failed with {e}')
 
 
-def transform_fn(item, item_name, input_shapes, tokenizer, config, max_tokens=127):
-    tokenized_text = tokenizer(item[item_name], return_tensors="np")
-    input_ids = tokenized_text["input_ids"][:max_tokens]
-    attention_mask = tokenized_text["attention_mask"][:max_tokens]
-
-    inputs = {}
-    inputs["input_ids"] = input_ids
+def transform_fn(
+    config,
+    input_shapes: Dict[str, List],
+    input_ids: torch.LongTensor,
+    attention_mask: Optional[torch.LongTensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    **kwargs
+):
+    inputs = {"input_ids": np.array(input_ids)}
 
     if "attention_mask" in input_shapes:
-        inputs["attention_mask"] = tokenized_text["attention_mask"]
+        inputs["attention_mask"] = attention_mask
 
     if "position_ids" in input_shapes:
-        position_ids = np.cumsum(attention_mask, axis=1) - 1
-        position_ids[attention_mask == 0] = 1
+        if position_ids is None:
+            position_ids = np.cumsum(attention_mask, axis=1) - 1
+            position_ids[attention_mask == 0] = 1
+        else:
+            position_ids = np.array(position_ids)
         inputs["position_ids"] = position_ids
 
-    batch_size = input_ids.shape[0]
-    if config.model_type == "bloom":
-        batch_size *= config.num_attention_heads
-
     if "beam_idx" in input_shapes:
+        batch_size = input_ids.shape[0]
+        if config.model_type == "bloom":
+            batch_size *= config.num_attention_heads
         inputs["beam_idx"] = np.arange(batch_size, dtype=int)
 
     for name, shape in input_shapes.items():
@@ -136,86 +142,68 @@ def get_ov_input_shapes(model, batch_size=1):
     return inputs
 
 
-def get_data_aware_args(ov_model, tokenizer, config, compression_args, args):
+def get_nncf_dataset(ov_model, tokenizer, config, dataset_name, subset_size):
     """initializes dict with data-aware compression parameters if defined dataset and tokenizer
 
     Args:
         ov_model : OpenVINO model for compression
         tokenizer : tokenizer for ov_model
         config : ov_model configuration
-        compression_args: compression arguments from model compression configuration
-        args : CLI args
+        dataset_name: name of the dataset to load; must be one of ['wikitext2', 'c4', 'c4-new']
+        subset_size: the number of sample the dataset should contain
 
     Returns:
-        res: dict with data-aware compression parameters
+        nncf_dataset: NNCF dataset
     """
-    res = {}
-    if tokenizer is None:
-        return res
-    dataset_params = None
-    if 'dataset' in compression_args:
-        dataset_args = compression_args['dataset']
-        dataset_params = dataset_args['name']
-        if 'sensitivity_metric' in dataset_args:
-            res['mode'] = dataset_args['sensitivity_metric']
-        if 'awq' in dataset_args:
-            res['awq'] = dataset_args['awq']
-        if 'scale_estimation' in dataset_args:
-            res['scale_estimation'] = dataset_args['scale_estimation']
-    elif args.dataset is not None:
-        dataset_params = args.dataset
-        if args.awq:
-            res['awq'] = args.awq
-        if args.scale_estimation:
-            res['scale_estimation'] = args.scale_estimation
-
-    if dataset_params is not None:
-        # for example "wikitext,wikitext-2-v1,train[:1000],text"
-        path, name, split, item_name = dataset_params.split(',')
-        dataset = load_dataset(path, name, split=split)
-
-        if path == 'wikitext':
-            # filter short sentences
-            dataset = dataset.filter(lambda example: len(example["text"]) > 128)
-        input_shapes = get_ov_input_shapes(ov_model)
-        data_transform_func = partial(transform_fn, item_name=item_name, tokenizer=tokenizer, input_shapes=input_shapes, config=config)
-        nncf_dataset = Dataset(dataset, data_transform_func)
-        res['dataset'] = nncf_dataset
-    return res
+    subset_size = subset_size or 128
+    dataset = get_dataset(dataset_name, tokenizer, seqlen=32, nsamples=subset_size)
+    dataset = prepare_dataset(dataset)
+    input_shapes = get_ov_input_shapes(ov_model)
+    nncf_dataset = Dataset(dataset, lambda x: transform_fn(config=config, input_shapes=input_shapes, **x))
+    return nncf_dataset
 
 
 def compress_ov_model_weights_helper(ov_model, tok, config, out_path, compress_weights_format="INT8", fp16=False, args={}, model_name="openvino_model"):
-    compression_args = None
     if "INT8" in compress_weights_format and "INT8_ASYM" in COMPRESSION_OPTIONS:
         warnings.warn("Usage INT8 mode is deprecated and will be removed soon. Please use INT8_ASYM instead", DeprecationWarning)
     if "4BIT_DEFAULT" in compress_weights_format:
-        try:
-            # TODO: remove this path when support of an older version optimum-intel is deprecated
-            compression_args = _check_default_4bit_configs(config)
-        except TypeError:
-            compression_args = _check_default_4bit_configs(config.name_or_path)
-        if compression_args:
-            sym = compression_args.pop("sym", False)
-            compression_args.pop("bits", 4)
-            compression_args["mode"] = nncf.CompressWeightsMode.INT4_SYM if sym else nncf.CompressWeightsMode.INT4_ASYM
+        compression_args = _check_default_4bit_configs(config.name_or_path)
         if compression_args is None:
-            model_id = out_path.parents[3].name
-            if model_id in INT4_MODEL_CONFIGURATION:
-                compression_args = INT4_MODEL_CONFIGURATION[model_id]
-            else:
-                compression_args = COMPRESSION_OPTIONS["INT4_ASYM"]
+            config_path = Path(config.name_or_path) / "config.json"
+            if config_path.exists():
+                with config_path.open("r") as f:
+                    json_config = json.load(f)
+                name_or_path = json_config.get("_name_or_path", None)
+                if name_or_path is not None:
+                    # Do additional check in case the input model is a full precision IR exported from PT model by path
+                    compression_args = _check_default_4bit_configs(name_or_path)
+        compression_args = compression_args or _DEFAULT_4BIT_CONFIG
+        compression_args = copy.deepcopy(compression_args)
+        compression_args.pop("bits")
 
-    if compression_args is None:
-        compression_args = COMPRESSION_OPTIONS[compress_weights_format]
-        if args.ratio is not None:
-            compression_args["ratio"] = args.ratio
-        if args.group_size is not None:
-            compression_args["group_size"] = args.group_size
-    if args.all_layers:
-        compression_args["all_layers"] = True
+        sym = compression_args.pop("sym", False)
+        compression_args["mode"] = nncf.CompressWeightsMode.INT4_SYM if sym else nncf.CompressWeightsMode.INT4_ASYM
+        if compression_args.pop("quant_method", None) == OVQuantizationMethod.AWQ:
+            compression_args["awq"] = True
+        if "num_samples" in compression_args:
+            compression_args["subset_size"] = compression_args.pop("num_samples")
+        if not compression_args.get("all_layers", None):
+            compression_args.pop("all_layers", None)
+    else:
+        compression_args = copy.deepcopy(COMPRESSION_OPTIONS[compress_weights_format])
+        for arg_name in ["ratio", "group_size", "all_layers", "dataset", "awq", "scale_estimation"]:
+            arg_value = getattr(args, arg_name, None)
+            if arg_value:
+                compression_args[arg_name] = arg_value
+
     log.info("Compression options:")
     log.info(compression_args)
-    compression_args.update(get_data_aware_args(ov_model, tok, config, compression_args, args))
+
+    dataset_name = compression_args.pop("dataset", None)
+    if dataset_name is not None and tok is not None:
+        nncf_dataset = get_nncf_dataset(ov_model, tok, config, dataset_name, compression_args.get("subset_size", None))
+        compression_args["dataset"] = nncf_dataset
+
     compressed_ov_model = compress_weights(ov_model, **compression_args)
     save_ov_model_helper(compressed_ov_model, out_path, model_name, fp16=fp16, tok=tok, config=config)
 

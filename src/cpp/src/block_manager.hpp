@@ -156,20 +156,6 @@ public:
     KVCacheBlock::Ptr allocate_block(size_t hash, std::map<uint64_t, KVCacheBlock::Ptr>& cached_blocks) {
         OPENVINO_ASSERT(m_enable_prefix_caching);
         OPENVINO_ASSERT(can_allocate_blocks(1));
-        auto block = m_evictor.get_block(hash);
-        auto it = cached_blocks.find(hash);
-        if (block != nullptr) {
-            // use cached block from evictor
-            return block;
-        }
-        // TODO: Currently we cache all allocated blocks which might be redundant for beam search,
-        // where blocks of non-used candidates are not needed in cache.
-        // This part can be improved if we cache only blocks for prompt.
-        if (it != cached_blocks.end()) {
-            // use cashed block from cached_blocks
-            it->second->increment();
-            return it->second;
-        }
         if (m_free_blocks.size() > 0) {
             // allocate new empty block
             KVCacheBlock::Ptr allocated_block = m_free_blocks.front();
@@ -225,6 +211,8 @@ class BlockManager {
     // stores blocks for each sequence (not sequence group)
     // the same block can be seen in multiple block_tables for different sequences
     std::map<uint64_t, std::vector<KVCacheBlock::Ptr>> m_block_table;
+
+    std::mutex m_cached_blocks_map_mutex;
 public:
     BlockManager(int num_blocks, bool enable_prefix_caching, size_t block_size)
         : m_allocator(num_blocks, enable_prefix_caching), m_enable_prefix_caching(enable_prefix_caching), m_block_size(block_size) { }
@@ -242,7 +230,6 @@ public:
     const size_t free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
         size_t blocks_num = std::ceil(num_required_blocks / sequence_group->get_not_finished_sequences().size());
         auto running_sequences = sequence_group->get_not_finished_sequences();
-        std::set<size_t> blocks_released_indices;
         for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
             auto seq_id = running_sequences[idx]->get_id();
             OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
@@ -250,6 +237,34 @@ public:
             free_sequence_partially(seq_id, blocks_num);
         }
         return blocks_num;
+    }
+
+    const size_t free_rightest_blocks(SequenceGroup::Ptr sequence_group) {
+        size_t blocks_released = 0;
+        auto running_sequences = sequence_group->get_not_finished_sequences();
+        for (size_t idx = 0; idx < running_sequences.size(); ++idx) {
+            auto seq_id = running_sequences[idx]->get_id();
+            OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
+            auto block_table = m_block_table[seq_id];
+            if (free_last_block(seq_id)) {
+                blocks_released++;
+            }
+        }
+        return blocks_released;
+    }
+
+    const size_t free_partially_beam_search_group(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
+        size_t physical_blocks_released = 0;
+        size_t logical_blocks_released = 0;
+        while (num_required_blocks > physical_blocks_released) {
+            size_t released_count = free_rightest_blocks(sequence_group);
+            logical_blocks_released ++;
+            if ((int)sequence_group->get_context_len() - logical_blocks_released * m_block_size <= 0) {
+                break;
+            }
+            physical_blocks_released += released_count;
+        }
+        return logical_blocks_released;
     }
 
     const size_t get_number_of_blocks_occupied_by_sequence(SequenceGroup::Ptr sequence_group) {
@@ -263,16 +278,11 @@ public:
             }
            // OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
             auto block_table = m_block_table[seq_id];
-            size_t last_idx = block_table.back()->get_index();
-            if (indices.find(last_idx) != indices.end()) {
-                continue;
-            }
-            else {
-                indices.insert(last_idx);
-                num_blocks += block_table.size();
+            for (const auto& block: block_table) {
+                indices.insert(block->get_index());
             }
         }
-        return num_blocks;
+        return indices.size();
     }
 
     const bool has_block_table(uint64_t seq_id) {
@@ -295,6 +305,20 @@ public:
         auto block_table = m_block_table[sequence_id];
         auto content_length = sequence->get_generated_len() + prompt_ids.size();
         size_t num_hashed_tokens = block_table.size() * m_block_size;
+
+        if (m_enable_prefix_caching && block_table.size() > 0) {
+            KVCacheBlock::Ptr last_block = block_table.back();
+            auto hash = sequence->get_hash(block_table.size() * m_block_size);
+            auto prev_hash = last_block->get_hash();
+            // If last block was restored from cache by using of a partially filled block,
+            // its hash would correspond to partially filled block.
+            // In this case hash needs to be updated to the hash of fully filled block.
+            if (prev_hash != hash) {
+                last_block->set_hash(hash);
+                cached_blocks.erase(prev_hash);
+                cached_blocks[hash] = last_block;
+            }
+        }
 
         for (size_t i = 0; i < num_blocks; ++i) {
 
@@ -474,6 +498,10 @@ public:
 
 
     void restore_cached_blocks(SequenceGroup::Ptr group, size_t block_size) {
+        // When add_request() is executed in multiple threads accessing to cached_blocks causes segfault.
+        // The mutex is needed to prevent such segfaults.
+        const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+
         auto prompt_ids = group->get_prompt_ids(); 
         auto sequences = group->get_not_finished_sequences();
         OPENVINO_ASSERT(sequences.size() == 1);
@@ -494,7 +522,7 @@ public:
             if (block != nullptr) {
                 block->set_timestamp(std::chrono::system_clock::now());
                 m_block_table[seq_id].push_back(block);
-                group->update_processed_tokens_num(content_len);
+                group->update_processed_tokens_num(content_len == prompt_ids.size() ? content_len - 1 : content_len);
             }
             else {
                 // restore partially filled block
@@ -506,15 +534,7 @@ public:
                     auto block = m_allocator.get_cached_block(hash, cached_blocks);
                     if (block != nullptr) {
                         block->set_timestamp(std::chrono::system_clock::now());
-                        group->update_processed_tokens_num(prev_iteration_content_len + i);
-
-                        size_t new_tokens_count_in_block = std::min(content_len, prev_iteration_content_len + block_size);
-                        if (new_tokens_count_in_block > prev_iteration_content_len + i) {
-                            cached_blocks.erase(hash);
-                            auto new_hash = sequence->get_hash(new_tokens_count_in_block);
-                            block->set_hash(new_hash);
-                            cached_blocks[new_hash] = block;
-                        }
+                        group->update_processed_tokens_num(prev_iteration_content_len + i == prompt_ids.size() ? prev_iteration_content_len + i - 1 : prev_iteration_content_len + i);
                         m_block_table[seq_id].push_back(block);
 
                         break;

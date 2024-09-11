@@ -45,7 +45,7 @@ ov::AnyMap py_object_to_any_map(const py::object& py_obj) {
 ov::Any py_object_to_any(const py::object& py_obj) {
     // Python types
     py::object float_32_type = py::module_::import("numpy").attr("float32");
-
+    
     if (py::isinstance<py::str>(py_obj)) {
         return py_obj.cast<std::string>();
     } else if (py::isinstance<py::bool_>(py_obj)) {
@@ -102,8 +102,8 @@ ov::Any py_object_to_any(const py::object& py_obj) {
         default:
             OPENVINO_ASSERT(false, "Unsupported attribute type.");
         }
-
-        // OV types
+    
+    // OV types
     } else if (py_object_is_any_map(py_obj)) {
         return py_object_to_any_map(py_obj);
     } else if (py::isinstance<ov::Any>(py_obj)) {
@@ -136,6 +136,8 @@ ov::Any py_object_to_any(const py::object& py_obj) {
         return py::cast<ov::Tensor>(py_obj);
     } else if (py::isinstance<ov::Output<ov::Node>>(py_obj)) {
         return py::cast<ov::Output<ov::Node>>(py_obj);
+    } else if (py::isinstance<ov::genai::SchedulerConfig>(py_obj)) {
+        return py::cast<ov::genai::SchedulerConfig>(py_obj);
     } else if (py::isinstance<py::object>(py_obj)) {
         return py_obj;
     }

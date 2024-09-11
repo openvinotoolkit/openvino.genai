@@ -48,15 +48,15 @@ from transformers import (
     AutoModelForSeq2SeqLM,
     AutoModel,
 )
-from utils.nncf_utils import get_compressed_path
-from utils.model_utils import add_stateful_model_arguments
+from llm_bench_utils.nncf_utils import get_compressed_path
+from llm_bench_utils.model_utils import add_stateful_model_arguments
 from optimum.exporters.openvino.utils import flattenize_inputs
-from utils.conversion_utils.convert_patch import patch_model_for_optimum_export
-from utils.conversion_utils.better_transformer_patch import (
+from llm_bench_utils.conversion_utils.convert_patch import patch_model_for_optimum_export
+from llm_bench_utils.conversion_utils.better_transformer_patch import (
     register_bettertransformer_config,
 )
-import utils.conversion_utils.export_configs  # noqa: F401,F403
-from utils.conversion_utils.helpers import (
+import llm_bench_utils.conversion_utils.export_configs  # noqa: F401,F403
+from llm_bench_utils.conversion_utils.helpers import (
     PYTORCH_DIR,
     OV_DIR,
     GPTQ_DIR,
@@ -75,7 +75,7 @@ from utils.conversion_utils.helpers import (
     is_int8_compression,
     BackendType,
 )
-from utils.nncf_utils import COMPRESSION_OPTIONS
+from llm_bench_utils.nncf_utils import COMPRESSION_OPTIONS
 
 if TYPE_CHECKING:
     from optimum.onnx.configuration import OnnxConfig
@@ -1446,10 +1446,7 @@ def main():
     compression_group.add_argument(
         "--dataset",
         help=(
-            "Dataset parameters for data-aware compression in format path,name,split,item_name "
-            "(for example \"wikitext,wikitext-2-v1,train[:1000],text\") "
-            "path,name,split - parameters for load_dataset from datasets "
-            "and item_name is field name in dataset with text."
+            "Dataset name for data-aware compression. Must be one of ['wikitext2', 'c4', 'c4-new']."
         ),
         default=None,
         type=str,
