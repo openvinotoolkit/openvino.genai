@@ -346,7 +346,7 @@ public:
             {"is not none", "is defined"},
             {"is none", "is undefined"},
             {"= none", "= undefined"},
-            // TODO: Jinja2Cpp does not support Python-style slicing, e.g. [1:].
+            // Jinja2Cpp does not support Python-style slicing, e.g. [1:].
             // If chat template contains such slicing, we replace it with 
             // a placeholder at the moment.
             {"messages[1:]", "slice(messages, 1)"},
