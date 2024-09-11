@@ -453,8 +453,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             const std::string& device,
             const std::map<std::string, py::object>& config
         ) {
-            ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<LLMPipeline>(model_path, tokenizer, device, properties_to_any_map(config));
+            ScopedVar env_manager(utils::ov_tokenizers_module_path());
+            return std::make_unique<LLMPipeline>(model_path, tokenizer, device, utils::properties_to_any_map(config));
         }),
         py::arg("model_path"),
         py::arg("tokenizer"),
