@@ -146,7 +146,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
 
     // read LoRA weights
     ov::genai::Adapter lora_adapter;
-    ov::genai::AdapterConfig lora_config(ov::genai::AdapterConfig::MODE_STATIC);
+    ov::genai::AdapterConfig lora_config(ov::genai::AdapterConfig::MODE_FUSE);
     if (!lora_path.empty()) {
         Timer t("Loading LoRA weights");
         DEBUG_PRINT("Adapters registered:" << lora_path.size());
