@@ -98,21 +98,6 @@ public:
 }  // namespace genai
 }  // namespace ov
 
-ov::genai::DecodedResults ov::genai::WhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
-                                                               OptionalWhisperGenerationConfig generation_config,
-                                                               StreamerVariant streamer) {
-    return m_impl->generate(raw_speech_input, generation_config, streamer);
-}
-
-ov::genai::DecodedResults ov::genai::WhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
-                                                               const ov::AnyMap& config_map) {
-    auto config_arg = get_config_from_map(config_map);
-    WhisperGenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
-    config.update_generation_config(config_map);
-
-    return m_impl->generate(raw_speech_input, config, utils::get_streamer_from_map(config_map));
-}
-
 ov::genai::WhisperPipeline::WhisperPipeline(const std::string& model_path,
                                             const ov::genai::Tokenizer& tokenizer,
                                             const std::string& device,
@@ -130,6 +115,21 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::string& model_path,
     m_impl = std::make_unique<WhisperPipeline::Impl>(model_path, device, config);
     auto stop_time = std::chrono::steady_clock::now();
     m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
+}
+
+ov::genai::DecodedResults ov::genai::WhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
+                                                               OptionalWhisperGenerationConfig generation_config,
+                                                               StreamerVariant streamer) {
+    return m_impl->generate(raw_speech_input, generation_config, streamer);
+}
+
+ov::genai::DecodedResults ov::genai::WhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
+                                                               const ov::AnyMap& config_map) {
+    auto config_arg = get_config_from_map(config_map);
+    WhisperGenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
+    config.update_generation_config(config_map);
+
+    return m_impl->generate(raw_speech_input, config, utils::get_streamer_from_map(config_map));
 }
 
 ov::genai::WhisperGenerationConfig ov::genai::WhisperPipeline::get_generation_config() const {

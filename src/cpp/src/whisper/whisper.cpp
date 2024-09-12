@@ -30,26 +30,27 @@ void suppress_tokens(ov::Tensor& logits, const size_t batch_idx, const std::vect
     }
 }
 
-ov::Tensor encode(ov::InferRequest& request, std::vector<float>& mel_data) {
-    auto shape = request.get_tensor("input_features").get_shape();
-
-    OPENVINO_ASSERT(mel_data.size() == shape[1] * shape[2],
+ov::Tensor encode(ov::InferRequest& request,
+                  std::vector<float>& mel_data,
+                  const size_t feature_size,
+                  const size_t nb_max_frames) {
+    OPENVINO_ASSERT(mel_data.size() == feature_size * nb_max_frames,
                     "Mel spectrogram required size: ",
-                    shape[1],
+                    feature_size,
                     " * ",
-                    shape[2],
+                    nb_max_frames,
                     ". Actual size: ",
                     mel_data.size(),
                     ".");
 
-    ov::Tensor input_tensor(ov::element::f32, {1, shape[1], shape[2]}, mel_data.data());
+    ov::Tensor input_tensor(ov::element::f32, {1, feature_size, nb_max_frames}, mel_data.data());
 
     request.set_tensor("input_features", input_tensor);
 
     request.infer();
 
     // reset input tensor
-    request.set_tensor("input_features", ov::Tensor(ov::element::f32, {0, shape[1], shape[2]}));
+    request.set_tensor("input_features", ov::Tensor(ov::element::f32, {0, feature_size, nb_max_frames}));
 
     return request.get_tensor("last_hidden_state");
 }
@@ -216,7 +217,8 @@ std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& 
 
         auto input_features = feature_extractor.extract(input_features_sub_chunk);
 
-        ov::Tensor hidden_state_tensor = encode(models.encoder, input_features);
+        ov::Tensor hidden_state_tensor =
+            encode(models.encoder, input_features, feature_extractor.feature_size, feature_extractor.nb_max_frames);
 
         bool cancelled;
         std::vector<int64_t> chunk_output_tokens;

@@ -19,6 +19,7 @@ public:
     size_t n_fft = 400;
     size_t chunk_length = 30;
     size_t n_samples = 480000;
+    size_t nb_max_frames = 3000;
 
     explicit WhisperFeatureExtractor(const std::string& preprocessor_json_path);
 

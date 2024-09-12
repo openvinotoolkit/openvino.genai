@@ -466,6 +466,7 @@ void WhisperFeatureExtractor::init_parameters(const std::string& preprocessor_js
     read_json_param(data, "n_fft", n_fft);
     read_json_param(data, "chunk_length", chunk_length);
     read_json_param(data, "n_samples", n_samples);
+    read_json_param(data, "nb_max_frames", nb_max_frames);
 };
 
 void WhisperFeatureExtractor::init_mel_filter() {
