@@ -229,13 +229,14 @@ protected:
 
 class EOSPenaltyTransform : public ILogitTransformer {
 public:
-    EOSPenaltyTransform(size_t eos_token_id, size_t min_generated_tokens) : 
-        m_eos_token_id(eos_token_id), m_applicable_tensor_len(min_generated_tokens) {}
+    EOSPenaltyTransform(const std::set<int64_t>& stop_token_ids, size_t min_generated_tokens) : 
+        m_stop_token_ids(stop_token_ids), m_applicable_tensor_len(min_generated_tokens) {}
 
     void apply(Logits& logits) override {
         // Since EOS penalty is applied early, the token vector is not initialized yet
         // and we can assume element order match token ids.
-        logits.m_data[m_eos_token_id] = 0.f;
+        for (auto stop_token_id: m_stop_token_ids)
+            logits.m_data[stop_token_id] = 0.f;
     }
     
 
@@ -245,7 +246,7 @@ public:
 
 protected:
     size_t m_applicable_tensor_len = std::numeric_limits<size_t>::max();
-    size_t m_eos_token_id;
+    std::set<int64_t> m_stop_token_ids;
 };
 
 class FrequencyPenaltyTransform : public IPenaltyTransformer {
@@ -317,7 +318,7 @@ public:
 
         if (sampling_params.min_new_tokens > 0) {
             m_logit_transformers.emplace_back(
-                new LogitTransformers::EOSPenaltyTransform(sampling_params.eos_token_id, sampling_params.min_new_tokens)
+                new LogitTransformers::EOSPenaltyTransform(sampling_params.stop_token_ids, sampling_params.min_new_tokens)
             );
         }
 

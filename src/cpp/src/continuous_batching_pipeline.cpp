@@ -115,7 +115,7 @@ public:
         m_scheduler = std::make_shared<Scheduler>(updated_config);
         // and finally create model runner
         m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
-        m_sampler = std::make_shared<Sampler>();
+        m_sampler = std::make_shared<Sampler>(m_tokenizer);
         m_sampler->set_seed(m_generation_config.rng_seed);
 
         // read default generation config
@@ -299,8 +299,8 @@ public:
             if (streamer_ptr) {
                 std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
                 OPENVINO_ASSERT(1 == token.size());
-                OPENVINO_ASSERT(1 == token.begin()->second.generated_token_ids.size());
-                continue_generation = !streamer_ptr->put(token.begin()->second.generated_token_ids.at(0));
+                OPENVINO_ASSERT(1 == token.begin()->second.generated_ids.size());
+                continue_generation = !streamer_ptr->put(token.begin()->second.generated_ids.at(0));
             }
         }
         if (streamer_ptr) {
@@ -319,7 +319,7 @@ public:
             auto num_outputs = std::min(sampling_params[generation_idx].num_return_sequences, generation_outputs.size());
             for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
                 const auto& generation_output = generation_outputs[generation_output_idx];
-                result.m_generation_ids.push_back(std::move(generation_output.generated_token_ids));
+                result.m_generation_ids.push_back(std::move(generation_output.generated_ids));
                 result.m_scores.push_back(generation_output.score);
             }
             result.m_status = generation->get_status();

@@ -7,6 +7,8 @@
 #include <jinja2cpp/template.h>
 #include <jinja2cpp/template_env.h>
 #include <jinja2cpp/user_callable.h>
+#include <jinja2cpp/generic_list.h>
+#include <jinja2cpp/generic_list_iterator.h>
 #include "tokenizers_path.hpp"
 #include "circular_buffer_queue.hpp"
 #include <fstream>
@@ -335,6 +337,31 @@ public:
         return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
     }
 
+    std::string patch_chat_template(std::string template_str) {
+        // Replace what jinja2cpp doesn't support
+        std::pair<std::string, std::string> replace_str_map[] = {
+            {"'}", "' }"},
+            {"{'", "{ '"},
+            {".strip()", ""},
+            {"is not none", "is defined"},
+            {"is none", "is undefined"},
+            {"= none", "= undefined"},
+            // Jinja2Cpp does not support Python-style slicing, e.g. [1:].
+            // If chat template contains such slicing, we replace it with 
+            // a placeholder at the moment.
+            {"messages[1:]", "slice(messages, 1)"},
+        };
+
+        for (const auto& [from, to] : replace_str_map) {
+            size_t pos = 0;
+            while ((pos = template_str.find(from, pos)) != std::string::npos) {
+                template_str.replace(pos, from.size(), to);
+                pos += to.size();
+            }
+        }
+        return template_str;
+    }
+
     std::string chat_template_from_tokenizer_json_if_exists(const std::filesystem::path& path) {
         auto tokenizer_config_file_path = path / "tokenizer_config.json";
         if (!std::filesystem::exists(tokenizer_config_file_path))
@@ -349,21 +376,7 @@ public:
         if (res.empty())
             return res;
         
-        // Replace what jinja2cpp doesn't support
-        std::pair<std::string, std::string> replace_str_map[] = {
-            {"'}", "' }"},
-            {"{'", "{ '"},
-            {".strip()", ""}
-        };
-
-        for (const auto& [from, to] : replace_str_map) {
-            size_t pos = 0;
-            while ((pos = res.find(from, pos)) != std::string::npos) {
-                res.replace(pos, from.size(), to);
-                pos += to.size();
-            }
-        }
-        return res;
+        return patch_chat_template(res);
     }
 
     std::string apply_chat_template(ChatHistory history, 
@@ -374,39 +387,28 @@ public:
                         "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
                         " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
                         " For more information see the section Troubleshooting in README.md");
-
-        // Jinja2Cpp does not support Python-style slicing, e.g. [1:].
-        // If chat template contains such slicing, we replace it with custom function `slice()` (user-defined callable) 
-        // that is defined below and does the same list slicing logic.
-        std::string slice_string = "messages[1:]";
-        std::string replacement_slice_string = "slice(messages, 1)";
-        size_t slice_pos = chat_tpl.find(slice_string);
-        if (slice_pos != std::string::npos) {
-            chat_tpl.replace(slice_pos, slice_string.length(), replacement_slice_string);
-        }
-        jinja2::UserCallable slice_callable = jinja2::MakeCallable(
-            [](const jinja2::ValuesList& list, const int64_t start) {
-                if (list.empty())
-                    return jinja2::Value();
-                jinja2::ValuesList result;
-                int64_t stop = list.size();
-                int64_t step = 1;
-                for (int64_t i = start; i < stop && i < list.size(); i += step)
-                {
-                    result.push_back(list.at(i));
-                }
-
-                return jinja2::Value(result);
-            },
-            jinja2::ArgInfo{"list"}, jinja2::ArgInfo{"start"}
-        );
-
         jinja2::TemplateEnv env;
         env.GetSettings().lstripBlocks = true;
         env.GetSettings().trimBlocks = true;
         jinja2::Template tpl(&env);
         tpl.Load(chat_tpl);
         
+        jinja2::UserCallable slice_callable = jinja2::MakeCallable(
+            [](const jinja2::GenericList& messages, const size_t& start) {
+                jinja2::ValuesList result;
+
+                size_t iter_num = 0;
+                for (auto message = messages.begin(); message != messages.end(); message++, iter_num++) {
+                    if (iter_num < start)
+                        continue;
+                    result.emplace_back(*message);
+                }
+
+                return result;
+            },
+            jinja2::ArgInfo{"messages"}, jinja2::ArgInfo{"start"}
+        );
+
         jinja2::ValuesList jinja_messages;
         jinja2::ValuesMap jinja_message;
         for (const auto& message : history) {
@@ -433,7 +435,7 @@ public:
     }
 
     void set_chat_template(const std::string& chat_template) {
-        m_chat_template = chat_template;
+        m_chat_template = patch_chat_template(chat_template);
     }
 };
 

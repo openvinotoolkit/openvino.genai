@@ -53,7 +53,8 @@ struct GenerationResult {
 };
 
 struct GenerationOutput {
-    std::vector<int64_t> generated_token_ids;
+    std::vector<int64_t> generated_ids;
+    std::vector<float> generated_log_probs;
     float score;
     GenerationFinishReason finish_reason;
 };
