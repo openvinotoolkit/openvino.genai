@@ -719,11 +719,10 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         current_config(config),  // FIXME: Compare current and passed configs and change incrementally
         lora_state_evaluators("CPU")    // FIXME: Try to run on the same device that is used for model inference
     {
-        OPENVINO_ASSERT(!config.is_dynamic || !config.fuse, "Both is_dynamic and fuse modes cannot be set simultaniously in adapter config");
         LoRAParametersByWeightGetter params_getter;
         params_getter.type = ov::element::dynamic;
 
-        for(auto const& adapter : current_config.adapters) {
+        for(auto const& adapter : current_config.get_adapters()) {
             auto adapter_impl = get_adapter_impl(adapter);
             params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->tensors, prefix));
             // TODO: Instead of aggregating types over all tensors in each adapter, make decision per node in LoRAWeightStateGetter
@@ -760,21 +759,24 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         };
 
         ov::pass::Manager pm;
-        if(current_config.is_dynamic) {
+        auto mode = current_config.get_mode();
+        if(mode == AdapterConfig::MODE_DYNAMIC || mode == AdapterConfig::MODE_STATIC_RANK || mode == AdapterConfig::MODE_AUTO) {
             // State mode
-            params_getter.dynamic_lora_rank = current_config.is_dynamic_rank;
+            params_getter.dynamic_lora_rank = (mode != AdapterConfig::MODE_STATIC_RANK);
             pm.register_pass<LoRASeparateTransform>(LoRAWeightStateGetter(params_getter, model, variable_ids));
             //ov::serialize(model, "after_lora.xml");
             // auto variables = model->get_variables();
             // for(size_t i = 0; i < variables.size(); ++i) {
             //     DEBUG_PRINT("Variable: " << variables[i]->get_info().variable_id);
             // }(
-        } else if(!current_config.fuse) {
+        } else if(mode == AdapterConfig::MODE_STATIC) {
             // Separate constant mode
             pm.register_pass<LoRASeparateTransform>(weight_as_constant);
-        } else {
+        } else if(mode == AdapterConfig::MODE_FUSE) {
             // Fuse mode
             pm.register_pass<LoRAFuseTransform>(weight_as_constant);
+        } else {
+            OPENVINO_THROW("Unrecognized AdapterConfig::Mode was used: ", mode);
         }
 
         pm.run_passes(model);
@@ -782,27 +784,23 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
     }
 
     struct ConfigChanged {
-        bool is_dynamic = false;
-        bool is_dynamic_rank = false;
-        bool fuse = false;
+        bool mode;
         bool alpha = false;
         bool adapter = false;
 
         operator bool() const {
-            return is_dynamic || is_dynamic_rank || fuse || alpha || adapter;
+            return mode || alpha || adapter;
         }
     };
 
     ConfigChanged compare_configs(const AdapterConfig& config1, const AdapterConfig& config2) {
         ConfigChanged diff;
-        diff.is_dynamic = config1.is_dynamic != config2.is_dynamic;
-        diff.is_dynamic_rank = config1.is_dynamic_rank != config2.is_dynamic_rank;
-        diff.fuse = config1.fuse != config2.fuse;
+        diff.mode = config1.get_mode() != config2.get_mode();
         // TODO: Use `set` from this commented block when the config change tracking is implemented at adapter granularity and will track order of adapters correctly
         // std::set<Adapter>
         //     adapters1(config1.adapters.begin(), config1.adapters.end()),
         //     adapters2(config2.adapters.begin(), config2.adapters.end());
-        const auto& adapters1 = config1.adapters, adapters2 = config2.adapters;
+        const auto& adapters1 = config1.get_adapters(), adapters2 = config2.get_adapters();
 
         // DEBUG_PRINT(config1.adapters.size());
         // DEBUG_PRINT(config2.adapters.size());
@@ -812,11 +810,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
             diff.adapter = true;
             diff.alpha = true;
         } else {
-            OPENVINO_ASSERT(config1.adapters.size() == config2.adapters.size());
-            OPENVINO_ASSERT(config1.alphas.size() == config2.alphas.size());
-            OPENVINO_ASSERT(config1.adapters.size() == config1.alphas.size());
-            for(size_t i = 0; i < config1.adapters.size() && !diff.alpha; ++i) {
-                const auto& adapter = config1.adapters[i];
+            for(auto const& adapter: adapters1) {
                 diff.alpha = config1.get_alpha(adapter) != config2.get_alpha(adapter);
             }
         }
@@ -825,16 +819,15 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
 
     void apply (ov::InferRequest& infer_request, const AdapterConfig& config) override {
         // FIXME: If a part of LoRA state tensors are not set here, then need to carefully reset state in LLMPipeline where global reset is called after the generation
-        OPENVINO_ASSERT(!config.is_dynamic || !config.fuse, "Both is_dynamic and fuse modes cannot be set simultaniously in adapter config");
 
         const auto diff = compare_configs(current_config, config);
         // DEBUG_PRINT("config.is_dynamic: " << config.is_dynamic);
         // DEBUG_PRINT("config.fuse: " << config.fuse);
         // DEBUG_PRINT("diff.adapter: " << diff.adapter);
-        OPENVINO_ASSERT(!diff.is_dynamic, "AdapterConfig::is_dynamic cannot be changed and should be configured once for a model at the initialization");
-        OPENVINO_ASSERT(!diff.is_dynamic_rank, "AdapterConfig::is_dynamic_rank cannot be changed and should be configured once for a model at the initialization");
-        OPENVINO_ASSERT(!diff.fuse, "AdapterConfig::fuse cannot be changed and should be configured once for a model at the initialization");
-        OPENVINO_ASSERT(config.is_dynamic || (!diff.alpha && !diff.adapter), "Cannot change adapters and/or the alphas when is_dynamic = false.");
+        OPENVINO_ASSERT(!diff.mode, "AdapterConfig::mode cannot be changed and should be configured once for a model at the initialization");
+        OPENVINO_ASSERT(
+            config.get_mode() == AdapterConfig::MODE_AUTO || config.get_mode() == AdapterConfig::MODE_DYNAMIC || config.get_mode() == AdapterConfig::MODE_STATIC_RANK || (!diff.alpha && !diff.adapter),
+            "Cannot change adapters and/or the alphas when not one of the dynamic modes are used.");
         if(need_full_apply) {
             need_full_apply = false;
             //DEBUG_PRINT("force apply");
@@ -860,26 +853,23 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
 
     void set_new_adapter_tensors (ov::InferRequest& infer_request, const AdapterConfig& config) {
         current_config = config;       // FIXME: Keep the old config to map to cached LoRA state tensors instead of the current approach where we start from scratch each time
-        if(!current_config.is_dynamic) {
+        if(current_config.get_mode() != AdapterConfig::MODE_AUTO && current_config.get_mode() != AdapterConfig::MODE_DYNAMIC && current_config.get_mode() != AdapterConfig::MODE_STATIC_RANK ) {
             return;
         }
 
         std::vector<LoRAWeightGetter> weight_getters;
-        weight_getters.reserve(current_config.adapters.size());
-        for(const auto& adapter: current_config.adapters) {
+        const auto& adapters = current_config.get_adapters();
+        weight_getters.reserve(adapters.size());
+        for(const auto& adapter: adapters) {
             weight_getters.emplace_back(LoRAWeightGetterDefault(&get_adapter_impl(adapter)->tensors, prefix));
         }
 
         auto state = infer_request.query_state();
-        // for(size_t i = 0; i < state.size(); ++i) {
-        //     DEBUG_PRINT("State [" << i << "].name: " << state[i].get_name());
-        // }
-        //std::map<std::string, size_t> var_id_to_index;
 
-        // FIXME: Forced to use variable_id instead of index to address the state tensors, require the same order for state as for variables from plugins
+        // TODO: Forced to use variable_id instead of index to address the state tensors, require the same order for state as for variables from plugins
 
         // Convert LoRAVarIDs to LoRAIndices to speedup search for state with a given name
-        // FIXME: If state order is stable, then this should be done this mapping once for a given infer request, TODO: cache it based on the infer request
+        // TODO: If state order is stable, then this should be done this mapping once for a given infer request, TODO: cache it based on the infer request
         std::map<std::string, size_t> state_name_to_index;
         for(size_t i = 0; i < state.size(); ++i) {
             auto name = state[i].get_name();
@@ -899,15 +889,16 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
     }
 
      std::vector<LoRAWeight> collect_applicable_tensors (const std::string& lora_name, const std::vector<LoRAWeightGetter>& weight_getters) {
-        OPENVINO_ASSERT(weight_getters.size() == current_config.adapters.size());
+        const auto& adapters = current_config.get_adapters();
+        OPENVINO_ASSERT(weight_getters.size() == adapters.size());
         std::vector<LoRAWeight> result;
         result.reserve(weight_getters.size());
-        for(size_t i = 0; i < current_config.adapters.size(); ++i) {
+        for(size_t i = 0; i < adapters.size(); ++i) {
             if(auto lora_tensors = weight_getters[i](lora_name)) {
                 // FIXME: Introduce more flexible logic of setting alpha based on alpha set in the adapter file itself, now it is ignored and only alpha from config is used
                 OPENVINO_ASSERT(lora_tensors->A);
                 OPENVINO_ASSERT(lora_tensors->B);
-                lora_tensors->alpha = current_config.alpha_constants[i];
+                lora_tensors->alpha = alpha_as_constant(current_config.get_alpha(adapters[i]));
                 result.push_back(LoRAWeight(
                     std::dynamic_pointer_cast<v0::Constant>(lora_tensors->alpha),
                     std::dynamic_pointer_cast<v0::Constant>(lora_tensors->A),
@@ -1194,74 +1185,35 @@ void AdapterController::force_full_apply(bool full_apply) {
     return m_pimpl->force_full_apply(full_apply);
 }
 
-void AdapterConfig::decompose_mode () {
-    switch(mode) {
-        case MODE_AUTO:
-            is_dynamic = true;
-            fuse = false;
-            is_dynamic_rank = true;
-        case MODE_DYNAMIC:
-            is_dynamic = true;
-            fuse = false;
-            is_dynamic_rank = true;
-            break;
-        case MODE_STATIC_RANK:
-            is_dynamic = true;
-            fuse = false;
-            is_dynamic_rank = false;
-            break;
-        case MODE_STATIC:
-            is_dynamic = false;
-            fuse = false;
-            is_dynamic_rank = false;
-            break;
-        case MODE_FUSE:
-            is_dynamic = false;
-            fuse = true;
-            is_dynamic_rank = false;
-            break;
-    }
-}
-
 void AdapterConfig::set_mode(Mode _mode) {
     mode = _mode;
-    decompose_mode();
 }
 
 AdapterConfig::AdapterConfig (const std::vector<Adapter>& adapters, Mode mode) : mode(mode), adapters(adapters) {
-    decompose_mode();
     alphas.reserve(adapters.size());
     for(const auto& adapter: adapters) {
         auto const alpha = 1;
         alphas.push_back(alpha);
-        alpha_constants.push_back(alpha_as_constant(alpha));
     }
 }
 
 AdapterConfig::AdapterConfig (const std::vector<std::pair<Adapter, float>>& _adapters, Mode mode) : mode(mode) {
-    decompose_mode();
     adapters.reserve(_adapters.size());
     alphas.reserve(_adapters.size());
     for(auto const& adapter_and_alpha: _adapters) {
         adapters.push_back(adapter_and_alpha.first);
         alphas.push_back(adapter_and_alpha.second);
-        alpha_constants.push_back(alpha_as_constant(adapter_and_alpha.second));
     }
 }
 
 AdapterConfig::AdapterConfig(Mode mode) : mode(mode) {
-    decompose_mode();
 }
-
-
-//AdapterConfig::AdapterConfig (const Adapter& adapter, float alpha, bool is_dynamic) : AdapterConfig(std::vector<std::pair<Adapter, float>>{{adapter, alpha}}, is_dynamic) {}
 
 AdapterConfig& AdapterConfig::add(const Adapter& adapter, float alpha) {
     OPENVINO_ASSERT(adapters.size() == alphas.size());
     OPENVINO_ASSERT(adapters.end() == std::find(adapters.begin(), adapters.end(), adapter), "Adapter object passed to AdapterConfig::add was already registered");
     adapters.push_back(adapter);
     alphas.push_back(alpha);
-    alpha_constants.push_back(alpha_as_constant(alpha));
     return *this;
 }
 
@@ -1275,7 +1227,6 @@ AdapterConfig& AdapterConfig::set_alpha(const Adapter& adapter, float alpha) {
     OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdapterConfig::set_alpha, register adapter object first with AdapterConfig::add");
     auto index = it - adapters.begin();
     alphas[index] = alpha;
-    alpha_constants[index] = alpha_as_constant(alpha);
     return *this;
 }
 
@@ -1292,7 +1243,6 @@ AdapterConfig& AdapterConfig::remove(const Adapter& adapter) {
     OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdapterConfig::remove, you can remove previously registered adapters only");
     auto index = it - adapters.begin();
     alphas.erase(alphas.begin() + index);
-    alpha_constants.erase(alpha_constants.begin() + index);
     adapters.erase(it);
     return *this;
 }
