@@ -1,8 +1,6 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "lora.hpp"
-
 #include <algorithm>
 #include <set>
 #include <map>
@@ -366,7 +364,7 @@ class LoRATransformBase : public ov::pass::MatcherPass {
 public:
 
     OPENVINO_RTTI("LoRATransformBase");
-   
+
     LoRATransformBase(const LoRAWeightByNodeGetter& lora_weight_getter) {
         register_matcher(
             std::make_shared<ov::pass::pattern::Matcher>(ov::pass::pattern::wrap_type<v0::MatMul, v1::Convolution>(), this->get_type_info().name),
@@ -512,9 +510,9 @@ class LoRAFuseTransform : public LoRATransformBase {
     }
 
 public:
-    
+
     OPENVINO_RTTI("LoRAFuseTransform");
-    
+
     LoRAFuseTransform(const LoRAWeightByNodeGetter& lora_weight_getter) : LoRATransformBase(lora_weight_getter) {}
 
     bool apply (NodePtr node, const LoRANode& lora_weight) override {
@@ -759,7 +757,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
 
         auto weight_as_constant = [&, this](NodePtr node) -> std::optional<LoRANode> {
             // FIXME: lora_placeholder is for passing element type only
-            LoRAParts<ov::Tensor> lora_placeholder{ov::Tensor(ov::element::f32, Shape{0}),  ov::Tensor(params_getter.type, ov::Shape{0}),  ov::Tensor(params_getter.type, ov::Shape{0})};                
+            LoRAParts<ov::Tensor> lora_placeholder{ov::Tensor(ov::element::f32, Shape{0}),  ov::Tensor(params_getter.type, ov::Shape{0}),  ov::Tensor(params_getter.type, ov::Shape{0})};
             auto name = node->get_friendly_name();
             auto lora_weight = prepare_lora_tensors(name, params_getter.weight_getter, lora_placeholder, false);
             if(lora_weight.alpha) {
@@ -822,7 +820,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         // DEBUG_PRINT(config1.adapters.size());
         // DEBUG_PRINT(config2.adapters.size());
         // DEBUG_PRINT("adapters1 != adapters2: " << (adapters1 != adapters2));
-        
+
         if(adapters1 != adapters2) {
             diff.adapter = true;
             diff.alpha = true;
@@ -928,7 +926,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
                     std::dynamic_pointer_cast<v0::Constant>(lora_tensors->A),
                     std::dynamic_pointer_cast<v0::Constant>(lora_tensors->B)
                 ));
-                
+
                 // TODO: Use the following block of code to adjust alpha in a more flexible way
                 // float alpha = 1;
                 // if(config.alphas.size()) {
@@ -1068,7 +1066,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         // DEBUG_PRINT("alpha_shape: " << alpha_shape);
         // DEBUG_PRINT("A_shape: " << A_shape);
         // DEBUG_PRINT("B_shape: " << B_shape);
-        
+
         outputs.alpha.set_shape(alpha_shape);
         outputs.A.set_shape(A_shape);
         outputs.B.set_shape(B_shape);
@@ -1144,8 +1142,8 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
 
         #if LORA_GPU_GET_STATE_BUG
         LoRAParts<ov::Tensor> lora_state_tensors{
-            ov::Tensor(lora_var_ids.alpha.data_type, dynamic_to_static(lora_var_ids.alpha.data_shape)), 
-            ov::Tensor(lora_var_ids.A.data_type, dynamic_to_static(lora_var_ids.A.data_shape)), 
+            ov::Tensor(lora_var_ids.alpha.data_type, dynamic_to_static(lora_var_ids.alpha.data_shape)),
+            ov::Tensor(lora_var_ids.A.data_type, dynamic_to_static(lora_var_ids.A.data_shape)),
             ov::Tensor(lora_var_ids.B.data_type, dynamic_to_static(lora_var_ids.B.data_shape))
         };
         // DEBUG_PRINT("alpha_shape: " << lora_state_tensors.alpha.get_shape());
@@ -1155,7 +1153,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         // FIXME: Get state tensors if there is a lazy state tensor repacking is implemented, otherwise it will lead to re-packing of state tensors which
         // values are not really required to get and they only play a role of the placehodler
         LoRAParts<ov::Tensor> lora_state_tensors(
-            state[lora_indices.alpha].get_state(),  
+            state[lora_indices.alpha].get_state(),
             state[lora_indices.A].get_state(),
             state[lora_indices.B].get_state()
         );
@@ -1297,7 +1295,7 @@ AdapterConfig& AdapterConfig::set_alpha(const Adapter& adapter, float alpha) {
 float AdapterConfig::get_alpha(const Adapter& adapter) const {
     OPENVINO_ASSERT(adapters.size() == alphas.size());
     auto it = std::find(adapters.begin(), adapters.end(), adapter);
-    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdapterConfig::get_alpha, alpha can be retrieved for previously registered adatpers only");  
+    OPENVINO_ASSERT(adapters.end() != it, "Unknown adapter object passed to AdapterConfig::get_alpha, alpha can be retrieved for previously registered adatpers only");
     return alphas[it - adapters.begin()];
 }
 

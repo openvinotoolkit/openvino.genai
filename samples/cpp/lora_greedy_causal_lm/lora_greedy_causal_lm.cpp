@@ -12,7 +12,7 @@ int main(int argc, char* argv[]) try {
     std::string adapter_path1 = adapter_path;
     std::string adapter_path2 = adapter_path;
     std::string prompt = argv[3];
-    std::string device = "GPU";  // GPU can be used as well
+    std::string device = "CPU";  // GPU can be used as well
 
     std::cout << "Run on devide: " << device << "\n";
 

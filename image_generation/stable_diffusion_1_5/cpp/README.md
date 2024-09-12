@@ -64,7 +64,7 @@ LoRA weights can be enabled for Unet model of Stable Diffusion pipeline to gener
 In this sample LoRA weights are used in [safetensors]((https://huggingface.co/docs/safetensors/index#format)) format.
 Safetensors is a serialization format developed by Hugging Face that is specifically designed for efficiently storing and loading large tensors. It provides a lightweight and efficient way to serialize tensors, making it easier to store and load machine learning models.
 
-The LoRA safetensors model is loaded via [safetensors.h](https://github.com/hsnyder/safetensors.h). The layer name and weight are modified with `Eigen` library and inserted into the SD models with `ov::pass::MatcherPass` in the file [common/diffusers/src/lora.cpp](https://github.com/openvinotoolkit/openvino.genai/blob/master/image_generation/common/diffusers/src/lora.cpp).
+The LoRA safetensors model is loaded with OpenVINO GenAI Adapters.
 
 There are various LoRA models on https://civitai.com/tag/lora and on HuggingFace, you can consider to choose your own LoRA model in safetensor format. For example, you can use LoRA [soulcard model](https://civitai.com/models/67927?modelVersionId=72591).
 Download and put LoRA safetensors model into the models directory. When running the built sample provide the path to the LoRA model with `-l, --loraPath arg` argument.
@@ -137,7 +137,7 @@ Guidance scale controls how similar the generated image will be to the prompt. A
 
 #### Negative Prompt
 
-To improve image generation quality, model supports negative prompting. Technically, positive prompt steers the diffusion toward the images associated with it, while negative prompt steers the diffusion away from it. 
+To improve image generation quality, model supports negative prompting. Technically, positive prompt steers the diffusion toward the images associated with it, while negative prompt steers the diffusion away from it.
 In other words, negative prompt declares undesired concepts for generation image, e.g. if we want to have colorful and bright image, gray scale image will be result which we want to avoid, in this case gray scale can be treated as negative prompt.
 The positive and negative prompt are in equal footing. You can always use one with or without the other. More explanation of how it works can be found in this [article](https://stable-diffusion-art.com/how-negative-prompt-work/).
 

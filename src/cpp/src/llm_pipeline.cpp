@@ -15,7 +15,7 @@
 #include "llm_pipeline_static.hpp"
 #include "utils.hpp"
 #include "text_callback_streamer.hpp"
-#include "lora.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 
 namespace {
 
@@ -592,7 +592,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
-    const std::string& path, 
+    const std::string& path,
     const std::string& device,
     const AdapterConfig& adapters_config,
     const ov::AnyMap& plugin_config
@@ -614,7 +614,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
-    const std::string& path, 
+    const std::string& path,
     const std::string& device,
     const Adapter& adapter,
     const ov::AnyMap& plugin_config
@@ -622,7 +622,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 {}
 
 ov::genai::LLMPipeline::LLMPipeline(
-    const std::string& path, 
+    const std::string& path,
     const std::string& device,
     const std::vector<Adapter>& adapters,
     const ov::AnyMap& plugin_config
@@ -630,7 +630,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 {}
 
 ov::genai::LLMPipeline::LLMPipeline(
-    const std::string& path, 
+    const std::string& path,
     const std::string& device,
     const std::initializer_list<Adapter>& adapters,
     const ov::AnyMap& plugin_config
@@ -638,7 +638,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 {}
 
 ov::genai::LLMPipeline::LLMPipeline(
-    const std::string& path, 
+    const std::string& path,
     const std::string& device,
     const std::vector<std::pair<Adapter, float>>& adapters,
     const ov::AnyMap& plugin_config

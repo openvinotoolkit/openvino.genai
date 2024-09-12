@@ -13,10 +13,16 @@
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
-#define DEBUG_PRINT(X) do { std::cerr << "[ DEBUG ] " << X << "\n"; } while(false)
 
 namespace ov {
 namespace genai {
+
+// FIXME: Remove or move to a dedicated common header
+#ifdef NDEBUG
+    #define DEBUG_PRINT(X) do {} while(false)
+#else
+    #define DEBUG_PRINT(X) do { std::cerr << "[ DEBUG ] " << X << "\n"; } while(false)
+#endif
 
 class OPENVINO_GENAI_EXPORTS AdapterController;
 struct AdapterControllerImpl;
@@ -79,7 +85,7 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
     template <typename T, typename = std::enable_if<std::is_same<T, Adapter>::value, T>>
     AdapterConfig (const std::initializer_list<T>& adapters, Mode mode = MODE_AUTO) :
         AdapterConfig(std::vector<Adapter>(adapters), mode) {}
-    
+
     // template <typename T>
     // AdapterConfig (const std::initializer_list<T>& adapters, bool is_dynamic = true) :
     //     AdapterConfig(std::vector<std::pair<Adapter, float>>(adapters, is_dynamic)) {}
@@ -102,11 +108,10 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
 
 
 class OPENVINO_GENAI_EXPORTS AdapterController {
-    // FIXME: Should hold AdapterConfig to compare with previsly set config and to hold Adapter objects
 
     std::shared_ptr<AdapterControllerImpl> m_pimpl;
     friend AdapterControllerImpl;
-    //static std::shared_ptr<Adapter::Impl> get_adapter_impl(const Adapter& adapter);
+
 public:
     AdapterController() = default;
     AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix);

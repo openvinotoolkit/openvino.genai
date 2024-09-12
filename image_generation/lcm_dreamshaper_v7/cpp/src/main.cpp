@@ -15,10 +15,10 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/pass/manager.hpp"
 #include "openvino/core/preprocess/pre_post_process.hpp"
+#include <openvino/genai/lora_adapter.hpp>
 
 #include "cxxopts.hpp"
 #include "scheduler_lcm.hpp"
-#include "lora.hpp"
 #include "imwrite.hpp"
 
 const size_t TOKENIZER_MODEL_MAX_LENGTH = 77;   // 'model_max_length' parameter from 'tokenizer_config.json'
@@ -68,21 +68,9 @@ struct StableDiffusionModels {
     ov::CompiledModel vae_decoder;
     ov::CompiledModel tokenizer;
 
-    #if GENAI_NEW_LORA
     ov::genai::AdapterController adapter_controller_text_encoder;
     ov::genai::AdapterController adapter_controller_unet;
-    #endif
 };
-
-#if !GENAI_NEW_LORA
-void apply_lora(std::shared_ptr<ov::Model> model, InsertLoRA::LoRAMap& lora_map) {
-    if (!lora_map.empty()) {
-        ov::pass::Manager manager;
-        manager.register_pass<InsertLoRA>(lora_map);
-        manager.run_passes(model);
-    }
-}
-#endif
 
 void reshape_text_encoder(std::shared_ptr<ov::Model> model, size_t batch_size, size_t tokenizer_model_max_length) {
     ov::PartialShape input_shape = model->input(0).get_partial_shape();
@@ -148,24 +136,14 @@ StableDiffusionModels compile_models(const std::string& model_path,
     core.add_extension(TOKENIZERS_LIBRARY_PATH);
 
     // read LoRA weights
-    #if GENAI_NEW_LORA
     ov::genai::Adapter lora_adapter;
     ov::genai::AdapterConfig lora_config(ov::genai::AdapterConfig::MODE_STATIC);
-    #else
-    std::map<std::string, InsertLoRA::LoRAMap> lora_weights;
-    #endif
     if (!lora_path.empty()) {
-        #if GENAI_NEW_LORA
         Timer t("Loading LoRA weights");
         DEBUG_PRINT("Adapters registered:" << lora_path.size());
         for(size_t i = 0; i < lora_path.size(); ++i) {
             lora_config.add(ov::genai::Adapter(lora_path[i], i < alpha.size() ? alpha[i] : 0.75f)); // TODO: Consider using default alpha from LoRA file
         }
-        #else
-        OPENVINO_ASSERT(lora_path.size() == 1, "Multiple LoRA adapters are not supported");
-        Timer t("Loading and multiplying LoRA weights");
-        lora_weights = read_lora_adapters(lora_path[0],  !alpha.empty() ? alpha[0] : 0.75f);
-        #endif
     }
 
     // Text encoder
@@ -175,13 +153,9 @@ StableDiffusionModels compile_models(const std::string& model_path,
         if (!use_dynamic_shapes) {
             reshape_text_encoder(text_encoder_model, batch_size, TOKENIZER_MODEL_MAX_LENGTH);
         }
-        #if GENAI_NEW_LORA
         if(lora_config) {
             models.adapter_controller_text_encoder = ov::genai::AdapterController(text_encoder_model, lora_config, "lora_te");
         }
-        #else
-        apply_lora(text_encoder_model, lora_weights["text_encoder"]);
-        #endif
         models.text_encoder = core.compile_model(text_encoder_model, device);
     }
 
@@ -192,13 +166,9 @@ StableDiffusionModels compile_models(const std::string& model_path,
         if (!use_dynamic_shapes) {
             reshape_unet(unet_model, batch_size, height, width, TOKENIZER_MODEL_MAX_LENGTH);
         }
-        #if GENAI_NEW_LORA
         if(lora_config) {
             models.adapter_controller_unet = ov::genai::AdapterController(unet_model, lora_config, "lora_unet");
         }
-        #else
-        apply_lora(unet_model, lora_weights["unet"]);
-        #endif
         models.unet = core.compile_model(unet_model, device);
     }
 
@@ -232,11 +202,9 @@ ov::Tensor text_encoder(StableDiffusionModels models, std::string& pos_prompt) {
 
     ov::InferRequest tokenizer_req = models.tokenizer.create_infer_request();
     ov::InferRequest text_encoder_req = models.text_encoder.create_infer_request();
-    #if GENAI_NEW_LORA
     if(models.adapter_controller_text_encoder) {
         models.adapter_controller_text_encoder.apply(text_encoder_req);
     }
-    #endif
 
     ov::Tensor text_embeddings(ov::element::f32, {1, TOKENIZER_MODEL_MAX_LENGTH, HIDDEN_SIZE});
     ov::Tensor input_ids(ov::element::i32, input_ids_shape);
@@ -386,14 +354,12 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     // Stable Diffusion pipeline
     const size_t batch_size = 1;
-    StableDiffusionModels models = 
+    StableDiffusionModels models =
         compile_models(model_path, device, lora_path, alpha, use_cache, use_dynamic_shapes, batch_size, height, width);
     ov::InferRequest unet_infer_request = models.unet.create_infer_request();
-    #if GENAI_NEW_LORA
     if(models.adapter_controller_text_encoder) {
         models.adapter_controller_unet.apply(unet_infer_request);
     }
-    #endif
 
 
     ov::PartialShape sample_shape = models.unet.input("sample").get_partial_shape();
@@ -407,7 +373,7 @@ int32_t main(int32_t argc, char* argv[]) try {
     {
         Timer t("Running Stable Diffusion pipeline");
 
-        // no negative prompt for LCM model: 
+        // no negative prompt for LCM model:
         // https://huggingface.co/docs/diffusers/api/pipelines/latent_consistency_models#diffusers.LatentConsistencyModelPipeline
         ov::Tensor text_embeddings = text_encoder(models, positive_prompt);
 
