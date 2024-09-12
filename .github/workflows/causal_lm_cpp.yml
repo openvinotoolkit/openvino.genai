@@ -616,7 +616,7 @@ jobs:
           | diff ./pred_greedy.txt -
 
   cpp-chat_sample-ubuntu:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     defaults:
       run:
         shell: bash

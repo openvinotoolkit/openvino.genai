@@ -34,6 +34,9 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * @param ignore_eos if set to true, then generation will not stop even if <eos> token is met.
  * @param eos_token_id token_id of <eos> (end of sentence)
  * @param min_new_tokens set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
+ * @param stop_strings vector of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+ * @param include_stop_str_in_output if set to true stop string that matched generation will be included in generation output (default: false)
+ * @param stop_token_ids vector of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
  * 
  * Beam search specific parameters:
  * @param num_beams number of beams for beam search. 1 disables beam search.
@@ -61,7 +64,9 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * @param frequency_penalty reduces absolute log prob as many times as the token was generated. Ignored for non continuous batching.
  * @param rng_seed initializes random generator. Ignored for non continuous batching.
  */
+
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
+
 public:
     GenerationConfig() = default;
     explicit GenerationConfig(const std::string& json_path);
@@ -71,6 +76,11 @@ public:
     size_t max_length = SIZE_MAX;
     bool ignore_eos = false;
     size_t min_new_tokens = 0;
+    
+    std::set<std::string> stop_strings;
+    // Default setting in vLLM (and OpenAI API) is not to include stop string in the output
+    bool include_stop_str_in_output = false;
+    std::set<int64_t> stop_token_ids;
 
     // Beam search specific
     size_t num_beam_groups = 1;
@@ -99,6 +109,7 @@ public:
      */
     void set_eos_token_id(size_t tokenizer_eos_token_id);
     size_t get_max_new_tokens(size_t prompt_length = 0) const;
+
     bool is_greedy_decoding() const;
     bool is_beam_search() const;
     bool is_multinomial() const;
@@ -123,6 +134,9 @@ static constexpr ov::Property<size_t> max_new_tokens{"max_new_tokens"};
 static constexpr ov::Property<size_t> max_length{"max_length"};
 static constexpr ov::Property<bool> ignore_eos{"ignore_eos"};
 static constexpr ov::Property<size_t> min_new_tokens{"min_new_tokens"};
+static constexpr ov::Property<std::vector<std::string>> stop_strings{"stop_strings"};
+static constexpr ov::Property<bool> include_stop_str_in_output{"include_stop_str_in_output"};
+static constexpr ov::Property<std::vector<std::vector<int64_t>>> stop_token_ids{"stop_token_ids"};
 
 static constexpr ov::Property<size_t> num_beam_groups{"num_beam_groups"};
 static constexpr ov::Property<size_t> num_beams{"num_beams"};
