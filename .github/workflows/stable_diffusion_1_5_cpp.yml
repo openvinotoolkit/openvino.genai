@@ -39,6 +39,13 @@ jobs:
           mkdir ${{ env.OV_INSTALL_DIR }}
           tar -xzf openvino_package.tar.gz -C ${{ env.OV_INSTALL_DIR }} --strip-components=1
 
+      - name: Build app
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+        run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release --parallel
+
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
@@ -61,13 +68,6 @@ jobs:
         run: |
           source openvino_sd_cpp/bin/activate
           optimum-cli export openvino --model botp/stable-diffusion-v1-5 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
-
-      - name: Build app
-        working-directory: ${{ env.WORKING_DIRECTORY }}
-        run: |
-          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --parallel
 
       - name: Run app
         working-directory: ${{ env.WORKING_DIRECTORY }}
@@ -94,6 +94,13 @@ jobs:
               mv ./tmp/*/* .
             popd
 
+        - name: Build app
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+          run: |
+            . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+            cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+            cmake --build ./build/ --config Release --parallel
+
         - name: Setup Python ${{ env.PYTHON_VERSION }}
           uses: actions/setup-python@v5
           with:
@@ -116,13 +123,6 @@ jobs:
           run: |
             . "./openvino_sd_cpp/Scripts/Activate.ps1"
             optimum-cli export openvino --model botp/stable-diffusion-v1-5 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
-
-        - name: Build app
-          working-directory: ${{ env.WORKING_DIRECTORY }}
-          run: |
-            . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-            cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-            cmake --build ./build/ --config Release --parallel
 
         - name: Run app
           working-directory: ${{ env.WORKING_DIRECTORY }}
