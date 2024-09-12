@@ -42,6 +42,7 @@ public:
     int64_t transcribe_token_id = 50359;        // "<|transcribe|>"
     int64_t no_timestamps_token_id = 50363;     // "<|notimestamps|>"
     int64_t begin_timestamps_token_id = 50364;  // "<|0.00|>"
+    bool is_multilingual = true;
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.

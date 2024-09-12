@@ -28,10 +28,14 @@ WhisperGenerationConfig::WhisperGenerationConfig(const std::string& json_path) {
     read_json_param(data, "decoder_start_token_id", decoder_start_token_id);
     read_json_param(data, "eos_token_id", eos_token_id);
     read_json_param(data, "pad_token_id", pad_token_id);
-    read_json_param(data, "task_to_id.transcribe", transcribe_token_id);
-    read_json_param(data, "task_to_id.translate", translate_token_id);
     read_json_param(data, "no_timestamps_token_id", no_timestamps_token_id);
     read_json_param(data, "begin_timestamps_token_id", begin_timestamps_token_id);
+
+    read_json_param(data, "is_multilingual", is_multilingual);
+    if (is_multilingual) {
+        read_json_param(data, "task_to_id.transcribe", transcribe_token_id);
+        read_json_param(data, "task_to_id.translate", translate_token_id);
+    }
 }
 
 void WhisperGenerationConfig::set_eos_token_id(int64_t tokenizer_eos_token_id) {
@@ -61,6 +65,7 @@ void WhisperGenerationConfig::update_generation_config(const ov::AnyMap& config_
     read_anymap_param(config_map, "translate_token_id", translate_token_id);
     read_anymap_param(config_map, "no_timestamps_token_id", no_timestamps_token_id);
     read_anymap_param(config_map, "begin_timestamps_token_id", begin_timestamps_token_id);
+    read_anymap_param(config_map, "is_multilingual", is_multilingual);
 }
 
 size_t WhisperGenerationConfig::get_max_new_tokens(size_t prompt_length) const {

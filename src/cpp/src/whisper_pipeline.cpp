@@ -1,12 +1,13 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "openvino/genai/whisper_pipeline.hpp"
+
 #include <algorithm>
 #include <filesystem>
 #include <openvino/openvino.hpp>
 #include <variant>
 
-#include "openvino/genai/whisper_pipeline.hpp"
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
 #include "whisper/whisper_feature_extractor.hpp"
@@ -110,9 +111,9 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::string& model_path,
 
 ov::genai::WhisperPipeline::WhisperPipeline(const std::string& model_path,
                                             const std::string& device,
-                                            const ov::AnyMap& config) {
+                                            const ov::AnyMap& plugin_config) {
     auto start_time = std::chrono::steady_clock::now();
-    m_impl = std::make_unique<WhisperPipeline::Impl>(model_path, device, config);
+    m_impl = std::make_unique<WhisperPipeline::Impl>(model_path, device, plugin_config);
     auto stop_time = std::chrono::steady_clock::now();
     m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }

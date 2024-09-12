@@ -79,7 +79,7 @@ def compare_genai_and_opt_pipelines(opt_pipe, genai_pipe, dataset_id):
     ds = datasets.load_dataset(dataset_id, "clean", split="validation")
     opt_infer_time = 0
     genai_infer_time = 0
-
+    failed = 0
     for ds_row in ds:
         audio_sample = ds_row["audio"]
 
@@ -91,8 +91,13 @@ def compare_genai_and_opt_pipelines(opt_pipe, genai_pipe, dataset_id):
         result = opt_pipe(audio_sample)
         opt_infer_time += time.time() - start
 
-        assert genai_result.texts[0] == result["text"]
+        if genai_result.texts[0] != result["text"]:
+            print(f'HuggingFace: {result["text"]}\n genai: {genai_result.texts[0]}')
+            failed += 1
     print(f"Inference time\nOpt: {opt_infer_time}\nGenAI: {genai_infer_time}")
+    if failed > 0:
+        print(f"Filed: {failed}")
+    assert failed == 0
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
@@ -118,8 +123,9 @@ def test_whisper_config_constructor(model_descr):
     assert original_config["max_length"] == config.max_length
     assert original_config["eos_token_id"] == config.eos_token_id
     assert original_config["pad_token_id"] == config.pad_token_id
-    assert original_config["task_to_id"]["translate"] == config.translate_token_id
-    assert original_config["task_to_id"]["transcribe"] == config.transcribe_token_id
+    if "task_to_id" in original_config:
+        assert original_config["task_to_id"]["translate"] == config.translate_token_id
+        assert original_config["task_to_id"]["transcribe"] == config.transcribe_token_id
     assert original_config["no_timestamps_token_id"] == config.no_timestamps_token_id
 
     assert set(original_config["begin_suppress_tokens"]) == set(
@@ -161,5 +167,32 @@ def test_whisper_constructors(model_descr, test_sample):
     genai_result = ov_genai.WhisperPipeline(
         str(path), tokenizer=tokenizer, device="CPU", config={"ENABLE_MMAP": False}
     ).generate(test_sample)
+
+    assert genai_result.texts[0] == expected
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list())
+@pytest.mark.parametrize("test_sample", [get_test_sample()])
+@pytest.mark.precommit
+def test_max_new_tokens(model_descr, test_sample):
+    model_id, path = model_descr
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    expected = opt_pipe(test_sample, max_new_tokens=10)["text"]
+
+    genai_result = ov_genai.WhisperPipeline(str(path)).generate(
+        test_sample, max_new_tokens=10
+    )
+
+    assert genai_result.texts[0] == expected
+
+    tokenizer = ov_genai.Tokenizer(str(path))
+
+    genai_pipeline = ov_genai.WhisperPipeline(
+        str(path), tokenizer=tokenizer, device="CPU", config={"ENABLE_MMAP": False}
+    )
+    config = genai_pipeline.get_generation_config()
+    config.max_new_tokens = 10
+    genai_result = genai_pipeline.generate(test_sample, config)
 
     assert genai_result.texts[0] == expected

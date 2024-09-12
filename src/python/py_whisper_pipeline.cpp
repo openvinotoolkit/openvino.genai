@@ -118,6 +118,8 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
             res_config.begin_suppress_tokens = py::cast<std::vector<int64_t>>(item.second);
         } else if (key == "suppress_tokens") {
             res_config.suppress_tokens = py::cast<std::vector<int64_t>>(item.second);
+        } else if (key == "is_multilingual") {
+            res_config.is_multilingual = py::cast<bool>(item.second);
         } else if (key == "eos_token_id") {
             res_config.set_eos_token_id(py::cast<int>(item.second));
         } else {
@@ -136,7 +138,13 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
                                         const OptionalWhisperGenerationConfig& config,
                                         const utils::PyBindStreamerVariant& py_streamer,
                                         const py::kwargs& kwargs) {
-    auto updated_config = update_whisper_config_from_kwargs(config, kwargs);
+    // whisper config should initialized from generation_config.json in case of only kwargs provided
+    // otherwise it would be initialized with default values which is unexpected for kwargs use case
+    // if full config was provided then rely on it as a base config
+    OptionalWhisperGenerationConfig base_config = config.has_value() ? config : pipe.get_generation_config();
+
+    auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
+
     StreamerVariant streamer = std::monostate();
 
     std::visit(utils::overloaded{[&streamer](const std::function<bool(py::str)>& py_callback) {

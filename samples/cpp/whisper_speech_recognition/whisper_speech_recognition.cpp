@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) try {
         return false;
     };
 
-    pipeline.generate(raw_speech, ov::genai::streamer(streamer));
+    pipeline.generate(raw_speech, ov::genai::max_new_tokens(100), ov::genai::streamer(streamer));
 
     std::cout << std::endl;
 } catch (const std::exception& error) {
