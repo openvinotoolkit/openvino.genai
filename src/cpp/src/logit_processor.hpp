@@ -367,6 +367,15 @@ public:
         ++m_generated_tokens;
     }
 
+    void decrement_gen_tokens() {
+        OPENVINO_ASSERT(m_generated_tokens > 0);
+        --m_generated_tokens;
+    }
+
+    size_t get_gen_token_len() {
+        return m_generated_tokens;
+    }
+
     void register_new_generated_token(int64_t new_token_id) {
         auto it = m_unique_generated_token_ids->find(new_token_id);
         if (it == m_unique_generated_token_ids->end()) {
@@ -374,5 +383,10 @@ public:
         } else {
             it->second++;
         }
+    }
+
+    void decrease_generated_token_occurance(int64_t token_id) {
+        OPENVINO_ASSERT(m_unique_generated_token_ids->count(token_id) > 0);
+        m_unique_generated_token_ids->at(token_id)--;
     }
 };

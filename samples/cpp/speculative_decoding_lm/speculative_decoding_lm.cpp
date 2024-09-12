@@ -174,7 +174,6 @@ public:
 
         draft_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
         draft_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
-
         draft_model.infer();
 
         auto logits = draft_model.get_tensor("logits");
@@ -250,8 +249,8 @@ int64_t get_eos_token(const std::shared_ptr<ov::Model> tokenizer) {
 }  // namespace
 
 int main(int argc, char* argv[]) try {
-    if (argc != 4) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <DRAFT MODEL_DIR> <MAIN MODEL_DIR> '<PROMPT>'");
+    if (argc != 4 + 2) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <DRAFT MODEL_DIR> <MAIN MODEL_DIR> '<PROMPT>' <CANDIDATES_NUM> <GENERATED_LEN>");
     }
 
     // tokenizer model
@@ -281,9 +280,9 @@ int main(int argc, char* argv[]) try {
 
     ov::InferRequest main_model = core.compile_model(ov_main_model, "CPU").create_infer_request();
 
-    size_t max_sequence_length = 100;
+    size_t max_sequence_length = std::stoi(std::string{argv[5]});
 
-    AssistedCandidateGenerator candidateGenerator{draft_model, max_sequence_length, 5, draft_model_seq_len_axis};
+    AssistedCandidateGenerator candidateGenerator{draft_model, max_sequence_length, std::stoi(std::string{argv[4]}), draft_model_seq_len_axis};
 
     main_model.set_tensor("input_ids", input_ids);
     main_model.set_tensor("attention_mask", attention_mask);
@@ -296,11 +295,15 @@ int main(int argc, char* argv[]) try {
     main_model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
     main_model.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
+    auto start_time = std::chrono::system_clock::now();
+    size_t iteration_cnt = 0;
+
     // To coollect kv-cache for the <PROMPT> and to get the next token run the very first infer request
     candidateGenerator.generate_next_token(
         std::vector<int64_t>(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size()));
 
     main_model.infer();
+    ++iteration_cnt;
 
     size_t vocab_size = draft_model.get_tensor("logits").get_shape().back();
     OPENVINO_ASSERT(vocab_size == main_model.get_tensor("logits").get_shape().back(),
@@ -349,6 +352,7 @@ int main(int argc, char* argv[]) try {
         std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), seq_len);
 
         main_model.infer();
+        ++iteration_cnt;
 
         data_logits = logits.data<float>();  // [BATCH_SIZE, K, vocab_size]
 
@@ -368,9 +372,8 @@ int main(int argc, char* argv[]) try {
                 break;
             }
 
-            text_streamer.put(out_token);
             accepted_tokens_number++;
-
+            text_streamer.put(out_token);
             if (i == candidates_size || out_token != candidates[i]) {
                 break;
             }
