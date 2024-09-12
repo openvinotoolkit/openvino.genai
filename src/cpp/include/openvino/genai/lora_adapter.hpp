@@ -78,6 +78,8 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
     std::vector<std::shared_ptr<ov::op::v0::Constant>> alpha_constants;
 
     AdapterConfig (const Adapter& adapter, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<Adapter>{adapter}, mode) {}
+    AdapterConfig (const Adapter& adapter, float alpha, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<std::pair<Adapter, float>>{{adapter, alpha}}, mode) {}
+    AdapterConfig (const Adapter& adapter, double alpha, Mode mode = MODE_AUTO) : AdapterConfig(adapter, float(alpha), mode) {}
     AdapterConfig (const std::vector<Adapter>& adapters, Mode mode = MODE_AUTO);
     AdapterConfig (const std::vector<std::pair<Adapter, float>>& adapters, Mode mode = MODE_AUTO);
 

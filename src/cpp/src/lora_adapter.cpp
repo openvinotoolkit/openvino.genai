@@ -676,30 +676,17 @@ namespace genai {
 
 class Adapter::Impl {
 public:
-    Impl(const std::string& path, std::optional<float> default_alpha = std::nullopt) :  // FIXME: Pass lora patterns
-        tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns())),  // FIXME: Accept directory with the config as well
-        default_alpha(default_alpha) {
-    }
-
-    std::optional<float> get_default_alpha () const {
-        return default_alpha;
-    }
+    Impl(const std::string& path) :
+        tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns()))
+    {}
 
     LoRATensors tensors;
-    std::optional<float> default_alpha;
 };
-
-Adapter::Adapter(const std::string& path, float default_alpha) :
-    m_pimpl(std::make_shared<Adapter::Impl>(path, default_alpha)) {
-}
 
 Adapter::Adapter(const std::string& path) :
     m_pimpl(std::make_shared<Adapter::Impl>(path)) {
 }
 
-std::optional<float> Adapter::get_default_alpha() const {
-    return m_pimpl->get_default_alpha();
-}
 
 
 struct AdapterControllerImpl {
@@ -1245,7 +1232,7 @@ AdapterConfig::AdapterConfig (const std::vector<Adapter>& adapters, Mode mode) :
     decompose_mode();
     alphas.reserve(adapters.size());
     for(const auto& adapter: adapters) {
-        auto const alpha = adapter.get_default_alpha().value_or(1);
+        auto const alpha = 1;
         alphas.push_back(alpha);
         alpha_constants.push_back(alpha_as_constant(alpha));
     }
@@ -1279,7 +1266,7 @@ AdapterConfig& AdapterConfig::add(const Adapter& adapter, float alpha) {
 }
 
 AdapterConfig& AdapterConfig::add(const Adapter& adapter) {
-    return add(adapter, adapter.get_default_alpha().value_or(1));
+    return add(adapter, 1);
 }
 
 AdapterConfig& AdapterConfig::set_alpha(const Adapter& adapter, float alpha) {

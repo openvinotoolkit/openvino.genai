@@ -151,7 +151,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
         Timer t("Loading LoRA weights");
         DEBUG_PRINT("Adapters registered:" << lora_path.size());
         for(size_t i = 0; i < lora_path.size(); ++i) {
-            lora_config.add(ov::genai::Adapter(lora_path[i], i < alpha.size() ? alpha[i] : 0.75f)); // TODO: Consider using default alpha from LoRA file
+            lora_config.add(ov::genai::Adapter(lora_path[i]), i < alpha.size() ? alpha[i] : 0.75f); // TODO: Consider using default alpha from LoRA file
         }
     }
 

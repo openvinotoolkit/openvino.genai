@@ -20,22 +20,22 @@ int main(int argc, char* argv[]) try {
 
     std::cout << "MODE_STATIC" << std::endl;
     {
-        Adapter adapter(adapter_path, 0.75);
-        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, AdapterConfig::MODE_STATIC));
+        Adapter adapter(adapter_path);
+        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, 0.75, AdapterConfig::MODE_STATIC));
         std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
     }
 
     std::cout << "MODE_STATIC_RANK" << std::endl;
     {
-        Adapter adapter(adapter_path, 0.75);
-        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, AdapterConfig::MODE_STATIC_RANK));
+        Adapter adapter(adapter_path);
+        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, 0.75, AdapterConfig::MODE_STATIC_RANK));
         std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
     }
 
     std::cout << "MODE_DYNAMIC" << std::endl;
     {
-        Adapter adapter(adapter_path, 0.75);
-        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, AdapterConfig::MODE_DYNAMIC));
+        Adapter adapter(adapter_path);
+        LLMPipeline pipe(model_path, device, AdapterConfig(adapter, 0.75, AdapterConfig::MODE_DYNAMIC));
         std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
     }
 
@@ -47,7 +47,7 @@ int main(int argc, char* argv[]) try {
 
     std::cout << "MODE_AUTO/explicit alpha" << std::endl;
     {
-        LLMPipeline pipe(model_path, device, Adapter(adapter_path, 0.75));
+        LLMPipeline pipe(model_path, device, AdapterConfig(Adapter(adapter_path), 0.75));
         std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
     }
 
@@ -57,15 +57,6 @@ int main(int argc, char* argv[]) try {
         Adapter adapter2(adapter_path2);
         LLMPipeline pipe(model_path, device, {adapter1, adapter2});
         std::cout << pipe.generate(prompt, max_new_tokens(100)) << std::endl;
-    }
-
-    std::cout << "MODE_AUTO/blended" << std::endl;
-    {
-        Adapter adapter1(adapter_path1, 0.5);
-        Adapter adapter2(adapter_path2, 0.25);
-        LLMPipeline pipe(model_path, device, {adapter1, adapter2});
-        std::cout << pipe.generate(prompt, adapters(adapter1), max_new_tokens(100)) << std::endl;
-        std::cout << pipe.generate(prompt, adapters(adapter2), max_new_tokens(100)) << std::endl;
     }
 
     std::cout << "MODE_AUTO/blended with late alpha set" << std::endl;
