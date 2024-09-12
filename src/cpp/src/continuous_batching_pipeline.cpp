@@ -112,7 +112,14 @@ public:
             updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
         }
 
-        m_scheduler = std::make_shared<Scheduler>(updated_config);
+        bool can_use_partial_preemption = true;
+        if (device_config.get_device().find("GPU") != std::string::npos && !updated_config.dynamic_split_fuse) {
+            // in case of executing a `vLLM-like` pipeline, it's better not to use partial eviction on the GPU,
+            // as it may lead to performance slowdown
+            can_use_partial_preemption = false;
+        }
+
+        m_scheduler = std::make_shared<Scheduler>(updated_config, can_use_partial_preemption);
         // and finally create model runner
         m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
         m_sampler = std::make_shared<Sampler>();
