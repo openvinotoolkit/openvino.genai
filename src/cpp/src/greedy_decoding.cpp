@@ -24,7 +24,11 @@ EncodedResults greedy_decoding(
     // Initialize results and performance metrics.
     EncodedResults results;
     auto& raw_perf_counters = results.perf_metrics.raw_metrics;
-    
+    raw_perf_counters.m_new_token_times.reserve(max_new_tokens);
+    raw_perf_counters.m_batch_sizes.reserve(max_new_tokens);
+    raw_perf_counters.m_token_infer_durations.reserve(max_new_tokens);
+    raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
+
     results.scores.resize(running_batch_size);
     results.tokens.resize(running_batch_size);
     std::fill(results.scores.begin(), results.scores.end(), 0);
@@ -38,8 +42,13 @@ EncodedResults greedy_decoding(
     auto beam_data = m_model_runner.get_tensor("beam_idx").data<int32_t>();
     std::iota(beam_data, beam_data + running_batch_size, 0);
 
+    const auto infer_start = std::chrono::steady_clock::now();
     m_model_runner.infer();
+    const auto infer_ms = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+    raw_perf_counters.m_inference_durations[0] = MicroSeconds(infer_ms);
+    raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
     auto logits = m_model_runner.get_tensor("logits");
+
     ov::Shape logits_shape = logits.get_shape();
     size_t seq_len = logits_shape[1], vocab_size = logits_shape[2];
     m_model_runner.get_tensor("input_ids").set_shape({running_batch_size, 1});
@@ -71,8 +80,14 @@ EncodedResults greedy_decoding(
             utils::update_position_ids(m_model_runner.get_tensor("position_ids"), m_model_runner.get_tensor("attention_mask"));
         m_model_runner.set_tensor("attention_mask", utils::extend_attention(m_model_runner.get_tensor("attention_mask")));
 
+        const auto infer_start = std::chrono::steady_clock::now();
         m_model_runner.infer();
+        const auto infer_ms = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+        raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
+        raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
+
         auto logits = m_model_runner.get_tensor("logits");
+
         ov::Shape logits_shape = logits.get_shape();
         size_t seq_len = logits_shape[1], vocab_size = logits_shape[2];
         

@@ -308,32 +308,34 @@ DecodedResults StaticLLMPipeline::generate(
     StreamerVariant streamer
 ) {
     auto start_time = std::chrono::steady_clock::now();
+
     GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-    TokenizedInputs tokenized_input;
+    std::string prompt;
     if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
-        // OPENVINO_ASSERT(!m_is_chat_conversation, "Can't chat with multiple prompts");
-        auto& strings = std::get<std::vector<std::string>>(inputs);
-        if (strings.size() != 1) {
+        if (input_vector->size() > 1u) {
             OPENVINO_THROW("Currently only batch size=1 is supported");
-        } else {
-            tokenized_input = m_tokenizer.encode(*input_vector);
         }
-    } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
-        std::string& prompt = *input_prompt;
-        if (m_is_chat_conversation) {
-            m_history.push_back({{"role", "user"}, {"content", prompt}});
-            constexpr bool add_generation_prompt = true;
-            prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-        }
-        tokenized_input = m_tokenizer.encode(prompt);
+        OPENVINO_ASSERT(!input_vector->empty());
+        prompt = std::move(input_vector->front());
+    } else {
+        OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
+        prompt = std::get<std::string>(inputs);
     }
+
+    if (m_is_chat_conversation) {
+        m_history.push_back({{"role", "user"}, {"content", prompt}});
+        constexpr bool add_generation_prompt = true;
+        prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+    }
+    auto tokenized_input = m_tokenizer.encode(prompt);
 
     auto encode_stop_time =  std::chrono::steady_clock::now();
     auto encoded_results = generate(tokenized_input, config, streamer);
+
     auto decode_start_time =  std::chrono::steady_clock::now();
     DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
-
     auto decode_stop_time =  std::chrono::steady_clock::now();
+
     if (m_is_chat_conversation) {
         auto answer = decoded_results.texts[0];
         m_history.push_back({{"role", "assistant"}, {"content", answer}});

@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   lcm_dreamshaper_v7_cpp-linux:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     defaults:
       run:
         shell: bash -l {0}
