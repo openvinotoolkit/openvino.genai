@@ -53,9 +53,8 @@ metrics_per_prompt, metrics = evaluator.score(optimized_model, test_data=prompts
 
 ### CLI example
 
-```
+```sh
 wwb --help
-...
 
 # run ground truth generation for uncompressed model on the first 32 samples from squad dataset
 # ground truth will be saved in llama_2_7b_squad_gt.csv file
@@ -75,7 +74,9 @@ wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv
 # run comparison with compressed model on internal set of questions
 wwb --target-model /home/user/models/Llama_2_7b_chat_hf_int8 --gt-data llama_2_7b_wwb_gt.csv
 
-done
+## Control the number of samples and use verbose mode to see the difference in the results
+wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv --num-samples 10
+wwb --target-model /home/user/models/Llama_2_7b_chat_hf_int8 --gt-data llama_2_7b_wwb_gt.csv  --num-samples 10 -v
 ```
 
 ### Supported metrics
