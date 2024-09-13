@@ -253,7 +253,7 @@ def main():
             ref_text = ""
             actual_text = ""
             diff = ""
-            for l1, l2 in zip(e["source_model"].splitlines(),e["optimized_model"].splitlines()):
+            for l1, l2 in zip(e["source_model"].splitlines(), e["optimized_model"].splitlines()):
                 if l1 == "" and l2 == "":
                     continue
                 ref_text += l1 + "\n"
@@ -261,9 +261,9 @@ def main():
                 diff += diff_strings(l1, l2) + "\n"
                 
             print("--------------------------------------------------------------------------------------")
-            print("## Reference text {}:\n".format(i+1), ref_text)
-            print("## Actual text {}:\n".format(i+1), actual_text)
-            print("## Diff {}: ".format(i+1))
+            print("## Reference text {}:\n".format(i + 1), ref_text)
+            print("## Actual text {}:\n".format(i + 1), actual_text)
+            print("## Diff {}: ".format(i + 1))
             print(diff)
 
 
