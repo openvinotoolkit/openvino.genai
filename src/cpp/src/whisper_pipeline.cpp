@@ -55,7 +55,7 @@ public:
          const ov::AnyMap& plugin_config)
         : m_generation_config{from_config_json_if_exists(model_path)},
           m_tokenizer{tokenizer},
-          m_feature_extractor{model_path / "preprocessor_config.json"} {
+          m_feature_extractor{(model_path / "preprocessor_config.json").string()} {
         ov::Core core;
         core.set_property(device, plugin_config);
 
