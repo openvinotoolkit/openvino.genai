@@ -2,7 +2,7 @@
 name = "openvino-genai"
 version = "2024.5.0.0"
 description = "Python bindings for https://github.com/openvinotoolkit/openvino.genai"
-requires-python = ">=3.9"
+requires-python = ">=3.8"
 readme = {file = "src/README.md", content-type="text/markdown"}
 license = {text = "OSI Approved :: Apache Software License"}
 authors = [
