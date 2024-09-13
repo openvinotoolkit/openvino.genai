@@ -92,8 +92,6 @@ private:
     Mode mode;
     std::vector<Adapter> adapters;
     std::vector<float> alphas;
-    //std::set<std::string> modules;  // additional modules that can be patched, from LoRA config "target_modules": ["q_proj", "v_proj"] etc.  // TODO: Implement this feature
-    //ov::element::Type adapter_element_type = ov::element::dynamic; // optional element type for adapter tensors in case if multiple adapters have various types or they are not known in advance
 
 };
 
