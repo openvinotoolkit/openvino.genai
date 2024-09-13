@@ -49,6 +49,7 @@ class Evaluator:
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
         max_new_tokens=128,
         crop_question=True,
+        num_samples=None,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -59,6 +60,7 @@ class Evaluator:
         self.max_new_tokens = max_new_tokens
         self.tokenizer = tokenizer
         self._crop_question = crop_question
+        self.num_samples = num_samples
 
         if base_model:
             self.gt_data = self._generate_data(base_model)
@@ -144,11 +146,12 @@ class Evaluator:
         questions = data["questions"]
 
         answers = []
+        prompts = questions.values if self.num_samples is None else questions.values[:self.num_samples]
 
-        for q in tqdm(questions.values, desc="Evaluate pipeline"):
+        for q in tqdm(prompts, desc="Evaluate pipeline"):
             answers.append(gen_answer_fn(model, self.tokenizer, q, self.max_new_tokens, self._crop_question))
 
-        res_data = {"questions": list(questions.values), "answers": answers}
+        res_data = {"questions": list(prompts), "answers": answers}
         df = pd.DataFrame(res_data)
 
         return df
