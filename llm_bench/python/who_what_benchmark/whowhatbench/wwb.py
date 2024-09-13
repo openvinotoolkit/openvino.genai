@@ -245,7 +245,7 @@ def main():
             df.to_csv(os.path.join(args.output, "metrics_per_qustion.csv"))
             df = pd.DataFrame(all_metrics)
             df.to_csv(os.path.join(args.output, "metrics.csv"))
-            
+
     if args.verbose:
         metric_of_interest = "similarity"
         worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
@@ -259,7 +259,7 @@ def main():
                 ref_text += l1 + "\n"
                 actual_text += l2 + "\n"
                 diff += diff_strings(l1, l2) + "\n"
-                
+
             print("--------------------------------------------------------------------------------------")
             print("## Reference text {}:\n".format(i + 1), ref_text)
             print("## Actual text {}:\n".format(i + 1), actual_text)
