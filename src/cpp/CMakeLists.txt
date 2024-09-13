@@ -15,8 +15,8 @@ endif()
 
 function(ov_genai_build_jinja2cpp)
     FetchContent_Declare(jinja2cpp
-        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/bcc0e30f17f17f738ec2a7a31316d6efbe78a0e0.tar.gz
-        URL_HASH SHA256=f76547deb323240e7d181ecda6f658757ea5eb07ce772cf39e8bd20467412164)
+        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/b32fbde7d98d13c34784c332c4a24a6f92c76e38.tar.gz
+        URL_HASH SHA256=7cc25ddbc438a5c874d404e100b4eccd8a331c195417f5487c48aebcf4b9e7fb)
 
     FetchContent_GetProperties(jinja2cpp)
     if(NOT jinja2cpp_POPULATED)
@@ -30,6 +30,9 @@ function(ov_genai_build_jinja2cpp)
         set(JINJA2CPP_WITH_JSON_BINDINGS "none" CACHE STRING "")
         set(JINJA2CPP_STRICT_WARNINGS OFF CACHE BOOL "")
         set(JINJA2CPP_PIC ON CACHE BOOL "")
+
+        # options for Jinja2Cpp dependencies
+        option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
 
         add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
     endif()
@@ -71,7 +74,7 @@ if(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND LINUX)
     # Don't pack symlinks but append version hash to the name for wheel
     set_target_properties(${TARGET_NAME} PROPERTIES
         SUFFIX ${CMAKE_SHARED_LIBRARY_SUFFIX}.${MAJOR_SUFFIX}${OpenVINOGenAI_VERSION_MINOR}${OpenVINOGenAI_VERSION_PATCH})
-elseif(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND APPELE)
+elseif(DEFINED PY_BUILD_CMAKE_PACKAGE_NAME AND APPLE)
     set_target_properties(${TARGET_NAME} PROPERTIES
         SUFFIX .${MAJOR_SUFFIX}${OpenVINOGenAI_VERSION_MINOR}${OpenVINOGenAI_VERSION_PATCH}${CMAKE_SHARED_LIBRARY_SUFFIX})
 else()

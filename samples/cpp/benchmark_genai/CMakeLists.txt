@@ -1,9 +1,11 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-find_package(OpenVINOGenAI REQUIRED PATHS
-    "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
-    ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+find_package(OpenVINOGenAI REQUIRED
+    PATHS
+        "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
+        ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+    NO_CMAKE_FIND_ROOT_PATH
 )
 
 include(FetchContent)
@@ -25,6 +27,6 @@ set_target_properties(benchmark_genai PROPERTIES
     INSTALL_RPATH_USE_LINK_PATH ON)
 
 install(TARGETS benchmark_genai
-    RUNTIME DESTINATION samples_bin/
-    COMPONENT samples_bin
-    EXCLUDE_FROM_ALL)
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)

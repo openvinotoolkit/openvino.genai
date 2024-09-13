@@ -146,7 +146,7 @@ def read_model(params, **tokenizer_kwargs):
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
-    if path.exists():
+    if (path / "openvino_model.xml").exists():
         opt_model = OVModelForCausalLM.from_pretrained(path, trust_remote_code=True, 
                                                        compile=False, device='CPU')
     else:
@@ -223,4 +223,6 @@ def load_pipe(configs: List[Tuple], temp_path):
 
 @functools.lru_cache(1)
 def get_continuous_batching(path):
-    return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), 'CB')
+    scheduler_config = ov_genai.SchedulerConfig()
+    scheduler_config.cache_size = 1
+    return ov_genai.LLMPipeline(str(path), ov_genai.Tokenizer(str(path)), device='CPU', config={"scheduler_config": scheduler_config})

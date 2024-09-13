@@ -15,6 +15,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         first_token_infer_latency = iter_data['first_token_infer_latency']
         other_token_infer_latency = iter_data['other_tokens_infer_avg_latency']
         rss_mem = iter_data['max_rss_mem_consumption']
+        uss_mem = iter_data['max_uss_mem_consumption']
         shared_mem = iter_data['max_shared_mem_consumption']
         tokenization_time = iter_data['tokenization_time']
         detokenization_time = iter_data['detokenization_time']
@@ -36,6 +37,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             'first_infer_latency': round(first_token_infer_latency, 5) if first_token_infer_latency != '' else first_token_infer_latency,
             'second_infer_avg_latency': round(other_token_infer_latency, 5) if other_token_infer_latency != '' else other_token_infer_latency,
             'max_rss_mem': round(rss_mem, 5) if rss_mem != '' else -1,
+            'max_uss_mem': round(uss_mem, 5) if uss_mem != '' else -1,
             'max_shared_mem': round(shared_mem, 5) if shared_mem != '' else -1,
             'prompt_idx': iter_data['prompt_idx'],
             'tokenization_time': round(tokenization_time, 5) if tokenization_time != '' else tokenization_time,

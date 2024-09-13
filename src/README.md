@@ -178,6 +178,8 @@ int main(int argc, char* argv[]) {
 ```
 
 Streaming with a custom class:
+
+C++ template for a stremer.
 ```cpp
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -186,18 +188,14 @@ Streaming with a custom class:
 class CustomStreamer: public ov::genai::StreamerBase {
 public:
     bool put(int64_t token) {
-        bool stop_flag = false; 
-        /* 
-        custom decoding/tokens processing code
-        tokens_cache.push_back(token);
-        std::string text = m_tokenizer.decode(tokens_cache);
-        ...
-        */
-        return stop_flag;  // flag whether generation should be stoped, if true generation stops.
+        // Custom decoding/tokens processing logic.
+        
+        // Returns a flag whether generation should be stoped, if true generation stops.
+        return false;  
     };
 
     void end() {
-        /* custom finalization */
+        // Custom finalization logic.
     };
 };
 
@@ -206,7 +204,51 @@ int main(int argc, char* argv[]) {
 
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
-    std::cout << pipe.generate("The Sun is yellow because", ov::genai::streamer(custom_streamer), ov::genai::max_new_tokens(200));
+    std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(15), ov::genai::streamer(custom_streamer));
+}
+```
+
+Python template for a streamer.
+```py
+import openvino_genai as ov_genai
+
+class CustomStreamer(ov_genai.StreamerBase):
+    def __init__(self):
+        super().__init__()
+        # Initialization logic.
+
+    def put(self, token_id) -> bool:
+        # Custom decoding/tokens processing logic.
+        
+        # Returns a flag whether generation should be stoped, if true generation stops.
+        return False
+
+    def end(self):
+        # Custom finalization logic.
+
+pipe = ov_genai.LLMPipeline(model_path, "CPU")
+custom_streamer = CustomStreamer()
+
+pipe.generate("The Sun is yellow because", max_new_tokens=15, streamer=custom_streamer)
+```
+For fully implemented iterable CustomStreamer please refer to [multinomial_causal_lm](https://github.com/openvinotoolkit/openvino.genai/tree/releases/2024/3/samples/python/multinomial_causal_lm/README.md) sample.
+
+
+Continuous batching with LLMPipeline:
+
+To activate continuous batching please provide additional property to LLMPipeline config: ov::genai::scheduler_config. This property contains struct SchedulerConfig.
+```cpp
+#include "openvino/genai/llm_pipeline.hpp"
+
+int main(int argc, char* argv[]) {
+    ov::AnyMap config;
+    ov::genai::SchedulerConfig scheduler_config;
+    {
+    //fill scheduler_config with custom data if required
+    }
+    config[ov::genai::scheduler_config.name()] = scheduler_config;
+
+    ov::genai::LLMPipeline pipe(model_path, "CPU", config);
 }
 ```
 
@@ -236,7 +278,7 @@ perf_metrics = result.perf_metrics
 print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
 print(f'TTFT: {perf_metrics.get_ttft().mean:.2f} ms')
 print(f'TPOT: {perf_metrics.get_tpot().mean:.2f} ms/token')
-print(f'Throughput: {perf_metrics.get_throughput()get_.mean():.2f} tokens/s')
+print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
 ```
 
 ```cpp

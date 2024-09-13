@@ -9,8 +9,8 @@ import logging as log
 import torch
 import time
 import types
-import utils.hook_common as hook_common
-from utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
+from llm_bench_utils.hook_common import get_bench_hook
+from llm_bench_utils.config_class import OV_MODEL_CLASSES_MAPPING, TOKENIZE_CLASSES_MAPPING, DEFAULT_MODEL_CLASSES
 import openvino.runtime.opset13 as opset
 
 
@@ -144,9 +144,7 @@ def create_text_gen_model(model_path, device, **kwargs):
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
         if kwargs.get("genai", False) and is_genai_available(log_msg=True):
-            if kwargs["batch_size"] > 1 or kwargs["num_beams"] > 1:
-                log.warning("OpenVINO GenAI based benchmarking implmented only for batch_size == 1 and num_beams == 1")
-            elif model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type], OV_MODEL_CLASSES_MAPPING["mpt"]]:
+            if model_class not in [OV_MODEL_CLASSES_MAPPING[default_model_type], OV_MODEL_CLASSES_MAPPING["mpt"]]:
                 log.warning("OpenVINO GenAI based benchmarking is not available for {model_type}. Will be switched to default bencmarking")
             else:
                 return create_genai_text_gen_model(model_path, device, ov_config, **kwargs)
@@ -168,7 +166,7 @@ def create_text_gen_model(model_path, device, **kwargs):
         if not isinstance(ov_model, OV_MODEL_CLASSES_MAPPING['t5']):
             patch_inter_processing_and_compile(ov_model, **kwargs)
         end = time.perf_counter()
-    bench_hook = hook_common.get_bench_hook(kwargs['num_beams'], ov_model)
+    bench_hook = get_bench_hook(kwargs['num_beams'], ov_model)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     # load token
@@ -183,34 +181,6 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     import openvino_genai
     from transformers import AutoTokenizer
 
-    class TokenStreamer(openvino_genai.StreamerBase):
-        def __init__(self, tokenizer):
-            openvino_genai.StreamerBase.__init__(self)
-            self.tokenizer = tokenizer
-            self.token_generation_time = []
-            self.generated_tokens = []
-            self.start_time = time.perf_counter()
-
-        def put(self, token_id):
-            self.token_generation_time.append(time.perf_counter() - self.start_time)
-            self.generated_tokens.append(token_id)
-            self.start_time = time.perf_counter()
-            return False
-
-        def reset(self):
-            self.token_generation_time = []
-            self.generated_tokens = []
-            self.start_time = time.perf_counter()
-
-        def end(self):
-            pass
-
-        def get_tokens(self):
-            return self.generated_tokens
-
-        def get_time_list(self):
-            return self.token_generation_time
-
     if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
         convert_ov_tokenizer(model_path)
 
@@ -220,9 +190,8 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     llm_pipe = openvino_genai.LLMPipeline(str(model_path), device.upper(), ov_config)
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
-    streamer = TokenStreamer(llm_pipe.get_tokenizer())
 
-    return llm_pipe, tokenizer, end - start, streamer, True
+    return llm_pipe, tokenizer, end - start, None, True
 
 
 def convert_ov_tokenizer(tokenizer_path):

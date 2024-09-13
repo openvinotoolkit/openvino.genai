@@ -26,19 +26,18 @@ if(POLICY CMP0169)
 endif()
 
 project(OpenVINOGenAI
-        VERSION 2024.4.0.0
+        VERSION 2024.5.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX)
 
-option(INSTALL_GTEST "Enable installation of googletest. (Projects embedding googletest may want to turn this OFF.)" OFF)
-option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
-
 # Find OpenVINODeveloperPackage first to compile with SDL flags
-find_package(OpenVINODeveloperPackage QUIET
+find_package(OpenVINODeveloperPackage ${OpenVINOGenAI_VERSION} QUIET
+             COMPONENTS Runtime
              PATHS "${OpenVINO_DIR}")
 if(NOT OpenVINODeveloperPackage_FOUND)
-    find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+    find_package(OpenVINO ${OpenVINOGenAI_VERSION} REQUIRED
+                 COMPONENTS Runtime)
 endif()
 
 include(cmake/features.cmake)
@@ -57,6 +56,10 @@ if(ENABLE_PYTHON)
     endif()
 endif()
 
+if(WIN32 OR APPLE)
+  set(CMAKE_DEBUG_POSTFIX "d")
+endif()
+
 add_subdirectory(thirdparty)
 add_subdirectory(src)
 add_subdirectory(samples)
@@ -73,4 +76,7 @@ set(CPACK_COMPONENTS_ALL core_genai core_genai_dev cpp_samples_genai licensing_g
 if(ENABLE_PYTHON)
     list(APPEND CPACK_COMPONENTS_ALL pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
 endif() 
+if(WIN32 AND NOT DEFINED CPACK_GENERATOR)
+    set(CPACK_GENERATOR "ZIP")
+endif()
 include(CPack)

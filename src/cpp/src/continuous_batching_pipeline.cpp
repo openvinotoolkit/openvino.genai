@@ -60,6 +60,15 @@ class ContinuousBatchingPipeline::Impl {
     ChatHistory m_history;
 
 
+    void _notify_requests_dropped_by_handle() {
+        // Notify the last time by pushing empty output
+        // This causes read() to unblock by adding anything to the queue
+        for (SequenceGroup::Ptr& request : m_requests) {
+            if (request->handle_dropped())
+                request->push_empty_outputs();
+        }
+    }
+
     void _free_non_running_requests() {
         std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
         while (requests_iterator != m_requests.end()) {
@@ -84,14 +93,14 @@ public:
         // The model can be compiled for GPU as well
         std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
 
-        DeviceConfig device_config(core, scheduler_config, device);
+        DeviceConfig device_config(core, scheduler_config, device, plugin_config);
 
         apply_paged_attention_transformations(model, device_config);
 
         ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
 
         // setup KV caches
-        m_cache_manager = std::make_shared<CacheManager>(device_config);
+        m_cache_manager = std::make_shared<CacheManager>(device_config, core);
         for (size_t decoder_layer_id = 0; decoder_layer_id < device_config.get_num_layers(); ++decoder_layer_id) {
             infer_request.set_input_tensor(2 + decoder_layer_id * 2, m_cache_manager->get_key_cache(decoder_layer_id));
             infer_request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager->get_value_cache(decoder_layer_id));
@@ -103,10 +112,17 @@ public:
             updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
         }
 
-        m_scheduler = std::make_shared<Scheduler>(updated_config);
+        bool can_use_partial_preemption = true;
+        if (device_config.get_device().find("GPU") != std::string::npos && !updated_config.dynamic_split_fuse) {
+            // in case of executing a `vLLM-like` pipeline, it's better not to use partial eviction on the GPU,
+            // as it may lead to performance slowdown
+            can_use_partial_preemption = false;
+        }
+
+        m_scheduler = std::make_shared<Scheduler>(updated_config, can_use_partial_preemption);
         // and finally create model runner
         m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
-        m_sampler = std::make_shared<Sampler>();
+        m_sampler = std::make_shared<Sampler>(m_tokenizer);
         m_sampler->set_seed(m_generation_config.rng_seed);
 
         // read default generation config
@@ -131,12 +147,19 @@ public:
         sampling_params.set_eos_token_id(m_tokenizer.get_eos_token_id());
         sampling_params.validate();
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
-                                                                            sampling_params, m_scheduler->get_config().block_size);
+                                                                            sampling_params, 
+                                                                            m_scheduler->get_config().block_size,
+                                                                            m_scheduler->get_config().enable_prefix_caching);
+        sequence_group->set_sequence_group_ptr(sequence_group);
+        if (m_scheduler->get_config().enable_prefix_caching) {
+            m_scheduler->restore_cached_blocks(sequence_group);
+        }
+
         {
             std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
             m_awaiting_requests.push_back(sequence_group);
         }
-        return std::make_unique<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
+        return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
     }
 
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, ov::genai::GenerationConfig sampling_params) {
@@ -188,16 +211,22 @@ public:
             logits = m_model_runner->forward(m_requests, scheduler_output);
             timer.end();
 
+            ov::InferRequest infer_request = m_model_runner->get_infer_request();
+            ov::CompiledModel compiled_model = infer_request.get_compiled_model();
+            const bool is_profiling_enabled = compiled_model.get_property(ov::enable_profiling);
+
             // collect detailed statistic
-            std::vector<ov::ProfilingInfo> profiling_info = m_model_runner->get_infer_request().get_profiling_info();
-            for (const ov::ProfilingInfo& info : profiling_info) {
-                double current_time = info.real_time.count();
-                if (info.node_type == "PagedAttentionExtension") {
-                    m_perf.m_paged_attention_time_ms += current_time;
-                } else if (info.node_type == "FullyConnected") {
-                    m_perf.m_matmul_time_ms += current_time;
+            if (is_profiling_enabled) {
+                std::vector<ov::ProfilingInfo> profiling_info = m_model_runner->get_infer_request().get_profiling_info();
+                for (const ov::ProfilingInfo& info : profiling_info) {
+                    double current_time = info.real_time.count();
+                    if (info.node_type == "PagedAttentionExtension") {
+                        m_perf.m_paged_attention_time_ms += current_time;
+                    } else if (info.node_type == "FullyConnected") {
+                        m_perf.m_matmul_time_ms += current_time;
+                    }
+                    m_perf.m_infer_total_ms += current_time;
                 }
-                m_perf.m_infer_total_ms += current_time;
             }
         }
 
@@ -224,6 +253,15 @@ public:
             for (auto seq_id : sampler_output.m_dropped_sequences)
                 m_scheduler->free_sequence(seq_id);
 
+            timer.end();
+        }
+
+        // notify requests dropped by handle
+
+        {
+            static ManualTimer timer("notify requests dropped by handle");
+            timer.start();
+            _notify_requests_dropped_by_handle();
             timer.end();
         }
 
@@ -274,8 +312,8 @@ public:
             if (streamer_ptr) {
                 std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
                 OPENVINO_ASSERT(1 == token.size());
-                OPENVINO_ASSERT(1 == token.begin()->second.generated_token_ids.size());
-                continue_generation = !streamer_ptr->put(token.begin()->second.generated_token_ids.at(0));
+                OPENVINO_ASSERT(1 == token.begin()->second.generated_ids.size());
+                continue_generation = !streamer_ptr->put(token.begin()->second.generated_ids.at(0));
             }
         }
         if (streamer_ptr) {
@@ -294,7 +332,7 @@ public:
             auto num_outputs = std::min(sampling_params[generation_idx].num_return_sequences, generation_outputs.size());
             for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
                 const auto& generation_output = generation_outputs[generation_output_idx];
-                result.m_generation_ids.push_back(std::move(generation_output.generated_token_ids));
+                result.m_generation_ids.push_back(std::move(generation_output.generated_ids));
                 result.m_scores.push_back(generation_output.score);
             }
             result.m_status = generation->get_status();

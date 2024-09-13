@@ -143,7 +143,7 @@ conversation = [
     {'role': 'user', 'content': '1+1='},
     {'role': 'assistant', 'content': '1 + 1 = 2'},
     {'role': 'user', 'content': 'What is the previous answer?'},
-    {'role': 'assistant', 'content': 'The previous answer was: 1 + 1 = 2. \n Please ask me your next question.'},
+    {'role': 'assistant', 'content': 'The previous answer was: 1 + 1 = 2. Please ask me your next question.'},
     {'role': 'user', 'content': 'Why is the sun yellow?'},
     {'role': 'assistant', 'content': 'Because it emits yeloow light.'},
     {'role': 'user', 'content': 'What was my first question?'},
@@ -159,7 +159,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
     model_id, path, tokenizer, opt_model, pipe = read_model(get_models_list()[0])
     
     full_history_str_hf = tokenizer.apply_chat_template(conversation, 
-        add_generation_prompt=False, 
+        add_generation_prompt=False,
         tokenize=False,
         **tokenizer_config)
     
@@ -174,7 +174,6 @@ def test_apply_chat_template(model_tmp_path, chat_config: Tuple[str, Dict]):
 @pytest.mark.parametrize("generation_config", configs[1:])
 @pytest.mark.parametrize("model_descr", get_chat_models_list())
 @pytest.mark.precommit
-@pytest.mark.skip("continuous_batching seg faults with nightly ov. Ticket 147793")
 def test_chat_continuous_batching_vs_stateful(model_descr, generation_config: Dict):
     model_id, path, tokenizer, model, stateful = read_model((model_descr[0], model_descr[1] / '_test_chat'))
     cb = get_continuous_batching(path)
@@ -186,3 +185,15 @@ def test_chat_continuous_batching_vs_stateful(model_descr, generation_config: Di
         assert generated == reference
     # Test that finish_chat() doesn't fail just in case.
     cb.finish_chat()
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_set_chat_template():
+    model_descr = get_chat_models_list()[0]
+    model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
+    pipe.get_tokenizer().set_chat_template("{% for message in messages %}{{ message['content'] }}{% endfor %}")
+    pipe.start_chat()
+    generated = pipe.generate("a", max_new_tokens=1)
+    pipe.finish_chat()
+    reference = pipe.generate("a", max_new_tokens=1)
+    assert generated == reference
