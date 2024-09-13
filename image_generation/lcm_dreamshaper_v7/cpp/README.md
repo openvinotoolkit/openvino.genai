@@ -52,7 +52,7 @@ conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 Low-Rank Adaptation (LoRA) is a technique introduced to deal with the problem of fine-tuning Diffusers and Large Language Models (LLMs). In the case of Stable Diffusion fine-tuning, LoRA can be applied to the cross-attention layers for the image representations with the latent described.
 
-LoRA weights can be enabled for Unet model of Stable Diffusion pipeline to generate images with different styles.
+LoRA weights can be enabled for the text encoder and Unet model of Stable Diffusion pipeline to generate images with different styles.
 
 In this sample LoRA weights are used in [safetensors]((https://huggingface.co/docs/safetensors/index#format)) format.
 Safetensors is a serialization format developed by Hugging Face that is specifically designed for efficiently storing and loading large tensors. It provides a lightweight and efficient way to serialize tensors, making it easier to store and load machine learning models.
@@ -60,7 +60,7 @@ Safetensors is a serialization format developed by Hugging Face that is specific
 The LoRA safetensors model is loaded with OpenVINO GenAI Adapters.
 
 There are various LoRA models on https://civitai.com/tag/lora and on HuggingFace, you can consider to choose your own LoRA model in safetensor format. For example, you can use LoRA [soulcard model](https://civitai.com/models/67927?modelVersionId=72591).
-Download and put LoRA safetensors model into the models directory. When running the built sample provide the path to the LoRA model with `-l, --loraPath arg` argument.
+Download and put LoRA safetensors model into the models directory. When running the built sample provide the path to the LoRA model with `-l, --loraPath arg` argument. Control how much of LoRA adapter effect is applied by specifying `-a`/`--alpha` parameter which is a floatting point number usually in the range from `0` to `1` and depends on specific LoRA adapter. Multiple LoRA adapters can be applied simultatniously with different weights by specifying multiple `-l` and `-a` parameters in the command line.
 
 ## Step 3: Build the LCM Application
 

@@ -67,7 +67,8 @@ Safetensors is a serialization format developed by Hugging Face that is specific
 The LoRA safetensors model is loaded with OpenVINO GenAI Adapters.
 
 There are various LoRA models on https://civitai.com/tag/lora and on HuggingFace, you can consider to choose your own LoRA model in safetensor format. For example, you can use LoRA [soulcard model](https://civitai.com/models/67927?modelVersionId=72591).
-Download and put LoRA safetensors model into the models directory. When running the built sample provide the path to the LoRA model with `-l, --loraPath arg` argument.
+
+Download and put LoRA safetensors model into the models directory. When running the built sample provide the path to the LoRA model with `-l, --loraPath arg` argument. Control how much of LoRA adapter effect is applied by specifying `-a`/`--alpha` parameter which is a floatting point number usually in the range from `0` to `1` and depends on specific LoRA adapter. Multiple LoRA adapters can be applied simultatniously with different weights by specifying multiple `-l` and `-a` parameters in the command line.
 
 ## Step 3: Build the SD Application
 
