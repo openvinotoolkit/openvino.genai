@@ -61,8 +61,8 @@ def get_whisper_models_list():
     precommit_models = [
         "openai/whisper-tiny.en",
         "openai/whisper-small",
-        "openai/whisper-base.en",
         # probably doesn't fit to memory
+        # "openai/whisper-base.en",
         # "openai/whisper-base",
     ]
 

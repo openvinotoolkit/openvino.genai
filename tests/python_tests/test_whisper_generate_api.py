@@ -12,6 +12,9 @@ from transformers import WhisperProcessor, pipeline, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import json
 import time
+import tracemalloc
+
+tracemalloc.start()
 
 
 @functools.lru_cache(1)
@@ -75,6 +78,8 @@ def get_test_sample(dataset_id="hf-internal-testing/librispeech_asr_dummy"):
     return ds[0]["audio"]["array"]
 
 
+# todo: implement sequential run with model unoading
+# base model probably doesn't fit to memory
 def compare_genai_and_opt_pipelines(opt_pipe, genai_pipe, dataset_id):
     ds = datasets.load_dataset(dataset_id, "clean", split="validation")
     opt_infer_time = 0
