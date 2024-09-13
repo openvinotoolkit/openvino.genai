@@ -24,6 +24,13 @@ GenerationConfig::GenerationConfig(const std::string& json_path) {
     read_json_param(data, "max_new_tokens", max_new_tokens);
     read_json_param(data, "max_length", max_length);
     // note that ignore_eos is not present in HF GenerationConfig
+    read_json_param(data, "ignore_eos", ignore_eos);
+    read_json_param(data, "min_new_tokens", min_new_tokens);
+    read_json_param(data, "stop_strings", stop_strings);
+    // note that include_stop_str_in_output is not present in HF GenerationConfig
+    read_json_param(data, "include_stop_str_in_output", include_stop_str_in_output);
+    // note that stop_token_ids is not present in HF GenerationConfig
+    read_json_param(data, "stop_token_ids", stop_token_ids);
     read_json_param(data, "num_beam_groups", num_beam_groups);
     read_json_param(data, "num_beams", num_beams);
     read_json_param(data, "diversity_penalty", diversity_penalty);
@@ -57,6 +64,8 @@ void GenerationConfig::set_eos_token_id(size_t tokenizer_eos_token_id) {
             "EOS token ID is different in generation config (", eos_token_id, ") and tokenizer (",
             tokenizer_eos_token_id, ")");
     }
+    // Merge user defined stop tokens with model EOS token
+    stop_token_ids.insert(eos_token_id);
 }
 
 void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
@@ -65,6 +74,10 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     read_anymap_param(config_map, "max_new_tokens", max_new_tokens);
     read_anymap_param(config_map, "max_length", max_length);
     read_anymap_param(config_map, "ignore_eos", ignore_eos);
+    read_anymap_param(config_map, "min_new_tokens", min_new_tokens);
+    read_anymap_param(config_map, "stop_strings", stop_strings);
+    read_anymap_param(config_map, "include_stop_str_in_output", include_stop_str_in_output);
+    read_anymap_param(config_map, "stop_token_ids", stop_token_ids);
     read_anymap_param(config_map, "num_beam_groups", num_beam_groups);
     read_anymap_param(config_map, "num_beams", num_beams);
     read_anymap_param(config_map, "diversity_penalty", diversity_penalty);

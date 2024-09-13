@@ -238,7 +238,7 @@ int main(int argc, char* argv[]) try {
     ov::Tensor position_ids = model.get_tensor("position_ids");
     position_ids.set_shape(input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
-    uint64_t seq_len = input_ids.get_shape()[1];
+    size_t seq_len = input_ids.get_shape()[1];
 
     // set beam_idx for stateful model: no beam search is used and BATCH_SIZE = 1
     model.get_tensor("beam_idx").set_shape({BATCH_SIZE});
@@ -333,9 +333,13 @@ int main(int argc, char* argv[]) try {
     // it is called for education purposes:
     model.reset_state();
 } catch (const std::exception& error) {
-    std::cerr << error.what() << '\n';
+    try {
+        std::cerr << error.what() << '\n';
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 } catch (...) {
-    std::cerr << "Non-exception object thrown\n";
+    try {
+        std::cerr << "Non-exception object thrown\n";
+    } catch (const std::ios_base::failure&) {}
     return EXIT_FAILURE;
 }
