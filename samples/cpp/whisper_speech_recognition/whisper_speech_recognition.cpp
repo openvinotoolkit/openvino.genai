@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "audio_utils.hpp"
-#include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {

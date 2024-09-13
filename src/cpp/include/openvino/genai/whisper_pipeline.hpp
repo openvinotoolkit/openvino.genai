@@ -52,6 +52,7 @@ public:
 
     /**
      * @brief High level generate that receives raw speech as a vector of floats and returns decoded output.
+     * Raw speech data required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
      *
      * @param raw_speech_input raw speech input
      * @param generation_config optional GenerationConfig
