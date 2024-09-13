@@ -137,6 +137,7 @@ def parse_args():
         "--verbose",
         action="store_true",
         help="Print results and their difference",
+    )
     parser.add_argument(
         "--device",
         type=str,
