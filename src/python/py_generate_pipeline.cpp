@@ -54,10 +54,10 @@ namespace {
 
 auto generate_docstring = R"(
     Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
-    
+
     :param inputs: inputs in the form of string, list of strings or tokenized input_ids
     :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
-    
+
     :param generation_config: generation_config
     :type generation_config: GenerationConfig or a Dict
 
@@ -71,13 +71,44 @@ auto generate_docstring = R"(
     :rtype: DecodedResults, EncodedResults, str
 )";
 
+auto decoded_results_docstring = R"(
+    Structure to store resulting batched text outputs and scores for each batch.
+    The first num_return_sequences elements correspond to the first batch element.
+
+    Parameters: 
+    texts:      vector of resulting sequences.
+    scores:     scores for each sequence.
+    metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
+)";
+
+auto encoded_results_docstring = R"(
+    Structure to store resulting batched tokens and scores for each batch sequence.
+    The first num_return_sequences elements correspond to the first batch element.
+    In the case if results decoded with beam search and random sampling scores contain
+    sum of logarithmic probabilities for each token in the sequence. In the case
+    of greedy decoding scores are filled with zeros.
+
+    Parameters: 
+    tokens: sequence of resulting tokens.
+    scores: sum of logarithmic probabilities of all tokens in the sequence.
+    metrics: performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
+)";
+
 auto generation_config_docstring = R"(
-    GenerationConfig parameters
+    Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group 
+    and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will 
+    be used while greedy and beam search parameters will not affect decoding at all.
+
+    Parameters: 
     max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
-                `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
+                   max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
     max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
     ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
     eos_token_id:  token_id of <eos> (end of sentence)
+    min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
+    stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+    include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
+    stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
 
     Beam search specific parameters:
     num_beams:         number of beams for beam search. 1 disables beam search.
@@ -85,8 +116,8 @@ auto generation_config_docstring = R"(
     diversity_penalty: value is subtracted from a beam's score if it generates the same token as any beam from other group at a particular time.
     length_penalty:    exponential penalty to the length that is used with beam-based generation. It is applied as an exponent to
         the sequence length, which in turn is used to divide the score of the sequence. Since the score is the log
-        likelihood of the sequence (i.e. negative), `length_penalty` > 0.0 promotes longer sequences, while
-        `length_penalty` < 0.0 encourages shorter sequences.
+        likelihood of the sequence (i.e. negative), length_penalty > 0.0 promotes longer sequences, while
+        length_penalty < 0.0 encourages shorter sequences.
     num_return_sequences: the number of sequences to return for grouped beam search decoding.
     no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
     stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values: 
@@ -100,6 +131,65 @@ auto generation_config_docstring = R"(
     top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
     do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
     repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.    
+)";
+
+auto scheduler_config_docstring = R"(
+    SchedulerConfig to construct ContinuousBatchingPipeline
+
+    Parameters: 
+    max_num_batched_tokens:     a maximum number of tokens to batch (in constrast to max_batch_size which combines
+        independent sequences, we consider total amount of tokens in a batch).
+    num_kv_blocks:              total number of KV blocks available to scheduler logic.
+    cache_size:                 total size of KV cache in GB.
+    block_size:                 block size for KV cache.
+    dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
+
+    vLLM-like settings:
+    max_num_seqs:               max number of scheduled sequences (you can think of it as "max batch size").
+    enable_prefix_caching:      Enable caching of KV-blocks.
+        When turned on all previously calculated KV-caches are kept in memory for future usages.
+        KV-caches can be rewritten if KV-cache limit is reached, but blocks are not released.
+        This results in more RAM usage, maximum RAM usage is determined by cache_size or num_kv_blocks parameters.
+        When turend off only KV-cache required for batch calculation is kept in memory and
+        when a sequence has finished genegartion its cache is released.
+)";
+
+auto generation_result_docstring = R"(
+    GenerationResult stores resulting batched tokens and scores.
+
+    Parameters: 
+    request_id:         obsolete when handle API is approved as handle will connect results with prompts.
+    generation_ids:     in a generic case we have multiple generation results per initial prompt
+        depending on sampling parameters (e.g. beam search or parallel sampling).
+    scores:             scores.
+    status:             status of generation. The following values are possible:
+        RUNNING = 0 - Default status for ongoing generation.
+        FINISHED = 1 - Status set when generation has been finished.
+        IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
+        DROPPED_BY_PIPELINE = 3 - Currently not used, TODO: implement abort functionality.
+        DROPPED_BY_HANDLE = 4 - Status set when generation handle is dropped.
+
+)";
+
+auto stop_criteria_docstring =  R"(
+    StopCriteria controls the stopping condition for grouped beam search.
+    
+    The following values are possible:
+        "openvino_genai.StopCriteria.EARLY" stops as soon as there are `num_beams` complete candidates.
+        "openvino_genai.StopCriteria.HEURISTIC" stops when is it unlikely to find better candidates.
+        "openvino_genai.StopCriteria.NEVER" stops when there cannot be better candidates.
+)";
+
+auto streamer_base_docstring =  R"(
+    Base class for streamers. In order to use inherit from from this class and inplement put, and methods.
+)";
+
+auto tokenized_inputs_docstring =  R"(
+    Structure to agregate inputs to model.
+    
+    Parameters: 
+    input_ids:         numerical token IDs from the tokenizer
+    attention_mask:    indicates which tokens are attended to
 )";
 
 auto raw_perf_metrics_docstring = R"(
@@ -161,22 +251,22 @@ auto perf_metrics_docstring = R"(
     :param get_num_input_tokens: Returns the number of tokens in the input prompt.
     :type get_num_input_tokens: int
 
-    :param get_ttft: Returns the mean and standard deviation of TTFT.
+    :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
     :type get_ttft: MeanStdPair
 
-    :param get_tpot: Returns the mean and standard deviation of TPOT.
+    :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
     :type get_tpot: MeanStdPair
 
-    :param get_throughput: Returns the mean and standard deviation of throughput.
+    :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
     :type get_throughput: MeanStdPair
 
-    :param get_generate_duration: Returns the mean and standard deviation of generate duration.
+    :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
     :type get_generate_duration: MeanStdPair
 
-    :param get_tokenization_duration: Returns the mean and standard deviation of tokenization duration.
+    :param get_tokenization_duration: Returns the mean and standard deviation of tokenization durations in milliseconds.
     :type get_tokenization_duration: MeanStdPair
 
-    :param get_detokenization_duration: Returns the mean and standard deviation of detokenization duration.
+    :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
     :type get_detokenization_duration: MeanStdPair
 
     :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
@@ -366,7 +456,9 @@ ov::Any py_object_to_any(const py::object& py_obj) {
         return py::cast<ov::Tensor>(py_obj);
     } else if (py::isinstance<ov::Output<ov::Node>>(py_obj)) {
         return py::cast<ov::Output<ov::Node>>(py_obj);
-     } else if (py::isinstance<py::object>(py_obj)) {
+    } else if (py::isinstance<ov::genai::SchedulerConfig>(py_obj)) {
+        return py::cast<ov::genai::SchedulerConfig>(py_obj);
+    } else if (py::isinstance<py::object>(py_obj)) {
         return py_obj;
     }
     OPENVINO_ASSERT(false, "Unsupported attribute type.");
@@ -487,7 +579,7 @@ std::ostream& operator << (std::ostream& stream, const GenerationResult& generat
 PYBIND11_MODULE(py_generate_pipeline, m) {
     m.doc() = "Pybind11 binding for LLM Pipeline";
 
-    py::class_<LLMPipeline>(m, "LLMPipeline")
+    py::class_<LLMPipeline>(m, "LLMPipeline", "This class is used for generation with LLMs")
         .def(py::init([](
             const std::string& model_path, 
             const std::string& device,
@@ -503,17 +595,28 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             LLMPipeline class constructor.
             model_path (str): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
         )")
 
-        .def(py::init<const std::string, const Tokenizer&, const std::string>(), 
+        .def(py::init([](
+            const std::string& model_path,
+            const Tokenizer& tokenizer,
+            const std::string& device,
+            const std::map<std::string, py::object>& config
+        ) {
+            ScopedVar env_manager(ov_tokenizers_module_path());
+            return std::make_unique<LLMPipeline>(model_path, tokenizer, device, properties_to_any_map(config));
+        }),
         py::arg("model_path"),
         py::arg("tokenizer"),
         py::arg("device") = "CPU",
+        py::arg("config") = ov::AnyMap({}), "openvino.properties map",
         R"(
             LLMPipeline class constructor for manualy created openvino_genai.Tokenizer.
             model_path (str): Path to the model file.
             tokenizer (openvino_genai.Tokenizer): tokenizer object.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
         )")
 
         .def(
@@ -622,11 +725,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("get_eos_token", &Tokenizer::get_eos_token);
 
     // Binding for StopCriteria
-    py::enum_<StopCriteria>(m, "StopCriteria",
-        R"(StopCriteria controls the stopping condition for grouped beam search. The following values are possible:
-            "openvino_genai.StopCriteria.EARLY" stops as soon as there are `num_beams` complete candidates.
-            "openvino_genai.StopCriteria.HEURISTIC" stops when is it unlikely to find better candidates.
-            "openvino_genai.StopCriteria.NEVER" stops when there cannot be better candidates.)")
+    py::enum_<StopCriteria>(m, "StopCriteria", stop_criteria_docstring)
         .value("EARLY", StopCriteria::EARLY)
         .value("HEURISTIC", StopCriteria::HEURISTIC)
         .value("NEVER", StopCriteria::NEVER)
@@ -656,22 +755,38 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("presence_penalty", &GenerationConfig::presence_penalty)
         .def_readwrite("frequency_penalty", &GenerationConfig::frequency_penalty)
         .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
+        .def_readwrite("stop_strings", &GenerationConfig::stop_strings)
+        .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
+        .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id)
         .def("is_beam_search", &GenerationConfig::is_beam_search);
 
-    py::class_<DecodedResults>(m, "DecodedResults")
+    py::class_<DecodedResults>(m, "DecodedResults", decoded_results_docstring)
         .def(py::init<>())
         .def_property_readonly("texts", [](const DecodedResults &dr) { return handle_utf8_results(dr); })
         .def_readonly("scores", &DecodedResults::scores)
         .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
-        .def("__str__", &DecodedResults::operator std::string);
+        .def("__str__", [](const DecodedResults &dr) -> py::str {
+            auto valid_utf8_strings = handle_utf8_results(dr);
+            py::str res;
+            if (valid_utf8_strings.size() == 1)
+                return valid_utf8_strings[0];
+            
+            for (size_t i = 0; i < valid_utf8_strings.size() - 1; i++) {
+                res += py::str(std::to_string(dr.scores[i])) + py::str(": ") + valid_utf8_strings[i] + py::str("\n");
+            }
+            res += py::str(std::to_string(dr.scores.back())) + py::str(": ") + valid_utf8_strings[valid_utf8_strings.size() - 1];
+            return res;
+        });
 
     py::class_<RawPerfMetrics>(m, "RawPerfMetrics", raw_perf_metrics_docstring)
         .def(py::init<>())
-        .def_readonly("generate_durations", &RawPerfMetrics::generate_durations)
+        .def_property_readonly("generate_durations", [](const RawPerfMetrics &rw) {
+            return get_ms(rw, &RawPerfMetrics::generate_durations);
+        })
         .def_property_readonly("tokenization_durations", [](const RawPerfMetrics &rw) { 
             return get_ms(rw, &RawPerfMetrics::tokenization_durations);
-         })
+        })
         .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) { 
             return get_ms(rw, &RawPerfMetrics::detokenization_durations); 
         })
@@ -681,24 +796,27 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_property_readonly("m_durations", [](const RawPerfMetrics &rw) { 
             return get_ms(rw, &RawPerfMetrics::m_durations); 
         })
-        .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes)
-        .def_readonly("num_generated_tokens", &RawPerfMetrics::num_generated_tokens)
-        .def_readonly("num_input_tokens", &RawPerfMetrics::num_input_tokens);
+        .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes);
 
     py::class_<MeanStdPair>(m, "MeanStdPair")
         .def(py::init<>())
         .def_readonly("mean", &MeanStdPair::mean)
-        .def_readonly("std", &MeanStdPair::std);
+        .def_readonly("std", &MeanStdPair::std)
+        .def("__iter__", [](const MeanStdPair &self) {
+            return py::make_iterator(&self.mean, &self.std + 1);
+        }, py::keep_alive<0, 1>());  // Keep object alive while the iterator is used;
 
     py::class_<PerfMetrics>(m, "PerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
+        .def("get_load_time", &PerfMetrics::get_load_time)
+        .def("get_num_generated_tokens", &PerfMetrics::get_num_generated_tokens)
+        .def("get_num_input_tokens", &PerfMetrics::get_num_input_tokens)
+        .def("get_ttft", &PerfMetrics::get_ttft)
+        .def("get_tpot", &PerfMetrics::get_tpot)
+        .def("get_throughput", &PerfMetrics::get_throughput)
         .def("get_generate_duration", &PerfMetrics::get_generate_duration)
         .def("get_tokenization_duration", &PerfMetrics::get_tokenization_duration)
         .def("get_detokenization_duration", &PerfMetrics::get_detokenization_duration)
-        .def("get_throughput", &PerfMetrics::get_throughput)
-        .def("get_tpot", &PerfMetrics::get_tpot)
-        .def("get_ttft", &PerfMetrics::get_ttft)
-        .def("get_load_time", &PerfMetrics::get_load_time)
         .def("__add__", &PerfMetrics::operator+)
         .def("__iadd__", &PerfMetrics::operator+=)
         .def_readonly("raw_metrics", &PerfMetrics::raw_metrics);
@@ -708,17 +826,17 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("input_ids", &TokenizedInputs::input_ids)
         .def_readwrite("attention_mask", &TokenizedInputs::attention_mask);
 
-    py::class_<EncodedResults>(m, "EncodedResults")
+    py::class_<EncodedResults>(m, "EncodedResults", encoded_results_docstring)
         .def_readonly("tokens", &EncodedResults::tokens)
         .def_readonly("scores", &EncodedResults::scores)
         .def_readonly("perf_metrics", &EncodedResults::perf_metrics);
 
-    py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase")  // Change the holder form unique_ptr to shared_ptr
+    py::class_<StreamerBase, ConstructableStreamer, std::shared_ptr<StreamerBase>>(m, "StreamerBase", streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
         .def(py::init<>())
-        .def("put", &StreamerBase::put)
-        .def("end", &StreamerBase::end);
+        .def("put", &StreamerBase::put, "Put is called every time new token is decoded. Returns a bool flag to indicate whether generation should be stoped, if return true generation stops")
+        .def("end", &StreamerBase::end, "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
 
-    py::class_<GenerationResult>(m, "GenerationResult")
+    py::class_<GenerationResult>(m, "GenerationResult", generation_result_docstring)
         .def(py::init<>())
         .def_readonly("m_request_id", &GenerationResult::m_request_id)
         .def_property("m_generation_ids",
@@ -753,7 +871,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             return res;
         });
 
-    py::class_<SchedulerConfig>(m, "SchedulerConfig")
+    py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
         .def(py::init<>())
         .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
         .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
@@ -763,7 +881,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
         .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching);
 
-    py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline")
+    py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
         .def(py::init([](const std::string& model_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
             ScopedVar env_manager(ov_tokenizers_module_path());
             return std::make_unique<ContinuousBatchingPipeline>(model_path, scheduler_config, device, properties_to_any_map(llm_plugin_config), properties_to_any_map(tokenizer_plugin_config));

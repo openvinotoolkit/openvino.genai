@@ -42,8 +42,10 @@ private:
 
 private:
     struct KVCacheDesc {
+        uint32_t max_prompt_size;
         uint32_t total_size;
         uint32_t num_stored_tokens;
+        uint32_t dim;
     };
 
     // FIXME: Ideally, we don't need to keep those

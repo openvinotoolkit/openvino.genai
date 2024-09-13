@@ -2,6 +2,7 @@ import argparse
 import difflib
 import os
 
+import json
 import pandas as pd
 from datasets import load_dataset
 from optimum.exporters import TasksManager
@@ -11,18 +12,21 @@ from transformers import AutoConfig, AutoTokenizer
 
 from . import Evaluator
 
-TasksManager._SUPPORTED_MODEL_TYPE[
-    "stablelm-epoch"
-] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
+TasksManager._SUPPORTED_MODEL_TYPE["stablelm-epoch"] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
 NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args(
     num_layers="num_hidden_layers",
     num_attention_heads="num_attention_heads",
 )
 
 
-def load_model(model_id):
+def load_model(model_id, device="CPU", ov_config=None):
+    if ov_config:
+        with open(ov_config) as f:
+            ov_options = json.load(f)
+    else:
+        ov_options = None
     try:
-        model = OVModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
+        model = OVModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device=device, ov_config=ov_options)
     except ValueError:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
         model = OVModelForCausalLM.from_pretrained(
@@ -30,6 +34,8 @@ def load_model(model_id):
             config=config,
             trust_remote_code=True,
             use_cache=True,
+            device=device,
+            ov_config=ov_options
         )
     return model
 
@@ -132,6 +138,18 @@ def parse_args():
         action="store_true",
         help="Print results and their difference",
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="CPU",
+        help="Device to run the model, e.g. 'CPU', 'GPU'.",
+    )
+    parser.add_argument(
+        "--ov-config",
+        type=str,
+        default=None,
+        help="Path to the JSON file that contains OpenVINO Runtime configuration.",
+    )
 
     return parser.parse_args()
 
@@ -202,7 +220,7 @@ def main():
             num_samples=args.num_samples,
         )
     else:
-        base_model = load_model(args.base_model)
+        base_model = load_model(args.base_model, args.device, args.ov_config)
         evaluator = Evaluator(
             base_model=base_model,
             test_data=prompts,
@@ -215,7 +233,7 @@ def main():
         del base_model
 
     if args.target_model:
-        target_model = load_model(args.target_model)
+        target_model = load_model(args.target_model, args.device, args.ov_config)
         all_metrics_per_question, all_metrics = evaluator.score(target_model)
         print("Metrics for model: ", args.target_model)
         print(all_metrics)

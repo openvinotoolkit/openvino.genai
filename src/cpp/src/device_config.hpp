@@ -72,6 +72,16 @@ public:
         m_head_size = head_size;
         m_num_decoder_layers = num_decoder_layers;
 
+        if (m_device == "CPU") {
+            // Scale, zero point and quantized data will be stored together.
+            // The layout for per token per head:
+            // |scale(f32)|zeropoint(f32)|quantized data(u8,idx_1)|quantized data(u8,idx_2)|...|quantized data(u8,idx_head_size)|
+            // so, we have to extend head_size by 8, which is sizeof(float)
+            // for scale and sizeof(float) for zeropoint
+            if (m_kv_cache_type == ov::element::u8)
+                m_head_size += 8;
+        }
+
         if (m_num_kv_blocks == 0) {
             OPENVINO_ASSERT(m_cache_size > 0, "num_kv_blocks or cache_size should be more than zero.");
             size_t size_in_bytes = m_cache_size * 1024 * 1024 * 1024;

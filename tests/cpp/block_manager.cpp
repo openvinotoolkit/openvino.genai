@@ -18,7 +18,8 @@ TEST(TestBlockManager, general_test) {
         ov::Tensor(ov::element::i64, {
         prompt_ids.size()}, prompt_ids.data()),
         ov::genai::beam_search(),
-        4);
+        4, 
+        false);
     auto sequence = sequence_group->get_not_finished_sequences()[0];
     bm.allocate(sequence, 6);
     auto seq_id = sequence->get_id();
@@ -50,13 +51,16 @@ TEST(TestBlockManager, required_blocks_count) {
         ov::Tensor(ov::element::i64, {
         tokens.size()}, tokens.data()),
         ov::genai::beam_search(),
-        4);
+        4,
+        false);
+    sequence_group->set_sequence_group_ptr(sequence_group);
     sequence_group->schedule_tokens(5);
     auto required_blocks = bm.required_blocks_count(sequence_group);
     EXPECT_EQ(required_blocks, 2);
     EXPECT_TRUE(bm.can_append_slots(sequence_group));
     bm.append_slots(sequence_group);
     EXPECT_EQ(bm.num_free_blocks(), 6);
+    EXPECT_EQ(bm.get_number_of_blocks_occupied_by_sequence(sequence_group), 2);
 
     sequence_group->finish_iteration();
     auto sequence_to_fork = sequence_group->get_running_sequences()[0];    
@@ -64,11 +68,13 @@ TEST(TestBlockManager, required_blocks_count) {
         const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
         bm.fork_sequence(sequence_to_fork->get_id(), forked_sequence->get_id());
     }
+    EXPECT_EQ(bm.get_number_of_blocks_occupied_by_sequence(sequence_group), 2);
     sequence_group->schedule_tokens(1);
     required_blocks = bm.required_blocks_count(sequence_group);
     EXPECT_EQ(required_blocks, 4);
     EXPECT_TRUE(bm.can_append_slots(sequence_group));
     bm.append_slots(sequence_group);
+    EXPECT_EQ(bm.get_number_of_blocks_occupied_by_sequence(sequence_group), 6);
     EXPECT_EQ(bm.num_free_blocks(), 2);
     sequence_group->finish_iteration();
 
