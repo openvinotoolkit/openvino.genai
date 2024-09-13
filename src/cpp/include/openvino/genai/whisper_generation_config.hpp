@@ -56,7 +56,7 @@ public:
 
     bool is_multilingual = true;
 
-    //  A list containing tokens that will be supressed at the beginning of the sampling process.
+    // A list containing tokens that will be supressed at the beginning of the sampling process.
     std::vector<int64_t> begin_suppress_tokens;
 
     // A list containing the non-speech tokens that will be supressed during generation.

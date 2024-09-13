@@ -25,53 +25,69 @@ namespace utils = ov::genai::pybind::utils;
 namespace {
 
 auto whisper_generate_docstring = R"(
-    Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
+    High level generate that receives raw speech as a vector of floats and returns decoded output.
     
-    :param inputs: inputs in the form of string, list of strings or tokenized input_ids
-    :type inputs: str, List[str], ov.genai.TokenizedInputs, or ov.Tensor
+    :param raw_speech_input: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
+    :type raw_speech_input: List[float]
     
     :param generation_config: generation_config
-    :type generation_config: GenerationConfig or a Dict
+    :type generation_config: WhisperGenerationConfig or a Dict
 
     :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
     :type : Callable[[str], bool], ov.genai.StreamerBase
 
-    :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+    :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
     :type : Dict
 
     :return: return results in encoded, or decoded form depending on inputs type
-    :rtype: DecodedResults, EncodedResults, str
+    :rtype: DecodedResults
 )";
 
 auto whisper_generation_config_docstring = R"(
     WhisperGenerationConfig parameters
-    max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
+    max_length: the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
                 `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
+    type: int
+
     max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
-    ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
-    eos_token_id:  token_id of <eos> (end of sentence)
+    type: int
 
-    Beam search specific parameters:
-    num_beams:         number of beams for beam search. 1 disables beam search.
-    num_beam_groups:   number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
-    diversity_penalty: value is subtracted from a beam's score if it generates the same token as any beam from other group at a particular time.
-    length_penalty:    exponential penalty to the length that is used with beam-based generation. It is applied as an exponent to
-        the sequence length, which in turn is used to divide the score of the sequence. Since the score is the log
-        likelihood of the sequence (i.e. negative), `length_penalty` > 0.0 promotes longer sequences, while
-        `length_penalty` < 0.0 encourages shorter sequences.
-    num_return_sequences: the number of sequences to return for grouped beam search decoding.
-    no_repeat_ngram_size: if set to int > 0, all ngrams of that size can only occur once.
-    stop_criteria:        controls the stopping condition for grouped beam search. It accepts the following values: 
-        "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates; 
-        "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
-        "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
+    eos_token_id: End of stream token id.
+    type: int
 
-    Random sampling parameters:
-    temperature:        the value used to modulate token probabilities for random sampling.
-    top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
-    top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
-    do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
-    repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.    
+    Whisper specific parameters:
+
+    decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
+    type: int
+
+    language_token_id: The language token id of the transcription text. It is appended to the start of the sequence for
+                       multilingual speech recognition, e.g. for Spanish the token id corresponding to the "<|es|>" is appended to the
+                       start of sequence.
+    type: int
+    
+    pad_token_id: Padding token id.
+    type: int
+    
+    translate_token_id: Translate token id.
+    type: int
+    
+    transcribe_token_id: Transcribe token id.
+    type: int
+    
+    no_timestamps_token_id: No timestamps token id.
+    type: int
+    
+    begin_timestamps_token_id: Begin timestamps token id.
+    type: int
+    
+    is_multilingual:
+    type: bool
+    
+    begin_suppress_tokens: A list containing tokens that will be supressed at the beginning of the sampling process.
+    type: list[int]
+
+    suppress_tokens: A list containing the non-speech tokens that will be supressed during generation.
+    type: list[int]
 )";
 
 OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const OptionalWhisperGenerationConfig& config,
@@ -125,8 +141,8 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
         } else {
             throw(std::invalid_argument(
                 "'" + key +
-                "' is incorrect GenerationConfig parameter name. "
-                "Use help(openvino_genai.GenerationConfig) to get list of acceptable parameters."));
+                "' is incorrect WhisperGenerationConfig parameter name. "
+                "Use help(openvino_genai.WhisperGenerationConfig) to get list of acceptable parameters."));
         }
     }
 
@@ -188,6 +204,7 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("transcribe_token_id", &WhisperGenerationConfig::transcribe_token_id)
         .def_readwrite("begin_timestamps_token_id", &WhisperGenerationConfig::begin_timestamps_token_id)
         .def_readwrite("no_timestamps_token_id", &WhisperGenerationConfig::no_timestamps_token_id)
+        .def_readwrite("is_multilingual", &WhisperGenerationConfig::is_multilingual)
         .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id);
 
     py::class_<WhisperPipeline>(m, "WhisperPipeline")
@@ -240,7 +257,8 @@ void init_whisper_pipeline(py::module_& m) {
                 return call_whisper_common_generate(pipe, raw_speech_input, generation_config, streamer, kwargs);
             },
             py::arg("raw_speech_input"),
-            "List of floats representing raw speech audio",
+            "List of floats representing raw speech audio. "
+            "Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.",
             py::arg("generation_config") = std::nullopt,
             "generation_config",
             py::arg("streamer") = std::monostate(),

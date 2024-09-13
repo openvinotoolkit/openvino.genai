@@ -52,12 +52,11 @@ public:
 
     /**
      * @brief High level generate that receives raw speech as a vector of floats and returns decoded output.
-     * Raw speech data required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
      *
-     * @param raw_speech_input raw speech input
+     * @param raw_speech_input raw speech input. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
      * @param generation_config optional GenerationConfig
      * @param streamer optional streamer
-     * @return DecodedResults decoded resulting text
+     * @return DecodedResults decoded resulting text transcription
      */
     DecodedResults generate(const RawSpeechInput& raw_speech_input,
                             OptionalWhisperGenerationConfig generation_config = std::nullopt,
@@ -70,7 +69,7 @@ public:
      *
      * @param raw_speech_input raw speech input
      * @param properties properties
-     * @return DecodedResults decoded resulting text
+     * @return DecodedResults decoded resulting text transcription
      */
     template <typename... Properties>
     util::EnableIfAllStringAny<DecodedResults, Properties...> generate(const RawSpeechInput& raw_speech_input,
