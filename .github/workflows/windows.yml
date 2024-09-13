@@ -295,45 +295,51 @@ jobs:
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
 
       - name: Build genai libs
+        shell: cmd
         run: |
-          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ./ -B ./build/
-          cmake --build ./build/ --config ${{ matrix.build-type }} --target package -j
+          call "${{ env.OV_INSTALL_DIR }}\setupvars.bat"
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S .\ -B .\build
+          cmake --build .\build --config ${{ matrix.build-type }} --target package -j
 
       - name: Build and Install dependencies
+        shell: cmd
         run: |
-          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --find-links ${env:OV_INSTALL_DIR}/tools
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --find-links ${env:OV_INSTALL_DIR}/tools
+          call "${{ env.OV_INSTALL_DIR }}\setupvars.bat"
+          python -m pip install .\thirdparty\openvino_tokenizers\[transformers] --find-links ${env:OV_INSTALL_DIR}\tools
+          python -m pip install --upgrade-strategy eager -r .\samples\requirements.txt --find-links ${env:OV_INSTALL_DIR}\tools
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 
       - name: Install samples
+        shell: cmd
         run: |
-          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          cmake --install ./build/ --config ${{ matrix.build-type }} --prefix ${{ env.OV_INSTALL_DIR }}
+          call "${{ env.OV_INSTALL_DIR }}\setupvars.bat"
+          cmake --install .\build\ --config ${{ matrix.build-type }} --prefix ${{ env.OV_INSTALL_DIR }}
 
       - name: Build samples (Release)
         if: ${{ 'Release' == matrix.build-type }} # build_samples enforces Release build
+        shell: cmd
         run: |
-          & ${{ env.OV_INSTALL_DIR }}\samples\cpp\build_samples.ps1 -i ${{ github.workspace }}/samples_install
+          call ${{ env.OV_INSTALL_DIR }}\samples\cpp\build_samples_msvc.bat -i ${{ github.workspace }}\samples_install
 
       - name: Build samples (Debug)
         if: ${{ 'Release' != matrix.build-type }}
+        shell: cmd
         run: |
-          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          cmake -DCMAKE_BUILD_TYPE= -S ./ov/samples/cpp/ -B "samples build"
+          call "${{ env.OV_INSTALL_DIR }}\setupvars.bat"
+          cmake -DCMAKE_BUILD_TYPE= -S .\ov\samples\cpp\ -B "samples build"
           cmake --build "samples build" --config ${{ matrix.build-type }} -j
           cmake --install "samples build" --config ${{ matrix.build-type }} --component samples_bin --prefix samples_install
 
       - name: Test C++ samples (greedy_causal_lm)
+        shell: cmd
         run: |
-          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          Start-Process -FilePath "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm.exe" -ArgumentList "TinyLlama-1.1B-Chat-v1.0 ''"
+          call "${{ env.OV_INSTALL_DIR }}\setupvars.bat"
+          start "" "${{ github.workspace }}\samples_install\samples_bin\greedy_causal_lm.exe" "TinyLlama-1.1B-Chat-v1.0" ""
 
       - name: Test python samples (multinomial_causal_lm)
-        if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
+        shell: cmd
         run: |
-          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          call "${{ env.OV_INSTALL_DIR }}\setupvars.bat"
           python ${{ env.OV_INSTALL_DIR }}\samples\python\multinomial_causal_lm\multinomial_causal_lm.py TinyLlama-1.1B-Chat-v1.0 0
 
   Overall_Status:
