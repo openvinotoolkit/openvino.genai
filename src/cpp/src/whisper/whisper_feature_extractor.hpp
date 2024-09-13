@@ -24,7 +24,7 @@ public:
     explicit WhisperFeatureExtractor(const std::string& preprocessor_json_path);
 
     /**
-     * @brief Create 2d log-mel spectrogram from raw speech data
+     * @brief Create a flattened 2d log-mel spectrogram [feature_size, nb_max_frames] from raw speech data
      *
      * @see [huggingface introduction to audio
      * data](https://huggingface.co/learn/audio-course/chapter1/audio_data#mel-spectrogram)
