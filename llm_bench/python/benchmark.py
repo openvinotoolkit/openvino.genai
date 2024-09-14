@@ -10,6 +10,7 @@ import logging as log
 import numpy as np
 from openvino.runtime import get_version
 import PIL
+from PIL import Image
 import hashlib
 import traceback
 import llm_bench_utils.metrics_print
@@ -778,8 +779,8 @@ def main():
 
 if __name__ == '__main__':
     if os.getenv('OMP_WAIT_POLICY') is None:
-       os.putenv('OMP_WAIT_POLICY', 'PASSIVE')
-       os.system('echo [ INFO ] OMP_WAIT_POLICY=$OMP_WAIT_POLICY')
+        os.putenv('OMP_WAIT_POLICY', 'PASSIVE')
+        os.system('echo [ INFO ] OMP_WAIT_POLICY=$OMP_WAIT_POLICY')
     import torch
     from transformers import set_seed
     import llm_bench_utils.ov_utils
