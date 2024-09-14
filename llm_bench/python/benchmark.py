@@ -741,6 +741,10 @@ def main():
         out_str += ', openvino runtime version: {}'.format(get_version())
         if model_args['config'].get('PREC_BF16') and model_args['config']['PREC_BF16'] is True:
             log.warning('[Warning] Param bf16/prec_bf16 only work for framework pt. It will be disabled.')
+        if model_args['num_beams'] > 1:
+            torch.set_num_threads(torch.get_num_threads() / 2)
+        else:
+            torch.set_num_threads(1)
     log.info(out_str)
     if args.memory_consumption:
         mem_consumption.start_collect_mem_consumption_thread()
