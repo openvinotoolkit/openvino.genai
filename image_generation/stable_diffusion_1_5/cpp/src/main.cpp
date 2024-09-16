@@ -157,27 +157,37 @@ StableDiffusionModels compile_models(const std::string& model_path,
 
     // Text encoder
     {
-        Timer t("Loading and compiling text encoder");
-        auto text_encoder_model = core.read_model(model_path + "/text_encoder/openvino_model.xml");
-        if (!use_dynamic_shapes) {
-            reshape_text_encoder(text_encoder_model, batch_size, TOKENIZER_MODEL_MAX_LENGTH);
+        std::shared_ptr<ov::Model> text_encoder_model;
+        {
+            Timer t("Loading text encoder");
+            text_encoder_model = core.read_model(model_path + "/text_encoder/openvino_model.xml");
+            if (!use_dynamic_shapes) {
+                reshape_text_encoder(text_encoder_model, batch_size, TOKENIZER_MODEL_MAX_LENGTH);
+            }
         }
         if(lora_config) {
+            Timer tt("Prepare text encoder for LoRA adapter");
             models.adapter_controller_text_encoder = ov::genai::AdapterController(text_encoder_model, lora_config, "lora_te", device);
         }
+        Timer t("Compiling text encoder");
         models.text_encoder = core.compile_model(text_encoder_model, device);
     }
 
     // UNet
     {
-        Timer t("Loading and compiling UNet");
-        auto unet_model = core.read_model(model_path + "/unet/openvino_model.xml");
-        if (!use_dynamic_shapes) {
-            reshape_unet(unet_model, batch_size, height, width, TOKENIZER_MODEL_MAX_LENGTH);
+        std::shared_ptr<ov::Model> unet_model;
+        {
+            Timer t("Loading UNet");
+            unet_model = core.read_model(model_path + "/unet/openvino_model.xml");
+            if (!use_dynamic_shapes) {
+                reshape_unet(unet_model, batch_size, height, width, TOKENIZER_MODEL_MAX_LENGTH);
+            }
         }
         if(lora_config) {
+            Timer tt("Prepare UNet for LoRA adapter");
             models.adapter_controller_unet = ov::genai::AdapterController(unet_model, lora_config, "lora_unet", device);
         }
+        Timer t("Compiling UNet");
         models.unet = core.compile_model(unet_model, device);
     }
 
