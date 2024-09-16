@@ -107,7 +107,7 @@ public:
             // DEBUG_PRINT("Prepare model for LoRA");
             // Read model explicitly to be able to inject the adapters
             auto model = core.read_model(model_path / "openvino_model.xml");
-            m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.");   // TODO: Make the prefix name configurable
+            m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable
             //ov::serialize(model, "after_lora.xml");
             m_model_runner = core.compile_model(model, device).create_infer_request();
             m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);

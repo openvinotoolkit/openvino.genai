@@ -163,7 +163,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
             reshape_text_encoder(text_encoder_model, batch_size, TOKENIZER_MODEL_MAX_LENGTH);
         }
         if(lora_config) {
-            models.adapter_controller_text_encoder = ov::genai::AdapterController(text_encoder_model, lora_config, "lora_te");
+            models.adapter_controller_text_encoder = ov::genai::AdapterController(text_encoder_model, lora_config, "lora_te", device);
         }
         models.text_encoder = core.compile_model(text_encoder_model, device);
     }
@@ -176,7 +176,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
             reshape_unet(unet_model, batch_size, height, width, TOKENIZER_MODEL_MAX_LENGTH);
         }
         if(lora_config) {
-            models.adapter_controller_unet = ov::genai::AdapterController(unet_model, lora_config, "lora_unet");
+            models.adapter_controller_unet = ov::genai::AdapterController(unet_model, lora_config, "lora_unet", device);
         }
         models.unet = core.compile_model(unet_model, device);
     }

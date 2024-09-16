@@ -734,17 +734,6 @@ Adapter::Adapter(const std::string& path) :
 }
 
 
-struct AdapterControllerImpl {
-    virtual void apply (ov::InferRequest& infer_request, const AdapterConfig& config) = 0;
-    virtual void apply (ov::InferRequest& infer_request) = 0;
-    static std::shared_ptr<Adapter::Impl> get_adapter_impl(const Adapter& adapter) {
-        return adapter.m_pimpl;
-    }
-
-    virtual void force_full_apply(bool full_apply) = 0;
-};
-
-
 bool operator== (const Adapter& a, const Adapter& b) {
     return a.m_pimpl == b.m_pimpl;
 }
@@ -755,14 +744,14 @@ bool operator< (const Adapter& a, const Adapter& b) {
 }
 
 
-struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
+struct AdapterControllerImpl {
     std::vector<LoRAVarIDs> variable_ids;
     const std::string prefix;
     AdapterConfig current_config;
     bool need_full_apply = true;
     InferRequestSignatureCache lora_state_evaluators;
 
-    AdapterControllerImplSeparateState(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix) :
+    AdapterControllerImpl(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix) :
         prefix(prefix),
         current_config(config),  // FIXME: Compare current and passed configs and change incrementally
         lora_state_evaluators("CPU")    // FIXME: Try to run on the same device that is used for model inference
@@ -826,6 +815,10 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         model->validate_nodes_and_infer_types();    // FIXME: For debugging purposes only
     }
 
+    static std::shared_ptr<Adapter::Impl> get_adapter_impl(const Adapter& adapter) {
+        return adapter.m_pimpl;
+    }
+
     struct ConfigChanged {
         bool mode;
         bool alpha = false;
@@ -845,10 +838,6 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         //     adapters2(config2.adapters.begin(), config2.adapters.end());
         const auto& adapters1 = config1.get_adapters(), adapters2 = config2.get_adapters();
 
-        // DEBUG_PRINT(config1.adapters.size());
-        // DEBUG_PRINT(config2.adapters.size());
-        // DEBUG_PRINT("adapters1 != adapters2: " << (adapters1 != adapters2));
-
         if(adapters1 != adapters2) {
             diff.adapter = true;
             diff.alpha = true;
@@ -860,11 +849,13 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         return diff;
     }
 
-    void apply (ov::InferRequest& infer_request, const AdapterConfig& config) override {
+    void apply (ov::InferRequest& infer_request, const AdapterConfig& config) {
         // FIXME: If a part of LoRA state tensors are not set here, then need to carefully reset state in LLMPipeline where global reset is called after the generation
 
         const auto diff = compare_configs(current_config, config);
-        OPENVINO_ASSERT(!diff.mode, "AdapterConfig::mode cannot be changed and should be configured once for a model at the initialization");
+        OPENVINO_ASSERT(
+            !diff.mode || config.get_mode() == AdapterConfig::MODE_AUTO,  // MODE_AUTO in this call means that mode is not changed
+            "AdapterConfig::mode cannot be changed and should be configured once for a model at the initialization");
         OPENVINO_ASSERT(
             config.get_mode() == AdapterConfig::MODE_AUTO || config.get_mode() == AdapterConfig::MODE_DYNAMIC || config.get_mode() == AdapterConfig::MODE_STATIC_RANK || (!diff.alpha && !diff.adapter),
             "Cannot change adapters and/or the alphas when not one of the dynamic modes are used.");
@@ -881,7 +872,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         }
     }
 
-    void force_full_apply(bool full_apply) override {
+    void force_full_apply(bool full_apply) {
         need_full_apply = full_apply;
     }
 
@@ -908,7 +899,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         // TODO: Forced to use variable_id instead of index to address the state tensors, require the same order for state as for variables from plugins
 
         // Convert LoRAVarIDs to LoRAIndices to speedup search for state with a given name
-        // TODO: If state order is stable, then this should be done this mapping once for a given infer request, TODO: cache it based on the infer request
+        // TODO: If state order is stable, then the mapping should be done once for a given infer request, TODO: cache it based on the infer request
         std::map<std::string, size_t> state_name_to_index;
         for(size_t i = 0; i < state.size(); ++i) {
             auto name = state[i].get_name();
@@ -921,7 +912,7 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
             lora_indices.alpha = state_name_to_index.at(lora_var_ids.alpha.variable_id);
             lora_indices.A = state_name_to_index.at(lora_var_ids.A.variable_id);
             lora_indices.B = state_name_to_index.at(lora_var_ids.B.variable_id);
-            lora_indices.name = lora_var_ids.name;  // FIXME: Redundant
+            lora_indices.name = lora_var_ids.name;  // TODO: Redundant?
 
             set_lora_tensors(state, lora_var_ids, lora_indices, weight_getters);
         }
@@ -1150,15 +1141,45 @@ struct AdapterControllerImplSeparateState : public AdapterControllerImpl {
         return new_tensors;
     }
 
-    void apply (ov::InferRequest& infer_request) override {
+    void apply (ov::InferRequest& infer_request) {
         return apply(infer_request, current_config);
     }
 };
 
 
-AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix) :
-    m_pimpl(std::make_shared<AdapterControllerImplSeparateState>(model, config, prefix)) {
-    // FIXME: Create Static lora if user requested, now always dynamic LoRA is created
+AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix, std::string device)
+{
+    // If AdapterConfig::MODE_AUTO is used, then set real mode depending on the device capabilities
+    // TODO: Remove this code when devices become aligned on their capabilities for LoRA adapaters
+    if (config.get_mode() == AdapterConfig::MODE_AUTO) {
+        static const std::map<std::string, AdapterConfig::Mode> default_modes {
+            {"CPU", AdapterConfig::MODE_DYNAMIC},
+            {"GPU", AdapterConfig::MODE_STATIC_RANK},
+            {"NPU", AdapterConfig::MODE_STATIC},
+        };
+        if(device.find("GPU") != std::string::npos) {  // to handle GPU device variants which doesn't matter for adapter mode
+            device = "GPU";
+        }
+        auto default_mode = default_modes.find(device);
+        if(default_mode != default_modes.end()) {
+            AdapterConfig updated_config = config;
+            updated_config.set_mode(default_mode->second);
+            m_pimpl = std::make_shared<AdapterControllerImpl>(model, updated_config, prefix);
+            return;
+        } else {
+            std::string device_msg;
+            if(device.empty()) {
+                device_msg = "No device set";
+            } else {
+                device_msg = "Device \"" + device + "\" is unrecognized";
+            }
+            std::cout
+                << "[ WARNING ] " << device_msg << " to deduce default device-dependent LoRA application mode.\n"
+                << "This warning appears because no specific LoRA mode was set in AdapterConfig or MODE_AUTO was used explicitly.\n"
+                << "To avoid this warnign set one of the AdapterConfig::Mode values except MODE_AUTO.";
+        }
+    }
+    m_pimpl = std::make_shared<AdapterControllerImpl>(model, config, prefix);
 }
 
 

@@ -104,7 +104,8 @@ class OPENVINO_GENAI_EXPORTS AdapterController {
 public:
 
     AdapterController() = default;
-    AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix);
+
+    AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix, std::string device = "");
 
     // Call it every time when adapter config is changed; if adapter is configured as a static one, this call is not required
     void apply(ov::InferRequest& request, const AdapterConfig& config);
