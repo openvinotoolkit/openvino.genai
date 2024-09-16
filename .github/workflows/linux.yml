@@ -1,4 +1,4 @@
-name: Linux (Ubuntu 20.04, Python 3.8)
+name: Linux (Ubuntu 20.04, Python 3.9)
 on:
   workflow_dispatch:
   pull_request:
@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.8'
-  OV_BRANCH: 'master'
+  PYTHON_VERSION: '3.9'
+  OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   OV_TARBALL: ''
 
 permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions

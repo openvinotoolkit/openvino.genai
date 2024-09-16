@@ -13,7 +13,7 @@ permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b
 
 env:
   WORKING_DIRECTORY: "./image_generation/stable_diffusion_1_5/cpp/"
-  PYTHON_VERSION: '3.8'
+  PYTHON_VERSION: '3.10'
   LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/l_openvino_toolkit_ubuntu20_2024.5.0.dev20240830_x86_64.tgz
   WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/w_openvino_toolkit_windows_2024.5.0.dev20240830_x86_64.zip
   OV_INSTALL_DIR: ${{ github.workspace }}/ov
