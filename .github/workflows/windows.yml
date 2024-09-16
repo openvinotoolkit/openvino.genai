@@ -327,9 +327,8 @@ jobs:
 
       - name: Test C++ samples (greedy_causal_lm)
         run: |
-          $ErrorActionPreference = 'Stop'
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          Start-Process -FilePath "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm.exe" -ArgumentList "TinyLlama-1.1B-Chat-v1.0 ''"
+          & "${{ github.workspace }}/samples_install/samples_bin/greedy_causal_lm.exe" "TinyLlama-1.1B-Chat-v1.0" ""
 
       - name: Test python samples (multinomial_causal_lm)
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
