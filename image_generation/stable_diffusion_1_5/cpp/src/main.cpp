@@ -21,16 +21,14 @@ const size_t VAE_SCALE_FACTOR = 8;
 
 class Timer {
     const decltype(std::chrono::steady_clock::now()) m_start;
-    std::string m_scope;
 
 public:
-    Timer(const std::string& scope) : m_start(std::chrono::steady_clock::now()), m_scope(scope) {
-        (std::cout << m_scope << "...\n").flush();
+    Timer(const std::string& scope) : m_start(std::chrono::steady_clock::now()) {
+        (std::cout << scope << ": ").flush();
     }
 
     ~Timer() {
         auto m_end = std::chrono::steady_clock::now();
-        std::cout << m_scope << ": ";
         std::cout << std::chrono::duration<double, std::milli>(m_end - m_start).count() << " ms" << std::endl;
     }
 };
@@ -146,7 +144,7 @@ StableDiffusionModels compile_models(const std::string& model_path,
 
     // read LoRA weights
     ov::genai::Adapter lora_adapter;
-    ov::genai::AdapterConfig lora_config(ov::genai::AdapterConfig::MODE_FUSE);
+    ov::genai::AdapterConfig lora_config(ov::genai::AdapterConfig::MODE_STATIC);
     if (!lora_path.empty()) {
         Timer t("Loading LoRA weights");
         DEBUG_PRINT("Adapters registered:" << lora_path.size());
