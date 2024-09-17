@@ -49,6 +49,9 @@ template <>
 struct json_type_traits<std::vector<int64_t>> { static constexpr auto json_value_t = nlohmann::json::value_t::array; };
 
 template <>
+struct json_type_traits<std::map<std::string, int64_t>> { static constexpr auto json_value_t = nlohmann::json::value_t::object; };
+
+template <>
 struct json_type_traits<std::set<std::string>> { static constexpr auto json_value_t = nlohmann::json::value_t::array; };
 
 template <>

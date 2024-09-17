@@ -130,13 +130,24 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
 }
 
 std::vector<int64_t> prepare_input_ids(const ov::genai::WhisperGenerationConfig& config) {
-    if (config.is_multilingual) {
-        return std::vector<int64_t>{config.decoder_start_token_id,
-                                    config.language_token_id,
-                                    config.transcribe_token_id,
-                                    config.no_timestamps_token_id};
+    if (!config.is_multilingual) {
+        return std::vector<int64_t>{config.decoder_start_token_id, config.no_timestamps_token_id};
     }
-    return std::vector<int64_t>{config.decoder_start_token_id, config.no_timestamps_token_id};
+
+    int64_t language_token_id = config.language_token_id;
+    if (!config.language.empty() && config.lang_to_id.count(config.language)) {
+        language_token_id = config.lang_to_id.at(config.language);
+    }
+
+    int64_t task_token_id = config.transcribe_token_id;
+    if (config.task == "translate") {
+        task_token_id = config.translate_token_id;
+    }
+
+    return std::vector<int64_t>{config.decoder_start_token_id,
+                                language_token_id,
+                                task_token_id,
+                                config.no_timestamps_token_id};
 }
 
 std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_state,

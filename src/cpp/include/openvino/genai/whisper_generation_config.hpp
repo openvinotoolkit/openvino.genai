@@ -56,6 +56,12 @@ public:
 
     bool is_multilingual = true;
 
+    std::string language = "<|en|>";
+
+    std::map<std::string, int64_t> lang_to_id;
+
+    std::string task = "transcribe";
+
     // A list containing tokens that will be supressed at the beginning of the sampling process.
     std::vector<int64_t> begin_suppress_tokens;
 
@@ -95,6 +101,8 @@ static constexpr ov::Property<int64_t> transcribe_token_id{"transcribe_token_id"
 static constexpr ov::Property<int64_t> translate_token_id{"translate_token_id"};
 static constexpr ov::Property<int64_t> no_timestamps_token_id{"no_timestamps_token_id"};
 static constexpr ov::Property<int64_t> begin_timestamps_token_id{"begin_timestamps_token_id"};
+static constexpr ov::Property<std::string> language{"language"};
+static constexpr ov::Property<std::string> task{"task"};
 
 }  // namespace genai
 }  // namespace ov

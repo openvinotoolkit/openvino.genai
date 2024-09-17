@@ -88,6 +88,16 @@ auto whisper_generation_config_docstring = R"(
 
     suppress_tokens: A list containing the non-speech tokens that will be supressed during generation.
     type: list[int]
+
+    language: Language token to use for generation in the form of <|en|>.
+              You can find all the possible language tokens in the model.generation_config.lang_to_id dictionary.
+    type: str
+    
+    lang_to_id: Language token to token_id map. Initialized from the generation_config.lang_to_id dictionary.
+    type: Dict[str, int]
+    
+    task: Task to use for generation, either “translate” or “transcribe”
+    type: int
 )";
 
 OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const OptionalWhisperGenerationConfig& config,
@@ -136,6 +146,12 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
             res_config.suppress_tokens = py::cast<std::vector<int64_t>>(item.second);
         } else if (key == "is_multilingual") {
             res_config.is_multilingual = py::cast<bool>(item.second);
+        } else if (key == "language") {
+            res_config.language = py::cast<std::string>(item.second);
+        } else if (key == "lang_to_id") {
+            res_config.lang_to_id = py::cast<std::map<std::string, int64_t>>(item.second);
+        } else if (key == "task") {
+            res_config.task = py::cast<std::string>(item.second);
         } else if (key == "eos_token_id") {
             res_config.set_eos_token_id(py::cast<int>(item.second));
         } else {
@@ -205,6 +221,9 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("begin_timestamps_token_id", &WhisperGenerationConfig::begin_timestamps_token_id)
         .def_readwrite("no_timestamps_token_id", &WhisperGenerationConfig::no_timestamps_token_id)
         .def_readwrite("is_multilingual", &WhisperGenerationConfig::is_multilingual)
+        .def_readwrite("language", &WhisperGenerationConfig::language)
+        .def_readwrite("lang_to_id", &WhisperGenerationConfig::lang_to_id)
+        .def_readwrite("task", &WhisperGenerationConfig::task)
         .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id);
 
     py::class_<WhisperPipeline>(m, "WhisperPipeline")
