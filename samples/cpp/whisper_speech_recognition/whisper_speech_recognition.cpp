@@ -18,7 +18,7 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::WhisperGenerationConfig config{model_path + "/generation_config.json"};
     config.max_length = 100;
-    config.language = "<|en|>";
+    // config.language = "<|en|>";
     config.task = "transcribe";
 
     auto streamer = [](std::string word) {

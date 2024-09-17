@@ -92,8 +92,10 @@ void WhisperGenerationConfig::validate() const {
     OPENVINO_ASSERT(eos_token_id != -1 || max_new_tokens != SIZE_MAX || max_length != SIZE_MAX,
                     "Either 'eos_token_id', or 'max_new_tokens', or 'max_length' should be defined.");
 
-    OPENVINO_ASSERT(!language.empty(), "'language' must be provided.");
-    OPENVINO_ASSERT(lang_to_id.count(language), "'language' " + language + " must be provided in 'lang_to_id' map.");
+    if (language.has_value()) {
+        OPENVINO_ASSERT(lang_to_id.count(*language),
+                        "'language' " + *language + " must be provided in 'lang_to_id' map.");
+    }
 }
 }  // namespace genai
 }  // namespace ov

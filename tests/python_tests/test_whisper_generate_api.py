@@ -105,7 +105,7 @@ def get_samples_from_dataset(language: str = "en", length: int = 30):
         trust_remote_code=True,
     )
     ds = typing.cast(datasets.IterableDataset, ds)
-    return [next(iter(ds))["audio"]["array"] for _ in range(length)]
+    return [x["audio"]["array"] for x in ds.take(length)]
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
@@ -186,10 +186,10 @@ def test_max_new_tokens(model_descr, test_sample):
     model_id, path = model_descr
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
 
-    expected = opt_pipe(test_sample, max_new_tokens=10)["text"]
+    expected = opt_pipe(test_sample, max_new_tokens=30)["text"]
 
     genai_result = ov_genai.WhisperPipeline(str(path)).generate(
-        test_sample, max_new_tokens=10
+        test_sample, max_new_tokens=30
     )
 
     assert genai_result.texts[0] == expected
@@ -200,7 +200,7 @@ def test_max_new_tokens(model_descr, test_sample):
         str(path), tokenizer=tokenizer, device="CPU", config={"ENABLE_MMAP": False}
     )
     config = genai_pipeline.get_generation_config()
-    config.max_new_tokens = 10
+    config.max_new_tokens = 30
     genai_result = genai_pipeline.generate(test_sample, config)
 
     assert genai_result.texts[0] == expected
@@ -216,15 +216,15 @@ def test_language_mode_fr(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
 
     expected = opt_pipe(
-        test_sample, max_new_tokens=10, generate_kwargs={"language": "fr"}
+        test_sample, max_new_tokens=30, generate_kwargs={"language": "fr"}
     )
 
-    genai_result = pipe.generate(test_sample, max_new_tokens=10, language="<|fr|>")
+    genai_result = pipe.generate(test_sample, max_new_tokens=30, language="<|fr|>")
 
     assert genai_result.texts[0] == expected["text"]
 
     config = pipe.get_generation_config()
-    config.max_new_tokens = 10
+    config.max_new_tokens = 30
     config.language = "<|fr|>"
     genai_result = pipe.generate(test_sample, config)
 
@@ -241,15 +241,15 @@ def test_language_mode_de(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
 
     expected = opt_pipe(
-        test_sample, max_new_tokens=10, generate_kwargs={"language": "de"}
+        test_sample, max_new_tokens=30, generate_kwargs={"language": "de"}
     )
 
-    genai_result = pipe.generate(test_sample, max_new_tokens=10, language="<|de|>")
+    genai_result = pipe.generate(test_sample, max_new_tokens=30, language="<|de|>")
 
     assert genai_result.texts[0] == expected["text"]
 
     config = pipe.get_generation_config()
-    config.max_new_tokens = 10
+    config.max_new_tokens = 30
     config.language = "<|de|>"
     genai_result = pipe.generate(test_sample, config)
 
@@ -267,18 +267,18 @@ def test_task_mode(model_descr, test_sample):
 
     expected = opt_pipe(
         test_sample,
-        max_new_tokens=10,
+        max_new_tokens=30,
         generate_kwargs={"language": "fr", "task": "translate"},
     )
 
     genai_result = pipe.generate(
-        test_sample, max_new_tokens=10, language="<|fr|>", task="translate"
+        test_sample, max_new_tokens=30, language="<|fr|>", task="translate"
     )
 
     assert genai_result.texts[0] == expected["text"]
 
     config = pipe.get_generation_config()
-    config.max_new_tokens = 10
+    config.max_new_tokens = 30
     config.language = "<|fr|>"
     config.task = "translate"
     genai_result = pipe.generate(test_sample, config)
@@ -287,20 +287,70 @@ def test_task_mode(model_descr, test_sample):
 
     expected = opt_pipe(
         test_sample,
-        max_new_tokens=10,
+        max_new_tokens=30,
         generate_kwargs={"language": "ru", "task": "translate"},
     )
 
     genai_result = pipe.generate(
-        test_sample, max_new_tokens=10, language="<|ru|>", task="translate"
+        test_sample, max_new_tokens=30, language="<|ru|>", task="translate"
     )
 
     assert genai_result.texts[0] == expected["text"]
 
     config = pipe.get_generation_config()
-    config.max_new_tokens = 10
+    config.max_new_tokens = 30
     config.language = "<|ru|>"
     config.task = "translate"
     genai_result = pipe.generate(test_sample, config)
+
+    assert genai_result.texts[0] == expected["text"]
+
+    # seems to be equivalent to translate task
+    expected = opt_pipe(
+        test_sample,
+        max_new_tokens=30,
+        generate_kwargs={"language": "en", "task": "transcribe"},
+    )
+
+    genai_result = pipe.generate(
+        test_sample, max_new_tokens=30, language="<|en|>", task="transcribe"
+    )
+
+    assert genai_result.texts[0] == expected["text"]
+
+    config = pipe.get_generation_config()
+    config.max_new_tokens = 30
+    config.language = "<|en|>"
+    config.task = "transcribe"
+    genai_result = pipe.generate(test_sample, config)
+
+    assert genai_result.texts[0] == expected["text"]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "test_sample",
+    [
+        *get_samples_from_dataset(language="fr", length=2),
+        *get_samples_from_dataset(language="de", length=2),
+        *get_samples_from_dataset(language="es", length=2),
+    ],
+)
+@pytest.mark.precommit
+def test_language_autodetect(model_descr, test_sample):
+    model_id, path = model_descr
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    input_features = opt_pipe.feature_extractor(test_sample)
+    language_id = opt_pipe.model.detect_language(input_features["input_features"])[0]
+    # ensure detected language us not english
+    assert language_id != pipe.get_generation_config().lang_to_id["<|en|>"]
+
+    expected = opt_pipe(
+        test_sample,
+        max_new_tokens=30,
+    )
+
+    genai_result = pipe.generate(test_sample, max_new_tokens=30)
 
     assert genai_result.texts[0] == expected["text"]

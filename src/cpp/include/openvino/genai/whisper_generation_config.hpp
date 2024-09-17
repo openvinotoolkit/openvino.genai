@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/runtime/compiled_model.hpp"
 
@@ -31,11 +33,6 @@ public:
     // Corresponds to the ”<|startoftranscript|>” token.
     int64_t decoder_start_token_id = 50258;
 
-    // The language token id of the transcription text. It is appended to the start of the sequence for
-    // multilingual speech recognition, e.g. for Spanish the token id corresponding to the "<|es|>" is appended to the
-    // start of sequence.
-    int64_t language_token_id = 50259;
-
     // End of stream token id.
     int64_t eos_token_id = 50257;
 
@@ -56,7 +53,7 @@ public:
 
     bool is_multilingual = true;
 
-    std::string language = "<|en|>";
+    std::optional<std::string> language = std::nullopt;
 
     std::map<std::string, int64_t> lang_to_id;
 
@@ -95,7 +92,6 @@ public:
 static constexpr ov::Property<std::vector<int64_t>> begin_suppress_tokens{"begin_suppress_tokens"};
 static constexpr ov::Property<std::vector<int64_t>> suppress_tokens{"suppress_tokens"};
 static constexpr ov::Property<int64_t> decoder_start_token_id{"decoder_start_token_id"};
-
 static constexpr ov::Property<int64_t> pad_token_id{"pad_token_id"};
 static constexpr ov::Property<int64_t> transcribe_token_id{"transcribe_token_id"};
 static constexpr ov::Property<int64_t> translate_token_id{"translate_token_id"};
