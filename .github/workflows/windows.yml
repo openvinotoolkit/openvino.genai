@@ -336,10 +336,12 @@ jobs:
           python ${{ env.OV_INSTALL_DIR }}\samples\python\multinomial_causal_lm\multinomial_causal_lm.py TinyLlama-1.1B-Chat-v1.0 0
 
       - name: Cmake install - OpenVINO
+        if: ${{ always() }}
         run: |
           cmake --install ./build --config=${{ matrix.build-type }} --prefix=./genai_package
 
       - name: Pack Artifacts
+        if: ${{ always() }}
         run: |
           $file=Get-ChildItem -Path "./genai_package"
           $compress = @{
