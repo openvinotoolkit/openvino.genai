@@ -17,7 +17,9 @@ from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, 
     get_multinomial_temperature_top_p_and_top_k, DEFAULT_SCHEDULER_CONFIG, get_greedy_with_repetition_penalty, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     generate_and_compare_with_reference_text, get_greedy, get_greedy_with_min_and_max_tokens, \
-    get_beam_search, get_beam_search_min_and_max_tokens, get_multinomial_max_and_min_token, \
+    get_greedy_with_single_stop_string, get_greedy_with_multiple_stop_strings, get_greedy_with_multiple_stop_strings_no_match, \
+    get_beam_search, get_beam_search_min_and_max_tokens, get_beam_search_with_single_stop_string, \
+    get_beam_search_with_multiple_stop_strings, get_beam_search_with_multiple_stop_strings_no_match, get_multinomial_max_and_min_token, \
     get_multinomial_temperature_and_frequence_penalty, get_multinomial_temperature_and_presence_penalty, \
     generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty, get_scheduler_config
 
@@ -77,15 +79,40 @@ def test_eos_greedy(tmp_path):
     generate_and_compare_with_hf(model_id, prompts, generation_configs, scheduler_config, tmp_path)
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("generation_config", [get_greedy(), get_greedy_with_min_and_max_tokens(), get_greedy_with_repetition_penalty(), get_beam_search(), get_beam_search_min_and_max_tokens()],
+@pytest.mark.parametrize("generation_config", [get_greedy(), get_greedy_with_min_and_max_tokens(), get_greedy_with_repetition_penalty(), get_greedy_with_single_stop_string(),
+                                               get_greedy_with_multiple_stop_strings(), get_greedy_with_multiple_stop_strings_no_match(), 
+                                               get_beam_search(), get_beam_search_min_and_max_tokens(), get_beam_search_with_multiple_stop_strings_no_match(), ],
         ids=[
             "greedy",
             "greedy_with_min_and_max_tokens",
             "greedy_with_repetition_penalty",
+            "greedy_with_single_stop_string",
+            "greedy_with_multiple_stop_strings",
+            "greedy_with_multiple_stop_strings_no_match",
             "beam",
-            "beam_search_min_and_max_tokens"
+            "beam_search_min_and_max_tokens",
+            "beam_search_with_multiple_stop_strings_no_match",
             ])
 def test_individual_generation_configs_deterministic(tmp_path, generation_config):
+    prompts = [
+            "What is OpenVINO?",
+            ]
+    generation_configs = [generation_config]
+    model_id : str = "facebook/opt-125m"
+    generate_and_compare_with_hf(model_id, prompts, generation_configs, DEFAULT_SCHEDULER_CONFIG, tmp_path)
+
+@pytest.mark.precommit
+@pytest.mark.xfail(
+    raises=AssertionError,
+    reason="Stop strings do not seem to work as expected with beam search in HF, so comparison will fail. If it changes, these cases shall be merged to the test above.",
+    strict=True,
+)
+@pytest.mark.parametrize("generation_config", [get_beam_search_with_single_stop_string(), get_beam_search_with_multiple_stop_strings(),],
+        ids=[
+            "beam_search_with_single_stop_string",
+            "beam_search_with_multiple_stop_strings",
+            ])
+def test_beam_search_with_stop_string(tmp_path, generation_config):
     prompts = [
             "What is OpenVINO?",
             ]

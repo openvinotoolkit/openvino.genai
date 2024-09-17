@@ -28,7 +28,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.9
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
@@ -77,7 +77,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: '3.10'
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
@@ -215,7 +215,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.9
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
       - run: curl --output ov.zip ${{ env.w_ov_link }}
@@ -267,7 +267,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.11
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
@@ -300,7 +300,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.12
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
@@ -334,7 +334,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.9
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
@@ -368,7 +368,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: '3.10'
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
@@ -402,7 +402,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.11
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
@@ -445,7 +445,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.12
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
@@ -518,7 +518,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.9
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
@@ -572,7 +572,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: '3.10'
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
@@ -616,7 +616,7 @@ jobs:
           | diff ./pred_greedy.txt -
 
   cpp-chat_sample-ubuntu:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     defaults:
       run:
         shell: bash
@@ -626,7 +626,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.11
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
@@ -692,7 +692,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.12
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
@@ -738,7 +738,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.9
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
       - name: Install OpenVINO
@@ -786,7 +786,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.9
       - name: Install OpenVINO
         run: |
           mkdir ./ov/

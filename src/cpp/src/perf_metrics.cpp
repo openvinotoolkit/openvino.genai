@@ -11,7 +11,7 @@ namespace {
 
 ov::genai::MeanStdPair calc_mean_and_std(const std::vector<ov::genai::MicroSeconds>& durations) {
     if (durations.size() == 0) {
-        return {-1.0f, -1.0f};
+        return {-1, -1};
     }
     // Accepts time durations in microseconds and returns standard deviation and mean in milliseconds.
     float mean = std::accumulate(durations.begin(), durations.end(), 0.0f, 
