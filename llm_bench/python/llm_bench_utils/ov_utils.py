@@ -86,7 +86,7 @@ def build_ov_tokenizer(hf_tokenizer):
     try:
         from openvino_tokenizers import convert_tokenizer
     except ImportError:
-        log.warn("OV Tokenizer is unavailable, tokenizer conversion will be skipped")
+        log.warning("OV Tokenizer is unavailable, tokenizer conversion will be skipped")
         return hf_tokenizer
 
     ov_tokenizer, ov_detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
@@ -191,7 +191,36 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
-    return llm_pipe, tokenizer, end - start, None, True
+    class TokenStreamer(openvino_genai.StreamerBase):
+        def __init__(self, tokenizer):
+            openvino_genai.StreamerBase.__init__(self)
+            self.tokenizer = tokenizer
+            self.token_generation_time = []
+            self.generated_tokens = []
+            self.start_time = time.perf_counter()
+
+        def put(self, token_id):
+            self.token_generation_time.append(time.perf_counter() - self.start_time)
+            self.generated_tokens.append(token_id)
+            self.start_time = time.perf_counter()
+            return False
+
+        def reset(self):
+            self.token_generation_time = []
+            self.generated_tokens = []
+            self.start_time = time.perf_counter()
+
+        def end(self):
+            pass
+
+        def get_tokens(self):
+            return self.generated_tokens
+
+        def get_time_list(self):
+            return self.token_generation_time
+    streamer = TokenStreamer(llm_pipe.get_tokenizer()) if "NPU" in device.upper() else None
+
+    return llm_pipe, tokenizer, end - start, streamer, True
 
 
 def convert_ov_tokenizer(tokenizer_path):
