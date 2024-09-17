@@ -335,6 +335,28 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python ${{ env.OV_INSTALL_DIR }}\samples\python\multinomial_causal_lm\multinomial_causal_lm.py TinyLlama-1.1B-Chat-v1.0 0
 
+      - name: Cmake install - OpenVINO
+        run: |
+          cmake --install ./build --config=${{ matrix.build-type }} --prefix=./genai_package
+
+      - name: Pack Artifacts
+        run: |
+          $file=Get-ChildItem -Path "./genai_package"
+          $compress = @{
+            Path = $file
+            CompressionLevel = "Optimal"
+            DestinationPath = "./genai_package.zip"
+          }
+          Compress-Archive @compress
+
+      - name: Upload openvino package
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: genai_package
+          path: ./genai_package.zip
+          if-no-files-found: 'error'
+
   Overall_Status:
     name: ci/gha_overall_status_linux
     needs: [openvino_download, openvino_build, genai_python_lib, genai_package]
