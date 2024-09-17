@@ -216,7 +216,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         bench_hook.clear_time_infer_list()
 
 
-def run_text_generation_genai_with_streamer(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_index, streamer, model_precision, proc_id):
+def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_index, streamer, model_precision, proc_id):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
@@ -450,7 +450,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
     if not use_genai:
         text_gen_fn = run_text_generation
     elif bench_hook is not None:
-        text_gen_fn = run_text_generation_genai_with_streamer
+        text_gen_fn = run_text_generation_genai_with_stream
     else:
         text_gen_fn = run_text_generation_genai
     proc_id = os.getpid()
