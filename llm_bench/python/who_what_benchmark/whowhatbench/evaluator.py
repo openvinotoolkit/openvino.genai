@@ -70,6 +70,7 @@ default_data = {
     },
 }
 
+
 def autodetect_language(model):
     model2language = {
         "chatglm": "cn",
@@ -79,6 +80,7 @@ def autodetect_language(model):
     }
 
     return model2language.get(model.config.model_type, "en")
+
 
 class Evaluator:
     def __init__(
@@ -119,7 +121,7 @@ class Evaluator:
         # Take language ground truth if no base model provided
         if self.language is None and "language" in self.gt_data.columns:
             self.language = self.gt_data["language"].values[0]
-            
+
         self.similarity = None
         self.divergency = None
         if "similarity" in self.metrics:
