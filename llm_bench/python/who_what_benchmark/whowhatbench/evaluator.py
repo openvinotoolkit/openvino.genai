@@ -39,46 +39,46 @@ default_data = {
     },
     "cn": {
         "questions": [
-            "马克·吐温是谁?",
-            "威廉·莎士比亚是谁?",
-            "阿加莎·克里斯蒂是谁?",
-            "芭芭拉·卡特兰是谁?",
-            "丹尼尔·斯蒂尔是谁?",
-            "哈罗德·罗宾斯是谁?",
-            "乔治·西默农是谁?",
-            "伊妮德·布莱顿是谁?",
-            "西德尼·谢尔顿是谁?",
+            "马克吐温是谁?",
+            "谁是威廉-莎士比亚?",
+            "阿加莎-克里斯蒂是谁?",
+            "芭芭拉-卡特兰是谁?",
+            "丹妮尔-斯蒂尔是谁?"
+            "谁是哈罗德-罗宾斯?",
+            "乔治-西默农是谁?",
+            "伊妮德-布莱顿是谁?",
+            "西德尼-谢尔顿是谁?",
             "鸟山明是谁?",
-            "列夫·托尔斯泰是谁?",
-            "亚历山大·普希金是谁?",
-            "斯蒂芬·金是谁?",
-            "什么是 C++?",
-            "什么是 Python?",
+            "谁是列夫-托尔斯泰?",
+            "亚历山大-普希金是谁?",
+            "斯蒂芬-金是谁?",
+            "C++是什么?",
+            "Python是什么?",
             "什么是 Java?",
-            "什么是 JavaScript?",
+            "JavaScript是什么?",
             "什么是 Perl?",
             "什么是 OpenCV?",
             "谁是最著名的作家?",
-            "谁是最著名的发明家?",
+            "谁是最有名的发明家?",
             "谁是最著名的数学家?",
-            "谁是最著名的作曲家?",
-            "最著名的程序员是谁?",
-            "最著名的运动员是谁?",
-            "最著名的古希腊科学家是谁?",
-            "将蓝色和黄色混合会得到什么颜色?"
+            "最著名的作曲家是谁?",
+            "谁是最有名的程序员?",
+            "谁是最著名的运动员?",
+            "谁是最著名的古希腊科学家?",
+            "蓝色和黄色混合会得到什么颜色?",
         ],
     },
 }
 
 def autodetect_language(model):
-    model2lagnuage = {
+    model2language = {
         "chatglm": "cn",
         "qwen2": "cn",
         "qwen": "cn",
         "baichuan": "cn",
     }
 
-    return model2lagnuage.get(model.config.model_type, "en")
+    return model2language.get(model.config.model_type, "en")
 
 class Evaluator:
     def __init__(
@@ -104,13 +104,22 @@ class Evaluator:
         self.tokenizer = tokenizer
         self._crop_question = crop_question
         self.num_samples = num_samples
-        self.lagnuage = language if language is not None else autodetect_language(base_model)
+
+        # Take language from the base model if provided
+        self.language = language
+        if self.language is None:
+            if base_model is not None:
+                self.language = autodetect_language(base_model)
 
         if base_model:
             self.gt_data = self._generate_data(base_model)
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
+        # Take language ground truth if no base model provided
+        if self.language is None and "language" in self.gt_data.columns:
+            self.language = self.gt_data["language"].values[0]
+            
         self.similarity = None
         self.divergency = None
         if "similarity" in self.metrics:
@@ -185,7 +194,10 @@ class Evaluator:
                     data = {"questions": list(self.test_data)}
                 data = pd.DataFrame.from_dict(data)
         else:
-            data = pd.DataFrame.from_dict(default_data[self.lagnuage])
+            if self.language is None:
+                print("No language detecting in the base model or ground truth data. Taking language from target model.")
+                self.language = autodetect_language(model)
+            data = pd.DataFrame.from_dict(default_data[self.language])
 
         questions = data["questions"]
 
@@ -197,5 +209,6 @@ class Evaluator:
 
         res_data = {"questions": list(prompts), "answers": answers}
         df = pd.DataFrame(res_data)
+        df["language"] = self.language
 
         return df
