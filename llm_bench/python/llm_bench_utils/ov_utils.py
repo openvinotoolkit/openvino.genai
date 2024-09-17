@@ -218,7 +218,6 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
         def get_time_list(self):
             return self.token_generation_time
-    
     streamer = TokenStreamer(llm_pipe.get_tokenizer()) if "NPU" in device.upper() else None
 
     return llm_pipe, tokenizer, end - start, streamer, True
