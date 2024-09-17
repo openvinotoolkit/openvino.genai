@@ -77,6 +77,8 @@ def autodetect_language(model):
         "qwen2": "cn",
         "qwen": "cn",
         "baichuan": "cn",
+        "minicpmv": "cn",
+        "internlm": "cn",
     }
 
     return model2language.get(model.config.model_type, "en")
