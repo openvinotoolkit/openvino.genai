@@ -150,6 +150,12 @@ def parse_args():
         default=None,
         help="Path to the JSON file that contains OpenVINO Runtime configuration.",
     )
+    parser.add_argument(
+        "--language",
+        type=str,
+        default=None,
+        help="Used to select default prompts based on the primary model language, e.g. 'en', 'ch'.",
+    )
 
     return parser.parse_args()
 
@@ -218,6 +224,7 @@ def main():
             tokenizer=tokenizer,
             similarity_model_id=args.text_encoder,
             num_samples=args.num_samples,
+            language=args.language,
         )
     else:
         base_model = load_model(args.base_model, args.device, args.ov_config)
@@ -227,6 +234,7 @@ def main():
             tokenizer=tokenizer,
             similarity_model_id=args.text_encoder,
             num_samples=args.num_samples,
+            language=args.language,
         )
         if args.gt_data:
             evaluator.dump_gt(args.gt_data)

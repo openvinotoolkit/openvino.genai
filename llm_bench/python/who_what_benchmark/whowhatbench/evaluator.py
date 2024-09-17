@@ -6,37 +6,79 @@ from tqdm import tqdm
 from .whowhat_metrics import DivergencyMetric, SimilarityMetric
 
 default_data = {
-    "questions": [
-        "Who is Mark Twain?",
-        "Who is William Shakespeare?",
-        "Who is Agatha Christie?",
-        "Who is Barbara Cartland?",
-        "Who is Danielle Steel?",
-        "Who is Harold Robbins?",
-        "Who is Georges Simenon?",
-        "Who is Enid Blyton?",
-        "Who is Sidney Sheldon?",
-        "Who is Akira Toriyama?",
-        "Who is Leo Tolstoy?",
-        "Who is Alexander Pushkin?",
-        "Who is Stephen King?",
-        "What is C++?",
-        "What is Python?",
-        "What is Java?",
-        "What is JavaScript?",
-        "What is Perl?",
-        "What is OpenCV?",
-        "Who is the most famous writer?",
-        "Who is the most famous inventor?",
-        "Who is the most famous mathematician?",
-        "Who is the most famous composer?",
-        "Who is the most famous programmer?",
-        "Who is the most famous athlete?",
-        "Who is the most famous ancient Greek scientist?",
-        "What color will you get when you mix blue and yellow?",
-    ]
+    "en" : {
+        "questions": [
+            "Who is Mark Twain?",
+            "Who is William Shakespeare?",
+            "Who is Agatha Christie?",
+            "Who is Barbara Cartland?",
+            "Who is Danielle Steel?",
+            "Who is Harold Robbins?",
+            "Who is Georges Simenon?",
+            "Who is Enid Blyton?",
+            "Who is Sidney Sheldon?",
+            "Who is Akira Toriyama?",
+            "Who is Leo Tolstoy?",
+            "Who is Alexander Pushkin?",
+            "Who is Stephen King?",
+            "What is C++?",
+            "What is Python?",
+            "What is Java?",
+            "What is JavaScript?",
+            "What is Perl?",
+            "What is OpenCV?",
+            "Who is the most famous writer?",
+            "Who is the most famous inventor?",
+            "Who is the most famous mathematician?",
+            "Who is the most famous composer?",
+            "Who is the most famous programmer?",
+            "Who is the most famous athlete?",
+            "Who is the most famous ancient Greek scientist?",
+            "What color will you get when you mix blue and yellow?",
+        ],
+    },
+    "cn": {
+        "questions": [
+            "马克·吐温是谁?",
+            "威廉·莎士比亚是谁?",
+            "阿加莎·克里斯蒂是谁?",
+            "芭芭拉·卡特兰是谁?",
+            "丹尼尔·斯蒂尔是谁?",
+            "哈罗德·罗宾斯是谁?",
+            "乔治·西默农是谁?",
+            "伊妮德·布莱顿是谁?",
+            "西德尼·谢尔顿是谁?",
+            "鸟山明是谁?",
+            "列夫·托尔斯泰是谁?",
+            "亚历山大·普希金是谁?",
+            "斯蒂芬·金是谁?",
+            "什么是 C++?",
+            "什么是 Python?",
+            "什么是 Java?",
+            "什么是 JavaScript?",
+            "什么是 Perl?",
+            "什么是 OpenCV?",
+            "谁是最著名的作家?",
+            "谁是最著名的发明家?",
+            "谁是最著名的数学家?",
+            "谁是最著名的作曲家?",
+            "最著名的程序员是谁?",
+            "最著名的运动员是谁?",
+            "最著名的古希腊科学家是谁?",
+            "将蓝色和黄色混合会得到什么颜色?"
+        ],
+    },
 }
 
+def autodetect_language(model):
+    model2lagnuage = {
+        "chatglm": "cn",
+        "qwen2": "cn",
+        "qwen": "cn",
+        "baichuan": "cn",
+    }
+
+    return model2lagnuage.get(model.config.model_type, "en")
 
 class Evaluator:
     def __init__(
@@ -50,6 +92,7 @@ class Evaluator:
         max_new_tokens=128,
         crop_question=True,
         num_samples=None,
+        language=None
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -61,6 +104,7 @@ class Evaluator:
         self.tokenizer = tokenizer
         self._crop_question = crop_question
         self.num_samples = num_samples
+        self.lagnuage = language if language is not None else autodetect_language(base_model)
 
         if base_model:
             self.gt_data = self._generate_data(base_model)
@@ -141,7 +185,7 @@ class Evaluator:
                     data = {"questions": list(self.test_data)}
                 data = pd.DataFrame.from_dict(data)
         else:
-            data = pd.DataFrame.from_dict(default_data)
+            data = pd.DataFrame.from_dict(default_data[self.lagnuage])
 
         questions = data["questions"]
 
