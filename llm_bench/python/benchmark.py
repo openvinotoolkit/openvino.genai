@@ -618,7 +618,7 @@ def get_argprser():
     parser.add_argument('-f', '--framework', default='ov', help='framework')
     parser.add_argument('-p', '--prompt', default=None, help='one prompt')
     parser.add_argument('-pf', '--prompt_file', nargs='+', default=None,
-                        help='prompt file in jsonl format. You can specify multiple prompt files, separated by spaces.')
+                        help='Prompt file(s) in jsonl format. Multiple prompt files should be separated with space(s).')
     parser.add_argument('-pi', '--prompt_index', nargs='+', type=num_iters_type, default=None,
                         help='Run the specified prompt index. You can specify multiple prompt indexes, separated by spaces.')
     parser.add_argument(
