@@ -1,4 +1,3 @@
-Test
 # Benchmarking script for large language models
 
 This script provides a unified approach to estimate performance for Large Language Models.
