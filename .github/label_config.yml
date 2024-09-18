@@ -7,7 +7,6 @@ llm_bench:
     - 'llm_bench/**'
     - '.github/workflows/llm_bench-python.yml'
 
-
 WWB:
 - changed-files:
   - any-glob-to-any-file:
