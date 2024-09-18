@@ -33,6 +33,49 @@ void align_u4_zp_constants(const std::shared_ptr<ov::Model>& model) {
     }
 }
 
+// FIXME: It should be different function or at least this one requires fix
+uint32_t calculate_trainable_parameters(const std::shared_ptr<ov::Model>& model) {
+    uint32_t total_parameters = 0u;
+    for (auto op : model->get_ops()) {
+        for (auto input : op->inputs()) {
+            auto src = input.get_source_output().get_node_shared_ptr();
+            if (auto cst_op = std::dynamic_pointer_cast<ov::op::v0::Constant>(src)) {
+                total_parameters += ov::shape_size(cst_op->get_shape());
+            }
+        }
+    }
+    std::cout << "total params: " << static_cast<float>(total_parameters) / 1'000'000'000 << std::endl;
+    return total_parameters;
+}
+
+bool allow_to_enable_npuw_dq(const std::shared_ptr<ov::Model>& model, const bool is_prefill_model = false) {
+    std::vector<std::string> rt_info_path = {"nncf", "weight_compression", "group_size"};
+    if (!model->has_rt_info(rt_info_path)) {
+        // NB: Model isn't compressed by using either CW or GQ configurations
+        return false;
+    }
+    auto group_size = model->get_rt_info<int>(rt_info_path);
+    if (group_size == -1) {
+        // NB: For CW configuration NPUW DQ is enabled unconditionally
+        return true;
+    }
+    const uint32_t kTotalParams = calculate_trainable_parameters(model);
+    if (!is_prefill_model && kTotalParams < 2'000'000'000) {
+        // NB: For GQ configurations NPUW DQ is enabled only
+        // for models that have <2B parameters and only for generate model (so far)
+        return true;
+    }
+    return false;
+}
+
+void enable_npuw_dq_if_allowed(ov::AnyMap& config,
+                               const std::shared_ptr<ov::Model>& model,
+                               const bool is_prefill_model = false) {
+    if (allow_to_enable_npuw_dq(model, is_prefill_model)) {
+        config["NPUW_DQ"] = "YES";
+    }
+}
+
 std::shared_ptr<ov::Model> redirect_new_kv_to_output(const std::shared_ptr<ov::Model>& model) {
     const auto kStartOutputKVCacheLayers = 1u;
     for (int i = kStartOutputKVCacheLayers; i < model->outputs().size(); ++i) {
@@ -293,11 +336,17 @@ void StaticLLMPipeline::setupAndCompileModels(
     // (7) Compile both model
     auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", get_default_prefill_config());
     auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", get_default_generate_config());
+
+    // NB: Enable NPUW DQ
+    enable_npuw_dq_if_allowed(prefill_config, m_prefill_model, true /* is_prefill_model */);
+    enable_npuw_dq_if_allowed(generate_config, m_kvcache_model);
+
     merge_config_with(prefill_config, pipeline_config);
     merge_config_with(generate_config, pipeline_config);
     // FIXME: Drop CACHE_DIR option if NPUW is enabled
     drop_cache_dir(prefill_config);
     drop_cache_dir(generate_config);
+
     m_prefill_request = core.compile_model(
         m_prefill_model, device, prefill_config
     ).create_infer_request();
@@ -321,7 +370,7 @@ void StaticLLMPipeline::setupAndImportModels(
     */
     ov::Core core;
 
-    auto import_blob = [this, 
+    auto import_blob = [this,
                         &path,
                         &pipeline_config,
                         &core,
@@ -376,8 +425,8 @@ void StaticLLMPipeline::setupAndImportModels(
     // (4) Fill in m_kvcache_desc
     const uint32_t kMaxPromptLen = get_kvcache_size(prefill_model);
     const uint32_t kMinResponseLen = get_kvcache_size(generate_model) - kMaxPromptLen;
-    // FIXME For some models KV-cache dim != 2u   
-    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, 2u };    
+    // FIXME For some models KV-cache dim != 2u
+    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, 2u };
 }
 
 void StaticLLMPipeline::start_chat(const std::string& system_message) {
