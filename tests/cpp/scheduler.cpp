@@ -676,3 +676,165 @@ TEST(TestScheduler, prefix_caching_with_max_new_tokens_equal_1) {
     }
 
 }
+
+TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 6;
+    scheduler_config.block_size = 4;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 5;
+
+    std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7,8,9,10,11};
+    SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                            ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+    auto idx0 = (*sequence_group1)[0]->get_id();
+    SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                            ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+    auto idx1 = (*sequence_group2)[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
+
+
+    // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
+    const bool can_use_partial_preemption = false;
+    Scheduler scheduler = Scheduler(scheduler_config, can_use_partial_preemption);
+    auto out1 = scheduler.schedule(requests);
+
+    for (auto req : requests)
+        req->finish_iteration();
+
+    // sequence_group2 should be fully preempted
+    auto out2 = scheduler.schedule(requests);
+
+    // check that sequence_group1 has one more allocated block
+    auto block_table1 = scheduler.get_block_table(*(*sequence_group1)[0]);
+    ASSERT_EQ(block_table1.size(), 4);
+    ASSERT_EQ(block_table1[0]->get_index(), 0);
+    ASSERT_EQ(block_table1[1]->get_index(), 1);
+    ASSERT_EQ(block_table1[2]->get_index(), 2);
+    ASSERT_EQ(block_table1[3]->get_index(), 3);
+    ASSERT_EQ(out2.m_block_tables[idx0].size(), 4);
+    ASSERT_EQ(out2.m_block_tables[idx0][0]->get_index(), 0);
+    ASSERT_EQ(out2.m_block_tables[idx0][1]->get_index(), 1);
+    ASSERT_EQ(out2.m_block_tables[idx0][2]->get_index(), 2);
+    ASSERT_EQ(out2.m_block_tables[idx0][3]->get_index(), 3);
+
+    std::vector<uint64_t> ref_ids = {0};
+    ASSERT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
+    ASSERT_EQ(out2.m_total_num_scheduled_tokens, 1);
+
+    // for vllm case sequence_group2 is fully preempted
+    EXPECT_FALSE(scheduler.has_block_table(idx1));
+
+    for (auto req : requests)
+        req->finish_iteration();
+
+    // finish first sequence
+    requests[0]->get_running_sequences()[0]->set_status(SequenceStatus::FINISHED);
+    scheduler.free_sequence(idx0);
+    clear_finished_sequences(requests);
+
+    // sequence_group2 should be scheduled
+    auto out3 = scheduler.schedule(requests);
+
+    // prompt should be fully scheduled
+    ASSERT_EQ(out3.m_total_num_scheduled_tokens, 12);
+
+    ASSERT_EQ(out3.m_block_tables[idx1][0]->get_index(), 4);
+    ASSERT_EQ(out3.m_block_tables[idx1][1]->get_index(), 5);
+    ASSERT_EQ(out3.m_block_tables[idx1][2]->get_index(), 0);
+
+    auto block_table2 = scheduler.get_block_table(*(*sequence_group2)[0]);
+    ASSERT_EQ(block_table2.size(), 3);
+    ASSERT_EQ(block_table2[0]->get_index(), 4);
+    ASSERT_EQ(block_table2[1]->get_index(), 5);
+    ASSERT_EQ(block_table2[2]->get_index(), 0);
+
+    EXPECT_FALSE(scheduler.has_block_table(idx0));
+}
+
+TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 6;
+    scheduler_config.block_size = 4;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 5;
+
+    std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7,8,9};
+    SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                            ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+    auto idx0 = (*sequence_group1)[0]->get_id();
+    SequenceGroup::Ptr sequence_group2 = std::make_shared<SequenceGroup>(1, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                                            ov::genai::greedy(), scheduler_config.block_size, scheduler_config.enable_prefix_caching);
+    auto idx1 = (*sequence_group2)[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
+
+    // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
+    const bool can_use_partial_preemption = false;
+    Scheduler scheduler = Scheduler(scheduler_config, can_use_partial_preemption);
+    scheduler.schedule(requests);
+    for (auto req: requests)
+        req->finish_iteration();
+
+    scheduler.schedule(requests);
+    for (auto req: requests)
+        req->finish_iteration();
+
+    scheduler.schedule(requests);
+    for (auto req: requests)
+        req->finish_iteration();
+
+    // sequence_group2 should be fully preempted
+    scheduler.schedule(requests);
+    for (auto req: requests)
+        req->finish_iteration();
+
+    auto out2 = scheduler.schedule(requests);
+
+    // check that sequence_group1 has one more allocated block
+    auto block_table1 = scheduler.get_block_table(*(*sequence_group1)[0]);
+    ASSERT_EQ(block_table1.size(), 4);
+    ASSERT_EQ(block_table1[0]->get_index(), 0);
+    ASSERT_EQ(block_table1[1]->get_index(), 1);
+    ASSERT_EQ(block_table1[2]->get_index(), 2);
+    ASSERT_EQ(block_table1[3]->get_index(), 3);
+    ASSERT_EQ(out2.m_block_tables[idx0].size(), 4);
+    ASSERT_EQ(out2.m_block_tables[idx0][0]->get_index(), 0);
+    ASSERT_EQ(out2.m_block_tables[idx0][1]->get_index(), 1);
+    ASSERT_EQ(out2.m_block_tables[idx0][2]->get_index(), 2);
+    ASSERT_EQ(out2.m_block_tables[idx0][3]->get_index(), 3);
+
+    std::vector<uint64_t> ref_ids = {0};
+    ASSERT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
+    ASSERT_EQ(out2.m_total_num_scheduled_tokens, 1);
+
+    // for vllm case sequence_group2 is fully preempted
+    EXPECT_FALSE(scheduler.has_block_table(idx1));
+
+    for (auto req: requests)
+        req->finish_iteration();
+
+    // finish first sequence
+    requests[0]->get_running_sequences()[0]->set_status(SequenceStatus::FINISHED);
+    scheduler.free_sequence(idx0);
+    clear_finished_sequences(requests);
+
+    // sequence_group2 should be scheduled
+    auto out3 = scheduler.schedule(requests);
+
+    // prompt should be fully scheduled + generated tokens concatenated to prompt (10 + 2)
+    ASSERT_EQ(out3.m_total_num_scheduled_tokens, 12);
+
+    ASSERT_EQ(out3.m_block_tables[idx1][0]->get_index(), 4);
+    ASSERT_EQ(out3.m_block_tables[idx1][1]->get_index(), 5);
+    ASSERT_EQ(out3.m_block_tables[idx1][2]->get_index(), 0);
+
+    auto block_table2 = scheduler.get_block_table(*(*sequence_group2)[0]);
+    ASSERT_EQ(block_table2.size(), 3);
+    ASSERT_EQ(block_table2[0]->get_index(), 4);
+    ASSERT_EQ(block_table2[1]->get_index(), 5);
+    ASSERT_EQ(block_table2[2]->get_index(), 0);
+
+    EXPECT_FALSE(scheduler.has_block_table(idx0));
+}

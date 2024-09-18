@@ -171,7 +171,9 @@ public:
         raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
         raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
         raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
-
+        
+        // Added tokenization/detokenization times, and updated generate duration, need to reevaluate statistics.
+        decoded_results.perf_metrics.m_evaluated = false;
         decoded_results.perf_metrics.evaluate_statistics(start_time);
         return decoded_results;
     }

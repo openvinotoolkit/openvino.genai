@@ -6,36 +6,82 @@ from tqdm import tqdm
 from .whowhat_metrics import DivergencyMetric, SimilarityMetric
 
 default_data = {
-    "questions": [
-        "Who is Mark Twain?",
-        "Who is William Shakespeare?",
-        "Who is Agatha Christie?",
-        "Who is Barbara Cartland?",
-        "Who is Danielle Steel?",
-        "Who is Harold Robbins?",
-        "Who is Georges Simenon?",
-        "Who is Enid Blyton?",
-        "Who is Sidney Sheldon?",
-        "Who is Akira Toriyama?",
-        "Who is Leo Tolstoy?",
-        "Who is Alexander Pushkin?",
-        "Who is Stephen King?",
-        "What is C++?",
-        "What is Python?",
-        "What is Java?",
-        "What is JavaScript?",
-        "What is Perl?",
-        "What is OpenCV?",
-        "Who is the most famous writer?",
-        "Who is the most famous inventor?",
-        "Who is the most famous mathematician?",
-        "Who is the most famous composer?",
-        "Who is the most famous programmer?",
-        "Who is the most famous athlete?",
-        "Who is the most famous ancient Greek scientist?",
-        "What color will you get when you mix blue and yellow?",
-    ]
+    "en" : {
+        "questions": [
+            "Who is Mark Twain?",
+            "Who is William Shakespeare?",
+            "Who is Agatha Christie?",
+            "Who is Barbara Cartland?",
+            "Who is Danielle Steel?",
+            "Who is Harold Robbins?",
+            "Who is Georges Simenon?",
+            "Who is Enid Blyton?",
+            "Who is Sidney Sheldon?",
+            "Who is Akira Toriyama?",
+            "Who is Leo Tolstoy?",
+            "Who is Alexander Pushkin?",
+            "Who is Stephen King?",
+            "What is C++?",
+            "What is Python?",
+            "What is Java?",
+            "What is JavaScript?",
+            "What is Perl?",
+            "What is OpenCV?",
+            "Who is the most famous writer?",
+            "Who is the most famous inventor?",
+            "Who is the most famous mathematician?",
+            "Who is the most famous composer?",
+            "Who is the most famous programmer?",
+            "Who is the most famous athlete?",
+            "Who is the most famous ancient Greek scientist?",
+            "What color will you get when you mix blue and yellow?",
+        ],
+    },
+    "cn": {
+        "questions": [
+            "马克吐温是谁?",
+            "谁是威廉-莎士比亚?",
+            "阿加莎-克里斯蒂是谁?",
+            "芭芭拉-卡特兰是谁?",
+            "丹妮尔-斯蒂尔是谁?"
+            "谁是哈罗德-罗宾斯?",
+            "乔治-西默农是谁?",
+            "伊妮德-布莱顿是谁?",
+            "西德尼-谢尔顿是谁?",
+            "鸟山明是谁?",
+            "谁是列夫-托尔斯泰?",
+            "亚历山大-普希金是谁?",
+            "斯蒂芬-金是谁?",
+            "C++是什么?",
+            "Python是什么?",
+            "什么是 Java?",
+            "JavaScript是什么?",
+            "什么是 Perl?",
+            "什么是 OpenCV?",
+            "谁是最著名的作家?",
+            "谁是最有名的发明家?",
+            "谁是最著名的数学家?",
+            "最著名的作曲家是谁?",
+            "谁是最有名的程序员?",
+            "谁是最著名的运动员?",
+            "谁是最著名的古希腊科学家?",
+            "蓝色和黄色混合会得到什么颜色?",
+        ],
+    },
 }
+
+
+def autodetect_language(model):
+    model2language = {
+        "chatglm": "cn",
+        "qwen2": "cn",
+        "qwen": "cn",
+        "baichuan": "cn",
+        "minicpmv": "cn",
+        "internlm": "cn",
+    }
+
+    return model2language.get(model.config.model_type, "en")
 
 
 class Evaluator:
@@ -49,6 +95,8 @@ class Evaluator:
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
         max_new_tokens=128,
         crop_question=True,
+        num_samples=None,
+        language=None
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -59,11 +107,22 @@ class Evaluator:
         self.max_new_tokens = max_new_tokens
         self.tokenizer = tokenizer
         self._crop_question = crop_question
+        self.num_samples = num_samples
+
+        # Take language from the base model if provided
+        self.language = language
+        if self.language is None:
+            if base_model is not None:
+                self.language = autodetect_language(base_model)
 
         if base_model:
             self.gt_data = self._generate_data(base_model)
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
+
+        # Take language ground truth if no base model provided
+        if self.language is None and "language" in self.gt_data.columns:
+            self.language = self.gt_data["language"].values[0]
 
         self.similarity = None
         self.divergency = None
@@ -139,16 +198,21 @@ class Evaluator:
                     data = {"questions": list(self.test_data)}
                 data = pd.DataFrame.from_dict(data)
         else:
-            data = pd.DataFrame.from_dict(default_data)
+            if self.language is None:
+                print("No language detecting in the base model or ground truth data. Taking language from target model.")
+                self.language = autodetect_language(model)
+            data = pd.DataFrame.from_dict(default_data[self.language])
 
         questions = data["questions"]
 
         answers = []
+        prompts = questions.values if self.num_samples is None else questions.values[:self.num_samples]
 
-        for q in tqdm(questions.values, desc="Evaluate pipeline"):
+        for q in tqdm(prompts, desc="Evaluate pipeline"):
             answers.append(gen_answer_fn(model, self.tokenizer, q, self.max_new_tokens, self._crop_question))
 
-        res_data = {"questions": list(questions.values), "answers": answers}
+        res_data = {"questions": list(prompts), "answers": answers}
         df = pd.DataFrame(res_data)
+        df["language"] = self.language
 
         return df

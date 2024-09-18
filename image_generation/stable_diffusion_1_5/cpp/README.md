@@ -8,14 +8,14 @@ The pure C++ text-to-image pipeline, driven by the OpenVINO native C++ API for S
 
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - GCC 7.5 or higher
-- Python 3.8 or higher
+- Python 3.9 or higher
 - Git
 
 ### Windows
 
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - Microsoft Visual Studio 2019 or higher, version 16.3 or later
-- Python 3.8 or higher
+- Python 3.9 or higher
 - Git for Windows
 
 ### macOS
@@ -25,7 +25,7 @@ The pure C++ text-to-image pipeline, driven by the OpenVINO native C++ API for S
     ```sh
     xcode-select --install
     ```
-- Python 3.8 or higher
+- Python 3.9 or higher
 - Git
 
 ## Build Instructions
@@ -57,7 +57,7 @@ The path to the OpenVINO install directory is referred as `<INSTALL_DIR>` throug
 2. Download the model from Huggingface and convert it to OpenVINO IR via [optimum-intel CLI](https://github.com/huggingface/optimum-intel).
 
     Example models to download:
-    - [runwayml/stable-diffusion-v1-5](https://huggingface.co/runwayml/stable-diffusion-v1-5)
+    - [botp/stable-diffusion-v1-5](https://huggingface.co/botp/stable-diffusion-v1-5)
     - [dreamlike-art/dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0)
 
     Example command for downloading [dreamlike-art/dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0) model and exporting it with FP16 precision:

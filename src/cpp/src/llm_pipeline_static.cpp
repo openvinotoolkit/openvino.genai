@@ -9,6 +9,10 @@
 #include "utils.hpp"
 
 #include <openvino/pass/stateful_to_stateless.hpp>
+#include <jinja2cpp/user_callable.h>
+#include <fstream>
+
+#include <fstream>
 
 namespace {
 
@@ -83,9 +87,39 @@ std::shared_ptr<ov::Model> add_slices_to_kvcache_inputs(const std::shared_ptr<ov
     return std::make_shared<ov::Model>(model->get_results(), ov::SinkVector{}, new_params);
 }
 
+struct KVAxesPosition {
+    uint32_t batch;
+    uint32_t seq_len;
+};
+
+KVAxesPosition get_kv_axes(const std::string& model_type) {
+    KVAxesPosition axes;
+    if (model_type == "chatglm") {
+        axes.batch = 1u;
+        axes.seq_len = 0u;
+    } else if (model_type == "qwen") {
+        // Note, qwen2 does not fall into this category and conforms to default layout
+        axes.batch = 0u;
+        axes.seq_len = 1u;
+    } else {
+        axes.batch = 0u;
+        axes.seq_len = 2u;
+    }
+    return axes;
+}
+
+std::string get_model_type_from_json(const std::filesystem::path& filepath) {
+    std::ifstream file(filepath);
+    OPENVINO_ASSERT(file.is_open(), "Could not open file: " + filepath.string());
+    nlohmann::json config_data = nlohmann::json::parse(file);
+    std::string model_type = config_data["model_type"].get<std::string>();
+    return model_type;
+}
+
 void reshape_to_static(std::shared_ptr<ov::Model> model,
                        const uint32_t input_size,
-                       const uint32_t kvcache_size) {
+                       const uint32_t kvcache_size,
+                       const KVAxesPosition& kv_axes_position) {
     std::map<std::string, ov::PartialShape> new_shapes;
     for (auto input : model->inputs()) {
         const auto& input_name = input.get_any_name();
@@ -98,10 +132,9 @@ void reshape_to_static(std::shared_ptr<ov::Model> model,
             new_shape = ov::PartialShape({1, input_size});
         } else {
             const auto& partial_shape = input.get_partial_shape();
-            new_shape = ov::PartialShape({1,
-                                          partial_shape[1].get_length(),
-                                          kvcache_size-input_size,
-                                          partial_shape[3].get_length()});
+            new_shape = partial_shape;
+            new_shape[kv_axes_position.batch] = 1;
+            new_shape[kv_axes_position.seq_len] = kvcache_size - input_size;
         }
         new_shapes.emplace(input_name, new_shape);
     }
@@ -113,7 +146,7 @@ void fill_tensor(ov::Tensor tensor, int64_t fill_val, size_t offset = 0u) {
     std::fill(tensor_data + offset, tensor_data + tensor.get_size(), fill_val);
 }
 
-void copy_with_offset(const ov::Tensor& orig, const int32_t offset, ov::Tensor& padded) {
+void copy_with_offset(const ov::Tensor& orig, const std::size_t offset, ov::Tensor& padded) {
     int64_t* orig_data = orig.data<int64_t>();
     int64_t* padded_data = padded.data<int64_t>();
     std::copy(orig_data, orig_data + orig.get_size(), padded_data + offset);
@@ -195,19 +228,50 @@ StaticLLMPipeline::StaticLLMPipeline(
                         utils::from_config_json_if_exists(path)) {
     auto pipeline_config = config;
     /* NB: Static LLM pipeline consists of two models,
-       first to process the input prompt (prefill), second to use in generation loop (kvcache)
+       first to process the input prompt (prefill),
+       second to use in generation loop (kvcache)
 
-       Initialization assumes multiple steps:
-       1) Read the template model - this will be kvcache model
-       2) Expose KV-cache input and output layers from kvcache model
-       3) Align u4 ZP constants - TODO: get rid of this step in future
-       4) Replace KV-cache tensors for the entire cache to tensors only for new token (before concat)
-       5) Clone the model - this will be prefill
-       6) Reshape both models to static shape
-       7) Compile both models
-       8) Initialize input tensors for kvcache and prefill models
+       There are two ways of how these models can be created
+       and user chooses one or another via configuration option
+       "USE_BLOBS":
+        1. When both models are created from the provided .xml one,
+           that is "USE_BLOBS=NO" default way.
+        2. When both models are directly imported from provided prefill
+           and generation precompiled blobs, that is "USE_BLOBS=YES" way.
     */
+    const auto use_blobs = pop_or_default(pipeline_config, "USE_BLOBS", false);
+    if (!use_blobs) {
+        setupAndCompileModels(path, device, pipeline_config);
+    } else {
+        setupAndImportModels(path, device, pipeline_config);
+    }
+    // Initialize tensors
+    prepare_for_new_conversation();
+};
+
+StaticLLMPipeline::StaticLLMPipeline(
+    const std::filesystem::path& path,
+    const std::string& device,
+    const ov::AnyMap& config
+) : StaticLLMPipeline(path, path.string(), device, config) {
+}
+
+void StaticLLMPipeline::setupAndCompileModels(
+    const std::filesystem::path& path,
+    const std::string& device,
+    ov::AnyMap& pipeline_config) {
+    /* Initialization assumes multiple steps if user passes "USE_BLOBS=NO":
+        1) Read the template model - this will be kvcache model
+        2) Expose KV-cache input and output layers from kvcache model
+        3) Align u4 ZP constants - TODO: get rid of this step in future
+        4) Replace KV-cache tensors for the entire cache to tensors only for new token (before concat)
+        5) Clone the model - this will be prefill
+        6) Reshape both models to static shape
+        7) Compile both models
+    */
+
     ov::Core core;
+
     // (1) Read the template model - this will be kvcache model
     m_kvcache_model = core.read_model(path / "openvino_model.xml");
     // (2) Expose KV-cache input and output layers from kvcache model
@@ -222,10 +286,10 @@ StaticLLMPipeline::StaticLLMPipeline(
     // (6) Reshape both models to static shape
     const auto kMaxPromptLen = pop_or_default(pipeline_config, "MAX_PROMPT_LEN", 1024u);
     const auto kMinResponseLen = pop_or_default(pipeline_config, "MIN_RESPONSE_LEN", 150u);
-    // FIXME For some models KV-cache dim != 2u
-    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, 2u };
-    reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size);
-    reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size);
+    KVAxesPosition axes = get_kv_axes(get_model_type_from_json(path / "config.json"));
+    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len };
+    reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
+    reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
     // (7) Compile both model
     auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", get_default_prefill_config());
     auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", get_default_generate_config());
@@ -240,15 +304,80 @@ StaticLLMPipeline::StaticLLMPipeline(
     m_kvcache_request = core.compile_model(
         m_kvcache_model, device, generate_config
     ).create_infer_request();
-    // (8) Initialize tensors
-    prepare_for_new_conversation();
-};
+}
 
-StaticLLMPipeline::StaticLLMPipeline(
+void StaticLLMPipeline::setupAndImportModels(
     const std::filesystem::path& path,
     const std::string& device,
-    const ov::AnyMap& config
-) : StaticLLMPipeline(path, path.string(), device, config) {
+    ov::AnyMap& pipeline_config) {
+    /* To initialize pipeline in case when user passes "USE_BLOBS=YES",
+       next steps are required:
+        1) Check that neither MAX_PROMPT_LEN nor MIN_RESPONSE_LEN is
+           exposed in the config. These parameters will be retrieved
+           from blobs
+        2) Import prefill model from model directory or specified path
+        3) Import generate model from model directory or specified path
+        4) Fill in m_kvcache_desc
+    */
+    ov::Core core;
+
+    auto import_blob = [this, 
+                        &path,
+                        &pipeline_config,
+                        &core,
+                        &device](const std::string& model_name,
+                                 ov::AnyMap& model_config) {
+        auto blob_path = pop_or_default(model_config, "BLOB_PATH", std::string{});
+
+        if (blob_path.empty()) {
+            blob_path = (path /
+                (std::string("openvino_") + model_name + ".blob")).string();
+        }
+
+        if (!std::filesystem::exists(blob_path)) {
+            OPENVINO_THROW("Blob for " + model_name + " model is not found at: "
+                + blob_path);
+        }
+
+        merge_config_with(model_config, pipeline_config);
+
+        std::fstream fs(blob_path, std::ios::in | std::ios::binary);
+
+        return core.import_model(
+            fs, device, model_config);
+
+    };
+
+    auto get_kvcache_size = [](ov::CompiledModel& model) {
+        for (auto input : model.inputs()) {
+            const auto& input_name = input.get_any_name();
+            if (input_name.find("attention_mask") != std::string::npos) {
+                return static_cast<uint32_t>(input.get_shape()[1]);
+            }
+        }
+        OPENVINO_THROW("No attention_mask input is found! Such model isn't supported.");
+    };
+
+    // (1) Check that neither MAX_PROMPT_LEN nor MIN_RESPONSE_LEN is
+    //     exposed in the config
+    if (pipeline_config.count("MAX_PROMPT_LEN") ||
+        pipeline_config.count("MIN_RESPONSE_LEN")) {
+        OPENVINO_THROW("Neither \"MAX_PROMPT_LEN\" nor \"MIN_RESPONSE_LEN\""
+           " can be specified in \"USE_BLOBS=YES\" configuration!");
+    }
+    // (2) Import prefill model from model directory or specified path
+    auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", ov::AnyMap());
+    auto prefill_model = import_blob("prefill", prefill_config);
+    m_prefill_request = prefill_model.create_infer_request();
+    // (3) Import generate model from model directory or specified path
+    auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", ov::AnyMap());
+    auto generate_model = import_blob("generate", generate_config);
+    m_kvcache_request = generate_model.create_infer_request();
+    // (4) Fill in m_kvcache_desc
+    const uint32_t kMaxPromptLen = get_kvcache_size(prefill_model);
+    const uint32_t kMinResponseLen = get_kvcache_size(generate_model) - kMaxPromptLen;
+    // FIXME For some models KV-cache dim != 2u   
+    m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, 2u };    
 }
 
 void StaticLLMPipeline::start_chat(const std::string& system_message) {
@@ -276,28 +405,48 @@ DecodedResults StaticLLMPipeline::generate(
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
 ) {
-    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-    if (std::holds_alternative<std::vector<std::string>>(inputs)) {
-        OPENVINO_THROW("Currently only batch size=1 is supported");
-    }
+    auto start_time = std::chrono::steady_clock::now();
 
-    OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
-    auto& prompt = std::get<std::string>(inputs);
+    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    std::string prompt;
+    if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
+        if (input_vector->size() > 1u) {
+            OPENVINO_THROW("Currently only batch size=1 is supported");
+        }
+        OPENVINO_ASSERT(!input_vector->empty());
+        prompt = std::move(input_vector->front());
+    } else {
+        OPENVINO_ASSERT(std::holds_alternative<std::string>(inputs));
+        prompt = std::get<std::string>(inputs);
+    }
 
     if (m_is_chat_conversation) {
         m_history.push_back({{"role", "user"}, {"content", prompt}});
         constexpr bool add_generation_prompt = true;
         prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
     }
-
     auto tokenized_input = m_tokenizer.encode(prompt);
+
+    auto encode_stop_time =  std::chrono::steady_clock::now();
     auto encoded_results = generate(tokenized_input, config, streamer);
+
+    auto decode_start_time =  std::chrono::steady_clock::now();
     DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    auto decode_stop_time =  std::chrono::steady_clock::now();
 
     if (m_is_chat_conversation) {
         auto answer = decoded_results.texts[0];
         m_history.push_back({{"role", "assistant"}, {"content", answer}});
     }
+    // generate_durations
+    decoded_results.perf_metrics = encoded_results.perf_metrics;
+    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
+    auto stop_time = std::chrono::steady_clock::now();
+    raw_counters.generate_durations = std::vector<MicroSeconds>();
+    raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
+    decoded_results.perf_metrics.evaluate_statistics(start_time);
     return decoded_results;
 }
 
@@ -306,6 +455,7 @@ EncodedResults StaticLLMPipeline::generate(
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer
 ) {
+    auto start_time = std::chrono::steady_clock::now();
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
 
@@ -340,7 +490,10 @@ EncodedResults StaticLLMPipeline::generate(
         OPENVINO_THROW("Currently only greedy decoding is supported");
     }
 
+    ov::Shape prompts_shape = input_ids.get_shape();
+    const size_t batch_size = prompts_shape[0];
     ov::genai::EncodedResults results;
+    auto& raw_perf_counters = results.perf_metrics.raw_metrics;
     // NB: Only batch=1 is supported now
     results.scores.resize(1u);
     results.scores[0] = 0u;
@@ -370,9 +523,11 @@ EncodedResults StaticLLMPipeline::generate(
     std::iota(padded_pos_data + offset, padded_pos_data + padded_position_ids.get_size(), 0u);
 
     m_prefill_request.infer();
+    raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+    raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
     // NB: Now there are prompt_len tokens in KV-cache
-    m_kvcache_desc.num_stored_tokens += prompt_len;
+    m_kvcache_desc.num_stored_tokens += static_cast<uint32_t>(prompt_len);
     int64_t last_token = utils::argmax(m_prefill_request.get_tensor("logits"), 0);
     results.tokens[0].push_back(last_token);
     if (streamer_ptr && streamer_ptr->put(last_token)) {
@@ -423,6 +578,8 @@ EncodedResults StaticLLMPipeline::generate(
         last_token = utils::argmax(m_kvcache_request.get_tensor("logits"), 0);
         results.tokens[0].push_back(last_token);
 
+        raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+        raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
         if (streamer_ptr && streamer_ptr->put(last_token)) {
             break;
         }
@@ -447,6 +604,13 @@ EncodedResults StaticLLMPipeline::generate(
             m_kvcache_request.get_tensor(output_name).copy_to(kvcache_in_slice);
         }
     }
+    auto stop_time = std::chrono::steady_clock::now();
+    // If is called without tokenization then that stat will not be reported.
+    auto& metrics = results.perf_metrics;
+    metrics.num_input_tokens = batch_size * input_ids.get_shape().at(1);
+    metrics.load_time = this->m_load_time_ms;
+    metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+    metrics.evaluate_statistics(start_time);
     return results;
 }
 

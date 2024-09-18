@@ -1,4 +1,4 @@
-name: Linux (Ubuntu 20.04, Python 3.8)
+name: Linux (Ubuntu 20.04, Python 3.9)
 on:
   workflow_dispatch:
   pull_request:
@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.8'
-  OV_BRANCH: 'master'
+  PYTHON_VERSION: '3.9'
+  OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   OV_TARBALL: ''
 
 permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
@@ -377,3 +377,17 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+
+  Overall_Status:
+    name: ci/gha_overall_status_linux
+    needs: [openvino_download, openvino_build, genai_python_lib, genai_package]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status of all jobs
+        if: >-
+          ${{
+            contains(needs.*.result, 'failure') ||
+            contains(needs.*.result, 'cancelled')
+          }}
+        run: exit 1

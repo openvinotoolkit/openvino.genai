@@ -238,7 +238,7 @@ int main(int argc, char* argv[]) try {
     ov::Tensor position_ids = model.get_tensor("position_ids");
     position_ids.set_shape(input_ids.get_shape());
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + position_ids.get_size(), 0);
-    uint64_t seq_len = input_ids.get_shape()[1];
+    size_t seq_len = input_ids.get_shape()[1];
 
     // set beam_idx for stateful model: no beam search is used and BATCH_SIZE = 1
     model.get_tensor("beam_idx").set_shape({BATCH_SIZE});

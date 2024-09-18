@@ -6,8 +6,8 @@ include(FetchContent)
 
 FetchContent_Declare(
     pybind11
-    URL https://github.com/pybind/pybind11/archive/refs/tags/v2.12.0.tar.gz
-    URL_HASH SHA256=bf8f242abd1abcd375d516a7067490fb71abd79519a282d22b6e4d19282185a7
+    URL https://github.com/pybind/pybind11/archive/refs/tags/v2.13.5.tar.gz
+    URL_HASH SHA256=b1e209c42b3a9ed74da3e0b25a4f4cd478d89d5efbb48f04b277df427faf6252
 )
 FetchContent_GetProperties(pybind11)
 # search for FindPython3.cmake instead of legacy modules

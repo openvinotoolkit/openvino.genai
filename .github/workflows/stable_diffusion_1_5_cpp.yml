@@ -1,23 +1,21 @@
 name: stable_diffusion_1_5_cpp
 
 on:
+  workflow_dispatch:
   pull_request:
-    paths:
-      - image_generation/stable_diffusion_1_5/cpp/**
-      - image_generation/common/**
-      - image_generation/requirements.txt
-      - samples/requirements.txt
-      - .github/workflows/stable_diffusion_1_5_cpp.yml
-      - thirdparty/openvino_tokenizers
-      - "!**.md"
+  merge_group:
+  push:
+    branches:
+      - master
+      - 'releases/**'
 
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
 env:
   WORKING_DIRECTORY: "./image_generation/stable_diffusion_1_5/cpp/"
-  PYTHON_VERSION: '3.8'
-  LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16527-382ac845923/l_openvino_toolkit_ubuntu20_2024.4.0.dev20240828_x86_64.tgz
-  WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.4.0-16527-382ac845923/w_openvino_toolkit_windows_2024.4.0.dev20240828_x86_64.zip
+  PYTHON_VERSION: '3.10'
+  LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/l_openvino_toolkit_ubuntu20_2024.5.0.dev20240830_x86_64.tgz
+  WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/w_openvino_toolkit_windows_2024.5.0.dev20240830_x86_64.zip
   OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
 concurrency:
@@ -41,12 +39,19 @@ jobs:
           mkdir ${{ env.OV_INSTALL_DIR }}
           tar -xzf openvino_package.tar.gz -C ${{ env.OV_INSTALL_DIR }} --strip-components=1
 
+      - name: Build app
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+        run: |
+          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release --parallel
+
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-        
+
       - name: Create virtual environment
         working-directory: ${{ env.WORKING_DIRECTORY }}
         run: python3 -m venv openvino_sd_cpp
@@ -62,14 +67,7 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
         run: |
           source openvino_sd_cpp/bin/activate
-          optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
-
-      - name: Build app
-        working-directory: ${{ env.WORKING_DIRECTORY }}
-        run: |
-          source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --parallel
+          optimum-cli export openvino --model botp/stable-diffusion-v1-5 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
 
       - name: Run app
         working-directory: ${{ env.WORKING_DIRECTORY }}
@@ -95,39 +93,53 @@ jobs:
               Expand-Archive openvino_package.zip -DestinationPath ./tmp
               mv ./tmp/*/* .
             popd
-  
-        - name: Setup Python ${{ env.PYTHON_VERSION }}
-          uses: actions/setup-python@v5
-          with:
-            python-version: ${{ env.PYTHON_VERSION }}
-            cache: 'pip'
-          
-        - name: Create virtual environment
-          working-directory: ${{ env.WORKING_DIRECTORY }}
-          run: python -m venv openvino_sd_cpp
-  
-        - name: Install python dependencies
-          working-directory: ${{ env.WORKING_DIRECTORY }}
-          run: |
-            . "./openvino_sd_cpp/Scripts/Activate.ps1"
-            python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-            python -m pip install -r ../../requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-  
-        - name: Download and convert model and tokenizer
-          working-directory: ${{ env.WORKING_DIRECTORY }}
-          run: |
-            . "./openvino_sd_cpp/Scripts/Activate.ps1"
-            optimum-cli export openvino --model runwayml/stable-diffusion-v1-5 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
-  
+
         - name: Build app
           working-directory: ${{ env.WORKING_DIRECTORY }}
           run: |
             . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
             cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
             cmake --build ./build/ --config Release --parallel
-  
+
+        - name: Setup Python ${{ env.PYTHON_VERSION }}
+          uses: actions/setup-python@v5
+          with:
+            python-version: ${{ env.PYTHON_VERSION }}
+            cache: 'pip'
+
+        - name: Create virtual environment
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+          run: python -m venv openvino_sd_cpp
+
+        - name: Install python dependencies
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+          run: |
+            . "./openvino_sd_cpp/Scripts/Activate.ps1"
+            python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+            python -m pip install -r ../../requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+
+        - name: Download and convert model and tokenizer
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+          run: |
+            . "./openvino_sd_cpp/Scripts/Activate.ps1"
+            optimum-cli export openvino --model botp/stable-diffusion-v1-5 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
+
         - name: Run app
           working-directory: ${{ env.WORKING_DIRECTORY }}
           run: |
             . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
             ./build/Release/stable_diffusion.exe -m ./models/stable_diffusion_v1_5_ov -t FP16 --dynamic
+
+  Overall_Status:
+    name: ci/gha_overall_status_stable_diffusion
+    needs: [stable_diffusion_1_5_cpp-linux, stable_diffusion_1_5_cpp-windows]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status of all jobs
+        if: >-
+          ${{
+            contains(needs.*.result, 'failure') ||
+            contains(needs.*.result, 'cancelled')
+          }}
+        run: exit 1

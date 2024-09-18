@@ -21,16 +21,19 @@ enum class SequenceStatus {
 };
 
 using TokenIds = std::vector<int64_t>;
+using LogProbs = std::vector<float>;
 class SequenceGroup;
 
 class Sequence {
     // This can be a problem if we launch two pipelines in the same application.
     static uint64_t _get_next_global_sequence_id() {
+        const std::lock_guard<std::mutex> lock(m_counter_mutex);
         static uint64_t m_counter = 0;
         return m_counter++;
     }
 
     TokenIds m_generated_ids;
+    LogProbs m_generated_log_probs;
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     SequenceStatus m_status = SequenceStatus::RUNNING;
@@ -38,6 +41,7 @@ class Sequence {
     float m_cumulative_log_prob = 0.0f;
     std::vector<int64_t> m_prefix_hashes;
     std::weak_ptr<SequenceGroup> m_sequence_group;
+    static std::mutex m_counter_mutex;
 
     size_t _make_hash(size_t content_length);
 public:
@@ -107,14 +111,27 @@ public:
     // appends new tokens to a generated part
     void append_token(int64_t token_id, float log_prob) {
         m_cumulative_log_prob += log_prob;
-        m_generated_ids.push_back(token_id);     
+        m_generated_log_probs.push_back(log_prob);
+        m_generated_ids.push_back(token_id); 
+    }
+
+    // removes n last tokens and updates cumulative log prob
+    // used to remove stop_string from the output
+    void remove_last_tokens(int n) {
+        OPENVINO_ASSERT(m_generated_ids.size() >= n, "Cannot remove more tokens than has been generated");
+        for (int i = 0; i < n; i++) {
+            m_cumulative_log_prob -= m_generated_log_probs.back();
+            m_generated_log_probs.pop_back();
+            m_generated_ids.pop_back();
+        }
     }
 
     GenerationOutput get_last_generation_output() {
         GenerationOutput output;
         OPENVINO_ASSERT(m_generated_ids.size());
         output.score = get_cumulative_log_probs();
-        output.generated_token_ids = std::vector<int64_t> {m_generated_ids.back()};
+        output.generated_ids = std::vector<int64_t> {m_generated_ids.back()};
+        output.generated_log_probs = std::vector<float> {m_generated_log_probs.back()};
         output.finish_reason = get_finish_reason();
         return output;
     }
@@ -125,6 +142,10 @@ public:
 
     const TokenIds & get_generated_ids() const {
         return m_generated_ids;
+    }
+
+    const LogProbs & get_generated_log_probs() const {
+        return m_generated_log_probs;
     }
 
     float get_cumulative_log_probs() const {
@@ -182,6 +203,7 @@ class SequenceGroup {
           m_enable_prefix_caching(enable_prefix_caching) {
             m_generation_stream = GenerationStream::create();    
            }
+
 public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
@@ -208,27 +230,6 @@ public:
         });
         OPENVINO_ASSERT(remove_it != m_sequences.end(), "Failed to remove sequence with specified ID");
         m_sequences.erase(remove_it);
-    }
-
-    std::vector<int64_t> try_finish_generation() {
-        std::vector<int64_t> dropped_seq_ids;
-        for (auto& running_sequence : get_running_sequences()) {
-            const auto generated_len = running_sequence->get_generated_len();
-            if (m_sampling_params.max_new_tokens == generated_len ||
-                running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
-                // stop sequence by max_new_tokens or EOS token
-                running_sequence->set_status(SequenceStatus::FINISHED);
-
-                if (running_sequence->get_generated_ids().back() == m_sampling_params.eos_token_id && !m_sampling_params.ignore_eos) {
-                    running_sequence->set_finish_reason(GenerationFinishReason::STOP);
-                } else if (m_sampling_params.max_new_tokens == generated_len) {
-                    running_sequence->set_finish_reason(GenerationFinishReason::LENGTH);
-                }
-                
-                dropped_seq_ids.push_back(running_sequence->get_id());
-            }
-        }
-        return dropped_seq_ids;
     }
 
     size_t get_prompt_len() const {
@@ -481,7 +482,8 @@ public:
         GenerationOutputs outputs;
         for (auto& sequence: m_sequences) {
             GenerationOutput output;
-            output.generated_token_ids = sequence->get_generated_ids();
+            output.generated_ids = sequence->get_generated_ids();
+            output.generated_log_probs = sequence->get_generated_log_probs();
             output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_probs();
             output.finish_reason = sequence->get_finish_reason();
             outputs.emplace(sequence->get_grouped_id(), output);
@@ -512,8 +514,9 @@ public:
                 push_outputs();
             }
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
-            // TO DO: Now we always stream for greedy search for the sake of benchmarking 
-            if (num_total_seqs() == 1) {
+            // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
+            // (after stop string is detected its tokens are already sent) 
+            if (num_total_seqs() == 1 && (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output)) {
                 push_partial_outputs();
             } else if (has_finished() || out_of_memory()) {
                 push_outputs();
