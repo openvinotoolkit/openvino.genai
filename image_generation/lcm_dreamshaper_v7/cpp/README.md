@@ -8,14 +8,14 @@ The pure C++ text-to-image pipeline, driven by the OpenVINO native API for SD v1
 
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - GCC 7.5 or higher
-- Python 3.8 or higher
+- Python 3.9 or higher
 - Git
 
 ### Windows
 
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - Microsoft Visual Studio 2019 or higher, version 16.3 or later
-- Python 3.8 or higher
+- Python 3.9 or higher
 - Git for Windows
 
 ### macOS
@@ -25,7 +25,7 @@ The pure C++ text-to-image pipeline, driven by the OpenVINO native API for SD v1
     ```sh
     xcode-select --install
     ```
-- Python 3.8 or higher
+- Python 3.9 or higher
 - Git
 
 ## Build Instructions
