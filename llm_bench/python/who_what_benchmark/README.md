@@ -46,7 +46,6 @@ metrics_per_prompt, metrics = evaluator.score(optimized_model, test_data=prompts
 
 ### Installing
 
-* git clone https://github.com/andreyanufr/who_what_benchmark.git
 * python -m venv eval_env
 * source eval_env/bin/activate
 * pip install -r requirements.txt
