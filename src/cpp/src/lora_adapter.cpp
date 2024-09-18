@@ -419,7 +419,7 @@ struct LoRAWeightStateGetter {
         #else
         auto read_value = std::make_shared<v6::ReadValue>(variable);
         #endif
-        model->add_sinks({std::make_shared<v6::Assign>(read_value, variable)});  // FIXME: Required? -- Yes, create ticket agains CPU
+        model->add_sinks({std::make_shared<v6::Assign>(read_value, variable)});  // FIXME: Required? -- Yes, create ticket against CPU
         return read_value;
     }
 };
