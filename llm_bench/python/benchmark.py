@@ -724,6 +724,9 @@ CASE_TO_BENCH = {
 def main():
     logging_kwargs = {"encoding": "utf-8"} if sys.version_info[1] > 8 else {}
     log.basicConfig(format='[ %(levelname)s ] %(message)s', level=os.environ.get("LOGLEVEL", log.INFO), stream=sys.stdout, **logging_kwargs)
+    env_omp = os.getenv('OMP_WAIT_POLICY')
+    if env_omp is None or env_omp != 'PASSIVE':
+        log.warning('The environment OMP_WAIT_POLICY is not set to PASSIVE')
     args = get_argprser()
     model_path, framework, model_args, model_name = llm_bench_utils.model_utils.analyze_args(args)
 
@@ -739,7 +742,7 @@ def main():
         if model_args['config'].get('PREC_BF16') and model_args['config']['PREC_BF16'] is True:
             log.warning('[Warning] Param bf16/prec_bf16 only work for framework pt. It will be disabled.')
         if model_args['num_beams'] > 1:
-            torch.set_num_threads(torch.get_num_threads() / 2)
+            torch.set_num_threads(int(torch.get_num_threads() / 2))
         else:
             torch.set_num_threads(1)
     log.info(out_str)
