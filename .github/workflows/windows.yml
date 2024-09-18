@@ -240,6 +240,7 @@ jobs:
           python -m pytest ./tests/python_tests/
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
+          PIP_EXTRA_INDEX_URL: "https://storage.openvinotoolkit.org/simple/wheels/nightly"
 
       - name: Test bindings (wheel)
         run: |
