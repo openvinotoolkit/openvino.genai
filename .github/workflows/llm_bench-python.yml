@@ -90,5 +90,6 @@ jobs:
       - name: WWB Tests
         run: |
           GIT_CLONE_PROTECTION_ACTIVE=false pip install -r llm_bench/python/who_what_benchmark/requirements.txt
+          GIT_CLONE_PROTECTION_ACTIVE=false pip install llm_bench/python/who_what_benchmark/
           pip install pytest
           python -m pytest  ./llm_bench/python/who_what_benchmark/tests
