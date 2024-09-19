@@ -1,4 +1,5 @@
 import argparse
+import difflib
 import os
 
 import json
@@ -126,6 +127,18 @@ def parse_args():
         help="Directory name for saving the per sample comparison and metrics in CSV files.",
     )
     parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=None,
+        help="Maximum number of prompts to use from dataset",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print results and their difference",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default="CPU",
@@ -136,6 +149,13 @@ def parse_args():
         type=str,
         default=None,
         help="Path to the JSON file that contains OpenVINO Runtime configuration.",
+    )
+    parser.add_argument(
+        "--language",
+        type=str,
+        choices=["en", "cn"],
+        default=None,
+        help="Used to select default prompts based on the primary model language, e.g. 'en', 'ch'.",
     )
 
     return parser.parse_args()
@@ -164,6 +184,33 @@ def load_tokenizer(args):
     return tokenizer
 
 
+def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
+    output = []
+    matcher = difflib.SequenceMatcher(None, a, b)
+    if use_loguru_colors:
+        green = "<GREEN><black>"
+        red = "<RED><black>"
+        endgreen = "</black></GREEN>"
+        endred = "</black></RED>"
+    else:
+        green = "\x1b[38;5;16;48;5;2m"
+        red = "\x1b[38;5;16;48;5;1m"
+        endgreen = "\x1b[0m"
+        endred = "\x1b[0m"
+
+    for opcode, a0, a1, b0, b1 in matcher.get_opcodes():
+        if opcode == "equal":
+            output.append(a[a0:a1])
+        elif opcode == "insert":
+            output.append(f"{green}{b[b0:b1]}{endgreen}")
+        elif opcode == "delete":
+            output.append(f"{red}{a[a0:a1]}{endred}")
+        elif opcode == "replace":
+            output.append(f"{green}{b[b0:b1]}{endgreen}")
+            output.append(f"{red}{a[a0:a1]}{endred}")
+    return "".join(output)
+
+
 def main():
     args = parse_args()
     check_args(args)
@@ -177,6 +224,8 @@ def main():
             test_data=prompts,
             tokenizer=tokenizer,
             similarity_model_id=args.text_encoder,
+            num_samples=args.num_samples,
+            language=args.language,
         )
     else:
         base_model = load_model(args.base_model, args.device, args.ov_config)
@@ -185,6 +234,8 @@ def main():
             test_data=prompts,
             tokenizer=tokenizer,
             similarity_model_id=args.text_encoder,
+            num_samples=args.num_samples,
+            language=args.language,
         )
         if args.gt_data:
             evaluator.dump_gt(args.gt_data)
@@ -203,6 +254,26 @@ def main():
             df.to_csv(os.path.join(args.output, "metrics_per_qustion.csv"))
             df = pd.DataFrame(all_metrics)
             df.to_csv(os.path.join(args.output, "metrics.csv"))
+
+    if args.verbose:
+        metric_of_interest = "similarity"
+        worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
+        for i, e in enumerate(worst_examples):
+            ref_text = ""
+            actual_text = ""
+            diff = ""
+            for l1, l2 in zip(e["source_model"].splitlines(), e["optimized_model"].splitlines()):
+                if l1 == "" and l2 == "":
+                    continue
+                ref_text += l1 + "\n"
+                actual_text += l2 + "\n"
+                diff += diff_strings(l1, l2) + "\n"
+
+            print("--------------------------------------------------------------------------------------")
+            print("## Reference text {}:\n".format(i + 1), ref_text)
+            print("## Actual text {}:\n".format(i + 1), actual_text)
+            print("## Diff {}: ".format(i + 1))
+            print(diff)
 
 
 if __name__ == "__main__":

@@ -551,8 +551,8 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
         for image in input_image_list:
             if args['prompt'] is None and args['prompt_file'] is None:
                 raise RuntimeError('==Failure image is empty ==')
-            elif args['prompt_file'] is not None:
-                image['prompt'] = os.path.join(os.path.dirname(args['prompt_file']), image['prompt'].replace('./', ''))
+            elif args['prompt_file'] is not None and len(args['prompt_file']) > 0:
+                image['prompt'] = os.path.join(os.path.dirname(args['prompt_file'][0]), image['prompt'].replace('./', ''))
             image['prompt'] = Path(image['prompt'])
             images.append(image)
     else:
@@ -617,7 +617,8 @@ def get_argprser():
     parser.add_argument('-rj', '--report_json', help='report json')
     parser.add_argument('-f', '--framework', default='ov', help='framework')
     parser.add_argument('-p', '--prompt', default=None, help='one prompt')
-    parser.add_argument('-pf', '--prompt_file', default=None, help='prompt file in jsonl format')
+    parser.add_argument('-pf', '--prompt_file', nargs='+', default=None,
+                        help='Prompt file(s) in jsonl format. Multiple prompt files should be separated with space(s).')
     parser.add_argument('-pi', '--prompt_index', nargs='+', type=num_iters_type, default=None,
                         help='Run the specified prompt index. You can specify multiple prompt indexes, separated by spaces.')
     parser.add_argument(
