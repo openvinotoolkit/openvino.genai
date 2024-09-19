@@ -98,7 +98,7 @@ void WhisperGenerationConfig::validate() const {
                         "'language' " + *language + " must be provided in generation_config.json 'lang_to_id' map.");
     }
 
-    if (is_multilingual) {
+    if (is_multilingual && task.has_value()) {
         OPENVINO_ASSERT(*task == "transcribe" || *task == "translate",
                         "'task' mast be 'transcribe' or 'translate'. Task provided: '",
                         *task,
