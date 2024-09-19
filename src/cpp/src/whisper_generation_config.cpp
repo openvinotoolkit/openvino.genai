@@ -99,9 +99,9 @@ void WhisperGenerationConfig::validate() const {
     }
 
     if (is_multilingual) {
-        OPENVINO_ASSERT(task == "transcribe" || task == "translate",
+        OPENVINO_ASSERT(*task == "transcribe" || *task == "translate",
                         "'task' mast be 'transcribe' or 'translate'. Task provided: '",
-                        task,
+                        *task,
                         "'.");
     }
 
