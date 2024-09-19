@@ -29,7 +29,7 @@ optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task sta
 
 Prompt: `cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting`
 
-   ![](./768×768.png)
+   ![](./512x512.bmp)
 
 ## Supported models
 
