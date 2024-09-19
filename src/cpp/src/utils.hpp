@@ -5,7 +5,6 @@
 
 #include "openvino/genai/llm_pipeline.hpp"
 
-#include <openvino/openvino.hpp>
 #include <nlohmann/json.hpp>
 
 namespace ov {
@@ -24,46 +23,12 @@ ov::Tensor extend_attention(ov::Tensor attention_mask);
 
 void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention_mask);
 
-template <typename>
-struct json_type_traits {};
-
-template <>
-struct json_type_traits<int> { static constexpr auto json_value_t = nlohmann::json::value_t::number_integer; };
-
-template <>
-struct json_type_traits<int64_t> { static constexpr auto json_value_t = nlohmann::json::value_t::number_integer; };
-
-template <>
-struct json_type_traits<size_t> { static constexpr auto json_value_t = nlohmann::json::value_t::number_unsigned; };
-
-template <>
-struct json_type_traits<float> { static constexpr auto json_value_t = nlohmann::json::value_t::number_float; };
-
-template <>
-struct json_type_traits<std::string> { static constexpr auto json_value_t = nlohmann::json::value_t::string; };
-
-template <>
-struct json_type_traits<bool> { static constexpr auto json_value_t = nlohmann::json::value_t::boolean; };
-
-template <>
-struct json_type_traits<std::vector<int64_t>> { static constexpr auto json_value_t = nlohmann::json::value_t::array; };
-
-template <>
-struct json_type_traits<std::set<std::string>> { static constexpr auto json_value_t = nlohmann::json::value_t::array; };
-
-template <>
-struct json_type_traits<std::set<int64_t>> { static constexpr auto json_value_t = nlohmann::json::value_t::array; };
-
 /// @brief reads value to param if T argument type is aligned with value stores in json
 /// if types are not compatible leave param unchanged
 template <typename T>
 void read_json_param(const nlohmann::json& data, const std::string& name, T& param) {
     if (data.contains(name)) {
-        if constexpr (std::is_integral_v<T>) {
-            if (data[name].is_number_integer() || data[name].is_number_unsigned() || data[name].is_boolean()) {
-                param = data[name].get<T>();
-            }
-        } else if (data[name].type() == json_type_traits<T>::json_value_t) {
+        if (data[name].is_number() || data[name].is_boolean() || data[name].is_string()) {
             param = data[name].get<T>();
         }
     } else if (name.find(".") != std::string::npos) {
@@ -78,10 +43,21 @@ void read_json_param(const nlohmann::json& data, const std::string& name, T& par
     }
 }
 
+template <typename V>
+void read_json_param(const nlohmann::json& data, const std::string& name, std::vector<V>& param) {
+    if (data.contains(name) && data[name].is_array()) {
+        param.resize(0);
+        for (const auto elem : data[name]) {
+            param.push_back(elem.get<V>());
+        }
+    }
+}
+
 template <typename T>
 void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T& param) {
-    if (config_map.count(name)) {
-        param = config_map.at(name).as<T>();
+    auto it = config_map.find(name);
+    if (it != config_map.end()) {
+        param = it->second.as<T>();
     }
 }
 
