@@ -16,9 +16,7 @@
 namespace {
 
 void suppress_tokens(ov::Tensor& logits, const size_t batch_idx, const std::vector<int64_t>& suppress_tokens) {
-    if (logits.get_shape()[0] <= batch_idx) {
-        OPENVINO_THROW("logits batch size doesn't match the number of beams");
-    }
+    OPENVINO_ASSERT(logits.get_shape()[0] >= batch_idx, "logits batch size doesn't match the number of beams");
 
     size_t vocab_size = logits.get_shape().back();
     size_t batch_offset = batch_idx * logits.get_shape()[1] * vocab_size;

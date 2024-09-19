@@ -26,7 +26,15 @@ def main():
         print(word, end="")
         return False
 
-    pipe.generate(raw_speech, streamer=streamer)
+    pipe.generate(
+        raw_speech,
+        max_new_tokens=100,
+        language="<|en|>",
+        task="transcribe",
+        streamer=streamer,
+    )
+
+    print()
 
 
 if "__main__" == __name__:

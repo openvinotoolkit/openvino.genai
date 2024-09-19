@@ -99,6 +99,7 @@ static constexpr ov::Property<int64_t> no_timestamps_token_id{"no_timestamps_tok
 static constexpr ov::Property<int64_t> begin_timestamps_token_id{"begin_timestamps_token_id"};
 static constexpr ov::Property<std::string> language{"language"};
 static constexpr ov::Property<std::string> task{"task"};
+static constexpr ov::Property<std::map<std::string, int64_t>> lang_to_id{"lang_to_id"};
 
 }  // namespace genai
 }  // namespace ov
