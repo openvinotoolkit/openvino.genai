@@ -80,7 +80,7 @@ int64_t get_out_token_id(const std::vector<int>& input_ids, float* logits, size_
     return out_token;
 }
 
-ov::Tensor process_prompt(Tokenizer& tokenizer, ov::InferRequest& embedding, const ov::Tensor& prompt, float scale_emb) {
+ov::Tensor process_prompt(ov::InferRequest& embedding, const ov::Tensor& prompt, float scale_emb) {
     embedding.set_input_tensor(prompt);
     embedding.infer();
 
@@ -419,17 +419,43 @@ DecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    OPENVINO_ASSERT(1 == batch.size());
-    const auto& [prompt, images] = batch.at(0);
     std::string wrapped = images.empty() ?
         "<用户>" + prompt + "<AI>" : prompt + "<AI>";
-    ov::Tensor input_ids = m_tokenizer.encode(prompt).input_ids;
+    ov::Tensor input_ids = m_tokenizer.encode(wrapped).input_ids;
+    // ov::Tensor input_ids{ov::element::i64, {1, 26}};
+    // int64_t* d = input_ids.data<int64_t>();
+    // d[0] = 151644;
+    // d[1] = 8948;
+    // d[2] = 198;
+    // d[3] = 2610;
+    // d[4] = 525;
+    // d[5] = 264;
+    // d[6] = 10950;
+    // d[7] = 17847;
+    // d[8] = 13;
+    // d[9] = 151645;
+    // d[10] = 198;
+    // d[11] = 151644;
+    // d[12] = 872;
+    // d[13] = 198;
+    // d[14] = 3838;
+    // d[15] = 374;
+    // d[16] = 18511;
+    // d[17] = 389;
+    // d[18] = 419;
+    // d[19] = 2168;
+    // d[20] = 30;
+    // d[21] = 151645;
+    // d[22] = 198;
+    // d[23] = 151644;
+    // d[24] = 77091;
+    // d[25] = 198;
     if (images.empty()) {
-        //<用户> + prompt + <AI>  LLM first input
-        ov::Tensor promtTensor = process_prompt(m_tokenizer, m_embedding, input_ids, m_vlm_config.scale_emb);
+        //<用户> + prompt + <AI> LLM first input
+        ov::Tensor promtTensor = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
 
-        if ((m_history_length + promtTensor.get_shape()[1]) > m_language_embeddings_history.size()) {
-            m_language_embeddings_history.resize((m_history_length + 256) * m_vlm_config.hidden_size);
+        if ((m_history_length + promtTensor.get_shape()[1]) * m_vlm_config.hidden_size > m_language_embeddings_history.size()) {
+            m_language_embeddings_history.resize((m_history_length + promtTensor.get_shape()[1]) * m_vlm_config.hidden_size);
         }
 
         memcpy(m_language_embeddings_history.data() + m_history_length * m_vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
@@ -447,7 +473,7 @@ DecodedResults VLMPipeline::generate(
         m_language_embeddings_history.resize((m_language_embeddings_history.size() * m_vlm_config.hidden_size));
 
         //<用户> + image embedding + prompt + <AI> LLM first input
-        ov::Tensor promtTensor = process_prompt(m_tokenizer, m_embedding, input_ids, m_vlm_config.scale_emb);
+        ov::Tensor promtTensor = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
         m_history_length = img_embed_shape[1] + promtTensor.get_shape()[1];
 
         //memcpy image embedding buf
@@ -463,7 +489,7 @@ DecodedResults VLMPipeline::generate(
 
     m_language.set_tensor("inputs_embeds", llmEmbedTensor);
     m_language.get_tensor("attention_mask").set_shape({ llmEmbedTensor.get_shape()[0], llmEmbedTensor.get_shape()[1] });
-    std::fill_n(m_language.get_tensor("attention_mask").data<float>(), m_language.get_tensor("attention_mask").get_size(), 1.0f);
+    std::fill_n(m_language.get_tensor("attention_mask").data<int64_t>(), m_language.get_tensor("attention_mask").get_size(), 1);
     m_language.get_tensor("position_ids").set_shape({ llmEmbedTensor.get_shape()[0], llmEmbedTensor.get_shape()[1] });
     std::iota(m_language.get_tensor("position_ids").data<int64_t>(), m_language.get_tensor("position_ids").data<int64_t>() + m_language.get_tensor("position_ids").get_size(), 0);
     m_language.get_tensor("beam_idx").set_shape({ BATCH_SIZE });
@@ -482,7 +508,7 @@ DecodedResults VLMPipeline::generate(
     m_language.get_tensor("inputs_embeds").set_shape({BATCH_SIZE, 1, m_vlm_config.hidden_size});
     m_language.get_tensor("position_ids").set_shape({ BATCH_SIZE, 1 });
 
-    m_embedding.get_tensor("inputs_id").set_shape({ 1, 1 });
+    m_embedding.get_input_tensor().set_shape({ 1, 1 });
 
     int64_t eos_token_id = m_tokenizer.get_eos_token_id();
     std::shared_ptr<StreamerBase> streamer_ptr = std::visit(overloaded{
@@ -501,32 +527,33 @@ DecodedResults VLMPipeline::generate(
     std::vector<int64_t> generated;
     while (true) {  //(out_token != eos_token_id)
         //out_token embedding
-        m_embedding.get_tensor("inputs_id").data<int64_t>()[0] = out_token;
+        m_embedding.get_input_tensor().data<int64_t>()[0] = out_token;
         m_embedding.infer();
         const ov::Tensor& embed_prompt_tensor = m_embedding.get_output_tensor();
         float* embed_data = embed_prompt_tensor.data<float>();
 
         //input_ids * config.scale_emb
-        for (auto idx = 0; idx < embed_prompt_tensor.get_size(); idx++) {
-            embed_data[idx] = embed_data[idx] * m_vlm_config.scale_emb;
-        }
+        // for (auto idx = 0; idx < embed_prompt_tensor.get_size(); idx++) {
+        //     embed_data[idx] = embed_data[idx] * m_vlm_config.scale_emb;
+        // }
 
         //record answer token info
         if ((m_history_length + 1) > m_language_embeddings_history.size()) {
             m_language_embeddings_history.resize((m_history_length + 256) * m_vlm_config.hidden_size);
         }
 
-        memcpy(m_language_embeddings_history.data() + m_history_length * m_vlm_config.hidden_size, embed_prompt_tensor.data<float>(), embed_prompt_tensor.get_byte_size());
+        memcpy(m_language_embeddings_history.data() + (m_history_length + embed_prompt_tensor.get_size()) * m_vlm_config.hidden_size, embed_prompt_tensor.data<float>(), embed_prompt_tensor.get_byte_size());
         m_history_length = m_history_length + 1;
+        ov::Tensor inputs_embeds{ov::element::f32, embed_prompt_tensor.get_shape()};
+        embed_prompt_tensor.copy_to(inputs_embeds);
 
-        m_language.set_tensor("inputs_embeds", embed_prompt_tensor);
+        m_language.set_tensor("inputs_embeds", inputs_embeds);
 
         m_language.get_tensor("attention_mask").set_shape({ BATCH_SIZE, m_language.get_tensor("attention_mask").get_shape()[1] + 1 });
-        std::fill_n(m_language.get_tensor("attention_mask").data<float>(), m_language.get_tensor("attention_mask").get_size(), 1.0f);
-        m_language.get_tensor("position_ids").data<int64_t>()[0] = m_language.get_tensor("attention_mask").get_size() - 2;
+        std::fill_n(m_language.get_tensor("attention_mask").data<int64_t>(), m_language.get_tensor("attention_mask").get_size(), 1);
+        m_language.get_tensor("position_ids").data<int64_t>()[0] = int64_t(m_language.get_tensor("attention_mask").get_size() - 2);
 
-        m_language.start_async();
-        m_language.wait();
+        m_language.infer();
 
         generated.push_back(out_token);
         if (streamer_ptr && streamer_ptr->put(out_token)) {
@@ -555,21 +582,6 @@ DecodedResults VLMPipeline::generate(
 }
 
 DecodedResults VLMPipeline::generate(
-    const std::vector<std::string>& prompts,
-    const GenerationConfig& generation_config,
-    const StreamerVariant& streamer
-) {
-    std::vector<PromptImages> batch(prompts.size());
-    std::transform(
-        prompts.begin(), prompts.end(), batch.begin(),
-        [](const std::string& prompt) {
-            return PromptImages{prompt};
-        }
-    );
-    return generate(batch, generation_config, streamer);
-}
-
-DecodedResults VLMPipeline::generate(
     const std::string& prompt,
     const ov::AnyMap& config_map
 ) {
@@ -578,11 +590,9 @@ DecodedResults VLMPipeline::generate(
     GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
     return generate(
-        std::vector<PromptImages>{PromptImages{
-            prompt,
-            config_map.end() == image ? std::vector<ov::Tensor>{}
-                : std::vector{image->second.as<ov::Tensor>()}
-        }},
+        prompt,
+        config_map.end() == image ? std::vector<ov::Tensor>{}
+            : std::vector{image->second.as<ov::Tensor>()},
         config,
         utils::get_streamer_from_map(config_map)
     );

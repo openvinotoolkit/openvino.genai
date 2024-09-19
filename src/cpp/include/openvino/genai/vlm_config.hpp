@@ -16,7 +16,7 @@ public:
     /// Used to initialize positional embeddings for resampler input.
     size_t hidden_size = 2304;
     /// @brief multiply embeddings by this value.
-    float scale_emb = 12.0f;
+    float scale_emb = 1.0f;
     /// @brief the number of <unk> to insert into the prompt per image
     /// slice.
     size_t query_num = 64;

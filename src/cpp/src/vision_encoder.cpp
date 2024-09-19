@@ -93,7 +93,7 @@ std::vector<std::vector<clip_image_u8>> slice_image(const clip_image_u8& img, co
         float min_error = std::numeric_limits<float>::infinity();
 
         for (const auto& grid : candidate_grids) {
-            float error = std::abs(log_ratio - std::log(1.0 * grid.first / grid.second));
+            float error = std::abs(log_ratio - std::log(1.0f * grid.first / grid.second));
             if (error < min_error) {
                 best_grid = grid;
                 min_error = error;
@@ -174,7 +174,6 @@ ov::Tensor preprocess_for_encoder(const ov::Tensor& images, size_t kernel) {
     float* permuted = permuted_tensor.data<float>();
     for (size_t b_idx = 0; b_idx < bs; ++b_idx) {
         for (size_t d1_idx = 0; d1_idx < d1; ++d1_idx) {
-            std::cout << b_idx << ' ' << d1_idx << ' ' << d2 << ' ' << channels << ' ' << kernel << ' ' << new_len << ' ' << permuted_tensor.get_shape() << ' ' << unfolded_tensor.get_shape() << '\n';
             for (size_t d2_idx = 0; d2_idx < d2; ++d2_idx) {
                 permuted[b_idx * channels * kernel * new_len + d1_idx / (kernel * kernel) * kernel * new_len + d1_idx % (kernel * kernel) / kernel * new_len + d1_idx % kernel * d2 + d2_idx]
                     = unfolded[b_idx * d1 * d2 + d1_idx * d2 + d2_idx];
@@ -216,11 +215,9 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     int64_t* tgt_sizes_data = tgt_sizes.data<int64_t>();
     tgt_sizes_data[0] = resized_source_size.height;
     tgt_sizes_data[1] = resized_source_size.width;
-    std::cout << tgt_sizes.get_shape() << ' ' << pixel_values.get_shape() << '\n';
-    std::cout << encoder.get_tensor("tgt_sizes").get_element_type() << '\n';
     encoder.set_tensor("tgt_sizes", tgt_sizes);
     encoder.infer();
-    ov::Tensor output_tensor = encoder.get_output_tensor();
+    const ov::Tensor& output_tensor = encoder.get_output_tensor();
     ov::Tensor resized_source{output_tensor.get_element_type(), output_tensor.get_shape()};
     output_tensor.copy_to(resized_source);
 
@@ -228,44 +225,34 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
         size_t(preprocessed.at(1).at(0).ny),
         size_t(preprocessed.at(1).at(0).nx)
     };
-    ov::Tensor batched{ov::element::f32, {(preprocessed.size() - 1) * preprocessed.at(1).size(), 3, size.height, size.width}};
-    float* batched_data = batched.data<float>();
-    size_t batch_offset = 0;
-    size_t values_in_elem = 3 * size.height * size.width;
     std::vector<HeightWidth> sliced_sizes;
+    size_t n_patches = size.height / patch_size * size.width / patch_size,
+        old_hidden_size = resized_source.get_shape().at(2);
+    ov::Tensor encoded_slices{ov::element::f32, {preprocessed.size() - 1, preprocessed.at(1).size(), n_patches, old_hidden_size}};
+    // там внутри есть какая-то операция которая констант фолдит батч и из-за этого нельзя использовать отличный от того что был при экспорте
+    // констант фолдит она его в торч скрипте
+    // Even though batch can't be used, it's still possible to use async.
     for (size_t row = 1; row < preprocessed.size(); ++row) {
-        for (const clip_image_f32& elem : preprocessed.at(row)) {
-            std::copy_n(elem.buf.begin(), values_in_elem, batched_data + batch_offset);
+        for (size_t col = 0; col < preprocessed.at(row).size(); ++col) {
+            clip_image_f32& elem = preprocessed.at(row).at(col);
             sliced_sizes.push_back({elem.ny / patch_size, elem.nx / patch_size});
-            batch_offset += values_in_elem;
+            encoder.set_tensor("pixel_values", preprocess_for_encoder(
+                {ov::element::f32, {1, 3, size_t(elem.ny), size_t(elem.nx)}, elem.buf.data()},
+                patch_size
+            ));
+            ov::Tensor patch_attention_mask{ov::element::boolean, {1, 1, sliced_sizes.back().height * sliced_sizes.back().width}};
+            std::fill_n(patch_attention_mask.data<bool>(), patch_attention_mask.get_size(), true);
+            encoder.set_tensor("patch_attention_mask", patch_attention_mask);
+            ov::Tensor tgt_sizes{ov::element::i64, {1, 2}};
+            int64_t* tgt_sizes_data = tgt_sizes.data<int64_t>();
+            tgt_sizes_data[0] = sliced_sizes.back().height;
+            tgt_sizes_data[1] = sliced_sizes.back().width;
+            encoder.set_tensor("tgt_sizes", tgt_sizes);
+            encoder.set_output_tensor({ov::element::f32, {1, n_patches, old_hidden_size}, encoded_slices.data<float>() + ((row - 1) * preprocessed.at(row).size() + col) * n_patches * old_hidden_size});
+            encoder.infer();
         }
     }
-    ov::Tensor b_pixel_values = preprocess_for_encoder(batched, patch_size);
-    encoder.set_tensor("pixel_values", b_pixel_values);
-    ov::Tensor b_patch_attention_mask{ov::element::boolean, {b_pixel_values.get_shape().at(0), 1, sliced_sizes.at(0).height * sliced_sizes.at(0).width}};
-    std::fill_n(b_patch_attention_mask.data<bool>(), b_patch_attention_mask.get_size(), true);
-    encoder.set_tensor("patch_attention_mask", b_patch_attention_mask);
-    ov::Tensor b_tgt_sizes{ov::element::i64, {b_pixel_values.get_shape().at(0), 2}};
-    int64_t* b_tgt_sizes_data = b_tgt_sizes.data<int64_t>();
-    for (size_t idx = 0; idx < sliced_sizes.size(); ++idx) {
-        b_tgt_sizes_data[idx * 2] = sliced_sizes.at(idx).height;
-        b_tgt_sizes_data[idx * 2 + 1] = sliced_sizes.at(idx).width;
-        std::cout << b_tgt_sizes_data[idx * 2] << ' ' << b_tgt_sizes_data[idx * 2 + 1] << '\n';
-    }
-    encoder.set_tensor("tgt_sizes", b_tgt_sizes);
-    std::cout << b_pixel_values.get_shape() << ' ' << b_patch_attention_mask.get_shape() << ' ' << b_tgt_sizes.get_shape() << '\n';
-    encoder.infer();
-    std::cout << "AAAAAAAAAAAAAAAA\n";
-    const ov::Tensor& encoded = encoder.get_output_tensor();
-    const ov::Shape& plain = encoded.get_shape();
-    struct SharedTensorAllocator {
-        const ov::Tensor tensor;
-        void* allocate(size_t bytes, size_t) {return bytes <= tensor.get_byte_size() ? tensor.data() : nullptr;}
-        void deallocate(void*, size_t, size_t) {}
-        bool is_equal(const SharedTensorAllocator& other) const noexcept {return this == &other;}
-    };
-    ov::Tensor reshaped{encoded.get_element_type(), {preprocessed.size() - 1, preprocessed.at(1).size(), plain.at(1), plain.at(2)}, SharedTensorAllocator{encoded}};
-    return {resized_source, resized_source_size, reshaped, sliced_sizes};
+    return {resized_source, resized_source_size, encoded_slices, sliced_sizes};
 }
 }
 
