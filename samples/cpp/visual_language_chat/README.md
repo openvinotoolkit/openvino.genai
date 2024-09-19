@@ -10,14 +10,14 @@ It's not required to install [../../requirements.txt](../../requirements.txt) fo
 
 ```sh
 pip install --upgrade-strategy eager -r ../../requirements.txt
-export_MiniCPM-V-2_6.py --model_id openbmb/MiniCPM-V-2_6 --output_dir miniCPM-V-2_6
+export_MiniCPM-V-2_6.py miniCPM-V-2_6
 ```
 
 ## Run
 
 https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 can be used as a sample image.
 
-`visual_language_chat greedy_causal_lm miniCPM-V-2_6 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg`
+`visual_language_chat miniCPM-V-2_6 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg`
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model `llava-hf/llava-v1.6-mistral-7b-hf` can benefit from being run on a dGPU. Modify the source code to change the device for inference to the `GPU`.
 

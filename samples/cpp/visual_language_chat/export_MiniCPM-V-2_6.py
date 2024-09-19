@@ -776,7 +776,6 @@ class OvMiniCPMV:
 
         with torch.inference_mode():
             model_inputs["inputs_embeds"] = self.get_vllm_embedding(model_inputs)
-            breakpoint()
 
             if stream:
                 result = self._decode_stream(model_inputs["inputs_embeds"], tokenizer, **kwargs)
