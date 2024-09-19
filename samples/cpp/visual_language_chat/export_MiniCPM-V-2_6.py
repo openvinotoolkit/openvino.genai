@@ -936,27 +936,27 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_dir', type=Path)
     model_dir = parser.parse_args().model_dir
-    # model_id = "openbmb/MiniCPM-V-2_6"
-    # ckpt = model_dir / "ckpt"
-    # if not ckpt.exists():
-    #     snapshot_download(model_id, local_dir=ckpt, force_download=True)
-    #     patch_model_code(ckpt)
-    # model = AutoModel.from_pretrained(ckpt, trust_remote_code=True)
-    # model.eval()
-    # model.config.save_pretrained(model_dir)
-    # tokenizer = AutoTokenizer.from_pretrained(ckpt, trust_remote_code=True)
-    # tokenizer.save_pretrained(model_dir)
-    # ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
-    # ov.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
-    # ov.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
-    # processor = AutoProcessor.from_pretrained(ckpt, trust_remote_code=True)
-    # processor.save_pretrained(model_dir)
+    model_id = "openbmb/MiniCPM-V-2_6"
+    ckpt = model_dir / "ckpt"
+    if not ckpt.exists():
+        snapshot_download(model_id, local_dir=ckpt, force_download=True)
+        patch_model_code(ckpt)
+    model = AutoModel.from_pretrained(ckpt, trust_remote_code=True)
+    model.eval()
+    model.config.save_pretrained(model_dir)
+    tokenizer = AutoTokenizer.from_pretrained(ckpt, trust_remote_code=True)
+    tokenizer.save_pretrained(model_dir)
+    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
+    ov.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
+    ov.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
+    processor = AutoProcessor.from_pretrained(ckpt, trust_remote_code=True)
+    processor.save_pretrained(model_dir)
 
-    # convert_llm(model, model_dir)
-    # del model.llm
-    # gc.collect()
+    convert_llm(model, model_dir)
+    del model.llm
+    gc.collect()
 
-    # convert_vision_encoder(model, model_dir)
+    convert_vision_encoder(model, model_dir)
     ov_cpm = init_model(model_dir, "CPU")
     print(ov_cpm.chat(Image.open("C:/Users/vzlobin/OneDrive - Intel Corporation/a/pictures/icon.png"), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
 
