@@ -29,6 +29,7 @@ def main():
     pipe.generate(
         raw_speech,
         max_new_tokens=100,
+        # 'task' and 'language' parameters are supported for multilingual models only
         language="<|en|>",
         task="transcribe",
         streamer=streamer,

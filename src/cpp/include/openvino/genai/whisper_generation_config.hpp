@@ -53,11 +53,17 @@ public:
 
     bool is_multilingual = true;
 
+    // Language token to use for generation in the form of <|en|>.
+    // You can find all the possible language tokens in the generation_config.json lang_to_id dictionary.
+    // Can be set for multilingual models only.
     std::optional<std::string> language = std::nullopt;
 
+    // Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
     std::map<std::string, int64_t> lang_to_id;
 
-    std::string task = "transcribe";
+    // Task to use for generation, either “translate” or “transcribe”.
+    // Can be set for multilingual models only.
+    std::optional<std::string> task = std::nullopt;
 
     // A list containing tokens that will be supressed at the beginning of the sampling process.
     std::vector<int64_t> begin_suppress_tokens;

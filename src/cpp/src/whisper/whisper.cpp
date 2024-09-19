@@ -157,7 +157,7 @@ std::vector<int64_t> prepare_input_ids(ov::Tensor& encoder_hidden_state,
     }
 
     int64_t task_token_id = config.transcribe_token_id;
-    if (config.task == "translate") {
+    if (*config.task == "translate") {
         task_token_id = config.translate_token_id;
     }
 

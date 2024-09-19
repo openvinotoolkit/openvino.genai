@@ -85,10 +85,10 @@ auto whisper_generation_config_docstring = R"(
     type: list[int]
 
     language: Language token to use for generation in the form of <|en|>.
-              You can find all the possible language tokens in the model.generation_config.lang_to_id dictionary.
+              You can find all the possible language tokens in the generation_config.json lang_to_id dictionary.
     type: Optional[str]
     
-    lang_to_id: Language token to token_id map. Initialized from the generation_config.lang_to_id dictionary.
+    lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
     type: Dict[str, int]
     
     task: Task to use for generation, either “translate” or “transcribe”

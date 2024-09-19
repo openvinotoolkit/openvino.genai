@@ -70,6 +70,7 @@ void WhisperGenerationConfig::update_generation_config(const ov::AnyMap& config_
     read_anymap_param(config_map, "is_multilingual", is_multilingual);
     read_anymap_param(config_map, "language", language);
     read_anymap_param(config_map, "lang_to_id", lang_to_id);
+    read_anymap_param(config_map, "task", task);
 }
 
 size_t WhisperGenerationConfig::get_max_new_tokens(size_t prompt_length) const {
@@ -102,6 +103,11 @@ void WhisperGenerationConfig::validate() const {
                         "'task' mast be 'transcribe' or 'translate'. Task provided: '",
                         task,
                         "'.");
+    }
+
+    if (!is_multilingual) {
+        OPENVINO_ASSERT(!language.has_value(), "Cannot specify 'language' for not multilingual model.");
+        OPENVINO_ASSERT(!task.has_value(), "Cannot specify 'task' for not multilingual model.");
     }
 }
 }  // namespace genai
