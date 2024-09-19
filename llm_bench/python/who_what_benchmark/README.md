@@ -1,4 +1,3 @@
-TEST
 # Simple Accuracy Benchmark for Optimized LLMs
 
 Simple and quick accuracy test for compressed, quantized, pruned, distilled LLMs. It works with any model that suppors HuggingFace Transformers text generation API including:
