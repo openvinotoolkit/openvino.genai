@@ -76,8 +76,6 @@ def test_gt_data():
         "--num-samples", "2",
         "--device", "CPU"
     ])
-    import time
-    time.sleep(1)
     data = pd.read_csv(temp_file_name)
     os.remove(temp_file_name)
 
@@ -127,3 +125,21 @@ def test_language_autodetect():
 
     assert result.returncode == 0
     assert "马克" in data["questions"].values[0]
+
+
+def test_hf_model():
+    with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
+        temp_file_name = tmpfile.name
+
+    result = run_wwb([
+        "--base-model", model_id,
+        "--gt-data", temp_file_name,
+        "--num-samples", "2",
+        "--device", "CPU",
+        "--hf"
+    ])
+    data = pd.read_csv(temp_file_name)
+    os.remove(temp_file_name)
+
+    assert result.returncode == 0
+    assert len(data["questions"].values) == 2
