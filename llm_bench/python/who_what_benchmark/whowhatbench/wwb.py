@@ -8,7 +8,7 @@ from datasets import load_dataset
 from optimum.exporters import TasksManager
 from optimum.intel.openvino import OVModelForCausalLM
 from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
 
 from . import Evaluator
 
@@ -19,7 +19,11 @@ NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args
 )
 
 
-def load_model(model_id, device="CPU", ov_config=None):
+def load_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False):
+    if use_hf:
+        print("Using HF model")
+        return AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device_map=device.lower())
+
     if ov_config:
         with open(ov_config) as f:
             ov_options = json.load(f)
@@ -157,6 +161,11 @@ def parse_args():
         default=None,
         help="Used to select default prompts based on the primary model language, e.g. 'en', 'ch'.",
     )
+    parser.add_argument(
+        "--hf",
+        action="store_true",
+        help="Use AutoModelForCausalLM from transformers library to instantiate the model.",
+    )
 
     return parser.parse_args()
 
@@ -228,7 +237,7 @@ def main():
             language=args.language,
         )
     else:
-        base_model = load_model(args.base_model, args.device, args.ov_config)
+        base_model = load_model(args.base_model, args.device, args.ov_config, args.hf)
         evaluator = Evaluator(
             base_model=base_model,
             test_data=prompts,
@@ -242,7 +251,7 @@ def main():
         del base_model
 
     if args.target_model:
-        target_model = load_model(args.target_model, args.device, args.ov_config)
+        target_model = load_model(args.target_model, args.device, args.ov_config, args.hf)
         all_metrics_per_question, all_metrics = evaluator.score(target_model)
         print("Metrics for model: ", args.target_model)
         print(all_metrics)
