@@ -221,6 +221,10 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     ov::Tensor resized_source{output_tensor.get_element_type(), output_tensor.get_shape()};
     output_tensor.copy_to(resized_source);
 
+    if (1 == preprocessed.size()) {
+        return {std::move(resized_source), resized_source_size};
+    }
+
     HeightWidth size{
         size_t(preprocessed.at(1).at(0).ny),
         size_t(preprocessed.at(1).at(0).nx)

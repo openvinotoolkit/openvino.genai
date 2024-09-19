@@ -776,6 +776,7 @@ class OvMiniCPMV:
 
         with torch.inference_mode():
             model_inputs["inputs_embeds"] = self.get_vllm_embedding(model_inputs)
+            breakpoint()
 
             if stream:
                 result = self._decode_stream(model_inputs["inputs_embeds"], tokenizer, **kwargs)
@@ -958,8 +959,7 @@ def main():
 
     # convert_vision_encoder(model, model_dir)
     ov_cpm = init_model(model_dir, "CPU")
-    print(ov_cpm.chat(None, [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
-    # print(ov_cpm.chat(Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
+    print(ov_cpm.chat(Image.open("C:/Users/vzlobin/OneDrive - Intel Corporation/a/pictures/icon.png"), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
 
 if "__main__" == __name__:
     main()

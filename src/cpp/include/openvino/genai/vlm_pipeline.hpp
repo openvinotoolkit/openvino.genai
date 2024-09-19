@@ -43,12 +43,6 @@ public:
     // position_ids[N, conversation length], beam_idx[N].
     // Output shape: logits[N, conversation length, vocab_size].
     ov::InferRequest m_language;
-    // Conversation history represented as embeddings.
-    std::vector<float> m_language_embeddings_history;
-    // The actual size of m_language_embeddings_history.
-    // m_language_embeddings_history is allocated in chunks and its
-    // tail can be uninitialized.
-    size_t m_history_length;
     // Precomputed positional embeddings for the resampler.
     // [70, 70, hidden_size]. 70 is the initial guess of the image
     // height and width after dividing by patch_size.

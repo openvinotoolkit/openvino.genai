@@ -99,7 +99,9 @@ ov::Tensor process_prompt(ov::InferRequest& embedding, const ov::Tensor& prompt,
 ov::Tensor concatenate(const ov::Tensor& first, const ov::Tensor& second) {
     size_t res_d_0 = first.get_shape().at(0);
     size_t res_d_1 = first.get_shape().at(1);
-    size_t res_d_2 = first.get_shape().at(2) * 2;
+    OPENVINO_ASSERT(second.get_shape().at(0) == res_d_0);
+    OPENVINO_ASSERT(second.get_shape().at(1) == res_d_1);
+    size_t res_d_2 = first.get_shape().at(2) + second.get_shape().at(2);
     ov::Tensor res{first.get_element_type(), {res_d_0, res_d_1, res_d_2}};
     float* first_data = first.data<float>();
     float* second_data = second.data<float>();
@@ -115,6 +117,36 @@ ov::Tensor concatenate(const ov::Tensor& first, const ov::Tensor& second) {
                 res_data[i * res_d_1 * res_d_2 + j * res_d_2 + k]
                     = second_data[i * res_d_1 * second.get_shape().at(2) + j * second.get_shape().at(2) + l];
             }
+        }
+    }
+    return res;
+}
+
+ov::Tensor concatenate_mid_dim(const ov::Tensor& first, const ov::Tensor& second) {
+    size_t res_d_0 = first.get_shape().at(0);
+    size_t res_d_2 = first.get_shape().at(2);
+    OPENVINO_ASSERT(second.get_shape().at(0) == res_d_0);
+    OPENVINO_ASSERT(second.get_shape().at(2) == res_d_2);
+    size_t res_d_1 = first.get_shape().at(1) + second.get_shape().at(1);
+    ov::Tensor res{first.get_element_type(), {res_d_0, res_d_1, res_d_2}};
+    float* first_data = first.data<float>();
+    float* second_data = second.data<float>();
+    float* res_data = res.data<float>();
+    for (size_t i = 0; i < res_d_0; ++i) {
+        size_t j = 0;
+        for (; j < first.get_shape().at(1); ++j) {
+            std::copy_n(
+                first_data + i * first.get_shape().at(1) * res_d_2 + j * res_d_2,
+                res_d_2,
+                res_data + i * res_d_1 * res_d_2 + j * res_d_2
+            );
+        }
+        for (size_t k = 0; k < second.get_shape().at(1); ++k, ++j) {
+            std::copy_n(
+                second_data + i * second.get_shape().at(1) * res_d_2 + k * res_d_2,
+                res_d_2,
+                res_data + i * res_d_1 * res_d_2 + j * res_d_2
+            );
         }
     }
     return res;
@@ -294,9 +326,8 @@ ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tok
     embedding_len += n_img_pos;
 
     const ov::Tensor& slices = encoded_image.slices;
-    const ov::Shape& slices_shape = slices.get_shape();
-    const std::vector<HeightWidth>& sliced_sizes = encoded_image.slices_sizes;
-    if (!sliced_sizes.empty()) {
+    if (slices) {
+        const ov::Shape& slices_shape = slices.get_shape();
         embedding_len += 1;
         for (size_t i = 0; i < slices_shape.at(0); ++i) {
             for (size_t j = 0; j < slices_shape.at(1); ++j) {
@@ -344,7 +375,9 @@ ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tok
     std::copy(data + embedding_dim * 3, data + embedding_dim * 4, imgEmbedData);
     imgEmbedData += embedding_dim;
 
-    if (!sliced_sizes.empty()) {
+    if (slices) {
+        const ov::Shape& slices_shape = slices.get_shape();
+        const std::vector<HeightWidth>& sliced_sizes = encoded_image.slices_sizes;
         //fill "<slice>" embedding
         std::copy(data + embedding_dim * 4, data + embedding_dim * 5, imgEmbedData);
         imgEmbedData += embedding_dim;
@@ -406,12 +439,12 @@ VLMPipeline::VLMPipeline(
     m_language{core.compile_model(
         model_dir / "language_model.xml", device, device_config
     ).create_infer_request()},
-    m_language_embeddings_history(2048),
-    m_history_length{0},
     m_pos_embed_cache{
         get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70})
     },
-    is_chat_conversation{false} {}
+    is_chat_conversation{false} {
+        m_language.get_tensor("attention_mask").set_shape({1, 0});
+    }
 
 DecodedResults VLMPipeline::generate(
     const std::string& prompt,
@@ -421,45 +454,39 @@ DecodedResults VLMPipeline::generate(
 ) {
     std::string wrapped = images.empty() ?
         "<用户>" + prompt + "<AI>" : prompt + "<AI>";
-    ov::Tensor input_ids = m_tokenizer.encode(wrapped).input_ids;
-    // ov::Tensor input_ids{ov::element::i64, {1, 26}};
-    // int64_t* d = input_ids.data<int64_t>();
-    // d[0] = 151644;
-    // d[1] = 8948;
-    // d[2] = 198;
-    // d[3] = 2610;
-    // d[4] = 525;
-    // d[5] = 264;
-    // d[6] = 10950;
-    // d[7] = 17847;
-    // d[8] = 13;
-    // d[9] = 151645;
-    // d[10] = 198;
-    // d[11] = 151644;
-    // d[12] = 872;
-    // d[13] = 198;
-    // d[14] = 3838;
-    // d[15] = 374;
-    // d[16] = 18511;
-    // d[17] = 389;
-    // d[18] = 419;
-    // d[19] = 2168;
-    // d[20] = 30;
-    // d[21] = 151645;
-    // d[22] = 198;
-    // d[23] = 151644;
-    // d[24] = 77091;
-    // d[25] = 198;
+    // ov::Tensor input_ids = m_tokenizer.encode(wrapped).input_ids;
+    ov::Tensor input_ids{ov::element::i64, {1, 26}};
+    int64_t* d = input_ids.data<int64_t>();
+    d[0] = 151644;
+    d[1] = 8948;
+    d[2] = 198;
+    d[3] = 2610;
+    d[4] = 525;
+    d[5] = 264;
+    d[6] = 10950;
+    d[7] = 17847;
+    d[8] = 13;
+    d[9] = 151645;
+    d[10] = 198;
+    d[11] = 151644;
+    d[12] = 872;
+    d[13] = 198;
+    d[14] = 3838;
+    d[15] = 374;
+    d[16] = 18511;
+    d[17] = 389;
+    d[18] = 419;
+    d[19] = 2168;
+    d[20] = 30;
+    d[21] = 151645;
+    d[22] = 198;
+    d[23] = 151644;
+    d[24] = 77091;
+    d[25] = 198;
+    ov::Tensor inputs_embeds;
     if (images.empty()) {
         //<用户> + prompt + <AI> LLM first input
-        ov::Tensor promtTensor = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
-
-        if ((m_history_length + promtTensor.get_shape()[1]) * m_vlm_config.hidden_size > m_language_embeddings_history.size()) {
-            m_language_embeddings_history.resize((m_history_length + promtTensor.get_shape()[1]) * m_vlm_config.hidden_size);
-        }
-
-        memcpy(m_language_embeddings_history.data() + m_history_length * m_vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
-        m_history_length = m_history_length + promtTensor.get_shape()[1];
+        inputs_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
     } else {
         OPENVINO_ASSERT(1 == images.size(), "Only a single image allowed");
         EncodedImage embeds = m_vision_encoder.encode(images.at(0));
@@ -470,28 +497,16 @@ DecodedResults VLMPipeline::generate(
             m_vlm_config.hidden_size == img_embed_shape.at(2),
             "Unexpected embedding size");
 
-        m_language_embeddings_history.resize((m_language_embeddings_history.size() * m_vlm_config.hidden_size));
-
         //<用户> + image embedding + prompt + <AI> LLM first input
-        ov::Tensor promtTensor = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
-        m_history_length = img_embed_shape[1] + promtTensor.get_shape()[1];
-
-        //memcpy image embedding buf
-        if (m_history_length > m_language_embeddings_history.size()) {
-            m_language_embeddings_history.resize((m_history_length + 256) * m_vlm_config.hidden_size);
-        }
-
-        memcpy(m_language_embeddings_history.data(), imgEmbedTensor.data<float>(), imgEmbedTensor.get_byte_size());
-        memcpy(m_language_embeddings_history.data() + img_embed_shape[1] * m_vlm_config.hidden_size, promtTensor.data<float>(), promtTensor.get_byte_size());
+        ov::Tensor prompt_tensor = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+        inputs_embeds = concatenate_mid_dim(imgEmbedTensor, prompt_tensor);
     }
-    ov::Tensor llmEmbedTensor = ov::Tensor(ov::element::f32, {1, m_history_length, m_vlm_config.hidden_size}, m_language_embeddings_history.data());
-    auto input_len = llmEmbedTensor.get_shape()[1];
-
-    m_language.set_tensor("inputs_embeds", llmEmbedTensor);
-    m_language.get_tensor("attention_mask").set_shape({ llmEmbedTensor.get_shape()[0], llmEmbedTensor.get_shape()[1] });
+    m_language.set_tensor("inputs_embeds", inputs_embeds);
+    size_t history_len = m_language.get_tensor("attention_mask").get_shape().at(1);
+    m_language.get_tensor("attention_mask").set_shape({1, history_len + inputs_embeds.get_shape()[1]});
     std::fill_n(m_language.get_tensor("attention_mask").data<int64_t>(), m_language.get_tensor("attention_mask").get_size(), 1);
-    m_language.get_tensor("position_ids").set_shape({ llmEmbedTensor.get_shape()[0], llmEmbedTensor.get_shape()[1] });
-    std::iota(m_language.get_tensor("position_ids").data<int64_t>(), m_language.get_tensor("position_ids").data<int64_t>() + m_language.get_tensor("position_ids").get_size(), 0);
+    m_language.get_tensor("position_ids").set_shape({1, inputs_embeds.get_shape().at(1)});
+    std::iota(m_language.get_tensor("position_ids").data<int64_t>(), m_language.get_tensor("position_ids").data<int64_t>() + m_language.get_tensor("position_ids").get_size(), history_len);
     m_language.get_tensor("beam_idx").set_shape({ BATCH_SIZE });
     m_language.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
@@ -531,24 +546,11 @@ DecodedResults VLMPipeline::generate(
         m_embedding.infer();
         const ov::Tensor& embed_prompt_tensor = m_embedding.get_output_tensor();
         float* embed_data = embed_prompt_tensor.data<float>();
-
-        //input_ids * config.scale_emb
-        // for (auto idx = 0; idx < embed_prompt_tensor.get_size(); idx++) {
-        //     embed_data[idx] = embed_data[idx] * m_vlm_config.scale_emb;
-        // }
-
-        //record answer token info
-        if ((m_history_length + 1) > m_language_embeddings_history.size()) {
-            m_language_embeddings_history.resize((m_history_length + 256) * m_vlm_config.hidden_size);
+        for (auto idx = 0; idx < embed_prompt_tensor.get_size(); idx++) {
+            embed_data[idx] = embed_data[idx] * m_vlm_config.scale_emb;
         }
 
-        memcpy(m_language_embeddings_history.data() + (m_history_length + embed_prompt_tensor.get_size()) * m_vlm_config.hidden_size, embed_prompt_tensor.data<float>(), embed_prompt_tensor.get_byte_size());
-        m_history_length = m_history_length + 1;
-        ov::Tensor inputs_embeds{ov::element::f32, embed_prompt_tensor.get_shape()};
-        embed_prompt_tensor.copy_to(inputs_embeds);
-
-        m_language.set_tensor("inputs_embeds", inputs_embeds);
-
+        m_language.set_tensor("inputs_embeds", embed_prompt_tensor);
         m_language.get_tensor("attention_mask").set_shape({ BATCH_SIZE, m_language.get_tensor("attention_mask").get_shape()[1] + 1 });
         std::fill_n(m_language.get_tensor("attention_mask").data<int64_t>(), m_language.get_tensor("attention_mask").get_size(), 1);
         m_language.get_tensor("position_ids").data<int64_t>()[0] = int64_t(m_language.get_tensor("attention_mask").get_size() - 2);
@@ -571,12 +573,11 @@ DecodedResults VLMPipeline::generate(
         streamer_ptr->end();
     }
 
-    for (auto& variable : m_language.query_state()) {
-        variable.reset();
-    }
     if (!is_chat_conversation) {
-        m_language_embeddings_history.clear();
-        m_history_length = 0;
+        for (auto& variable : m_language.query_state()) {
+            variable.reset();
+        }
+        m_language.get_tensor("attention_mask").set_shape({1, 0});
     }
     return {{m_tokenizer.decode(generated)}};
 }
