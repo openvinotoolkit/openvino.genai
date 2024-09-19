@@ -11,6 +11,7 @@ add_subdirectory(cpp/multinomial_causal_lm)
 add_subdirectory(cpp/prompt_lookup_decoding_lm)
 add_subdirectory(cpp/speculative_decoding_lm)
 add_subdirectory(cpp/benchmark_genai)
+add_subdirectory(cpp/whisper_speech_recognition)
 
 install(FILES requirements.txt DESTINATION samples
         COMPONENT cpp_samples_genai)
