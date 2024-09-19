@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9"]
+        python-version: ["3.12"]
 
     steps:
     - uses: actions/checkout@v4
@@ -42,6 +42,7 @@ jobs:
         GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt
         pip install openvino-nightly
         GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.WWB_PATH }}/requirements.txt
+        GIT_CLONE_PROTECTION_ACTIVE=false pip install ${{ env.WWB_PATH }}
 
     - name: Lint with flake8
       run: |
@@ -92,4 +93,4 @@ jobs:
           GIT_CLONE_PROTECTION_ACTIVE=false pip install -r llm_bench/python/who_what_benchmark/requirements.txt
           GIT_CLONE_PROTECTION_ACTIVE=false pip install llm_bench/python/who_what_benchmark/
           pip install pytest
-          python -m pytest  ./llm_bench/python/who_what_benchmark/tests
+          python -m pytest  llm_bench/python/who_what_benchmark/tests
