@@ -3,16 +3,16 @@
 
 #include "llm_pipeline_static.hpp"
 
+#include <fstream>
+
+#include "openvino/pass/stateful_to_stateless.hpp"
+#include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
+
+#include <jinja2cpp/user_callable.h>
 
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
-
-#include <openvino/pass/stateful_to_stateless.hpp>
-#include <jinja2cpp/user_callable.h>
-#include <fstream>
-
-#include <fstream>
 
 namespace {
 
@@ -446,6 +446,7 @@ DecodedResults StaticLLMPipeline::generate(
     raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
     raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
+    decoded_results.perf_metrics.m_evaluated = false;
     decoded_results.perf_metrics.evaluate_statistics(start_time);
     return decoded_results;
 }
