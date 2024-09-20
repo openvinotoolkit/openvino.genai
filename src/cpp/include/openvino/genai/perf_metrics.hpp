@@ -118,15 +118,10 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     size_t get_num_input_tokens();
     MeanStdPair get_ttft();         // Time to the first token (in ms) (TTFT).
     MeanStdPair get_tpot();         // Time (in ms) per output token (TPOT).
-<<<<<<< HEAD
-    MeanStdPair get_throughput();   // Tokens per second.
-    
-=======
     MeanStdPair get_ipot();         // Inference time (in ms) per output token.
     MeanStdPair get_throughput();   // Tokens per second.
     
     MeanStdPair get_inference_duration();       // in ms
->>>>>>> master
     MeanStdPair get_generate_duration();        // in ms
     MeanStdPair get_tokenization_duration();    // in ms
     MeanStdPair get_detokenization_duration();  // in ms
