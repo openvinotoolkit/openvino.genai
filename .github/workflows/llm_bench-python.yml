@@ -74,7 +74,7 @@ https://storage.openvinotoolkit.org/simple/wheels/nightly
         python ./llm_bench/python/benchmark.py -m ./ov_models/tiny-sd/pytorch/dldt/FP16/ -pf ./llm_bench/python/prompts/stable-diffusion.jsonl -d cpu -n 1
     - name: WWB Tests
       run: |
-        python -m pytest  ./llm_bench/python/who_what_benchmark/tests
+        python -m pytest llm_bench/python/who_what_benchmark/tests
   stateful:
     runs-on: ubuntu-20.04
     steps:
@@ -95,4 +95,4 @@ https://storage.openvinotoolkit.org/simple/wheels/nightly
           GIT_CLONE_PROTECTION_ACTIVE=false pip install -r llm_bench/python/who_what_benchmark/requirements.txt
           GIT_CLONE_PROTECTION_ACTIVE=false pip install llm_bench/python/who_what_benchmark/
           pip install pytest
-          python -m pytest  llm_bench/python/who_what_benchmark/tests
+          python -m pytest llm_bench/python/who_what_benchmark/tests
