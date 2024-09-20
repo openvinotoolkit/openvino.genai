@@ -23,10 +23,38 @@ NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args
 )
 
 
+class  GenAIModelWrapper():
+    """
+    A helper class to store additional attributes for GenAI models
+    """
+    def __init__(self, model, model_dir):
+        self.model = model
+        self.config = AutoConfig.from_pretrained(model_dir)
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return getattr(self, attr)
+        else:
+            return getattr(self.model, attr)
+
+
+def load_genai_pipeline(model_dir, device="CPU"):
+    try:
+        import openvino_genai
+    except ImportError:
+        logger.error("Failed to import openvino_genai package. Please install it.")
+        exit(-1)
+    logger.info("Using OpenVINO GenAI API")
+    return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device), model_dir)
+    
+
 def load_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False):
     if use_hf:
-        logger.info("Using HF model")
+        logger.info("Using HF Transformers API")
         return AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device_map=device.lower())
+    
+    if use_genai:
+        return load_genai_pipeline(model_id, device)
 
     if ov_config:
         with open(ov_config) as f:
@@ -170,6 +198,11 @@ def parse_args():
         action="store_true",
         help="Use AutoModelForCausalLM from transformers library to instantiate the model.",
     )
+    parser.add_argument(
+        "--genai",
+        action="store_true",
+        help="Use LLMPipeline from transformers library to instantiate the model.",
+    )
 
     return parser.parse_args()
 
@@ -224,6 +257,11 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
+def genai_gen_answer(model, tokenizer, question, max_new_tokens, skip_question):
+    out = model.generate(question, max_new_tokens=max_new_tokens)
+    return out
+
+
 def main():
     args = parse_args()
     check_args(args)
@@ -241,7 +279,7 @@ def main():
             language=args.language,
         )
     else:
-        base_model = load_model(args.base_model, args.device, args.ov_config, args.hf)
+        base_model = load_model(args.base_model, args.device, args.ov_config, args.hf, args.genai)
         evaluator = Evaluator(
             base_model=base_model,
             test_data=prompts,
@@ -249,14 +287,15 @@ def main():
             similarity_model_id=args.text_encoder,
             num_samples=args.num_samples,
             language=args.language,
+            gen_answer_fn=genai_gen_answer if args.genai else None
         )
         if args.gt_data:
             evaluator.dump_gt(args.gt_data)
         del base_model
 
     if args.target_model:
-        target_model = load_model(args.target_model, args.device, args.ov_config, args.hf)
-        all_metrics_per_question, all_metrics = evaluator.score(target_model)
+        target_model = load_model(args.target_model, args.device, args.ov_config, args.hf, args.genai)
+        all_metrics_per_question, all_metrics = evaluator.score(target_model, genai_gen_answer if args.genai else None)
         logger.info("Metrics for model: %s", args.target_model)
         logger.info(all_metrics)
 

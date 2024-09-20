@@ -32,17 +32,21 @@ target_model_path = os.path.join(tmp_dir, "opt125m_int8")
 
 
 def setup_module():
+    from optimum.exporters.openvino.convert import export_tokenizer
+    
     logger.info("Create models")
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     base_model = OVModelForCausalLM.from_pretrained(model_id)
     base_model.save_pretrained(base_model_path)
     tokenizer.save_pretrained(base_model_path)
+    export_tokenizer(tokenizer, base_model_path)
 
     target_model = OVModelForCausalLM.from_pretrained(
         model_id, quantization_config=OVWeightQuantizationConfig(bits=8)
     )
     target_model.save_pretrained(target_model_path)
     tokenizer.save_pretrained(target_model_path)
+    export_tokenizer(tokenizer, target_model_path)
 
 
 def teardown_module():
@@ -57,9 +61,10 @@ def test_target_model():
         "--num-samples", "2",
         "--device", "CPU"
     ])
+
     assert result.returncode == 0
-    assert "Metrics for model" in result.stdout
-    assert "## Reference text" not in result.stdout
+    assert "Metrics for model" in result.stderr
+    assert "## Reference text" not in result.stderr
 
 
 @pytest.fixture
@@ -93,7 +98,7 @@ def test_output_directory():
             "--output", temp_dir
         ])
         assert result.returncode == 0
-        assert "Metrics for model" in result.stdout
+        assert "Metrics for model" in result.stderr
         assert os.path.exists(os.path.join(temp_dir, "metrics_per_qustion.csv"))
         assert os.path.exists(os.path.join(temp_dir, "metrics.csv"))
 
@@ -107,7 +112,7 @@ def test_verbose():
         "--verbose"
     ])
     assert result.returncode == 0
-    assert "## Reference text" in result.stdout
+    assert "## Diff " in result.stderr
 
 
 def test_language_autodetect():
@@ -143,3 +148,16 @@ def test_hf_model():
 
     assert result.returncode == 0
     assert len(data["questions"].values) == 2
+
+
+def test_genai_model():
+    result = run_wwb([
+        "--base-model", base_model_path,
+        "--target-model", target_model_path,
+        "--num-samples", "2",
+        "--device", "CPU",
+        "--genai"
+    ])
+    assert result.returncode == 0
+    assert "Metrics for model" in result.stderr
+    assert "## Reference text" not in result.stderr
