@@ -24,5 +24,7 @@ from .py_generate_pipeline import (
     StopCriteria,
     StreamerBase, 
     TokenizedInputs,
-    Tokenizer
+    Tokenizer,
+    WhisperGenerationConfig,
+    WhisperPipeline,
 )
