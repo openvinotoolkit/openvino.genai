@@ -106,7 +106,7 @@ def get_samples_from_dataset(language: str = "en", length: int = 30):
     )
     ds = typing.cast(datasets.IterableDataset, ds)
 
-    tries = 3
+    tries = 5
     while tries > 0:
         try:
             tries -= 1
