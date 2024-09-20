@@ -570,7 +570,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         std::cout << "Found custom SchedulerConfig.\n";
     } else if (true) {
         SchedulerConfig scheduler_config;
-        scheduler_config.cache_size = 8;
+        scheduler_config.num_kv_blocks= 16;
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(
             path,
             scheduler_config,
