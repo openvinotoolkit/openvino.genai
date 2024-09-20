@@ -630,7 +630,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl https://storage.openvinotoolkit.org/repositories/openvino/packages/pre-release/2024.4.0rc2/linux/l_openvino_toolkit_ubuntu24_2024.4.0.dev20240905_x86_64.tgz | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Build app
         run: |

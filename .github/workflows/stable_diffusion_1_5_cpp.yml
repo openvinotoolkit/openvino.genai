@@ -38,32 +38,6 @@ jobs:
           mkdir ${{ env.OV_INSTALL_DIR }}
           tar -xzf openvino_package.tar.gz -C ${{ env.OV_INSTALL_DIR }} --strip-components=1
 
-<<<<<<< HEAD
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-        
-      - name: Create virtual environment
-        working-directory: ${{ env.WORKING_DIRECTORY }}
-        run: python3 -m venv openvino_sd_cpp
-
-      - name: Install python dependencies
-        working-directory: ${{ env.WORKING_DIRECTORY }}
-        run: |
-          source openvino_sd_cpp/bin/activate
-          python -m pip install ../../../thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -r ../../requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-
-      - name: Download and convert model and tokenizer
-        working-directory: ${{ env.WORKING_DIRECTORY }}
-        run: |
-          source openvino_sd_cpp/bin/activate
-          optimum-cli export openvino --model botp/stable-diffusion-v1-5 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
-
-=======
->>>>>>> master
       - name: Build app
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
@@ -139,20 +113,8 @@ jobs:
         - name: Download and convert models and tokenizer
           run: |
             . "./openvino_sd_cpp/Scripts/Activate.ps1"
-<<<<<<< HEAD
-            optimum-cli export openvino --model botp/stable-diffusion-v1-5 --task stable-diffusion models/stable_diffusion_v1_5_ov/FP16
-  
-        - name: Build app
-          working-directory: ${{ env.WORKING_DIRECTORY }}
-          run: |
-            . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-            cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-            cmake --build ./build/ --config Release --parallel
-  
-=======
             optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 models/dreamlike-art-dreamlike-anime-1.0/FP16
 
->>>>>>> master
         - name: Run app
           run: |
             . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"

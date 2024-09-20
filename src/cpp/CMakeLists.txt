@@ -45,7 +45,7 @@ ov_genai_build_jinja2cpp()
 file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
 set(TARGET_NAME openvino_genai)
-add_library(${TARGET_NAME} SHARED ${SOURCE_FILES} ${HEADERS} ${PUBLIC_HEADERS})
+add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 add_dependencies(${TARGET_NAME} openvino_tokenizers)
 add_library(openvino::genai ALIAS ${TARGET_NAME})
 
