@@ -159,7 +159,7 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
             else:
                 prompt_dict[p_idx] = '\n[ INFO ] [Average] Prompt[{}] 1st step of unet latency: {}, ' \
                     '2nd steps of unet latency: {}, 2nd steps throughput: {}' \
-                    .format(p_idx, avg_1st_token_latency, latency_unit, avg_2nd_tokens_latency, latency_unit, avg_2nd_token_tput)
+                    .format(p_idx, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput)
 
 
 def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False):
