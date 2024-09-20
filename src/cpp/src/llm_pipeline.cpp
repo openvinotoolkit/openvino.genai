@@ -571,6 +571,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if (true) {
         SchedulerConfig scheduler_config;
         scheduler_config.num_kv_blocks= 16;
+        scheduler_config.enable_prefix_caching = true;
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(
             path,
             scheduler_config,
