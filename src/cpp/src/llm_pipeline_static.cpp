@@ -3,16 +3,16 @@
 
 #include "llm_pipeline_static.hpp"
 
+#include <fstream>
+
+#include "openvino/pass/stateful_to_stateless.hpp"
+#include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
+
+#include <jinja2cpp/user_callable.h>
 
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
-
-#include <openvino/pass/stateful_to_stateless.hpp>
-#include <jinja2cpp/user_callable.h>
-#include <fstream>
-
-#include <fstream>
 
 namespace {
 
