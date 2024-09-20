@@ -35,16 +35,16 @@ public:
     * @brief encode a single prompt
     * @return pair of [input_ids, attention_mask]
     */
-    TokenizedInputs encode(const std::string prompt);
+    TokenizedInputs encode(const std::string prompt, bool add_special_tokens = true);
     
     /**
     * @brief encode batch of prompts. Left padding will be applied by default
     * @param prompts vector storing batch of prompts
     * @return pair of [input_ids, attention_mask]
     */
-    TokenizedInputs encode(std::vector<std::string>& prompts);
-    TokenizedInputs encode(std::vector<std::string>&& prompts);
-    TokenizedInputs encode(std::initializer_list<std::string>& prompts);
+    TokenizedInputs encode(std::vector<std::string>& prompts, bool add_special_tokens = true);
+    TokenizedInputs encode(std::vector<std::string>&& prompts, bool add_special_tokens = true);
+    TokenizedInputs encode(std::initializer_list<std::string>& prompts, bool add_special_tokens = true);
     
     /**
     * @brief decode sequence of tokens

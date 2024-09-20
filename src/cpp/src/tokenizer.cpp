@@ -65,7 +65,10 @@ public:
 
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_tokenizer;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_detokenizer;
-
+    // To change the adding special tokens mode we use a statefull subgraph, 
+    // this flag holds the current state value of the CompiledModel.
+    bool m_add_special_tokens = true;  
+    
     int64_t m_pad_token_id = -1;
     int64_t m_bos_token_id = -1;
     int64_t m_eos_token_id = -1;
@@ -75,6 +78,30 @@ public:
     std::string m_eos_token = "";
     
     std::string m_chat_template = "";
+
+    void set_state_if_necessary(bool add_special_tokens) {
+        // If user requested add_special_tokens mode different from the current one,
+        // need to set state variable.
+        OPENVINO_ASSERT(m_ireq_queue_tokenizer != nullptr);
+
+        // If requested mode matches the stored state set, then don't touch states.
+        if (add_special_tokens == m_add_special_tokens) {
+            return;
+        }
+        
+        auto states = m_ireq_queue_tokenizer->get(0).query_state();
+        int32_t flag = add_special_tokens ?  1 : 0;
+        ov::Tensor add_special_tensor = ov::Tensor{ov::element::i32, {}, &flag};
+         
+        for (auto& state: states) {
+            if (state.get_name().find("ADD_SPECIAL_TOKENS") == std::string::npos) {
+                // It's not add_special_tokens flag state.
+                continue;
+            }
+            state.set_state(add_special_tensor);
+        }
+        m_add_special_tokens = add_special_tokens;
+    }
 
     TokenizerImpl() = default;
 
@@ -251,7 +278,9 @@ public:
         get_id_from_str(m_eos_token, m_eos_token_id);
     }
 
-    TokenizedInputs encode(std::string prompt) {
+    TokenizedInputs encode(std::string prompt, bool add_special_tokens = true) {
+        set_state_if_necessary(add_special_tokens);
+
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
         size_t batch_size = 1;
         infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
@@ -263,7 +292,9 @@ public:
         );
     }
 
-    TokenizedInputs encode(std::vector<std::string>& prompts) {
+    TokenizedInputs encode(std::vector<std::string>& prompts, bool add_special_tokens = true) {
+        set_state_if_necessary(add_special_tokens);
+        
         TokenizedInputs unpadded;
         {
             CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
@@ -444,20 +475,20 @@ Tokenizer::Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& plugin
     m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path, plugin_config);
 }
 
-TokenizedInputs Tokenizer::encode(const std::string prompt) {
-    return m_pimpl->encode(std::move(prompt));
+TokenizedInputs Tokenizer::encode(const std::string prompt, bool add_special_tokens) {
+    return m_pimpl->encode(std::move(prompt), add_special_tokens);
 }
 
-TokenizedInputs Tokenizer::encode(std::vector<std::string>& prompts) {
-    return m_pimpl->encode(prompts);
+TokenizedInputs Tokenizer::encode(std::vector<std::string>& prompts, bool add_special_tokens) {
+    return m_pimpl->encode(prompts, add_special_tokens);
 }
 
-TokenizedInputs Tokenizer::encode(std::vector<std::string>&& prompts) {
-    return m_pimpl->encode(prompts);
+TokenizedInputs Tokenizer::encode(std::vector<std::string>&& prompts, bool add_special_tokens) {
+    return m_pimpl->encode(prompts, add_special_tokens);
 }
 
-TokenizedInputs Tokenizer::encode(std::initializer_list<std::string>& text) {
-    return encode(std::vector<std::string>(text.begin(), text.end()));
+TokenizedInputs Tokenizer::encode(std::initializer_list<std::string>& text, bool add_special_tokens) {
+    return encode(std::vector<std::string>(text.begin(), text.end()), add_special_tokens);
 }
 
 std::string Tokenizer::decode(std::vector<int64_t> tokens) {
