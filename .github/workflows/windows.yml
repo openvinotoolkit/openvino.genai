@@ -401,8 +401,8 @@ jobs:
           python ${{ env.OV_INSTALL_DIR }}\samples\python\multinomial_causal_lm\multinomial_causal_lm.py TinyLlama-1.1B-Chat-v1.0 0
 
   Overall_Status:
-    name: ci/gha_overall_status_linux
-    needs: [openvino_download, openvino_build, genai_python_lib, genai_package]
+    name: ci/gha_overall_status_windows
+    needs: [openvino_download, openvino_build, genai_python_lib, genai_package, genai_python_lib_whisper]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
