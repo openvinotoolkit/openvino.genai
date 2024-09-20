@@ -40,7 +40,8 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest black
         GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt
-        pip install openvino-nightly
+        python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url
+https://storage.openvinotoolkit.org/simple/wheels/nightly
         GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.WWB_PATH }}/requirements.txt
         GIT_CLONE_PROTECTION_ACTIVE=false pip install ${{ env.WWB_PATH }}
 
@@ -85,7 +86,8 @@ jobs:
         run: |
           GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r llm_bench/python/requirements.txt
           python -m pip uninstall --yes openvino
-          python -m pip install openvino-nightly
+          python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url
+https://storage.openvinotoolkit.org/simple/wheels/nightly
           python llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir . --stateful
           grep beam_idx pytorch/dldt/FP32/openvino_model.xml
       - name: WWB Tests
