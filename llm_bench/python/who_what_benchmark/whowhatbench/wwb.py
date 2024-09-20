@@ -23,7 +23,7 @@ NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args
 )
 
 
-class  GenAIModelWrapper():
+class GenAIModelWrapper():
     """
     A helper class to store additional attributes for GenAI models
     """
@@ -46,13 +46,13 @@ def load_genai_pipeline(model_dir, device="CPU"):
         exit(-1)
     logger.info("Using OpenVINO GenAI API")
     return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device), model_dir)
-    
+
 
 def load_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False):
     if use_hf:
         logger.info("Using HF Transformers API")
         return AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device_map=device.lower())
-    
+
     if use_genai:
         return load_genai_pipeline(model_id, device)
 

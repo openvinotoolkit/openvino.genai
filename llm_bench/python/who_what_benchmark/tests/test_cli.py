@@ -33,7 +33,7 @@ target_model_path = os.path.join(tmp_dir, "opt125m_int8")
 
 def setup_module():
     from optimum.exporters.openvino.convert import export_tokenizer
-    
+
     logger.info("Create models")
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     base_model = OVModelForCausalLM.from_pretrained(model_id)
