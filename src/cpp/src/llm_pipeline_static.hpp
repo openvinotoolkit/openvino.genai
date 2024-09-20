@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <filesystem>
+
 #include "llm_pipeline_base.hpp"
 
 namespace ov {
