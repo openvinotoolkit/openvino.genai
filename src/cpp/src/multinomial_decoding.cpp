@@ -156,15 +156,20 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
                                                 std::shared_ptr<ov::genai::StreamerBase> streamer,
                                                 std::optional<ov::Tensor> position_ids) {
     ov::Shape prompts_shape = input_ids.get_shape();
-    size_t batch_size = prompts_shape[0];
+    const size_t batch_size = prompts_shape[0];
 
     OPENVINO_ASSERT(batch_size == 1, "Only batch size = 1 supported for multinomial decoding");
 
-    size_t prompt_len = prompts_shape[1];
+    const size_t prompt_len = prompts_shape[1];
+    const size_t max_new_tokens = config.get_max_new_tokens(prompt_len);
 
     // Initialize results and performance metrics.
     EncodedResults results;
     auto& raw_perf_counters = results.perf_metrics.raw_metrics;
+    raw_perf_counters.m_new_token_times.reserve(max_new_tokens);
+    raw_perf_counters.m_batch_sizes.reserve(max_new_tokens);
+    raw_perf_counters.m_token_infer_durations.reserve(max_new_tokens);
+    raw_perf_counters.m_inference_durations = {{ MicroSeconds(0.0f) }};
     results.scores.resize(batch_size, 0);
     results.tokens.resize(batch_size);
 
@@ -180,8 +185,13 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
     m_model_runner.get_tensor("beam_idx").set_shape({batch_size});
     m_model_runner.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
+    const auto infer_start = std::chrono::steady_clock::now();
     m_model_runner.infer();
-    raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+    const auto infer_end = std::chrono::steady_clock::now();
+    const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
+    raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
+    raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
+    raw_perf_counters.m_new_token_times.emplace_back(infer_end);
     raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
     auto logits_tensor = m_model_runner.get_tensor("logits");
@@ -213,8 +223,6 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
 
     m_model_runner.get_tensor("input_ids").set_shape({batch_size, 1});
 
-    size_t max_new_tokens = config.get_max_new_tokens(prompt_len);
-
     for (size_t i = 0; i < max_new_tokens - 1; i++) {
         if (position_ids.has_value()) {
             ov::genai::utils::update_position_ids(m_model_runner.get_tensor("position_ids"),
@@ -225,8 +233,13 @@ ov::genai::EncodedResults multinominal_decoding(ov::InferRequest& m_model_runner
 
         m_model_runner.get_tensor("input_ids").data<int64_t>()[0] = out_token.id;
 
+        const auto infer_start = std::chrono::steady_clock::now();
         m_model_runner.infer();
-        raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
+        const auto infer_end = std::chrono::steady_clock::now();
+        const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
+        raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
+        raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
+        raw_perf_counters.m_new_token_times.emplace_back(infer_end);
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
         logits = m_model_runner.get_tensor("logits").data<float>();

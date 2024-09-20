@@ -11,7 +11,10 @@
 #include <openvino/runtime/auto/properties.hpp>
 #include "../cpp/src/tokenizers_path.hpp"
 
+#include "./utils.hpp"
+
 namespace py = pybind11;
+namespace utils = ov::genai::pybind::utils;
 using ov::genai::ChatHistory;
 using ov::genai::ContinuousBatchingPipeline;
 using ov::genai::DecodedResults;
@@ -32,13 +35,6 @@ using ov::genai::StringInputs;
 using ov::genai::TokenizedInputs;
 using ov::genai::Tokenizer;
 
-// When StreamerVariant is used utf-8 decoding is done by pybind and can lead to exception on incomplete texts.
-// Therefore strings decoding should be handled with PyUnicode_DecodeUTF8(..., "replace") to not throw errors.
-using PyBindStreamerVariant = std::variant<std::function<bool(py::str)>, std::shared_ptr<StreamerBase>, std::monostate>;
-
-template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
-
 template <typename T, typename U>
 std::vector<float> get_ms(const T& instance, U T::*member) {
     // Converts c++ duration to float so that it can be used in Python.
@@ -49,6 +45,8 @@ std::vector<float> get_ms(const T& instance, U T::*member) {
                    [](const auto& duration) { return duration.count(); });
     return res;
 }
+
+void init_whisper_pipeline(py::module_& m);
 
 namespace {
 
@@ -104,7 +102,11 @@ auto generation_config_docstring = R"(
                    max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
     max_new_tokens: the maximum numbers of tokens to generate, excluding the number of tokens in the prompt. max_new_tokens has priority over max_length.
     ignore_eos:    if set to true, then generation will not stop even if <eos> token is met.
-    eos_token_id:  token_id of <eos> (end of sentence).
+    eos_token_id:  token_id of <eos> (end of sentence)
+    min_new_tokens: set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
+    stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+    include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
+    stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
 
     Beam search specific parameters:
     num_beams:         number of beams for beam search. 1 disables beam search.
@@ -331,143 +333,6 @@ OptionalGenerationConfig update_config_from_kwargs(const OptionalGenerationConfi
     return res_config;
 }
 
-ov::Any py_object_to_any(const py::object& py_obj);
-
-bool py_object_is_any_map(const py::object& py_obj) {
-    if (!py::isinstance<py::dict>(py_obj)) {
-        return false;
-    }
-    auto dict = py::cast<py::dict>(py_obj);
-    return std::all_of(dict.begin(), dict.end(), [&](const std::pair<py::object::handle, py::object::handle>& elem) {
-        return py::isinstance<py::str>(elem.first);
-    });
-}
-
-ov::AnyMap py_object_to_any_map(const py::object& py_obj) {
-    OPENVINO_ASSERT(py_object_is_any_map(py_obj), "Unsupported attribute type.");
-    ov::AnyMap return_value = {};
-    for (auto& item : py::cast<py::dict>(py_obj)) {
-        std::string key = py::cast<std::string>(item.first);
-        py::object value = py::cast<py::object>(item.second);
-        if (py_object_is_any_map(value)) {
-            return_value[key] = py_object_to_any_map(value);
-        } else {
-            return_value[key] = py_object_to_any(value);
-        }
-    }
-    return return_value;
-}
-
-ov::Any py_object_to_any(const py::object& py_obj) {
-    // Python types
-    py::object float_32_type = py::module_::import("numpy").attr("float32");
-    
-    if (py::isinstance<py::str>(py_obj)) {
-        return py_obj.cast<std::string>();
-    } else if (py::isinstance<py::bool_>(py_obj)) {
-        return py_obj.cast<bool>();
-    } else if (py::isinstance<py::bytes>(py_obj)) {
-        return py_obj.cast<std::string>();
-    } else if (py::isinstance<py::float_>(py_obj)) {
-        return py_obj.cast<double>();
-    } else if (py::isinstance(py_obj, float_32_type)) {
-        return py_obj.cast<float>();
-    } else if (py::isinstance<py::int_>(py_obj)) {
-        return py_obj.cast<int64_t>();
-    } else if (py::isinstance<py::none>(py_obj)) {
-        return {};
-    } else if (py::isinstance<py::list>(py_obj)) {
-        auto _list = py_obj.cast<py::list>();
-        enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE };
-        PY_TYPE detected_type = PY_TYPE::UNKNOWN;
-        for (const auto& it : _list) {
-            auto check_type = [&](PY_TYPE type) {
-                if (detected_type == PY_TYPE::UNKNOWN || detected_type == type) {
-                    detected_type = type;
-                    return;
-                }
-                OPENVINO_THROW("Incorrect attribute. Mixed types in the list are not allowed.");
-            };
-            if (py::isinstance<py::str>(it)) {
-                check_type(PY_TYPE::STR);
-            } else if (py::isinstance<py::int_>(it)) {
-                check_type(PY_TYPE::INT);
-            } else if (py::isinstance<py::float_>(it)) {
-                check_type(PY_TYPE::FLOAT);
-            } else if (py::isinstance<py::bool_>(it)) {
-                check_type(PY_TYPE::BOOL);
-            } else if (py::isinstance<ov::PartialShape>(it)) {
-                check_type(PY_TYPE::PARTIAL_SHAPE);
-            }
-        }
-
-        if (_list.empty())
-            return ov::Any();
-
-        switch (detected_type) {
-        case PY_TYPE::STR:
-            return _list.cast<std::vector<std::string>>();
-        case PY_TYPE::FLOAT:
-            return _list.cast<std::vector<double>>();
-        case PY_TYPE::INT:
-            return _list.cast<std::vector<int64_t>>();
-        case PY_TYPE::BOOL:
-            return _list.cast<std::vector<bool>>();
-        case PY_TYPE::PARTIAL_SHAPE:
-            return _list.cast<std::vector<ov::PartialShape>>();
-        default:
-            OPENVINO_ASSERT(false, "Unsupported attribute type.");
-        }
-    
-    // OV types
-    } else if (py_object_is_any_map(py_obj)) {
-        return py_object_to_any_map(py_obj);
-    } else if (py::isinstance<ov::Any>(py_obj)) {
-        return py::cast<ov::Any>(py_obj);
-    } else if (py::isinstance<ov::element::Type>(py_obj)) {
-        return py::cast<ov::element::Type>(py_obj);
-    } else if (py::isinstance<ov::PartialShape>(py_obj)) {
-        return py::cast<ov::PartialShape>(py_obj);
-    } else if (py::isinstance<ov::hint::Priority>(py_obj)) {
-        return py::cast<ov::hint::Priority>(py_obj);
-    } else if (py::isinstance<ov::hint::PerformanceMode>(py_obj)) {
-        return py::cast<ov::hint::PerformanceMode>(py_obj);
-    } else if (py::isinstance<ov::intel_auto::SchedulePolicy>(py_obj)) {
-        return py::cast<ov::intel_auto::SchedulePolicy>(py_obj);
-    } else if (py::isinstance<ov::hint::SchedulingCoreType>(py_obj)) {
-        return py::cast<ov::hint::SchedulingCoreType>(py_obj);
-    } else if (py::isinstance<std::set<ov::hint::ModelDistributionPolicy>>(py_obj)) {
-        return py::cast<std::set<ov::hint::ModelDistributionPolicy>>(py_obj);
-    } else if (py::isinstance<ov::hint::ExecutionMode>(py_obj)) {
-        return py::cast<ov::hint::ExecutionMode>(py_obj);
-    } else if (py::isinstance<ov::log::Level>(py_obj)) {
-        return py::cast<ov::log::Level>(py_obj);
-    } else if (py::isinstance<ov::device::Type>(py_obj)) {
-        return py::cast<ov::device::Type>(py_obj);
-    } else if (py::isinstance<ov::streams::Num>(py_obj)) {
-        return py::cast<ov::streams::Num>(py_obj);
-    } else if (py::isinstance<ov::Affinity>(py_obj)) {
-        return py::cast<ov::Affinity>(py_obj);
-    } else if (py::isinstance<ov::Tensor>(py_obj)) {
-        return py::cast<ov::Tensor>(py_obj);
-    } else if (py::isinstance<ov::Output<ov::Node>>(py_obj)) {
-        return py::cast<ov::Output<ov::Node>>(py_obj);
-    } else if (py::isinstance<ov::genai::SchedulerConfig>(py_obj)) {
-        return py::cast<ov::genai::SchedulerConfig>(py_obj);
-    } else if (py::isinstance<py::object>(py_obj)) {
-        return py_obj;
-    }
-    OPENVINO_ASSERT(false, "Unsupported attribute type.");
-}
-
-std::map<std::string, ov::Any> properties_to_any_map(const std::map<std::string, py::object>& properties) {
-    std::map<std::string, ov::Any> properties_to_cpp;
-    for (const auto& property : properties) {
-        properties_to_cpp[property.first] = py_object_to_any(property.second);
-    }
-    return properties_to_cpp;
-}
-
 py::list handle_utf8_results(const std::vector<std::string>& decoded_res) {
     // pybind11 decodes strings similar to Pythons's
     // bytes.decode('utf-8'). It raises if the decoding fails.
@@ -485,7 +350,7 @@ py::object call_common_generate(
     LLMPipeline& pipe, 
     const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs, 
     const OptionalGenerationConfig& config, 
-    const PyBindStreamerVariant& py_streamer, 
+    const utils::PyBindStreamerVariant& py_streamer, 
     const py::kwargs& kwargs
 ) {
     auto updated_config = update_config_from_kwargs(config, kwargs);
@@ -493,7 +358,7 @@ py::object call_common_generate(
     EncodedInputs tensor_data;
     StreamerVariant streamer = std::monostate();
     
-    std::visit(overloaded {
+    std::visit(utils::overloaded {
     [&streamer](const std::function<bool(py::str)>& py_callback){
         // Wrap python streamer with manual utf-8 decoding. Do not rely
         // on pybind automatic decoding since it raises exceptions on incomplete strings.
@@ -510,7 +375,7 @@ py::object call_common_generate(
     }, py_streamer);
 
     // Call suitable generate overload for each type of input.
-    std::visit(overloaded {
+    std::visit(utils::overloaded {
     [&](ov::Tensor ov_tensor) {
         results = py::cast(pipe.generate(ov_tensor, updated_config, streamer));
     },
@@ -533,15 +398,6 @@ py::object call_common_generate(
     inputs);
     
     return results;
-}
-
-std::string ov_tokenizers_module_path() {
-    // Try a path relative to build artifacts folder first.
-    std::filesystem::path from_relative = tokenizers_relative_to_genai();
-    if (std::filesystem::exists(from_relative)) {
-        return from_relative.string();
-    }
-    return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
 }
 
 class ConstructableStreamer: public StreamerBase {
@@ -569,6 +425,7 @@ std::ostream& operator << (std::ostream& stream, const GenerationResult& generat
     }
     return stream << std::endl;
 }
+
 } // namespace
 
 
@@ -581,8 +438,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             const std::string& device,
             const std::map<std::string, py::object>& config
         ) {
-            ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<LLMPipeline>(model_path, device, properties_to_any_map(config));
+            ScopedVar env_manager(utils::ov_tokenizers_module_path());
+            return std::make_unique<LLMPipeline>(model_path, device, utils::properties_to_any_map(config));
         }),
         py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
         py::arg("device") = "CPU", "device on which inference will be done",
@@ -600,8 +457,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             const std::string& device,
             const std::map<std::string, py::object>& config
         ) {
-            ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<LLMPipeline>(model_path, tokenizer, device, properties_to_any_map(config));
+            ScopedVar env_manager(utils::ov_tokenizers_module_path());
+            return std::make_unique<LLMPipeline>(model_path, tokenizer, device, utils::properties_to_any_map(config));
         }),
         py::arg("model_path"),
         py::arg("tokenizer"),
@@ -620,7 +477,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             [](LLMPipeline& pipe, 
                 const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs, 
                 const OptionalGenerationConfig& generation_config, 
-                const PyBindStreamerVariant& streamer, 
+                const utils::PyBindStreamerVariant& streamer, 
                 const py::kwargs& kwargs
             ) {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
@@ -636,7 +493,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             [](LLMPipeline& pipe, 
                 const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs, 
                 const OptionalGenerationConfig& generation_config, 
-                const PyBindStreamerVariant& streamer, 
+                const utils::PyBindStreamerVariant& streamer, 
                 const py::kwargs& kwargs
             ) {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
@@ -659,8 +516,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
            if it's located in a different path than the main model.)")
         
         .def(py::init([](const std::string& tokenizer_path, const std::map<std::string, py::object>& plugin_config) {
-            ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, properties_to_any_map(plugin_config));
+            ScopedVar env_manager(utils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, utils::properties_to_any_map(plugin_config));
         }), py::arg("tokenizer_path"), py::arg("plugin_config") = ov::AnyMap({}))
         
         .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts) { return tok.encode(prompts); },
@@ -751,6 +608,9 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("presence_penalty", &GenerationConfig::presence_penalty)
         .def_readwrite("frequency_penalty", &GenerationConfig::frequency_penalty)
         .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
+        .def_readwrite("stop_strings", &GenerationConfig::stop_strings)
+        .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
+        .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id)
         .def("is_beam_search", &GenerationConfig::is_beam_search);
 
@@ -876,12 +736,12 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
         .def(py::init([](const std::string& model_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
-            ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<ContinuousBatchingPipeline>(model_path, scheduler_config, device, properties_to_any_map(llm_plugin_config), properties_to_any_map(tokenizer_plugin_config));
+            ScopedVar env_manager(utils::ov_tokenizers_module_path());
+            return std::make_unique<ContinuousBatchingPipeline>(model_path, scheduler_config, device, utils::properties_to_any_map(llm_plugin_config), utils::properties_to_any_map(tokenizer_plugin_config));
         }), py::arg("model_path"), py::arg("scheduler_config"), py::arg("device") = "CPU", py::arg("llm_plugin_config") = ov::AnyMap({}), py::arg("tokenizer_plugin_config") = ov::AnyMap({}))
         .def(py::init([](const std::string& model_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& plugin_config) {
-            ScopedVar env_manager(ov_tokenizers_module_path());
-            return std::make_unique<ContinuousBatchingPipeline>(model_path, tokenizer, scheduler_config, device, properties_to_any_map(plugin_config));
+            ScopedVar env_manager(utils::ov_tokenizers_module_path());
+            return std::make_unique<ContinuousBatchingPipeline>(model_path, tokenizer, scheduler_config, device, utils::properties_to_any_map(plugin_config));
         }), py::arg("model_path"), py::arg("tokenizer"), py::arg("scheduler_config"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap({}))
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
@@ -903,4 +763,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             py::arg("sampling_params"),
             py::arg("streamer") = std::monostate{}
         );
+    
+    // init whisper bindings
+    init_whisper_pipeline(m);
 }

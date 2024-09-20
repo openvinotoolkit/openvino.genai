@@ -100,7 +100,7 @@ public:
         ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
 
         // setup KV caches
-        m_cache_manager = std::make_shared<CacheManager>(device_config);
+        m_cache_manager = std::make_shared<CacheManager>(device_config, core);
         for (size_t decoder_layer_id = 0; decoder_layer_id < device_config.get_num_layers(); ++decoder_layer_id) {
             infer_request.set_input_tensor(2 + decoder_layer_id * 2, m_cache_manager->get_key_cache(decoder_layer_id));
             infer_request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager->get_value_cache(decoder_layer_id));
@@ -112,10 +112,17 @@ public:
             updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
         }
 
-        m_scheduler = std::make_shared<Scheduler>(updated_config);
+        bool can_use_partial_preemption = true;
+        if (device_config.get_device().find("GPU") != std::string::npos && !updated_config.dynamic_split_fuse) {
+            // in case of executing a `vLLM-like` pipeline, it's better not to use partial eviction on the GPU,
+            // as it may lead to performance slowdown
+            can_use_partial_preemption = false;
+        }
+
+        m_scheduler = std::make_shared<Scheduler>(updated_config, can_use_partial_preemption);
         // and finally create model runner
         m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
-        m_sampler = std::make_shared<Sampler>();
+        m_sampler = std::make_shared<Sampler>(m_tokenizer);
         m_sampler->set_seed(m_generation_config.rng_seed);
 
         // read default generation config
@@ -204,16 +211,22 @@ public:
             logits = m_model_runner->forward(m_requests, scheduler_output);
             timer.end();
 
+            ov::InferRequest infer_request = m_model_runner->get_infer_request();
+            ov::CompiledModel compiled_model = infer_request.get_compiled_model();
+            const bool is_profiling_enabled = compiled_model.get_property(ov::enable_profiling);
+
             // collect detailed statistic
-            std::vector<ov::ProfilingInfo> profiling_info = m_model_runner->get_infer_request().get_profiling_info();
-            for (const ov::ProfilingInfo& info : profiling_info) {
-                double current_time = info.real_time.count();
-                if (info.node_type == "PagedAttentionExtension") {
-                    m_perf.m_paged_attention_time_ms += current_time;
-                } else if (info.node_type == "FullyConnected") {
-                    m_perf.m_matmul_time_ms += current_time;
+            if (is_profiling_enabled) {
+                std::vector<ov::ProfilingInfo> profiling_info = m_model_runner->get_infer_request().get_profiling_info();
+                for (const ov::ProfilingInfo& info : profiling_info) {
+                    double current_time = info.real_time.count();
+                    if (info.node_type == "PagedAttentionExtension") {
+                        m_perf.m_paged_attention_time_ms += current_time;
+                    } else if (info.node_type == "FullyConnected") {
+                        m_perf.m_matmul_time_ms += current_time;
+                    }
+                    m_perf.m_infer_total_ms += current_time;
                 }
-                m_perf.m_infer_total_ms += current_time;
             }
         }
 
@@ -299,8 +312,8 @@ public:
             if (streamer_ptr) {
                 std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
                 OPENVINO_ASSERT(1 == token.size());
-                OPENVINO_ASSERT(1 == token.begin()->second.generated_token_ids.size());
-                continue_generation = !streamer_ptr->put(token.begin()->second.generated_token_ids.at(0));
+                OPENVINO_ASSERT(1 == token.begin()->second.generated_ids.size());
+                continue_generation = !streamer_ptr->put(token.begin()->second.generated_ids.at(0));
             }
         }
         if (streamer_ptr) {
@@ -319,7 +332,7 @@ public:
             auto num_outputs = std::min(sampling_params[generation_idx].num_return_sequences, generation_outputs.size());
             for (size_t generation_output_idx = 0; generation_output_idx < num_outputs; ++generation_output_idx) {
                 const auto& generation_output = generation_outputs[generation_output_idx];
-                result.m_generation_ids.push_back(std::move(generation_output.generated_token_ids));
+                result.m_generation_ids.push_back(std::move(generation_output.generated_ids));
                 result.m_scores.push_back(generation_output.score);
             }
             result.m_status = generation->get_status();

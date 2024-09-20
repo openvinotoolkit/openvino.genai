@@ -15,8 +15,8 @@ endif()
 
 function(ov_genai_build_jinja2cpp)
     FetchContent_Declare(jinja2cpp
-        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/bcc0e30f17f17f738ec2a7a31316d6efbe78a0e0.tar.gz
-        URL_HASH SHA256=f76547deb323240e7d181ecda6f658757ea5eb07ce772cf39e8bd20467412164)
+        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/b32fbde7d98d13c34784c332c4a24a6f92c76e38.tar.gz
+        URL_HASH SHA256=7cc25ddbc438a5c874d404e100b4eccd8a331c195417f5487c48aebcf4b9e7fb)
 
     FetchContent_GetProperties(jinja2cpp)
     if(NOT jinja2cpp_POPULATED)
@@ -42,9 +42,7 @@ ov_genai_build_jinja2cpp()
 
 # Library
 
-file(GLOB SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
-file(GLOB HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp")
-file(GLOB PUBLIC_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/include/openvino/genai/*.hpp")
+file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
 set(TARGET_NAME openvino_genai)
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES} ${HEADERS} ${PUBLIC_HEADERS})
@@ -52,7 +50,8 @@ add_dependencies(${TARGET_NAME} openvino_tokenizers)
 add_library(openvino::genai ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME}
-    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>")
+    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>"
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
 

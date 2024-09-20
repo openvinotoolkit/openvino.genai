@@ -59,6 +59,11 @@ MeanStdPair PerfMetrics::get_tpot() {
     return tpot;
 }
 
+MeanStdPair PerfMetrics::get_ipot() {
+    evaluate_statistics();
+    return ipot;
+}
+
 MeanStdPair PerfMetrics::get_throughput() {
     evaluate_statistics();
     return throughput;
@@ -79,6 +84,11 @@ MeanStdPair PerfMetrics::get_detokenization_duration() {
     return detokenization_duration;
 }
 
+MeanStdPair PerfMetrics::get_inference_duration() {
+    evaluate_statistics();
+    return inference_duration;
+}
+
 float PerfMetrics::get_microsec(std::chrono::steady_clock::duration duration) {
     return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
 }
@@ -96,7 +106,7 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
 
         auto ttft = tok_times[0] - start_time_val;
         raw_metrics.m_times_to_first_token = std::vector<MicroSeconds>();
-        raw_metrics.m_times_to_first_token.emplace_back(ttft);
+        raw_metrics.m_times_to_first_token.emplace_back(ttft / batch_sizes[0]);
         num_generated_tokens = 0;
         for (size_t i = 0; i < tok_times.size(); ++i) {
             raw_metrics.m_durations[i] = tok_times[i] - start_time_val;
@@ -110,12 +120,14 @@ void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     
     // calc_mean_and_std will convert microsecond to milliseconds.
     tpot = calc_mean_and_std(raw_metrics.m_durations);
+    ipot = calc_mean_and_std(raw_metrics.m_token_infer_durations);
     ttft = calc_mean_and_std(raw_metrics.m_times_to_first_token);
 
     generate_duration = calc_mean_and_std(raw_metrics.generate_durations);
     tokenization_duration = calc_mean_and_std(raw_metrics.tokenization_durations);
-    detokenization_duration = calc_mean_and_std(raw_metrics.detokenization_durations);    
-    
+    detokenization_duration = calc_mean_and_std(raw_metrics.detokenization_durations);
+    inference_duration = calc_mean_and_std(raw_metrics.m_inference_durations);
+
     // tokens per second
     throughput = {1000.0f / tpot.mean, (tpot.std * 1000.0f) / (tpot.mean * tpot.mean)};
     m_evaluated = true;
@@ -151,9 +163,8 @@ PerfMetrics PerfMetrics::operator+(const PerfMetrics& right) const {
     new_detok_durations.insert(new_detok_durations.end(), right_detok_durations.begin(), right_detok_durations.end());
     new_gen_durations.insert(new_gen_durations.end(), right_gen_durations.begin(), right_gen_durations.end());
 
-    res.num_generated_tokens = num_generated_tokens + right.num_generated_tokens;
-    res.num_input_tokens = num_generated_tokens + right.num_input_tokens;
-    res.load_time = load_time;
+    res.num_generated_tokens += right.num_generated_tokens;
+    res.num_input_tokens += right.num_input_tokens;
     res.m_evaluated = false;
     return res;
 }

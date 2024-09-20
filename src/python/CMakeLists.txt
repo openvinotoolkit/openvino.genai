@@ -6,8 +6,8 @@ include(FetchContent)
 
 FetchContent_Declare(
     pybind11
-    URL https://github.com/pybind/pybind11/archive/refs/tags/v2.13.0.tar.gz
-    URL_HASH SHA256=8ac2bd138ea3c12683d3496361af6bee0f7754f86bf050e6c61e3966de688215
+    URL https://github.com/pybind/pybind11/archive/refs/tags/v2.13.5.tar.gz
+    URL_HASH SHA256=b1e209c42b3a9ed74da3e0b25a4f4cd478d89d5efbb48f04b277df427faf6252
 )
 FetchContent_GetProperties(pybind11)
 # search for FindPython3.cmake instead of legacy modules
@@ -18,7 +18,7 @@ if(NOT pybind11_POPULATED)
     add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
 endif()
 
-pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp)
+pybind11_add_module(py_generate_pipeline py_generate_pipeline.cpp py_whisper_pipeline.cpp utils.cpp)
 target_link_libraries(py_generate_pipeline PRIVATE openvino::genai)
 set_target_properties(py_generate_pipeline PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
