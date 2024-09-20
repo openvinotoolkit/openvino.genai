@@ -377,7 +377,7 @@ struct LoRAWeightStateGetter {
             //indices.A = model->get_variables().size();
             var_ids.A = ov::op::util::VariableInfo{
                 ov::PartialShape{params->rank, input_dim},  // Will be used with transpose_b == true
-                ov::element::f32,  // params->type,  // FIXME: Do not override type to f32, now it is required due to CPU bug
+                params->type,
                 variable_id_prefix + ".A"
             };
             result.A = add_variable(var_ids.A);
@@ -385,7 +385,7 @@ struct LoRAWeightStateGetter {
             //indices.A = model->get_variables().size();
             var_ids.alpha = ov::op::util::VariableInfo{
                 params->fine_grained_alpha ? ov::PartialShape{1, params->rank} : ov::PartialShape{},
-                ov::element::f32,
+                ov::element::f32,   // alpha is always f32 because it is set from host as float data type
                 variable_id_prefix + ".alpha"
             };
             result.alpha = add_variable(var_ids.alpha);
@@ -780,7 +780,11 @@ struct AdapterControllerImpl {
 
         auto weight_as_constant = [&, this](NodePtr node) -> std::optional<LoRANode> {
             // FIXME: lora_placeholder is for passing element type only
-            LoRAParts<ov::Tensor> lora_placeholder{ov::Tensor(ov::element::f32, Shape{0}),  ov::Tensor(params_getter.type, ov::Shape{0}),  ov::Tensor(params_getter.type, ov::Shape{0})};
+            LoRAParts<ov::Tensor> lora_placeholder{
+                ov::Tensor(ov::element::f32, Shape{0}),
+                ov::Tensor(params_getter.type, ov::Shape{0}),
+                ov::Tensor(params_getter.type, ov::Shape{0})
+            };
             auto name = node->get_friendly_name();
             auto lora_weight = prepare_lora_tensors(name, params_getter.weight_getter, lora_placeholder, false);
             if(lora_weight.alpha) {
@@ -1176,7 +1180,7 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
             std::cout
                 << "[ WARNING ] " << device_msg << " to deduce default device-dependent LoRA application mode.\n"
                 << "This warning appears because no specific LoRA mode was set in AdapterConfig or MODE_AUTO was used explicitly.\n"
-                << "To avoid this warnign set one of the AdapterConfig::Mode values except MODE_AUTO.";
+                << "To avoid this warning set one of the AdapterConfig::Mode values except MODE_AUTO.";
         }
     }
     m_pimpl = std::make_shared<AdapterControllerImpl>(model, config, prefix);
