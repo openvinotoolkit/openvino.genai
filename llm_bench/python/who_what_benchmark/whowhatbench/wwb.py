@@ -1,9 +1,9 @@
 import argparse
 import difflib
 import os
-
 import json
 import pandas as pd
+import logging
 from datasets import load_dataset
 from optimum.exporters import TasksManager
 from optimum.intel.openvino import OVModelForCausalLM
@@ -11,6 +11,10 @@ from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
 
 from . import Evaluator
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 TasksManager._SUPPORTED_MODEL_TYPE["stablelm-epoch"] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
 NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args(
@@ -21,7 +25,7 @@ NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args
 
 def load_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False):
     if use_hf:
-        print("Using HF model")
+        logger.info("Using HF model")
         return AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device_map=device.lower())
 
     if ov_config:
@@ -253,8 +257,8 @@ def main():
     if args.target_model:
         target_model = load_model(args.target_model, args.device, args.ov_config, args.hf)
         all_metrics_per_question, all_metrics = evaluator.score(target_model)
-        print("Metrics for model: ", args.target_model)
-        print(all_metrics)
+        logger.info("Metrics for model: %s", args.target_model)
+        logger.info(all_metrics)
 
         if args.output:
             if not os.path.exists(args.output):
@@ -278,11 +282,11 @@ def main():
                 actual_text += l2 + "\n"
                 diff += diff_strings(l1, l2) + "\n"
 
-            print("--------------------------------------------------------------------------------------")
-            print("## Reference text {}:\n".format(i + 1), ref_text)
-            print("## Actual text {}:\n".format(i + 1), actual_text)
-            print("## Diff {}: ".format(i + 1))
-            print(diff)
+            logger.info("--------------------------------------------------------------------------------------")
+            logger.info("## Reference text %d:\n%s", i + 1, ref_text)
+            logger.info("## Actual text %d:\n%s", i + 1, actual_text)
+            logger.info("## Diff %d: ", i + 1)
+            logger.info(diff)
 
 
 if __name__ == "__main__":
