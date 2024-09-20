@@ -105,7 +105,17 @@ def get_samples_from_dataset(language: str = "en", length: int = 30):
         trust_remote_code=True,
     )
     ds = typing.cast(datasets.IterableDataset, ds)
-    return [x["audio"]["array"] for x in ds.take(length)]
+
+    tries = 3
+    while tries > 0:
+        try:
+            tries -= 1
+            ds = ds.take(length)
+        except Exception:
+            continue
+        break
+
+    return [x["audio"]["array"] for x in ds]
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
@@ -135,6 +145,7 @@ def test_whisper_config_constructor(model_descr):
         assert original_config["task_to_id"]["translate"] == config.translate_token_id
         assert original_config["task_to_id"]["transcribe"] == config.transcribe_token_id
     assert original_config["no_timestamps_token_id"] == config.no_timestamps_token_id
+    assert original_config["is_multilingual"] == config.is_multilingual
 
     assert set(original_config["begin_suppress_tokens"]) == set(
         config.begin_suppress_tokens
@@ -143,12 +154,16 @@ def test_whisper_config_constructor(model_descr):
     assert set(original_config["suppress_tokens"]) == set(config.suppress_tokens)
 
     config = ov_genai.WhisperGenerationConfig(
-        suppress_tokens=[1, 2], begin_suppress_tokens=[3, 4], max_new_tokens=100
+        suppress_tokens=[1, 2],
+        begin_suppress_tokens=[3, 4],
+        max_new_tokens=100,
+        lang_to_id={"<|_ru|>": 42},
     )
 
     assert set(config.suppress_tokens) == set([1, 2])
     assert set(config.begin_suppress_tokens) == set([3, 4])
     assert config.max_new_tokens == 100
+    assert config.lang_to_id["<|_ru|>"] == 42
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
