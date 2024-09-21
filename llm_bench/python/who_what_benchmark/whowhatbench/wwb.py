@@ -1,16 +1,20 @@
 import argparse
 import difflib
 import os
-
 import json
 import pandas as pd
+import logging
 from datasets import load_dataset
 from optimum.exporters import TasksManager
 from optimum.intel.openvino import OVModelForCausalLM
 from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
 
 from . import Evaluator
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 TasksManager._SUPPORTED_MODEL_TYPE["stablelm-epoch"] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
 NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args(
@@ -19,7 +23,39 @@ NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args
 )
 
 
-def load_model(model_id, device="CPU", ov_config=None):
+class GenAIModelWrapper():
+    """
+    A helper class to store additional attributes for GenAI models
+    """
+    def __init__(self, model, model_dir):
+        self.model = model
+        self.config = AutoConfig.from_pretrained(model_dir)
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return getattr(self, attr)
+        else:
+            return getattr(self.model, attr)
+
+
+def load_genai_pipeline(model_dir, device="CPU"):
+    try:
+        import openvino_genai
+    except ImportError:
+        logger.error("Failed to import openvino_genai package. Please install it.")
+        exit(-1)
+    logger.info("Using OpenVINO GenAI API")
+    return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device), model_dir)
+
+
+def load_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False):
+    if use_hf:
+        logger.info("Using HF Transformers API")
+        return AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device_map=device.lower())
+
+    if use_genai:
+        return load_genai_pipeline(model_id, device)
+
     if ov_config:
         with open(ov_config) as f:
             ov_options = json.load(f)
@@ -157,6 +193,16 @@ def parse_args():
         default=None,
         help="Used to select default prompts based on the primary model language, e.g. 'en', 'ch'.",
     )
+    parser.add_argument(
+        "--hf",
+        action="store_true",
+        help="Use AutoModelForCausalLM from transformers library to instantiate the model.",
+    )
+    parser.add_argument(
+        "--genai",
+        action="store_true",
+        help="Use LLMPipeline from transformers library to instantiate the model.",
+    )
 
     return parser.parse_args()
 
@@ -211,6 +257,11 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
+def genai_gen_answer(model, tokenizer, question, max_new_tokens, skip_question):
+    out = model.generate(question, max_new_tokens=max_new_tokens)
+    return out
+
+
 def main():
     args = parse_args()
     check_args(args)
@@ -228,7 +279,7 @@ def main():
             language=args.language,
         )
     else:
-        base_model = load_model(args.base_model, args.device, args.ov_config)
+        base_model = load_model(args.base_model, args.device, args.ov_config, args.hf, args.genai)
         evaluator = Evaluator(
             base_model=base_model,
             test_data=prompts,
@@ -236,16 +287,17 @@ def main():
             similarity_model_id=args.text_encoder,
             num_samples=args.num_samples,
             language=args.language,
+            gen_answer_fn=genai_gen_answer if args.genai else None
         )
         if args.gt_data:
             evaluator.dump_gt(args.gt_data)
         del base_model
 
     if args.target_model:
-        target_model = load_model(args.target_model, args.device, args.ov_config)
-        all_metrics_per_question, all_metrics = evaluator.score(target_model)
-        print("Metrics for model: ", args.target_model)
-        print(all_metrics)
+        target_model = load_model(args.target_model, args.device, args.ov_config, args.hf, args.genai)
+        all_metrics_per_question, all_metrics = evaluator.score(target_model, genai_gen_answer if args.genai else None)
+        logger.info("Metrics for model: %s", args.target_model)
+        logger.info(all_metrics)
 
         if args.output:
             if not os.path.exists(args.output):
@@ -269,11 +321,11 @@ def main():
                 actual_text += l2 + "\n"
                 diff += diff_strings(l1, l2) + "\n"
 
-            print("--------------------------------------------------------------------------------------")
-            print("## Reference text {}:\n".format(i + 1), ref_text)
-            print("## Actual text {}:\n".format(i + 1), actual_text)
-            print("## Diff {}: ".format(i + 1))
-            print(diff)
+            logger.info("--------------------------------------------------------------------------------------")
+            logger.info("## Reference text %d:\n%s", i + 1, ref_text)
+            logger.info("## Actual text %d:\n%s", i + 1, actual_text)
+            logger.info("## Diff %d: ", i + 1)
+            logger.info(diff)
 
 
 if __name__ == "__main__":
