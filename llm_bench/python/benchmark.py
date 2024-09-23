@@ -727,7 +727,7 @@ def main():
     log.basicConfig(format='[ %(levelname)s ] %(message)s', level=os.environ.get("LOGLEVEL", log.INFO), stream=sys.stdout, **logging_kwargs)
     env_omp = os.getenv('OMP_WAIT_POLICY')
     if env_omp is None or env_omp != 'PASSIVE':
-        log.warning('The environment OMP_WAIT_POLICY is not set to PASSIVE')
+        log.warning('It is recommended to set the environment variable OMP_WAIT_POLICY to PASSIVE, so that OpenVINO inference can use all CPU resources without waiting.')
     args = get_argprser()
     model_path, framework, model_args, model_name = llm_bench_utils.model_utils.analyze_args(args)
 
