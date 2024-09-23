@@ -305,9 +305,15 @@ public:
     LogFilter() {}
     
     void apply(Logits& logits) override {
-        OPENVINO_ASSERT(logits.is_vector_initialized());
-        for (size_t i = 0; i < logits.m_size; i++) {
-            logits.m_vector[i].m_log_prob = std::log(logits.m_vector[i].m_log_prob);
+        if(logits.is_vector_initialized()) {
+            for (size_t i = 0; i < logits.m_size; i++) {
+                logits.m_vector[i].m_log_prob = std::log(logits.m_vector[i].m_log_prob);
+            }
+        }
+        else {
+            for (size_t i = 0; i < logits.m_size; i++) {
+                logits.m_data[i] = std::log(logits.m_data[i]);
+            }
         }
     }
 };
