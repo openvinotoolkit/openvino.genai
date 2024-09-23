@@ -14,7 +14,7 @@ namespace ov {
 namespace genai {
 
 GenerationConfig::GenerationConfig(const std::string& json_path) {
-    using ov::genai::utils::read_json_param;
+    using utils::read_json_param;
 
     std::ifstream f(json_path);
     OPENVINO_ASSERT(f.is_open(), "Failed to open '" + json_path + "' with generation config");
@@ -69,8 +69,8 @@ void GenerationConfig::set_eos_token_id(size_t tokenizer_eos_token_id) {
 }
 
 void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
-    using ov::genai::utils::read_anymap_param;
-    
+    using utils::read_anymap_param;
+
     read_anymap_param(config_map, "max_new_tokens", max_new_tokens);
     read_anymap_param(config_map, "max_length", max_length);
     read_anymap_param(config_map, "ignore_eos", ignore_eos);

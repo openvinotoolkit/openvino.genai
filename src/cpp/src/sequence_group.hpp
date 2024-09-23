@@ -27,6 +27,7 @@ class SequenceGroup;
 class Sequence {
     // This can be a problem if we launch two pipelines in the same application.
     static uint64_t _get_next_global_sequence_id() {
+        const std::lock_guard<std::mutex> lock(m_counter_mutex);
         static uint64_t m_counter = 0;
         return m_counter++;
     }
@@ -40,6 +41,7 @@ class Sequence {
     float m_cumulative_log_prob = 0.0f;
     std::vector<int64_t> m_prefix_hashes;
     std::weak_ptr<SequenceGroup> m_sequence_group;
+    static std::mutex m_counter_mutex;
 
     size_t _make_hash(size_t content_length);
 public:
