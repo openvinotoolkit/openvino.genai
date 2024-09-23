@@ -11,6 +11,7 @@
 #include "openvino/op/constant.hpp"
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/infer_request.hpp"
+#include "openvino/runtime/properties.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
 
@@ -63,17 +64,20 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
     Mode get_mode() const { return mode; }
     void set_mode(Mode);
 
-    AdapterConfig (const Adapter& adapter, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<Adapter>{adapter}, mode) {}
+    AdapterConfig (Mode mode = MODE_AUTO);
+
     AdapterConfig (const Adapter& adapter, float alpha, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<std::pair<Adapter, float>>{{adapter, alpha}}, mode) {}
-    AdapterConfig (const Adapter& adapter, double alpha, Mode mode = MODE_AUTO) : AdapterConfig(adapter, float(alpha), mode) {}
+
+    AdapterConfig (const Adapter& adapter, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<Adapter>{adapter}, mode) {}
+
+    template <typename AT, std::enable_if_t<std::is_constructible<Adapter, AT>::value>* = nullptr>
+    AdapterConfig (const std::initializer_list<AT>& adapters, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<Adapter>(adapters), mode) {}
+
+    AdapterConfig (const std::initializer_list<std::pair<Adapter, float>>& adapters, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<std::pair<Adapter, float>>(adapters), mode) {}
+
     AdapterConfig (const std::vector<Adapter>& adapters, Mode mode = MODE_AUTO);
+
     AdapterConfig (const std::vector<std::pair<Adapter, float>>& adapters, Mode mode = MODE_AUTO);
-
-    template <typename T, typename = std::enable_if<std::is_same<T, Adapter>::value, T>>
-    AdapterConfig (const std::initializer_list<T>& adapters, Mode mode = MODE_AUTO) :
-        AdapterConfig(std::vector<Adapter>(adapters), mode) {}
-
-    AdapterConfig(Mode mode = MODE_AUTO);
 
     AdapterConfig& add(const Adapter& adapter, float alpha);
     AdapterConfig& add(const Adapter& adapter);
@@ -93,6 +97,70 @@ private:
     std::vector<Adapter> adapters;
     std::vector<float> alphas;
 
+};
+
+
+class AdaptersProperty : public ov::Property<AdapterConfig> {
+public:
+    constexpr AdaptersProperty() : ov::Property<AdapterConfig>("adapters") {}
+
+    inline std::pair<std::string, ov::Any> operator()(const AdapterConfig& config) const {
+        return ov::Property<AdapterConfig>::operator()(config);
+    }
+
+    inline std::pair<std::string, ov::Any> operator()() const {
+        return operator()(AdapterConfig());
+    }
+
+    inline std::pair<std::string, ov::Any> operator()(AdapterConfig::Mode mode) const {
+        return operator()(AdapterConfig(mode));
+    }
+
+    inline std::pair<std::string, ov::Any> operator()(const Adapter& adapter, float alpha) const {
+        return operator()(AdapterConfig(adapter, alpha));
+    }
+
+    inline std::pair<std::string, ov::Any> operator()(const Adapter& adapter, float alpha, AdapterConfig::Mode mode) const {
+        return operator()(AdapterConfig(adapter, alpha, mode));
+    }
+
+    inline std::pair<std::string, ov::Any> operator()(const Adapter& adapter, AdapterConfig::Mode mode) const {
+        return operator()(AdapterConfig(adapter, mode));
+    }
+
+    template <typename AT, std::enable_if_t<std::is_constructible<Adapter, AT>::value>* = nullptr>
+    inline std::pair<std::string, ov::Any> operator()(const std::initializer_list<AT>& adapters) const {
+        return operator()(AdapterConfig(adapters));
+    }
+
+    template <typename AT, std::enable_if_t<std::is_constructible<Adapter, AT>::value>* = nullptr>
+    inline std::pair<std::string, ov::Any> operator()(const std::initializer_list<AT>& adapters, AdapterConfig::Mode mode) const {
+        return operator()(AdapterConfig(adapters, mode));
+    }
+
+    inline std::pair<std::string, ov::Any> operator()(const std::initializer_list<std::pair<Adapter, float>>& adapters) const {
+        return operator()(AdapterConfig(adapters));
+    }
+
+    inline std::pair<std::string, ov::Any> operator()(const std::initializer_list<std::pair<Adapter, float>>& adapters, AdapterConfig::Mode mode) const {
+        return operator()(AdapterConfig(adapters, mode));
+    }
+
+    inline std::pair<std::string, ov::Any> operator()(const std::vector<Adapter>& adapters) const {
+        return operator()(AdapterConfig(adapters));
+    }
+
+    inline std::pair<std::string, ov::Any> operator()(const std::vector<Adapter>& adapters, AdapterConfig::Mode mode) const {
+        return operator()(AdapterConfig(adapters, mode));
+    }
+
+    inline std::pair<std::string, ov::Any> operator()(const std::vector<std::pair<Adapter, float>>& adapters) const {
+        return operator()(AdapterConfig(adapters));
+    }
+
+    inline std::pair<std::string, ov::Any> operator()(const std::vector<std::pair<Adapter, float>>& adapters, AdapterConfig::Mode mode) const {
+        return operator()(AdapterConfig(adapters, mode));
+    }
 };
 
 
