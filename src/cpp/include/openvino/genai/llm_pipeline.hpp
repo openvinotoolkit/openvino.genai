@@ -33,8 +33,8 @@ static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_confi
 /**
 * @brief Structure to store resulting batched tokens and scores for each batch sequence.
 * The first num_return_sequences elements correspond to the first batch element.
-* In the case if results decoded with beam search and random sampling scores contain 
-* sum of logarithmic probabilities for each token in the sequence. In the case 
+* In the case if results decoded with beam search and random sampling scores contain
+* sum of logarithmic probabilities for each token in the sequence. In the case
 * of greedy decoding scores are filled with zeros.
 *
 * @param tokens sequence of resulting tokens
@@ -71,10 +71,10 @@ public:
 
     // @brief Convert DecodedResults to a single string.
     // @return std::string containing the texts from the DecodedResults object.
-    operator std::vector<std::string>() const { 
-        return texts; 
+    operator std::vector<std::string>() const {
+        return texts;
     }
-    
+
      // @brief Overloads operator<< to enhance output the contents of DecodedResults.
      // @return A reference to the output stream with the concatenated texts.
     friend std::ostream& operator<<(std::ostream& os, const DecodedResults& dr) {
@@ -112,64 +112,29 @@ public:
     * Add ov::genai::scheduler_config property to plugin_config to create continuous batching pipeline
     */
     LLMPipeline(
-        const std::string& path, 
-        const std::string& device="CPU", 
+        const std::string& path,
+        const std::string& device="CPU",
         const ov::AnyMap& plugin_config={}
     );
 
-    LLMPipeline(
-        const std::string& path, 
-        const std::string& device,
-        const AdapterConfig& adapters_config,
-        const ov::AnyMap& plugin_config={}
-    );
-    
-    LLMPipeline(
-        const std::string& path, 
-        const std::string& device,
-        const std::vector<Adapter>& adapters,
-        const ov::AnyMap& plugin_config={}
-    );
-    
-    LLMPipeline(
-        const std::string& path, 
-        const std::string& device,
-        const std::initializer_list<Adapter>& adapters,
-        const ov::AnyMap& plugin_config={}
-    );
-    
-    LLMPipeline(
-        const std::string& path, 
-        const std::string& device,
-        const Adapter& adapter,
-        const ov::AnyMap& plugin_config={}
-    );
-    
-    LLMPipeline(
-        const std::string& path, 
-        const std::string& device,
-        const std::vector<std::pair<Adapter, float>>& adapters,
-        const ov::AnyMap& plugin_config={}
-    );
-    
     /**
     * @brief Constructs an LLMPipeline from already existing infer InferRequest and Tokenizer
     *
     * @param request infer request of the model
-    * @param tokenizer initialized Tokenizer 
+    * @param tokenizer initialized Tokenizer
     * @param generation_config optional generation_config, be default will be initialized for greedy decoding
     */
     LLMPipeline(
-        const ov::InferRequest& request, 
-        const ov::genai::Tokenizer& tokenizer, 
+        const ov::InferRequest& request,
+        const ov::genai::Tokenizer& tokenizer,
         OptionalGenerationConfig generation_config=std::nullopt
     );
-    
+
     /**
     * @brief Constructs a LLMPipeline when ov::genai::Tokenizer is initialized manually using file from the different dirs.
     *
     * @param model_path Path to the dir with model, tokenizer .xml/.bin files, and generation_configs.json
-    * @param tokenizer manually initialized ov::genai::Tokenizer 
+    * @param tokenizer manually initialized ov::genai::Tokenizer
     * @param device optional device
     * @param plugin_config optional plugin_config
     * Add ov::genai::scheduler_config property to plugin_config to create continuous batching pipeline
@@ -180,7 +145,7 @@ public:
         const std::string& device="CPU",
         const ov::AnyMap& plugin_config = {}
     );
-    
+
     ~LLMPipeline();
 
     /**
@@ -192,17 +157,17 @@ public:
     * @return DecodedResults decoded resulting text
     */
     DecodedResults generate(
-        StringInputs inputs, 
-        OptionalGenerationConfig generation_config=std::nullopt, 
+        StringInputs inputs,
+        OptionalGenerationConfig generation_config=std::nullopt,
         StreamerVariant streamer=std::monostate()
     );
 
     /**
     * @brief High level generate that receives prompts as a string or a vector of strings and returns decoded output.
     * properties can be in any order pipe.generate(..., ov::genai::max_new_tokens(100), ov::genai::streamer(lambda_func)).
-    * 
+    *
     * @param inputs input prompt or a vector of prompts
-    * @param properties properties 
+    * @param properties properties
     * @return DecodedResults decoded resulting text
     */
     template <typename... Properties>
@@ -215,8 +180,8 @@ public:
 
 
     DecodedResults operator()(
-        StringInputs inputs, 
-        OptionalGenerationConfig generation_config=std::nullopt, 
+        StringInputs inputs,
+        OptionalGenerationConfig generation_config=std::nullopt,
         StreamerVariant streamer=std::monostate()
     ) {
         return generate(inputs, generation_config, streamer);
@@ -240,7 +205,7 @@ public:
     * @throws Exception if the stremaer is set for inputs_ids with multiple batches
     */
     EncodedResults generate(
-        const EncodedInputs& inputs, 
+        const EncodedInputs& inputs,
         OptionalGenerationConfig generation_config=std::nullopt,
         StreamerVariant streamer=std::monostate()
     );
@@ -261,7 +226,7 @@ public:
         return generate(inputs, AnyMap{std::forward<Properties>(properties)...});
     }
     EncodedResults generate(const EncodedInputs& inputs, const ov::AnyMap& config_map);
-  
+
     ov::genai::Tokenizer get_tokenizer();
     GenerationConfig get_generation_config() const;
     void set_generation_config(const GenerationConfig& config);
@@ -271,7 +236,7 @@ public:
     * @brief start chat with keeping history in kv cache.
     * Turns on keeping KV cache between generate calls and automatic applying of chat templates.
     * In case if beam search is used, KV cache is kept fot the generated sequence with maximal scores.
-    * 
+    *
     * @param system_message optional system message.
     */
     void start_chat(const std::string& system_message = "");

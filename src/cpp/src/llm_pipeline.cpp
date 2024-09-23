@@ -89,26 +89,26 @@ public:
         const std::filesystem::path& model_path,
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
-        const AdapterConfig& adapters_config,
         const ov::AnyMap& plugin_config
     ):
-        // TODO: How adapters_config interfer with config loaded from the file? Suggestion: adapters_conig overrides adapters from the file
         LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(model_path))
     {
         ov::Core core;
-        core.set_property(device, plugin_config);
-        if(adapters_config) {
-            // DEBUG_PRINT("ADAPTER UPDATE CONFIG");
-            m_generation_config.adapters = adapters_config;
+        auto adapters_iter = plugin_config.find(ov::genai::adapters.name());
+        if (adapters_iter != plugin_config.end()) {
+            m_generation_config.adapters = adapters_iter->second.as<AdapterConfig>();
+            auto filtered_plugin_config = plugin_config;
+            filtered_plugin_config.erase(ov::genai::adapters.name());
+            core.set_property(device, filtered_plugin_config);
+        } else {
+            core.set_property(device, plugin_config);
         }
-        // DEBUG_PRINT("About to prepare model for LoRA");
+
         const auto start{std::chrono::steady_clock::now()};
         if(m_generation_config.adapters) {
-            // DEBUG_PRINT("Prepare model for LoRA");
-            // Read model explicitly to be able to inject the adapters
+            // Read model in a separate call to be able to inject the adapters before compile_model
             auto model = core.read_model(model_path / "openvino_model.xml");
             m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable
-            //ov::serialize(model, "after_lora.xml");
             m_model_runner = core.compile_model(model, device).create_infer_request();
             m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
         } else {
@@ -122,14 +122,7 @@ public:
         const std::filesystem::path& model_path,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, {}, plugin_config} {}
-
-    StatefulLLMPipeline(
-        const std::filesystem::path& model_path,
-        const std::string& device,
-        const AdapterConfig& adapters_config,
-        const ov::AnyMap& plugin_config
-    ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, adapters_config, plugin_config} {}
+    ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
 
     DecodedResults generate(
         StringInputs inputs,
@@ -276,13 +269,10 @@ public:
             utils::initialize_position_ids(*position_ids, attention_mask, kv_cache_len);
         }
 
-        // DEBUG_PRINT("About to apply LoRA");
         if(m_adapter_controller) {
-            // DEBUG_PRINT("Apply LoRA");
             auto start_lora_time = std::chrono::steady_clock::now();
             m_adapter_controller->apply(m_model_runner, config.adapters);
             auto stop_lora_time = std::chrono::steady_clock::now();
-            //DEBUG_PRINT("m_adapter_controller->apply: " << std::chrono::duration_cast<std::chrono::milliseconds>(stop_lora_time - start_lora_time).count());
         }
 
         ov::genai::EncodedResults result;
@@ -575,7 +565,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if ("NPU" == device) {
         m_pimpl = std::make_unique<StaticLLMPipeline>(model_path, tokenizer, device, plugin_config);
     } else {
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, AdapterConfig{}, plugin_config);
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, plugin_config);
     }
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
@@ -600,61 +590,6 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
-
-ov::genai::LLMPipeline::LLMPipeline(
-    const std::string& path,
-    const std::string& device,
-    const AdapterConfig& adapters_config,
-    const ov::AnyMap& plugin_config
-) {
-    auto start_time = std::chrono::steady_clock::now();
-    if ("CB" == device) {
-        OPENVINO_THROW("Continious batching pipeline doesn't support passing generation config in constructor");
-        //m_pimpl = std::make_unique<ContinuousBatchingAdapter>(path, "CPU", config);
-    } else if ("NPU" == device) {
-        OPENVINO_THROW("NPU pipeline doesn't support passing generation config in constructor");
-        //m_pimpl = std::make_unique<StaticLLMPipeline>(path, device, config);
-    } else {
-        // DEBUG_PRINT("LLMPipeline::LLMPipeline");
-        // DEBUG_PRINT(adapters_config.adapters.size());
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(path, device, adapters_config, plugin_config);
-    }
-    auto stop_time = std::chrono::steady_clock::now();
-    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
-}
-
-ov::genai::LLMPipeline::LLMPipeline(
-    const std::string& path,
-    const std::string& device,
-    const Adapter& adapter,
-    const ov::AnyMap& plugin_config
-) : ov::genai::LLMPipeline::LLMPipeline(path, device, AdapterConfig({adapter}), plugin_config)
-{}
-
-ov::genai::LLMPipeline::LLMPipeline(
-    const std::string& path,
-    const std::string& device,
-    const std::vector<Adapter>& adapters,
-    const ov::AnyMap& plugin_config
-) : ov::genai::LLMPipeline::LLMPipeline(path, device, AdapterConfig(adapters), plugin_config)
-{}
-
-ov::genai::LLMPipeline::LLMPipeline(
-    const std::string& path,
-    const std::string& device,
-    const std::initializer_list<Adapter>& adapters,
-    const ov::AnyMap& plugin_config
-) : ov::genai::LLMPipeline::LLMPipeline(path, device, AdapterConfig(adapters), plugin_config)
-{}
-
-ov::genai::LLMPipeline::LLMPipeline(
-    const std::string& path,
-    const std::string& device,
-    const std::vector<std::pair<Adapter, float>>& adapters,
-    const ov::AnyMap& plugin_config
-) : ov::genai::LLMPipeline::LLMPipeline(path, device, AdapterConfig(adapters), plugin_config)
-{}
-
 
 ov::genai::GenerationConfig ov::genai::LLMPipeline::get_generation_config() const {
     return m_pimpl->m_generation_config;
