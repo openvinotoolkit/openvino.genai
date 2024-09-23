@@ -96,7 +96,8 @@ class Evaluator:
         max_new_tokens=128,
         crop_question=True,
         num_samples=None,
-        language=None
+        language=None,
+        gen_answer_fn=None,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -116,7 +117,7 @@ class Evaluator:
                 self.language = autodetect_language(base_model)
 
         if base_model:
-            self.gt_data = self._generate_data(base_model)
+            self.gt_data = self._generate_data(base_model, gen_answer_fn)
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
