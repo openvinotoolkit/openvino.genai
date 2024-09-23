@@ -91,7 +91,7 @@ LCMScheduler::LCMScheduler(const Config& scheduler_config)
             betas.push_back(b * b);
         }
     } else {
-        OPENVINO_THROW("'beta_schedule' must be one of 'EPSILON' or 'SCALED_LINEAR'");
+        OPENVINO_THROW("'beta_schedule' must be one of 'LINEAR' or 'SCALED_LINEAR'");
     }
 
     for (float b : betas) {
