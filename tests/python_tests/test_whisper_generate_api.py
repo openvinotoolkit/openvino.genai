@@ -98,22 +98,15 @@ def compare_genai_and_opt_pipelines(opt_pipe, genai_pipe, dataset_id):
 
 def get_samples_from_dataset(language: str = "en", length: int = 30):
     ds = datasets.load_dataset(
-        "facebook/voxpopuli",
+        "mozilla-foundation/common_voice_11_0",
         language,
         split="test",
         streaming=True,
         trust_remote_code=True,
     )
     ds = typing.cast(datasets.IterableDataset, ds)
-
-    tries = 5
-    while tries > 0:
-        try:
-            tries -= 1
-            ds = ds.take(length)
-        except Exception:
-            continue
-        break
+    ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
+    ds = ds.take(length)
 
     return [x["audio"]["array"] for x in ds]
 
