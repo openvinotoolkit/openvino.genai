@@ -38,6 +38,12 @@
 // FIXME: Fix the plugins and set to 1 permanently.
 #define EMPTY_TENSORS_SUPPORTED_IN_MATMUL 0
 
+// If set to 1, LoRA state tensors will have the original type of LoRA adapter come from safetensors file.
+// If there are multiple LoRA adapters are applied, then negotiation between them happens.
+// If set to 0, LoRA state etnsors are always have type f32.
+// FIXME: Fix the plugins and set to 1 permanently.
+#define FP16_BF16_TENSORS_SUPPORTED_IN_STATE 0
+
 namespace {
 
 using NodePtr = std::shared_ptr<ov::Node>;
@@ -757,7 +763,11 @@ struct AdapterControllerImpl {
         lora_state_evaluators("CPU")    // FIXME: Try to run on the same device that is used for model inference
     {
         LoRAParametersByWeightGetter params_getter;
+        #if FP16_BF16_TENSORS_SUPPORTED_IN_STATE
         params_getter.type = ov::element::dynamic;
+        #else
+        params_getter.type = ov::element::f32;
+        #endif
 
         for(auto const& adapter : current_config.get_adapters()) {
             auto adapter_impl = get_adapter_impl(adapter);
@@ -771,6 +781,7 @@ struct AdapterControllerImpl {
                         params_getter.type = lora_tensor_type;
                     } else if(params_getter.type != lora_tensor_type) {
                         // if types are not match among multiple LoRA tensos then fall back to f32
+                        // TODO: Provide a more smart negotiation between multiple LoRAs: check ranges, try to pack to f16
                         params_getter.type = ov::element::f32;
                         break;
                     }
