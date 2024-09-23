@@ -568,7 +568,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         config_without_scheduler_config.erase(ov::genai::scheduler_config.name());
         auto& scheduler_config = config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(path, scheduler_config, device, config_without_scheduler_config);
-        std::cout << "Found custom SchedulerConfig.\n";
+        // std::cout << "Found custom SchedulerConfig.\n";
     } else if (true) {
         SchedulerConfig scheduler_config;
         scheduler_config.num_kv_blocks= 64;
