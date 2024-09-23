@@ -528,7 +528,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const std::string& device,
     const ov::AnyMap& plugin_config
 ){
-    std::cout << "Using continuous batching backend.\n";
+    // std::cout << "Using continuous batching backend.\n";
     auto start_time = std::chrono::steady_clock::now();
     if (plugin_config.find(ov::genai::scheduler_config.name()) != plugin_config.end()) {
         auto config_without_scheduler_config = plugin_config;
