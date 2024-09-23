@@ -3,6 +3,7 @@ from typing import Any, Union
 import pandas as pd
 from tqdm import tqdm
 
+from .registry import register_evaluator, Evaluator
 from .whowhat_metrics import DivergencyMetric, SimilarityMetric
 
 default_data = {
@@ -84,7 +85,8 @@ def autodetect_language(model):
     return model2language.get(model.config.model_type, "en")
 
 
-class Evaluator:
+@register_evaluator("text-generation", "text-generation-with-past", "text2text-generation")
+class TextEvaluator(Evaluator):
     def __init__(
         self,
         base_model: Any = None,

@@ -10,7 +10,7 @@ from optimum.intel.openvino import OVModelForCausalLM
 from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
 
-from . import Evaluator
+from whowhatbench import get_evaluator_class
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -265,6 +265,9 @@ def genai_gen_answer(model, tokenizer, question, max_new_tokens, skip_question):
 def main():
     args = parse_args()
     check_args(args)
+    
+    model_id = args.base_model if args.base_model else args.target_model
+    Evaluator = get_evaluator_class(model_id)
 
     prompts = load_prompts(args)
     tokenizer = load_tokenizer(args)
