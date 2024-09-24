@@ -337,7 +337,7 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
                 prompt_idx_list.append(i)
     if len(input_text_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
-    log.info(f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
+    log.info(f"Benchmarking iter nums(exclude warm-up): {num_iters}, "
              f'prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}')
 
     # if num_iters == 0, just output warm-up data
@@ -742,10 +742,13 @@ def main():
         out_str += ', openvino runtime version: {}'.format(get_version())
         if model_args['config'].get('PREC_BF16') and model_args['config']['PREC_BF16'] is True:
             log.warning('[Warning] Param bf16/prec_bf16 only work for framework pt. It will be disabled.')
-        if model_args['num_beams'] > 1:
-            torch.set_num_threads(int(torch.get_num_threads() / 2))
+        original_torch_thread_nums = torch.get_num_threads()
+        num_beams = model_args['num_beams']
+        if num_beams > 1:
+            torch.set_num_threads(int(original_torch_thread_nums / 2))
         else:
             torch.set_num_threads(1)
+        log.info(f'The num_beams is {num_beams}, the original torch threads is {original_torch_thread_nums}, now set to {torch.get_num_threads()}')
     log.info(out_str)
     if args.memory_consumption:
         mem_consumption.start_collect_mem_consumption_thread()
