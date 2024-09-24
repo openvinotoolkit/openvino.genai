@@ -44,6 +44,13 @@
 // FIXME: Fix the plugins and set to 1 permanently.
 #define FP16_BF16_TENSORS_SUPPORTED_IN_STATE 0
 
+// FIXME: Remove or move to a dedicated common header
+#ifdef NDEBUG
+    #define DEBUG_PRINT(X) do {} while(false)
+#else
+    #define DEBUG_PRINT(X) do { std::cerr << "[ DEBUG ] " << X << "\n"; } while(false)
+#endif
+
 namespace {
 
 using NodePtr = std::shared_ptr<ov::Node>;

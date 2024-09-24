@@ -18,17 +18,10 @@
 namespace ov {
 namespace genai {
 
-// FIXME: Remove or move to a dedicated common header
-#ifdef NDEBUG
-    #define DEBUG_PRINT(X) do {} while(false)
-#else
-    #define DEBUG_PRINT(X) do { std::cerr << "[ DEBUG ] " << X << "\n"; } while(false)
-#endif
-
 class OPENVINO_GENAI_EXPORTS AdapterController;
 struct AdapterControllerImpl;
 
-// Inmutable LoRA Adapter that carries the adaptation matrices and the default alpha value
+// Inmutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier
 class OPENVINO_GENAI_EXPORTS Adapter {
     class Impl;
     std::shared_ptr<Impl> m_pimpl;
@@ -37,19 +30,16 @@ class OPENVINO_GENAI_EXPORTS Adapter {
     friend bool operator== (const Adapter& a, const Adapter& b);
     friend bool operator< (const Adapter& a, const Adapter& b);
 public:
-    explicit Adapter(const std::string& path, float default_alpha);
     explicit Adapter(const std::string& path);
     Adapter() = default;
-    std::optional<float> get_default_alpha() const;
 
     operator bool() const {
         return bool(m_pimpl);
     }
-
-    // TODO: Mapping between names of layers in a model and tensor names in the adapter
 };
 
-bool OPENVINO_GENAI_EXPORTS operator== (const Adapter& a, const Adapter& b);
+// bool OPENVINO_GENAI_EXPORTS operator== (const Adapter& a, const Adapter& b);
+// bool OPENVINO_GENAI_EXPORTS operator< (const Adapter& a, const Adapter& b);
 
 
 struct OPENVINO_GENAI_EXPORTS AdapterConfig {

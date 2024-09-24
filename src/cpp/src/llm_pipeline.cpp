@@ -115,7 +115,6 @@ public:
             m_model_runner = core.compile_model(model_path / "openvino_model.xml", device).create_infer_request();
         }
         const auto end{std::chrono::steady_clock::now()};
-        DEBUG_PRINT("Model preparation/compilation: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
     }
 
     StatefulLLMPipeline(
@@ -309,7 +308,6 @@ public:
         metrics.load_time = this->m_load_time_ms;
         metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
         metrics.evaluate_statistics(start_time);
-        DEBUG_PRINT("Generate time:" << metrics.get_generate_duration().mean);
         return result;
     }
 
