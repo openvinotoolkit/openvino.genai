@@ -131,13 +131,15 @@ void DDIMScheduler::set_timesteps(size_t num_inference_steps) {
 std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) {
     // noise_pred - model_output
     // latents - sample
-    // inference_step - timestep - wrong value!!!!!!!!!!!!
+    // inference_step
+
+    size_t timestep = get_timesteps()[inference_step];
 
     // 1. get previous step value (=t-1)
-    size_t prev_timestep = inference_step - m_config.num_train_timesteps / m_num_inference_steps;
+    size_t prev_timestep = timestep - m_config.num_train_timesteps / m_num_inference_steps;
 
     // 2. compute alphas, betas
-    float alpha_prod_t = m_alphas_cumprod[inference_step];
+    float alpha_prod_t = m_alphas_cumprod[timestep];
     float alpha_prod_t_prev = (prev_timestep >= 0) ? m_alphas_cumprod[prev_timestep] : m_final_alpha_cumprod;
     float beta_prod_t = 1 - alpha_prod_t;
 
@@ -183,11 +185,10 @@ std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov:
     // σ_t = sqrt((1 − α_t−1)/(1 − α_t)) * sqrt(1 − α_t/α_t−1)
 
     float eta = 0.0f;
-    float variance = get_variance(inference_step, prev_timestep);
+    float variance = get_variance(timestep, prev_timestep);
     float std_dev_t = eta * std::sqrt(variance);
-    // float std_dev_t = 0;
 
-    std::cout << "inference_step: " << inference_step << " prev_timestep " << prev_timestep << std::endl;
+    std::cout << "inference_step: " << timestep << " prev_timestep " << prev_timestep << std::endl;
     std::cout << "variance: " << variance << " std_dev_t: " << std_dev_t << std::endl;
 
     // Remove if it's unnecessary:
@@ -195,8 +196,8 @@ std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov:
     // if use_clipped_model_output: ...
 
     // 6. compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
+    
     // std::vector<float> pred_sample_direction(pred_epsilon.size());
-
     // std::transform(pred_epsilon.begin(), pred_epsilon.end(), pred_sample_direction.begin(), [alpha_prod_t_prev, std_dev_t](auto x) {
     //     return std::sqrt(1 - alpha_prod_t_prev - std::pow(std_dev_t, 2)) * x;
     // });
