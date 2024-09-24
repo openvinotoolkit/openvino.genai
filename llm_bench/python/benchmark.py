@@ -319,6 +319,10 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
 
 
+def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters):
+    model, pretrain_time= FW_UTILS[framework].create_speech_2txt_model(model_path, device, **args)
+
+
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_gen_model(model_path, device, **args)
     model_precision = llm_bench_utils.model_utils.get_model_precision(model_path.parts)
@@ -718,6 +722,7 @@ CASE_TO_BENCH = {
     'image_cls': run_image_classification,
     'code_gen': run_text_generation_benchmark,
     'ldm_super_resolution': run_ldm_super_resolution_benchmark,
+    'speech2text': run_speech_2txt_benchmark,
 }
 
 
