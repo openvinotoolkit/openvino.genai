@@ -300,25 +300,6 @@ public:
 };
 
 
-class LogFilter : public ILogitTransformer {
-public:
-    LogFilter() {}
-    
-    void apply(Logits& logits) override {
-        if(logits.is_vector_initialized()) {
-            for (size_t i = 0; i < logits.m_size; i++) {
-                logits.m_vector[i].m_log_prob = std::log(logits.m_vector[i].m_log_prob);
-            }
-        }
-        else {
-            for (size_t i = 0; i < logits.m_size; i++) {
-                logits.m_data[i] = std::log(logits.m_data[i]);
-            }
-        }
-    }
-};
-
-
 } // namespace LogitTransformers
 
 class LogitProcessor {
@@ -372,7 +353,6 @@ public:
                 if (sampling_params.top_k > 0 && sampling_params.top_k < std::numeric_limits<size_t>::max()) {
                     m_logit_transformers.emplace_back(new LogitTransformers::TopKFilter(sampling_params.top_k));
                 }
-                m_logit_transformers.emplace_back(new LogitTransformers::LogFilter());
             }
         }
     }
