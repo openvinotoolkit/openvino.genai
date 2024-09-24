@@ -136,7 +136,7 @@ std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov:
     size_t timestep = get_timesteps()[inference_step];
 
     // 1. get previous step value (=t-1)
-    size_t prev_timestep = timestep - m_config.num_train_timesteps / m_num_inference_steps;
+    int prev_timestep = timestep - m_config.num_train_timesteps / m_num_inference_steps;
 
     // 2. compute alphas, betas
     float alpha_prod_t = m_alphas_cumprod[timestep];
@@ -187,6 +187,7 @@ std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov:
     float eta = 0.0f;
     float variance = get_variance(timestep, prev_timestep);
     float std_dev_t = eta * std::sqrt(variance);
+    std_dev_t = 0;
 
     std::cout << "inference_step: " << timestep << " prev_timestep " << prev_timestep << std::endl;
     std::cout << "variance: " << variance << " std_dev_t: " << std_dev_t << std::endl;
