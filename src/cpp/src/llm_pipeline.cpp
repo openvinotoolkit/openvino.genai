@@ -100,21 +100,18 @@ public:
             auto filtered_plugin_config = plugin_config;
             filtered_plugin_config.erase(ov::genai::adapters.name());
             core.set_property(device, filtered_plugin_config);
-        } else {
-            core.set_property(device, plugin_config);
-        }
-
-        const auto start{std::chrono::steady_clock::now()};
-        if(m_generation_config.adapters) {
-            // Read model in a separate call to be able to inject the adapters before compile_model
             auto model = core.read_model(model_path / "openvino_model.xml");
             m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable
             m_model_runner = core.compile_model(model, device).create_infer_request();
             m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
         } else {
+            core.set_property(device, plugin_config);
             m_model_runner = core.compile_model(model_path / "openvino_model.xml", device).create_infer_request();
         }
-        const auto end{std::chrono::steady_clock::now()};
+
+        // If eos_token_id was not provided, take value
+        if (m_generation_config.eos_token_id == -1)
+            m_generation_config.set_eos_token_id(m_tokenizer.get_eos_token_id());
     }
 
     StatefulLLMPipeline(
@@ -269,9 +266,7 @@ public:
         }
 
         if(m_adapter_controller) {
-            auto start_lora_time = std::chrono::steady_clock::now();
             m_adapter_controller->apply(m_model_runner, config.adapters);
-            auto stop_lora_time = std::chrono::steady_clock::now();
         }
 
         ov::genai::EncodedResults result;

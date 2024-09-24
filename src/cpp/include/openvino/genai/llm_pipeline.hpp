@@ -130,9 +130,10 @@ public:
     */
     template <typename... Properties, util::EnableIfAllStringAny<DecodedResults, Properties...>* = nullptr>
     LLMPipeline(
-        const std::string& path,
-        const std::string& device="CPU",
-        Properties&&... properties) : LLMPipeline(path, device,  AnyMap{std::forward<Properties>(properties)...}) {
+            const std::string& path,
+            const std::string& device="CPU",
+            Properties&&... properties)
+        : LLMPipeline(path, device,  AnyMap{std::forward<Properties>(properties)...}) {
     }
 
     /**
