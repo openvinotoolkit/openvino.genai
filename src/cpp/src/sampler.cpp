@@ -1,0 +1,374 @@
+
+// Copyright (C) 2023-2024 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include "sampler.hpp"
+
+namespace ov::genai {
+GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer)
+    : m_sequence_group(sequence_group),
+        m_parameters{m_sequence_group->get_sampling_parameters()},
+        m_groups{m_parameters.num_beam_groups},
+        m_tokenizer(tokenizer) {
+    OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1);
+    assert(m_parameters.num_beams % m_parameters.num_beam_groups == 0 &&
+        "number of beams should be divisible by number of groups");
+    size_t group_size = m_parameters.num_beams / m_parameters.num_beam_groups;
+
+    for (Group& group : m_groups) {
+        group.ongoing.reserve(group_size);
+        // initially we just add our "base" sequence to beams inside each group
+        for (size_t i = 0; i < group_size; ++i)
+            group.ongoing.push_back(Beam((*sequence_group)[0]));
+        // to avoid selecting the same tokens for beams within group, let's just initialize score
+        // for the front one
+        group.ongoing.front().m_score = 0.0f;
+    }
+}
+
+void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output) {
+    assert(m_parameters.num_beams % m_parameters.num_beam_groups == 0 &&
+        "number of beams should be divisible by number of groups");
+    size_t group_size = m_parameters.num_beams / m_parameters.num_beam_groups;
+    std::vector<int64_t> next_tokens;
+    std::vector<int32_t> next_beams;
+    next_tokens.reserve(m_parameters.num_beams);
+    next_beams.reserve(m_parameters.num_beams);
+
+    // parent sequence ID -> number of child sequences
+    std::map<uint64_t, uint64_t> parent_2_num_childs_map;
+
+    for (Group& group : m_groups) {
+        if (!group.done) {
+            for (Beam& beam : group.ongoing) {
+                uint64_t parent_seq_id = beam.m_sequence->get_id();
+
+                // here we need to map index of sequence in beam search group(s) and sequence group
+                beam.m_global_beam_idx = [this] (uint64_t seq_id) -> size_t {
+                    std::vector<Sequence::Ptr> running_seqs = m_sequence_group->get_running_sequences();
+                    for (size_t seq_global_index = 0; seq_global_index < running_seqs.size(); ++seq_global_index) {
+                        if (seq_id == running_seqs[seq_global_index]->get_id())
+                            return seq_global_index;
+                    }
+                    OPENVINO_THROW("Internal error in beam search: should not be here");
+                } (parent_seq_id);
+
+                // zero out all parent forks counts
+                parent_2_num_childs_map[parent_seq_id] = 0;
+            }
+        }
+    }
+
+    auto try_to_finish_candidate = [&] (Group& group, Beam& candidate, bool include_candidate_token = true) -> void {
+        uint64_t seq_id = candidate.m_sequence->get_id();
+        // try to finish candidate
+        int64_t preempted_seq_id = group.finish(candidate, m_parameters);
+
+        // if candidate has lower score than others finished
+        if (preempted_seq_id == seq_id) {
+            // do nothing and just ignore current finished candidate
+        } else {
+            if (preempted_seq_id >= 0) {
+                m_sequence_group->remove_sequence(preempted_seq_id);
+            }
+
+            // need to insert candidate to a sequence group
+            Sequence::Ptr forked_sequence = m_sequence_group->fork_sequence(candidate.m_sequence);
+            // and finish immidiately
+            forked_sequence->set_status(SequenceStatus::FINISHED);
+            // Setting stop since this function is used when sequence generated eos token
+            forked_sequence->set_finish_reason(GenerationFinishReason::STOP);
+
+            // TODO: make it more simplier
+            // currently, we finish sequence and then fork it in current code
+            {
+                for (size_t i = 0; i < group.min_heap.size(); ++i) {
+                    if (group.min_heap[i].m_sequence->get_id() == seq_id) {
+                        group.min_heap[i].m_sequence = forked_sequence;
+                        break;
+                    }
+                }
+            }
+
+            // append token from candidate to actual sequence
+            if (include_candidate_token)
+                forked_sequence->append_token(candidate.m_token_id, candidate.m_log_prob);
+        }
+    };
+
+    // group ID => child beams
+    std::map<int, std::vector<Beam>> child_beams_per_group;
+
+    for (size_t group_id = 0; group_id < m_groups.size(); ++group_id) {
+        Group & group = m_groups[group_id];
+        if (group.done)
+            continue;
+
+        std::vector<Beam> candidates;
+        candidates.reserve(group_size * 2 * group_size);
+        for (const Beam& beam : group.ongoing) {
+            std::vector<Token> tokens = log_softmax(logits, beam.m_global_beam_idx);
+
+            // apply diversity penalty
+            for (auto prev_group_id = 0; prev_group_id < group_id; ++prev_group_id) {
+                for (const Beam& prev_beam : child_beams_per_group[prev_group_id]) {
+                    tokens[prev_beam.m_token_id].m_log_prob -= m_parameters.diversity_penalty;
+                }
+            }
+
+            // apply n_gramm
+            std::vector<int64_t> full_text{m_sequence_group->get_prompt_ids()};
+            full_text.insert(full_text.end(), beam.m_sequence->get_generated_ids().begin(), beam.m_sequence->get_generated_ids().end());
+            if (full_text.size() > 1 && full_text.size() >= m_parameters.no_repeat_ngram_size) {
+                auto tail_start = full_text.end() - ptrdiff_t(m_parameters.no_repeat_ngram_size) + 1;
+                for (int64_t banned_token : kmp_search(full_text, {tail_start, full_text.end()})) {
+                    tokens[banned_token].m_log_prob = -std::numeric_limits<float>::infinity();
+                }
+            }
+
+            // sort tokens
+            std::sort(tokens.begin(), tokens.end(), [](Token left, Token right) {
+                return left.m_log_prob > right.m_log_prob;  // Most probable tokens in front
+            });
+
+            size_t add_count = 0;
+            for (Token token : tokens) {
+                Beam new_candidate = beam;
+                new_candidate.m_score += new_candidate.m_log_prob = token.m_log_prob;
+                new_candidate.m_token_id = token.m_index;
+
+                // TODO: fix it
+                // and ensure cumulative_log prob is used
+                if (/* m_parameters.early_finish(new_candidate) */ false) {
+                    try_to_finish_candidate(group, new_candidate);
+                } else {
+                    candidates.push_back(new_candidate);
+                    if (++add_count == 2 * group_size) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Sample 2 * group_size highest score tokens to get at least 1 non EOS token per beam
+        OPENVINO_ASSERT(candidates.size() >= 2 * group_size, "No beams left to search");
+
+        auto to_sort = candidates.begin() + ptrdiff_t(2 * group_size);
+        std::partial_sort(candidates.begin(), to_sort, candidates.end(), greater);
+
+        for (size_t cand_idx = 0; cand_idx < candidates.size(); ++cand_idx) {
+            Beam & candidate = candidates[cand_idx];
+            if (is_stop_token_id_hit(candidate.m_token_id, m_sequence_group->get_sampling_parameters().stop_token_ids)) {
+                // If beam_token does not belong to top num_beams tokens, it should not be added
+                if (cand_idx >= group_size)
+                    continue;
+
+                // try to finish candidate
+                try_to_finish_candidate(group, candidate);
+                continue;
+            }
+
+            if (!m_parameters.stop_strings.empty()) {
+                // We need to include candidate token to already generated tokens to check if stop string has been generated
+                // There's probably a better way to do that, than copying whole vector...
+                std::vector<int64_t> token_ids = candidate.m_sequence->get_generated_ids();
+                token_ids.push_back(candidate.m_token_id);
+                int num_last_matched_tokens = match_stop_string(m_tokenizer, token_ids, m_sequence_group->get_sampling_parameters().stop_strings);
+                if (num_last_matched_tokens) {
+                    // If beam_token does not belong to top num_beams tokens, it should not be added
+                    if (cand_idx >= group_size)
+                        continue;
+
+                    if(!m_parameters.include_stop_str_in_output) {
+                        // remove tokens that match stop_string from output (last token is not included in candidate.m_sequence at this point)
+                        candidate.m_sequence->remove_last_tokens(num_last_matched_tokens - 1);
+                    }
+
+                    // try to finish candidate
+                    try_to_finish_candidate(group, candidate, m_parameters.include_stop_str_in_output);
+                    continue;
+                }
+            }
+
+            parent_2_num_childs_map[candidate.m_sequence->get_id()] += 1;
+            child_beams_per_group[group_id].push_back(candidate);
+
+            // if num childs are enough
+            if (child_beams_per_group[group_id].size() == group_size) {
+                break;
+            }
+        }
+
+        // check whether group has finished
+        group.is_done(m_parameters);
+
+        // group cannot continue if there are no valid child beams
+        if (child_beams_per_group[group_id].size() == 0) {
+            group.done = true;
+        }
+
+        if (group.done) {
+            // group has finished, group all running sequences
+            for (const Beam& beam : group.ongoing) {
+                uint64_t seq_id = beam.m_sequence->get_id();
+                m_sequence_group->remove_sequence(seq_id);
+                sampler_output.m_dropped_sequences.push_back(seq_id);
+            }
+            group.ongoing.clear();
+        }
+    }
+
+    // fork child sequences for non-finished groups
+
+    for (size_t group_id = 0; group_id < m_groups.size(); ++group_id) {
+        Group & group = m_groups[group_id];
+
+        if (!group.done) {
+            for (Beam& child_beam : child_beams_per_group[group_id]) {
+                uint64_t parent_sequence_id = child_beam.m_sequence->get_id();
+                uint64_t& num_childs = parent_2_num_childs_map[parent_sequence_id];
+
+                // if current beam is forked multiple times
+                if (num_childs > 1) {
+                    child_beam.m_sequence = m_sequence_group->fork_sequence(child_beam.m_sequence);
+                    child_beam.m_sequence->append_token(child_beam.m_token_id, child_beam.m_log_prob);
+
+                    // reduce forks count, since fork already happened and next loop iteration
+                    // will go by the second branch (num_childs == 1)
+                    --num_childs;
+
+                    // fill out sampler output
+                    sampler_output.m_forked_sequences[parent_sequence_id].push_back(child_beam.m_sequence->get_id());
+                } else if (num_childs == 1) {
+                    // keep current sequence going and add a new token
+                    child_beam.m_sequence->append_token(child_beam.m_token_id, child_beam.m_log_prob);
+                }
+            }
+
+            // drop beams which are not forked by current group
+            for (const Beam& beam : group.ongoing) {
+                size_t num_childs = parent_2_num_childs_map[beam.m_sequence->get_id()];
+                if (num_childs == 0) {
+                    // drop sequence as not forked
+                    sampler_output.m_dropped_sequences.push_back(beam.m_sequence->get_id());
+                    m_sequence_group->remove_sequence(beam.m_sequence->get_id());
+                }
+            }
+
+            // child become parents
+            group.ongoing = child_beams_per_group[group_id];
+        }
+    }
+}
+
+SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits) {
+    const float * logits_data = logits.data<float>();
+    ov::Shape logits_shape = logits.get_shape();
+    OPENVINO_ASSERT(logits_shape.size() == 3);
+    size_t batch_seq_len = logits_shape[1], vocab_size = logits_shape[2];
+
+    SamplerOutput sampler_output;
+
+    for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
+        SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
+        if (!sequence_group->is_scheduled())
+            continue;
+
+        size_t num_running_sequences = sequence_group->num_running_seqs();
+        size_t actual_seq_len = sequence_group->get_num_scheduled_tokens(); // points to a token which needs to be sampled
+        size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
+        const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
+
+        const auto request_id = sequence_group->get_request_id();
+        if (!m_logit_processors.count(request_id)) {
+            m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids())});
+        }
+        auto& logit_processor = m_logit_processors.at(request_id);
+
+        const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
+        ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
+
+        if (sequence_group->requires_sampling()) {
+            if (sampling_params.is_greedy_decoding() || sampling_params.is_multinomial()) {
+                std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
+                if (sampling_params.is_greedy_decoding()) {
+                    OPENVINO_ASSERT(num_running_sequences == 1);
+                }
+                auto register_new_token = [&](const Token& sampled_token_id, Sequence::Ptr running_sequence) {
+                    logit_processor.register_new_generated_token(sampled_token_id.m_index);
+                    running_sequence->append_token(sampled_token_id.m_index, sampled_token_id.m_log_prob);
+                };
+                for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
+                    auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id);
+                    logit_processor.apply(logit_vector);
+                    Token sampled_token_id;
+                    if (sampling_params.is_greedy_decoding()) {
+                        sampled_token_id = _greedy_sample(logit_vector);
+                    } else {
+                        // is_multinomial()
+                        const bool is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
+                        const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
+                        auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence);
+                        sampled_token_id = sampled_token_ids[0];
+
+                        if (is_generate_n_tokens) {
+                            auto sequence_to_fork = running_sequences[0];
+                            std::list<uint64_t> forked_seq_ids;
+                            for (size_t i = num_running_sequences; i < num_tokens_per_sequence; ++i) {
+                                const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
+                                forked_seq_ids.push_back(forked_sequence->get_id());
+                                register_new_token(sampled_token_ids[i], forked_sequence);
+                            }
+                            sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
+                        }
+                    }
+                    
+                    register_new_token(sampled_token_id, running_sequences[running_sequence_id]);
+                }
+                logit_processor.increment_gen_tokens();
+                for (const auto& dropped_seq_id : _try_finish_generation(sequence_group)) {
+                    sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
+                }
+            } else if (sampling_params.is_beam_search()) {
+                uint64_t request_id = sequence_group->get_request_id();
+
+                // create beam search info if we are on the first generate
+                if (m_beam_search_info.find(request_id) == m_beam_search_info.end()) {
+                    m_beam_search_info.emplace(request_id, GroupBeamSearcher(sequence_group, m_tokenizer));
+                }
+
+                // current algorithm already adds new tokens to running sequences and
+                m_beam_search_info.at(request_id).select_next_tokens(sequence_group_logits, sampler_output);
+
+                // check max length stop criteria
+                std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
+                if (!sequence_group->has_finished() &&
+                    running_sequences[0]->get_generated_len() == sampling_params.max_new_tokens) {
+                    // stop sequence by max_new_tokens
+                    m_beam_search_info.at(request_id).finalize(sampler_output);
+                }
+            }
+            // Notify handle after sampling is done. 
+            // For non-streaming this is effective only when the generation is finished.
+            sequence_group->notify_handle();
+        } else {
+            // we are in prompt processing phase when prompt is split into chunks and processed step by step
+        }
+
+        // NOTE: it should be before 'get_num_scheduled_tokens' is used
+        // update internal state of sequence group to reset scheduler tokens and update currently processed ones
+        sequence_group->finish_iteration();
+
+        // accumulate a number of processed tokens
+        currently_processed_tokens += padded_amount_of_processed_tokens * num_running_sequences;
+    }
+
+    return sampler_output;
+}
+
+void Sampler::clear_beam_search_info(uint64_t request_id) { 
+    m_beam_search_info.erase(request_id);
+}
+
+
+}
