@@ -31,8 +31,9 @@
 
 #include "openvino/genai/lora_adapter.hpp"
 
-#define SAFETENSORS_IMPLEMENTATION
-#include "safetensors.h"
+extern "C" {
+    #include "safetensors.h"
+}
 
 // If set to 1, the empty tensors will be used to switch LoRA adapter off.
 // FIXME: Fix the plugins and set to 1 permanently.
