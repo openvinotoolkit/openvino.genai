@@ -1,10 +1,10 @@
-
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "sampler.hpp"
 
 namespace ov::genai {
+// Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
 std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std::vector<int64_t>& needle) {
     if (needle.empty()) {  // no_repeat_ngram_size == 1, ban every token
         return {haystack.begin(), haystack.end()};
@@ -85,6 +85,7 @@ std::string clean_wrapped_text(const std::string& wrapped_text, const std::strin
     return clean_text;
 }
 
+// Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
 int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings) {
     /*
     For catching stop_string hit we run comparisons character-wise to catch cases where stop string 
@@ -155,6 +156,9 @@ int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, 
     return 0;
 }
 
+// Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
+// Number of tokens might not be exact as if there's no direct token match, we decode generated tokens incrementally expanding decoding scope
+// with 4 next tokens with each iteration until we check all tokens.
 int match_stop_string2(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings) {
     for (auto stop_string: stop_strings) {
         auto stop_tokens_ov = tokenizer.encode(stop_string).input_ids;
@@ -182,7 +186,7 @@ int match_stop_string2(Tokenizer & tokenizer, const TokenIds & generated_tokens,
     return 0;
 }
 
-void GroupBeamSearcher::finalize(SamplerOutput& sampler_output) {
+void Sampler::GroupBeamSearcher::finalize(SamplerOutput& sampler_output) {
     for (Group& group : m_groups) {
         if (!group.done) {
             for (Beam& beam : group.ongoing) {
@@ -205,7 +209,7 @@ void GroupBeamSearcher::finalize(SamplerOutput& sampler_output) {
     }
 }
 
-GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer)
+Sampler::GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer)
     : m_sequence_group(sequence_group),
         m_parameters{m_sequence_group->get_sampling_parameters()},
         m_groups{m_parameters.num_beam_groups},
@@ -226,7 +230,7 @@ GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenize
     }
 }
 
-void GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output) {
+void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output) {
     assert(m_parameters.num_beams % m_parameters.num_beam_groups == 0 &&
         "number of beams should be divisible by number of groups");
     size_t group_size = m_parameters.num_beams / m_parameters.num_beam_groups;
@@ -503,15 +507,21 @@ std::vector<Token> Sampler::_multinomial_sample(const Logits& logits, size_t num
     else
         multinomial_weights.assign(logits.m_data, logits.m_data + logits.m_size);
 
+    // std::discrete_distribution returns corrupted results when applied to log probabilies
+    // which result returning NAN only logprobs.
+    // so log() is applied after this line
     auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
-    
+
     std::vector<Token> out_tokens;
     for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
         size_t element_to_pick = dist(rng_engine);
-        if (logits.is_vector_initialized())
-            out_tokens.push_back(logits.m_vector[element_to_pick]);
+        if (logits.is_vector_initialized()) {
+            auto logit = logits.m_vector[element_to_pick];
+            logit.m_log_prob = std::log(logit.m_log_prob);
+            out_tokens.push_back(logit);
+        }
         else
-            out_tokens.emplace_back(logits.m_data[element_to_pick], element_to_pick);
+            out_tokens.emplace_back(std::log(logits.m_data[element_to_pick]), element_to_pick);
     }
     return out_tokens;
 }
@@ -660,7 +670,7 @@ void Sampler::clear_beam_search_info(uint64_t request_id) {
     m_beam_search_info.erase(request_id);
 }
 
-int64_t Group::finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {
+int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {
     int64_t preeempted_sequence_id = -1;
     float generated_len = beam.get_generated_len() + (is_stop_token_id_hit(beam.m_token_id, sampling_params.stop_token_ids) ? 1 : 0); // HF counts EOS token in generation length
     beam.m_score /= std::pow(generated_len, sampling_params.length_penalty);
@@ -679,7 +689,7 @@ int64_t Group::finish(Beam beam, const ov::genai::GenerationConfig& sampling_par
     return preeempted_sequence_id;
 }
 
-void Group::is_done(const ov::genai::GenerationConfig& sampling_params) {
+void Sampler::GroupBeamSearcher::Group::is_done(const ov::genai::GenerationConfig& sampling_params) {
     assert(sampling_params.num_beams % sampling_params.num_beam_groups == 0 &&
         "number of beams should be divisible by number of groups");
     size_t group_size = sampling_params.num_beams / sampling_params.num_beam_groups;

@@ -21,23 +21,6 @@
 #include "sequence_group.hpp"
 
 namespace ov::genai {
-// Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
-std::vector<int64_t> kmp_search(const std::vector<int64_t>& haystack, const std::vector<int64_t>& needle);
-
-std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx);
-
-std::vector<int64_t> wrap_tokens(const std::vector<int64_t>& tokens, const std::vector<int64_t>& prefix_tokens, const std::vector<int64_t>& suffix_tokens);
-
-std::string clean_wrapped_text(const std::string& wrapped_text, const std::string& prefix, const std::string& suffix);
-
-// Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
-int match_stop_string(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings);
-
-// Return number of last tokens that match one of the stop_strings. If there's no match 0 is returned.
-// Number of tokens might not be exact as if there's no direct token match, we decode generated tokens incrementally expanding decoding scope
-// with 4 next tokens with each iteration until we check all tokens.
-int match_stop_string2(Tokenizer & tokenizer, const TokenIds & generated_tokens, const std::set<std::string> & stop_strings);
-
 // Handle stop_token_ids
 inline bool is_stop_token_id_hit(int64_t generated_token, const std::set<int64_t> & stop_token_ids) {
     for (auto & stop_token_id : stop_token_ids) {
@@ -47,38 +30,6 @@ inline bool is_stop_token_id_hit(int64_t generated_token, const std::set<int64_t
     return false;
 }
 
-struct Beam {
-    Sequence::Ptr m_sequence;
-    size_t m_global_beam_idx = 0;
-
-    // beam is made on top of sequence
-    float m_log_prob = 0.0f;
-    int64_t m_token_id = -1;
-
-    // cumulative log probabilities
-    float m_score = -std::numeric_limits<float>::infinity();
-
-    Beam(Sequence::Ptr sequence)
-        : m_sequence(std::move(sequence)) { }
-
-    size_t get_generated_len() const {
-        return m_sequence->get_generated_len();
-    }
-};
-
-inline bool greater(const Beam& left, const Beam& right) {
-    return left.m_score > right.m_score;
-}
-
-struct Group {
-    std::vector<Beam> ongoing;  // Best beams in front
-    std::vector<Beam> min_heap;  // The worst of the best completed beams is the first
-    bool done = false;
-
-    int64_t finish(Beam beam, const ov::genai::GenerationConfig& sampling_params);
-    void is_done(const ov::genai::GenerationConfig& sampling_params);
-};
-
 struct SamplerOutput {
     // IDs of sequences that need to be dropped
     std::vector<uint64_t> m_dropped_sequences;
@@ -87,19 +38,9 @@ struct SamplerOutput {
     std::unordered_map<uint64_t, std::list<uint64_t>> m_forked_sequences;
 };
 
-class GroupBeamSearcher {
-    SequenceGroup::Ptr m_sequence_group;
-    ov::genai::GenerationConfig m_parameters;
-    std::vector<Group> m_groups;
-    Tokenizer m_tokenizer;
-public:
-    explicit GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer);
-
-    void select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output);
-    void finalize(SamplerOutput& sampler_output);
-};
-
 class Sampler {
+    class GroupBeamSearcher;
+
     Logits _get_logit_vector(ov::Tensor logits, size_t batch_idx = 1);
     Token _greedy_sample(const Logits& logits) const;
     std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence);
@@ -115,14 +56,54 @@ class Sampler {
     Tokenizer m_tokenizer;
 
 public:
-
     Sampler(Tokenizer & tokenizer) : m_tokenizer(tokenizer) {};
 
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits);
-
     void set_seed(size_t seed) { rng_engine.seed(seed); }
-
     void clear_beam_search_info(uint64_t request_id);
 };
 
+class Sampler::GroupBeamSearcher {
+    struct Beam {
+        Sequence::Ptr m_sequence;
+        size_t m_global_beam_idx = 0;
+
+        // beam is made on top of sequence
+        float m_log_prob = 0.0f;
+        int64_t m_token_id = -1;
+
+        // cumulative log probabilities
+        float m_score = -std::numeric_limits<float>::infinity();
+
+        Beam(Sequence::Ptr sequence)
+            : m_sequence(std::move(sequence)) { }
+
+        size_t get_generated_len() const {
+            return m_sequence->get_generated_len();
+        }
+    };
+    
+    static bool greater(const Beam& left, const Beam& right) {
+        return left.m_score > right.m_score;
+    }
+
+    struct Group {
+        std::vector<Beam> ongoing;  // Best beams in front
+        std::vector<Beam> min_heap;  // The worst of the best completed beams is the first
+        bool done = false;
+
+        int64_t finish(Beam beam, const ov::genai::GenerationConfig& sampling_params);
+        void is_done(const ov::genai::GenerationConfig& sampling_params);
+    };
+
+    SequenceGroup::Ptr m_sequence_group;
+    ov::genai::GenerationConfig m_parameters;
+    std::vector<Group> m_groups;
+    Tokenizer m_tokenizer;
+public:
+    explicit GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer);
+
+    void select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output);
+    void finalize(SamplerOutput& sampler_output);
+};
 }
