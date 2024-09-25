@@ -8,7 +8,7 @@ from common import get_model_and_tokenizer, save_ov_model_from_optimum, generate
     get_scheduler_config, run_test_pipeline, get_beam_search, get_greedy, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
-from test_sampling import RandomSamplingTestStruct, get_current_plarform_ref_texts
+from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
 
 def get_greedy_seq_len_300() -> GenerationConfig:
@@ -50,7 +50,7 @@ multinomial_params = RandomSamplingTestStruct(
         "How are you?",
         "Tell me something about Canada?",
     ],
-    ref_texts=get_current_plarform_ref_texts({
+    ref_texts=get_current_platform_ref_texts({
         "linux": [
             [
                 "\n\nOpenVINO is a live platform that allows users to create and manage a new library for open source applications.\n\nOpenVINO is"
@@ -107,7 +107,7 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
         "What is the current",
         "Tell me something about UAE?",
     ],
-    ref_texts=get_current_plarform_ref_texts({
+    ref_texts=get_current_platform_ref_texts({
         "linux": [
             [
                 "\nI've seen this expression used too many times without making sense.\nAs an AI engineer, and as a scientist, we should make everything easier"
