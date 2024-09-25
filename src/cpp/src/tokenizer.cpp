@@ -287,7 +287,7 @@ public:
     }
 
     TokenizedInputs encode(std::string prompt, const ov::AnyMap& tokenization_params = {}) {
-        bool add_special_tokens_flag;
+        bool add_special_tokens_flag = true;
         ov::genai::utils::read_anymap_param(tokenization_params, add_special_tokens.name(), add_special_tokens_flag);
 
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
@@ -306,7 +306,7 @@ public:
         
         TokenizedInputs unpadded;
         {
-            bool add_special_tokens_flag;
+            bool add_special_tokens_flag = true;
             ov::genai::utils::read_anymap_param(tokenization_params, add_special_tokens.name(), add_special_tokens_flag);
 
             CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
