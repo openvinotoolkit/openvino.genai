@@ -128,7 +128,7 @@ public:
     * ov::genai::scheduler_config property to create continuous batching pipeline. Properties can be
     * specified in any order.
     */
-    template <typename... Properties, util::EnableIfAllStringAny<DecodedResults, Properties...>* = nullptr>
+    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     LLMPipeline(
             const std::string& path,
             const std::string& device="CPU",

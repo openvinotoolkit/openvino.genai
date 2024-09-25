@@ -60,7 +60,7 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
 
     AdapterConfig (const Adapter& adapter, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<Adapter>{adapter}, mode) {}
 
-    template <typename AT, std::enable_if_t<std::is_constructible<Adapter, AT>::value>* = nullptr>
+    template <typename AT, typename std::enable_if<std::is_constructible<Adapter, AT>::value, bool>::type = true>
     AdapterConfig (const std::initializer_list<AT>& adapters, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<Adapter>(adapters), mode) {}
 
     AdapterConfig (const std::initializer_list<std::pair<Adapter, float>>& adapters, Mode mode = MODE_AUTO) : AdapterConfig(std::vector<std::pair<Adapter, float>>(adapters), mode) {}
@@ -118,12 +118,12 @@ public:
         return operator()(AdapterConfig(adapter, mode));
     }
 
-    template <typename AT, std::enable_if_t<std::is_constructible<Adapter, AT>::value>* = nullptr>
+    template <typename AT, typename std::enable_if<std::is_constructible<Adapter, AT>::value, bool>::type = true>
     inline std::pair<std::string, ov::Any> operator()(const std::initializer_list<AT>& adapters) const {
         return operator()(AdapterConfig(adapters));
     }
 
-    template <typename AT, std::enable_if_t<std::is_constructible<Adapter, AT>::value>* = nullptr>
+    template <typename AT, typename std::enable_if<std::is_constructible<Adapter, AT>::value, bool>::type = true>
     inline std::pair<std::string, ov::Any> operator()(const std::initializer_list<AT>& adapters, AdapterConfig::Mode mode) const {
         return operator()(AdapterConfig(adapters, mode));
     }
