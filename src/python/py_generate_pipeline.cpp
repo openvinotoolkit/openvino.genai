@@ -667,12 +667,20 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, properties_to_any_map(plugin_config));
         }), py::arg("tokenizer_path"), py::arg("plugin_config") = ov::AnyMap({}))
         
-        .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, bool add_special_tokens) { return tok.encode(prompts, add_special_tokens); },
+        .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, bool add_special_tokens) {
+                ov::AnyMap tokenization_params;
+                tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
+                return tok.encode(prompts, tokenization_params);
+            },
             py::arg("prompts"),
             py::arg("add_special_tokens") = true,
             R"(Encodes a list of prompts into tokenized inputs.)")
-
-        .def("encode", py::overload_cast<const std::string, bool>(&Tokenizer::encode),
+        
+        .def("encode", [](Tokenizer& tok, const std::string prompt, bool add_special_tokens) {
+                ov::AnyMap tokenization_params;
+                tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
+                return tok.encode(prompt, tokenization_params);
+            },
             py::arg("prompt"), py::arg("add_special_tokens") = true,
             R"(Encodes a single prompt into tokenized input.)")
         

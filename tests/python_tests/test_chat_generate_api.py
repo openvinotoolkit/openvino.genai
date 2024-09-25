@@ -42,9 +42,8 @@ def test_chat_compare_with_HF(model_descr, generation_config: Dict):
     chat_history_ov = []
     chat_prompt = ''
     
-    # HF in chat scenario does not add special tokens, but openvino tokenizer by default is converted with add_special_tokens=True.
-    # Need to regenerate openvino_tokenizer/detokenizer.
-    model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'), add_special_tokens=False)
+    # Will set add_special_tokens=False inside pipeline when start_chat() is called.
+    model_id, path, tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
 
     pipe.start_chat()    
     for prompt in quenstions:
@@ -204,15 +203,12 @@ prompts = [
     'Why is the Sun yellow?',
     'What was my first question?',
     ['Why is the Sun yellow?'],
-    # ['Why is the Sun yellow?', 'What was my first question?'],
     "若我有一亿美元，在人工智能盛行的今天，我怎样投资才能收益最大化？",
     "מחרוזת בדיקה",
     "Multiline\nstring!\nWow!",
 ]
 
 @pytest.mark.precommit
-# TODO: unskip when OV GenAI will pull the latest openvino_tokenizers.
-# @pytest.mark.skip(reason="OV GenAI has not yet pulles latest openvino_tokenizers with statefull add_special_tokens")
 @pytest.mark.nightly
 @pytest.mark.parametrize("add_special_tokens", [True, False])
 @pytest.mark.parametrize("prompt", prompts)
