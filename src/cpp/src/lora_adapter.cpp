@@ -91,7 +91,7 @@ BufferPtr read_file_helper(const std::string& filename) {
     size_t filesize = file.tellg();
     auto buffer = std::make_shared<Buffer>(filesize);
     file.seekg(0, std::ios::beg);
-    // TODO: Use mmapped AlignedBuffer as ov::Core::read_model can do, necessary functionality is not available in public OV APIю
+    // TODO: Use mmapped AlignedBuffer as ov::Core::read_model can do, necessary functionality is not available in public OV API.
     // LoRA files do not usuall have huge size in comparison to the base models, but it can vary depending on adapter,
     // and using mmap will help to optimize memory consumption and could be critical
     // when the application at the edge of available memory that is not really uncommon for applications dealing with LLMs.
