@@ -99,14 +99,12 @@ public:
             m_generation_config.adapters = adapters_iter->second.as<AdapterConfig>();
             auto filtered_plugin_config = plugin_config;
             filtered_plugin_config.erase(ov::genai::adapters.name());
-            core.set_property(device, filtered_plugin_config);
             auto model = core.read_model(model_path / "openvino_model.xml");
             m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable
-            m_model_runner = core.compile_model(model, device).create_infer_request();
+            m_model_runner = core.compile_model(model, device, filtered_plugin_config).create_infer_request();
             m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
         } else {
-            core.set_property(device, plugin_config);
-            m_model_runner = core.compile_model(model_path / "openvino_model.xml", device).create_infer_request();
+            m_model_runner = core.compile_model(model_path / "openvino_model.xml", device, plugin_config).create_infer_request();
         }
 
         // If eos_token_id was not provided, take value
