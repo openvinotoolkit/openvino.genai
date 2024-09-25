@@ -9,6 +9,18 @@
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::ImplInterface {
 protected:
+    std::shared_ptr<Scheduler> m_scheduler;
+    std::shared_ptr<CacheManager> m_cache_manager;
+    std::shared_ptr<ModelRunner> m_model_runner;
+    std::shared_ptr<Sampler> m_sampler;
+
+    // current requests to process
+    std::vector<SequenceGroup::Ptr> m_requests;
+    // requests added to the pipeline that will be added to m_requests in the next iteration
+    std::vector<SequenceGroup::Ptr> m_awaiting_requests;
+    // Mutex protecting access to m_awaiting_requests, so add_request and step methods can be called from different threads
+    std::mutex m_awaiting_requests_mutex;
+
     void _free_non_running_requests();
     void _notify_requests_dropped_by_handle();
 

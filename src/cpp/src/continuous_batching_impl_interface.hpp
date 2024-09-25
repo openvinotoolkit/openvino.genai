@@ -15,10 +15,6 @@ namespace ov::genai {
 class ContinuousBatchingPipeline::ImplInterface {
 protected:
     Tokenizer m_tokenizer;
-    std::shared_ptr<Scheduler> m_scheduler;
-    std::shared_ptr<CacheManager> m_cache_manager;
-    std::shared_ptr<ModelRunner> m_model_runner;
-    std::shared_ptr<Sampler> m_sampler;
 
     // TODO (mzegla): GenerationConfig is request specific object
     // and pipeline only uses default rng_seed. 
@@ -39,13 +35,6 @@ protected:
             std::cout << std::endl;
         }
     } m_perf;
-
-    // current requests to process
-    std::vector<SequenceGroup::Ptr> m_requests;
-    // requests added to the pipeline that will be added to m_requests in the next iteration
-    std::vector<SequenceGroup::Ptr> m_awaiting_requests;
-    // Mutex protecting access to m_awaiting_requests, so add_request and step methods can be called from different threads
-    std::mutex m_awaiting_requests_mutex;
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
 
