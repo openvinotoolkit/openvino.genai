@@ -122,7 +122,7 @@ public:
     * @brief Constructs an LLMPipeline from xml/bin files, tokenizers and configuration in the same dir.
     * Accepts arbitrary list of optional properties.
     *
-    * @param model_path Path to the dir model xml/bin files, tokenizers and generation_configs.json
+    * @param model_path Path to the dir model xml/bin files, tokenizers and generation_config.json
     * @param device optional device
     * @param properties optional plugin properties, ov::genai::adapters property for LoRA adapters and
     * ov::genai::scheduler_config property to create continuous batching pipeline. Properties can be
