@@ -4,6 +4,7 @@
 find_package(OpenVINOGenAI REQUIRED PATHS
     "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
     ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+    NO_CMAKE_FIND_ROOT_PATH
 )
 add_executable(lora_greedy_causal_lm lora_greedy_causal_lm.cpp)
 target_link_libraries(lora_greedy_causal_lm PRIVATE openvino::genai)
