@@ -33,45 +33,23 @@ void align_u4_zp_constants(const std::shared_ptr<ov::Model>& model) {
     }
 }
 
-// FIXME: It should be different function or at least this one requires fix
-uint32_t calculate_trainable_parameters(const std::shared_ptr<ov::Model>& model) {
-    uint32_t total_parameters = 0u;
-    for (auto op : model->get_ops()) {
-        for (auto input : op->inputs()) {
-            auto src = input.get_source_output().get_node_shared_ptr();
-            if (auto cst_op = std::dynamic_pointer_cast<ov::op::v0::Constant>(src)) {
-                total_parameters += ov::shape_size(cst_op->get_shape());
-            }
-        }
-    }
-    std::cout << "total params: " << static_cast<float>(total_parameters) / 1'000'000'000 << std::endl;
-    return total_parameters;
-}
-
-bool allow_to_enable_npuw_dq(const std::shared_ptr<ov::Model>& model, const bool is_prefill_model = false) {
+bool allow_to_enable_npuw_dq(const std::shared_ptr<ov::Model>& model) {
     std::vector<std::string> rt_info_path = {"nncf", "weight_compression", "group_size"};
     if (!model->has_rt_info(rt_info_path)) {
-        // NB: Model isn't compressed by using either CW or GQ configurations
+        // NB: Model isn't compressed by NNCF - skip
         return false;
     }
     auto group_size = model->get_rt_info<int>(rt_info_path);
     if (group_size == -1) {
-        // NB: For CW configuration NPUW DQ is enabled unconditionally
-        return true;
-    }
-    const uint32_t kTotalParams = calculate_trainable_parameters(model);
-    if (!is_prefill_model && kTotalParams < 2'000'000'000) {
-        // NB: For GQ configurations NPUW DQ is enabled only
-        // for models that have <2B parameters and only for generate model (so far)
+        // NB: Enable DQ for CW quantized models
         return true;
     }
     return false;
 }
 
 void enable_npuw_dq_if_allowed(ov::AnyMap& config,
-                               const std::shared_ptr<ov::Model>& model,
-                               const bool is_prefill_model = false) {
-    if (allow_to_enable_npuw_dq(model, is_prefill_model)) {
+                               const std::shared_ptr<ov::Model>& model) {
+    if (allow_to_enable_npuw_dq(model)) {
         config["NPUW_DQ"] = "YES";
     }
 }
@@ -338,7 +316,7 @@ void StaticLLMPipeline::setupAndCompileModels(
     auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", get_default_generate_config());
 
     // NB: Enable NPUW DQ
-    enable_npuw_dq_if_allowed(prefill_config, m_prefill_model, true /* is_prefill_model */);
+    enable_npuw_dq_if_allowed(prefill_config, m_prefill_model);
     enable_npuw_dq_if_allowed(generate_config, m_kvcache_model);
 
     merge_config_with(prefill_config, pipeline_config);
