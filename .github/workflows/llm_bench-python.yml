@@ -5,6 +5,7 @@ name: llm_bench Python Test
 
 env:
   LLM_BENCH_PYPATH: llm_bench/python
+  WWB_PATH: llm_bench/python/who_what_benchmark
 
 on:
   push:
@@ -39,7 +40,10 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest black
         GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.LLM_BENCH_PYPATH }}/requirements.txt
-        pip install openvino-nightly
+        python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url
+https://storage.openvinotoolkit.org/simple/wheels/nightly
+        GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.WWB_PATH }}/requirements.txt
+        GIT_CLONE_PROTECTION_ACTIVE=false pip install ${{ env.WWB_PATH }}
 
     - name: Lint with flake8
       run: |
@@ -68,6 +72,9 @@ jobs:
       run: |
         python ./llm_bench/python/convert.py --model_id segmind/tiny-sd --output_dir ./ov_models/tiny-sd --precision FP16
         python ./llm_bench/python/benchmark.py -m ./ov_models/tiny-sd/pytorch/dldt/FP16/ -pf ./llm_bench/python/prompts/stable-diffusion.jsonl -d cpu -n 1
+    - name: WWB Tests
+      run: |
+        python -m pytest llm_bench/python/who_what_benchmark/tests
   stateful:
     runs-on: ubuntu-20.04
     steps:
@@ -79,6 +86,13 @@ jobs:
         run: |
           GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r llm_bench/python/requirements.txt
           python -m pip uninstall --yes openvino
-          python -m pip install openvino-nightly
+          python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url
+https://storage.openvinotoolkit.org/simple/wheels/nightly
           python llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir . --stateful
           grep beam_idx pytorch/dldt/FP32/openvino_model.xml
+      - name: WWB Tests
+        run: |
+          GIT_CLONE_PROTECTION_ACTIVE=false pip install -r llm_bench/python/who_what_benchmark/requirements.txt
+          GIT_CLONE_PROTECTION_ACTIVE=false pip install llm_bench/python/who_what_benchmark/
+          pip install pytest
+          python -m pytest llm_bench/python/who_what_benchmark/tests

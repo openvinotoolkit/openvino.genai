@@ -25,3 +25,6 @@ timm
 tiktoken
 # - microsoft/biogpt
 sacremoses
+# - openai/whisper-base
+librosa
+datasets

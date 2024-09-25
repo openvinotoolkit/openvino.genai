@@ -11,6 +11,8 @@ add_subdirectory(cpp/multinomial_causal_lm)
 add_subdirectory(cpp/prompt_lookup_decoding_lm)
 add_subdirectory(cpp/speculative_decoding_lm)
 add_subdirectory(cpp/benchmark_genai)
+add_subdirectory(cpp/whisper_speech_recognition)
+add_subdirectory(cpp/stable_diffusion)
 
 install(FILES requirements.txt DESTINATION samples
         COMPONENT cpp_samples_genai)
@@ -22,6 +24,8 @@ install(DIRECTORY
             cpp/multinomial_causal_lm
             # Don't install prompt_lookup_decoding_lm and speculative_decoding_lm because they don't use openvino_genai library and arent verifyed yet.
             # Don't install continuous_batching_accuracy and continuous_batching_benchmark because they depend on json.
+            cpp/whisper_speech_recognition
+            cpp/stable_diffusion
         DESTINATION samples/cpp COMPONENT cpp_samples_genai)
 
 install(DIRECTORY
@@ -29,5 +33,7 @@ install(DIRECTORY
             python/chat_sample
             python/greedy_causal_lm
             python/multinomial_causal_lm
+            python/whisper_speech_recognition
+            # python/stable_diffusion
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)
