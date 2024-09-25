@@ -110,12 +110,6 @@ void DDIMScheduler::set_timesteps(size_t num_inference_steps) {
 
     // TODO: add linspace and trailing
     if (m_config.timestep_spacing == TimestepSpacing::LEADING) {
-        // step_ratio = self.config.num_train_timesteps // self.num_inference_steps
-            // # creates integer timesteps by multiplying by ratio
-            // # casting to int to avoid issues when num_inference_step is power of 3
-        // timesteps = (np.arange(0, num_inference_steps) * step_ratio).round()[::-1].copy().astype(np.int64)
-        // timesteps += self.config.steps_offset
-
         size_t step_ratio = m_config.num_train_timesteps  / m_num_inference_steps;
 
         for (size_t i = num_inference_steps - 1; i != -1; --i) {
@@ -135,15 +129,15 @@ std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov:
 
     size_t timestep = get_timesteps()[inference_step];
 
-    // 1. get previous step value (=t-1)
+    // get previous step value (=t-1)
     int prev_timestep = timestep - m_config.num_train_timesteps / m_num_inference_steps;
 
-    // 2. compute alphas, betas
+    // compute alphas, betas
     float alpha_prod_t = m_alphas_cumprod[timestep];
     float alpha_prod_t_prev = (prev_timestep >= 0) ? m_alphas_cumprod[prev_timestep] : m_final_alpha_cumprod;
     float beta_prod_t = 1 - alpha_prod_t;
 
-    // 3. compute predicted original sample from predicted noise also called
+    // compute predicted original sample from predicted noise also called
     // "predicted x_0" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
     std::vector<float> pred_original_sample, pred_epsilon;
     float pos_val, pe_val;
@@ -172,8 +166,7 @@ std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov:
             }
     }
 
-    // TODO:
-    // 4. Clip or threshold "predicted x_0"
+    // TODO: Clip or threshold "predicted x_0"
     // if m_config.thresholding:
     //         pred_original_sample = _threshold_sample(pred_original_sample)
     // elif m_config.clip_sample:
@@ -181,55 +174,18 @@ std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov:
     //             -self.config.clip_sample_range, self.config.clip_sample_range
     //         )
 
-    // 5. compute variance: "sigma_t(η)" -> see formula (16)
-    // σ_t = sqrt((1 − α_t−1)/(1 − α_t)) * sqrt(1 − α_t/α_t−1)
+    // compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
+    std::vector<float> pred_sample_direction(pred_epsilon.size());
+    std::transform(pred_epsilon.begin(), pred_epsilon.end(), pred_sample_direction.begin(), [alpha_prod_t_prev](auto x) {
+        return std::sqrt(1 - alpha_prod_t_prev) * x;
+    });
 
-    float eta = 0.0f;
-    float variance = get_variance(timestep, prev_timestep);
-    float std_dev_t = eta * std::sqrt(variance);
-    std_dev_t = 0;
-
-    std::cout << "inference_step: " << timestep << " prev_timestep " << prev_timestep << std::endl;
-    std::cout << "variance: " << variance << " std_dev_t: " << std_dev_t << std::endl;
-
-    // Remove if it's unnecessary:
-    // TODO:
-    // if use_clipped_model_output: ...
-
-    // 6. compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-    
-    // std::vector<float> pred_sample_direction(pred_epsilon.size());
-    // std::transform(pred_epsilon.begin(), pred_epsilon.end(), pred_sample_direction.begin(), [alpha_prod_t_prev, std_dev_t](auto x) {
-    //     return std::sqrt(1 - alpha_prod_t_prev - std::pow(std_dev_t, 2)) * x;
-    // });
-    //(1 - alpha_prod_t_prev - std_dev_t**2) ** (0.5) * pred_epsilon
-
-    std::vector<float> pred_sample_direction = pred_epsilon;
-    for (size_t i = 0; i < pred_sample_direction.size(); ++i){
-        pred_sample_direction[i] *= std::sqrt(1 - alpha_prod_t_prev - std::pow(std_dev_t, 2) );
-     }
-
-    std::cout << "pred_sample_direction" << std::endl;
-    for (size_t i = 0; i < 10; ++i) {
-        std::cout << pred_sample_direction[i] << " ";
-    }
-    std::cout <<  std::endl;
-
-    // 7. compute x_t without "random noise" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
+    // compute x_t without "random noise" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
     ov::Tensor prev_sample(latents.get_element_type(), latents.get_shape());
     float* prev_sample_data = prev_sample.data<float>();
     for (size_t i = 0; i < prev_sample.get_size(); ++i) {
         prev_sample_data[i] = std::sqrt(alpha_prod_t_prev) * pred_original_sample[i] + pred_sample_direction[i];
     }
-    // prev_sample = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
-
-    // TODO: if eta > 0:
-
-    std::cout << "prev_sample" << prev_sample.get_element_type() << std::endl;
-    for (size_t i = 0; i < 10; ++i) {
-        std::cout << prev_sample_data[i] << " ";
-    }
-    std::cout << std::endl;
 
     std::map<std::string, ov::Tensor> result{{"latent", prev_sample}};
 
@@ -247,18 +203,6 @@ float DDIMScheduler::get_init_noise_sigma() const {
 void DDIMScheduler::scale_model_input(ov::Tensor sample, size_t inference_step) {
     return;
 }
-
-float DDIMScheduler::get_variance(size_t timestep, size_t prev_timestep) {
-    float alpha_prod_t = m_alphas_cumprod[timestep];
-    float alpha_prod_t_prev = (prev_timestep >= 0) ? m_alphas_cumprod[prev_timestep] : m_final_alpha_cumprod;
-    float beta_prod_t = 1 - alpha_prod_t;
-    float beta_prod_t_prev = 1 - alpha_prod_t_prev;
-
-    float variance = (beta_prod_t_prev / beta_prod_t) * (1 - alpha_prod_t / alpha_prod_t_prev);
-
-    return variance;
-}
-
 
 } // namespace genai
 } // namespace ov

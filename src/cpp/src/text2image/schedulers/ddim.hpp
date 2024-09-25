@@ -53,8 +53,6 @@ private:
     size_t m_num_inference_steps;
     std::vector<int64_t> m_timesteps;
 
-    float get_variance(size_t timestep, size_t prev_timestep);
-
 };
 
 } // namespace genai
