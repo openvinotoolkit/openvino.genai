@@ -79,26 +79,23 @@ public:
     
     std::string m_chat_template = "";
 
-    void set_state_if_necessary(bool add_special_tokens) {
+    void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, bool add_special_tokens) {
         // If user requested add_special_tokens mode different from the current one,
         // need to set state variable.
-        OPENVINO_ASSERT(m_ireq_queue_tokenizer != nullptr);
-
         // If requested mode matches the stored state set, then don't touch states.
         if (add_special_tokens == m_add_special_tokens) {
             return;
         }
         
-        auto states = m_ireq_queue_tokenizer->get(0).query_state();
-        int32_t flag = add_special_tokens ?  1 : 0;
-        ov::Tensor add_special_tensor = ov::Tensor{ov::element::i32, {}, &flag};
-         
-        for (auto& state: states) {
+        // auto states = m_ireq_queue_tokenizer->get(0).query_state();
+        ov::Tensor add_special_tensor = ov::Tensor{ov::element::boolean, {}, &add_special_tokens};
+        for (auto& state: infer_request_guard.get().query_state()) {
             if (state.get_name().find("ADD_SPECIAL_TOKENS") == std::string::npos) {
                 // It's not add_special_tokens flag state.
                 continue;
             }
             state.set_state(add_special_tensor);
+            break;            
         }
         m_add_special_tokens = add_special_tokens;
     }
@@ -123,7 +120,7 @@ public:
         read_special_tokens_map(tokenizer_path);
 
         // Try to read tokenizer_config if some token ids or token str are not defined.
-        read_tokenizer_config_if_necessary(tokenizer_path); 
+        read_tokenizer_config_if_necessary(tokenizer_path);
 
         auto device = "CPU"; // currently openvino_tokenizer supports only CPU
         m_tokenizer = core.compile_model(tokenizer_path / "openvino_tokenizer.xml",
@@ -279,9 +276,9 @@ public:
     }
 
     TokenizedInputs encode(std::string prompt, bool add_special_tokens = true) {
-        set_state_if_necessary(add_special_tokens);
 
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
+        set_state_if_necessary(infer_request_guard, add_special_tokens);
         size_t batch_size = 1;
         infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
         infer_request_guard.get().start_async();
@@ -293,11 +290,11 @@ public:
     }
 
     TokenizedInputs encode(std::vector<std::string>& prompts, bool add_special_tokens = true) {
-        set_state_if_necessary(add_special_tokens);
         
         TokenizedInputs unpadded;
         {
             CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
+            set_state_if_necessary(infer_request_guard, add_special_tokens);
             infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
             auto size_ = infer_request_guard.get().get_input_tensor().get_shape();
             infer_request_guard.get().start_async();

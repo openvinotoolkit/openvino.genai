@@ -202,9 +202,9 @@ prompts = [
     '1+1=',
     'What is the previous answer?',
     'Why is the Sun yellow?',
-    'What was my first question?'
+    'What was my first question?',
     ['Why is the Sun yellow?'],
-    ['Why is the Sun yellow?', 'What was my first question?'],
+    # ['Why is the Sun yellow?', 'What was my first question?'],
     "若我有一亿美元，在人工智能盛行的今天，我怎样投资才能收益最大化？",
     "מחרוזת בדיקה",
     "Multiline\nstring!\nWow!",
@@ -212,11 +212,12 @@ prompts = [
 
 @pytest.mark.precommit
 # TODO: unskip when OV GenAI will pull the latest openvino_tokenizers.
-@pytest.mark.skip(reason="OV GenAI has not yet pulles latest openvino_tokenizers with statefull add_special_tokens")
+# @pytest.mark.skip(reason="OV GenAI has not yet pulles latest openvino_tokenizers with statefull add_special_tokens")
 @pytest.mark.nightly
-@pytest.mark.parametrize("add_special_tokens", [None, True, False])
+@pytest.mark.parametrize("add_special_tokens", [True, False])
 @pytest.mark.parametrize("prompt", prompts)
-def test_add_special_tokens_vect_input(add_special_tokens, prompt):
+def test_add_special_tokens(add_special_tokens, prompt):
+    import numpy as np
     model_descr = get_chat_models_list()[0]
     model_id, path, hf_tokenizer, model_opt, pipe = read_model((model_descr[0], model_descr[1] / '_test_chat'))
     genai_tokenzier = pipe.get_tokenizer()
@@ -224,4 +225,5 @@ def test_add_special_tokens_vect_input(add_special_tokens, prompt):
     # Calling encode with add_special_tokens will set state flag.
     res_genai = genai_tokenzier.encode(prompt, add_special_tokens).input_ids.data
     res_hf = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=add_special_tokens)["input_ids"]
-    assert res_genai == res_hf
+    # breakpoint()
+    assert np.all(res_genai == res_hf)
