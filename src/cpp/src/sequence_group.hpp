@@ -186,9 +186,11 @@ class SequenceGroup {
     ov::genai::GenerationConfig m_sampling_params;
     std::size_t m_block_size;
     TokenIds m_prompt_ids;
+    std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
     bool m_enable_prefix_caching;
     size_t m_num_evicted_tokens = 0;
+    bool m_has_echoed = false;
 
     uint64_t m_next_sequence_id = 0;
  
@@ -223,6 +225,7 @@ public:
 
         m_prompt_ids.resize(input_ids.get_size());
         std::copy_n(input_ids.data<int64_t>(), input_ids.get_size(), m_prompt_ids.begin());
+        m_prompt_log_probs.reserve(m_prompt_ids.size());
     }
 
     void add_sequence(const Sequence::Ptr & sequence) {
@@ -398,13 +401,13 @@ public:
 
     // returns context length taking into account scheduled tokens
     size_t get_context_len() const {
-        OPENVINO_ASSERT(!has_finished());
+        // OPENVINO_ASSERT(!has_finished());
         return get_num_processed_tokens() + get_num_scheduled_tokens();
     }
 
 
     bool requires_sampling() const {
-        return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len;
+        return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len && m_sampling_params.max_new_tokens > 0;
     }
 
     void schedule_tokens(size_t num_tokens) {
@@ -450,6 +453,10 @@ public:
 
     const TokenIds& get_prompt_ids() const {
         return m_prompt_ids;
+    }
+
+    void append_prompt_log_prob(float log_prob) {
+        m_prompt_log_probs.push_back(log_prob);
     }
 
     /**
@@ -542,6 +549,10 @@ public:
             GenerationOutput output;
             output.generated_ids = sequence->get_generated_ids();
             output.generated_log_probs = sequence->get_generated_log_probs();
+            if (m_sampling_params.echo) {
+                output.generated_ids.insert(output.generated_ids.begin(), m_prompt_ids.begin(), m_prompt_ids.end());
+                output.generated_log_probs.insert(output.generated_log_probs.begin(), m_prompt_log_probs.begin(), m_prompt_log_probs.end());
+            }
             output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_probs();
             output.finish_reason = sequence->get_finish_reason();
             outputs.emplace(sequence->get_grouped_id(), output);
@@ -554,9 +565,37 @@ public:
         for (auto& sequence : m_sequences) {
             // todo: check seq.is_finished() to generate without several </s>
             // or is it ok to use padding?
-            const auto last_gen_token = sequence->get_last_generation_output();
-            outputs.emplace(sequence->get_grouped_id(), last_gen_token);
+            auto output = sequence->get_last_generation_output();
+            if (m_sampling_params.echo && !m_has_echoed) {
+                output.generated_ids.insert(output.generated_ids.begin(), m_prompt_ids.begin(), m_prompt_ids.end());
+                output.generated_log_probs.insert(output.generated_log_probs.begin(), m_prompt_log_probs.begin(), m_prompt_log_probs.end());
+            }
+            outputs.emplace(sequence->get_grouped_id(), output);
         }
+        m_has_echoed = true;
+        m_generation_stream->push(std::move(outputs));
+    }
+
+    // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
+    void notify_handle_echo_only() {
+        GenerationOutputs outputs;
+        // This method is called after scheduling and before sampling,
+        // so m_num_processed_tokens does not include recently forwarded tokens hence this is our starting position
+        // we return m_num_scheduled_tokens tokens as they were forwarded in the current step, meaning context length is our last position.
+        size_t first_token_position = m_num_processed_tokens;
+        size_t last_token_position = get_context_len();
+
+        GenerationOutput output;
+        output.generated_ids = std::vector<int64_t>(m_prompt_ids.begin() + first_token_position, m_prompt_ids.begin() + last_token_position);
+        output.generated_log_probs = std::vector<float>(m_prompt_log_probs.begin() + first_token_position, m_prompt_log_probs.begin() + last_token_position);
+        output.score = 0.0; // Should we accumulate prompt log probs here?
+        if (last_token_position == m_prompt_ids.size()) {
+            output.finish_reason = GenerationFinishReason::LENGTH;
+            set_generation_status(GenerationStatus::FINISHED);
+            m_sequences[0]->set_status(SequenceStatus::FINISHED); // for cleanup
+        }
+        output.finish_reason = GenerationFinishReason::NONE;
+        outputs.emplace(0, output);
         m_generation_stream->push(std::move(outputs));
     }
 
