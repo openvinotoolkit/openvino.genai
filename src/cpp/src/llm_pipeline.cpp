@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 #include <openvino/openvino.hpp>
+#include <limits>
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -611,6 +612,9 @@ void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& confi
     if (config.eos_token_id == -1)
         m_pimpl->m_generation_config.eos_token_id = default_eos_token_id;
 
+    if (config.m_generation_config.max_new_tokens == SIZE_MAX)
+        config.m_generation_config.max_new_tokens = 100;
+    
     m_pimpl->m_generation_config.validate();
 }
 
