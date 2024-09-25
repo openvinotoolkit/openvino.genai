@@ -171,9 +171,6 @@ GenerationConfig beam_search() {
 
 GenerationConfig greedy() {
     GenerationConfig greedy_config;
-    greedy_config.temperature = 0.0f;
-    greedy_config.ignore_eos = true;
-    greedy_config.num_return_sequences = 1;
     greedy_config.max_new_tokens = 30;
     return greedy_config;
 }
