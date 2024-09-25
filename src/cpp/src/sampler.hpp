@@ -378,6 +378,9 @@ class Sampler {
         else
             multinomial_weights.assign(logits.m_data, logits.m_data + logits.m_size);
 
+        // std::discrete_distribution returns corrupted results when applied to log probabilies
+        // which result returning NAN only logprobs.
+        // so log() is applied after this line
         auto dist = std::discrete_distribution<size_t>(multinomial_weights.begin(), multinomial_weights.end()); // equivalent to multinomial with number of trials == 1
         
         std::vector<Token> out_tokens;
