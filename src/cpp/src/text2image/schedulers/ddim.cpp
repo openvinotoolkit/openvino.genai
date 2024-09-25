@@ -84,18 +84,36 @@ void DDIMScheduler::set_timesteps(size_t num_inference_steps) {
 
     m_num_inference_steps = num_inference_steps;
 
-    // TODO: add linspace and trailing
-    if (m_config.timestep_spacing == TimestepSpacing::LEADING) {
-        size_t step_ratio = m_config.num_train_timesteps  / m_num_inference_steps;
-
-        for (size_t i = num_inference_steps - 1; i != -1; --i) {
-            m_timesteps.push_back(i * step_ratio + m_config.steps_offset);
+    switch (m_config.timestep_spacing) {
+        case TimestepSpacing::LINSPACE:
+        {
+            using utils::linspace;
+            float end = static_cast<float>(m_config.num_train_timesteps - 1);
+            auto linspaced = linspace<float>(0.0f, end, num_inference_steps, true);
+            for (auto it = linspaced.rbegin(); it != linspaced.rend(); ++it) {
+                m_timesteps.push_back(static_cast<int64_t>(std::round(*it)));
+            }
+            break;
         }
-
-    } else {
-        OPENVINO_THROW("'timestep_spacing' must be 'LEADING'. Please, add support of other types");
+        case TimestepSpacing::LEADING:
+        {
+            size_t step_ratio = m_config.num_train_timesteps / m_num_inference_steps;
+            for (size_t i = num_inference_steps - 1; i != -1; --i) {
+                m_timesteps.push_back(i * step_ratio + m_config.steps_offset);
+            }
+            break;
+        }
+        case TimestepSpacing::TRAILING:
+        {
+            float step_ratio = static_cast<float>(m_config.num_train_timesteps) / static_cast<float>(m_num_inference_steps);
+            for (float i = m_config.num_train_timesteps; i > 0; i-=step_ratio){
+                m_timesteps.push_back(static_cast<int64_t>(std::round(i)) - 1);
+            }
+            break;
+        }
+        default:
+            OPENVINO_THROW("Unsupported value for 'timestep_spacing'");
     }
-
 }
 
 std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) {
