@@ -3,6 +3,7 @@
 
 #include "utils.hpp"
 #include <fstream>
+#include <utility>
 
 namespace ov {
 namespace genai {
@@ -183,6 +184,33 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
         return config_map.at(CONFIG_ARG_NAME).as<ov::genai::GenerationConfig>();
     else
         return std::nullopt;
+}
+
+std::string join(const std::vector<std::string>& listOfStrings, const std::string delimiter) {
+    std::stringstream ss;
+    auto it = listOfStrings.cbegin();
+    if (it == listOfStrings.end()) {
+        return "";
+    }
+    for (; it != (listOfStrings.end() - 1); ++it) {
+        ss << *it << delimiter;
+    }
+    if (it != listOfStrings.end()) {
+        ss << *it;
+    }
+    return ss.str();
+}
+
+bool is_full_log_env_enabled() {
+    const char* environmentVariableBuffer = std::getenv("OV_CB_FULL_LOG");
+    if (environmentVariableBuffer) {
+        auto result = std::__cxx11::stoul(environmentVariableBuffer);
+        if (result && result > 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 }  // namespace utils

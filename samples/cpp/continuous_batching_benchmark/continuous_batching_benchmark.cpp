@@ -428,7 +428,7 @@ int main(int argc, char* argv[]) try {
     options.add_options()
     ("n,num_prompts", "A number of prompts", cxxopts::value<size_t>()->default_value("1000"))
     ("b,max_batch_size", "A maximum number of batched tokens", cxxopts::value<size_t>()->default_value("256"))
-    ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("true"))
+    ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling. Use --dynamic_split_fuse=false to disable", cxxopts::value<bool>()->default_value("true"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
     ("dataset", "Path to dataset .json file", cxxopts::value<std::string>()->default_value("./ShareGPT_V3_unfiltered_cleaned_split.json"))
     ("max_input_len", "Max input length take from dataset", cxxopts::value<size_t>()->default_value("1024"))
@@ -485,6 +485,7 @@ int main(int argc, char* argv[]) try {
     scheduler_config.dynamic_split_fuse = dynamic_split_fuse,
     scheduler_config.max_num_seqs = 256, // not used if dynamic_split_fuse=True
 
+    std::cout << "To enable logging of additional information, like model configuration set environment variable OV_CB_FULL_LOG=1.";
     std::cout << "Benchmarking parameters: " << std::endl;
     std::cout << "\tMax number of batched tokens: " << scheduler_config.max_num_batched_tokens << std::endl;
     std::cout << "\tScheduling type: " << (scheduler_config.dynamic_split_fuse ? "dynamic split-fuse" : "vLLM") << std::endl;
@@ -506,7 +507,17 @@ int main(int argc, char* argv[]) try {
     
     // Benchmarking
     std::cout << "Loading models, creating pipelines, preparing environment..." << std::endl;
-    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map);
+    ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, device_config_map, {});
+
+    // Enabled with env OV_CB_FULL_LOG=1
+    std::string print_values = "";
+    for (auto prop : pipe.get_model_configuration()) {
+        print_values = print_values + "\t" + prop + "\n";
+    }
+    if (!print_values.empty())
+    {
+        std::cout << "Model configuration: " << std::endl << print_values;
+    }
 
     std::cout << "Setup finished, launching LLM executor, traffic simulation and statistics reporter threads" << std::endl;
 
