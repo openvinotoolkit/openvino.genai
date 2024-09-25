@@ -7,33 +7,7 @@
 #include <iterator>
 
 #include "text2image/schedulers/ddim.hpp"
-
-
-namespace {
-
-// https://gist.github.com/lorenzoriano/5414671
-template <typename T, typename U>
-std::vector<T> linspace(U start, U end, size_t num, bool endpoint = false) {
-    std::vector<T> indices;
-    if (num != 0) {
-        if (num == 1)
-            indices.push_back(static_cast<T>(start));
-        else {
-            if (endpoint)
-                --num;
-
-            U delta = (end - start) / static_cast<U>(num);
-            for (size_t i = 0; i < num; i++)
-                indices.push_back(static_cast<T>(start + delta * i));
-
-            if (endpoint)
-                indices.push_back(static_cast<T>(end));
-        }
-    }
-    return indices;
-}
-
-} // namespace
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -70,6 +44,8 @@ DDIMScheduler::DDIMScheduler(const Config& scheduler_config)
     : m_config(scheduler_config) {
 
     std::vector<float> alphas, betas;
+
+    using utils::linspace;
 
     if (!m_config.trained_betas.empty()) {
         betas = m_config.trained_betas;
