@@ -242,9 +242,8 @@ To activate continuous batching please provide additional property to LLMPipelin
 
 int main(int argc, char* argv[]) {
     ov::genai::SchedulerConfig scheduler_config;
-    {
-    //fill scheduler_config with custom data if required
-    }
+    // fill other fields in scheduler_config with custom data if required
+    scheduler_config.cache_size = 1;    // minimal possible KV cache size in GB, adjust as required
 
     ov::genai::LLMPipeline pipe(model_path, "CPU", ov::genai::scheduler_config(scheduler_config));
 }
