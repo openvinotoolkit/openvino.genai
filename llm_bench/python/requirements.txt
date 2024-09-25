@@ -11,7 +11,7 @@ transformers>=4.40.0
 diffusers>=0.22.0
 #optimum is in dependency list of optimum-intel 
 git+https://github.com/huggingface/optimum-intel.git@9a8782446e394ac07283b8bd8b44916c4f297826##egg=optimum-intel
-git+https://github.com/openvinotoolkit/nncf.git@48b356fe64124f16a67eb719d9b1653503124f8a#egg=nncf
+nncf~=2.13.0
 packaging
 psutil
 timm
