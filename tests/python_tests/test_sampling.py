@@ -123,7 +123,7 @@ class PlatformsRefTexts(TypedDict, total=False):
     darwin: List[List[str]]
 
 
-def get_current_plarform_ref_texts(ref_texts: PlatformsRefTexts) -> List[List[str]]:
+def get_current_platform_ref_texts(ref_texts: PlatformsRefTexts) -> List[List[str]]:
     # mac and win often have identical results
     # to avoid duplication, use win32 ref_text if no mac ref_texts were found
     if sys.platform == "darwin":
@@ -155,7 +155,7 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_top_p(),
         prompts=["What is OpenVINO?"],
-        ref_texts=get_current_plarform_ref_texts({
+        ref_texts=get_current_platform_ref_texts({
             "linux": [
                 [
                     "\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"
@@ -180,7 +180,7 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_top_p_and_top_k(),
         prompts=["What is OpenVINO?"],
-        ref_texts=get_current_plarform_ref_texts({
+        ref_texts=get_current_platform_ref_texts({
             "linux": [
                 [
                     "\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"
@@ -216,7 +216,7 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_all_parameters(),
         prompts=["Tell me something about UAE"],
-        ref_texts=get_current_plarform_ref_texts({
+        ref_texts=get_current_platform_ref_texts({
             "linux": [
                 [
                     " and how it's not like we're all in the same boat right now lol (or even close) 😂😁! Just curious :) If",
@@ -265,7 +265,7 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_max_and_min_token(),
         prompts=["What is OpenVINO?"],
-        ref_texts=get_current_plarform_ref_texts({
+        ref_texts=get_current_platform_ref_texts({
             "linux": [
                 [
                     "\nOpenVINO is a Linux distro. It's not as simple as using the Linux distro itself. OpenVINO is essentially a dist",
@@ -317,6 +317,64 @@ def test_individual_generation_configs_random(tmp_path, test_struct: RandomSampl
     # Discrete_distribution impl depends on platform, model inference results may depend on CPU.
 
 
+@pytest.mark.precommit
+@pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()])
+@pytest.mark.parametrize("max_num_batched_tokens", [2, 4, 256])
+def test_echo_without_completion(tmp_path, sampling_config, max_num_batched_tokens):
+    generation_config = sampling_config
+    generation_config.max_new_tokens = 0
+    generation_config.echo = True
+
+    scheduler_config = get_scheduler_config()
+    scheduler_config.max_num_batched_tokens = max_num_batched_tokens
+    generation_configs = [generation_config]
+    model_id : str = "facebook/opt-125m"
+    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
+
+    model_path : Path = tmp_path / model_id
+    save_ov_model_from_optimum(model, hf_tokenizer, model_path)
+
+    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
+
+    outputs = pipe.generate(["What is OpenVINO?"], generation_configs)
+    assert(len(outputs))
+    for output in outputs:
+        assert(len(output.m_generation_ids))
+        for sequence in output.m_generation_ids:
+            assert(sequence == "What is OpenVINO?")
+
+    del pipe
+    shutil.rmtree(model_path)
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()])
+@pytest.mark.parametrize("max_num_batched_tokens", [2, 4, 256])
+def test_echo_with_completion(tmp_path, sampling_config, max_num_batched_tokens):
+    generation_config = sampling_config
+    generation_config.max_new_tokens = 10
+    generation_config.echo = True
+
+    scheduler_config = get_scheduler_config()
+    scheduler_config.max_num_batched_tokens = max_num_batched_tokens
+    generation_configs = [generation_config]
+    model_id : str = "facebook/opt-125m"
+    model, hf_tokenizer = get_model_and_tokenizer(model_id, use_optimum=True)
+
+    model_path : Path = tmp_path / model_id
+    save_ov_model_from_optimum(model, hf_tokenizer, model_path)
+
+    pipe = ContinuousBatchingPipeline(model_path.absolute().as_posix(), Tokenizer(model_path.absolute().as_posix(), {}), scheduler_config, "CPU", {})
+
+    outputs = pipe.generate(["What is OpenVINO?"], generation_configs)
+    assert(len(outputs))
+    for output in outputs:
+        assert(len(output.m_generation_ids))
+        for sequence in output.m_generation_ids:
+            assert(sequence.startswith("What is OpenVINO?"))
+            assert(len(sequence) > len("What is OpenVINO?"))
+
+    del pipe
+    shutil.rmtree(model_path)
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()])

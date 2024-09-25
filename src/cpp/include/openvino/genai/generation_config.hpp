@@ -84,7 +84,8 @@ public:
     size_t max_length = SIZE_MAX;
     bool ignore_eos = false;
     size_t min_new_tokens = 0;
-
+    bool echo = false;
+    
     std::set<std::string> stop_strings;
     // Default setting in vLLM (and OpenAI API) is not to include stop string in the output
     bool include_stop_str_in_output = false;
