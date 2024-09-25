@@ -8,6 +8,7 @@
 
 #include "text2image/schedulers/ddim.hpp"
 #include "utils.hpp"
+#include "text2image/numpy_utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -45,7 +46,7 @@ DDIMScheduler::DDIMScheduler(const Config& scheduler_config)
 
     std::vector<float> alphas, betas;
 
-    using utils::linspace;
+    using numpy_utils::linspace;
 
     if (!m_config.trained_betas.empty()) {
         betas = m_config.trained_betas;
@@ -77,17 +78,15 @@ DDIMScheduler::DDIMScheduler(const Config& scheduler_config)
 void DDIMScheduler::set_timesteps(size_t num_inference_steps) {
     m_timesteps.clear();
 
-    if (num_inference_steps > m_config.num_train_timesteps) {
-        OPENVINO_THROW("`num_inference_steps cannot be larger than m_config.num_train_timesteps");
-
-    }
+    OPENVINO_ASSERT(num_inference_steps <= m_config.num_train_timesteps,
+                    "`num_inference_steps` cannot be larger than `m_config.num_train_timesteps`");
 
     m_num_inference_steps = num_inference_steps;
 
     switch (m_config.timestep_spacing) {
         case TimestepSpacing::LINSPACE:
         {
-            using utils::linspace;
+            using numpy_utils::linspace;
             float end = static_cast<float>(m_config.num_train_timesteps - 1);
             auto linspaced = linspace<float>(0.0f, end, num_inference_steps, true);
             for (auto it = linspaced.rbegin(); it != linspaced.rend(); ++it) {
