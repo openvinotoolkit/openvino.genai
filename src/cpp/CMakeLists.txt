@@ -42,14 +42,15 @@ ov_genai_build_jinja2cpp()
 
 # Library
 
-file(GLOB SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
 set(TARGET_NAME openvino_genai)
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 add_library(openvino::genai ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME}
-    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>")
+    PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:runtime/include>"
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE nlohmann_json::nlohmann_json jinja2cpp)
 

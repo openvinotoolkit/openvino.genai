@@ -358,7 +358,15 @@ class Sampler {
                 max_index = i;
             }
         }
-        return Token(logits.m_data[max_index], max_index);
+
+        // apply log softmax to max value
+        float log_sum = std::log(std::accumulate(
+            logits.m_data, logits.m_data + logits.m_size, 0.0f, [max_value](float accumulated, float to_add) {
+                return accumulated + std::exp(to_add - max_value);
+        }));
+        max_value = -log_sum;
+
+        return Token(max_value, max_index);
     }
 
     std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence) {
@@ -375,10 +383,13 @@ class Sampler {
         std::vector<Token> out_tokens;
         for (size_t token_idx = 0; token_idx < num_tokens_per_sequence; ++token_idx) {
             size_t element_to_pick = dist(rng_engine);
-            if (logits.is_vector_initialized())
-                out_tokens.push_back(logits.m_vector[element_to_pick]);
+            if (logits.is_vector_initialized()) {
+                auto logit = logits.m_vector[element_to_pick];
+                logit.m_log_prob = std::log(logit.m_log_prob);
+                out_tokens.push_back(logit);
+            }
             else
-                out_tokens.emplace_back(logits.m_data[element_to_pick], element_to_pick);
+                out_tokens.emplace_back(std::log(logits.m_data[element_to_pick]), element_to_pick);
         }
         return out_tokens;
     }
