@@ -612,8 +612,8 @@ void ov::genai::LLMPipeline::set_generation_config(const GenerationConfig& confi
     if (config.eos_token_id == -1)
         m_pimpl->m_generation_config.eos_token_id = default_eos_token_id;
 
-    if (config.m_generation_config.max_new_tokens == SIZE_MAX)
-        config.m_generation_config.max_new_tokens = 100;
+    if (config.max_new_tokens == SIZE_MAX)
+        m_pimpl->m_generation_config.max_new_tokens = 100;
     
     m_pimpl->m_generation_config.validate();
 }
