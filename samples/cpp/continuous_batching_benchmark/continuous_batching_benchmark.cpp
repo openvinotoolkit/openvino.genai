@@ -121,6 +121,7 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
 
         ov::genai::GenerationConfig greedy_search = ov::genai::greedy();
         greedy_search.max_new_tokens = std::min(max_output_len, output_len);
+        greedy_search.ignore_eos = true;
         greedy_search.repetition_penalty = 1.0;
         greedy_search.frequency_penalty = 0.0;
         greedy_search.presence_penalty = 0.0;
@@ -228,14 +229,16 @@ public:
 
     GenerationMetrics get_metrics() {
         GenerationMetrics generation_metrics;
-        for (auto& sequenceInfoPair : sequences_info) {
-            generation_metrics.mean_ttft += sequenceInfoPair.second.ttft;
-            generation_metrics.mean_tpot += sequenceInfoPair.second.mean_tpot;
-            generation_metrics.num_output_tokens += sequenceInfoPair.second.num_output_tokens;
+        if (!sequences_info.empty()) {
+            for (auto& sequenceInfoPair : sequences_info) {
+                generation_metrics.mean_ttft += sequenceInfoPair.second.ttft;
+                generation_metrics.mean_tpot += sequenceInfoPair.second.mean_tpot;
+                generation_metrics.num_output_tokens += sequenceInfoPair.second.num_output_tokens;
+            }
+            generation_metrics.mean_ttft /= sequences_info.size();
+            generation_metrics.mean_tpot /= sequences_info.size();
+            generation_metrics.num_input_tokens = input_len;
         }
-        generation_metrics.mean_ttft /= sequences_info.size();
-        generation_metrics.mean_tpot /= sequences_info.size();
-        generation_metrics.num_input_tokens = input_len;
         return generation_metrics;
     }
 };
