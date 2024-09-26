@@ -7,32 +7,9 @@
 #include <iterator>
 
 #include "text2image/schedulers/lcm.hpp"
+#include "utils.hpp"
+#include "text2image/numpy_utils.hpp"
 
-namespace {
-
-// https://gist.github.com/lorenzoriano/5414671
-template <typename T, typename U>
-std::vector<T> linspace(U start, U end, size_t num, bool endpoint = false) {
-    std::vector<T> indices;
-    if (num != 0) {
-        if (num == 1)
-            indices.push_back(static_cast<T>(start));
-        else {
-            if (endpoint)
-                --num;
-
-            U delta = (end - start) / static_cast<U>(num);
-            for (size_t i = 0; i < num; i++)
-                indices.push_back(static_cast<T>(start + delta * i));
-
-            if (endpoint)
-                indices.push_back(static_cast<T>(end));
-        }
-    }
-    return indices;
-}
-
-} // namespace 
 
 namespace ov {
 namespace genai {
@@ -86,12 +63,14 @@ LCMScheduler::LCMScheduler(const Config& scheduler_config)
     } else if (m_config.beta_schedule == BetaSchedule::SCALED_LINEAR) {
         float start = std::sqrt(m_config.beta_start);
         float end = std::sqrt(m_config.beta_end);
+
+        using numpy_utils::linspace;
         std::vector<float> temp = linspace<float, float>(start, end, m_config.num_train_timesteps, true);
         for (float b : temp) {
             betas.push_back(b * b);
         }
     } else {
-        OPENVINO_THROW("'beta_schedule' must be one of 'EPSILON' or 'SCALED_LINEAR'");
+        OPENVINO_THROW("'beta_schedule' must be one of 'LINEAR' or 'SCALED_LINEAR'");
     }
 
     for (float b : betas) {
@@ -127,6 +106,7 @@ void LCMScheduler::set_timesteps(size_t num_inference_steps) {
     // LCM Inference Steps Schedule
     std::reverse(lcm_origin_timesteps.begin(),lcm_origin_timesteps.end());
 
+    using numpy_utils::linspace;
     // v1. based on https://github.com/huggingface/diffusers/blame/2a7f43a73bda387385a47a15d7b6fe9be9c65eb2/src/diffusers/schedulers/scheduling_lcm.py#L387
     std::vector<size_t> inference_indices = linspace<size_t, float>(0, origin_timesteps_size, m_num_inference_steps);
     for (size_t i : inference_indices){

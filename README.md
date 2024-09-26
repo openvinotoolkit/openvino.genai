@@ -34,8 +34,7 @@ It includes the following pipelines:
      6. [multinomial_causal_lm](./samples/cpp/multinomial_causal_lm/README.md)
      7. [prompt_lookup_decoding_lm](./samples/cpp/prompt_lookup_decoding_lm/README.md)
      8. [speculative_decoding_lm](./samples/cpp/speculative_decoding_lm/README.md)
-3. [Stable Diffuison (with LoRA) C++ image generation pipeline](./image_generation/stable_diffusion_1_5/cpp/README.md)
-4. [Latent Consistency Model (with LoRA) C++ image generation pipeline](./image_generation/lcm_dreamshaper_v7/cpp/README.md)
+3. [Stable Diffuison and Latent Consistency Model (with LoRA) C++ image generation pipeline](./samples/cpp/stable_diffusion/README.md)
 
 ### Requirements
 
