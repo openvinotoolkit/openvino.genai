@@ -7,5 +7,5 @@
 #include "device_config.hpp"
 
 namespace ov::genai {
-void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
+void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config, bool per_layer_cache_control = false);
 }

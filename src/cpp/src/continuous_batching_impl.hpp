@@ -5,6 +5,7 @@
 
 #include "continuous_batching_impl_interface.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "cache_eviction.hpp"
 
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::ImplInterface {
@@ -21,9 +22,22 @@ protected:
     // Mutex protecting access to m_awaiting_requests, so add_request and step methods can be called from different threads
     std::mutex m_awaiting_requests_mutex;
 
+    std::map<size_t, CacheEvictionAlgorithm> m_seq_group_id_to_cache_eviction_algo_map;
+
+    static const size_t AVG_CACHE_USAGE_WINDOW_SIZE_IN_STEPS = 1000;
+    std::deque<float> m_previous_step_cache_usages;
+
+#ifdef DEBUG_CACHE_STATE_DUMP
+    size_t step_count = 0;
+#endif
+
     void _free_non_running_requests();
     void _notify_requests_dropped_by_handle();
+    void _register_step_cache_usage(float step_cache_usage);
 
+    float _get_current_running_average_cache_usage() const;
+
+    void maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
 public:
     ContinuousBatchingImpl(const std::string& models_path,
                            const Tokenizer& tokenizer,

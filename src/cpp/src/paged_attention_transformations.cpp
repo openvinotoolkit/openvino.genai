@@ -21,7 +21,7 @@ inline ov::PartialShape to_partial_with_dyn_0_dim(const ov::Shape& static_shape)
  * different sets of KV cache blocks for different attention layers. If false, then the KV cache block structure will be identical across all
  * decoder layers.
  */
-void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config, bool per_layer_cache_control = false) {
+void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, DeviceConfig& device_config, bool per_layer_cache_control) {
     const ov::op::util::VariableVector& variables = model->get_variables();
     OPENVINO_ASSERT(!variables.empty(), "Model is supposed to be stateful");
 

@@ -13,6 +13,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/visibility.hpp"
+#include "cache_eviction.hpp"
 
 namespace ov::genai {
 

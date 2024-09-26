@@ -3,7 +3,6 @@
 
 #include "cache_eviction.hpp"
 #include "gtest/gtest.h"
-#include "openvino/genai/cache_eviction.hpp"
 
 #include <algorithm>
 

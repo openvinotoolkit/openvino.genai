@@ -17,7 +17,7 @@
 
 namespace ov::genai {
 
-std::string get_paged_attention_score_output_for_decoder_layer(size_t decoder_layer_id) {
+inline std::string get_paged_attention_score_output_for_decoder_layer(size_t decoder_layer_id) {
     std::stringstream ss;
     ss << "scores." << decoder_layer_id;
     return ss.str();
