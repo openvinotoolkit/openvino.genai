@@ -1,15 +1,12 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/core/model.hpp"
-
 #include "openvino/pass/manager.hpp"
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
 
-#include "device_config.hpp"
+#include "paged_attention_transformations.hpp"
 
-using namespace ov::genai;
-
+namespace ov::genai {
 inline ov::PartialShape to_partial_with_dyn_0_dim(const ov::Shape& static_shape) {
     ov::PartialShape partial_shape = static_shape;
     partial_shape[0] = ov::Dimension::dynamic();
@@ -44,4 +41,5 @@ void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, Dev
         parameters[kv_caches_inputs_offset + 2 * decoder_layer_id + 1]->set_partial_shape(to_partial_with_dyn_0_dim(device_config.get_value_cache_shape()));
     }
     model->validate_nodes_and_infer_types();
+}
 }
