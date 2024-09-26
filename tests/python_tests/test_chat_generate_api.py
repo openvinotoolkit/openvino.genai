@@ -221,5 +221,4 @@ def test_add_special_tokens(add_special_tokens, prompt):
     # Calling encode with add_special_tokens will set state flag.
     res_genai = genai_tokenzier.encode(prompt, add_special_tokens).input_ids.data
     res_hf = hf_tokenizer(prompt, return_tensors="np", add_special_tokens=add_special_tokens)["input_ids"]
-    # breakpoint()
     assert np.all(res_genai == res_hf)

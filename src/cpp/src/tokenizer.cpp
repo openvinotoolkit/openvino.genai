@@ -97,7 +97,7 @@ public:
         *add_special_tensor.data<bool>() = add_special_tokens;
 
         for (auto& state: infer_request_guard.get().query_state()) {
-            if (state.get_name().find("ADD_SPECIAL_TOKENS") == std::string::npos) {
+            if (state.get_name().find(ov::genai::ADD_SPECIAL_TOKENS_VAR_ID) == std::string::npos) {
                 // It's not add_special_tokens flag state.
                 continue;
             }

@@ -4,6 +4,9 @@
 #include "openvino/op/constant.hpp"
 #include "openvino/pass/pass.hpp"
 
+namespace ov {
+namespace genai {
+
 /** 
  * @brief This pass modifies tokenizer ov::Model so that special tokens adding will be
  *  enabled or diabled depending on stateful value.
@@ -34,3 +37,8 @@ public:
     OPENVINO_RTTI("MakeCombineSegmentsSatateful", "0");
     bool run_on_model(const std::shared_ptr<ov::Model>& model) override;
 };
+
+const std::string ADD_SPECIAL_TOKENS_VAR_ID = "add_special_tokens";
+
+} // namespace genai
+} // namespace ov
