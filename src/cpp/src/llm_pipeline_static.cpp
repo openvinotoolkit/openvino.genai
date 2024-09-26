@@ -47,10 +47,21 @@ bool allow_to_enable_npuw_dq(const std::shared_ptr<ov::Model>& model) {
     return false;
 }
 
+std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {
+    if (auto it = config.find(option_name); it != config.end()) {
+        config.erase(it);
+        return std::make_optional(it->second);
+    }
+    return std::nullopt;
+}
+
 void enable_npuw_dq_if_allowed(ov::AnyMap& config,
                                const std::shared_ptr<ov::Model>& model) {
     if (allow_to_enable_npuw_dq(model)) {
         config["NPUW_DQ"] = "YES";
+        // NB: Disable NPUW_DCOFF_TYPE / NPUW_DCOFF_SCALE options for NPUW_DQ case
+        pop_option(config, "NPUW_DCOFF_TYPE");
+        pop_option(config, "NPUW_DCOFF_SCALE");
     }
 }
 
@@ -184,19 +195,20 @@ void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
     }
 }
 
-ov::AnyMap get_default_prefill_config() {
-    std::map<std::string, std::string> config = {
+ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model) {
+    ov::AnyMap config = {
         { "NPU_USE_NPUW", "YES" },
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
         { "NPUW_DCOFF_SCALE",  "YES" },
         { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
     };
-    return { config.begin(), config.end() };
+    enable_npuw_dq_if_allowed(config, model);
+    return config;
 }
 
-ov::AnyMap get_default_generate_config() {
-    std::map<std::string, std::string> config = {
+ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model) {
+    ov::AnyMap config = {
         { "NPU_USE_NPUW", "YES" },
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
@@ -206,15 +218,15 @@ ov::AnyMap get_default_generate_config() {
         { "NPUW_FUNCALL_ASYNC", "YES" },
         { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
     };
-    return { config.begin(), config.end() };
+    enable_npuw_dq_if_allowed(config, model);
+    return config;
 }
 
 template <typename T>
 T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_value) {
-    if (auto it = config.find(key); it != config.end()) {
-        auto value = it->second;
-        config.erase(it);
-        return value.as<T>();
+    auto anyopt = pop_option(config, key);
+    if (anyopt.has_value()) {
+        return anyopt.value().as<T>();
     }
     return default_value;
 }
@@ -229,9 +241,7 @@ ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, si
 
 void drop_cache_dir(ov::AnyMap& config) {
     if (config.count("NPU_USE_NPUW") != 0u) {
-        if (auto it = config.find("CACHE_DIR"); it != config.end()) {
-            config.erase(it);
-        }
+        pop_option(config, "CACHE_DIR");
     }
 }
 
@@ -312,12 +322,13 @@ void StaticLLMPipeline::setupAndCompileModels(
     reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
     reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
     // (7) Compile both model
-    auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", get_default_prefill_config());
-    auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", get_default_generate_config());
 
-    // NB: Enable NPUW DQ
-    enable_npuw_dq_if_allowed(prefill_config, m_prefill_model);
-    enable_npuw_dq_if_allowed(generate_config, m_kvcache_model);
+    auto prefill_config = pop_or_default(
+        pipeline_config, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model)
+    );
+    auto generate_config = pop_or_default(
+        pipeline_config, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model)
+    );
 
     merge_config_with(prefill_config, pipeline_config);
     merge_config_with(generate_config, pipeline_config);
