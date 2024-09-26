@@ -8,6 +8,7 @@
 #include "openvino/pass/stateful_to_stateless.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/opsets/opset13.hpp"
+#include "openvino/core/preprocess/pre_post_process.hpp"
 
 #include <jinja2cpp/user_callable.h>
 
@@ -15,6 +16,24 @@
 #include "utils.hpp"
 
 namespace {
+
+std::shared_ptr<ov::Model> cvt_kvcache_to_fp16(const std::shared_ptr<ov::Model>& model) {
+    ov::preprocess::PrePostProcessor ppp(model);
+
+    for (auto tensor : model->inputs()) {
+        if (tensor.get_any_name().find("past_key") != std::string::npos) {
+            ppp.input(tensor.get_any_name()).tensor().set_element_type(ov::element::Type_t::f16);
+        }
+    }
+
+    for (auto tensor : model->outputs()) {
+        if (tensor.get_any_name().find("present") != std::string::npos) {
+            ppp.output(tensor.get_any_name()).tensor().set_element_type(ov::element::Type_t::f16);
+        }
+    }
+
+    return ppp.build();
+}
 
 void align_u4_zp_constants(const std::shared_ptr<ov::Model>& model) {
     for (auto op : model->get_ops()) {
@@ -280,17 +299,19 @@ void StaticLLMPipeline::setupAndCompileModels(
     align_u4_zp_constants(m_kvcache_model);
     // (4) Replace KV-tensors for the entire cache to tensors only for new token
     m_kvcache_model = redirect_new_kv_to_output(m_kvcache_model);
-    // (5) Clone the model - this will be prefill
+    // (5) Convert kvcache tensors to fp16 precision
+    m_kvcache_model = cvt_kvcache_to_fp16(m_kvcache_model);
+    // (6) Clone the model - this will be prefill
     m_prefill_model = m_kvcache_model->clone();
     m_prefill_model->set_friendly_name(m_kvcache_model->get_friendly_name() + "_prefill");
-    // (6) Reshape both models to static shape
+    // (7) Reshape both models to static shape
     const auto kMaxPromptLen = pop_or_default(pipeline_config, "MAX_PROMPT_LEN", 1024u);
     const auto kMinResponseLen = pop_or_default(pipeline_config, "MIN_RESPONSE_LEN", 150u);
     KVAxesPosition axes = get_kv_axes(get_model_type_from_json(path / "config.json"));
     m_kvcache_desc = KVCacheDesc { kMaxPromptLen, kMaxPromptLen + kMinResponseLen, 0u, axes.seq_len };
     reshape_to_static(m_prefill_model, m_kvcache_desc.max_prompt_size, m_kvcache_desc.max_prompt_size, axes);
     reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
-    // (7) Compile both model
+    // (8) Compile both model
     auto prefill_config = pop_or_default(pipeline_config, "PREFILL_CONFIG", get_default_prefill_config());
     auto generate_config = pop_or_default(pipeline_config, "GENERATE_CONFIG", get_default_generate_config());
     merge_config_with(prefill_config, pipeline_config);
