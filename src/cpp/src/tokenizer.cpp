@@ -4,17 +4,17 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <openvino/pass/manager.hpp>
-#include "openvino/genai/make_combine_segments_stateful.hpp"
 #include <jinja2cpp/template.h>
 #include <jinja2cpp/template_env.h>
 #include <jinja2cpp/user_callable.h>
 #include <jinja2cpp/generic_list.h>
 #include <jinja2cpp/generic_list_iterator.h>
 
+#include "openvino/pass/manager.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
+#include "make_combine_segments_stateful.hpp"
 #include "tokenizers_path.hpp"
 #include "circular_buffer_queue.hpp"
 #include "utils.hpp"
@@ -93,7 +93,9 @@ public:
         }
         
         // auto states = m_ireq_queue_tokenizer->get(0).query_state();
-        ov::Tensor add_special_tensor = ov::Tensor{ov::element::boolean, {}, &add_special_tokens};
+        ov::Tensor add_special_tensor = ov::Tensor(ov::element::boolean, {});
+        *add_special_tensor.data<bool>() = add_special_tokens;
+
         for (auto& state: infer_request_guard.get().query_state()) {
             if (state.get_name().find("ADD_SPECIAL_TOKENS") == std::string::npos) {
                 // It's not add_special_tokens flag state.
