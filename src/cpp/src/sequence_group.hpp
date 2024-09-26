@@ -152,6 +152,11 @@ public:
         return m_cumulative_log_prob;
     }
 
+    void update_generated_log_prob(size_t idx, float log_prob) {
+        OPENVINO_ASSERT(idx < m_generated_log_probs.size());
+        m_generated_log_probs[idx] = log_prob;
+    }
+
     float get_beam_search_score(const ov::genai::GenerationConfig& sampling_params) const {
         float cumulative_log_prob = get_cumulative_log_probs(), current_length = get_generated_len();
         float score = cumulative_log_prob / std::pow(current_length, sampling_params.length_penalty);
@@ -195,6 +200,8 @@ class SequenceGroup {
     size_t m_num_scheduled_tokens = 0;
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
+    // max validation length within a group to check generated tokens
+    size_t m_num_validated_tokens = 0;
 
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
         : m_request_id(request_id),
@@ -359,17 +366,22 @@ public:
 
     void clear_scheduled_tokens() {
         m_num_scheduled_tokens = 0;
+        m_num_validated_tokens = 0;
     }
 
     bool is_scheduled() const {
         return m_num_scheduled_tokens > 0;
     }
 
+    void set_num_validated_tokens(size_t k) {
+        m_num_validated_tokens = k;
+    }
+
     size_t get_num_available_tokens_for_batching() const {
         OPENVINO_ASSERT(!has_finished(), "Internal error: this function cannot be called on finished sequence group");
         OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");
         // if sequence group has not finished, it has at least one token to process
-        size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len);
+        size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len) + m_num_validated_tokens;
         return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u);
     }
 

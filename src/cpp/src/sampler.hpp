@@ -41,7 +41,7 @@ struct SamplerOutput {
 class Sampler {
     class GroupBeamSearcher;
 
-    Logits _get_logit_vector(ov::Tensor logits, size_t batch_idx = 1);
+    Logits _get_logit_vector(ov::Tensor logits, size_t batch_idx, size_t token_idx);
     Token _greedy_sample(const Logits& logits) const;
     std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence);
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr & sequence_group);
@@ -58,7 +58,7 @@ class Sampler {
 public:
     Sampler(Tokenizer & tokenizer) : m_tokenizer(tokenizer) {};
 
-    SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits);
+    SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled);
     void set_seed(size_t seed) { rng_engine.seed(seed); }
     void clear_beam_search_info(uint64_t request_id);
 };

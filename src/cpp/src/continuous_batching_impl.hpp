@@ -9,6 +9,8 @@
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::ImplInterface {
 protected:
+    friend class ContinuousBatchingPipeline::SpeculativeDecodingImpl;
+
     std::shared_ptr<Scheduler> m_scheduler;
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;
@@ -21,6 +23,8 @@ protected:
     // Mutex protecting access to m_awaiting_requests, so add_request and step methods can be called from different threads
     std::mutex m_awaiting_requests_mutex;
 
+    bool m_is_validation_mode_enabled = false;
+
     void _free_non_running_requests();
     void _notify_requests_dropped_by_handle();
 
@@ -29,14 +33,21 @@ public:
                            const Tokenizer& tokenizer,
                            const SchedulerConfig& scheduler_config,
                            const std::string& device,
-                           const ov::AnyMap& plugin_config);
+                           const ov::AnyMap& plugin_config,
+                           bool is_validation_mode_enabled = false);
 
     ContinuousBatchingImpl(const std::string& models_path,
                            const SchedulerConfig& scheduler_config,
                            const std::string& device,
                            const ov::AnyMap& llm_plugin_config,
-                           const ov::AnyMap& tokenizer_plugin_config)
-    : ContinuousBatchingImpl{models_path, Tokenizer(models_path, tokenizer_plugin_config), scheduler_config, device, llm_plugin_config} {};
+                           const ov::AnyMap& tokenizer_plugin_config,
+                           bool is_validation_mode_enabled = false)
+    : ContinuousBatchingImpl{ models_path,
+                              Tokenizer(models_path, tokenizer_plugin_config),
+                              scheduler_config,
+                              device,
+                              llm_plugin_config,
+                              is_validation_mode_enabled } {};
 
 
     GenerationHandle add_request(uint64_t request_id,

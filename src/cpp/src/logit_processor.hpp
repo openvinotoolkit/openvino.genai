@@ -365,8 +365,12 @@ public:
         }
     }
 
-    void increment_gen_tokens() {
-        ++m_generated_tokens;
+    void update_generated_len(size_t updated_len) {
+        m_generated_tokens = updated_len;
+    }
+
+    size_t get_generated_len() {
+        return m_generated_tokens;
     }
 
     void register_new_generated_token(int64_t new_token_id) {
