@@ -25,8 +25,9 @@ struct PipelineMetrics {
 };
 
 class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {
-    class Impl;
-    std::shared_ptr<Impl> m_impl;
+    class ImplInterface;
+    class ContinuousBatchingImpl;
+    std::shared_ptr<ImplInterface> m_impl;
 
 public:
     ContinuousBatchingPipeline(const std::string& models_path,
