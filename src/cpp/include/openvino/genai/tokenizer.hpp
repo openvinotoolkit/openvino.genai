@@ -35,7 +35,7 @@ public:
     /**
     * @brief encode a single prompt
     * @param prompt std::string with input prompt
-    * @param tokenization_params AnyMap with tokenization parameters, e.g. {'add_special_tokens': true}
+    * @param tokenization_params AnyMap with tokenization parameters, e.g. {'add_special_tokens', false}
     * @return pair of [input_ids, attention_mask]
     */
     TokenizedInputs encode(const std::string prompt, const ov::AnyMap& tokenization_params = {});
@@ -43,7 +43,7 @@ public:
     /**
     * @brief encode batch of prompts. Left padding will be applied by default
     * @param prompts vector storing batch of prompts
-    * @param tokenization_params AnyMap with tokenization parameters, e.g. {'add_special_tokens': false}
+    * @param tokenization_params AnyMap with tokenization parameters, e.g. {'add_special_tokens', false}
     * @return pair of [input_ids, attention_mask]
     */
     TokenizedInputs encode(std::vector<std::string>& prompt, const ov::AnyMap& tokenization_params = {});
