@@ -111,20 +111,21 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         m_awaiting_requests.clear();
     }
 
-        m_pipeline_metrics.requests = m_requests.size();
-        Scheduler::Output scheduler_output;
-        {
-            static ManualTimer timer("scheduling");
-            timer.start();
-            scheduler_output = m_scheduler->schedule(m_requests);
-            m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
-            m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
-            m_pipeline_metrics.max_cache_usage = std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
-            _register_step_cache_usage(scheduler_output.m_cache_usage);
-            m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
-            m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
-            timer.end();
-        }
+    m_pipeline_metrics.requests = m_requests.size();
+    Scheduler::Output scheduler_output;
+    {
+        static ManualTimer timer("scheduling");
+        timer.start();
+        scheduler_output = m_scheduler->schedule(m_requests);
+        m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
+        m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
+        m_pipeline_metrics.max_cache_usage =
+            std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
+        _register_step_cache_usage(scheduler_output.m_cache_usage);
+        m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
+        m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
+        timer.end();
+    }
 
     // if no tokens were scheduled, we are out of memory
     if (scheduler_output.m_total_num_scheduled_tokens == 0) {
@@ -165,30 +166,29 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
 #ifdef DEBUG_CACHE_STATE_DUMP
 
-        CacheStateDumper dumper(CacheStateDumper::get_run_id_for_generation_step(step_count, "before_eviction"));
-        dumper.dump_cache_state(*m_scheduler, m_requests, step_count);
+    CacheStateDumper dumper(CacheStateDumper::get_run_id_for_generation_step(step_count, "before_eviction"));
+    dumper.dump_cache_state(*m_scheduler, m_requests, step_count);
 #endif
-        const auto& sched_config = m_scheduler->get_config();
+    const auto& sched_config = m_scheduler->get_config();
 
-
-        // evict unimportant blocks from KV cache, if requested
-        if (sched_config.use_cache_eviction) {
-            maybe_evict_cache_blocks(sched_config);
-        }
+    // evict unimportant blocks from KV cache, if requested
+    if (sched_config.use_cache_eviction) {
+        maybe_evict_cache_blocks(sched_config);
+    }
 
 #ifdef DEBUG_CACHE_STATE_DUMP
-        CacheStateDumper dumper_after(CacheStateDumper::get_run_id_for_generation_step(step_count, "eviction"));
-        dumper_after.dump_cache_state(*m_scheduler, m_requests, step_count);
-        step_count++;
+    CacheStateDumper dumper_after(CacheStateDumper::get_run_id_for_generation_step(step_count, "eviction"));
+    dumper_after.dump_cache_state(*m_scheduler, m_requests, step_count);
+    step_count++;
 #endif
 
-        SamplerOutput sampler_output;
-        {
-            static ManualTimer timer("sample");
-            timer.start();
-            sampler_output = m_sampler->sample(m_requests, logits);
-            timer.end();
-        }
+    SamplerOutput sampler_output;
+    {
+        static ManualTimer timer("sample");
+        timer.start();
+        sampler_output = m_sampler->sample(m_requests, logits);
+        timer.end();
+    }
 
     // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
     {
@@ -198,7 +198,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         for (const auto& pair : sampler_output.m_forked_sequences) {
             uint64_t parent_id = pair.first;
             const std::list<uint64_t>& child_ids = pair.second;
-            for (auto & child_id : child_ids)
+            for (auto& child_id : child_ids)
                 m_scheduler->fork_sequence(parent_id, child_id);
         }
 
