@@ -61,8 +61,9 @@ DDIMScheduler::DDIMScheduler(const Config& scheduler_config)
         OPENVINO_THROW("'beta_schedule' must be one of 'LINEAR' or 'SCALED_LINEAR'. Please, add support of other types");
     }
 
-    // TODO: Rescale for zero SNR
-    // if (m_config.rescale_betas_zero_snr) {betas = rescale_zero_terminal_snr(betas)}
+    if (m_config.rescale_betas_zero_snr) {
+        rescale_zero_terminal_snr(betas);
+    }
 
     std::transform(betas.begin(), betas.end(), std::back_inserter(alphas), [] (float b) { return 1.0f - b; });
 
@@ -159,13 +160,12 @@ std::map<std::string, ov::Tensor> DDIMScheduler::step(ov::Tensor noise_pred, ov:
             }
     }
 
-    // TODO: Clip or threshold "predicted x_0"
-    // if m_config.thresholding:
-    //         pred_original_sample = _threshold_sample(pred_original_sample)
-    // elif m_config.clip_sample:
-    //         pred_original_sample = pred_original_sample.clamp(
-    //             -self.config.clip_sample_range, self.config.clip_sample_range
-    //         )
+    // TODO: support m_config.thresholding
+    OPENVINO_ASSERT(!m_config.thresholding,
+                    "Parameter 'thresholding' is not supported. Please, add support.");
+    // TODO: support m_config.clip_sample
+    OPENVINO_ASSERT(!m_config.clip_sample,
+                    "Parameter 'clip_sample' is not supported. Please, add support.");
 
     // compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
     std::vector<float> pred_sample_direction(pred_epsilon.size());
@@ -195,6 +195,46 @@ float DDIMScheduler::get_init_noise_sigma() const {
 
 void DDIMScheduler::scale_model_input(ov::Tensor sample, size_t inference_step) {
     return;
+}
+
+void DDIMScheduler::rescale_zero_terminal_snr(std::vector<float>& betas) {
+    // Convert betas to alphas_bar_sqrt
+    std::vector<float> alphas, alphas_bar_sqrt;
+    for (float b : betas) {
+        alphas.push_back(1.0f - b);
+    }
+
+    for (size_t i = 1; i <= alphas.size(); ++i) {
+        float alpha_cumprod =
+            std::accumulate(std::begin(alphas), std::begin(alphas) + i, 1.0, std::multiplies<float>{});
+        alphas_bar_sqrt.push_back(std::sqrt(alpha_cumprod));
+    }
+
+    float alphas_bar_sqrt_0 = alphas_bar_sqrt[0];
+    float alphas_bar_sqrt_T = alphas_bar_sqrt[alphas_bar_sqrt.size() - 1];
+
+    for (float& x : alphas_bar_sqrt) {
+        // Shift so the last timestep is zero.
+        x = x - alphas_bar_sqrt_T;
+        // Scale so the first timestep is back to the old value.
+        x *= alphas_bar_sqrt_0 / (alphas_bar_sqrt_0 - alphas_bar_sqrt_T);
+        // Revert sqrt
+        x = std::pow(x, 2);
+    }
+
+    // Revert cumprod
+    std::vector<float> end = alphas_bar_sqrt, begin = alphas_bar_sqrt;
+    end.erase(end.begin());
+    begin.pop_back();
+
+    alphas[0] = alphas_bar_sqrt[0];
+    for (size_t i = 1; i < alphas.size(); ++i) {
+        alphas[i] = end[i - 1] / begin[i - 1];
+    }
+
+    std::transform(alphas.begin(), alphas.end(), betas.begin(), [](float x) {
+        return (1 - x);
+    });
 }
 
 } // namespace genai
