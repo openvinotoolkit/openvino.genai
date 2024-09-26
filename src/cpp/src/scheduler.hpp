@@ -122,9 +122,7 @@ private:
             auto sequences = sequence_group->get_not_finished_sequences();
             for (size_t s = 0; s < sequences.size(); ++s) {
                 auto seq_id = sequences[s]->get_id();
-                if (m_block_manager.has_block_table(seq_id)) {
-                    m_block_manager.free_sequence(seq_id);
-                }
+                m_block_manager.free_sequence(seq_id);
             }
             sequence_group->preempt_tokens(processed_tokens);
             if (was_evicted_from) {

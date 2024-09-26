@@ -342,7 +342,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
         const auto& request = *requests_iterator;
         if(request->has_finished() || request->out_of_memory() || request->handle_dropped()) {
             for (const auto& sequence: request->get_sequences()) {
-                m_scheduler->free_sequence(sequence->get_id());
+                if (m_scheduler->has_block_table(sequence->get_id())) {
+                    m_scheduler->free_sequence(sequence->get_id());
+                }
             }
             m_sampler->clear_beam_search_info(request->get_request_id());
             requests_iterator = m_requests.erase(requests_iterator);
