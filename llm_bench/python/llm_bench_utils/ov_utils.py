@@ -188,7 +188,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
 
     cb = kwargs.get("use_cb", False)
     if cb:
-        log.info("Continius Batching mode activated")
+        log.info("Continuous Batching mode activated")
         scheduler_config = openvino_genai.SchedulerConfig()
         scheduler_params = kwargs.get("cb_config") or {"cache_size": 1}
         if scheduler_params:
@@ -202,7 +202,31 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     end = time.perf_counter()
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
 
-    return llm_pipe, tokenizer, end - start, None, True
+    class TokenStreamer(openvino_genai.StreamerBase):
+        def __init__(self, tokenizer):
+            openvino_genai.StreamerBase.__init__(self)
+            self.tokenizer = tokenizer
+            self.token_generation_time = []
+            self.generated_tokens = []
+            self.start_time = time.perf_counter()
+        def put(self, token_id):
+            self.token_generation_time.append(time.perf_counter() - self.start_time)
+            self.generated_tokens.append(token_id)
+            self.start_time = time.perf_counter()
+            return False
+        def reset(self):
+            self.token_generation_time = []
+            self.generated_tokens = []
+            self.start_time = time.perf_counter()
+        def end(self):
+            pass
+        def get_tokens(self):
+            return self.generated_tokens
+        def get_time_list(self):
+            return self.token_generation_time
+    streamer = TokenStreamer(llm_pipe.get_tokenizer()) if cb else None
+
+    return llm_pipe, tokenizer, end - start, streamer, True
 
 
 def convert_ov_tokenizer(tokenizer_path):
