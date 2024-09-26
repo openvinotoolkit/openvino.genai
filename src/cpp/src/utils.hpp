@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "openvino/genai/llm_pipeline.hpp"
-
 #include <nlohmann/json.hpp>
+
+#include "openvino/genai/llm_pipeline.hpp"
 
 namespace ov {
 namespace genai {
@@ -28,7 +28,7 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
 template <typename T>
 void read_json_param(const nlohmann::json& data, const std::string& name, T& param) {
     if (data.contains(name)) {
-        if (data[name].is_number() || data[name].is_boolean() || data[name].is_string()) {
+        if (data[name].is_number() || data[name].is_boolean() || data[name].is_string() || data[name].is_object()) {
             param = data[name].get<T>();
         }
     } else if (name.find(".") != std::string::npos) {

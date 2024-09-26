@@ -36,6 +36,8 @@ WhisperGenerationConfig::WhisperGenerationConfig(const std::string& json_path) {
         read_json_param(data, "task_to_id.transcribe", transcribe_token_id);
         read_json_param(data, "task_to_id.translate", translate_token_id);
     }
+
+    read_json_param(data, "lang_to_id", lang_to_id);
 }
 
 void WhisperGenerationConfig::set_eos_token_id(int64_t tokenizer_eos_token_id) {
@@ -66,6 +68,9 @@ void WhisperGenerationConfig::update_generation_config(const ov::AnyMap& config_
     read_anymap_param(config_map, "no_timestamps_token_id", no_timestamps_token_id);
     read_anymap_param(config_map, "begin_timestamps_token_id", begin_timestamps_token_id);
     read_anymap_param(config_map, "is_multilingual", is_multilingual);
+    read_anymap_param(config_map, "language", language);
+    read_anymap_param(config_map, "lang_to_id", lang_to_id);
+    read_anymap_param(config_map, "task", task);
 }
 
 size_t WhisperGenerationConfig::get_max_new_tokens(size_t prompt_length) const {
@@ -87,6 +92,23 @@ void WhisperGenerationConfig::validate() const {
 
     OPENVINO_ASSERT(eos_token_id != -1 || max_new_tokens != SIZE_MAX || max_length != SIZE_MAX,
                     "Either 'eos_token_id', or 'max_new_tokens', or 'max_length' should be defined.");
+
+    if (is_multilingual && language.has_value()) {
+        OPENVINO_ASSERT(lang_to_id.count(*language),
+                        "'language' " + *language + " must be provided in generation_config.json 'lang_to_id' map.");
+    }
+
+    if (is_multilingual && task.has_value()) {
+        OPENVINO_ASSERT(*task == "transcribe" || *task == "translate",
+                        "'task' mast be 'transcribe' or 'translate'. Task provided: '",
+                        *task,
+                        "'.");
+    }
+
+    if (!is_multilingual) {
+        OPENVINO_ASSERT(!language.has_value(), "Cannot specify 'language' for not multilingual model.");
+        OPENVINO_ASSERT(!task.has_value(), "Cannot specify 'task' for not multilingual model.");
+    }
 }
 }  // namespace genai
 }  // namespace ov

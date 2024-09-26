@@ -27,4 +27,5 @@ tiktoken
 sacremoses
 # - openai/whisper-base
 librosa
+soundfile
 datasets

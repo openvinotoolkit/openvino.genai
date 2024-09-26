@@ -1,6 +1,6 @@
 # Whisper automatic speech recognition sample
 
-This example showcases inference of speech recognition Whisper Models. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample fearures `ov::genai::WhisperPipeline` and uses audio file in wav format as an input source.
+This example showcases inference of speech recognition Whisper Models. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::WhisperPipeline` and uses audio file in wav format as an input source.
 
 ## Download and convert the model and tokenizers
 
@@ -21,10 +21,20 @@ Prepare audio file in wav format with sampling rate 16k Hz.
 
 `whisper_speech_recognition whisper-base sample.wav`
 
-
-Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a dGPU. Modify the source code to change the device for inference to the GPU.
+Output: text transcription of `sample.wav`
 
 Models can be downloaded from [OpenAI HiggingFace](https://huggingface.co/openai).
+
+Supported Models:
+[openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny)
+[openai/whisper-tiny.en](https://huggingface.co/openai/whisper-tiny.en)
+[openai/whisper-base](https://huggingface.co/openai/whisper-base)
+[openai/whisper-base.en](https://huggingface.co/openai/whisper-base.en)
+[openai/whisper-small](https://huggingface.co/openai/whisper-small)
+[openai/whisper-small.en](https://huggingface.co/openai/whisper-small.en)
+[openai/whisper-medium](https://huggingface.co/openai/whisper-medium)
+[openai/whisper-medium.en](https://huggingface.co/openai/whisper-medium.en)
+[openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3)
 
 ### Troubleshooting
 
