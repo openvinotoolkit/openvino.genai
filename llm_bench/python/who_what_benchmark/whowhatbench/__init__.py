@@ -1,4 +1,5 @@
-from .registry import register_evaluator, get_evaluator_class
+from .registry import register_evaluator, MODELTYPE2TASK, EVALUATOR_REGISTRY
 from .text_evaluator import TextEvaluator
+from .text2image_evaluator import Text2ImageEvaluator
 
-__all__ = ["Evaluator", "register_evaluator", "get_evaluator_class"]
+__all__ = ["Evaluator", "register_evaluator", "TextEvaluator", "Text2ImageEvaluator", "MODELTYPE2TASK", "EVALUATOR_REGISTRY"]

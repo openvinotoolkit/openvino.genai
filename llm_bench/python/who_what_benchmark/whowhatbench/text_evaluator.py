@@ -3,8 +3,8 @@ from typing import Any, Union
 import pandas as pd
 from tqdm import tqdm
 
-from .registry import register_evaluator, Evaluator
-from .whowhat_metrics import DivergencyMetric, SimilarityMetric
+from .registry import register_evaluator, BaseEvaluator
+from .whowhat_metrics import TextDivergency, TextSimilarity
 
 default_data = {
     "en" : {
@@ -86,7 +86,7 @@ def autodetect_language(model):
 
 
 @register_evaluator("text-generation", "text-generation-with-past", "text2text-generation")
-class TextEvaluator(Evaluator):
+class TextEvaluator(BaseEvaluator):
     def __init__(
         self,
         base_model: Any = None,
@@ -130,10 +130,10 @@ class TextEvaluator(Evaluator):
         self.similarity = None
         self.divergency = None
         if "similarity" in self.metrics:
-            self.similarity = SimilarityMetric(similarity_model_id)
+            self.similarity = TextSimilarity(similarity_model_id)
         if "divergency" in self.metrics:
             assert tokenizer is not None
-            self.divergency = DivergencyMetric(tokenizer)
+            self.divergency = TextDivergency(tokenizer)
 
         self.last_cmp = None
 
