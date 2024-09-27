@@ -16,7 +16,7 @@ namespace utils = ov::genai::pybind::utils;
 
 
 auto vlm_generate_docstring = R"(
-    Generates sequences or tokens for VLMs.
+    Generates sequences for VLMs.
 
     :param prompt: input prompt
     :type prompt: str
