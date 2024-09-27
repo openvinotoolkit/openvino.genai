@@ -4,16 +4,17 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
-
 #include <jinja2cpp/template.h>
 #include <jinja2cpp/template_env.h>
 #include <jinja2cpp/user_callable.h>
 #include <jinja2cpp/generic_list.h>
 #include <jinja2cpp/generic_list_iterator.h>
 
+#include "openvino/pass/manager.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
+#include "make_combine_segments_stateful.hpp"
 #include "tokenizers_path.hpp"
 #include "circular_buffer_queue.hpp"
 #include "utils.hpp"
@@ -69,7 +70,10 @@ public:
 
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_tokenizer;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_detokenizer;
-
+    // To change the adding special tokens mode we use a statefull subgraph, 
+    // this flag holds the current state value of the CompiledModel.
+    bool m_add_special_tokens = true;  
+    
     int64_t m_pad_token_id = -1;
     int64_t m_bos_token_id = -1;
     int64_t m_eos_token_id = -1;
@@ -79,6 +83,29 @@ public:
     std::string m_eos_token = "";
 
     std::string m_chat_template = "";
+
+    void set_state_if_necessary(CircularBufferQueueElementGuard<ov::InferRequest>& infer_request_guard, bool add_special_tokens) {
+        // If user requested add_special_tokens mode different from the current one,
+        // need to set state variable.
+        // If requested mode matches the stored state set, then don't touch states.
+        if (add_special_tokens == m_add_special_tokens) {
+            return;
+        }
+        
+        // auto states = m_ireq_queue_tokenizer->get(0).query_state();
+        ov::Tensor add_special_tensor = ov::Tensor(ov::element::boolean, {});
+        *add_special_tensor.data<bool>() = add_special_tokens;
+
+        for (auto& state: infer_request_guard.get().query_state()) {
+            if (state.get_name().find(ov::genai::ADD_SPECIAL_TOKENS_VAR_ID) == std::string::npos) {
+                // It's not add_special_tokens flag state.
+                continue;
+            }
+            state.set_state(add_special_tensor);
+            break;            
+        }
+        m_add_special_tokens = add_special_tokens;
+    }
 
     TokenizerImpl() = default;
 
@@ -99,13 +126,18 @@ public:
         read_tokenizer_config_if_necessary(tokenizer_path);
 
         auto device = "CPU"; // currently openvino_tokenizer supports only CPU
-        m_tokenizer = core.compile_model(tokenizer_path / "openvino_tokenizer.xml",
-                                                device, plugin_config);
+        auto ov_tokenizer = core.read_model(tokenizer_path / "openvino_tokenizer.xml");
+        
+        ov::pass::Manager manager;
+        manager.register_pass<MakeCombineSegmentsSatateful>();
+        manager.run_passes(ov_tokenizer);
+        
+        m_tokenizer = core.compile_model(ov_tokenizer, device, plugin_config);
         if (std::filesystem::exists(tokenizer_path / "openvino_detokenizer.xml")) {
-            m_detokenizer = core.compile_model(tokenizer_path / "openvino_detokenizer.xml",
-                                                    device, plugin_config);
+            m_detokenizer = core.compile_model(tokenizer_path / "openvino_detokenizer.xml", device, plugin_config);
         }
 
+        
         const size_t INFER_REQUEST_QUEUE_SIZE = m_tokenizer.get_property(ov::optimal_number_of_infer_requests);
         m_ireq_queue_tokenizer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
             INFER_REQUEST_QUEUE_SIZE,
@@ -256,8 +288,12 @@ public:
         get_id_from_str(m_eos_token, m_eos_token_id);
     }
 
-    TokenizedInputs encode(std::string prompt) {
+    TokenizedInputs encode(std::string prompt, const ov::AnyMap& tokenization_params = {}) {
+        bool add_special_tokens_flag = true;
+        ov::genai::utils::read_anymap_param(tokenization_params, add_special_tokens.name(), add_special_tokens_flag);
+
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
+        set_state_if_necessary(infer_request_guard, add_special_tokens_flag);
         size_t batch_size = 1;
         infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::string, {batch_size}, &prompt});
         infer_request_guard.get().start_async();
@@ -268,10 +304,15 @@ public:
         );
     }
 
-    TokenizedInputs encode(std::vector<std::string>& prompts) {
+    TokenizedInputs encode(std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params = {}) {
+        
         TokenizedInputs unpadded;
         {
+            bool add_special_tokens_flag = true;
+            ov::genai::utils::read_anymap_param(tokenization_params, add_special_tokens.name(), add_special_tokens_flag);
+
             CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_tokenizer.get());
+            set_state_if_necessary(infer_request_guard, add_special_tokens_flag);
             infer_request_guard.get().set_input_tensor(ov::Tensor{ov::element::string, {prompts.size()}, prompts.data()});
             auto size_ = infer_request_guard.get().get_input_tensor().get_shape();
             infer_request_guard.get().start_async();
@@ -454,20 +495,20 @@ Tokenizer::Tokenizer(const std::string& tokenizer_path, const ov::AnyMap& plugin
     m_pimpl = std::make_shared<TokenizerImpl>(tokenizer_path, plugin_config);
 }
 
-TokenizedInputs Tokenizer::encode(const std::string prompt) {
-    return m_pimpl->encode(std::move(prompt));
+TokenizedInputs Tokenizer::encode(const std::string prompt, const ov::AnyMap& tokenization_params) {
+    return m_pimpl->encode(std::move(prompt), tokenization_params);
 }
 
-TokenizedInputs Tokenizer::encode(std::vector<std::string>& prompts) {
-    return m_pimpl->encode(prompts);
+TokenizedInputs Tokenizer::encode(std::vector<std::string>& prompts, const ov::AnyMap& tokenization_params) {
+    return m_pimpl->encode(prompts, tokenization_params);
 }
 
-TokenizedInputs Tokenizer::encode(std::vector<std::string>&& prompts) {
-    return m_pimpl->encode(prompts);
+TokenizedInputs Tokenizer::encode(std::vector<std::string>&& prompts, const ov::AnyMap& tokenization_params) {
+    return m_pimpl->encode(prompts, tokenization_params);
 }
 
-TokenizedInputs Tokenizer::encode(std::initializer_list<std::string>& text) {
-    return encode(std::vector<std::string>(text.begin(), text.end()));
+TokenizedInputs Tokenizer::encode(std::initializer_list<std::string>& text, const ov::AnyMap& tokenization_params) {
+    return encode(std::vector<std::string>(text.begin(), text.end()), tokenization_params);
 }
 
 std::string Tokenizer::decode(std::vector<int64_t> tokens) {
