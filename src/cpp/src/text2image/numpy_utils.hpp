@@ -4,6 +4,12 @@
 #pragma once
 
 #include <vector>
+#include <cstddef>
+#include <cstdint>
+#include <numeric>
+#include <algorithm>
+#include <cmath>
+
 
 namespace ov {
 namespace genai {
@@ -30,6 +36,12 @@ std::vector<T> linspace(U start, U end, size_t num, bool endpoint = false) {
     }
     return indices;
 }
+
+// Rescales betas to have zero terminal SNR Based on https://arxiv.org/pdf/2305.08891.pdf (Algorithm 1)
+void rescale_zero_terminal_snr(std::vector<float>& betas);
+
+// np.interp(...) implementation
+std::vector<float> interp(const std::vector<std::int64_t>& x, const std::vector<size_t>& xp, const std::vector<float>& fp);
 
 }// namespace ov
 }// namespace genai
