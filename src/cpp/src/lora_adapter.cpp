@@ -843,7 +843,7 @@ struct AdapterControllerImpl {
     }
 
     struct ConfigChanged {
-        bool mode;
+        bool mode = false;
         bool alpha = false;
         bool adapter = false;
 
@@ -872,25 +872,28 @@ struct AdapterControllerImpl {
         return diff;
     }
 
-    void apply (ov::InferRequest& infer_request, const AdapterConfig& config) {
+    void apply (ov::InferRequest& infer_request, std::optional<AdapterConfig> config) {
         // FIXME: If a part of LoRA state tensors are not set here, then need to carefully reset state in LLMPipeline where global reset is called after the generation
-
-        const auto diff = compare_configs(current_config, config);
-        OPENVINO_ASSERT(
-            !diff.mode || config.get_mode() == AdapterConfig::MODE_AUTO,  // MODE_AUTO in this call means that mode is not changed
-            "AdapterConfig::mode cannot be changed and should be configured once for a model at the initialization");
-        OPENVINO_ASSERT(
-            config.get_mode() == AdapterConfig::MODE_AUTO || config.get_mode() == AdapterConfig::MODE_DYNAMIC || config.get_mode() == AdapterConfig::MODE_STATIC_RANK || (!diff.alpha && !diff.adapter),
-            "Cannot change adapters and/or the alphas when not one of the dynamic modes are used.");
+        ConfigChanged diff;
+        if(config) {
+            diff = compare_configs(current_config, *config);
+            OPENVINO_ASSERT(
+                !diff.mode || config->get_mode() == AdapterConfig::MODE_AUTO,  // MODE_AUTO in this call means that mode is not changed
+                "AdapterConfig::mode cannot be changed and should be configured once for a model at the initialization");
+            OPENVINO_ASSERT(
+                config->get_mode() == AdapterConfig::MODE_AUTO || config->get_mode() == AdapterConfig::MODE_DYNAMIC || config->get_mode() == AdapterConfig::MODE_STATIC_RANK || (!diff.alpha && !diff.adapter),
+                "Cannot change adapters and/or the alphas when not one of the dynamic modes are used.");
+            current_config = *config;
+        }
         if(need_full_apply) {
             need_full_apply = false;
-            set_new_adapter_tensors(infer_request, config);
+            set_new_adapter_tensors(infer_request);
         } else if(diff) {
             if(diff.adapter) {
-                set_new_adapter_tensors(infer_request, config);
+                set_new_adapter_tensors(infer_request);
             } else {
                 OPENVINO_ASSERT(diff.alpha);
-                set_new_adapter_alphas(infer_request, config);
+                set_new_adapter_alphas(infer_request);
             }
         }
     }
@@ -899,13 +902,12 @@ struct AdapterControllerImpl {
         need_full_apply = full_apply;
     }
 
-    void set_new_adapter_alphas (ov::InferRequest& infer_request, const AdapterConfig& config) {
+    void set_new_adapter_alphas (ov::InferRequest& infer_request) {
         // FIXME: Provide more economical way to update only alphas
-        set_new_adapter_tensors(infer_request, config);
+        set_new_adapter_tensors(infer_request);
     }
 
-    void set_new_adapter_tensors (ov::InferRequest& infer_request, const AdapterConfig& config) {
-        current_config = config;       // FIXME: Keep the old config to map to cached LoRA state tensors instead of the current approach where we start from scratch each time
+    void set_new_adapter_tensors (ov::InferRequest& infer_request) {
         if(current_config.get_mode() != AdapterConfig::MODE_AUTO && current_config.get_mode() != AdapterConfig::MODE_DYNAMIC && current_config.get_mode() != AdapterConfig::MODE_STATIC_RANK ) {
             return;
         }
@@ -1163,10 +1165,6 @@ struct AdapterControllerImpl {
         }
         return new_tensors;
     }
-
-    void apply (ov::InferRequest& infer_request) {
-        return apply(infer_request, current_config);
-    }
 };
 
 
@@ -1207,13 +1205,8 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
 
 
 // Call it every time when adapter config is changed; if adapter was configured as a static one, this call is not required
-void AdapterController::apply(ov::InferRequest& request, const AdapterConfig& config) {
+void AdapterController::apply(ov::InferRequest& request, const std::optional<AdapterConfig>& config) {
     return m_pimpl->apply(request, config);
-}
-
-
-void AdapterController::apply(ov::InferRequest& request){
-    return m_pimpl->apply(request);
 }
 
 

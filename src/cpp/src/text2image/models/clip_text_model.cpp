@@ -8,6 +8,7 @@
 #include "openvino/runtime/core.hpp"
 
 #include "utils.hpp"
+#include "lora_helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -33,7 +34,13 @@ CLIPTextModel::CLIPTextModel(const std::string& root_dir,
                 const std::string& device,
                 const ov::AnyMap& properties) :
     CLIPTextModel(root_dir) {
-    compile(device, properties);
+    AdapterConfig adapters;
+    if(auto filtered_properties = extract_adapters_from_properties(properties, adapters)) {
+        m_adapter_controller = AdapterController(m_model, std::move(adapters), "lora_te", device);
+        compile(device, std::move(*filtered_properties));
+    } else {
+        compile(device, properties);
+    }
 }
 
 CLIPTextModel::CLIPTextModel(const CLIPTextModel&) = default;
@@ -64,8 +71,16 @@ CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMa
     return *this;
 }
 
-ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance) {
+ov::Tensor CLIPTextModel::infer(
+        const std::string& pos_prompt,
+        const std::string& neg_prompt,
+        bool do_classifier_free_guidance,
+        const std::optional<AdapterConfig>& adapters) {
     OPENVINO_ASSERT(m_request, "CLIP text encoder model must be compiled first. Cannot infer non-compiled model");
+    OPENVINO_ASSERT(
+        !adapters || !*adapters || m_adapter_controller,
+        "Adapters are passed to CLIP text encoder infer method but it was not configured to use adapters. "
+        "Pass adapters in the constructor.");
 
     const int32_t pad_token_id = m_clip_tokenizer.get_pad_token_id();
     const size_t text_embedding_batch_size = do_classifier_free_guidance ? 2 : 1;
@@ -92,6 +107,10 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
     perform_tokenization(pos_prompt,
                             ov::Tensor(input_ids, {current_batch_idx    , 0},
                                                 {current_batch_idx + 1, m_config.max_position_embeddings}));
+
+    if(m_adapter_controller) {
+        m_adapter_controller.apply(m_request, adapters);
+    }
 
     // text embeddings
     m_request.set_tensor("input_ids", input_ids);
