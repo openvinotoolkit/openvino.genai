@@ -56,6 +56,7 @@ class Sampler {
     Tokenizer m_tokenizer;
 
 public:
+    Sampler() = default;
     Sampler(Tokenizer & tokenizer) : m_tokenizer(tokenizer) {};
 
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled);

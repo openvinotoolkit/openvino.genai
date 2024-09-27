@@ -428,7 +428,8 @@ public:
     }
 
     void set_num_validated_tokens(size_t k) {
-        m_num_validated_tokens = k;
+        // in case of non-prompt we need to take prev tokens + token to validate
+        m_num_validated_tokens = get_num_processed_tokens() ? k + 1 : k;
     }
 
     size_t get_num_available_tokens_for_batching() const {
