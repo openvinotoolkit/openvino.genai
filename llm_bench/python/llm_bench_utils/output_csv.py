@@ -9,75 +9,108 @@ from pathlib import Path
 
 def output_comments(result, use_case, writer):
     for key in result.keys():
-        result[key] = ''
+        result[key] = ""
     writer.writerow(result)
 
     comment_list = []
-    if use_case == 'text_gen' or use_case == 'code_gen':
-        comment_list.append('input_size: Input token size')
-        comment_list.append('output_size: Text/Code generation models: generated text token size')
-        comment_list.append("infer_count: Limit the Text/Code generation models' output token size")
-        comment_list.append('latency: Text/Code generation models: ms/token. Output token size / generation time')
-        comment_list.append('1st_latency: Text/Code generation models: Fisrt token latency')
-        comment_list.append('2nd_avg_latency: Text/Code generation models: Other tokens (exclude first token) latency')
-        comment_list.append('1st_infer_latency: Text/Code generation models: Fisrt inference latency')
-        comment_list.append('2nd_infer_avg_latency: Text/Code generation models: Other inferences (exclude first inference) latency')
-        comment_list.append('result_md5: MD5 of generated text')
-        comment_list.append('prompt_idx: Index of prompts')
-    elif use_case == 'image_gen':
-        comment_list.append("infer_count: Tex2Image models' Inference(or Sampling) step size")
-        comment_list.append('1st_latency: First step lantency of unet')
-        comment_list.append('2nd_avg_latency: Other steps latency of unet(exclude first step)')
-        comment_list.append('1st_infer_latency: Same as 1st_latency')
-        comment_list.append('2nd_infer_avg_latency: Same as 2nd_avg_latency')
-        comment_list.append('prompt_idx: Index of prompts')
-    elif use_case == 'ldm_super_resolution':
-        comment_list.append("infer_count: Tex2Image models' Inference(or Sampling) step size")
-        comment_list.append('1st_latency: First step lantency of unet')
-        comment_list.append('2nd_avg_latency: Other steps lantency of unet(exclude first step)')
-        comment_list.append('1st_infer_latency: Same as 1st_latency')
-        comment_list.append('2nd_infer_avg_latency: Same as 2nd_avg_latency')
-        comment_list.append('prompt_idx: Image Index')
-    comment_list.append('tokenization_time: Tokenizer encode time')
-    comment_list.append('detokenization_time: Tokenizer decode time')
-    comment_list.append('pretrain_time: Total time of load model and compile model')
-    comment_list.append('generation_time: Time for one interaction. (e.g. The duration of  answering one question or generating one picture)')
-    comment_list.append('iteration=0: warm-up; iteration=avg: average (exclude warm-up);iteration=mini: minimum value (exclude warm-up);'
-                        'iteration=median: median value (exclude warm-up);')
+    if use_case == "text_gen" or use_case == "code_gen":
+        comment_list.append("input_size: Input token size")
+        comment_list.append(
+            "output_size: Text/Code generation models: generated text token size"
+        )
+        comment_list.append(
+            "infer_count: Limit the Text/Code generation models' output token size"
+        )
+        comment_list.append(
+            "latency: Text/Code generation models: ms/token. Output token size / generation time"
+        )
+        comment_list.append(
+            "1st_latency: Text/Code generation models: Fisrt token latency"
+        )
+        comment_list.append(
+            "2nd_avg_latency: Text/Code generation models: Other tokens (exclude first token) latency"
+        )
+        comment_list.append(
+            "1st_infer_latency: Text/Code generation models: Fisrt inference latency"
+        )
+        comment_list.append(
+            "2nd_infer_avg_latency: Text/Code generation models: Other inferences (exclude first inference) latency"
+        )
+        comment_list.append("result_md5: MD5 of generated text")
+        comment_list.append("prompt_idx: Index of prompts")
+    elif use_case == "image_gen":
+        comment_list.append(
+            "infer_count: Tex2Image models' Inference(or Sampling) step size"
+        )
+        comment_list.append("1st_latency: First step lantency of unet")
+        comment_list.append(
+            "2nd_avg_latency: Other steps latency of unet(exclude first step)"
+        )
+        comment_list.append("1st_infer_latency: Same as 1st_latency")
+        comment_list.append("2nd_infer_avg_latency: Same as 2nd_avg_latency")
+        comment_list.append("prompt_idx: Index of prompts")
+    elif use_case == "ldm_super_resolution":
+        comment_list.append(
+            "infer_count: Tex2Image models' Inference(or Sampling) step size"
+        )
+        comment_list.append("1st_latency: First step lantency of unet")
+        comment_list.append(
+            "2nd_avg_latency: Other steps lantency of unet(exclude first step)"
+        )
+        comment_list.append("1st_infer_latency: Same as 1st_latency")
+        comment_list.append("2nd_infer_avg_latency: Same as 2nd_avg_latency")
+        comment_list.append("prompt_idx: Image Index")
+    comment_list.append("tokenization_time: Tokenizer encode time")
+    comment_list.append("detokenization_time: Tokenizer decode time")
+    comment_list.append("pretrain_time: Total time of load model and compile model")
     comment_list.append(
-        'max_rss_mem: max rss memory consumption;'
+        "generation_time: Time for one interaction. (e.g. The duration of  answering one question or generating one picture)"
     )
     comment_list.append(
-        'max_shared_mem: max shared memory consumption;'
+        "iteration=0: warm-up; iteration=avg: average (exclude warm-up);iteration=mini: minimum value (exclude warm-up);"
+        "iteration=median: median value (exclude warm-up);"
     )
+    comment_list.append("max_rss_mem: max rss memory consumption;")
+    comment_list.append("max_shared_mem: max shared memory consumption;")
 
     for comments in comment_list:
-        result['iteration'] = comments
+        result["iteration"] = comments
         writer.writerow(result)
 
 
 def output_avg_min_median(iter_data_list):
     prompt_idxs = []
     for iter_data in iter_data_list:
-        prompt_idxs.append(iter_data['prompt_idx'])
+        prompt_idxs.append(iter_data["prompt_idx"])
     prompt_idxs = list(set(prompt_idxs))
     result = {}
     for prompt_idx in prompt_idxs:
         same_prompt_datas = []
         for iter_data in iter_data_list:
-            if iter_data['prompt_idx'] == prompt_idx and iter_data['iteration'] > 0:
+            if iter_data["prompt_idx"] == prompt_idx and iter_data["iteration"] > 0:
                 same_prompt_datas.append(iter_data)
-        key_word = ['input_size', 'infer_count', 'generation_time', 'output_size', 'latency', 'first_token_latency', 'other_tokens_avg_latency',
-                    'first_token_infer_latency', 'other_tokens_infer_avg_latency', 'tokenization_time', 'detokenization_time']
+        key_word = [
+            "input_size",
+            "infer_count",
+            "generation_time",
+            "output_size",
+            "latency",
+            "first_token_latency",
+            "other_tokens_avg_latency",
+            "first_token_infer_latency",
+            "other_tokens_infer_avg_latency",
+            "tokenization_time",
+            "detokenization_time",
+        ]
         if len(same_prompt_datas) > 0:
-            iters_idx = ['avg', 'mini', 'median']
+            iters_idx = ["avg", "mini", "median"]
             result[prompt_idx] = [copy.deepcopy(same_prompt_datas[0]) for i in range(3)]
             for i in range(len(iters_idx)):
-                result[prompt_idx][i]['iteration'] = iters_idx[i]
+                result[prompt_idx][i]["iteration"] = iters_idx[i]
             for key in key_word:
                 values = []
                 for prompt in same_prompt_datas:
-                    if prompt[key] != '':
+                    if prompt[key] != "":
                         values.append(prompt[key])
                 if len(values) > 0:
                     result[prompt_idx][0][key] = np.mean(values)
@@ -106,22 +139,10 @@ def gen_data_to_csv(result, iter_data, pretrain_time):
     result['output_size'] = iter_data['output_size']
     result['latency(ms)'] = round(latency, 5) if latency != '' else latency
     result['result_md5'] = iter_data['result_md5']
-    if first_latency < 0:
-        result['1st_latency(ms)'] = 'NA'
-    else:
-        result['1st_latency(ms)'] = round(first_latency, 5) if first_latency != '' else first_latency
-    if other_latency < 0:
-        result['2nd_avg_latency(ms)'] = 'NA'
-    else:
-        result['2nd_avg_latency(ms)'] = round(other_latency, 5) if other_latency != '' else other_latency
-    if first_token_infer_latency < 0:
-        result['1st_infer_latency(ms)'] = 'NA'
-    else:
-        result['1st_infer_latency(ms)'] = round(first_token_infer_latency, 5) if first_token_infer_latency != '' else first_token_infer_latency
-    if other_token_infer_latency < 0:
-        result['2nd_infer_avg_latency(ms)'] = 'NA'
-    else:
-        result['2nd_infer_avg_latency(ms)'] = round(other_token_infer_latency, 5) if other_token_infer_latency != '' else other_token_infer_latency
+    result['1st_latency(ms)'] = round(first_latency, 5) if first_latency != '' else first_latency
+    result['2nd_avg_latency(ms)'] = round(other_latency, 5) if other_latency != '' else other_latency
+    result['1st_infer_latency(ms)'] = round(first_token_infer_latency, 5) if first_token_infer_latency != '' else first_token_infer_latency
+    result['2nd_infer_avg_latency(ms)'] = round(other_token_infer_latency, 5) if other_token_infer_latency != '' else other_token_infer_latency
     result['max_rss_mem(MB)'] = round(rss_mem, 5) if rss_mem != '' else rss_mem
     result['max_uss_mem(MB)'] = round(uss_mem, 5) if uss_mem != '' else uss_mem
     result['max_shared_mem(MB)'] = round(shared_mem, 5) if shared_mem != '' else shared_mem
@@ -130,50 +151,59 @@ def gen_data_to_csv(result, iter_data, pretrain_time):
     result['detokenization_time'] = round(detoken_time, 5) if detoken_time != '' else detoken_time
 
 
-def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision):
+def write_result(
+    report_file,
+    model,
+    framework,
+    device,
+    model_args,
+    iter_data_list,
+    pretrain_time,
+    model_precision,
+):
     header = [
-        'iteration',
-        'model',
-        'framework',
-        'device',
-        'pretrain_time(s)',
-        'input_size',
-        'infer_count',
-        'generation_time(s)',
-        'output_size',
-        'latency(ms)',
-        '1st_latency(ms)',
-        '2nd_avg_latency(ms)',
-        'precision',
-        'max_rss_mem(MB)',
-        'max_uss_mem(MB)',
-        'max_shared_mem(MB)',
-        'prompt_idx',
-        '1st_infer_latency(ms)',
-        '2nd_infer_avg_latency(ms)',
-        'num_beams',
-        'batch_size',
-        'tokenization_time',
-        'detokenization_time',
-        'result_md5',
+        "iteration",
+        "model",
+        "framework",
+        "device",
+        "pretrain_time(s)",
+        "input_size",
+        "infer_count",
+        "generation_time(s)",
+        "output_size",
+        "latency(ms)",
+        "1st_latency(ms)",
+        "2nd_avg_latency(ms)",
+        "precision",
+        "max_rss_mem(MB)",
+        "max_uss_mem(MB)",
+        "max_shared_mem(MB)",
+        "prompt_idx",
+        "1st_infer_latency(ms)",
+        "2nd_infer_avg_latency(ms)",
+        "num_beams",
+        "batch_size",
+        "tokenization_time",
+        "detokenization_time",
+        "result_md5",
     ]
     out_file = Path(report_file)
 
     if len(iter_data_list) > 0:
-        with open(out_file, 'w+', newline='') as f:
+        with open(out_file, "w+", newline="") as f:
             writer = csv.DictWriter(f, header)
             writer.writeheader()
             result = {}
-            result['model'] = model
-            result['framework'] = framework
-            result['device'] = device
-            result['pretrain_time(s)'] = round(pretrain_time, 5)
-            result['precision'] = model_precision
-            result['num_beams'] = model_args['num_beams']
-            result['batch_size'] = model_args['batch_size']
+            result["model"] = model
+            result["framework"] = framework
+            result["device"] = device
+            result["pretrain_time(s)"] = round(pretrain_time, 5)
+            result["precision"] = model_precision
+            result["num_beams"] = model_args["num_beams"]
+            result["batch_size"] = model_args["batch_size"]
             for i in range(len(iter_data_list)):
                 iter_data = iter_data_list[i]
-                pre_time = '' if i > 0 else result['pretrain_time(s)']
+                pre_time = "" if i > 0 else result["pretrain_time(s)"]
                 gen_data_to_csv(result, iter_data, pre_time)
                 writer.writerow(result)
 
@@ -181,6 +211,6 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
 
             for key in res_data.keys():
                 for data in res_data[key]:
-                    gen_data_to_csv(result, data, '')
+                    gen_data_to_csv(result, data, "")
                     writer.writerow(result)
-            output_comments(result, model_args['use_case'], writer)
+            output_comments(result, model_args["use_case"], writer)

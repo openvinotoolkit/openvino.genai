@@ -16,17 +16,20 @@ from . import Evaluator
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TasksManager._SUPPORTED_MODEL_TYPE["stablelm-epoch"] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
+TasksManager._SUPPORTED_MODEL_TYPE["stablelm-epoch"] = (
+    TasksManager._SUPPORTED_MODEL_TYPE["llama"]
+)
 NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args(
     num_layers="num_hidden_layers",
     num_attention_heads="num_attention_heads",
 )
 
 
-class GenAIModelWrapper():
+class GenAIModelWrapper:
     """
     A helper class to store additional attributes for GenAI models
     """
+
     def __init__(self, model, model_dir):
         self.model = model
         self.config = AutoConfig.from_pretrained(model_dir)
@@ -51,7 +54,9 @@ def load_genai_pipeline(model_dir, device="CPU"):
 def load_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False):
     if use_hf:
         logger.info("Using HF Transformers API")
-        return AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device_map=device.lower())
+        return AutoModelForCausalLM.from_pretrained(
+            model_id, trust_remote_code=True, device_map=device.lower()
+        )
 
     if use_genai:
         return load_genai_pipeline(model_id, device)
@@ -62,7 +67,9 @@ def load_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=F
     else:
         ov_options = None
     try:
-        model = OVModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device=device, ov_config=ov_options)
+        model = OVModelForCausalLM.from_pretrained(
+            model_id, trust_remote_code=True, device=device, ov_config=ov_options
+        )
     except ValueError:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
         model = OVModelForCausalLM.from_pretrained(
@@ -71,7 +78,7 @@ def load_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=F
             trust_remote_code=True,
             use_cache=True,
             device=device,
-            ov_config=ov_options
+            ov_config=ov_options,
         )
     return model
 
@@ -279,7 +286,9 @@ def main():
             language=args.language,
         )
     else:
-        base_model = load_model(args.base_model, args.device, args.ov_config, args.hf, args.genai)
+        base_model = load_model(
+            args.base_model, args.device, args.ov_config, args.hf, args.genai
+        )
         evaluator = Evaluator(
             base_model=base_model,
             test_data=prompts,
@@ -287,15 +296,19 @@ def main():
             similarity_model_id=args.text_encoder,
             num_samples=args.num_samples,
             language=args.language,
-            gen_answer_fn=genai_gen_answer if args.genai else None
+            gen_answer_fn=genai_gen_answer if args.genai else None,
         )
         if args.gt_data:
             evaluator.dump_gt(args.gt_data)
         del base_model
 
     if args.target_model:
-        target_model = load_model(args.target_model, args.device, args.ov_config, args.hf, args.genai)
-        all_metrics_per_question, all_metrics = evaluator.score(target_model, genai_gen_answer if args.genai else None)
+        target_model = load_model(
+            args.target_model, args.device, args.ov_config, args.hf, args.genai
+        )
+        all_metrics_per_question, all_metrics = evaluator.score(
+            target_model, genai_gen_answer if args.genai else None
+        )
         logger.info("Metrics for model: %s", args.target_model)
         logger.info(all_metrics)
 
@@ -314,14 +327,18 @@ def main():
             ref_text = ""
             actual_text = ""
             diff = ""
-            for l1, l2 in zip(e["source_model"].splitlines(), e["optimized_model"].splitlines()):
+            for l1, l2 in zip(
+                e["source_model"].splitlines(), e["optimized_model"].splitlines()
+            ):
                 if l1 == "" and l2 == "":
                     continue
                 ref_text += l1 + "\n"
                 actual_text += l2 + "\n"
                 diff += diff_strings(l1, l2) + "\n"
 
-            logger.info("--------------------------------------------------------------------------------------")
+            logger.info(
+                "--------------------------------------------------------------------------------------"
+            )
             logger.info("## Reference text %d:\n%s", i + 1, ref_text)
             logger.info("## Actual text %d:\n%s", i + 1, actual_text)
             logger.info("## Diff %d: ", i + 1)

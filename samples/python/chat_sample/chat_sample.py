@@ -7,7 +7,7 @@ import openvino_genai
 
 
 def streamer(subword):
-    print(subword, end='', flush=True)
+    print(subword, end="", flush=True)
     # Return flag corresponds whether generation should be stopped.
     # False means continue generation.
     return False
@@ -15,10 +15,10 @@ def streamer(subword):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
+    parser.add_argument("model_dir")
     args = parser.parse_args()
 
-    device = 'CPU'  # GPU can be used as well
+    device = "CPU"  # GPU can be used as well
     pipe = openvino_genai.LLMPipeline(args.model_dir, device)
 
     config = openvino_genai.GenerationConfig()
@@ -27,13 +27,13 @@ def main():
     pipe.start_chat()
     while True:
         try:
-            prompt = input('question:\n')
+            prompt = input("question:\n")
         except EOFError:
             break
         pipe.generate(prompt, config, streamer)
-        print('\n----------')
+        print("\n----------")
     pipe.finish_chat()
 
 
-if '__main__' == __name__:
+if "__main__" == __name__:
     main()

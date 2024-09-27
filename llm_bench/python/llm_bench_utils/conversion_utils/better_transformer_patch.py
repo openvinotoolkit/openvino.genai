@@ -865,7 +865,9 @@ class CodeGen2Attention(nn.Module):
         return outputs
 
 
-def gptj_apply_rotary_pos_emb(tensor: torch.Tensor, sin: torch.Tensor, cos: torch.Tensor) -> torch.Tensor:
+def gptj_apply_rotary_pos_emb(
+    tensor: torch.Tensor, sin: torch.Tensor, cos: torch.Tensor
+) -> torch.Tensor:
     sin = torch.repeat_interleave(sin[:, :, None, :], 2, 3)
     cos = torch.repeat_interleave(cos[:, :, None, :], 2, 3)
     return (tensor * cos) + (rotate_every_two(tensor) * sin)
@@ -930,7 +932,9 @@ def gptj_forward(
     # compute self-attention: V x Softmax(QK^T)
     attn_output, attn_weights = self._attn(query, key, value, attention_mask, head_mask)
 
-    attn_output = self._merge_heads(attn_output, self.num_attention_heads, self.head_dim)
+    attn_output = self._merge_heads(
+        attn_output, self.num_attention_heads, self.head_dim
+    )
     attn_output = self.out_proj(attn_output)
     attn_output = self.resid_dropout(attn_output)
 
@@ -969,8 +973,14 @@ def gptj_wrapped_scaled_dot_product(
         query = query.to(value.dtype)
         key = key.to(value.dtype)
 
-    if batch_size == 1 and attention_mask is not None and attention_mask[0, 0, -1, -1] < -1:
-        raise ValueError("BetterTransformer does not support padding='max_length' with a batch size of 1.")
+    if (
+        batch_size == 1
+        and attention_mask is not None
+        and attention_mask[0, 0, -1, -1] < -1
+    ):
+        raise ValueError(
+            "BetterTransformer does not support padding='max_length' with a batch size of 1."
+        )
 
     dropout_p = self.dropout_prob_attn if self.training else 0.0
     if batch_size == 1 or self.training:
@@ -988,7 +998,9 @@ def gptj_wrapped_scaled_dot_product(
         # causal_mask is always [True, ..., True] otherwise, so executing this
         # is unnecessary
         if query_length > 1:
-            causal_mask = self.bias[:, :, key_length - query_length : key_length, :key_length].to(torch.bool)
+            causal_mask = self.bias[
+                :, :, key_length - query_length : key_length, :key_length
+            ].to(torch.bool)
 
             causal_mask = torch.where(causal_mask, 0, mask_value)
 
@@ -1000,7 +1012,12 @@ def gptj_wrapped_scaled_dot_product(
                 causal_mask = causal_mask.expand(batch_size, -1, -1, -1)
 
         sdpa_result = torch.nn.functional.scaled_dot_product_attention(
-            query, key, value, attn_mask=attention_mask, dropout_p=dropout_p, is_causal=False
+            query,
+            key,
+            value,
+            attn_mask=attention_mask,
+            dropout_p=dropout_p,
+            is_causal=False,
         )
 
     # in gpt-neo-x and gpt-j the query and keys are always in fp32
@@ -1091,7 +1108,9 @@ def register_bettertransformer_config():
         def forward(self, *args, **kwargs):
             return bt_aquila_forward(self, *args, **kwargs)
 
-    class GPTJAttentionLayerBetterTransformer(BetterTransformerBaseLayer, GPTJAttention, nn.Module):
+    class GPTJAttentionLayerBetterTransformer(
+        BetterTransformerBaseLayer, GPTJAttention, nn.Module
+    ):
         _attn = gptj_wrapped_scaled_dot_product
 
         def __init__(self, layer: "nn.Module", config: "PretrainedConfig"):
@@ -1118,7 +1137,9 @@ def register_bettertransformer_config():
                 setattr(self, attr, getattr(layer, attr))
 
             self.module_mapping = None
-            self.original_layers_mapping = {submodule: submodule for submodule in submodules}
+            self.original_layers_mapping = {
+                submodule: submodule for submodule in submodules
+            }
 
             self.downcast_qk = True
             self.dropout_prob_attn = config.attn_pdrop

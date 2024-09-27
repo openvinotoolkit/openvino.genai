@@ -8,11 +8,11 @@ import openvino_genai
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir')
-    parser.add_argument('prompt')
+    parser.add_argument("model_dir")
+    parser.add_argument("prompt")
     args = parser.parse_args()
 
-    device = 'CPU'  # GPU can be used as well
+    device = "CPU"  # GPU can be used as well
     pipe = openvino_genai.LLMPipeline(args.model_dir, device)
 
     config = openvino_genai.GenerationConfig()
@@ -21,5 +21,5 @@ def main():
     print(pipe.generate(args.prompt, config))
 
 
-if '__main__' == __name__:
+if "__main__" == __name__:
     main()
