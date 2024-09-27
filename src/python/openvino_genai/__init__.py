@@ -18,6 +18,7 @@ from .py_generate_pipeline import (
     GenerationConfig, 
     GenerationResult,
     LLMPipeline, 
+    VLMPipeline, 
     PerfMetrics,
     RawPerfMetrics,
     SchedulerConfig,

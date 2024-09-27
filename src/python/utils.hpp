@@ -6,6 +6,7 @@
 #include <pybind11/stl_bind.h>
 
 #include "openvino/genai/streamer_base.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
 
 namespace py = pybind11;
 using ov::genai::StreamerBase;
@@ -32,5 +33,7 @@ ov::AnyMap py_object_to_any_map(const py::object& py_obj);
 std::map<std::string, ov::Any> properties_to_any_map(const std::map<std::string, py::object>& properties);
 
 std::string ov_tokenizers_module_path();
+
+ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs);
 
 }  // namespace ov::genai::pybind::utils
