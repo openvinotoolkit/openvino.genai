@@ -62,6 +62,7 @@ public:
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled);
     void set_seed(size_t seed) { rng_engine.seed(seed); }
     void clear_beam_search_info(uint64_t request_id);
+    void update_logit_processor(uint64_t request_id, uint64_t token_id);
 };
 
 class Sampler::GroupBeamSearcher {

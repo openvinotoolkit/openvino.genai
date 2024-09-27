@@ -68,7 +68,6 @@ TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
     // shape 4 tokens + 1 batch + 5 vocab
     ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
 
-    // Tokenizer t("");
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
 
@@ -114,7 +113,6 @@ TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {
     // shape 4 tokens + 1 batch + 5 vocab
     ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
 
-    // Tokenizer t("");
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
 
@@ -159,7 +157,6 @@ TEST(SamplerValidationMode, gen_phase) {
     // shape 4 tokens + 1 batch + 5 vocab
     ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
 
-    // Tokenizer t("");
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
 
@@ -206,7 +203,6 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_part_seq) {
     // shape 4 tokens + 1 batch + 5 vocab
     ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{8, 1, 5}, logits.data());
 
-    // Tokenizer t("");
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
 
@@ -252,7 +248,6 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_whole_seq) {
     // shape 4 tokens + 1 batch + 5 vocab
     ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{8, 1, 5}, logits.data());
 
-    // Tokenizer t("");
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
 
@@ -298,7 +293,6 @@ TEST(SamplerValidationMode, prompt_phase) {
     // shape 4 tokens + 1 batch + 5 vocab
     ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{8, 1, 5}, logits.data());
 
-    // Tokenizer t("");
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
 

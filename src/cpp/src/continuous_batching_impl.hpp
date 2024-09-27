@@ -10,8 +10,6 @@
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::ImplInterface {
 protected:
-    friend class ContinuousBatchingPipeline::SpeculativeDecodingImpl;
-
     std::shared_ptr<Scheduler> m_scheduler;
     std::shared_ptr<CacheManager> m_cache_manager;
     std::shared_ptr<ModelRunner> m_model_runner;

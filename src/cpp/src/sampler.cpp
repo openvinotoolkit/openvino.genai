@@ -726,6 +726,14 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
     return sampler_output;
 }
 
+void Sampler::update_logit_processor(uint64_t request_id, uint64_t token_id) {
+    OPENVINO_ASSERT(m_logit_processors.count(request_id));
+    auto& logit_processor = m_logit_processors.at(request_id);
+    logit_processor.decrease_generated_token_occurance(token_id);
+    auto gen_size = logit_processor.get_generated_len();
+    logit_processor.update_generated_len(gen_size - 1);
+}
+
 void Sampler::clear_beam_search_info(uint64_t request_id) { 
     m_beam_search_info.erase(request_id);
 }
