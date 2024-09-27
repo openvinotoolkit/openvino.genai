@@ -46,8 +46,6 @@ py::object call_vlm_generate(
     const py::kwargs& kwargs
 ) {
     auto updated_config = *ov::genai::pybind::utils::update_config_from_kwargs(generation_config, kwargs);
-    py::object results;
-   // EncodedInputs tensor_data;
     ov::genai::StreamerVariant streamer = std::monostate();
     
     std::visit(utils::overloaded {
@@ -78,7 +76,7 @@ void init_vlm_pipeline(py::module_& m) {
             const ov::Core& core
         ) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::VLMPipeline>(model_path, device, utils::properties_to_any_map(config));
+            return std::make_unique<ov::genai::VLMPipeline>(model_path, device, utils::properties_to_any_map(config), core);
         }),
         py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
         py::arg("device") = "CPU", "device on which inference will be done",
@@ -100,7 +98,7 @@ void init_vlm_pipeline(py::module_& m) {
             const ov::Core& core
         ) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::VLMPipeline>(model_path, tokenizer, device, utils::properties_to_any_map(config));
+            return std::make_unique<ov::genai::VLMPipeline>(model_path, tokenizer, device, utils::properties_to_any_map(config), core);
         }),
         py::arg("model_path"),
         py::arg("tokenizer"),
