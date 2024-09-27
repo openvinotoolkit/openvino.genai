@@ -52,7 +52,8 @@ public:
         enum Type {
             AUTO,
             LCM,
-            LMS_DISCRETE
+            LMS_DISCRETE,
+            DDIM
         };
 
         static std::shared_ptr<Scheduler> from_config(const std::string& scheduler_config_path,

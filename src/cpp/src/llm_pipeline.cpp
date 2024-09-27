@@ -148,11 +148,12 @@ public:
                 m_history.push_back({{"role", "user"}, {"content", prompt}});
                 constexpr bool add_generation_prompt = true;
                 auto new_templated_chat_history  = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history);
+                bool add_special_tokens_ = false;  // Do not add special tokens is chat scenario.
+                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens_));
                 if (m_is_cache_empty) {
                     encoded_input = new_chat_tokens;
                 } else {
-                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history);
+                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens_));
                     encoded_input = subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
                 }
                 m_templated_chat_history = new_templated_chat_history;

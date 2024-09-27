@@ -6,9 +6,9 @@
 #include <pybind11/stl_bind.h>
 
 #include "../cpp/src/tokenizers_path.hpp"
-#include "./utils.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
+#include "utils.hpp"
 
 namespace py = pybind11;
 using ov::genai::DecodedResults;
@@ -60,11 +60,6 @@ auto whisper_generation_config_docstring = R"(
     decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
     type: int
 
-    language_token_id: The language token id of the transcription text. It is appended to the start of the sequence for
-                       multilingual speech recognition, e.g. for Spanish the token id corresponding to the "<|es|>" is appended to the
-                       start of sequence.
-    type: int
-    
     pad_token_id: Padding token id.
     type: int
     
@@ -88,6 +83,16 @@ auto whisper_generation_config_docstring = R"(
 
     suppress_tokens: A list containing the non-speech tokens that will be supressed during generation.
     type: list[int]
+
+    language: Language token to use for generation in the form of <|en|>.
+              You can find all the possible language tokens in the generation_config.json lang_to_id dictionary.
+    type: Optional[str]
+    
+    lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
+    type: Dict[str, int]
+    
+    task: Task to use for generation, either “translate” or “transcribe”
+    type: int
 )";
 
 OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const OptionalWhisperGenerationConfig& config,
@@ -118,8 +123,6 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
             res_config.max_length = py::cast<int>(item.second);
         } else if (key == "decoder_start_token_id") {
             res_config.decoder_start_token_id = py::cast<int>(item.second);
-        } else if (key == "language_token_id") {
-            res_config.language_token_id = py::cast<int>(item.second);
         } else if (key == "pad_token_id") {
             res_config.pad_token_id = py::cast<int>(item.second);
         } else if (key == "translate_token_id") {
@@ -136,6 +139,12 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
             res_config.suppress_tokens = py::cast<std::vector<int64_t>>(item.second);
         } else if (key == "is_multilingual") {
             res_config.is_multilingual = py::cast<bool>(item.second);
+        } else if (key == "language") {
+            res_config.language = py::cast<std::string>(item.second);
+        } else if (key == "lang_to_id") {
+            res_config.lang_to_id = py::cast<std::map<std::string, int64_t>>(item.second);
+        } else if (key == "task") {
+            res_config.task = py::cast<std::string>(item.second);
         } else if (key == "eos_token_id") {
             res_config.set_eos_token_id(py::cast<int>(item.second));
         } else {
@@ -197,7 +206,6 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("begin_suppress_tokens", &WhisperGenerationConfig::begin_suppress_tokens)
         .def_readwrite("suppress_tokens", &WhisperGenerationConfig::suppress_tokens)
         .def_readwrite("decoder_start_token_id", &WhisperGenerationConfig::decoder_start_token_id)
-        .def_readwrite("language_token_id", &WhisperGenerationConfig::language_token_id)
         .def_readwrite("eos_token_id", &WhisperGenerationConfig::eos_token_id)
         .def_readwrite("pad_token_id", &WhisperGenerationConfig::pad_token_id)
         .def_readwrite("translate_token_id", &WhisperGenerationConfig::translate_token_id)
@@ -205,6 +213,9 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("begin_timestamps_token_id", &WhisperGenerationConfig::begin_timestamps_token_id)
         .def_readwrite("no_timestamps_token_id", &WhisperGenerationConfig::no_timestamps_token_id)
         .def_readwrite("is_multilingual", &WhisperGenerationConfig::is_multilingual)
+        .def_readwrite("language", &WhisperGenerationConfig::language)
+        .def_readwrite("lang_to_id", &WhisperGenerationConfig::lang_to_id)
+        .def_readwrite("task", &WhisperGenerationConfig::task)
         .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id);
 
     py::class_<WhisperPipeline>(m, "WhisperPipeline")
