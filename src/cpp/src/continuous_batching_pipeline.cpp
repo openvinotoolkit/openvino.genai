@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <mutex>
 #include <memory>
+#include <openvino/runtime/properties.hpp>
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_handle.hpp"
@@ -11,6 +12,7 @@
 #include "continuous_batching_impl.hpp"
 #include "timer.hpp"
 #include "debug_utils.hpp"
+#include "cache_state_dumper.hpp"
 
 using namespace ov::genai;
 
