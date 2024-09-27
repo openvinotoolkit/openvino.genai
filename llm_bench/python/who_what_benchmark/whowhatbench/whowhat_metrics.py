@@ -143,9 +143,6 @@ def evaluate_image_similarity(processor, model, data_gold, data_prediction):
             gold_outputs = model.get_image_features(gold_inputs)
             prediction_outputs = model.get_image_features(prediction_inputs)
 
-        #cos_sim = util.cos_sim(gold_outputs, prediction_outputs)#(gold_outputs.last_hidden_state[-1] , prediction_outputs.last_hidden_state[-1])
-        #print("cos_sim: ", cos_sim.item())
-        #metric_per_image.append(cos_sim[0, 0].item())
         cos_sim = F.cosine_similarity(gold_outputs, prediction_outputs)
         print("cos_sim: ", cos_sim.item())
         metric_per_image.append(cos_sim.item())

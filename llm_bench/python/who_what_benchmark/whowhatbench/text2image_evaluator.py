@@ -3,8 +3,6 @@ from typing import Any, Union
 
 import pandas as pd
 from tqdm import tqdm
-
-import torch
 from transformers import set_seed
 
 from .registry import register_evaluator, BaseEvaluator
@@ -16,7 +14,6 @@ default_data = {
         "Cinematic, a vibrant Mid-century modern dining area, colorful chairs and a sideboard, ultra realistic, many detail",
         "colibri flying near a flower, side view, forest background, natural light, photorealistic, 4k",
         "Illustration of an astronaut sitting in outer space, moon behind him",
-        
         "A vintage illustration of a retro computer, vaporwave aesthetic, light pink and light blue",
         "A view from beautiful alien planet, very beautiful, surealism, retro astronaut on the first plane, 8k photo",
         
@@ -98,10 +95,11 @@ class Text2ImageEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
-        model.reshape(batch_size=1, height=self.resolution[0], width=self.resolution[1], num_images_per_prompt=1)
+        if hasattr(model, "reshape") and self.resolution is not None:
+            model.reshape(batch_size=1, height=self.resolution[0], width=self.resolution[1], num_images_per_prompt=1)
 
         def default_gen_image_fn(model, prompt, num_inference_steps):
-            output = model(prompt, num_inference_steps=num_inference_steps, output_type="pil")
+            output = model(prompt, num_inference_steps=num_inference_steps, output_type="pil", width=self.resolution[0], height=self.resolution[0])
             return output.images[0]
 
         gen_image_fn = gen_image_fn or default_gen_image_fn

@@ -5,10 +5,22 @@ import json
 import pandas as pd
 import logging
 from datasets import load_dataset
+from diffusers import DiffusionPipeline
 from optimum.exporters import TasksManager
 from optimum.intel.openvino import OVModelForCausalLM
 from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
+
+from optimum.exporters.tasks import TasksManager
+from optimum.intel import  (
+        OVLatentConsistencyModelPipeline,
+        OVStableDiffusionImg2ImgPipeline,
+        OVStableDiffusionInpaintPipeline,
+        OVStableDiffusionPipeline,
+        OVStableDiffusionXLImg2ImgPipeline,
+        OVStableDiffusionXLPipeline,
+)
+from transformers import AutoConfig
 
 from whowhatbench import EVALUATOR_REGISTRY, MODELTYPE2TASK
 
@@ -77,6 +89,14 @@ def load_text_model(model_id, device="CPU", ov_config=None, use_hf=False, use_ge
     return model
 
 
+TEXT2IMAGE_TASK2CLASS = {
+    "sd": OVStableDiffusionPipeline,
+    "sd-xl": OVStableDiffusionXLPipeline,
+    "sd-lcm": OVLatentConsistencyModelPipeline,
+}
+
+
+
 def load_text2image_model(model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False):
     if ov_config:
         with open(ov_config) as f:
@@ -84,7 +104,8 @@ def load_text2image_model(model_type, model_id, device="CPU", ov_config=None, us
     else:
         ov_options = None
 
-    from .registry import TEXT2IMAGE_TASK2CLASS
+    if use_hf:
+        return DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True)
 
     TEXT2IMAGEPipeline = TEXT2IMAGE_TASK2CLASS[model_type]
 
