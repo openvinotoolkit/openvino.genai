@@ -138,3 +138,4 @@ For example, --load_config config.json as following in OpenVINO 2024.0.0 will re
 > If you encounter any errors, please check **[NOTES.md](./doc/NOTES.md)** which provides solutions to the known errors.
 ### 2. Image generation
 > To configure more parameters for image generation models, reference to **[IMAGE_GEN.md](./doc/IMAGE_GEN.md)**
+### 3. Threading
