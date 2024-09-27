@@ -18,10 +18,11 @@ import hashlib
 import llm_bench_utils.metrics_print
 import llm_bench_utils.output_csv
 import traceback
-from transformers import set_seed
+from transformers import set_seed, pipeline
 from PIL import Image
 from llm_bench_utils.memory_profile import MemConsumption
 from llm_bench_utils.hook_forward import StableDiffusionHook
+from llm_bench_utils.hook_forward_whisper import WhisperHook
 import llm_bench_utils.output_json
 import llm_bench_utils.output_file
 
@@ -38,6 +39,7 @@ DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
 mem_consumption = MemConsumption()
 stable_diffusion_hook = StableDiffusionHook()
+whisper_hook = WhisperHook()
 
 
 def gen_iterate_data(
@@ -319,8 +321,106 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
 
 
+def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_prompt, iter_data_list):
+    result_md5_list = []
+    max_rss_mem_consumption = ''
+    max_uss_mem_consumption = ''
+    max_shared_mem_consumption = ''
+    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
+        mem_consumption.start_collect_memory_consumption()
+    inputs = llm_bench_utils.model_utils.get_audio(audio_prompt['prompt'], pipe.feature_extractor.sampling_rate)
+    start = time.perf_counter()
+    result_text = pipe(inputs, generate_kwargs={"task": 'translate'}, return_timestamps=True)["text"]
+    end = time.perf_counter()
+    generation_time = end - start
+
+    result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
+    if len(md5_list[num]) == 0:
+        md5_list[num] = {prompt_id : result_md5_list}
+    else:
+        md5_list[num][prompt_id] = result_md5_list
+    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
+        mem_consumption.end_collect_momory_consumption()
+        max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
+        mem_consumption.clear_max_memory_consumption()
+    iter_data = gen_iterate_data(
+        iter_idx=num,
+        gen_time=generation_time,
+        res_md5=result_md5_list,
+        max_rss_mem=max_rss_mem_consumption,
+        max_shared_mem=max_shared_mem_consumption,
+        max_uss_mem=max_uss_mem_consumption,
+        prompt_idx=prompt_id,
+    )
+    iter_data_list.append(iter_data)
+    llm_bench_utils.metrics_print.print_metrics(
+        num,
+        iter_data,
+        warm_up=(num == 0),
+        max_rss_mem=max_rss_mem_consumption,
+        max_shared_mem=max_shared_mem_consumption,
+        max_uss_mem=max_uss_mem_consumption,
+        whisper=whisper_hook
+    )
+    if num > 0:
+        prev_md5 = md5_list[num - 1][prompt_id]
+        if result_md5_list != prev_md5:
+            log.warning(f"[{num}] Prompt[{prompt_id}]'s md5 {result_md5_list} "
+                        f"is different from md5 of the {num - 1} iteration {prev_md5}")
+            llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text)
+            if num == 1:
+                # if the device is CPU, throw exception
+                if args['devices'].lower().startswith('cpu') is True:
+                    assert (result_md5_list == prev_md5)
+            else:
+                # throw exception
+                assert (result_md5_list == prev_md5)
+    else:
+        llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text)
+    whisper_hook.clear_statistics()
+
+
 def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters):
-    model, pretrain_time= FW_UTILS[framework].create_speech_2txt_model(model_path, device, **args)
+    iter_data_list = []
+    input_audio_prompt_list = llm_bench_utils.model_utils.get_audio_param_from_prompt_file(args)
+    audios_prompt_list = []
+    if len(input_audio_prompt_list) > 0:
+        for audio_prompt in input_audio_prompt_list:
+            if args['prompt'] is None and args['prompt_file'] is None:
+                raise RuntimeError('==Failure image is empty ==')
+            elif args['prompt_file'] is not None:
+                audio_prompt['prompt'] = os.path.join(os.path.dirname(args['prompt_file']), audio_prompt['prompt'].replace('./', ''))
+            audio_prompt['prompt'] = Path(audio_prompt['prompt'])
+            audios_prompt_list.append(audio_prompt)
+    if args['prompt_index'] is None:
+        prompt_idx_list = [prompt_idx for prompt_idx, input_audio in enumerate(audios_prompt_list)]
+        audio_list = audios_prompt_list
+    else:
+        prompt_idx_list = []
+        audio_list = []
+        for i in args['prompt_index']:
+            if 0 <= i < len(audios_prompt_list):
+                audio_list.append(audios_prompt_list[i])
+                prompt_idx_list.append(i)
+    if len(audio_list) == 0:
+        raise RuntimeError('==Failure prompts is empty ==')
+    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_audio_prompt_list)}, prompt idx: {prompt_idx_list}')
+    ov_model, processor, pretrain_time= FW_UTILS[framework].create_speech_2txt_model(model_path, device, **args)
+    pipe = pipeline(
+        "automatic-speech-recognition",
+        model=ov_model,
+        chunk_length_s=30,
+        tokenizer=processor.tokenizer,
+        feature_extractor=processor.feature_extractor,
+    )
+    if framework == "ov":
+        whisper_hook.new_text_encoder(pipe)
+        whisper_hook.new_text_decoder(pipe)
+    md5_list = {num : {} for num in range(num_iters + 1)}
+    for num in range(num_iters + 1):
+        for idx, audio_prompt in enumerate(audio_list):
+            run_speech_2txt_generation(pipe, args, num, md5_list, prompt_idx_list[idx], audio_prompt, iter_data_list) 
+    return iter_data_list, pretrain_time
 
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):

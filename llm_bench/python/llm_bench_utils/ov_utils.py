@@ -2,7 +2,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
-from transformers import AutoConfig
+from transformers import AutoConfig, AutoProcessor
 from openvino.runtime import Core
 import openvino as ov
 import logging as log
@@ -260,7 +260,8 @@ def create_speech_2txt_model(model_path, device, **kwargs):
         end = time.perf_counter()
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
-    return ov_model, from_pretrained_time
+    processor = AutoProcessor.from_pretrained(model_path)
+    return ov_model, processor, from_pretrained_time
 
 
 def is_genai_available(log_msg=False):
