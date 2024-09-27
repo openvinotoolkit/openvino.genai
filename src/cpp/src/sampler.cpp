@@ -677,8 +677,6 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                             }
                         }
                     }
-                    
-                    // register_new_token(sampled_token_id, running_sequences[running_sequence_id]);
                 }
                 for (const auto& dropped_seq_id : _try_finish_generation(sequence_group)) {
                     sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
