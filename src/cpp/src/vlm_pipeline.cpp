@@ -554,7 +554,6 @@ DecodedResults VLMPipeline::generate(
 
     DecodedResults results;
     results.texts = {m_tokenizer.decode(generated)};
-    std::cout << "initt metrics" << std::endl;
 
     // TODO: implement performance metrics
     results.perf_metrics = ov::genai::PerfMetrics();
