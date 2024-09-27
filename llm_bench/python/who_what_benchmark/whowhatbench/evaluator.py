@@ -81,6 +81,8 @@ def autodetect_language(model):
         "internlm": "cn",
     }
 
+    if not hasattr(model, "config"):
+        return "en"
     return model2language.get(model.config.model_type, "en")
 
 
@@ -98,6 +100,9 @@ class Evaluator:
         num_samples=None,
         language=None,
         gen_answer_fn=None,
+        generation_config=None,
+        generation_config_base=None,
+        seqs_per_request=None
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -109,6 +114,11 @@ class Evaluator:
         self.tokenizer = tokenizer
         self._crop_question = crop_question
         self.num_samples = num_samples
+        self.generation_config = generation_config
+        self.generation_config_base = generation_config
+        self.seqs_per_request = seqs_per_request
+        if self.generation_config is not None:
+            assert self.seqs_per_request is not None
 
         # Take language from the base model if provided
         self.language = language
@@ -117,7 +127,7 @@ class Evaluator:
                 self.language = autodetect_language(base_model)
 
         if base_model:
-            self.gt_data = self._generate_data(base_model, gen_answer_fn)
+            self.gt_data = self._generate_data(base_model, gen_answer_fn, generation_config=generation_config)
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
@@ -139,7 +149,7 @@ class Evaluator:
         self.gt_data.to_csv(csv_name)
 
     def score(self, model, gen_answer_fn=None):
-        predictions = self._generate_data(model, gen_answer_fn)
+        predictions = self._generate_data(model, gen_answer_fn, self.generation_config)
 
         all_metrics_per_question = {}
         all_metrics = {}
@@ -179,9 +189,10 @@ class Evaluator:
 
         return res
 
-    def _generate_data(self, model, gen_answer_fn=None):
+    def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
         def default_gen_answer(model, tokenizer, question, max_new_tokens, crop_question):
             inputs = self.tokenizer(question, return_tensors="pt")
+
             tokens = model.generate(**inputs, max_new_tokens=max_new_tokens)
             out = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
             return out[len(question) :] if crop_question else out
@@ -209,8 +220,21 @@ class Evaluator:
         answers = []
         prompts = questions.values if self.num_samples is None else questions.values[:self.num_samples]
 
-        for q in tqdm(prompts, desc="Evaluate pipeline"):
-            answers.append(gen_answer_fn(model, self.tokenizer, q, self.max_new_tokens, self._crop_question))
+        if generation_config is None:
+            for q in tqdm(prompts, desc="Evaluate pipeline"):
+                answers.append(gen_answer_fn(model, self.tokenizer, q, self.max_new_tokens, self._crop_question))
+        else:
+            with tqdm(total=len(questions.values)) as progress_bar:
+                batch = []
+                for q_idx, q in enumerate(questions.values):
+                    progress_bar.update(1)
+                    batch.append(q)
+                    if len(batch) == self.seqs_per_request or q_idx == len(questions.values) - 1:
+                        ans_batch = model.generate(batch, [generation_config] * len(batch))
+                        for ans in ans_batch:
+                            answers.append(ans.m_generation_ids[0])
+
+                        batch.clear()
 
         res_data = {"questions": list(prompts), "answers": answers}
         df = pd.DataFrame(res_data)

@@ -7,6 +7,7 @@ add_subdirectory(cpp/chat_sample)
 add_subdirectory(cpp/continuous_batching_accuracy)
 add_subdirectory(cpp/continuous_batching_benchmark)
 add_subdirectory(cpp/greedy_causal_lm)
+add_subdirectory(cpp/lora_greedy_causal_lm)
 add_subdirectory(cpp/multinomial_causal_lm)
 add_subdirectory(cpp/prompt_lookup_decoding_lm)
 add_subdirectory(cpp/speculative_decoding_lm)
@@ -26,6 +27,7 @@ install(DIRECTORY
             # Don't install continuous_batching_accuracy and continuous_batching_benchmark because they depend on json.
             cpp/whisper_speech_recognition
             cpp/stable_diffusion
+            cpp/lora_greedy_causal_lm
         DESTINATION samples/cpp COMPONENT cpp_samples_genai)
 
 install(DIRECTORY

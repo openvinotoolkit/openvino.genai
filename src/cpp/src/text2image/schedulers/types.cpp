@@ -46,8 +46,7 @@ void read_json_param(const nlohmann::json& data, const std::string& name, Text2I
         if (scheduler_type_str == "LCMScheduler")
             param = Text2ImagePipeline::Scheduler::LCM;
         else if (scheduler_type_str == "DDIMScheduler")
-            // TODO: remove this TMP workaround
-            param = Text2ImagePipeline::Scheduler::LMS_DISCRETE;
+            param = Text2ImagePipeline::Scheduler::DDIM;
         else if (scheduler_type_str == "LMSDiscreteScheduler")
             param = Text2ImagePipeline::Scheduler::LMS_DISCRETE;
         else if (!scheduler_type_str.empty()) {
@@ -82,6 +81,8 @@ std::ostream& operator<<(std::ostream& os, const ov::genai::Text2ImagePipeline::
         return os << "LCMScheduler";
     case ov::genai::Text2ImagePipeline::Scheduler::Type::LMS_DISCRETE:
         return os << "LMSDiscreteScheduler";
+    case ov::genai::Text2ImagePipeline::Scheduler::Type::DDIM:
+        return os << "DDIMScheduler";
     case ov::genai::Text2ImagePipeline::Scheduler::Type::AUTO:
         return os << "AutoScheduler";
     default:

@@ -17,14 +17,17 @@ int main(int argc, char* argv[]) try {
     ov::genai::WhisperPipeline pipeline{model_path};
 
     ov::genai::WhisperGenerationConfig config{model_path + "/generation_config.json"};
-    config.max_length = 100;
+    config.max_new_tokens = 100;
+    // 'task' and 'language' parameters are supported for multilingual models only
+    config.language = "<|en|>";
+    config.task = "transcribe";
 
     auto streamer = [](std::string word) {
         std::cout << word;
         return false;
     };
 
-    pipeline.generate(raw_speech, ov::genai::max_new_tokens(100), ov::genai::streamer(streamer));
+    pipeline.generate(raw_speech, config, streamer);
 
     std::cout << std::endl;
 } catch (const std::exception& error) {
