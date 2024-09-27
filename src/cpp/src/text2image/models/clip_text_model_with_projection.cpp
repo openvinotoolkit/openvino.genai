@@ -1,19 +1,18 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/text2image/clip_text_model.hpp"
+#include "openvino/genai/text2image/clip_text_model_with_projection.hpp"
 
 #include <fstream>
 
 #include "openvino/runtime/core.hpp"
 
 #include "utils.hpp"
-#include "lora_helper.hpp"
 
 namespace ov {
 namespace genai {
 
-CLIPTextModel::Config::Config(const std::string& config_path) {
+CLIPTextModelWithProjection::Config::Config(const std::string& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
 
@@ -24,32 +23,26 @@ CLIPTextModel::Config::Config(const std::string& config_path) {
     read_json_param(data, "hidden_size", hidden_size);
 }
 
-CLIPTextModel::CLIPTextModel(const std::string root_dir) :
+CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string root_dir) :
     m_clip_tokenizer(root_dir + "/../tokenizer"),
     m_config(root_dir + "/config.json") {
     m_model = ov::Core().read_model(root_dir + "/openvino_model.xml");
 }
 
-CLIPTextModel::CLIPTextModel(const std::string& root_dir,
+CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string& root_dir,
                 const std::string& device,
                 const ov::AnyMap& properties) :
-    CLIPTextModel(root_dir) {
-    AdapterConfig adapters;
-    if(auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
-        m_adapter_controller = AdapterController(m_model, adapters, "lora_te", device);
-        compile(device, *filtered_properties);
-    } else {
-        compile(device, properties);
-    }
+    CLIPTextModelWithProjection(root_dir) {
+    compile(device, properties);
 }
 
-CLIPTextModel::CLIPTextModel(const CLIPTextModel&) = default;
+CLIPTextModelWithProjection::CLIPTextModelWithProjection(const CLIPTextModelWithProjection&) = default;
 
-const CLIPTextModel::Config& CLIPTextModel::get_config() const {
+const CLIPTextModelWithProjection::Config& CLIPTextModelWithProjection::get_config() const {
     return m_config;
 }
 
-CLIPTextModel& CLIPTextModel::reshape(int batch_size) {
+CLIPTextModelWithProjection& CLIPTextModelWithProjection::reshape(int batch_size) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
     ov::PartialShape input_shape = m_model->input(0).get_partial_shape();
@@ -61,7 +54,7 @@ CLIPTextModel& CLIPTextModel::reshape(int batch_size) {
     return *this;
 }
 
-CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMap& properties) {
+CLIPTextModelWithProjection& CLIPTextModelWithProjection::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::CompiledModel compiled_model = ov::Core().compile_model(m_model, device, properties);
     m_request = compiled_model.create_infer_request();
@@ -71,24 +64,20 @@ CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMa
     return *this;
 }
 
-void CLIPTextModel::set_adapters(const AdapterConfig& adapters) {
-    m_adapter_controller.apply(m_request, adapters);
-}
-
-ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance) {
+ov::Tensor CLIPTextModelWithProjection::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance) {
     OPENVINO_ASSERT(m_request, "CLIP text encoder model must be compiled first. Cannot infer non-compiled model");
 
     const int32_t pad_token_id = m_clip_tokenizer.get_pad_token_id();
     const size_t text_embedding_batch_size = do_classifier_free_guidance ? 2 : 1;
 
     auto perform_tokenization = [&](const std::string& prompt, ov::Tensor input_ids) {
-        std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
+        std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), pad_token_id);
 
         ov::Tensor input_ids_token = m_clip_tokenizer.encode(prompt).input_ids;
-        std::copy_n(input_ids_token.data<std::int64_t>(), input_ids_token.get_size(), input_ids.data<std::int32_t>());
+        std::copy_n(input_ids_token.data<std::int64_t>(), input_ids_token.get_size(), input_ids.data<std::int64_t>());
     };
 
-    ov::Tensor input_ids(ov::element::i32, {text_embedding_batch_size, m_config.max_position_embeddings});
+    ov::Tensor input_ids(ov::element::i64, {text_embedding_batch_size, m_config.max_position_embeddings});
     size_t current_batch_idx = 0;
 
     if (do_classifier_free_guidance) {
@@ -111,7 +100,7 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
     return m_request.get_output_tensor(0);
 }
 
-ov::Tensor CLIPTextModel::get_output_tensor(const size_t idx) {
+ov::Tensor CLIPTextModelWithProjection::get_output_tensor(const size_t idx) {
     return m_request.get_output_tensor(idx);
 }
 

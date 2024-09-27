@@ -15,6 +15,7 @@
 
 #include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/text2image/clip_text_model.hpp"
+#include "openvino/genai/text2image/clip_text_model_with_projection.hpp"
 #include "openvino/genai/text2image/unet2d_condition_model.hpp"
 #include "openvino/genai/text2image/autoencoder_kl.hpp"
 
@@ -54,7 +55,8 @@ public:
             AUTO,
             LCM,
             LMS_DISCRETE,
-            DDIM
+            DDIM,
+            EULER_DISCRETE
         };
 
         static std::shared_ptr<Scheduler> from_config(const std::string& scheduler_config_path,
@@ -108,15 +110,24 @@ public:
 
     // creates either LCM or SD pipeline from building blocks
     static Text2ImagePipeline stable_diffusion(
-        const std::shared_ptr<Scheduler>& scheduler_type,
-        const CLIPTextModel& clip_text_model,
-        const UNet2DConditionModel& unet,
-        const AutoencoderKL& vae_decoder);
+        const std::shared_ptr<Scheduler>& scheduler_type, // scheduler
+        const CLIPTextModel& clip_text_model,             // text_encoder
+        const UNet2DConditionModel& unet,                 // unet
+        const AutoencoderKL& vae_decoder);                // vae
+
 
     // creates either LCM or SD pipeline from building blocks
     static Text2ImagePipeline latent_consistency_model(
         const std::shared_ptr<Scheduler>& scheduler_type,
         const CLIPTextModel& clip_text_model,
+        const UNet2DConditionModel& unet,
+        const AutoencoderKL& vae_decoder);
+
+    // creates either SDXL pipeline from building blocks
+    static Text2ImagePipeline stable_diffusion_xl(
+        const std::shared_ptr<Scheduler>& scheduler_type,
+        const CLIPTextModel& clip_text_model,
+        const CLIPTextModelWithProjection& clip_text_model_with_projection,
         const UNet2DConditionModel& unet,
         const AutoencoderKL& vae_decoder);
 
@@ -148,6 +159,7 @@ private:
     explicit Text2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl);
 
     class StableDiffusionPipeline;
+    class StableDiffusionXLPipeline;
 };
 
 //
