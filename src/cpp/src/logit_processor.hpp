@@ -299,6 +299,7 @@ public:
     }
 };
 
+
 } // namespace LogitTransformers
 
 class LogitProcessor {

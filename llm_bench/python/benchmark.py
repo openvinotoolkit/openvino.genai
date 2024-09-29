@@ -321,53 +321,98 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
 
 
-def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_prompt, iter_data_list):
-    result_md5_list = []
+def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_index, streamer, model_precision, proc_id):
+    set_seed(args['seed'])
+    input_text_list = [input_text] * args['batch_size']
+    if args["output_dir"] is not None and num == 0:
+        for bs_index, in_text in enumerate(input_text_list):
+            llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
+    pt_inputs = tokenizer(input_text_list, return_tensors="pt")
+    input_token_size = pt_inputs.input_ids.shape[1]
+    pipe_tokenizer = model.get_tokenizer()
+    tok_encode_start = time.perf_counter()
+    input_data = pipe_tokenizer.encode(input_text_list)
+    tok_encode_end = time.perf_counter()
+    tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
+    if args['batch_size'] > 1:
+        out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
+        out_str += " Batch_size={}, ".format(args['batch_size'])
+        out_str += 'all input token size after padding: {} * {}, '.format(input_token_size, args['batch_size'])
+        if args['infer_count'] is not None:
+            out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
+        log.info(out_str)
     max_rss_mem_consumption = ''
     max_uss_mem_consumption = ''
     max_shared_mem_consumption = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start_collect_memory_consumption()
-    inputs = llm_bench_utils.model_utils.get_audio(audio_prompt['prompt'], pipe.feature_extractor.sampling_rate)
+    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
+    streamer.reset()
     start = time.perf_counter()
-    result_text = pipe(inputs, generate_kwargs={"task": 'translate'}, return_timestamps=True)["text"]
+    generated_tokens = model.generate(input_data, max_new_tokens=max_gen_tokens, num_beams=args["num_beams"], streamer=streamer).tokens
     end = time.perf_counter()
-    generation_time = end - start
-
-    result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
-    if len(md5_list[num]) == 0:
-        md5_list[num] = {prompt_id : result_md5_list}
-    else:
-        md5_list[num][prompt_id] = result_md5_list
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
+    generation_time = end - start
+    tok_decode_start = time.perf_counter()
+    generated_text = pipe_tokenizer.decode(generated_tokens)
+    tok_decode_end = time.perf_counter()
+    tok_decode_time = (tok_decode_end - tok_decode_start) * 1000
+    # Only text_gen need to minus length of input_data, because generated_text may include input_text
+    num_tokens = 0
+    result_md5_list = []
+    for bs_idx in range(args['batch_size']):
+        generated_text_len = len(generated_tokens[bs_idx])
+        num_tokens += generated_text_len
+        if generated_text_len > max_gen_tokens:
+            log.error('Output token size is over max output token size!')
+        result_text = generated_text[bs_idx]
+        if args["output_dir"] is not None:
+            llm_bench_utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
+        result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
+    if len(md5_list[num]) == 0:
+        md5_list[num] = {prompt_index : result_md5_list}
+    else:
+        md5_list[num][prompt_index] = result_md5_list
+    per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+    tm_list = streamer.get_time_list()
+    log.debug('latency of all tokens:')
+    [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
     iter_data = gen_iterate_data(
-        iter_idx=num,
-        gen_time=generation_time,
-        res_md5=result_md5_list,
+        num,
+        input_token_size * args['batch_size'],
+        len(tm_list),
+        num_tokens,
+        generation_time,
+        per_token_time,
+        result_md5_list,
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
-        prompt_idx=prompt_id,
+        prompt_idx=prompt_index,
+        tokenization_time=(tok_encode_time, tok_decode_time)
     )
     iter_data_list.append(iter_data)
     llm_bench_utils.metrics_print.print_metrics(
         num,
         iter_data,
+        tm_list,
+        [],
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
-        whisper=whisper_hook
+        tokenization_time=(tok_encode_time, tok_decode_time),
+        batch_size=args['batch_size']
     )
     if num > 0:
-        prev_md5 = md5_list[num - 1][prompt_id]
+        prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
-            log.warning(f"[{num}] Prompt[{prompt_id}]'s md5 {result_md5_list} "
+            log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
-            llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text)
+            llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
             if num == 1:
                 # if the device is CPU, throw exception
                 if args['devices'].lower().startswith('cpu') is True:
@@ -376,51 +421,8 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_promp
                 # throw exception
                 assert (result_md5_list == prev_md5)
     else:
-        llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text)
-    whisper_hook.clear_statistics()
-
-
-def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters):
-    iter_data_list = []
-    input_audio_prompt_list = llm_bench_utils.model_utils.get_audio_param_from_prompt_file(args)
-    audios_prompt_list = []
-    if len(input_audio_prompt_list) > 0:
-        for audio_prompt in input_audio_prompt_list:
-            if args['prompt'] is None and args['prompt_file'] is None:
-                raise RuntimeError('==Failure image is empty ==')
-            elif args['prompt_file'] is not None:
-                audio_prompt['prompt'] = os.path.join(os.path.dirname(args['prompt_file']), audio_prompt['prompt'].replace('./', ''))
-            audio_prompt['prompt'] = Path(audio_prompt['prompt'])
-            audios_prompt_list.append(audio_prompt)
-    if args['prompt_index'] is None:
-        prompt_idx_list = [prompt_idx for prompt_idx, input_audio in enumerate(audios_prompt_list)]
-        audio_list = audios_prompt_list
-    else:
-        prompt_idx_list = []
-        audio_list = []
-        for i in args['prompt_index']:
-            if 0 <= i < len(audios_prompt_list):
-                audio_list.append(audios_prompt_list[i])
-                prompt_idx_list.append(i)
-    if len(audio_list) == 0:
-        raise RuntimeError('==Failure prompts is empty ==')
-    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_audio_prompt_list)}, prompt idx: {prompt_idx_list}')
-    ov_model, processor, pretrain_time= FW_UTILS[framework].create_speech_2txt_model(model_path, device, **args)
-    pipe = pipeline(
-        "automatic-speech-recognition",
-        model=ov_model,
-        chunk_length_s=30,
-        tokenizer=processor.tokenizer,
-        feature_extractor=processor.feature_extractor,
-    )
-    if framework == "ov":
-        whisper_hook.new_text_encoder(pipe)
-        whisper_hook.new_text_decoder(pipe)
-    md5_list = {num : {} for num in range(num_iters + 1)}
-    for num in range(num_iters + 1):
-        for idx, audio_prompt in enumerate(audio_list):
-            run_speech_2txt_generation(pipe, args, num, md5_list, prompt_idx_list[idx], audio_prompt, iter_data_list) 
-    return iter_data_list, pretrain_time
+        llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+    streamer.reset()
 
 
 def run_text_generation_benchmark(model_path, framework, device, args, num_iters):
@@ -445,7 +447,12 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
              f'prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}')
 
     # if num_iters == 0, just output warm-up data
-    text_gen_fn = run_text_generation if not use_genai else run_text_generation_genai
+    if not use_genai:
+        text_gen_fn = run_text_generation
+    elif bench_hook is not None:
+        text_gen_fn = run_text_generation_genai_with_stream
+    else:
+        text_gen_fn = run_text_generation_genai
     proc_id = os.getpid()
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
@@ -655,8 +662,8 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
         for image in input_image_list:
             if args['prompt'] is None and args['prompt_file'] is None:
                 raise RuntimeError('==Failure image is empty ==')
-            elif args['prompt_file'] is not None:
-                image['prompt'] = os.path.join(os.path.dirname(args['prompt_file']), image['prompt'].replace('./', ''))
+            elif args['prompt_file'] is not None and len(args['prompt_file']) > 0:
+                image['prompt'] = os.path.join(os.path.dirname(args['prompt_file'][0]), image['prompt'].replace('./', ''))
             image['prompt'] = Path(image['prompt'])
             images.append(image)
     else:
@@ -699,6 +706,108 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     return iter_data_list, pretrain_time
 
 
+def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_prompt, iter_data_list):
+    result_md5_list = []
+    max_rss_mem_consumption = ''
+    max_uss_mem_consumption = ''
+    max_shared_mem_consumption = ''
+    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
+        mem_consumption.start_collect_memory_consumption()
+    inputs = llm_bench_utils.model_utils.get_audio(audio_prompt['prompt'], pipe.feature_extractor.sampling_rate)
+    start = time.perf_counter()
+    result_text = pipe(inputs, generate_kwargs={"task": 'translate'}, return_timestamps=True)["text"]
+    end = time.perf_counter()
+    generation_time = end - start
+
+    result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
+    if len(md5_list[num]) == 0:
+        md5_list[num] = {prompt_id : result_md5_list}
+    else:
+        md5_list[num][prompt_id] = result_md5_list
+    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
+        mem_consumption.end_collect_momory_consumption()
+        max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
+        mem_consumption.clear_max_memory_consumption()
+    iter_data = gen_iterate_data(
+        iter_idx=num,
+        gen_time=generation_time,
+        res_md5=result_md5_list,
+        max_rss_mem=max_rss_mem_consumption,
+        max_shared_mem=max_shared_mem_consumption,
+        max_uss_mem=max_uss_mem_consumption,
+        prompt_idx=prompt_id,
+    )
+    iter_data_list.append(iter_data)
+    llm_bench_utils.metrics_print.print_metrics(
+        num,
+        iter_data,
+        warm_up=(num == 0),
+        max_rss_mem=max_rss_mem_consumption,
+        max_shared_mem=max_shared_mem_consumption,
+        max_uss_mem=max_uss_mem_consumption,
+        whisper=whisper_hook
+    )
+    if num > 0:
+        prev_md5 = md5_list[num - 1][prompt_id]
+        if result_md5_list != prev_md5:
+            log.warning(f"[{num}] Prompt[{prompt_id}]'s md5 {result_md5_list} "
+                        f"is different from md5 of the {num - 1} iteration {prev_md5}")
+            llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text)
+            if num == 1:
+                # if the device is CPU, throw exception
+                if args['devices'].lower().startswith('cpu') is True:
+                    assert (result_md5_list == prev_md5)
+            else:
+                # throw exception
+                assert (result_md5_list == prev_md5)
+    else:
+        llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text)
+    whisper_hook.clear_statistics()
+
+
+def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters):
+    iter_data_list = []
+    input_audio_prompt_list = llm_bench_utils.model_utils.get_audio_param_from_prompt_file(args)
+    audios_prompt_list = []
+    if len(input_audio_prompt_list) > 0:
+        for audio_prompt in input_audio_prompt_list:
+            if args['prompt'] is None and args['prompt_file'] is None:
+                raise RuntimeError('==Failure image is empty ==')
+            elif args['prompt_file'] is not None:
+                audio_prompt['prompt'] = os.path.join(os.path.dirname(args['prompt_file']), audio_prompt['prompt'].replace('./', ''))
+            audio_prompt['prompt'] = Path(audio_prompt['prompt'])
+            audios_prompt_list.append(audio_prompt)
+    if args['prompt_index'] is None:
+        prompt_idx_list = [prompt_idx for prompt_idx, input_audio in enumerate(audios_prompt_list)]
+        audio_list = audios_prompt_list
+    else:
+        prompt_idx_list = []
+        audio_list = []
+        for i in args['prompt_index']:
+            if 0 <= i < len(audios_prompt_list):
+                audio_list.append(audios_prompt_list[i])
+                prompt_idx_list.append(i)
+    if len(audio_list) == 0:
+        raise RuntimeError('==Failure prompts is empty ==')
+    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_audio_prompt_list)}, prompt idx: {prompt_idx_list}')
+    ov_model, processor, pretrain_time= FW_UTILS[framework].create_speech_2txt_model(model_path, device, **args)
+    pipe = pipeline(
+        "automatic-speech-recognition",
+        model=ov_model,
+        chunk_length_s=30,
+        tokenizer=processor.tokenizer,
+        feature_extractor=processor.feature_extractor,
+    )
+    if framework == "ov":
+        whisper_hook.new_text_encoder(pipe)
+        whisper_hook.new_text_decoder(pipe)
+    md5_list = {num : {} for num in range(num_iters + 1)}
+    for num in range(num_iters + 1):
+        for idx, audio_prompt in enumerate(audio_list):
+            run_speech_2txt_generation(pipe, args, num, md5_list, prompt_idx_list[idx], audio_prompt, iter_data_list) 
+    return iter_data_list, pretrain_time
+
+
 def num_iters_type(x):
     x = int(x)
     if x < 0:
@@ -721,7 +830,8 @@ def get_argprser():
     parser.add_argument('-rj', '--report_json', help='report json')
     parser.add_argument('-f', '--framework', default='ov', help='framework')
     parser.add_argument('-p', '--prompt', default=None, help='one prompt')
-    parser.add_argument('-pf', '--prompt_file', default=None, help='prompt file in jsonl format')
+    parser.add_argument('-pf', '--prompt_file', nargs='+', default=None,
+                        help='Prompt file(s) in jsonl format. Multiple prompt files should be separated with space(s).')
     parser.add_argument('-pi', '--prompt_index', nargs='+', type=num_iters_type, default=None,
                         help='Run the specified prompt index. You can specify multiple prompt indexes, separated by spaces.')
     parser.add_argument(
@@ -806,7 +916,9 @@ def get_argprser():
     )
     parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
     llm_bench_utils.model_utils.add_stateful_model_arguments(parser)
-    parser.add_argument("--genai", action="store_true")
+    parser.add_argument("--genai", action="store_true", help="Use OpenVINO GenAI optimized pipelines for benchmarking")
+    parser.add_argument("--use_cb", action="store_true", help="Use Continuous Batching inference mode")
+    parser.add_argument("--cb_config", required=False, default=None, help="Path to file with Continuous Batching Scheduler settings")
     parser.add_argument(
         '--end_token_stopping',
         action='store_true',

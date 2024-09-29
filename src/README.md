@@ -136,13 +136,13 @@ int main(int argc, char* argv[]) {
 
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
-    
+
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
     config.num_beam_groups = 3;
     config.num_beams = 15;
     config.diversity_penalty = 1.0f;
-    
+
     pipe.start_chat();
     for (;;;) {
         std::cout << "question:\n";
@@ -166,9 +166,9 @@ Streaming example with lambda function:
 int main(int argc, char* argv[]) {
     std::string model_path = argv[1];
     ov::genai::LLMPipeline pipe(model_path, "CPU");
-        
-    auto streamer = [](std::string word) { 
-        std::cout << word << std::flush; 
+
+    auto streamer = [](std::string word) {
+        std::cout << word << std::flush;
         // Return flag corresponds whether generation should be stopped.
         // false means continue generation.
         return false;
@@ -189,9 +189,9 @@ class CustomStreamer: public ov::genai::StreamerBase {
 public:
     bool put(int64_t token) {
         // Custom decoding/tokens processing logic.
-        
+
         // Returns a flag whether generation should be stoped, if true generation stops.
-        return false;  
+        return false;
     };
 
     void end() {
@@ -219,7 +219,7 @@ class CustomStreamer(ov_genai.StreamerBase):
 
     def put(self, token_id) -> bool:
         # Custom decoding/tokens processing logic.
-        
+
         # Returns a flag whether generation should be stoped, if true generation stops.
         return False
 
@@ -241,14 +241,11 @@ To activate continuous batching please provide additional property to LLMPipelin
 #include "openvino/genai/llm_pipeline.hpp"
 
 int main(int argc, char* argv[]) {
-    ov::AnyMap config;
     ov::genai::SchedulerConfig scheduler_config;
-    {
-    //fill scheduler_config with custom data if required
-    }
-    config[ov::genai::scheduler_config.name()] = scheduler_config;
+    // fill other fields in scheduler_config with custom data if required
+    scheduler_config.cache_size = 1;    // minimal possible KV cache size in GB, adjust as required
 
-    ov::genai::LLMPipeline pipe(model_path, "CPU", config);
+    ov::genai::LLMPipeline pipe(model_path, "CPU", ov::genai::scheduler_config(scheduler_config));
 }
 ```
 
@@ -290,7 +287,7 @@ int main(int argc, char* argv[]) {
     ov::genai::LLMPipeline pipe(model_path, "CPU");
     auto result = pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(20));
     auto perf_metrics = result.perf_metrics;
-    
+
     std::cout << std::fixed << std::setprecision(2);
     std::cout << "Generate duration: " << perf_metrics.get_generate_duration().mean << " ms" << std::endl;
     std::cout << "TTFT: " << metrics.get_ttft().mean  << " ms" << std::endl;
@@ -319,7 +316,7 @@ int main(int argc, char* argv[]) {
     auto result_1 = pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(20));
     auto result_2 = pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(20));
     auto perf_metrics = result_1.perf_metrics + result_2.perf_metrics
-    
+
     std::cout << std::fixed << std::setprecision(2);
     std::cout << "Generate duration: " << perf_metrics.get_generate_duration().mean << " ms" << std::endl;
     std::cout << "TTFT: " << metrics.get_ttft().mean  << " ms" << std::endl;
