@@ -185,7 +185,7 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
 
 /**
  * Split config by core and compile configs
- * There are unsupported by `core.compile` function plugin options like `ENABLE_MMAP`
+ * There are not supported by `core.compile` function plugin options like `ENABLE_MMAP`
  * Move this options to `core.set_property` config
  */
 std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& plugin_config) {
