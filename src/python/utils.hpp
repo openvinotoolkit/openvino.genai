@@ -36,4 +36,6 @@ std::string ov_tokenizers_module_path();
 
 ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs);
 
+ov::genai::StreamerVariant pystreamer_to_streamer(const utils::PyBindStreamerVariant& py_streamer);
+
 }  // namespace ov::genai::pybind::utils
