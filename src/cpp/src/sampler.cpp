@@ -651,7 +651,8 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                                         const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
                                         const auto forked_seq_id = forked_sequence->get_id();
                                         forked_seq_ids.push_back(forked_seq_id);
-                                        register_new_token(sampled_token_ids[i], forked_seq_id, true);
+                                        running_sequences = sequence_group->get_running_sequences();
+                                        register_new_token(sampled_token_ids[i], forked_sequence->get_grouped_id(), true);
                                     }
                                     sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
                                 }
