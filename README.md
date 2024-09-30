@@ -84,6 +84,10 @@ int main(int argc, char* argv[]) {
 ```
 </details>
 
+### Sample notebooks using this API
+
+(TBD)
+
 ## Performing image generation (TBD)
 
 <details>
@@ -99,7 +103,7 @@ optimum-cli export openvino --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --weigh
 optimum-cli export openvino --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --weight-format int4 --trust-remote-code "TinyLlama-1.1B-Chat-v1.0"
 ```
 
-### Run generation using LLMPipeline API in Python
+### Run generation using Text2Image API in Python
 
 ```python
 import openvino_genai as ov_genai
@@ -108,7 +112,7 @@ pipe = ov_genai.LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU")
 print(pipe.generate("The Sun is yellow because", max_new_tokens=100))
 ```
 
-### Run generation using LLM Pipeline in C++
+### Run generation using Text2Image API in C++
 
 Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details)
 
@@ -122,7 +126,16 @@ int main(int argc, char* argv[]) {
    std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(100));
 }
 ```
+### Sample notebooks using this API
+
+(TBD)
+
 </details>
+
+## Additional materials
+
+- [OpenVINO LLM inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
+- [Optimum-intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
 
 ## License
 
