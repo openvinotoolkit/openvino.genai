@@ -14,7 +14,12 @@ OpenVINO™ GenAI library provides very lightweight C++ and Python APIs to run f
  - Speech recognition using Whisper family models
  - Text generation using Large Visual Models, for instance Image analysis using LLaVa models family
 
-All scenarios could be run on top of OpenVINO Runtime that supports inference on CPU, GPU and NPU. See [here](https://github.com/openvinotoolkit/openvino) for platform support matrix.
+Library efficiently supports LoRA adapters for Text and Image generation scenarios:
+- Load multiple adapters per model
+- Select active adapters for every generation
+- Mix multiple adapters with coefficients via alpha blending
+
+All scenarios are run on top of OpenVINO Runtime that supports inference on CPU, GPU and NPU. See [here](https://github.com/openvinotoolkit/openvino) for platform support matrix.
 
 ## Supported Generative AI optimization methods
 
