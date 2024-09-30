@@ -14,8 +14,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& plugin_config) {
+    const ov::AnyMap& plugin_config,
+    bool is_validation_mode_enabled) {
     m_tokenizer = tokenizer;
+    m_is_validation_mode_enabled = is_validation_mode_enabled;
     ov::Core core;
 
     // The model can be compiled for GPU as well
