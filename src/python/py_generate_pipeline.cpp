@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
+#include <pybind11/iostream.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
@@ -10,7 +11,6 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include <openvino/runtime/auto/properties.hpp>
 #include "../cpp/src/tokenizers_path.hpp"
-#include <pybind11/iostream.h>
 
 #include "./utils.hpp"
 
@@ -434,7 +434,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
     m.doc() = "Pybind11 binding for LLM Pipeline";
 
     py::class_<LLMPipeline>(m, "LLMPipeline", "This class is used for generation with LLMs")
-        .def(py::init([&](
+        .def(py::init([](
             const std::string& model_path, 
             const std::string& device,
             const std::map<std::string, py::object>& config
@@ -442,8 +442,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             return std::make_unique<LLMPipeline>(model_path, device, utils::properties_to_any_map(config));
         }),
-        py::call_guard<py::scoped_ostream_redirect,
-                     py::scoped_estream_redirect>(),
+        py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>(),  // Respect std::cout flushes from constructor.
         py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
         py::arg("device") = "CPU", "device on which inference will be done",
         py::arg("config") = ov::AnyMap({}), "openvino.properties map",
@@ -463,8 +462,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             return std::make_unique<LLMPipeline>(model_path, tokenizer, device, utils::properties_to_any_map(config));
         }),
-        py::call_guard<py::scoped_ostream_redirect,
-                     py::scoped_estream_redirect>(),
+        py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>(),  // Respect std::cout flushes from constructor.
         py::arg("model_path"),
         py::arg("tokenizer"),
         py::arg("device") = "CPU",
