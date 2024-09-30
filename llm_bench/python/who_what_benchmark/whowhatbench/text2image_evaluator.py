@@ -4,6 +4,7 @@ from typing import Any, Union
 import pandas as pd
 from tqdm import tqdm
 from transformers import set_seed
+import torch
 
 from .registry import register_evaluator, BaseEvaluator
 
@@ -98,8 +99,8 @@ class Text2ImageEvaluator(BaseEvaluator):
         if hasattr(model, "reshape") and self.resolution is not None:
             model.reshape(batch_size=1, height=self.resolution[0], width=self.resolution[1], num_images_per_prompt=1)
 
-        def default_gen_image_fn(model, prompt, num_inference_steps):
-            output = model(prompt, num_inference_steps=num_inference_steps, output_type="pil", width=self.resolution[0], height=self.resolution[0])
+        def default_gen_image_fn(model, prompt, num_inference_steps, generator=None):
+            output = model(prompt, num_inference_steps=num_inference_steps, output_type="pil", width=self.resolution[0], height=self.resolution[0], generator=generator)
             return output.images[0]
 
         gen_image_fn = gen_image_fn or default_gen_image_fn
@@ -120,12 +121,14 @@ class Text2ImageEvaluator(BaseEvaluator):
         prompts = data["prompts"]
         prompts = prompts.values if self.num_samples is None else prompts.values[:self.num_samples]
         images = []
+        rng = torch.Generator(device="cpu")
+        
 
         if not os.path.exists(image_dir):
             os.makedirs(image_dir)
         for i, prompt in tqdm(enumerate(prompts), desc="Evaluate pipeline"):
             set_seed(self.seed)
-            image = gen_image_fn(model, prompt, self.num_inference_steps)
+            image = gen_image_fn(model, prompt, self.num_inference_steps, generator=rng.manual_seed(self.seed))
             image_path = os.path.join(image_dir, f"{i}.png")
             image.save(image_path)
             images.append(image_path)
