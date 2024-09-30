@@ -58,7 +58,7 @@ public:
           m_feature_extractor{(model_path / "preprocessor_config.json").string()} {
         ov::Core core;
         auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
-        core.set_property(device, core_plugin_config);
+        core.set_property(core_plugin_config);
 
         m_models.encoder = core.compile_model(model_path / "openvino_encoder_model.xml", device, compile_plugin_config)
                                .create_infer_request();
