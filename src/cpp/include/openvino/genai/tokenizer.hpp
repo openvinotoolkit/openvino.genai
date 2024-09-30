@@ -3,12 +3,13 @@
 
 #pragma once
 
-#include <filesystem>
 #include <string>
 #include <vector>
 #include <initializer_list>
-#include <openvino/runtime/tensor.hpp>
+
+#include "openvino/runtime/tensor.hpp"
 #include "openvino/genai/visibility.hpp"
+#include <openvino/runtime/properties.hpp>
 
 namespace ov {
 namespace genai {
@@ -33,19 +34,44 @@ public:
 
     /**
     * @brief encode a single prompt
+    * @param prompt std::string with input prompt
+    * @param tokenization_params AnyMap with tokenization parameters, e.g. {'add_special_tokens', false}
     * @return pair of [input_ids, attention_mask]
     */
-    TokenizedInputs encode(const std::string prompt);
+    TokenizedInputs encode(const std::string prompt, const ov::AnyMap& tokenization_params = {});
     
     /**
     * @brief encode batch of prompts. Left padding will be applied by default
     * @param prompts vector storing batch of prompts
+    * @param tokenization_params AnyMap with tokenization parameters, e.g. {'add_special_tokens', false}
     * @return pair of [input_ids, attention_mask]
     */
-    TokenizedInputs encode(std::vector<std::string>& prompts);
-    TokenizedInputs encode(std::vector<std::string>&& prompts);
-    TokenizedInputs encode(std::initializer_list<std::string>& prompts);
-    
+    TokenizedInputs encode(std::vector<std::string>& prompt, const ov::AnyMap& tokenization_params = {});
+    TokenizedInputs encode(std::vector<std::string>&& prompts, const ov::AnyMap& tokenization_params = {});
+    TokenizedInputs encode(std::initializer_list<std::string>& prompts, const ov::AnyMap& tokenization_params = {});
+
+    /**
+    * @brief encode a single prompt
+    * @param prompt std::string with input prompt
+    * @param properties tokenization properties, e.g. ov::genai::add_special_tokens(false)
+    * @return pair of [input_ids, attention_mask]
+    */    
+    template <typename... Properties>
+    util::EnableIfAllStringAny<TokenizedInputs, Properties...> encode(std::string& prompt, Properties&&... properties) {
+        return encode(prompt, AnyMap{std::forward<Properties>(properties)...});
+    }
+
+    /**
+    * @brief encode batch of prompts. Left padding will be applied by default
+    * @param prompts vector storing batch of prompts
+    * @param properties tokenization properties, e.g. ov::genai::add_special_tokens(false)
+    * @return pair of [input_ids, attention_mask]
+    */
+    template <typename... Properties>
+    util::EnableIfAllStringAny<TokenizedInputs, Properties...> encode(std::vector<std::string>& prompts, Properties&&... properties) {
+        return encode(prompts, AnyMap{std::forward<Properties>(properties)...});
+    }
+
     /**
     * @brief decode sequence of tokens
     * @param tokens vector storing tokens
@@ -103,5 +129,8 @@ private:
     class TokenizerImpl;
     std::shared_ptr<TokenizerImpl> m_pimpl;
 };
+
+static constexpr ov::Property<bool> add_special_tokens{"add_special_tokens"};
+
 }  // namespace genai
 }  // namespace ov

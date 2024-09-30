@@ -57,6 +57,30 @@ def get_models_list():
     return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
 
 
+def get_whisper_models_list(tiny_only=False):
+    precommit_models = [
+        "openai/whisper-tiny",
+        "openai/whisper-small.en",
+        "openai/whisper-base",
+        "openai/whisper-base.en",
+    ]
+    if tiny_only:
+        precommit_models = ["openai/whisper-tiny"]
+
+    nightly_models = []
+
+    if pytest.run_marker == "precommit":
+        model_ids = precommit_models
+    else:
+        model_ids = nightly_models
+
+    if pytest.selected_model_ids:
+        model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
+    # pytest.set_trace()
+    prefix = pathlib.Path(os.getenv('GENAI_MODELS_PATH_PREFIX', ''))
+    return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
+
+
 def get_chat_models_list():
     precommit_models = [
         "Qwen/Qwen2-0.5B-Instruct",
