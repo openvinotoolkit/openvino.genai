@@ -16,6 +16,7 @@
 #include "llm_pipeline_static.hpp"
 #include "utils.hpp"
 #include "text_callback_streamer.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 
 namespace {
 
@@ -57,9 +58,9 @@ ov::genai::EncodedResults multinominal_decoding(
 );
 
 std::pair<EncodedResults, int32_t> beam_search(
-    ov::InferRequest& lm, 
-    ov::Tensor prompts, 
-    ov::Tensor attention_mask, 
+    ov::InferRequest& lm,
+    ov::Tensor prompts,
+    ov::Tensor attention_mask,
     GenerationConfig config,
     std::optional<ov::Tensor> position_ids,
     std::optional<int32_t> selected_beam_idx
@@ -68,7 +69,7 @@ std::pair<EncodedResults, int32_t> beam_search(
 class StatefulLLMPipeline final : public LLMPipelineImplBase {
 public:
     ov::InferRequest m_model_runner;
-    
+
     bool is_chat_conversation = false;
     bool m_is_cache_empty = true;
     std::optional<int32_t> m_selected_beam = std::nullopt;
@@ -90,12 +91,24 @@ public:
         const ov::genai::Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): 
+    ):
         LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(model_path))
     {
         ov::Core core;
-        core.set_property(device, plugin_config);
-        m_model_runner = core.compile_model(model_path / "openvino_model.xml", device).create_infer_request();
+        auto adapters_iter = plugin_config.find(ov::genai::adapters.name());
+        if (adapters_iter != plugin_config.end()) {
+            m_generation_config.adapters = adapters_iter->second.as<AdapterConfig>();
+            auto filtered_plugin_config = plugin_config;
+            filtered_plugin_config.erase(ov::genai::adapters.name());
+            core.set_property(device, filtered_plugin_config);
+            auto model = core.read_model(model_path / "openvino_model.xml");
+            m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable
+            m_model_runner = core.compile_model(model, device).create_infer_request();
+            m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
+        } else {
+            core.set_property(device, plugin_config);
+            m_model_runner = core.compile_model(model_path / "openvino_model.xml", device).create_infer_request();
+        }
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1)
@@ -103,11 +116,11 @@ public:
     }
 
     StatefulLLMPipeline(
-        const std::filesystem::path& model_path, 
-        const std::string& device, 
+        const std::filesystem::path& model_path,
+        const std::string& device,
         const ov::AnyMap& plugin_config
     ): StatefulLLMPipeline{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
-    
+
     DecodedResults generate(
         StringInputs inputs,
         OptionalGenerationConfig generation_config,
@@ -122,7 +135,7 @@ public:
             encoded_input = m_tokenizer.encode(*input_vector);
         } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
             std::string& prompt = *input_prompt;
-            
+
             if (is_chat_conversation) {
                 // KV cache in model already contains prompts and answers from previous iterations.
                 // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
@@ -136,14 +149,16 @@ public:
                 m_history.push_back({{"role", "user"}, {"content", prompt}});
                 constexpr bool add_generation_prompt = true;
                 auto new_templated_chat_history  = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history);
+                bool add_special_tokens_ = false;  // Do not add special tokens is chat scenario.
+                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens_));
                 if (m_is_cache_empty) {
                     encoded_input = new_chat_tokens;
                 } else {
-                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history);
+                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens_));
                     encoded_input = subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
                 }
                 m_templated_chat_history = new_templated_chat_history;
+                // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
             } else {
                 encoded_input = m_tokenizer.encode(prompt);
             }
@@ -154,7 +169,7 @@ public:
         auto decode_start_time =  std::chrono::steady_clock::now();
         DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
         auto decode_stop_time =  std::chrono::steady_clock::now();
-        
+
         if (is_chat_conversation) {
             // Tail of chat template is missing in KV cache.
             // Find the tail to concatenate it with the next input prompt.
@@ -162,7 +177,7 @@ public:
             m_templated_chat_history.append(answer);
             m_history.push_back({{"role", "assistant"}, {"content", answer}});
         }
-        
+
         // generate_durations
         decoded_results.perf_metrics = encoded_results.perf_metrics;
 
@@ -172,7 +187,7 @@ public:
         raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
         raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
         raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
-        
+
         // Added tokenization/detokenization times, and updated generate duration, need to reevaluate statistics.
         decoded_results.perf_metrics.m_evaluated = false;
         decoded_results.perf_metrics.evaluate_statistics(start_time);
@@ -223,7 +238,7 @@ public:
                         "(input_ids, attention_mask, position_ids, beam_idx) "
                         "but you have '" + std::to_string(num_inputs) + "' inputs");
 
-        
+
         size_t kv_cache_len = 0;
         ov::Tensor concatenated_attention_mask;
         if (is_chat_conversation && !m_is_cache_empty) {
@@ -252,16 +267,20 @@ public:
             utils::initialize_position_ids(*position_ids, attention_mask, kv_cache_len);
         }
 
+        if(m_adapter_controller) {
+            m_adapter_controller->apply(m_model_runner, config.adapters);
+        }
+
         ov::genai::EncodedResults result;
         if (config.is_greedy_decoding()) {
-            result = ov::genai::greedy_decoding(m_model_runner, input_ids, concatenated_attention_mask, 
+            result = ov::genai::greedy_decoding(m_model_runner, input_ids, concatenated_attention_mask,
                                                 config, streamer_ptr, position_ids);
             m_selected_beam = 0;
         } else if (config.is_beam_search()) {
-            std::tie(result, m_selected_beam) = beam_search(m_model_runner, input_ids, concatenated_attention_mask, 
+            std::tie(result, m_selected_beam) = beam_search(m_model_runner, input_ids, concatenated_attention_mask,
                                                             config, position_ids, m_selected_beam);
         } else if (config.is_multinomial()) {
-            result = multinominal_decoding(m_model_runner, input_ids, concatenated_attention_mask, 
+            result = multinominal_decoding(m_model_runner, input_ids, concatenated_attention_mask,
                                            config, streamer_ptr, position_ids);
             m_selected_beam = 0;
         } else {
@@ -269,7 +288,11 @@ public:
         }
 
         if (!is_chat_conversation) {
+            // FIXME: Reset only KV cache part of state, there is also can be LoRA applied in the states and full reset will need to reapply LoRA even if the LoRA config is not changed
             m_model_runner.reset_state();
+            if(m_adapter_controller) {
+                m_adapter_controller->force_full_apply(); // FIXME: Reset only KV cache part to avoid this call
+            }
             m_selected_beam = std::nullopt;
         } else {
             m_is_cache_empty = false;
@@ -520,7 +543,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
     m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
     auto stop_time = std::chrono::steady_clock::now();
-    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();   
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
@@ -554,7 +577,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<StatefulLLMPipeline>(model_path, tokenizer, device, plugin_config);
     }
     auto stop_time = std::chrono::steady_clock::now();
-    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();    
+    m_pimpl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
 ov::genai::LLMPipeline::LLMPipeline(

@@ -27,8 +27,11 @@ using ov::genai::LLMPipeline;
 using ov::genai::MeanStdPair;
 using ov::genai::OptionalGenerationConfig;
 using ov::genai::PerfMetrics;
+using ov::genai::PipelineMetrics;
 using ov::genai::RawPerfMetrics;
 using ov::genai::SchedulerConfig;
+using ov::genai::CacheEvictionConfig;
+using ov::genai::AggregationMode;
 using ov::genai::StopCriteria;
 using ov::genai::StreamerBase;
 using ov::genai::StreamerVariant;
@@ -224,7 +227,7 @@ auto raw_perf_metrics_docstring = R"(
 
 auto perf_metrics_docstring = R"(
     Holds performance metrics for each generate call.
-    
+
     PerfMetrics holds fields with mean and standard deviations for the following metrics:
     - Time To the First Token (TTFT), ms
     - Time per Output Token (TPOT), ms/token
@@ -270,6 +273,42 @@ auto perf_metrics_docstring = R"(
 
     :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
     :type raw_metrics: RawPerfMetrics
+)";
+
+auto pipeline_metrics_docstring = R"(
+    Contains general pipeline metrics, either aggregated throughout the lifetime of the generation pipeline
+    or measured at the previous generation step.
+
+    :param requests: Number of requests to be processed by the pipeline.
+    :type requests: int
+
+    :param scheduled_requests:  Number of requests that were scheduled for processing at the previous step of the pipeline.
+    :type scheduled_requests: int
+
+    :param cache_usage: Percentage of KV cache usage in the last generation step.
+    :type cache_usage: float
+
+    :param max_cache_usage: Max KV cache usage during the lifetime of the pipeline in %
+    :type max_cache_usage: float
+
+
+    :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
+    :type avg_cache_usage: float
+)";
+
+auto cache_eviction_config_docstring = R"(
+    Configuration struct for the cache eviction algorithm.
+    :param start_size: Number of tokens in the *beginning* of KV cache that should be retained in the KV cache for this sequence during generation. Must be non-zero and a multiple of the KV cache block size for this pipeline.
+    :type start_size: int
+
+    :param recent_size: Number of tokens in the *end* of KV cache that should be retained in the KV cache for this sequence during generation. Must be non-zero and a multiple of the KV cache block size for this pipeline.
+    :type recent_size: int
+
+    :param max_cache_size: Maximum number of tokens that should be kept in the KV cache. The evictable block area will be located between the "start" and "recent" blocks and its size will be calculated as (`max_cache_size` - `start_size` - `recent_size`). Must be non-zero, larger than (`start_size` + `recent_size`), and a multiple of the KV cache block size for this pipeline. Note that since only the completely filled blocks are evicted, the actual maximum per-sequence KV cache size in tokens may be up to (`max_cache_size` + `SchedulerConfig.block_size - 1`).
+    :type max_cache_size: int
+
+    :param aggregation_mode: The mode used to compute the importance of tokens for eviction
+    :type aggregation_mode: openvino_genai.AggregationMode
 )";
 
 OptionalGenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& config, const py::kwargs& kwargs) {
@@ -523,12 +562,21 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             return std::make_unique<ov::genai::Tokenizer>(tokenizer_path, utils::properties_to_any_map(plugin_config));
         }), py::arg("tokenizer_path"), py::arg("plugin_config") = ov::AnyMap({}))
         
-        .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts) { return tok.encode(prompts); },
+        .def("encode", [](Tokenizer& tok, std::vector<std::string>& prompts, bool add_special_tokens) {
+                ov::AnyMap tokenization_params;
+                tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
+                return tok.encode(prompts, tokenization_params);
+            },
             py::arg("prompts"),
+            py::arg("add_special_tokens") = true,
             R"(Encodes a list of prompts into tokenized inputs.)")
-
-        .def("encode", py::overload_cast<const std::string>(&Tokenizer::encode),
-            py::arg("prompt"),
+        
+        .def("encode", [](Tokenizer& tok, const std::string prompt, bool add_special_tokens) {
+                ov::AnyMap tokenization_params;
+                tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
+                return tok.encode(prompt, tokenization_params);
+            },
+            py::arg("prompt"), py::arg("add_special_tokens") = true,
             R"(Encodes a single prompt into tokenized input.)")
         
         .def(
@@ -646,11 +694,11 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) { 
             return get_ms(rw, &RawPerfMetrics::detokenization_durations); 
         })
-        .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) { 
-            return get_ms(rw, &RawPerfMetrics::m_times_to_first_token); 
+        .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) {
+            return get_ms(rw, &RawPerfMetrics::m_times_to_first_token);
         })
-        .def_property_readonly("m_durations", [](const RawPerfMetrics &rw) { 
-            return get_ms(rw, &RawPerfMetrics::m_durations); 
+        .def_property_readonly("m_durations", [](const RawPerfMetrics &rw) {
+            return get_ms(rw, &RawPerfMetrics::m_durations);
         })
         .def_readonly("m_batch_sizes", &RawPerfMetrics::m_batch_sizes);
 
@@ -676,6 +724,14 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def("__add__", &PerfMetrics::operator+)
         .def("__iadd__", &PerfMetrics::operator+=)
         .def_readonly("raw_metrics", &PerfMetrics::raw_metrics);
+
+    py::class_<PipelineMetrics>(m, "PipelineMetrics", pipeline_metrics_docstring)
+            .def(py::init<>())
+            .def_readonly("requests", &PipelineMetrics::requests)
+            .def_readonly("scheduled_requests", &PipelineMetrics::scheduled_requests)
+            .def_readonly("cache_usage", &PipelineMetrics::cache_usage)
+            .def_readonly("avg_cache_usage", &PipelineMetrics::avg_cache_usage)
+            .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
 
     py::class_<TokenizedInputs>(m, "TokenizedInputs")
         .def(py::init<ov::Tensor, ov::Tensor>())
@@ -735,7 +791,24 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("block_size", &SchedulerConfig::block_size)
         .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
         .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
-        .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching);
+        .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching)
+        .def_readwrite("use_cache_eviction", &SchedulerConfig::use_cache_eviction)
+        .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config);
+
+    py::class_<CacheEvictionConfig>(m, "CacheEvictionConfig", cache_eviction_config_docstring)
+            .def(py::init<>([](const size_t start_size, size_t recent_size, size_t max_cache_size, AggregationMode aggregation_mode) {
+                return CacheEvictionConfig{start_size, recent_size, max_cache_size, aggregation_mode}; }),
+                 py::arg("start_size"), py::arg("recent_size"), py::arg("max_cache_size"), py::arg("aggregation_mode"))
+            .def_readwrite("aggregation_mode", &CacheEvictionConfig::aggregation_mode);
+
+    // Binding for StopCriteria
+    py::enum_<AggregationMode>(m, "AggregationMode",
+                            R"(Represents the mode of per-token score aggregation when determining least important tokens for eviction from cache
+                               :param AggregationMode.SUM: In this mode the importance scores of each token will be summed after each step of generation
+                               :param AggregationMode.NORM_SUM: Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated) of a given token in cache)")
+            .value("SUM", AggregationMode::SUM)
+            .value("NORM_SUM", AggregationMode::NORM_SUM)
+            .export_values();
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
         .def(py::init([](const std::string& model_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config, const std::map<std::string, py::object>& tokenizer_plugin_config) {
@@ -748,6 +821,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         }), py::arg("model_path"), py::arg("tokenizer"), py::arg("scheduler_config"), py::arg("device") = "CPU", py::arg("plugin_config") = ov::AnyMap({}))
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
+        .def("get_metrics", &ContinuousBatchingPipeline::get_metrics)
         .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request))
         .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request))
         .def("step", &ContinuousBatchingPipeline::step)

@@ -57,13 +57,15 @@ def get_models_list():
     return [(model_id, prefix / model_id.split('/')[1]) for model_id in model_ids]
 
 
-def get_whisper_models_list():
+def get_whisper_models_list(tiny_only=False):
     precommit_models = [
-        "openai/whisper-tiny.en",
-        "openai/whisper-small",
+        "openai/whisper-tiny",
+        "openai/whisper-small.en",
         "openai/whisper-base",
         "openai/whisper-base.en",
     ]
+    if tiny_only:
+        precommit_models = ["openai/whisper-tiny"]
 
     nightly_models = []
 
