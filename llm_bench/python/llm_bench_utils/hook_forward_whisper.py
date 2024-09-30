@@ -27,7 +27,7 @@ class WhisperHook:
             time_infer_list.insert(0, self.time_data[0]['enc_infer_time'])
         return time_infer_list
     
-    def get_whisper_latency(self, iter):
+    def get_whisper_latency(self, iter, prompt_idx):
         str = ''
         for idx, data in enumerate(self.time_data):
             enc_infer_time = data['enc_infer_time'] * 1000
@@ -35,7 +35,7 @@ class WhisperHook:
             dec_infer_count = len(data['dec_infer_time'])
             dec_token_time = sum(data['dec_token_time']) / dec_token_count * 1000 if dec_token_count > 1 else 0
             dec_infer_time = sum(data['dec_infer_time']) / dec_infer_count * 1000 if dec_infer_count > 1 else 0
-            str += f"[{iter}][{idx}] encoder token latency: {enc_infer_time:.2f} ms/token, " \
+            str += f"[{iter}][P{prompt_idx}][L{idx}] encoder token latency: {enc_infer_time:.2f} ms/token, " \
                 f"decoder tokens latency: {dec_token_time:.2f} ms/token, " \
                 f"decoder infers latency: {dec_infer_time:.2f} ms/infer, " \
                 f"decoder tokens count: {dec_token_count}, " \

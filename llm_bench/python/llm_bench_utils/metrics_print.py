@@ -6,7 +6,7 @@ import logging as log
 
 def print_metrics(
         iter_num, iter_data, tms=None, tms_infer=None, warm_up=False, max_rss_mem=-1, max_shared_mem=-1,
-        max_uss_mem=-1, stable_diffusion=None, tokenization_time=None, batch_size=1, whisper = None
+        max_uss_mem=-1, stable_diffusion=None, tokenization_time=None, batch_size=1, whisper = None, prompt_idx=-1
 ):
     iter_str = str(iter_num)
     if warm_up:
@@ -57,7 +57,7 @@ def print_metrics(
     if stable_diffusion is not None:
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion)
     if whisper is not None:
-        print_whisper_infer_latency(iter_str, whisper)
+        print_whisper_infer_latency(iter_str, whisper, prompt_idx)
     output_str = ''
     if max_rss_mem != '' and max_rss_mem > -1:
         output_str += 'Max rss memory cost: {:.2f}MBytes, '.format(max_rss_mem)
@@ -102,8 +102,8 @@ def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion):
              f"vae decoder step count: {stable_diffusion.get_vae_decoder_step_count()}",)
 
 
-def print_whisper_infer_latency(iter_str, whisper):
-    print(f'{whisper.get_whisper_latency(iter_str)}')
+def print_whisper_infer_latency(iter_str, whisper, prompt_idx):
+    print(f'{whisper.get_whisper_latency(iter_str, prompt_idx)}')
 
 
 def print_ldm_unet_vqvae_infer_latency(iter_num, iter_data, tms=None, warm_up=False):

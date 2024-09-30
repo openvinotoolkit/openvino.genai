@@ -752,7 +752,8 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_promp
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
-        whisper=whisper_hook
+        whisper=whisper_hook,
+        prompt_idx=prompt_id
     )
     if num > 0:
         prev_md5 = md5_list[num - 1][prompt_id]
