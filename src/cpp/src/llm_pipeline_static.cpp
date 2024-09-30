@@ -59,9 +59,6 @@ void enable_npuw_dq_if_allowed(ov::AnyMap& config,
                                const std::shared_ptr<ov::Model>& model) {
     if (allow_to_enable_npuw_dq(model)) {
         config["NPUW_DQ"] = "YES";
-        // NB: Disable NPUW_DCOFF_TYPE / NPUW_DCOFF_SCALE options for NPUW_DQ case
-        pop_option(config, "NPUW_DCOFF_TYPE");
-        pop_option(config, "NPUW_DCOFF_SCALE");
     }
 }
 
