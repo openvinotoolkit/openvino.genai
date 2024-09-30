@@ -16,9 +16,7 @@
 namespace {
 
 void suppress_tokens(ov::Tensor& logits, const size_t batch_idx, const std::vector<int64_t>& suppress_tokens) {
-    if (logits.get_shape()[0] <= batch_idx) {
-        OPENVINO_THROW("logits batch size doesn't match the number of beams");
-    }
+    OPENVINO_ASSERT(logits.get_shape()[0] >= batch_idx, "logits batch size doesn't match the number of beams");
 
     size_t vocab_size = logits.get_shape().back();
     size_t batch_offset = batch_idx * logits.get_shape()[1] * vocab_size;
@@ -85,7 +83,8 @@ void set_past_key_value(ov::InferRequest& source, ov::InferRequest& dest) {
 int64_t decode(ov::Tensor& encoder_hidden_state,
                ov::InferRequest& decoder,
                std::vector<int64_t>& input_ids,
-               const ov::genai::WhisperGenerationConfig& config) {
+               const ov::genai::WhisperGenerationConfig& config,
+               bool do_suppress_tokens = true) {
     decoder.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
 
     ov::Tensor input_ids_tensor(ov::element::i64, {1, input_ids.size()}, input_ids.data());
@@ -95,8 +94,10 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
 
     auto output_tensor = decoder.get_tensor("logits");
 
-    suppress_tokens(output_tensor, 0, config.begin_suppress_tokens);
-    suppress_tokens(output_tensor, 0, config.suppress_tokens);
+    if (do_suppress_tokens) {
+        suppress_tokens(output_tensor, 0, config.begin_suppress_tokens);
+        suppress_tokens(output_tensor, 0, config.suppress_tokens);
+    }
 
     int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
 
@@ -129,14 +130,41 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
     return output_token;
 }
 
-std::vector<int64_t> prepare_input_ids(const ov::genai::WhisperGenerationConfig& config) {
-    if (config.is_multilingual) {
-        return std::vector<int64_t>{config.decoder_start_token_id,
-                                    config.language_token_id,
-                                    config.transcribe_token_id,
-                                    config.no_timestamps_token_id};
+int64_t detect_language(ov::Tensor& encoder_hidden_state,
+                        ov::InferRequest decoder,
+                        const ov::genai::WhisperGenerationConfig& config) {
+    std::vector<int64_t> input_ids{config.decoder_start_token_id};
+    int64_t output_token = decode(encoder_hidden_state, decoder, input_ids, config, false);
+
+    return output_token;
+}
+
+std::vector<int64_t> prepare_input_ids(ov::Tensor& encoder_hidden_state,
+                                       ov::InferRequest decoder,
+                                       const ov::genai::WhisperGenerationConfig& config) {
+    if (!config.is_multilingual) {
+        return std::vector<int64_t>{config.decoder_start_token_id, config.no_timestamps_token_id};
     }
-    return std::vector<int64_t>{config.decoder_start_token_id, config.no_timestamps_token_id};
+
+    int64_t language_token_id;
+    if (config.language.has_value()) {
+        std::string language = *config.language;
+        if (config.lang_to_id.count(language)) {
+            language_token_id = config.lang_to_id.at(language);
+        }
+    } else {
+        language_token_id = detect_language(encoder_hidden_state, decoder, config);
+    }
+
+    int64_t task_token_id = config.transcribe_token_id;
+    if (config.task.has_value() && *config.task == "translate") {
+        task_token_id = config.translate_token_id;
+    }
+
+    return std::vector<int64_t>{config.decoder_start_token_id,
+                                language_token_id,
+                                task_token_id,
+                                config.no_timestamps_token_id};
 }
 
 std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_state,
@@ -144,7 +172,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
                                                   ov::genai::WhisperInitializedModels& models,
                                                   const size_t max_new_tokens,
                                                   const std::shared_ptr<ov::genai::StreamerBase> streamer) {
-    std::vector<int64_t> input_ids = prepare_input_ids(config);
+    std::vector<int64_t> input_ids = prepare_input_ids(encoder_hidden_state, models.decoder, config);
 
     int64_t output_token = decode(encoder_hidden_state, models.decoder, input_ids, config);
 

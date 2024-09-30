@@ -136,6 +136,7 @@ def analyze_args(args):
     model_args['subsequent'] = args.subsequent
     model_args['output_dir'] = args.output_dir
     model_args['genai'] = args.genai
+    model_args["use_cb"] = args.use_cb
     model_args['devices'] = args.device
     model_args['prompt_index'] = [] if args.prompt_index is not None else None
     if model_args['prompt_index'] is not None:
@@ -164,6 +165,13 @@ def analyze_args(args):
         log.info(f"PT Config={model_args['config']}")
     model_args['model_type'] = get_model_type(model_name, use_case, model_framework)
     model_args['model_name'] = model_name
+
+    if args.use_cb and not args.genai:
+        raise RuntimeError("Continious batching mode supported only via OpenVINO GenAI")
+    cb_config = None
+    if args.cb_config:
+        cb_config = get_config(args.cb_config)
+    model_args["cb_config"] = cb_config
     return model_path, model_framework, model_args, model_name
 
 
