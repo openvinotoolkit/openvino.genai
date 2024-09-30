@@ -24,12 +24,12 @@ All scenarios are run on top of OpenVINO Runtime that supports inference on CPU,
 ## Supported Generative AI optimization methods
 
 OpenVINO™ GenAI library provides transparent way to use state of the art generation optimizations:
-- Prefix caching that caches fragments of previous generation requests and corresponding KVCache entries internally and uses them in case of repeated query. See [here](https://google.com) for more detailed overview
 - Speculative decoding that employs two models of different size and uses large model to periodically correct results of small model. See [here](https://google.com) for more detailed overview
 - Lookahead decoding that attempts to guess multiple tokens based on historical context and corrects this guess using LLMs. See [here](https://google.com) for more detailed overview
 - KVCache token eviction algorithm that reduces size of the KVCache by pruning less impacting tokens. See [here](https://google.com) for more detailed overview
 
-Additionally, OpenVINO™ GenAI library implements continuous batching approach that allows processing multiple generation requests simultaneously and efficiently use compute resources. 
+Additionally, OpenVINO™ GenAI library implements continuous batching approach to use OpenVINO within LLM serving. Continuous batching library supports following features:
+- Prefix caching that caches fragments of previous generation requests and corresponding KVCache entries internally and uses them in case of repeated query. See [here](https://google.com) for more detailed overview
 
 ## Installing OpenVINO GenAI
 
