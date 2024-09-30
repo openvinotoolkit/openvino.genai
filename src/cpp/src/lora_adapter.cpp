@@ -1206,7 +1206,12 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
 
 // Call it every time when adapter config is changed; if adapter was configured as a static one, this call is not required
 void AdapterController::apply(ov::InferRequest& request, const std::optional<AdapterConfig>& config) {
-    return m_pimpl->apply(request, config);
+    OPENVINO_ASSERT(m_pimpl || !config || !*config,
+        "Adapters are passed to AdapterController but it was not configured to use adapters. "
+        "Enable using adapters by pass them in the constructor first.");
+    if (m_pimpl) {
+        m_pimpl->apply(request, config);
+    }
 }
 
 

@@ -13,6 +13,7 @@
 
 #include "openvino/genai/visibility.hpp"
 
+#include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/text2image/clip_text_model.hpp"
 #include "openvino/genai/text2image/unet2d_condition_model.hpp"
 #include "openvino/genai/text2image/autoencoder_kl.hpp"
@@ -80,6 +81,8 @@ public:
         int64_t height = -1;
         int64_t width = -1;
         size_t num_inference_steps = 50;
+
+        AdapterConfig adapters;
 
         void update_generation_config(const ov::AnyMap& config_map);
 

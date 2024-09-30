@@ -14,6 +14,7 @@
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/properties.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 
 namespace ov {
 namespace genai {
@@ -61,10 +62,13 @@ public:
 
     void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states);
 
+    void set_adapters(const AdapterConfig& adapters);
+
     ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep);
 
 private:
     Config m_config;
+    AdapterController m_adapter_controller;
     std::shared_ptr<ov::Model> m_model;
     ov::InferRequest m_request;
     size_t m_vae_scale_factor;

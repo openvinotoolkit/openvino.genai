@@ -149,6 +149,9 @@ public:
             generation_config.width = unet_config.sample_size * vae_scale_factor;
         check_inputs(generation_config.height, generation_config.width);
 
+        m_clip_text_encoder->set_adapters(generation_config.adapters);
+        m_unet->set_adapters(generation_config.adapters);
+
         if (generation_config.random_generator == nullptr) {
             uint32_t seed = time(NULL);
             generation_config.random_generator = std::make_shared<CppStdGenerator>(seed);
