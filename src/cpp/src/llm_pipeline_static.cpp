@@ -59,6 +59,7 @@ void enable_npuw_dq_if_allowed(ov::AnyMap& config,
                                const std::shared_ptr<ov::Model>& model) {
     if (allow_to_enable_npuw_dq(model)) {
         config["NPUW_DQ"] = "YES";
+        config["NPUW_FUNCALL_FOR_ALL"] = "YES";
     }
 }
 
@@ -198,6 +199,7 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model) {
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
         { "NPUW_DCOFF_SCALE",  "YES" },
+        { "NPUW_WEIGHTS_BANK",  "shared" },
         { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
     };
     enable_npuw_dq_if_allowed(config, model);
@@ -213,6 +215,7 @@ ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model) 
         { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
         { "NPUW_PARALLEL_COMPILE", "YES" },
         { "NPUW_FUNCALL_ASYNC", "YES" },
+        { "NPUW_WEIGHTS_BANK",  "shared" },
         { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
     };
     enable_npuw_dq_if_allowed(config, model);
