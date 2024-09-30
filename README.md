@@ -41,7 +41,7 @@ Additionally, OpenVINO™ GenAI library implements continuous batching approach 
 ```
 
 ## Performing text generation 
-
+<details open>
 For more examples check out our [LLM Cheat Sheet](https://docs.openvino.ai)
 
 ### Converting and compressing text generation model from Hugging Face library
@@ -77,9 +77,11 @@ int main(int argc, char* argv[]) {
    std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(100));
 }
 ```
+</details>
 
 ## Performing image generation (TBD)
 
+<details>
 For more examples check out our [LLM Cheat Sheet](https://docs.openvino.ai)
 
 ### Converting and compressing text generation model from Hugging Face library
@@ -115,6 +117,7 @@ int main(int argc, char* argv[]) {
    std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(100));
 }
 ```
+</details>
 
 ## License
 
