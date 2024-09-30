@@ -2,7 +2,7 @@
 
 OpenVINO™ GenAI is a library of most popular Generative AI model pipelines, optimized execution methods and samples that runs on top of highly performant [OpenVINO Runtime](https://github.com/openvinotoolkit/openvino).
 
-Library requires no external dependencies to run generative models and includes all required functionality (e.g. tokenization via openvino-tokenizers).
+Library is friendly to PC and laptop execution, optimized for resource consumption and requires no external dependencies to run generative models and includes all required functionality (e.g. tokenization via openvino-tokenizers).
 
 (TBD plug small gif of generation)
 
