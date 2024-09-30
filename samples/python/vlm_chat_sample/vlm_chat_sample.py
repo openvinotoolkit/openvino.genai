@@ -10,10 +10,17 @@ from PIL import Image
 from openvino import Tensor
 
 
-def streamer(subword):
+def streamer(subword: str):
+    '''
+
+    Args:
+        subword: sub-word of the generated text.
+
+    Returns: Return flag corresponds whether generation should be stopped.
+
+    '''
     print(subword, end='', flush=True)
-    # Return flag corresponds whether generation should be stopped.
-    # False means continue generation.
+
     return False
 
 
