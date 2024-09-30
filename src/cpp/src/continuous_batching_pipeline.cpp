@@ -40,8 +40,6 @@ class ContinuousBatchingPipeline::Impl {
         float m_paged_attention_time_ms = 0.0f;
         float m_matmul_time_ms = 0.0f;
         float m_infer_total_ms = 0.0f;
-
-        ~PerfTime() {}
     } m_perf;
 
     // current requests to process

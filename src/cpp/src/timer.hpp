@@ -25,6 +25,4 @@ public:
         auto m_end = std::chrono::steady_clock::now();
         m_total += std::chrono::duration<double, std::milli>(m_end - m_start).count();
     }
-
-    ~ManualTimer() {}
 };
