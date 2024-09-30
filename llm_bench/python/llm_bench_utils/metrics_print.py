@@ -57,7 +57,7 @@ def print_metrics(
     if stable_diffusion is not None:
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion)
     if whisper is not None:
-        print_whisper_infer_latency(iter_str, iter_data, whisper)
+        print_whisper_infer_latency(iter_str, whisper)
     output_str = ''
     if max_rss_mem != '' and max_rss_mem > -1:
         output_str += 'Max rss memory cost: {:.2f}MBytes, '.format(max_rss_mem)
@@ -102,17 +102,8 @@ def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion):
              f"vae decoder step count: {stable_diffusion.get_vae_decoder_step_count()}",)
 
 
-def print_whisper_infer_latency(iter_str, iter_data, whisper):
-    iter_data['first_token_latency'] = whisper.get_1st_text_dec_latency()
-    iter_data['other_tokens_avg_latency'] = whisper.get_2nd_text_dec_latency()
-    iter_data['first_token_infer_latency'] = iter_data['first_token_latency']
-    iter_data['other_tokens_infer_avg_latency'] = iter_data['other_tokens_avg_latency']
-    log.info(f"[{iter_str}] First token of encoder latency: {whisper.get_1st_text_enc_latency():.2f} ms/token, "
-             f"other tokens of encoder latency: {whisper.get_2nd_text_enc_latency():.2f} ms/token, "
-             f"First token of decoder latency: {iter_data['first_token_latency']:.2f} ms/token, "
-             f"other tokens of decoder latency: {iter_data['other_tokens_avg_latency']:.2f} ms/token, "
-             f"text encoder infer count: {whisper.get_text_encoder_step_count()}, "
-             f"text decoder infer count: {whisper.get_text_decoder_step_count()}")
+def print_whisper_infer_latency(iter_str, whisper):
+    print(f'{whisper.get_whisper_latency(iter_str)}')
 
 
 def print_ldm_unet_vqvae_infer_latency(iter_num, iter_data, tms=None, warm_up=False):

@@ -738,9 +738,16 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_promp
         prompt_idx=prompt_id,
     )
     iter_data_list.append(iter_data)
+    tm_list = []
+    tm_infer_list = []
+    if whisper_hook is not None:
+        tm_list = whisper_hook.get_time_list()
+        tm_infer_list = whisper_hook.get_time_infer_list()
     llm_bench_utils.metrics_print.print_metrics(
         num,
         iter_data,
+        tm_list,
+        tm_infer_list,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
@@ -773,8 +780,8 @@ def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters):
         for audio_prompt in input_audio_prompt_list:
             if args['prompt'] is None and args['prompt_file'] is None:
                 raise RuntimeError('==Failure image is empty ==')
-            elif args['prompt_file'] is not None:
-                audio_prompt['prompt'] = os.path.join(os.path.dirname(args['prompt_file']), audio_prompt['prompt'].replace('./', ''))
+            elif args['prompt_file'] is not None and len(args['prompt_file']) > 0:
+                audio_prompt['prompt'] = os.path.join(os.path.dirname(args['prompt_file'][0]), audio_prompt['prompt'].replace('./', ''))
             audio_prompt['prompt'] = Path(audio_prompt['prompt'])
             audios_prompt_list.append(audio_prompt)
     if args['prompt_index'] is None:
@@ -800,7 +807,8 @@ def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters):
     )
     if framework == "ov":
         whisper_hook.new_text_encoder(pipe)
-        whisper_hook.new_text_decoder(pipe)
+        whisper_hook.new_generate(pipe)
+        whisper_hook.new_text_sample(pipe)
     md5_list = {num : {} for num in range(num_iters + 1)}
     for num in range(num_iters + 1):
         for idx, audio_prompt in enumerate(audio_list):
