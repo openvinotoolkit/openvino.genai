@@ -37,6 +37,24 @@ auto vlm_generate_docstring = R"(
     :rtype: DecodedResults
 )";
 
+auto vlm_generate_kwargs_docstring = R"(
+    Generates sequences for VLMs.
+
+    :param prompt: input prompt
+    :type prompt: str
+
+    :param kwargs: arbitrary keyword arguments with keys corresponding to generate params. 
+    
+    Expected parameters list: 
+    image: ov.Tensor - input image,
+    images: List[ov.Tensor] - input images,
+    generation_config: GenerationConfig,
+    streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
+
+    :return: return results in decoded form
+    :rtype: DecodedResults
+)";
+
 py::object call_vlm_generate(
     ov::genai::VLMPipeline& pipe, 
     const std::string& prompt,
@@ -46,25 +64,39 @@ py::object call_vlm_generate(
     const py::kwargs& kwargs
 ) {
     auto updated_config = *ov::genai::pybind::utils::update_config_from_kwargs(generation_config, kwargs);
-    ov::genai::StreamerVariant streamer = std::monostate();
-    
-    std::visit(utils::overloaded {
-    [&streamer](const std::function<bool(py::str)>& py_callback){
-        // Wrap python streamer with manual utf-8 decoding. Do not rely
-        // on pybind automatic decoding since it raises exceptions on incomplete strings.
-        auto callback_wrapped = [&py_callback](std::string subword) -> bool {
-            auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-            return py_callback(py::reinterpret_borrow<py::str>(py_str));
-        };
-        streamer = callback_wrapped;
-    },
-    [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
-        streamer = streamer_cls;
-    },
-    [](std::monostate none){ /*streamer is already a monostate */ }
-    }, py_streamer);
+    ov::genai::StreamerVariant streamer = ov::genai::pybind::utils::pystreamer_to_streamer(py_streamer);
     
     return py::cast(pipe.generate(prompt, images, updated_config, streamer));
+}
+
+py::object call_vlm_generate(
+    ov::genai::VLMPipeline& pipe, 
+    const std::string& prompt,
+    const py::kwargs& kwargs
+) {
+    ov::AnyMap params = {};
+
+    for (const auto& item : kwargs) {
+        std::string key = py::cast<std::string>(item.first);
+        py::object value = py::cast<py::object>(item.second);
+
+        if (key == "images") {
+            params.insert({ov::genai::images(std::move(py::cast<std::vector<ov::Tensor>>(item.second)))});
+        } else if (key == "image") {
+            params.insert({ov::genai::image(std::move(py::cast<ov::Tensor>(item.second)))});
+        } else if (key == "generation_config") {
+            params.insert({ov::genai::generation_config(std::move(py::cast<ov::genai::GenerationConfig>(item.second)))});
+        } else if (key == "streamer") {
+            auto py_streamer = py::cast<utils::PyBindStreamerVariant>(value);
+            params.insert({ov::genai::streamer(std::move(ov::genai::pybind::utils::pystreamer_to_streamer(py_streamer)))});
+
+        } else {
+            throw(std::invalid_argument("'" + key + "' is unexpected parameter name. "
+                                        "Use help(openvino_genai.VLMPipeline.generate) to get list of acceptable parameters."));
+        }
+    }
+    
+    return py::cast(pipe.generate(prompt, params));
 }
 
 void init_vlm_pipeline(py::module_& m) {
@@ -134,6 +166,17 @@ void init_vlm_pipeline(py::module_& m) {
             (vlm_generate_docstring + std::string(" \n ")).c_str()
         )
         .def(
+            "generate", 
+            [](ov::genai::VLMPipeline& pipe, 
+                const std::string& prompt,
+                const py::kwargs& kwargs
+            ) {
+                return call_vlm_generate(pipe, prompt, kwargs);
+            },
+            py::arg("prompt"), "Input string",
+            (vlm_generate_kwargs_docstring + std::string(" \n ")).c_str()
+        )
+        .def(
             "__call__", 
             [](ov::genai::VLMPipeline& pipe, 
                 const std::string& prompt,
@@ -149,5 +192,16 @@ void init_vlm_pipeline(py::module_& m) {
             py::arg("generation_config") = std::nullopt, "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
             (vlm_generate_docstring + std::string(" \n ")).c_str()
+        )
+        .def(
+            "__call__", 
+            [](ov::genai::VLMPipeline& pipe, 
+                const std::string& prompt,
+                const py::kwargs& kwargs
+            ) {
+                return call_vlm_generate(pipe, prompt, kwargs);
+            },
+            py::arg("prompt"), "Input string",
+            (vlm_generate_kwargs_docstring + std::string(" \n ")).c_str()
         );
 }
