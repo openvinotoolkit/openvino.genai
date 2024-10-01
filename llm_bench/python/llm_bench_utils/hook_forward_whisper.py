@@ -51,19 +51,19 @@ class WhisperHook:
         self.greedy_hook.clear_time_infer_list()
 
     def new_text_encoder(self, pipe):
-        old_text_encoder = pipe.model.encoder.request
+        old_text_encoder = pipe.model.encoder.forward
 
-        def my_text_encoder(inputs, share_inputs=True, share_outputs=True):
+        def my_text_encoder(*args, **kwargs):
             loop_data = {}
-            t1 = time.time()
-            r = old_text_encoder(inputs, share_inputs, share_outputs)
+            t1 = time.time()            
+            r = old_text_encoder(*args, **kwargs)
             t2 = time.time()
             text_encoder_time = t2 - t1
             loop_data['enc_infer_time'] = text_encoder_time
             self.time_data.append(loop_data)
             self.enc_infer_count += 1
             return r
-        pipe.model.encoder.request = my_text_encoder
+        pipe.model.encoder.forward = my_text_encoder
 
     def new_text_sample(self, pipe):
         self.greedy_hook = llm_bench_utils.hook_greedy_search.GreedySearchHook()
