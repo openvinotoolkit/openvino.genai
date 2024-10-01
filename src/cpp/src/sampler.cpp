@@ -561,6 +561,78 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
     return dropped_seq_ids;
 }
 
+void register_new_token(const Token& sampled_token_id,
+                        Sequence::Ptr running_sequence,
+                        LogitProcessor& logit_processor,
+                        bool is_extend_sequence,
+                        bool is_update_len_logit_processor) {
+    logit_processor.register_new_generated_token(sampled_token_id.m_index);
+    size_t generated_len = logit_processor.get_generated_len();
+    // increment seq len only for one sequence in sequence group to sync them
+    if (is_extend_sequence) {
+        running_sequence->append_token(sampled_token_id.m_index, sampled_token_id.m_log_prob);
+    } else {
+        OPENVINO_ASSERT(generated_len < running_sequence->get_generated_len());
+        running_sequence->update_generated_log_prob(generated_len, sampled_token_id.m_log_prob);
+    }
+    if (is_update_len_logit_processor) {
+        logit_processor.update_generated_len(++generated_len);
+    }
+};
+
+std::list<uint64_t>
+create_n_forked_sequences(SequenceGroup::Ptr sequence_group,
+                          LogitProcessor& logit_processor,
+                          const std::vector<Token>& sampled_tokens) {
+    const auto& running_sequences = sequence_group->get_running_sequences();
+    OPENVINO_ASSERT(running_sequences.size() == 1);
+    Sequence::Ptr sequence_to_fork = running_sequences.front();
+    std::list<uint64_t> forked_seq_ids;
+    for (size_t i = 1; i < sampled_tokens.size(); ++i) {
+        const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
+        const auto forked_seq_id = forked_sequence->get_id();
+        forked_seq_ids.push_back(forked_seq_id);
+        register_new_token(sampled_tokens[i], forked_sequence, logit_processor, true, false);
+    }
+    return forked_seq_ids;
+}
+
+bool
+is_continue_generation(Sequence::Ptr running_sequence,
+                       size_t token_id,
+                       size_t max_gen_len,
+                       size_t& decrease_context_len) {
+    if (max_gen_len == 0) {
+        running_sequence->remove_last_tokens(token_id);
+        decrease_context_len = std::max(decrease_context_len, token_id);
+        return false;
+    }
+    return true;
+}
+
+bool
+validate_candidate(Sequence::Ptr running_sequence,
+                   size_t& token_id,
+                   Token& sampled_token,
+                   bool& is_extend_sequence,
+                   size_t& decrease_context_len) {
+    if (token_id > 0) {
+        const auto& generated_tokens = running_sequence->get_generated_ids();
+        auto it = generated_tokens.rbegin();
+        std::advance(it, token_id - 1);
+        // to validate candidates from assisting model and remove incorrect ones from generated sequence
+        if (*it != sampled_token.m_index) {
+            running_sequence->remove_last_tokens(token_id);
+            decrease_context_len = std::max(decrease_context_len, token_id);
+            is_extend_sequence = true;
+            return false;
+        } else {
+            sampled_token.m_index = *it;
+        }
+    }
+    return true;
+
+}
 
 SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                               ov::Tensor logits,
@@ -571,7 +643,6 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
     size_t batch_seq_len = logits_shape[1], vocab_size = logits_shape[2];
 
     SamplerOutput sampler_output;
-
     for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
         SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
         if (!sequence_group->is_scheduled())
@@ -590,92 +661,58 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
 
         const void * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
         ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
-        size_t decrease_len = 0;
+        size_t decrease_context_len = 0;
         if (sequence_group->requires_sampling()) {
-            auto token_id = actual_seq_len;
             // prompt phase
-            if (sequence_group->get_num_processed_tokens() == 0) {
-                token_id -= (sequence_group->get_prompt_len() - 1);
-            }
+            auto num_tokens_to_process = sequence_group->get_num_validated_tokens();
             if (sampling_params.is_greedy_decoding() || sampling_params.is_multinomial()) {
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
-                // limitation for speculative decoding
-                if (is_validation_mode_enabled || sampling_params.is_greedy_decoding()) {
+                if (sampling_params.is_greedy_decoding()) {
                     OPENVINO_ASSERT(running_sequences.size() == 1);
                 }
-                auto register_new_token = [&](const Token& sampled_token_id, size_t running_sequence_id, bool is_extend_sequence = true) {
-                    logit_processor.register_new_generated_token(sampled_token_id.m_index);
-                    size_t generated_len = logit_processor.get_generated_len();
-                    // increment seq len only for one sequence in sequence group to sync them
-                    if (is_extend_sequence) {
-                        running_sequences[running_sequence_id]->append_token(sampled_token_id.m_index, sampled_token_id.m_log_prob);
-                    } else {
-                        OPENVINO_ASSERT(generated_len < running_sequences[running_sequence_id]->get_generated_len());
-                        running_sequences[running_sequence_id]->update_generated_log_prob(generated_len, sampled_token_id.m_log_prob);
-                    }
-                    if (running_sequence_id == num_running_sequences - 1) {
-                        logit_processor.update_generated_len(++generated_len);
-                    }
-                };
                 for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
-                                    const auto running_seq_token_ids = running_sequences[running_sequence_id]->get_generated_ids();
-                    // max lenght of new added tokens
-                    auto max_new_tokens_cnt = sampling_params.max_new_tokens - running_seq_token_ids.size() + token_id;
-                    // token offset in case of multiple token infer
-                    auto token_id_per_seq = token_id;
-                    while (--token_id_per_seq >= 0 && --max_new_tokens_cnt >= 0) {
-                        if (max_new_tokens_cnt == 0) {
-                            running_sequences[running_sequence_id]->remove_last_tokens(token_id_per_seq);
-                            decrease_len = std::max(decrease_len, token_id_per_seq);
+                    auto& running_sequence = running_sequences[running_sequence_id];
+                    for (size_t i = 0; i <= num_tokens_to_process; ++i) {
+                        size_t token_offset = num_tokens_to_process - i;
+                        // max lenght of new added tokens
+                        size_t max_gen_len = sampling_params.max_new_tokens + token_offset - running_sequence->get_generated_len();
+                        if (!is_continue_generation(running_sequence, token_offset, max_gen_len, decrease_context_len)) {
                             break;
-                        } 
-                        Token sampled_token_id;
-                        // get logit processors only for validation or generation, not for cases of extending KV cache
-                        if (token_id_per_seq == 0 && !is_validation_mode_enabled || is_validation_mode_enabled) {
-                            auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, token_id_per_seq);
-                            logit_processor.apply(logit_vector);
-                            Token sampled_token_id;
-                            if (sampling_params.is_greedy_decoding()) {
-                                sampled_token_id = _greedy_sample(logit_vector);
-                            } else {
-                                // is_multinomial()
-                                const bool is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
-                                const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
-                                auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence);
-                                sampled_token_id = sampled_token_ids[0];
+                        }
+                        
+                        // do sampling only for token validation/generation. Extending KV cache will be skipped
+                        if (!is_validation_mode_enabled && token_offset > 0) {
+                            continue;
+                        }
 
-                                if (is_generate_n_tokens) {
-                                    auto sequence_to_fork = running_sequences[0];
-                                    std::list<uint64_t> forked_seq_ids;
-                                    for (size_t i = num_running_sequences; i < num_tokens_per_sequence; ++i) {
-                                        const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
-                                        const auto forked_seq_id = forked_sequence->get_id();
-                                        forked_seq_ids.push_back(forked_seq_id);
-                                        running_sequences = sequence_group->get_running_sequences();
-                                        register_new_token(sampled_token_ids[i], forked_sequence->get_grouped_id(), true);
-                                    }
-                                    sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
-                                }
+                        auto logit_vector = _get_logit_vector(sequence_group_logits, running_sequence_id, token_offset);
+                        logit_processor.apply(logit_vector);
+
+                        Token sampled_token_id;
+                        if (sampling_params.is_greedy_decoding()) {
+                            sampled_token_id = _greedy_sample(logit_vector);
+                        } else {
+                            // is_multinomial()
+                            const bool is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
+                            const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
+                            auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence);
+                            OPENVINO_ASSERT(sampled_token_ids.size(), num_tokens_per_sequence);
+                            if (is_generate_n_tokens) {
+                                const auto forked_seq_ids = create_n_forked_sequences(sequence_group, logit_processor, sampled_token_ids);
+                                sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
                             }
-                            // flag to add sampled token to generated sequence or extend logit processors only
-                            bool is_extend_sequence = token_id_per_seq == 0;
-                            if (token_id_per_seq > 0) {
-                                auto it = running_seq_token_ids.rbegin();
-                                std::advance(it, token_id_per_seq - 1);
-                                // to validate candidates from assisting model and remove incorrect ones from generated sequence
-                                if (is_validation_mode_enabled && *it != sampled_token_id.m_index) {
-                                    running_sequences[running_sequence_id]->remove_last_tokens(token_id_per_seq);
-                                    decrease_len = std::max(decrease_len, token_id_per_seq);
-                                    is_extend_sequence = true;
-                                    token_id_per_seq = 0;
-                                } else {
-                                    sampled_token_id.m_index = *it;
-                                }
-                            }
-                            register_new_token(sampled_token_id, running_sequence_id, is_extend_sequence);
-                            if (token_id_per_seq == 0) {
-                                break;
-                            }
+                            sampled_token_id = sampled_token_ids.front();
+                        }
+                        // flag to add sampled token to generated sequence or extend logit processors only
+                        bool is_extend_sequence = token_offset == 0,
+                             is_update_len_logit_processor = running_sequence_id == num_running_sequences - 1,
+                             is_continue_generation = true;
+                        if (is_validation_mode_enabled) {
+                            is_continue_generation = validate_candidate(running_sequences[running_sequence_id], token_offset, sampled_token_id, is_extend_sequence, decrease_context_len);
+                        }
+                        register_new_token(sampled_token_id, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_update_len_logit_processor);
+                        if (!is_continue_generation) {
+                            break;
                         }
                     }
                 }
@@ -711,15 +748,15 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         // NOTE: it should be before 'get_num_scheduled_tokens' is used
         // update internal state of sequence group to reset scheduler tokens and update currently processed ones
         sequence_group->finish_iteration();
-        if (decrease_len) {
+        if (decrease_context_len) {
             const auto num_processed_tokens = sequence_group->get_num_processed_tokens();
-            OPENVINO_ASSERT(num_processed_tokens >= decrease_len);
-            OPENVINO_ASSERT(sequence_group->get_context_len() >= decrease_len);
-            sequence_group->update_processed_tokens_num(num_processed_tokens - decrease_len);
+            OPENVINO_ASSERT(num_processed_tokens >= decrease_context_len);
+            OPENVINO_ASSERT(sequence_group->get_context_len() >= decrease_context_len);
+            sequence_group->update_processed_tokens_num(num_processed_tokens - decrease_context_len);
         }
 
         // accumulate a number of processed tokens
-        currently_processed_tokens += padded_amount_of_processed_tokens * num_running_sequences;
+        currently_processed_tokens += (padded_amount_of_processed_tokens - decrease_context_len) * num_running_sequences;
     }
 
     return sampler_output;
