@@ -11,6 +11,7 @@
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
 #include "whisper/whisper.hpp"
+#include "whisper/whisper_config.hpp"
 #include "whisper/whisper_feature_extractor.hpp"
 #include "whisper/whisper_models.hpp"
 
@@ -37,6 +38,9 @@ namespace ov {
 namespace genai {
 
 class WhisperPipeline::Impl {
+private:
+    ov::genai::WhisperConfig m_model_config;
+
 public:
     ov::genai::WhisperGenerationConfig m_generation_config;
     ov::genai::WhisperInitializedModels m_models;
@@ -50,7 +54,8 @@ public:
          const ov::AnyMap& plugin_config)
         : m_generation_config{from_config_json_if_exists(model_path)},
           m_tokenizer{tokenizer},
-          m_feature_extractor{(model_path / "preprocessor_config.json").string()} {
+          m_feature_extractor{(model_path / "preprocessor_config.json").string()},
+          m_model_config{(model_path / "config.json").string()} {
         ov::Core core;
         core.set_property(device, plugin_config);
 
@@ -84,8 +89,12 @@ public:
             streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
         }
 
-        auto [output_tokens, segments] =
-            ov::genai::whisper_generate(config, raw_speech_input, m_models, m_feature_extractor, streamer_ptr);
+        auto [output_tokens, segments] = ov::genai::whisper_generate(config,
+                                                                     m_model_config,
+                                                                     raw_speech_input,
+                                                                     m_models,
+                                                                     m_feature_extractor,
+                                                                     streamer_ptr);
 
         WhisperDecodedResults decoded_results{std::vector{m_tokenizer.decode(output_tokens)}, std::vector{1.f}};
         if (!segments.has_value()) {

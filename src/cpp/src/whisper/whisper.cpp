@@ -14,6 +14,7 @@
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "timestamps.hpp"
+#include "whisper_config.hpp"
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
 
@@ -241,6 +242,7 @@ namespace genai {
 // 7. Concatenate output tokens
 std::pair<std::vector<int64_t>, std::optional<std::vector<Segment>>> whisper_generate(
     const ov::genai::WhisperGenerationConfig& config,
+    const ov::genai::WhisperConfig& model_config,
     const RawSpeechInput& raw_speech,
     ov::genai::WhisperInitializedModels& models,
     WhisperFeatureExtractor& feature_extractor,
@@ -277,8 +279,10 @@ std::pair<std::vector<int64_t>, std::optional<std::vector<Segment>>> whisper_gen
 
     std::optional<std::vector<Segment>> segments = std::nullopt;
     if (config.return_timestamps) {
-        std::tie(output_tokens, segments) =
-            ov::genai::extract_segments(output_tokens, config, feature_extractor.time_precision);
+        // 0.02 by default
+        const float time_precision =
+            static_cast<float>(feature_extractor.chunk_length) / model_config.max_source_positions;
+        std::tie(output_tokens, segments) = ov::genai::extract_segments(output_tokens, config, time_precision);
     }
 
     return {output_tokens, segments};

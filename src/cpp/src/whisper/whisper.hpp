@@ -7,6 +7,7 @@
 
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
+#include "whisper_config.hpp"
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
 
@@ -21,6 +22,7 @@ struct Segment {
 
 std::pair<std::vector<int64_t>, std::optional<std::vector<Segment>>> whisper_generate(
     const ov::genai::WhisperGenerationConfig& config,
+    const ov::genai::WhisperConfig& model_config,
     const ov::genai::RawSpeechInput& raw_speech,
     ov::genai::WhisperInitializedModels& models,
     ov::genai::WhisperFeatureExtractor& feature_extractor,

@@ -20,8 +20,6 @@ public:
     size_t chunk_length = 30;
     size_t n_samples = 480000;
     size_t nb_max_frames = 3000;
-    // todo: read from config
-    float time_precision = 0.02;
 
     explicit WhisperFeatureExtractor(const std::string& preprocessor_json_path);
 
