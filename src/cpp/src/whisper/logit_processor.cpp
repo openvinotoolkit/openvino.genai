@@ -84,14 +84,12 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
     }
 
     // apply the `max_initial_timestamp` option
-    // todo: read from generation config json
-    constexpr size_t max_initial_timestamp_index = 50;
     if (initial_step) {
         for (size_t i = 0; i < timestamp_begin; i++) {
             logits_data[i] = -std::numeric_limits<float>::infinity();
         }
 
-        size_t last_allowed = timestamp_begin + max_initial_timestamp_index;
+        size_t last_allowed = timestamp_begin + config.max_initial_timestamp_index;
         for (size_t i = last_allowed + 1; i < vocab_size; i++) {
             logits_data[i] = -std::numeric_limits<float>::infinity();
         }

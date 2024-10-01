@@ -51,6 +51,8 @@ public:
     // Begin timestamps token id.
     int64_t begin_timestamps_token_id = 50364;
 
+    size_t max_initial_timestamp_index = 50;
+
     bool is_multilingual = true;
 
     // Language token to use for generation in the form of <|en|>.
