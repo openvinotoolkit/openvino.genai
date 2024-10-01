@@ -71,6 +71,7 @@ void WhisperGenerationConfig::update_generation_config(const ov::AnyMap& config_
     read_anymap_param(config_map, "language", language);
     read_anymap_param(config_map, "lang_to_id", lang_to_id);
     read_anymap_param(config_map, "task", task);
+    read_anymap_param(config_map, "return_timestamps", return_timestamps);
 }
 
 size_t WhisperGenerationConfig::get_max_new_tokens(size_t prompt_length) const {
