@@ -10,6 +10,10 @@ namespace ov::genai {
 class ContinuousBatchingPipeline::SpeculativeDecodingImpl : public ContinuousBatchingPipeline::ImplInterface {
 protected:
     std::shared_ptr<ContinuousBatchingImpl> m_main_pipeline, m_draft_pipeline;
+    size_t m_num_candidates = 5, m_max_num_candidates = 10;
+    std::map<int64_t, size_t> m_to_generate_length;
+
+    void update_strategy(size_t num_matches);
     
 public:
     SpeculativeDecodingImpl(const std::string& main_models_path,
@@ -43,9 +47,9 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;
-    std::vector<GenerationResult>
-    generate(const std::vector<std::string>& prompts,
-             std::vector<ov::genai::GenerationConfig> sampling_params,
-             const StreamerVariant& streamer) override;
+    // std::vector<GenerationResult>
+    // generate(const std::vector<std::string>& prompts,
+    //          std::vector<ov::genai::GenerationConfig> sampling_params,
+    //          const StreamerVariant& streamer) override;
 };
 }
