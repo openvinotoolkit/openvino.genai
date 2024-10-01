@@ -161,8 +161,6 @@ static constexpr ov::Property<float> presence_penalty{"presence_penalty"};
 static constexpr ov::Property<float> frequency_penalty{"frequency_penalty"};
 static constexpr ov::Property<size_t> rng_seed{"rng_seed"};
 
-static constexpr AdaptersProperty adapters;
-
 // Predefined Configs
 OPENVINO_GENAI_EXPORTS GenerationConfig beam_search();
 OPENVINO_GENAI_EXPORTS GenerationConfig greedy();

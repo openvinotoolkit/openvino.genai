@@ -14,6 +14,7 @@
 #include "openvino/op/constant.hpp"
 
 #include "utils.hpp"
+#include "lora_helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -43,7 +44,7 @@ AutoencoderKL::AutoencoderKL(const std::string& root_dir,
                 const std::string& device,
                 const ov::AnyMap& properties)
     : AutoencoderKL(root_dir) {
-    compile(device, properties);
+    compile(device, filter_out_adapters_from_properties(properties).value_or(properties));
 }
 
 AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;

@@ -99,6 +99,13 @@ public:
 
     Text2ImagePipeline(const std::string& root_dir, const std::string& device, const ov::AnyMap& properties = {});
 
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    Text2ImagePipeline(const std::string& root_dir,
+                  const std::string& device,
+                  Properties&&... properties)
+        : Text2ImagePipeline(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
     // creates either LCM or SD pipeline from building blocks
     static Text2ImagePipeline stable_diffusion(
         const std::shared_ptr<Scheduler>& scheduler_type,

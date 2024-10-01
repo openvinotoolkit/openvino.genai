@@ -491,7 +491,7 @@ private:
 
 // Builds LoRA subgraph that consists of several matrix and element-wise multiplications with optional data type conversions and reshapes
 // to build a consistent graph.
-NodePtr tensors_multiplication(NodePtr input, const NodeVector multipliers, ov::Output<ov::Node> target, bool transpose_weights, size_t alpha_pos) {
+NodePtr tensors_multiplication(NodePtr input, const NodeVector multipliers, ov::Output<ov::Node> target, bool transpose_weights, size_t alpha_pos, bool transpose_in_end) {
     const auto target_type = target.get_element_type();
     const auto target_shape = target.get_partial_shape();
     const auto target_rank = target_shape.rank().get_length();
@@ -516,7 +516,7 @@ NodePtr tensors_multiplication(NodePtr input, const NodeVector multipliers, ov::
         }
     }
 
-    if(target_rank == 4 && target_shape[-1].is_static() && target_shape[-1].get_length() > 1) {  // FIXME: Check all potentially permuted dimensions, not only the last one
+    if(transpose_in_end) {
         // FIXME: Check the dimensions we really need to move, currently it is hardcoded 2 + 2 dimensions that usually appears in 2D Convolution case
         // where we need to apply LoRA for the first two dimensions (channels) while interpreting two last dimensions (spatial )
         // TODO: Stash transposition constant to reuse
@@ -648,7 +648,7 @@ public:
             for(auto multiplier : adapter) {
                 parameters.push_back(std::make_shared<v0::Parameter>(multiplier->get_output_element_type(0), multiplier->get_output_partial_shape(0)));
             }
-            auto result = std::make_shared<v0::Result>(tensors_multiplication(nullptr, NodeVector{parameters.begin() + 1, parameters.end()}, target, false, 1));
+            auto result = std::make_shared<v0::Result>(tensors_multiplication(nullptr, NodeVector{parameters.begin() + 1, parameters.end()}, target, false, 1, false));
             auto weights_model = std::make_shared<ov::Model>(ov::ResultVector{result}, parameters);
             fusers.insert(signature, weights_model);
         }
@@ -699,6 +699,7 @@ public:
 
         auto target_rank = target.get_partial_shape().rank().get_length();
         auto consumers = target.get_target_inputs();
+        bool transpose_in_end = false;
 
         // FIXME: Should check rank of activations instead of target rank
         if(target_rank == 4 && target.get_partial_shape()[target_rank - 3].get_length() > 1) {
@@ -707,10 +708,11 @@ public:
             auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int>{2, 3, 0, 1});
             auto transpose = register_new_node<v1::Transpose>(activations, transposition);
             activations = transpose;
+            transpose_in_end = true;
         }
 
         NodeVector lora_variables{lora_weight.A, lora_weight.alpha, lora_weight.B};
-        replacement = tensors_multiplication(activations.get_node_shared_ptr(), lora_variables, target, true, 1);
+        replacement = tensors_multiplication(activations.get_node_shared_ptr(), lora_variables, target, true, 1, transpose_in_end);
 
         for (auto consumer : consumers) {
             consumer.replace_source_output(replacement->output(0));

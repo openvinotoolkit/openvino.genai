@@ -156,6 +156,9 @@ public:
 };
 
 
+static constexpr AdaptersProperty adapters;
+
+
 class OPENVINO_GENAI_EXPORTS AdapterController {
 
     std::shared_ptr<AdapterControllerImpl> m_pimpl;
