@@ -59,7 +59,7 @@ void enable_npuw_dq_if_allowed(ov::AnyMap& config,
                                const std::shared_ptr<ov::Model>& model) {
     if (allow_to_enable_npuw_dq(model)) {
         config["NPUW_DQ"] = "YES";
-        config["NPUW_FUNCALL_FOR_ALL"] = "YES";
+        pop_option(config, "NPUW_ONLINE_AVOID");
     }
 }
 
