@@ -57,7 +57,7 @@ std::pair<std::vector<int64_t>, std::vector<ov::genai::Segment>> extract_segment
     if (token_start.has_value() && has_tokens_to_add && !has_previous_segments) {
         ov::genai::Segment segment;
         segment.m_tokens = {tokens.begin() + idx_start + 1, tokens.end()};
-        segment.m_start = round_up((*token_start - config.begin_timestamps_token_id) * time_precision, 2);
+        segment.m_start = (*token_start - config.begin_timestamps_token_id) * time_precision;
         segment.m_end = -1.0f;
         segments.push_back(segment);
 

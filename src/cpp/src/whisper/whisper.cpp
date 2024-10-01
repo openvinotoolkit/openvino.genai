@@ -174,7 +174,7 @@ std::vector<int64_t> prepare_input_ids(ov::Tensor& encoder_hidden_state,
 std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_state,
                                                   const ov::genai::WhisperGenerationConfig& config,
                                                   ov::genai::WhisperInitializedModels& models,
-                                                  size_t max_new_tokens,
+                                                  const size_t max_new_tokens,
                                                   const std::shared_ptr<ov::genai::StreamerBase> streamer) {
     std::vector<int64_t> input_ids = prepare_input_ids(encoder_hidden_state, models.decoder, config);
 
