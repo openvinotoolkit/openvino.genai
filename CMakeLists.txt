@@ -29,7 +29,7 @@ project(OpenVINOGenAI
         VERSION 2024.5.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
-        LANGUAGES CXX)
+        LANGUAGES CXX C)
 
 # Find OpenVINODeveloperPackage first to compile with SDL flags
 find_package(OpenVINODeveloperPackage ${OpenVINOGenAI_VERSION} QUIET
@@ -75,7 +75,7 @@ set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 set(CPACK_COMPONENTS_ALL core_genai core_genai_dev cpp_samples_genai licensing_genai openvino_tokenizers openvino_tokenizers_docs)
 if(ENABLE_PYTHON)
     list(APPEND CPACK_COMPONENTS_ALL pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
-endif() 
+endif()
 if(WIN32 AND NOT DEFINED CPACK_GENERATOR)
     set(CPACK_GENERATOR "ZIP")
 endif()

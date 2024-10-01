@@ -91,6 +91,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     read_anymap_param(config_map, "do_sample", do_sample);
     read_anymap_param(config_map, "repetition_penalty", repetition_penalty);
     read_anymap_param(config_map, "eos_token_id", eos_token_id);
+    read_anymap_param(config_map, "adapters", adapters);
 }
 
 size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
@@ -171,12 +172,6 @@ GenerationConfig beam_search() {
 
 GenerationConfig greedy() {
     GenerationConfig greedy_config;
-    greedy_config.temperature = 0.0f;
-    greedy_config.ignore_eos = true;
-    greedy_config.num_return_sequences = 1;
-    greedy_config.repetition_penalty = 3.0f;
-    greedy_config.presence_penalty = 0.1f;
-    greedy_config.frequency_penalty = 0.01f;
     greedy_config.max_new_tokens = 30;
     return greedy_config;
 }
