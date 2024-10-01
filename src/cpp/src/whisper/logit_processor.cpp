@@ -103,15 +103,11 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
     }
     float timestamp_logprob = std::log(timestamp_exp_prov_sum);
 
-    float max_text_token_logprob = -std::numeric_limits<float>::infinity();
-    // todo: replace with max
-    for (size_t i = 0; i < timestamp_begin; i++) {
-        if (tokens[i].m_log_prob > max_text_token_logprob) {
-            max_text_token_logprob = tokens[i].m_log_prob;
-        }
-    }
+    auto max_logprob_token = std::max_element(tokens.begin(), tokens.end(), [](const Token& left, const Token& right) {
+        return left.m_log_prob < right.m_log_prob;
+    });
 
-    if (timestamp_logprob > max_text_token_logprob) {
+    if (timestamp_logprob > max_logprob_token->m_log_prob) {
         for (size_t i = 0; i < timestamp_begin; i++) {
             logits_data[i] = -std::numeric_limits<float>::infinity();
         }
