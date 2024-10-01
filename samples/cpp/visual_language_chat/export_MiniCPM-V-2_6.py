@@ -870,13 +870,17 @@ class OvMiniCPMV:
             if system_prompt:
                 sys_msg = {"role": "system", "content": system_prompt}
                 copy_msgs = [sys_msg] + copy_msgs
+            print(f"{copy_msgs=}")
 
             prompts_lists.append(processor.tokenizer.apply_chat_template(copy_msgs, tokenize=False, add_generation_prompt=True))
             input_images_lists.append(images)
+        print(f"{prompts_lists=}")
 
         inputs = processor(
             prompts_lists, input_images_lists, max_slice_nums=max_slice_nums, use_image_id=use_image_id, return_tensors="pt", max_length=max_inp_length
         )
+        print(f"{inputs=}")
+        breakpoint()
 
         if sampling:
             generation_config = {"top_p": 0.8, "top_k": 100, "temperature": 0.7, "do_sample": True, "repetition_penalty": 1.05}
@@ -936,27 +940,27 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model_dir", type=Path)
     model_dir = parser.parse_args().model_dir
-    model_id = "openbmb/MiniCPM-V-2_6"
-    ckpt = model_dir / "ckpt"
-    if not ckpt.exists():
-        snapshot_download(model_id, local_dir=ckpt, force_download=True)
-        patch_model_code(ckpt)
-    model = AutoModel.from_pretrained(ckpt, trust_remote_code=True)
-    model.eval()
-    model.config.save_pretrained(model_dir)
-    tokenizer = AutoTokenizer.from_pretrained(ckpt, trust_remote_code=True)
-    tokenizer.save_pretrained(model_dir)
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
-    ov.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
-    ov.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
-    processor = AutoProcessor.from_pretrained(ckpt, trust_remote_code=True)
-    processor.save_pretrained(model_dir)
+    # model_id = "openbmb/MiniCPM-V-2_6"
+    # ckpt = model_dir / "ckpt"
+    # if not ckpt.exists():
+    #     snapshot_download(model_id, local_dir=ckpt, force_download=True)
+    #     patch_model_code(ckpt)
+    # model = AutoModel.from_pretrained(ckpt, trust_remote_code=True)
+    # model.eval()
+    # model.config.save_pretrained(model_dir)
+    # tokenizer = AutoTokenizer.from_pretrained(ckpt, trust_remote_code=True)
+    # tokenizer.save_pretrained(model_dir)
+    # ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
+    # ov.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
+    # ov.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
+    # processor = AutoProcessor.from_pretrained(ckpt, trust_remote_code=True)
+    # processor.save_pretrained(model_dir)
 
-    convert_llm(model, model_dir)
-    del model.llm
-    gc.collect()
+    # convert_llm(model, model_dir)
+    # del model.llm
+    # gc.collect()
+    # convert_vision_encoder(model, model_dir)
 
-    convert_vision_encoder(model, model_dir)
     ov_cpm = init_model(model_dir, "CPU")
     print(ov_cpm.chat(Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
 

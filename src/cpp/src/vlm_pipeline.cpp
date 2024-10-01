@@ -442,7 +442,7 @@ VLMPipeline::VLMPipeline(
     m_pos_embed_cache{
         get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70})
     },
-    is_chat_conversation{false} {
+    m_is_chat_conversation{false} {
         m_language.get_tensor("attention_mask").set_shape({1, 0});
     }
 
@@ -452,6 +452,24 @@ DecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
+    constexpr char IMAGE_REPRESENTATION[] = "(<image>./</image>)\n";
+    std::string images_prompt = std::string{
+        IMAGE_REPRESENTATION, images.size()
+    } + prompt;
+    if (m_is_chat_conversation) {
+        // KV cache in model already contains prompts and answers from previous iterations.
+        // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
+        // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
+        // <bos token> will be inserted on every iteration.
+        // So actual pipeline calculates input_ids for whole chat history + for whole chat history without the new prompt
+        // and takes only the difference between them.
+        // The chat history cannot be saved as already encoded tokens because generate call doesn't return <eos> token, but
+        // KV cache contains it. So we have to add it manually or get it by tokenization all chat history.
+
+        m_history.push_back({{"role", "user"}, {"content", images_prompt}});
+        constexpr bool add_generation_prompt = true;
+        std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+    }
     std::string wrapped = images.empty() ?
         "<用户>" + prompt + "<AI>" : prompt + "<AI>";
     ov::Tensor input_ids = m_tokenizer.encode(wrapped).input_ids;
@@ -545,7 +563,16 @@ DecodedResults VLMPipeline::generate(
         streamer_ptr->end();
     }
 
-    if (!is_chat_conversation) {
+    if (m_is_chat_conversation) {
+        // auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history);
+        // if (m_is_cache_empty) {
+        //     encoded_input = new_chat_tokens;
+        // } else {
+        //     auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history);
+        //     encoded_input = subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
+        // }
+        // m_templated_chat_history = new_templated_chat_history;
+    } else {
         for (auto& variable : m_language.query_state()) {
             variable.reset();
         }
@@ -569,6 +596,27 @@ DecodedResults VLMPipeline::generate(
         config,
         utils::get_streamer_from_map(config_map)
     );
+}
+
+void VLMPipeline::start_chat(const std::string& system_message) {
+    m_is_chat_conversation = true;
+    bool have_state = 0 != m_language.get_tensor("attention_mask").get_size();
+    if (have_state) {
+        // Resetting state may be slow.
+        for (ov::VariableState& variable : m_language.query_state()) {
+            variable.reset();
+        }
+        // Since if is already introduced, move all resetting here.
+        m_language.get_tensor("attention_mask").set_shape({1, 0});
+        m_history.clear();
+        m_templated_chat_history.clear();
+    }
+    if (system_message.empty()) {
+        return;
+    }
+    m_history = {{{"role", "system"}, {"content", system_message}}};
+    constexpr bool add_generation_prompt = false;
+    m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
 }
 
 GenerationConfig& VLMPipeline::get_generation_config() {

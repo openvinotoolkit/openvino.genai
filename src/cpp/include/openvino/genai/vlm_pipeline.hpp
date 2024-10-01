@@ -49,7 +49,9 @@ public:
     ov::Tensor m_pos_embed_cache;
     // True if chat mode is activated to save conversation
     // history between generate() calls.
-    bool is_chat_conversation;
+    bool m_is_chat_conversation;
+    ChatHistory m_history;
+    std::string m_templated_chat_history;
 
     explicit VLMPipeline(
         const std::filesystem::path& model_dir,
@@ -91,8 +93,8 @@ public:
             prompt, AnyMap{std::forward<Properties>(properties)...}
         );
     }
-    void start_chat() {is_chat_conversation = true;}
-    void finish_chat() {is_chat_conversation = false;}
+    void start_chat(const std::string& system_message="");
+    void finish_chat() {m_is_chat_conversation = false;}
     GenerationConfig& get_generation_config();
     const GenerationConfig& get_generation_config() const;
 };
