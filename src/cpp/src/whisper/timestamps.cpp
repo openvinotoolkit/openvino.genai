@@ -3,13 +3,6 @@
 
 #include "timestamps.hpp"
 
-namespace {
-float round_up(const float value, const int decimal_places) {
-    const float multiplier = std::pow(10, decimal_places);
-    return ceilf(value * multiplier) / multiplier;
-}
-}  // namespace
-
 namespace ov {
 namespace genai {
 
@@ -46,8 +39,8 @@ std::pair<std::vector<int64_t>, std::vector<ov::genai::Segment>> extract_segment
 
             ov::genai::Segment segment;
             segment.m_tokens = {tokens.begin() + idx_start + 1, tokens.begin() + i};
-            segment.m_start = round_up((*token_start - config.begin_timestamps_token_id) * time_precision, 2);
-            segment.m_end = round_up((token - config.begin_timestamps_token_id) * time_precision, 2);
+            segment.m_start = (*token_start - config.begin_timestamps_token_id) * time_precision;
+            segment.m_end = (token - config.begin_timestamps_token_id) * time_precision;
             segments.push_back(segment);
 
             non_timestamp_tokens.insert(non_timestamp_tokens.end(), tokens.begin() + idx_start + 1, tokens.begin() + i);
