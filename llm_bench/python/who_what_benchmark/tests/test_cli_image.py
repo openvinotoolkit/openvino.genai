@@ -96,30 +96,3 @@ def test_image_custom_dataset(model_id, model_type, backend):
     shutil.rmtree("reference")
 
     assert result.returncode == 0
-
-
-# def test_image_output_directory():
-#     with tempfile.TemporaryDirectory() as temp_dir:
-#         result = run_wwb([
-#             "--base-model", base_model_path,
-#             "--target-model", target_model_path,
-#             "--num-samples", "2",
-#             "--device", "CPU",
-#             "--output", temp_dir
-#         ])
-#         assert result.returncode == 0
-#         assert "Metrics for model" in result.stderr
-#         assert os.path.exists(os.path.join(temp_dir, "metrics_per_qustion.csv"))
-#         assert os.path.exists(os.path.join(temp_dir, "metrics.csv"))
-
-
-# def test_image_verbose():
-#     result = run_wwb([
-#         "--base-model", base_model_path,
-#         "--target-model", target_model_path,
-#         "--num-samples", "2",
-#         "--device", "CPU",
-#         "--verbose"
-#     ])
-#     assert result.returncode == 0
-#     assert "## Diff " in result.stderr
