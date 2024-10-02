@@ -118,7 +118,7 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
 
     data_dict = load_prompts_dataset(test_struct.prompt_file)
 
-    evaluator = whowhatbench.Evaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
+    evaluator = whowhatbench.TextEvaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
                                        generation_config=generation_config,
                                        generation_config_base=generation_config,
                                        max_new_tokens=test_struct.max_new_tokens, seqs_per_request=seqs_per_request)
