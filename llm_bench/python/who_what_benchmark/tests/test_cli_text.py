@@ -16,11 +16,7 @@ logger = logging.getLogger(__name__)
 
 def run_wwb(args):
     logger.info(" ".join(["wwb"] + args))
-    result = subprocess.run(
-        ["wwb"] + args,
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(["wwb"] + args, capture_output=True, text=True)
     logger.info(result)
     return result
 
@@ -55,13 +51,20 @@ def teardown_module():
 
 
 def test_text_target_model():
-    result = run_wwb([
-        "--base-model", base_model_path,
-        "--target-model", target_model_path,
-        "--num-samples", "2",
-        "--device", "CPU",
-        "--model-type", "text",
-    ])
+    result = run_wwb(
+        [
+            "--base-model",
+            base_model_path,
+            "--target-model",
+            target_model_path,
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--model-type",
+            "text",
+        ]
+    )
 
     assert result.returncode == 0
     assert "Metrics for model" in result.stderr
@@ -73,15 +76,24 @@ def test_text_gt_data():
     with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
         temp_file_name = tmpfile.name
 
-    result = run_wwb([
-        "--base-model", base_model_path,
-        "--gt-data", temp_file_name,
-        "--dataset", "EleutherAI/lambada_openai,en",
-        "--dataset-field", "text",
-        "--split", "test",
-        "--num-samples", "2",
-        "--device", "CPU"
-    ])
+    result = run_wwb(
+        [
+            "--base-model",
+            base_model_path,
+            "--gt-data",
+            temp_file_name,
+            "--dataset",
+            "EleutherAI/lambada_openai,en",
+            "--dataset-field",
+            "text",
+            "--split",
+            "test",
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+        ]
+    )
     data = pd.read_csv(temp_file_name)
     os.remove(temp_file_name)
 
@@ -91,13 +103,20 @@ def test_text_gt_data():
 
 def test_text_output_directory():
     with tempfile.TemporaryDirectory() as temp_dir:
-        result = run_wwb([
-            "--base-model", base_model_path,
-            "--target-model", target_model_path,
-            "--num-samples", "2",
-            "--device", "CPU",
-            "--output", temp_dir
-        ])
+        result = run_wwb(
+            [
+                "--base-model",
+                base_model_path,
+                "--target-model",
+                target_model_path,
+                "--num-samples",
+                "2",
+                "--device",
+                "CPU",
+                "--output",
+                temp_dir,
+            ]
+        )
         assert result.returncode == 0
         assert "Metrics for model" in result.stderr
         assert os.path.exists(os.path.join(temp_dir, "metrics_per_qustion.csv"))
@@ -105,13 +124,19 @@ def test_text_output_directory():
 
 
 def test_text_verbose():
-    result = run_wwb([
-        "--base-model", base_model_path,
-        "--target-model", target_model_path,
-        "--num-samples", "2",
-        "--device", "CPU",
-        "--verbose"
-    ])
+    result = run_wwb(
+        [
+            "--base-model",
+            base_model_path,
+            "--target-model",
+            target_model_path,
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--verbose",
+        ]
+    )
     assert result.returncode == 0
     assert "## Diff " in result.stderr
 
@@ -120,12 +145,18 @@ def test_text_language_autodetect():
     with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
         temp_file_name = tmpfile.name
 
-    result = run_wwb([
-        "--base-model", "Qwen/Qwen2-0.5B",
-        "--gt-data", temp_file_name,
-        "--num-samples", "2",
-        "--device", "CPU"
-    ])
+    result = run_wwb(
+        [
+            "--base-model",
+            "Qwen/Qwen2-0.5B",
+            "--gt-data",
+            temp_file_name,
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+        ]
+    )
     data = pd.read_csv(temp_file_name)
     os.remove(temp_file_name)
 
@@ -137,13 +168,19 @@ def test_text_hf_model():
     with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
         temp_file_name = tmpfile.name
 
-    result = run_wwb([
-        "--base-model", model_id,
-        "--gt-data", temp_file_name,
-        "--num-samples", "2",
-        "--device", "CPU",
-        "--hf"
-    ])
+    result = run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--gt-data",
+            temp_file_name,
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--hf",
+        ]
+    )
     data = pd.read_csv(temp_file_name)
     os.remove(temp_file_name)
 
@@ -152,13 +189,19 @@ def test_text_hf_model():
 
 
 def test_text_genai_model():
-    result = run_wwb([
-        "--base-model", base_model_path,
-        "--target-model", target_model_path,
-        "--num-samples", "2",
-        "--device", "CPU",
-        "--genai"
-    ])
+    result = run_wwb(
+        [
+            "--base-model",
+            base_model_path,
+            "--target-model",
+            target_model_path,
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+        ]
+    )
     assert result.returncode == 0
     assert "Metrics for model" in result.stderr
     assert "## Reference text" not in result.stderr

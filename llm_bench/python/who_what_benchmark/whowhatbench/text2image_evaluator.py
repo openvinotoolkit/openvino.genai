@@ -17,7 +17,6 @@ default_data = {
         "Illustration of an astronaut sitting in outer space, moon behind him",
         "A vintage illustration of a retro computer, vaporwave aesthetic, light pink and light blue",
         "A view from beautiful alien planet, very beautiful, surealism, retro astronaut on the first plane, 8k photo",
-        
     ],
 }
 
@@ -31,7 +30,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         test_data: Union[str, list] = None,
         metrics="similarity",
         similarity_model_id: str = "openai/clip-vit-large-patch14",
-        resolution=(512,512),
+        resolution=(512, 512),
         num_inference_steps=4,
         crop_prompts=True,
         num_samples=None,
@@ -54,16 +53,19 @@ class Text2ImageEvaluator(BaseEvaluator):
         self.last_cmp = None
         self.gt_dir = os.path.dirname(gt_data)
         if base_model:
-            self.gt_data = self._generate_data(base_model, gen_image_fn, os.path.join(self.gt_dir, "reference"))
+            self.gt_data = self._generate_data(
+                base_model, gen_image_fn, os.path.join(self.gt_dir, "reference")
+            )
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
-
 
     def dump_gt(self, csv_name: str):
         self.gt_data.to_csv(csv_name)
 
     def score(self, model, gen_image_fn=None):
-        predictions = self._generate_data(model, gen_image_fn, os.path.join(self.gt_dir, "target"))
+        predictions = self._generate_data(
+            model, gen_image_fn, os.path.join(self.gt_dir, "target")
+        )
 
         all_metrics_per_prompt = {}
         all_metrics = {}
@@ -93,10 +95,22 @@ class Text2ImageEvaluator(BaseEvaluator):
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
         if hasattr(model, "reshape") and self.resolution is not None:
-            model.reshape(batch_size=1, height=self.resolution[0], width=self.resolution[1], num_images_per_prompt=1)
+            model.reshape(
+                batch_size=1,
+                height=self.resolution[0],
+                width=self.resolution[1],
+                num_images_per_prompt=1,
+            )
 
         def default_gen_image_fn(model, prompt, num_inference_steps, generator=None):
-            output = model(prompt, num_inference_steps=num_inference_steps, output_type="pil", width=self.resolution[0], height=self.resolution[0], generator=generator)
+            output = model(
+                prompt,
+                num_inference_steps=num_inference_steps,
+                output_type="pil",
+                width=self.resolution[0],
+                height=self.resolution[0],
+                generator=generator,
+            )
             return output.images[0]
 
         gen_image_fn = gen_image_fn or default_gen_image_fn
@@ -115,16 +129,24 @@ class Text2ImageEvaluator(BaseEvaluator):
             data = pd.DataFrame.from_dict(default_data)
 
         prompts = data["prompts"]
-        prompts = prompts.values if self.num_samples is None else prompts.values[:self.num_samples]
+        prompts = (
+            prompts.values
+            if self.num_samples is None
+            else prompts.values[: self.num_samples]
+        )
         images = []
         rng = torch.Generator(device="cpu")
-        
 
         if not os.path.exists(image_dir):
             os.makedirs(image_dir)
         for i, prompt in tqdm(enumerate(prompts), desc="Evaluate pipeline"):
             set_seed(self.seed)
-            image = gen_image_fn(model, prompt, self.num_inference_steps, generator=rng.manual_seed(self.seed))
+            image = gen_image_fn(
+                model,
+                prompt,
+                self.num_inference_steps,
+                generator=rng.manual_seed(self.seed),
+            )
             image_path = os.path.join(image_dir, f"{i}.png")
             image.save(image_path)
             images.append(image_path)

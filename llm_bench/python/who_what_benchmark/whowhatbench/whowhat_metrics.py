@@ -1,6 +1,7 @@
 """
 Metrics for text similarity
 """
+
 from difflib import SequenceMatcher
 from PIL import Image
 import torch
@@ -72,9 +73,7 @@ def evaluate_divergency(tokenizer, data_gold, data_prediction):
             fdt_list.append(fdt)
 
             num_matched = sum(block.size for block in blocks)
-            sdt = (
-                len(b_indexes) - num_matched
-            )
+            sdt = len(b_indexes) - num_matched
             sdt_list.append(sdt)
             sdt_norm = sdt / len(b_indexes)
             sdtn_list.append(sdt_norm)
@@ -124,7 +123,7 @@ class TextDivergency:
         return evaluate_divergency(self.tokenizer, gt, prediction)
 
 
-############### Image metrics ###################
+# Image metrics
 def evaluate_image_similarity(processor, model, data_gold, data_prediction):
     images_gold = data_gold["images"].values
     images_prediction = data_prediction["images"].values
@@ -137,7 +136,9 @@ def evaluate_image_similarity(processor, model, data_gold, data_prediction):
         prediction_image = Image.open(prediction)
 
         gold_inputs = processor(images=gold_image, return_tensors="pt")["pixel_values"]
-        prediction_inputs = processor(images=prediction_image, return_tensors="pt")["pixel_values"]
+        prediction_inputs = processor(images=prediction_image, return_tensors="pt")[
+            "pixel_values"
+        ]
 
         with torch.no_grad():
             gold_outputs = model.get_image_features(gold_inputs)
@@ -158,5 +159,3 @@ class ImageSimilarity:
 
     def evaluate(self, gt, prediction):
         return evaluate_image_similarity(self.processor, self.model, gt, prediction)
-
-

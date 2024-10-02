@@ -6,39 +6,39 @@ import pandas as pd
 import logging
 from datasets import load_dataset
 from diffusers import DiffusionPipeline
-from optimum.exporters import TasksManager
 from optimum.intel.openvino import OVModelForCausalLM
 from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
 
 from optimum.exporters.tasks import TasksManager
 from optimum.intel import (
-        OVLatentConsistencyModelPipeline,
-        OVStableDiffusionPipeline,
-        OVStableDiffusionXLPipeline,
+    OVLatentConsistencyModelPipeline,
+    OVStableDiffusionPipeline,
+    OVStableDiffusionXLPipeline,
 )
-from transformers import AutoConfig
 
 import openvino_genai
 from whowhatbench import EVALUATOR_REGISTRY, MODELTYPE2TASK
-
 
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TasksManager._SUPPORTED_MODEL_TYPE["stablelm-epoch"] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
+TasksManager._SUPPORTED_MODEL_TYPE["stablelm-epoch"] = (
+    TasksManager._SUPPORTED_MODEL_TYPE["llama"]
+)
 NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args(
     num_layers="num_hidden_layers",
     num_attention_heads="num_attention_heads",
 )
 
 
-class GenAIModelWrapper():
+class GenAIModelWrapper:
     """
     A helper class to store additional attributes for GenAI models
     """
+
     def __init__(self, model, model_dir):
         self.model = model
         self.config = AutoConfig.from_pretrained(model_dir)
@@ -60,10 +60,14 @@ def load_text_genai_pipeline(model_dir, device="CPU"):
     return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device), model_dir)
 
 
-def load_text_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False):
+def load_text_model(
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+):
     if use_hf:
         logger.info("Using HF Transformers API")
-        return AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device_map=device.lower())
+        return AutoModelForCausalLM.from_pretrained(
+            model_id, trust_remote_code=True, device_map=device.lower()
+        )
 
     if use_genai:
         return load_text_genai_pipeline(model_id, device)
@@ -74,7 +78,9 @@ def load_text_model(model_id, device="CPU", ov_config=None, use_hf=False, use_ge
     else:
         ov_options = None
     try:
-        model = OVModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device=device, ov_config=ov_options)
+        model = OVModelForCausalLM.from_pretrained(
+            model_id, trust_remote_code=True, device=device, ov_config=ov_options
+        )
     except ValueError:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
         model = OVModelForCausalLM.from_pretrained(
@@ -83,7 +89,7 @@ def load_text_model(model_id, device="CPU", ov_config=None, use_hf=False, use_ge
             trust_remote_code=True,
             use_cache=True,
             device=device,
-            ov_config=ov_options
+            ov_config=ov_options,
         )
     return model
 
@@ -95,7 +101,9 @@ TEXT2IMAGE_TASK2CLASS = {
 }
 
 
-def load_text2image_model(model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False):
+def load_text2image_model(
+    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+):
     if ov_config:
         with open(ov_config) as f:
             ov_options = json.load(f)
@@ -108,7 +116,9 @@ def load_text2image_model(model_type, model_id, device="CPU", ov_config=None, us
     TEXT2IMAGEPipeline = TEXT2IMAGE_TASK2CLASS[model_type]
 
     try:
-        model = TEXT2IMAGEPipeline.from_pretrained(model_id, trust_remote_code=True, device=device, ov_config=ov_options)
+        model = TEXT2IMAGEPipeline.from_pretrained(
+            model_id, trust_remote_code=True, device=device, ov_config=ov_options
+        )
     except ValueError:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
         model = TEXT2IMAGEPipeline.from_pretrained(
@@ -117,20 +127,25 @@ def load_text2image_model(model_type, model_id, device="CPU", ov_config=None, us
             trust_remote_code=True,
             use_cache=True,
             device=device,
-            ov_config=ov_options
+            ov_config=ov_options,
         )
     return model
 
 
-def load_model(model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False):
+def load_model(
+    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+):
     from .registry import MODELTYPE2TASK
+
     if model_id is None:
         return None
 
     if model_type == "text":
         return load_text_model(model_id, device, ov_config, use_hf, use_genai)
     elif MODELTYPE2TASK[model_type] == "image-generation":
-        return load_text2image_model(model_type, model_id, device, ov_config, use_hf, use_genai)
+        return load_text2image_model(
+            model_type, model_id, device, ov_config, use_hf, use_genai
+        )
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -331,8 +346,8 @@ def genai_gen_answer(model, tokenizer, question, max_new_tokens, skip_question):
 
 
 def get_evaluator(base_model, args):
-    #config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-    #task = TasksManager.infer_task_from_model(config._name_or_path)
+    # config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+    # task = TasksManager.infer_task_from_model(config._name_or_path)
     # TODO: Add logic to auto detect task based on model_id (TaskManager does not work for locally saved models)
     task = MODELTYPE2TASK[args.model_type]
 
@@ -350,7 +365,7 @@ def get_evaluator(base_model, args):
                 similarity_model_id=args.data_encoder,
                 num_samples=args.num_samples,
                 language=args.language,
-                gen_answer_fn=genai_gen_answer if args.genai else None
+                gen_answer_fn=genai_gen_answer if args.genai else None,
             )
         elif task == "image-generation":
             return EvaluatorCLS(
@@ -364,7 +379,8 @@ def get_evaluator(base_model, args):
 
     except KeyError:
         raise ValueError(
-            f"Attempted to load evaluator for '{task}', but no evaluator for this model type found! Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}"
+            f"Attempted to load evaluator for '{task}', but no evaluator for this model type found!"
+            "Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}"
         )
 
 
@@ -375,24 +391,31 @@ def print_text_results(evaluator):
         ref_text = ""
         actual_text = ""
         diff = ""
-        for l1, l2 in zip(e["source_model"].splitlines(), e["optimized_model"].splitlines()):
+        for l1, l2 in zip(
+            e["source_model"].splitlines(), e["optimized_model"].splitlines()
+        ):
             if l1 == "" and l2 == "":
                 continue
             ref_text += l1 + "\n"
             actual_text += l2 + "\n"
             diff += diff_strings(l1, l2) + "\n"
 
-        logger.info("--------------------------------------------------------------------------------------")
+        logger.info(
+            "--------------------------------------------------------------------------------------"
+        )
         logger.info("## Reference text %d:\n%s", i + 1, ref_text)
         logger.info("## Actual text %d:\n%s", i + 1, actual_text)
         logger.info("## Diff %d: ", i + 1)
         logger.info(diff)
 
+
 def print_image_results(evaluator):
     metric_of_interest = "similarity"
     worst_examples = evaluator.worst_examples(top_k=1, metric=metric_of_interest)
     for i, e in enumerate(worst_examples):
-        logger.info("--------------------------------------------------------------------------------------")
+        logger.info(
+            "--------------------------------------------------------------------------------------"
+        )
         logger.info(f"Top-{i+1} example:")
         logger.info(e)
 
@@ -400,11 +423,18 @@ def print_image_results(evaluator):
 def main():
     args = parse_args()
     check_args(args)
-    
+
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = get_evaluator(None, args)
     else:
-        base_model = load_model(args.model_type, args.base_model, args.device, args.ov_config, args.hf, args.genai)
+        base_model = load_model(
+            args.model_type,
+            args.base_model,
+            args.device,
+            args.ov_config,
+            args.hf,
+            args.genai,
+        )
         evaluator = get_evaluator(base_model, args)
 
         if args.gt_data:
@@ -412,8 +442,17 @@ def main():
         del base_model
 
     if args.target_model:
-        target_model = load_model(args.model_type, args.target_model, args.device, args.ov_config, args.hf, args.genai)
-        all_metrics_per_question, all_metrics = evaluator.score(target_model, genai_gen_answer if args.genai else None)
+        target_model = load_model(
+            args.model_type,
+            args.target_model,
+            args.device,
+            args.ov_config,
+            args.hf,
+            args.genai,
+        )
+        all_metrics_per_question, all_metrics = evaluator.score(
+            target_model, genai_gen_answer if args.genai else None
+        )
         logger.info("Metrics for model: %s", args.target_model)
         logger.info(all_metrics)
 

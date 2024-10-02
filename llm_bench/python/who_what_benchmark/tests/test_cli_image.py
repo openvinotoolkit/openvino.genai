@@ -5,38 +5,40 @@ import pytest
 import logging
 
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 def run_wwb(args):
     logger.info(" ".join(["wwb"] + args))
-    result = subprocess.run(
-        ["wwb"] + args,
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(["wwb"] + args, capture_output=True, text=True)
     logger.info(result)
     return result
 
 
-@pytest.mark.parametrize(("model_id", "model_type", "backend"),
-        [
-            ("hf-internal-testing/tiny-stable-diffusion-torch", "sd", "hf"),
-            ("hf-internal-testing/tiny-stable-diffusion-openvino", "sd", "openvino"),
-            ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "sd-xl", "hf")
-        ],
+@pytest.mark.parametrize(
+    ("model_id", "model_type", "backend"),
+    [
+        ("hf-internal-testing/tiny-stable-diffusion-torch", "sd", "hf"),
+        ("hf-internal-testing/tiny-stable-diffusion-openvino", "sd", "openvino"),
+        ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "sd-xl", "hf"),
+    ],
 )
 def test_image_model_types(model_id, model_type, backend):
     GT_FILE = "test_sd.json"
     wwb_args = [
-        "--base-model", model_id,
-        "--target-model", model_id,
-        "--num-samples", "1",
-        "--gt-data", GT_FILE, 
-        "--device", "CPU",
-        "--model-type", model_type,
+        "--base-model",
+        model_id,
+        "--target-model",
+        model_id,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
     ]
     if backend == "hf":
         wwb_args.append("--hf")
@@ -52,21 +54,29 @@ def test_image_model_types(model_id, model_type, backend):
     assert "## Reference text" not in result.stderr
 
 
-@pytest.mark.parametrize(("model_id", "model_type", "backend"),
-        [
-            ("hf-internal-testing/tiny-stable-diffusion-torch", "sd", "hf"),
-        ],
+@pytest.mark.parametrize(
+    ("model_id", "model_type", "backend"),
+    [
+        ("hf-internal-testing/tiny-stable-diffusion-torch", "sd", "hf"),
+    ],
 )
 def test_image_custom_dataset(model_id, model_type, backend):
     GT_FILE = "test_sd.json"
     wwb_args = [
-        "--base-model", model_id,
-        "--num-samples", "1",
-        "--gt-data", GT_FILE, 
-        "--device", "CPU",
-        "--model-type", model_type,
-        "--dataset", "google-research-datasets/conceptual_captions",
-        "--dataset-field", "caption",
+        "--base-model",
+        model_id,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--dataset",
+        "google-research-datasets/conceptual_captions",
+        "--dataset-field",
+        "caption",
     ]
     if backend == "hf":
         wwb_args.append("--hf")

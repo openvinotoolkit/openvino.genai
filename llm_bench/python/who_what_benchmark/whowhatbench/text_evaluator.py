@@ -7,7 +7,7 @@ from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity
 
 default_data = {
-    "en" : {
+    "en": {
         "prompts": [
             "Who is Mark Twain?",
             "Who is William Shakespeare?",
@@ -44,8 +44,7 @@ default_data = {
             "谁是威廉-莎士比亚?",
             "阿加莎-克里斯蒂是谁?",
             "芭芭拉-卡特兰是谁?",
-            "丹妮尔-斯蒂尔是谁?"
-            "谁是哈罗德-罗宾斯?",
+            "丹妮尔-斯蒂尔是谁?" "谁是哈罗德-罗宾斯?",
             "乔治-西默农是谁?",
             "伊妮德-布莱顿是谁?",
             "西德尼-谢尔顿是谁?",
@@ -87,7 +86,9 @@ def autodetect_language(model):
     return model2language.get(model.config.model_type, "en")
 
 
-@register_evaluator("text-generation", "text-generation-with-past", "text2text-generation")
+@register_evaluator(
+    "text-generation", "text-generation-with-past", "text2text-generation"
+)
 class TextEvaluator(BaseEvaluator):
     def __init__(
         self,
@@ -104,7 +105,7 @@ class TextEvaluator(BaseEvaluator):
         gen_answer_fn=None,
         generation_config=None,
         generation_config_base=None,
-        seqs_per_request=None
+        seqs_per_request=None,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -129,7 +130,9 @@ class TextEvaluator(BaseEvaluator):
                 self.language = autodetect_language(base_model)
 
         if base_model:
-            self.gt_data = self._generate_data(base_model, gen_answer_fn, generation_config=generation_config)
+            self.gt_data = self._generate_data(
+                base_model, gen_answer_fn, generation_config=generation_config
+            )
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
@@ -213,26 +216,45 @@ class TextEvaluator(BaseEvaluator):
                 data = pd.DataFrame.from_dict(data)
         else:
             if self.language is None:
-                print("No language detecting in the base model or ground truth data. Taking language from target model.")
+                print(
+                    "No language detecting in the base model or ground truth data. Taking language from target model."
+                )
                 self.language = autodetect_language(model)
             data = pd.DataFrame.from_dict(default_data[self.language])
 
         prompt_data = data["prompts"]
 
         answers = []
-        prompts = prompt_data.values if self.num_samples is None else prompt_data.values[:self.num_samples]
+        prompts = (
+            prompt_data.values
+            if self.num_samples is None
+            else prompt_data.values[: self.num_samples]
+        )
 
         if generation_config is None:
             for p in tqdm(prompts, desc="Evaluate pipeline"):
-                answers.append(gen_answer_fn(model, self.tokenizer, p, self.max_new_tokens, self._crop_question))
+                answers.append(
+                    gen_answer_fn(
+                        model,
+                        self.tokenizer,
+                        p,
+                        self.max_new_tokens,
+                        self._crop_question,
+                    )
+                )
         else:
             with tqdm(total=len(prompt_data.values)) as progress_bar:
                 batch = []
                 for p_idx, p in enumerate(prompt_data.values):
                     progress_bar.update(1)
                     batch.append(p)
-                    if len(batch) == self.seqs_per_request or p_idx == len(prompt_data.values) - 1:
-                        ans_batch = model.generate(batch, [generation_config] * len(batch))
+                    if (
+                        len(batch) == self.seqs_per_request
+                        or p_idx == len(prompt_data.values) - 1
+                    ):
+                        ans_batch = model.generate(
+                            batch, [generation_config] * len(batch)
+                        )
                         for ans in ans_batch:
                             answers.append(ans.m_generation_ids[0])
 

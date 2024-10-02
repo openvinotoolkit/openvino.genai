@@ -1,17 +1,16 @@
-
 from abc import ABC, abstractmethod
 
 from optimum.intel import (
-        OVLatentConsistencyModelPipeline,
-        OVStableDiffusionPipeline,
-        OVStableDiffusionXLPipeline,
+    OVLatentConsistencyModelPipeline,
+    OVStableDiffusionPipeline,
+    OVStableDiffusionXLPipeline,
 )
 
 
 # Registry for evaluators
 EVALUATOR_REGISTRY = {}
 MODELTYPE2TASK = {
-    "text":  "text-generation",
+    "text": "text-generation",
     "sd": "image-generation",
     "sd-xl": "image-generation",
     "sd-lcm": "image-generation",
@@ -35,18 +34,16 @@ def register_evaluator(*names):
         return cls
 
     return decorate
-    
+
 
 class BaseEvaluator(ABC):
     @abstractmethod
     def dump_gt(self, csv_name: str):
         pass
 
-
     @abstractmethod
     def score(self, model, **kwargs):
         pass
-    
 
     @abstractmethod
     def worst_examples(self, top_k: int = 5, metric="similarity"):
