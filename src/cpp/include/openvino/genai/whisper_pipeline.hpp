@@ -17,7 +17,7 @@ using OptionalWhisperGenerationConfig = std::optional<WhisperGenerationConfig>;
 
 using RawSpeechInput = std::vector<float>;
 
-struct OPENVINO_GENAI_EXPORTS WhisperDecodedResultChunk {
+struct WhisperDecodedResultChunk {
     // start of chunk in seconds
     float start_ts;
 
@@ -28,8 +28,7 @@ struct OPENVINO_GENAI_EXPORTS WhisperDecodedResultChunk {
     std::string text;
 };
 
-class OPENVINO_GENAI_EXPORTS WhisperDecodedResults : public DecodedResults {
-public:
+struct WhisperDecodedResults : public DecodedResults {
     std::optional<std::vector<WhisperDecodedResultChunk>> chunks = std::nullopt;
 };
 
