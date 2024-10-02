@@ -41,10 +41,15 @@ struct EncodedImage {
 /// ov::InferRequest and configured by ProcessorConfig.
 class OPENVINO_GENAI_EXPORTS VisionEncoder {
 public:
+    /// @brief A string denoting model type.
+    std::string model_type;
     /// @brief A model for image encoding.
     ov::InferRequest m_encoder;
     /// @brief A config to follow.
     ProcessorConfig m_processor_config;
+
+    // LLaVa specific members
+    ov::InferRequest m_vision_embeddings;
 
     /// @brief Construct from an already compiled model and a config.
     /// @param encoder Compiled model.
@@ -65,7 +70,8 @@ public:
         const std::filesystem::path& model_dir,
         const std::string& device="CPU",
         const ov::AnyMap device_config={},
-        ov::Core core=ov::Core{}
+        ov::Core core=ov::Core{},
+        std::string model_type=""
     );
 
     /// @brief Compute embeddings of an image.
@@ -117,5 +123,14 @@ public:
             image, AnyMap{std::forward<Properties>(properties)...}
         );
     }
+
+private:
+    EncodedImage encode_minicpm(
+        const ov::Tensor& image, const ProcessorConfig& config
+    );
+
+    EncodedImage encode_llava(
+        const ov::Tensor& image, const ProcessorConfig& config
+    );
 };
 }

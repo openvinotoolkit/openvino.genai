@@ -291,27 +291,117 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     }
     return {resized_source, resized_source_size, encoded_slices, sliced_sizes};
 }
+
+
+ov::Tensor preprocess_image_llava(const ov::Tensor& image, const ProcessorConfig& config) {
+    bool do_resize = true;
+    bool do_center_crop = true;
+
+    // ov::Tensor to clip_image_u8
+    clip_image_u8 input_image{
+        int(image.get_shape().at(3)),
+        int(image.get_shape().at(2)),
+        {image.data<uint8_t>(), image.data<uint8_t>() + image.get_size()}
+    };
+
+    // Resize
+    clip_image_u8 resized_image;
+    if (do_resize) {
+        int target_size = config.size_shortest_edge;
+        float scale = static_cast<float>(target_size) / std::min(input_image.nx, input_image.ny);
+        int new_width = static_cast<int>(input_image.nx * scale);
+        int new_height = static_cast<int>(input_image.ny * scale);
+        bicubic_resize(input_image, resized_image, new_width, new_height);
+    } else {
+        resized_image = input_image;
+    }
+
+    // Center crop
+    clip_image_u8 cropped_image;
+    if (do_center_crop) {
+        int crop_height = config.crop_size_height;
+        int crop_width = config.crop_size_width;
+        int start_x = (resized_image.nx - crop_width) / 2;
+        int start_y = (resized_image.ny - crop_height) / 2;
+
+        cropped_image.nx = crop_width;
+        cropped_image.ny = crop_height;
+        cropped_image.buf.resize(3 * crop_width * crop_height);
+
+        for (int y = 0; y < crop_height; ++y) {
+            for (int x = 0; x < crop_width; ++x) {
+                for (int c = 0; c < 3; ++c) {
+                    cropped_image.buf[(y * crop_width + x) * 3 + c] = 
+                        resized_image.buf[((start_y + y) * resized_image.nx + (start_x + x)) * 3 + c];
+                }
+            }
+        }
+    } else {
+        cropped_image = resized_image;
+    }
+
+    // Normalize
+    clip_ctx ctx;
+    std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
+    std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
+
+    clip_image_f32 normalized_image = clip_image_preprocess(ctx, cropped_image);
+
+    // Convert clip_image_f32 to ov::Tensor
+    ov::Tensor result(
+        ov::element::f32,
+        {1, 3, size_t(normalized_image.ny), size_t(normalized_image.nx)},
+        (void*)(normalized_image.buf.data())
+    );
+
+    return result;
+}
 }
 
-VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap device_config, ov::Core core) :
-    VisionEncoder{
-        core.compile_model(
-            model_dir / "image_encoder.xml", device, device_config
-        ).create_infer_request(),
-        ov::genai::utils::from_config_json_if_exists<ov::genai::ProcessorConfig>(
+VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap device_config, ov::Core core, std::string model_type) :
+    model_type(model_type) {
+        if (model_type == "minicpmv") {
+            m_encoder = core.compile_model(model_dir / "image_encoder.xml", device, device_config).create_infer_request();
+        } else if (model_type == "llava") {
+            // Vision embeddings model is merged with multi modal projector at model export stage by optimum-intel
+            m_vision_embeddings = core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config).create_infer_request();
+        } else {
+            OPENVINO_THROW("Unsupported model type: " + model_type);
+        }
+        m_processor_config = ov::genai::utils::from_config_json_if_exists<ov::genai::ProcessorConfig>(
             model_dir, "preprocessor_config.json"
-        )
-    } {}
+        );
+}
 
 EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ProcessorConfig& config) {
-    clip_ctx ctx_clip;
-    std::copy(config.norm_mean.begin(), config.norm_mean.end(), ctx_clip.image_mean);
-    std::copy(config.norm_std.begin(), config.norm_std.end(), ctx_clip.image_std);
-    return llava_image_embed_make_with_bytes_slice(ctx_clip, image, m_encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
+    if (model_type == "minicpmv") {
+        return encode_minicpm(image, config);
+    } else if (model_type == "llava") {
+        return encode_llava(image, config);
+    }
 }
 
 EncodedImage VisionEncoder::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     return encode(image, utils::from_any_map(
         config_map, m_processor_config
     ));
+}
+
+EncodedImage VisionEncoder::encode_minicpm(const ov::Tensor& image, const ProcessorConfig& config) {
+    clip_ctx ctx_clip;
+    std::copy(config.norm_mean.begin(), config.norm_mean.end(), ctx_clip.image_mean);
+    std::copy(config.norm_std.begin(), config.norm_std.end(), ctx_clip.image_std);
+    return llava_image_embed_make_with_bytes_slice(ctx_clip, image, m_encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
+}
+
+EncodedImage VisionEncoder::encode_llava(const ov::Tensor& image, const ProcessorConfig& config) {
+    ov::Tensor preprocessed_image = preprocess_image_llava(image, config);
+
+    m_vision_embeddings.set_tensor("pixel_values", preprocessed_image);
+    m_vision_embeddings.infer();
+
+    ov::Tensor image_features = m_vision_embeddings.get_output_tensor();
+    HeightWidth resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
+
+    return {image_features, resized_source_size};
 }
