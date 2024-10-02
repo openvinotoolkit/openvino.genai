@@ -486,7 +486,6 @@ DecodedResults VLMPipeline::generate(
     }, streamer);
     std::vector<int64_t> generated;
     while (true) {  //(out_token != eos_token_id)
-        //out_token embedding
         m_embedding.get_input_tensor().data<int64_t>()[0] = out_token;
         m_embedding.infer();
         const ov::Tensor& embed_prompt_tensor = m_embedding.get_output_tensor();
