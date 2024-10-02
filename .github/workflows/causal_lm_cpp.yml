@@ -682,7 +682,7 @@ jobs:
           echo "Chat sample python" passed
 
   py-vlm_chat_sample-ubuntu:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04-16-cores
     defaults:
       run:
         shell: bash
