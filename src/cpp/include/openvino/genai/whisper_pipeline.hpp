@@ -17,9 +17,10 @@ using OptionalWhisperGenerationConfig = std::optional<WhisperGenerationConfig>;
 
 using RawSpeechInput = std::vector<float>;
 
+class WhisperPipelineImplBase;
+
 class OPENVINO_GENAI_EXPORTS WhisperPipeline {
-    class Impl;
-    std::unique_ptr<Impl> m_impl;
+    std::unique_ptr<WhisperPipelineImplBase> m_impl;
 
 public:
     /**

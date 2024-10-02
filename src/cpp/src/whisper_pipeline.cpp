@@ -13,6 +13,10 @@
 #include "whisper/whisper_feature_extractor.hpp"
 #include "whisper/whisper_models.hpp"
 
+#include "whisper_pipeline_base.hpp"
+#include "whisper_pipeline_static.hpp"
+
+// FIXME: Remove these duplicates
 namespace {
 ov::genai::WhisperGenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path) {
     auto config_file_path = model_path / "generation_config.json";
@@ -41,21 +45,17 @@ std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& 
                                       ov::genai::WhisperFeatureExtractor& feature_extractor,
                                       const std::shared_ptr<StreamerBase> streamer);
 
-class WhisperPipeline::Impl {
+class WhisperPipelineImpl : public WhisperPipelineImplBase {
 public:
-    ov::genai::WhisperGenerationConfig m_generation_config;
     ov::genai::WhisperInitializedModels m_models;
-    ov::genai::WhisperFeatureExtractor m_feature_extractor;
-    Tokenizer m_tokenizer;
-    float m_load_time_ms = 0;
 
-    Impl(const std::filesystem::path& model_path,
-         const ov::genai::Tokenizer& tokenizer,
-         const std::string& device,
-         const ov::AnyMap& plugin_config)
-        : m_generation_config{from_config_json_if_exists(model_path)},
-          m_tokenizer{tokenizer},
-          m_feature_extractor{(model_path / "preprocessor_config.json").string()} {
+    WhisperPipelineImpl(const std::filesystem::path& model_path,
+                        const ov::genai::Tokenizer& tokenizer,
+                        const std::string& device,
+                        const ov::AnyMap& plugin_config)
+        : WhisperPipelineImplBase(from_config_json_if_exists(model_path),
+                                  tokenizer,
+                                  WhisperFeatureExtractor{(model_path / "preprocessor_config.json").string()}) {
         ov::Core core;
         auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
         core.set_property(core_plugin_config);
@@ -74,12 +74,12 @@ public:
         }
     }
 
-    Impl(const std::filesystem::path& model_path, const std::string& device, const ov::AnyMap& plugin_config)
-        : Impl{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
+    WhisperPipelineImpl(const std::filesystem::path& model_path, const std::string& device, const ov::AnyMap& plugin_config)
+        : WhisperPipelineImpl{model_path, Tokenizer(model_path.string()), device, plugin_config} {}
 
     DecodedResults generate(const RawSpeechInput& raw_speech_input,
                             OptionalWhisperGenerationConfig generation_config,
-                            StreamerVariant streamer) {
+                            StreamerVariant streamer) override {
         auto start_time = std::chrono::steady_clock::now();
         WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
         config.validate();
@@ -109,7 +109,11 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::string& model_path,
                                             const std::string& device,
                                             const ov::AnyMap& plugin_config) {
     auto start_time = std::chrono::steady_clock::now();
-    m_impl = std::make_unique<WhisperPipeline::Impl>(model_path, tokenizer, device, plugin_config);
+    if (device == "NPU") {
+        m_impl = std::make_unique<StaticWhisperPipeline>(model_path, tokenizer, plugin_config);
+    } else {
+        m_impl = std::make_unique<WhisperPipelineImpl>(model_path, tokenizer, device, plugin_config);
+    }
     auto stop_time = std::chrono::steady_clock::now();
     m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
@@ -118,7 +122,11 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::string& model_path,
                                             const std::string& device,
                                             const ov::AnyMap& plugin_config) {
     auto start_time = std::chrono::steady_clock::now();
-    m_impl = std::make_unique<WhisperPipeline::Impl>(model_path, device, plugin_config);
+    if (device == "NPU") {
+        m_impl = std::make_unique<StaticWhisperPipeline>(model_path, plugin_config);
+    } else {
+        m_impl = std::make_unique<WhisperPipelineImpl>(model_path, device, plugin_config);
+    }
     auto stop_time = std::chrono::steady_clock::now();
     m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
