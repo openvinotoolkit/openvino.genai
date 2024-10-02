@@ -312,20 +312,33 @@ VLMPipeline::VLMPipeline(
         )
     },
     m_tokenizer{tokenizer},
-    m_vision_encoder(model_dir, device, device_config, core),
-    m_resampler{core.compile_model(
-        model_dir / "resampler.xml", device, device_config
-    ).create_infer_request()},
-    m_embedding{core.compile_model(
-        model_dir / "embed_tokens.xml", device, device_config
-    ).create_infer_request()},
-    m_language{core.compile_model(
-        model_dir / "language_model.xml", device, device_config
-    ).create_infer_request()},
-    m_pos_embed_cache{
-        get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70})
-    },
+    m_vision_encoder(model_dir, device, device_config, core, m_vlm_config.model_type),
     m_is_chat_conversation{false} {
+        if (m_vlm_config.model_type == "minicpmv") {
+            m_resampler = core.compile_model(
+                model_dir / "resampler.xml", device, device_config
+            ).create_infer_request();
+
+            m_embedding = core.compile_model(
+                model_dir / "embed_tokens.xml", device, device_config
+            ).create_infer_request();
+
+            m_language = core.compile_model(
+                model_dir / "language_model.xml", device, device_config
+            ).create_infer_request();
+
+            m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
+        } else if (m_vlm_config.model_type == "llava") {
+            m_language = core.compile_model(
+                model_dir / "openvino_language_model.xml", device, device_config
+            ).create_infer_request();
+
+            // Reusing the same m_embedding for llava text_embeddings model
+            m_embedding = core.compile_model(
+                model_dir / "openvino_text_embeddings_model.xml", device, device_config
+            ).create_infer_request();
+        }
+
         m_language.get_tensor("attention_mask").set_shape({1, 0});
     }
 
@@ -448,12 +461,21 @@ DecodedResults VLMPipeline::generate(
             }
         }
     }
+
+    // if (m_vlm_config.model_type == "minicpmv") {
+    //     inputs_embeds = get_inputs_embeds_minicpm(prompt, images);
+    // } else if (m_vlm_config.model_type == "llava") {
+    //     inputs_embeds = get_inputs_embeds_llava(prompt, images);
+    // }
+
     m_language.set_tensor("inputs_embeds", inputs_embeds);
     size_t history_len = m_language.get_tensor("attention_mask").get_shape().at(1);
     m_language.get_tensor("attention_mask").set_shape({1, history_len + inputs_embeds.get_shape()[1]});
     std::fill_n(m_language.get_tensor("attention_mask").data<int64_t>(), m_language.get_tensor("attention_mask").get_size(), 1);
+    
     m_language.get_tensor("position_ids").set_shape({1, inputs_embeds.get_shape().at(1)});
     std::iota(m_language.get_tensor("position_ids").data<int64_t>(), m_language.get_tensor("position_ids").data<int64_t>() + m_language.get_tensor("position_ids").get_size(), history_len);
+    
     m_language.get_tensor("beam_idx").set_shape({ BATCH_SIZE });
     m_language.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
@@ -585,4 +607,47 @@ GenerationConfig VLMPipeline::get_generation_config() const {
 
 void VLMPipeline::set_generation_config(const GenerationConfig& new_config) {
     m_generation_config = new_config;
+}
+
+ov::Tensor VLMPipeline::get_inputs_embeds_llava(const std::string& prompt, const std::vector<ov::Tensor>& images) {
+    std::string image_token = "<image>"; // TODO Consider getting from vlm_config or json
+    std::string formatted_prompt = "USER: " + (images.empty() ? prompt : image_token + "\n" + prompt) + " ASSISTANT:";
+    ov::Tensor input_ids = m_tokenizer.encode(formatted_prompt).input_ids;
+    if (images.empty()) {
+        return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+    } else {
+        OPENVINO_ASSERT(1 == images.size(), "Only a single image allowed");
+        EncodedImage encoded_image = m_vision_encoder.encode(images.at(0));
+        ov::Tensor image_embeds = encoded_image.resized_source;
+        
+        ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+
+        int64_t image_token_index = 32000; // TODO Consider getting from m_vlm_config.image_token_index or config.json
+
+        return merge_text_and_image_embeddings(input_ids, text_embeds, image_embeds, image_token_index);
+    }
+}
+
+ov::Tensor VLMPipeline::get_inputs_embeds_minicpm(const std::string& prompt, const std::vector<ov::Tensor>& images) {
+    std::string wrapped = images.empty() ?
+        "<用户>" + prompt + "<AI>" : prompt + "<AI>";
+    ov::Tensor input_ids = m_tokenizer.encode(wrapped).input_ids;
+    
+    if (images.empty()) {
+        //<用户> + prompt + <AI> LLM first input
+        return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+    } else {
+        OPENVINO_ASSERT(1 == images.size(), "Only a single image allowed");
+        EncodedImage embeds = m_vision_encoder.encode(images.at(0));
+        ov::Tensor imgEmbedTensor = get_image_embedding(embeds, m_tokenizer, m_embedding, *this);
+
+        ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
+        OPENVINO_ASSERT(
+            m_vlm_config.hidden_size == img_embed_shape.at(2),
+            "Unexpected embedding size");
+
+        //<用户> + image embedding + prompt + <AI> LLM first input
+        ov::Tensor prompt_tensor = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+        return concatenate_mid_dim(imgEmbedTensor, prompt_tensor);
+    }
 }
