@@ -27,11 +27,11 @@ Login to Hugging Face if you want to use non-public models:
 huggingface-cli login
 ```
 
-### 2. Convert a model to OpenVINO IR Format
+### 2. Convert Model to OpenVINO IR Format
    
 The `optimum-cli` tool simplifies converting Hugging Face models to OpenVINO IR format. 
 - Detailed documentation can be found in the [Optimum-Intel documentation](https://huggingface.co/docs/optimum/main/en/intel/openvino/export). 
-- To learn more about weight compression techniques and their impact on model size and performance, see the [NNCF Weight Compression Guide](https://docs.openvino.ai/2024/openvino-workflow/model-optimization-guide/weight-compression.html).
+- To learn more about weight compression, see the [NNCF Weight Compression Guide](https://docs.openvino.ai/2024/openvino-workflow/model-optimization-guide/weight-compression.html).
 - For additional guidance on running inference with OpenVINO for LLMs, see the [OpenVINO LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html).
 
 **Usage:**
@@ -72,7 +72,7 @@ optimum-cli export openvino --model meta-llama/Llama-2-7b-chat-hf --weight-forma
         └── tokenizer.model
 ```
 
-### 3. Benchmarking
+### 3. Benchmark LLM Model
 
 To benchmark the performance of the LLM, use the following command:
 
@@ -118,9 +118,21 @@ python benchmark.py -m models/llama-2-7b-chat/pytorch -n 2 -f pytorch
 > pip install --upgrade --pre openvino openvino-tokenizers --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 > ```
 
-## 4. Benchmarking with `torch.compile()`
+## 4. Benchmark LLM with `torch.compile()`
 
 The `--torch_compile_backend` option enables you to use `torch.compile()` to accelerate PyTorch models by compiling them into optimized kernels using a specified backend.
+
+Before benchmarking, you need to download the original PyTorch model. Use the following command to download the model locally:
+
+```bash
+huggingface-cli download meta-llama/Llama-2-7b-chat-hf --local-dir models/llama-2-7b-chat/pytorch
+```
+
+To run the benchmarking script with `torch.compile()`, use the `--torch_compile_backend` option to specify the backend. You can choose between `pytorch` or `openvino` (default). Example:
+
+```bash
+python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino
+```
 
 > **Note:** To use `torch.compile()` with CUDA GPUs, you need to install the nightly version of PyTorch:
 >
@@ -128,19 +140,6 @@ The `--torch_compile_backend` option enables you to use `torch.compile()` to acc
 > pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu118
 > ```
 
-**Downloading the PyTorch Model**
-Before benchmarking, you need to download the original PyTorch model. Use the following command to download the model locally:
-
-```bash
-huggingface-cli download meta-llama/Llama-2-7b-chat-hf --local-dir models/llama-2-7b-chat/pytorch
-```
-
-**Running the Benchmark with `torch.compile()`**
-To run the benchmarking script with `torch.compile()`, use the `--torch_compile_backend` option to specify the backend. You can choose between `pytorch` or `openvino` (default). Example:
-
-```bash
-python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino
-```
 
 ## 5. Running on 2-Socket Platforms
 
