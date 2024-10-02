@@ -23,15 +23,16 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
 
     DeviceConfig device_config(core, scheduler_config, device, plugin_config);
 
-    apply_paged_attention_transformations(model, device_config);
+    bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
+    apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
 
     ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
 
     // setup KV caches
     m_cache_manager = std::make_shared<CacheManager>(device_config, core);
     for (size_t decoder_layer_id = 0; decoder_layer_id < device_config.get_num_layers(); ++decoder_layer_id) {
-        infer_request.set_input_tensor(2 + decoder_layer_id * 2, m_cache_manager->get_key_cache(decoder_layer_id));
-        infer_request.set_input_tensor(2 + decoder_layer_id * 2 + 1, m_cache_manager->get_value_cache(decoder_layer_id));
+        infer_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_key_cache(decoder_layer_id));
+        infer_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_value_cache(decoder_layer_id));
     }
 
     SchedulerConfig updated_config = scheduler_config;
@@ -47,9 +48,14 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
         can_use_partial_preemption = false;
     }
 
-    m_scheduler = std::make_shared<Scheduler>(updated_config, can_use_partial_preemption);
+    m_scheduler = std::make_shared<Scheduler>(updated_config, device_config.get_num_layers(), can_use_partial_preemption);
     // and finally create model runner
-    m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config);
+    bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
+    if (is_use_cache_eviction) {
+        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers(), true);
+    } else {
+        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers());
+    }
     m_sampler = std::make_shared<Sampler>(m_tokenizer);
     m_sampler->set_seed(m_generation_config.rng_seed);
 
@@ -113,6 +119,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         scheduler_output = m_scheduler->schedule(m_requests);
         m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
         m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
+        m_pipeline_metrics.max_cache_usage =
+            std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
+        _register_step_cache_usage(scheduler_output.m_cache_usage);
+        m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
         m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
         timer.end();
     }
@@ -154,6 +164,24 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         }
     }
 
+#ifdef DEBUG_CACHE_STATE_DUMP
+
+    CacheStateDumper dumper(CacheStateDumper::get_run_id_for_generation_step(step_count, "before_eviction"));
+    dumper.dump_cache_state(*m_scheduler, m_requests, step_count);
+#endif
+    const auto& sched_config = m_scheduler->get_config();
+
+    // evict unimportant blocks from KV cache, if requested
+    if (sched_config.use_cache_eviction) {
+        maybe_evict_cache_blocks(sched_config);
+    }
+
+#ifdef DEBUG_CACHE_STATE_DUMP
+    CacheStateDumper dumper_after(CacheStateDumper::get_run_id_for_generation_step(step_count, "eviction"));
+    dumper_after.dump_cache_state(*m_scheduler, m_requests, step_count);
+    step_count++;
+#endif
+
     SamplerOutput sampler_output;
     {
         static ManualTimer timer("sample");
@@ -170,7 +198,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         for (const auto& pair : sampler_output.m_forked_sequences) {
             uint64_t parent_id = pair.first;
             const std::list<uint64_t>& child_ids = pair.second;
-            for (auto & child_id : child_ids)
+            for (auto& child_id : child_ids)
                 m_scheduler->fork_sequence(parent_id, child_id);
         }
 
@@ -314,7 +342,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
         const auto& request = *requests_iterator;
         if(request->has_finished() || request->out_of_memory() || request->handle_dropped()) {
             for (const auto& sequence: request->get_sequences()) {
-                m_scheduler->free_sequence(sequence->get_id());
+                if (m_scheduler->has_block_table(sequence->get_id())) {
+                    m_scheduler->free_sequence(sequence->get_id());
+                }
             }
             m_sampler->clear_beam_search_info(request->get_request_id());
             requests_iterator = m_requests.erase(requests_iterator);
@@ -330,6 +360,55 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_requests_droppe
     for (SequenceGroup::Ptr& request : m_requests) {
         if (request->handle_dropped())
             request->push_empty_outputs();
+    }
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_register_step_cache_usage(float step_cache_usage) {
+    if (m_previous_step_cache_usages.size() >= AVG_CACHE_USAGE_WINDOW_SIZE_IN_STEPS) {
+        m_previous_step_cache_usages.pop_front();
+    }
+    m_previous_step_cache_usages.push_back(step_cache_usage);
+}
+
+float ContinuousBatchingPipeline::ContinuousBatchingImpl::_get_current_running_average_cache_usage() const {
+    return std::accumulate(m_previous_step_cache_usages.begin(), m_previous_step_cache_usages.end(), 0.0) / m_previous_step_cache_usages.size();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::maybe_evict_cache_blocks(const SchedulerConfig& sched_config) {
+    std::unordered_map<SequenceGroup::Ptr, size_t> seq_group_to_num_blocks_evicted_map;
+    auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
+    for (auto& seq_id_and_attention_scores : sequence_attention_scores) {
+        auto seq_id = seq_id_and_attention_scores.first;
+        const auto& attention_scores_for_all_decoder_layers = seq_id_and_attention_scores.second;
+        if (m_seq_group_id_to_cache_eviction_algo_map.find(seq_id) == m_seq_group_id_to_cache_eviction_algo_map.end()) {
+            auto num_decoder_layers = attention_scores_for_all_decoder_layers.size();
+
+            m_seq_group_id_to_cache_eviction_algo_map[seq_id] = CacheEvictionAlgorithm(sched_config.cache_eviction_config, sched_config.block_size, num_decoder_layers);
+        }
+        auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
+
+        cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers);
+        auto logical_blocks_to_evict = cache_eviction_algo.evict_logical_blocks();
+
+        m_scheduler->free_blocks_from_sequence(seq_id, logical_blocks_to_evict);
+
+        auto seq_group_ptr_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_id](const SequenceGroup::Ptr& val) { return val->has_sequence_with_id(seq_id); });
+        OPENVINO_ASSERT(seq_group_ptr_it != m_requests.end(), "could not find sequence group with sequence ", seq_id);
+        auto seq_group_ptr = *seq_group_ptr_it;
+        size_t num_blocks_evicted = logical_blocks_to_evict[0].size();
+
+        if (seq_group_to_num_blocks_evicted_map.find(seq_group_ptr) != seq_group_to_num_blocks_evicted_map.end()) {
+            OPENVINO_ASSERT(seq_group_to_num_blocks_evicted_map[seq_group_ptr] == num_blocks_evicted, "internal error - each sequence in the same group must have the same number of blocks evicted");
+        } else {
+            seq_group_to_num_blocks_evicted_map[seq_group_ptr] = num_blocks_evicted;
+        }
+
+    }
+    for (const auto& seq_group_ptr_and_num_blocks_evicted : seq_group_to_num_blocks_evicted_map) {
+        // Assuming that the evicted blocks are always full (since they by design are only selected from intermediate-age blocks)
+        auto seq_group_ptr = seq_group_ptr_and_num_blocks_evicted.first;
+        auto num_blocks_evicted = seq_group_ptr_and_num_blocks_evicted.second;
+        seq_group_ptr->register_token_eviction(num_blocks_evicted * sched_config.block_size);
     }
 }
 }

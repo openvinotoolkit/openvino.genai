@@ -18,6 +18,7 @@ class Scheduler {
 
     SchedulerConfig m_config;
     BlockManager m_block_manager;
+    friend class CacheStateDumper;
 
 public:
     struct Output {
@@ -25,8 +26,8 @@ public:
         std::vector<uint64_t> m_scheduled_sequence_groups_ids;
         // map of src -> dst blocks copies, which need to be performed by CacheManager
         std::map<size_t, std::list<size_t>> m_block_copy_map;
-        // block tables for scheduled sequences
-        std::map<uint64_t, std::vector<KVCacheBlock::Ptr>> m_block_tables;
+        // block tables for scheduled sequences per each attention layer in the model
+        std::map<uint64_t, std::vector<BlocksPerLayer>> m_block_tables;
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
         // dedicated prompt phase
@@ -35,10 +36,11 @@ public:
         float m_cache_usage = 0.0;
     };
 
-    explicit Scheduler(const SchedulerConfig & config = {}, bool can_use_partial_preemption = true) :
-        m_can_use_partial_preemption(can_use_partial_preemption),
-        m_config(config),
-        m_block_manager(m_config.num_kv_blocks, m_config.enable_prefix_caching, m_config.block_size) {
+    explicit Scheduler(const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true) :
+            m_can_use_partial_preemption(can_use_partial_preemption),
+            m_config(config),
+            m_block_manager(m_config.num_kv_blocks, m_config.enable_prefix_caching, m_config.block_size, num_layers) {
+        OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
     }
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
@@ -64,11 +66,12 @@ public:
 
         _clear_waiting_sequences(sequence_groups);
         scheduler_output.m_cache_usage = m_block_manager.get_used_percentage();
+
         return scheduler_output;
     }
 
-    const std::vector<KVCacheBlock::Ptr>& get_block_table(const Sequence& seq) {
-        return m_block_manager.get_block_table(seq.get_id());
+    const std::vector<BlocksPerLayer>& get_block_tables(const Sequence& seq) const {
+        return m_block_manager.get_block_tables(seq.get_id());
     }
 
     const bool has_block_table(uint64_t seq_id) {
@@ -84,11 +87,15 @@ public:
     }
 
     void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group) {
-        m_block_manager.restore_cached_blocks(sequence_group, m_config.block_size);
+        m_block_manager.restore_cached_blocks(sequence_group);
     }
 
     const SchedulerConfig& get_config() const {
         return m_config;
+    }
+
+    void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free) {
+        m_block_manager.free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free);
     }
 
 private:
@@ -109,14 +116,18 @@ private:
         size_t prev_blocks_count = m_block_manager.num_free_blocks();
         size_t preempted_tokens = 0;
         size_t num_blocks_occupied_by_sequence = m_block_manager.get_number_of_blocks_occupied_by_sequence(sequence_group);
+        bool was_evicted_from = (sequence_group->get_num_evicted_tokens() != 0);
 
-        if (num_blocks_occupied_by_sequence <= blocks_needed || !m_can_use_partial_preemption) {
+        if (num_blocks_occupied_by_sequence <= blocks_needed || !m_can_use_partial_preemption || was_evicted_from) {
             auto sequences = sequence_group->get_not_finished_sequences();
             for (size_t s = 0; s < sequences.size(); ++s) {
                 auto seq_id = sequences[s]->get_id();
                 m_block_manager.free_sequence(seq_id);
             }
             sequence_group->preempt_tokens(processed_tokens);
+            if (was_evicted_from) {
+                sequence_group->reset_eviction_token_count();
+            }
             sequence_group->set_waiting();
             return m_block_manager.num_free_blocks() > prev_blocks_count;
         }
@@ -142,7 +153,9 @@ private:
             preempted_tokens = processed_tokens;
             for (auto sequence: sequence_group->get_not_finished_sequences()) {
                 auto seq_id = sequence->get_id();
-                m_block_manager.free_sequence(seq_id);
+                if (m_block_manager.has_block_table(seq_id)) {
+                    m_block_manager.free_sequence(seq_id);
+                }
             }
         }
         sequence_group->preempt_tokens(preempted_tokens);
@@ -208,7 +221,10 @@ private:
                 size_t num_scheduled_tokens = std::min(num_tokens_in_megabatch, num_available_tokens);
 
                 // apply KV cache limitations
-                size_t available_slots = sequence_group->get_num_blocks() * m_config.block_size - sequence_group->get_num_processed_tokens(),
+                size_t currently_allocated_token_slots = sequence_group->get_num_blocks() * m_config.block_size;
+                size_t occupied_token_slots = sequence_group->get_num_processed_tokens() - sequence_group->get_num_evicted_tokens();
+                OPENVINO_ASSERT(currently_allocated_token_slots >= occupied_token_slots, "internal error");
+                size_t available_slots = currently_allocated_token_slots - occupied_token_slots,
                        required_slots = num_scheduled_tokens > available_slots ? num_scheduled_tokens - available_slots : 0;
                 size_t num_required_blocks = (required_slots + m_config.block_size - 1) / m_config.block_size, num_free_blocks = m_block_manager.num_free_blocks();
                 size_t num_scheduled_blocks = std::min(num_required_blocks, num_free_blocks);
@@ -226,7 +242,7 @@ private:
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
-                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_table(seq_id);
+                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
                     }
                 }
@@ -283,7 +299,7 @@ private:
                     // block tables for each running sequence within a group
                     std::vector<Sequence::Ptr> running_seqs = sequence_group->get_running_sequences();
                     for (const auto & seq : sequence_group->get_running_sequences()) {
-                        scheduler_output.m_block_tables[seq->get_id()] = m_block_manager.get_block_table(seq->get_id());
+                        scheduler_output.m_block_tables[seq->get_id()] = m_block_manager.get_block_tables(seq->get_id());
                     }
 
                     // merge copy_blocks
@@ -361,7 +377,7 @@ private:
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
-                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_table(seq_id);
+                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
                     }
 
@@ -380,4 +396,5 @@ private:
         }
     }
 };
+
 }

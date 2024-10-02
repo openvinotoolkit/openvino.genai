@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/runtime/compiled_model.hpp"
 
@@ -31,11 +33,6 @@ public:
     // Corresponds to the ”<|startoftranscript|>” token.
     int64_t decoder_start_token_id = 50258;
 
-    // The language token id of the transcription text. It is appended to the start of the sequence for
-    // multilingual speech recognition, e.g. for Spanish the token id corresponding to the "<|es|>" is appended to the
-    // start of sequence.
-    int64_t language_token_id = 50259;
-
     // End of stream token id.
     int64_t eos_token_id = 50257;
 
@@ -55,6 +52,18 @@ public:
     int64_t begin_timestamps_token_id = 50364;
 
     bool is_multilingual = true;
+
+    // Language token to use for generation in the form of <|en|>.
+    // You can find all the possible language tokens in the generation_config.json lang_to_id dictionary.
+    // Can be set for multilingual models only.
+    std::optional<std::string> language = std::nullopt;
+
+    // Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
+    std::map<std::string, int64_t> lang_to_id;
+
+    // Task to use for generation, either “translate” or “transcribe”.
+    // Can be set for multilingual models only.
+    std::optional<std::string> task = std::nullopt;
 
     // A list containing tokens that will be supressed at the beginning of the sampling process.
     std::vector<int64_t> begin_suppress_tokens;
@@ -89,12 +98,14 @@ public:
 static constexpr ov::Property<std::vector<int64_t>> begin_suppress_tokens{"begin_suppress_tokens"};
 static constexpr ov::Property<std::vector<int64_t>> suppress_tokens{"suppress_tokens"};
 static constexpr ov::Property<int64_t> decoder_start_token_id{"decoder_start_token_id"};
-
 static constexpr ov::Property<int64_t> pad_token_id{"pad_token_id"};
 static constexpr ov::Property<int64_t> transcribe_token_id{"transcribe_token_id"};
 static constexpr ov::Property<int64_t> translate_token_id{"translate_token_id"};
 static constexpr ov::Property<int64_t> no_timestamps_token_id{"no_timestamps_token_id"};
 static constexpr ov::Property<int64_t> begin_timestamps_token_id{"begin_timestamps_token_id"};
+static constexpr ov::Property<std::string> language{"language"};
+static constexpr ov::Property<std::string> task{"task"};
+static constexpr ov::Property<std::map<std::string, int64_t>> lang_to_id{"lang_to_id"};
 
 }  // namespace genai
 }  // namespace ov
