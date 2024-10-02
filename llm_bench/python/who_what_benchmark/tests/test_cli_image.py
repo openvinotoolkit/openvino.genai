@@ -44,6 +44,7 @@ def test_image_model_types(model_id, model_type, backend):
         wwb_args.append("--hf")
 
     result = run_wwb(wwb_args)
+    logger.error("WWB result: ", result, result.stderr)
 
     os.unlink(GT_FILE)
     shutil.rmtree("reference")
