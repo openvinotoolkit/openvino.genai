@@ -432,7 +432,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
         size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
 
         const float * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
-        // ov::Tensor sequence_group_logits(ov::element::f32, ov::Shape{num_running_sequences, actual_seq_len, vocab_size}, (void *)sequence_group_logits_data);
 
         size_t num_prompt_tokens_processed = sequence_group->get_num_processed_tokens();
         OPENVINO_ASSERT(num_prompt_tokens_processed + actual_seq_len <= sequence_group->get_prompt_len());
