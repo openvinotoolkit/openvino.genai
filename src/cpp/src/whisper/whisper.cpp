@@ -277,6 +277,10 @@ std::pair<std::vector<int64_t>, std::optional<std::vector<Segment>>> whisper_gen
         }
     }
 
+    if (streamer) {
+        streamer->end();
+    }
+
     std::optional<std::vector<Segment>> segments = std::nullopt;
     if (config.return_timestamps) {
         // 0.02 by default
