@@ -110,6 +110,7 @@ auto generation_config_docstring = R"(
     stop_strings: list of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
     include_stop_str_in_output: if set to true stop string that matched generation will be included in generation output (default: false)
     stop_token_ids: list of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
+    echo:           if set to true, output will include user prompt (default: false).
 
     Beam search specific parameters:
     num_beams:         number of beams for beam search. 1 disables beam search.
@@ -659,6 +660,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("stop_strings", &GenerationConfig::stop_strings)
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
+        .def_readwrite("echo", &GenerationConfig::echo)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id)
         .def("is_beam_search", &GenerationConfig::is_beam_search);
 

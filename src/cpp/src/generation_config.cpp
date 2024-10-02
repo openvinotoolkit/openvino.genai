@@ -175,7 +175,7 @@ GenerationConfig beam_search() {
 
 GenerationConfig greedy() {
     GenerationConfig greedy_config;
-    greedy_config.max_new_tokens = 0;
+    greedy_config.max_new_tokens = 30;
     return greedy_config;
 }
 
