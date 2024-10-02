@@ -1,17 +1,11 @@
 
 from abc import ABC, abstractmethod
-from typing import Any, Union, Type
 
-from optimum.exporters.tasks import TasksManager
-from optimum.intel import  (
+from optimum.intel import (
         OVLatentConsistencyModelPipeline,
-        OVStableDiffusionImg2ImgPipeline,
-        OVStableDiffusionInpaintPipeline,
         OVStableDiffusionPipeline,
-        OVStableDiffusionXLImg2ImgPipeline,
         OVStableDiffusionXLPipeline,
 )
-from transformers import AutoConfig
 
 
 # Registry for evaluators

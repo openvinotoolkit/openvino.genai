@@ -12,12 +12,9 @@ from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
 
 from optimum.exporters.tasks import TasksManager
-from optimum.intel import  (
+from optimum.intel import (
         OVLatentConsistencyModelPipeline,
-        OVStableDiffusionImg2ImgPipeline,
-        OVStableDiffusionInpaintPipeline,
         OVStableDiffusionPipeline,
-        OVStableDiffusionXLImg2ImgPipeline,
         OVStableDiffusionXLPipeline,
 )
 from transformers import AutoConfig
@@ -94,7 +91,6 @@ TEXT2IMAGE_TASK2CLASS = {
     "sd-xl": OVStableDiffusionXLPipeline,
     "sd-lcm": OVLatentConsistencyModelPipeline,
 }
-
 
 
 def load_text2image_model(model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False):

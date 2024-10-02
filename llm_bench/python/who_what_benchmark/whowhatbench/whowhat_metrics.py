@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
-from transformers import CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPImageProcessor
+from transformers import CLIPImageProcessor, CLIPModel
 from tqdm import tqdm
 
 
