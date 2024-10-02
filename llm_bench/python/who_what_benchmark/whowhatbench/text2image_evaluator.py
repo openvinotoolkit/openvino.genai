@@ -65,7 +65,7 @@ class Text2ImageEvaluator(BaseEvaluator):
     def score(self, model, gen_image_fn=None):
         predictions = self._generate_data(model, gen_image_fn, os.path.join(self.gt_dir, "target"))
 
-        all_metrics_per_question = {}
+        all_metrics_per_prompt = {}
         all_metrics = {}
 
         if self.similarity:
@@ -73,24 +73,20 @@ class Text2ImageEvaluator(BaseEvaluator):
                 self.gt_data, predictions
             )
             all_metrics.update(metric_dict)
-            all_metrics_per_question.update(metric_per_question)
+            all_metrics_per_prompt.update(metric_per_question)
 
-        self.last_cmp = all_metrics_per_question
+        self.last_cmp = all_metrics_per_prompt
         self.last_cmp["prompts"] = predictions["prompts"].values
         self.last_cmp["source_model"] = self.gt_data["images"].values
         self.last_cmp["optimized_model"] = predictions["images"].values
         self.last_cmp = pd.DataFrame(self.last_cmp)
 
-        return pd.DataFrame(all_metrics_per_question), pd.DataFrame([all_metrics])
+        return pd.DataFrame(all_metrics_per_prompt), pd.DataFrame([all_metrics])
 
     def worst_examples(self, top_k: int = 5, metric="similarity"):
         assert self.last_cmp is not None
 
-        if metric in ["SDT", "SDT norm"]:
-            res = self.last_cmp.nlargest(top_k, metric)
-        else:
-            res = self.last_cmp.nsmallest(top_k, metric)
-
+        res = self.last_cmp.nsmallest(top_k, metric)
         res = list(row for idx, row in res.iterrows())
 
         return res

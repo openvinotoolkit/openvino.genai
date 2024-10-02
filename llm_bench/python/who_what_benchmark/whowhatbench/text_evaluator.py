@@ -8,7 +8,7 @@ from .whowhat_metrics import TextDivergency, TextSimilarity
 
 default_data = {
     "en" : {
-        "questions": [
+        "prompts": [
             "Who is Mark Twain?",
             "Who is William Shakespeare?",
             "Who is Agatha Christie?",
@@ -39,7 +39,7 @@ default_data = {
         ],
     },
     "cn": {
-        "questions": [
+        "prompts": [
             "马克吐温是谁?",
             "谁是威廉-莎士比亚?",
             "阿加莎-克里斯蒂是谁?",
@@ -153,7 +153,7 @@ class TextEvaluator(BaseEvaluator):
     def score(self, model, gen_answer_fn=None):
         predictions = self._generate_data(model, gen_answer_fn, self.generation_config)
 
-        all_metrics_per_question = {}
+        all_metrics_per_prompt = {}
         all_metrics = {}
 
         if self.similarity:
@@ -161,23 +161,23 @@ class TextEvaluator(BaseEvaluator):
                 self.gt_data, predictions
             )
             all_metrics.update(metric_dict)
-            all_metrics_per_question.update(metric_per_question)
+            all_metrics_per_prompt.update(metric_per_question)
 
         if self.divergency:
             metric_dict, metric_per_question = self.divergency.evaluate(
                 self.gt_data, predictions
             )
             all_metrics.update(metric_dict)
-            all_metrics_per_question.update(metric_per_question)
+            all_metrics_per_prompt.update(metric_per_question)
 
-        self.last_cmp = all_metrics_per_question
-        self.last_cmp["questions"] = predictions["questions"].values
+        self.last_cmp = all_metrics_per_prompt
+        self.last_cmp["prompts"] = predictions["prompts"].values
         self.last_cmp["source_model"] = self.gt_data["answers"].values
         self.last_cmp["optimized_model"] = predictions["answers"].values
         self.last_cmp = pd.DataFrame(self.last_cmp)
-        self.last_cmp.rename(columns={"questions": "prompt"}, inplace=True)
+        self.last_cmp.rename(columns={"prompts": "prompt"}, inplace=True)
 
-        return pd.DataFrame(all_metrics_per_question), pd.DataFrame([all_metrics])
+        return pd.DataFrame(all_metrics_per_prompt), pd.DataFrame([all_metrics])
 
     def worst_examples(self, top_k: int = 5, metric="similarity"):
         assert self.last_cmp is not None
@@ -192,12 +192,12 @@ class TextEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(model, tokenizer, question, max_new_tokens, crop_question):
-            inputs = self.tokenizer(question, return_tensors="pt")
+        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question):
+            inputs = self.tokenizer(prompt, return_tensors="pt")
 
             tokens = model.generate(**inputs, max_new_tokens=max_new_tokens)
             out = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
-            return out[len(question) :] if crop_question else out
+            return out[len(prompt) :] if crop_question else out
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
 
@@ -206,10 +206,10 @@ class TextEvaluator(BaseEvaluator):
                 data = pd.read_csv(self.test_data)
             else:
                 if isinstance(self.test_data, dict):
-                    assert "questions" in self.test_data
+                    assert "prompts" in self.test_data
                     data = dict(self.test_data)
                 else:
-                    data = {"questions": list(self.test_data)}
+                    data = {"prompts": list(self.test_data)}
                 data = pd.DataFrame.from_dict(data)
         else:
             if self.language is None:
@@ -217,28 +217,28 @@ class TextEvaluator(BaseEvaluator):
                 self.language = autodetect_language(model)
             data = pd.DataFrame.from_dict(default_data[self.language])
 
-        questions = data["questions"]
+        questions = data["prompts"]
 
         answers = []
         prompts = questions.values if self.num_samples is None else questions.values[:self.num_samples]
 
         if generation_config is None:
-            for q in tqdm(prompts, desc="Evaluate pipeline"):
-                answers.append(gen_answer_fn(model, self.tokenizer, q, self.max_new_tokens, self._crop_question))
+            for p in tqdm(prompts, desc="Evaluate pipeline"):
+                answers.append(gen_answer_fn(model, self.tokenizer, p, self.max_new_tokens, self._crop_question))
         else:
             with tqdm(total=len(questions.values)) as progress_bar:
                 batch = []
-                for q_idx, q in enumerate(questions.values):
+                for p_idx, p in enumerate(questions.values):
                     progress_bar.update(1)
-                    batch.append(q)
-                    if len(batch) == self.seqs_per_request or q_idx == len(questions.values) - 1:
+                    batch.append(p)
+                    if len(batch) == self.seqs_per_request or p_idx == len(questions.values) - 1:
                         ans_batch = model.generate(batch, [generation_config] * len(batch))
                         for ans in ans_batch:
                             answers.append(ans.m_generation_ids[0])
 
                         batch.clear()
 
-        res_data = {"questions": list(prompts), "answers": answers}
+        res_data = {"prompts": list(prompts), "answers": answers}
         df = pd.DataFrame(res_data)
         df["language"] = self.language
 

@@ -54,12 +54,13 @@ def teardown_module():
     shutil.rmtree(tmp_dir)
 
 
-def test_target_model():
+def test_text_target_model():
     result = run_wwb([
         "--base-model", base_model_path,
         "--target-model", target_model_path,
         "--num-samples", "2",
-        "--device", "CPU"
+        "--device", "CPU",
+        "--model-type", "text",
     ])
 
     assert result.returncode == 0
@@ -68,7 +69,7 @@ def test_target_model():
 
 
 @pytest.fixture
-def test_gt_data():
+def test_text_gt_data():
     with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
         temp_file_name = tmpfile.name
 
@@ -88,7 +89,7 @@ def test_gt_data():
     assert len(data["questions"].values) == 2
 
 
-def test_output_directory():
+def test_text_output_directory():
     with tempfile.TemporaryDirectory() as temp_dir:
         result = run_wwb([
             "--base-model", base_model_path,
@@ -103,7 +104,7 @@ def test_output_directory():
         assert os.path.exists(os.path.join(temp_dir, "metrics.csv"))
 
 
-def test_verbose():
+def test_text_verbose():
     result = run_wwb([
         "--base-model", base_model_path,
         "--target-model", target_model_path,
@@ -115,7 +116,7 @@ def test_verbose():
     assert "## Diff " in result.stderr
 
 
-def test_language_autodetect():
+def test_text_language_autodetect():
     with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
         temp_file_name = tmpfile.name
 
@@ -129,10 +130,10 @@ def test_language_autodetect():
     os.remove(temp_file_name)
 
     assert result.returncode == 0
-    assert "马克" in data["questions"].values[0]
+    assert "马克" in data["prompts"].values[0]
 
 
-def test_hf_model():
+def test_text_hf_model():
     with tempfile.NamedTemporaryFile(suffix=".csv") as tmpfile:
         temp_file_name = tmpfile.name
 
@@ -147,10 +148,10 @@ def test_hf_model():
     os.remove(temp_file_name)
 
     assert result.returncode == 0
-    assert len(data["questions"].values) == 2
+    assert len(data["prompts"].values) == 2
 
 
-def test_genai_model():
+def test_text_genai_model():
     result = run_wwb([
         "--base-model", base_model_path,
         "--target-model", target_model_path,

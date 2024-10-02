@@ -19,7 +19,9 @@ from optimum.intel import (
 )
 from transformers import AutoConfig
 
+import openvino_genai
 from whowhatbench import EVALUATOR_REGISTRY, MODELTYPE2TASK
+
 
 
 # Configure logging
@@ -150,7 +152,7 @@ def load_prompts(args):
 
     res = data[args.dataset_field]
 
-    res = {"questions": list(res)}
+    res = {"prompts": list(res)}
 
     return res
 
@@ -209,7 +211,7 @@ def parse_args():
     parser.add_argument(
         "--dataset-field",
         type=str,
-        default="questions",
+        default="text",
         help="The name of field in dataset for prompts. For example question or context in squad."
         "Will be used only if dataset is defined.",
     )
@@ -322,7 +324,9 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
 
 
 def genai_gen_answer(model, tokenizer, question, max_new_tokens, skip_question):
-    out = model.generate(question, max_new_tokens=max_new_tokens)
+    config = openvino_genai.GenerationConfig()
+    config.max_new_tokens = max_new_tokens
+    out = model.generate(question, config)
     return out
 
 
@@ -346,6 +350,7 @@ def get_evaluator(base_model, args):
                 similarity_model_id=args.data_encoder,
                 num_samples=args.num_samples,
                 language=args.language,
+                gen_answer_fn=genai_gen_answer if args.genai else None
             )
         elif task == "image-generation":
             return EvaluatorCLS(
@@ -361,6 +366,35 @@ def get_evaluator(base_model, args):
         raise ValueError(
             f"Attempted to load evaluator for '{task}', but no evaluator for this model type found! Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}"
         )
+
+
+def print_text_results(evaluator):
+    metric_of_interest = "similarity"
+    worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
+    for i, e in enumerate(worst_examples):
+        ref_text = ""
+        actual_text = ""
+        diff = ""
+        for l1, l2 in zip(e["source_model"].splitlines(), e["optimized_model"].splitlines()):
+            if l1 == "" and l2 == "":
+                continue
+            ref_text += l1 + "\n"
+            actual_text += l2 + "\n"
+            diff += diff_strings(l1, l2) + "\n"
+
+        logger.info("--------------------------------------------------------------------------------------")
+        logger.info("## Reference text %d:\n%s", i + 1, ref_text)
+        logger.info("## Actual text %d:\n%s", i + 1, actual_text)
+        logger.info("## Diff %d: ", i + 1)
+        logger.info(diff)
+
+def print_image_results(evaluator):
+    metric_of_interest = "similarity"
+    worst_examples = evaluator.worst_examples(top_k=1, metric=metric_of_interest)
+    for i, e in enumerate(worst_examples):
+        logger.info("--------------------------------------------------------------------------------------")
+        logger.info(f"Top-{i+1} example:")
+        logger.info(e)
 
 
 def main():
@@ -391,25 +425,11 @@ def main():
             df = pd.DataFrame(all_metrics)
             df.to_csv(os.path.join(args.output, "metrics.csv"))
 
-    if args.verbose and args.model_type == "text":
-        metric_of_interest = "similarity"
-        worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
-        for i, e in enumerate(worst_examples):
-            ref_text = ""
-            actual_text = ""
-            diff = ""
-            for l1, l2 in zip(e["source_model"].splitlines(), e["optimized_model"].splitlines()):
-                if l1 == "" and l2 == "":
-                    continue
-                ref_text += l1 + "\n"
-                actual_text += l2 + "\n"
-                diff += diff_strings(l1, l2) + "\n"
-
-            logger.info("--------------------------------------------------------------------------------------")
-            logger.info("## Reference text %d:\n%s", i + 1, ref_text)
-            logger.info("## Actual text %d:\n%s", i + 1, actual_text)
-            logger.info("## Diff %d: ", i + 1)
-            logger.info(diff)
+    if args.verbose and args.target_model is not None:
+        if args.model_type == "text":
+            print_text_results(evaluator)
+        elif "sd" in args.model_type:
+            print_image_results(evaluator)
 
 
 if __name__ == "__main__":
