@@ -49,7 +49,7 @@ generation_config.num_return_sequences = 1
 generation_config.max_new_tokens = MAX_NEW_TOKENS
 
 data = load_dataset(path='squad', name=None, split='validation')["context"]
-data_dict = {"questions": list(dict({k: None for k in data}).keys())[:MAX_SEQUENCES]}
+data_dict = {"prompts": list(dict({k: None for k in data}).keys())[:MAX_SEQUENCES]}
 
 model_cb_noopt = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config_noopt, "CPU", {})
 model_cb_opt = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config_opt, "CPU", {})
@@ -58,11 +58,11 @@ model_cb_opt = ContinuousBatchingPipeline(model_path.absolute().as_posix(), sche
 GT_DATA_FILE = 'gt_data.csv'
 
 if os.path.exists(GT_DATA_FILE):
-    evaluator = whowhatbench.Evaluator(base_model=model_cb_noopt, gt_data=GT_DATA_FILE, tokenizer=tokenizer,
+    evaluator = whowhatbench.TextEvaluator(base_model=model_cb_noopt, gt_data=GT_DATA_FILE, tokenizer=tokenizer,
                                        test_data=data_dict, generation_config=generation_config,
                                        max_new_tokens=MAX_NEW_TOKENS, seqs_per_request=3)
 else:
-    evaluator = whowhatbench.Evaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
+    evaluator = whowhatbench.TextEvaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
                                        generation_config=generation_config, max_new_tokens=MAX_NEW_TOKENS,
                                        seqs_per_request=3)
     evaluator.dump_gt('gt_data.csv')

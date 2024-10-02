@@ -22,7 +22,7 @@ from common import TESTS_ROOT
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
     file_path = TESTS_ROOT / 'data' / file_name
     with open(file_path, 'r') as f:
-        return {"questions": [s for s in f]}
+        return {"prompts": [s for s in f]}
 
 def get_scheduler_config(num_kv_blocks: int) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()

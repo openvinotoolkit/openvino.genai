@@ -217,21 +217,21 @@ class TextEvaluator(BaseEvaluator):
                 self.language = autodetect_language(model)
             data = pd.DataFrame.from_dict(default_data[self.language])
 
-        questions = data["prompts"]
+        prompt_data = data["prompts"]
 
         answers = []
-        prompts = questions.values if self.num_samples is None else questions.values[:self.num_samples]
+        prompts = prompt_data.values if self.num_samples is None else prompt_data.values[:self.num_samples]
 
         if generation_config is None:
             for p in tqdm(prompts, desc="Evaluate pipeline"):
                 answers.append(gen_answer_fn(model, self.tokenizer, p, self.max_new_tokens, self._crop_question))
         else:
-            with tqdm(total=len(questions.values)) as progress_bar:
+            with tqdm(total=len(prompt_data.values)) as progress_bar:
                 batch = []
-                for p_idx, p in enumerate(questions.values):
+                for p_idx, p in enumerate(prompt_data.values):
                     progress_bar.update(1)
                     batch.append(p)
-                    if len(batch) == self.seqs_per_request or p_idx == len(questions.values) - 1:
+                    if len(batch) == self.seqs_per_request or p_idx == len(prompt_data.values) - 1:
                         ans_batch = model.generate(batch, [generation_config] * len(batch))
                         for ans in ans_batch:
                             answers.append(ans.m_generation_ids[0])
