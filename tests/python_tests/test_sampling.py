@@ -128,7 +128,7 @@ class PlatformsRefTexts(TypedDict, total=False):
     darwin: List[List[str]]
 
 
-def get_current_plarform_ref_texts(ref_texts: PlatformsRefTexts) -> List[List[str]]:
+def get_current_platform_ref_texts(ref_texts: PlatformsRefTexts) -> List[List[str]]:
     # mac and win often have identical results
     # to avoid duplication, use win32 ref_text if no mac ref_texts were found
     if sys.platform == "darwin":
@@ -160,7 +160,7 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_and_top_p(),
         prompts=["What is OpenVINO?"],
-        ref_texts=get_current_plarform_ref_texts({
+        ref_texts=get_current_platform_ref_texts({
             "linux": [
                 [
                     "\nOpenVINO is an online application that allows users to create, test, and analyze their own software using a collection of software packages. The application"
@@ -185,7 +185,7 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_temperature_top_p_and_top_k(),
         prompts=["What is OpenVINO?"],
-        ref_texts=get_current_plarform_ref_texts({
+        ref_texts=get_current_platform_ref_texts({
             "linux": [
                 [
                     "\nOpenVINO is an open source software that allows developers to create, manage, and distribute software. It is an open source project that allows developers"
@@ -221,7 +221,7 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_all_parameters(),
         prompts=["Tell me something about UAE"],
-        ref_texts=get_current_plarform_ref_texts({
+        ref_texts=get_current_platform_ref_texts({
             "linux": [
                 [
                     " and how it's not like we're all in the same boat right now lol (or even close) 😂😁! Just curious :) If",
@@ -270,7 +270,7 @@ RANDOM_SAMPLING_TEST_CASES = [
     RandomSamplingTestStruct(
         generation_config=get_multinomial_max_and_min_token(),
         prompts=["What is OpenVINO?"],
-        ref_texts=get_current_plarform_ref_texts({
+        ref_texts=get_current_platform_ref_texts({
             "linux": [
                 [
                     "\nOpenVINO is a Linux distro. It's not as simple as using the Linux distro itself. OpenVINO is essentially a dist",
