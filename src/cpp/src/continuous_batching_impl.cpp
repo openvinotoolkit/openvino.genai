@@ -419,7 +419,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
     ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3);
     size_t batch_seq_len = logits_shape[1], vocab_size = logits_shape[2];
-    std::cout << std::endl << "Logits shape: (" << logits_shape[0] << ", " << logits_shape[1] << ", " << logits_shape[2] << ")" << std::endl; 
     for (size_t sequence_group_id = 0, currently_processed_tokens = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
         SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
         // requests not scheduled, in decoding phase or not echoing are not processed
