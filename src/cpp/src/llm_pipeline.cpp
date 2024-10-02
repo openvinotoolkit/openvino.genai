@@ -95,8 +95,7 @@ public:
         LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(model_path))
     {
         ov::Core core;
-        if(auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, m_generation_config.adapters))
-        {
+        if(auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
             core.set_property(device, *filtered_plugin_config);
             auto model = core.read_model(model_path / "openvino_model.xml");
             m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable

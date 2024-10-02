@@ -108,7 +108,7 @@ public:
         // initialize generation config
         initialize_generation_config(data["_class_name"].get<std::string>());
 
-        extract_adapters_from_properties(properties, m_generation_config.adapters);
+        update_adapters_from_properties(properties, m_generation_config.adapters);
     }
 
     StableDiffusionPipeline(

@@ -44,7 +44,11 @@ AutoencoderKL::AutoencoderKL(const std::string& root_dir,
                 const std::string& device,
                 const ov::AnyMap& properties)
     : AutoencoderKL(root_dir) {
-    compile(device, filter_out_adapters_from_properties(properties).value_or(properties));
+    if(auto filtered_properties = extract_adapters_from_properties(properties)) {
+        compile(device, *filtered_properties);
+    } else {
+        compile(device, properties);
+    }
 }
 
 AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;

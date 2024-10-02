@@ -35,9 +35,9 @@ CLIPTextModel::CLIPTextModel(const std::string& root_dir,
                 const ov::AnyMap& properties) :
     CLIPTextModel(root_dir) {
     AdapterConfig adapters;
-    if(auto filtered_properties = extract_adapters_from_properties(properties, adapters)) {
-        m_adapter_controller = AdapterController(m_model, std::move(adapters), "lora_te", device);
-        compile(device, std::move(*filtered_properties));
+    if(auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
+        m_adapter_controller = AdapterController(m_model, adapters, "lora_te", device);
+        compile(device, *filtered_properties);
     } else {
         compile(device, properties);
     }
