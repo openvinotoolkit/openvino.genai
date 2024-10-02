@@ -44,9 +44,12 @@ def test_image_model_types(model_id, model_type, backend):
         wwb_args.append("--hf")
 
     result = run_wwb(wwb_args)
-    logger.error("WWB result: ", result, result.stderr)
+    print(f"WWB result: {result}, {result.stderr}")
 
-    os.unlink(GT_FILE)
+    try:
+        os.remove(GT_FILE)
+    except OSError:
+        pass
     shutil.rmtree("reference")
     shutil.rmtree("target")
 
@@ -86,7 +89,10 @@ def test_image_custom_dataset(model_id, model_type, backend):
 
     assert os.path.exists(GT_FILE)
 
-    os.unlink(GT_FILE)
+    try:
+        os.remove(GT_FILE)
+    except OSError:
+        pass
     shutil.rmtree("reference")
 
     assert result.returncode == 0
