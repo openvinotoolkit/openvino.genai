@@ -9,14 +9,7 @@ bool print_subword(std::string&& subword) {
     return !(std::cout << subword << std::flush);
 }
 
-int main(int argc, char* argv[]) {
-    // std::string prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<image_id>0</image_id><image><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk></image><slice><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk></slice><slice><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk></slice>\n<slice><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk></slice><slice><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk></slice>\nWhat is unusual on this image?<|im_end|>\n<|im_start|>assistant";
-    // auto core = ov::Core{};
-    // core.add_extension("/home/vzlobin/r/ov/build/openvino_genai/libopenvino_tokenizers.so");
-    // auto ireq = core.compile_model(argv[1] + std::string{"openvino_tokenizer.xml"}, "CPU").create_infer_request();
-    // ireq.set_input_tensor(ov::Tensor{ov::element::string, {1}, &prompt});
-    // ireq.infer();
-    // std::cout << "AAAAAAAAAAAAAAAAAAAAAAAAAa\n";
+int main(int argc, char* argv[]) try {
     if (3 != argc) {
         throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE>");
     }
@@ -49,14 +42,14 @@ int main(int argc, char* argv[]) {
             "question:\n";
     }
     pipe.finish_chat();
-// } catch (const std::exception& error) {
-//     try {
-//         std::cerr << error.what() << '\n';
-//     } catch (const std::ios_base::failure&) {}
-//     return EXIT_FAILURE;
-// } catch (...) {
-//     try {
-//         std::cerr << "Non-exception object thrown\n";
-//     } catch (const std::ios_base::failure&) {}
-//     return EXIT_FAILURE;
+} catch (const std::exception& error) {
+    try {
+        std::cerr << error.what() << '\n';
+    } catch (const std::ios_base::failure&) {}
+    return EXIT_FAILURE;
+} catch (...) {
+    try {
+        std::cerr << "Non-exception object thrown\n";
+    } catch (const std::ios_base::failure&) {}
+    return EXIT_FAILURE;
 }

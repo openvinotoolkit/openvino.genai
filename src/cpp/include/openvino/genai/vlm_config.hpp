@@ -32,10 +32,10 @@ public:
     std::string image_slice_end_token = "</slice>";
     /// @brief Start each image (not a slice) with <image_id>i</image_id>.
     /// i is a number.
-    // TODO: read it from config.
     bool use_image_id = true;
-    std::string m_id_start = "<image_id>", m_id_end = "</image_id>";
-    std::string unk = "<unk>";// TODO: unk or unk_token?
+    std::string im_id_start = "<image_id>",
+        im_id_end = "</image_id>",
+        unk = "<unk>";  // A placeholder for image embeddings in text.
     /// @brief Default constructor.
     VLMConfig() = default;
     /// @brief Construct VLMConfig from values in json_path.

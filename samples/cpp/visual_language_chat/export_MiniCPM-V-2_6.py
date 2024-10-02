@@ -704,7 +704,6 @@ class OvMiniCPMV:
                     image_indices = torch.stack([torch.arange(r[0], r[1], dtype=torch.long) for r in cur_image_bound])
 
                     cur_vllm_emb.scatter_(0, image_indices.view(-1, 1).repeat(1, cur_vllm_emb.shape[-1]), cur_vs_hs.view(-1, cur_vs_hs.shape[-1]))
-        breakpoint()
         return vllm_embedding
 
     def forward(self, data, **kwargs):
@@ -871,16 +870,13 @@ class OvMiniCPMV:
             if system_prompt:
                 sys_msg = {"role": "system", "content": system_prompt}
                 copy_msgs = [sys_msg] + copy_msgs
-            print(f"{copy_msgs=}")
 
             prompts_lists.append(processor.tokenizer.apply_chat_template(copy_msgs, tokenize=False, add_generation_prompt=True))
             input_images_lists.append(images)
-        print(f"{prompts_lists=}")
 
         inputs = processor(
             prompts_lists, input_images_lists, max_slice_nums=max_slice_nums, use_image_id=use_image_id, return_tensors="pt", max_length=max_inp_length
         )
-        print(f"{inputs=}")
 
         if sampling:
             generation_config = {"top_p": 0.8, "top_k": 100, "temperature": 0.7, "do_sample": True, "repetition_penalty": 1.05}

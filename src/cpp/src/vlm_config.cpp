@@ -13,4 +13,5 @@ ov::genai::VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     read_json_param(parsed, "hidden_size", hidden_size);
     read_json_param(parsed, "scale_emb", scale_emb);
     read_json_param(parsed, "query_num", query_num);
+    read_json_param(parsed, "use_image_id", use_image_id);
 }
