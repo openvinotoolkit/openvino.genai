@@ -53,7 +53,6 @@ public:
     ChatHistory m_history;
     std::string m_templated_chat_history;
     size_t image_id = 0;  // Used to insert <image_id>i</image_id> per image (not a slice).
-
     explicit VLMPipeline(
         const std::filesystem::path& model_dir,
         const std::string& device="CPU",
@@ -74,6 +73,9 @@ public:
         const ov::AnyMap device_config={},
         ov::Core core=ov::Core{}
     );
+
+    /// @brief Default destructor.
+    ~VLMPipeline();
 
     DecodedResults generate(
         const std::string& prompt,
@@ -96,9 +98,13 @@ public:
     }
     void start_chat(const std::string& system_message="");
     void finish_chat() {m_is_chat_conversation = false;}
-    GenerationConfig& get_generation_config();
-    const GenerationConfig& get_generation_config() const;
+    GenerationConfig get_generation_config() const;
+    void set_generation_config(const GenerationConfig& new_config);
+private:
+    class VLMPipelineImpl;
+    std::unique_ptr<VLMPipelineImpl> m_pimpl;
 };
+
 /*
  * utils that allow to use generate() in the following way:
  * pipe.generate(prompt, ov::genai::image(std::move(image_tensor))).
