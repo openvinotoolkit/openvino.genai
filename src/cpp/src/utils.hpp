@@ -83,6 +83,9 @@ ProcessorConfig from_any_map(
     const ov::AnyMap& config_map,
     const ProcessorConfig& initial
 );
+
+std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& plugin_config);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
