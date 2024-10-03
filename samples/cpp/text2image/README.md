@@ -50,7 +50,11 @@ Models can be downloaded from [HiggingFace](https://huggingface.co/models). This
 
 LoRA adapters can be connected to the pipeline and modify generated images to have certain style, details or quality. Adapters are supported in Safetensors format and can be downloaded from public sources like [Civitai](https://civitai.com) or [HuggingFace](https://huggingface.co/models) or trained by the user. Adapters compatible with a base model should be used only. A weighted blend of multiple adapters can be applied by specifying multple adapter files with corresponding alpha parameters in command line. Check `lora.cpp` source code to learn how to enable adapters and specify them in each `generate` call.
 
-Here is an example how to run the sample with a single adapter. Download adapter file from https://civitai.com/models/67927/soulcard, save it as `soulcard.safetensors` and run `lora_stable_diffusion` executable:
+Here is an example how to run the sample with a single adapter. First download adapter file from https://civitai.com/models/67927/soulcard page manually and save it as `soulcard.safetensors`. Or download it from command line:
+
+`wget -O soulcard.safetensors https://civitai.com/api/download/models/72591`
+
+Then run `lora_stable_diffusion` executable:
 
 `./lora_stable_diffusion dreamlike_anime_1_0_ov/FP16 'curly-haired unicorn in the forest, anime, line' soulcard.safetensors 0.7`
 
