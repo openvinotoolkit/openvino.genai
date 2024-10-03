@@ -31,11 +31,11 @@ using StringInputs = std::variant<std::string, std::vector<std::string>>;
 static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_config"};
 
 /**
-* @brief draft_model_path property serves to activate speculative decoding model in continuous batching pipeline.
+* @brief draft_model property serves to activate speculative decoding model in continuous batching pipeline.
 * Create SchedulerConfig and fill it with sutable values. Copy or move it to plugin_config.
 * And create LLMPipeline instance with this config.
 */
-static constexpr ov::Property<SchedulerConfig> draft_model_path{"draft_model_path"};
+static constexpr ov::Property<SchedulerConfig> draft_model{"draft_model"};
 
 /**
 * @brief Structure to store resulting batched tokens and scores for each batch sequence.
