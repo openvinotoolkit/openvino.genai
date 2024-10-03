@@ -44,8 +44,11 @@ void add_partial_result(std::unordered_map<uint64_t, GenerationOutput>& partial_
         if (partial_result_iter == partial_results.end()) {
             partial_results.emplace(iteration_result.first, iteration_result.second);
         } else {
-            partial_result_iter->second.generated_ids.push_back(iteration_result.second.generated_ids[0]);
-            partial_result_iter->second.generated_log_probs.push_back(iteration_result.second.generated_log_probs[0]);
+            OPENVINO_ASSERT(iteration_result.second.generated_ids.size() == iteration_result.second.generated_log_probs.size());
+            for (int i = 0; i < iteration_result.second.generated_ids.size(); i++) {
+                partial_result_iter->second.generated_ids.push_back(iteration_result.second.generated_ids[i]);
+                partial_result_iter->second.generated_log_probs.push_back(iteration_result.second.generated_log_probs[i]);
+            }
             partial_result_iter->second.score = iteration_result.second.score;
             partial_result_iter->second.finish_reason = iteration_result.second.finish_reason;
         }
