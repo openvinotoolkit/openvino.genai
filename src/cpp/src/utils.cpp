@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "utils.hpp"
+
 #include <fstream>
 
 namespace ov {
@@ -42,7 +43,7 @@ int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
     size_t batch_offset = batch_idx * logits.get_shape()[1] * vocab_size;
     size_t sequence_offset = (logits.get_shape()[1] - 1) * vocab_size;
     const float* logits_data = logits.data<const float>() + batch_offset + sequence_offset;
-    
+
     int64_t out_token = std::max_element(logits_data, logits_data + vocab_size) - logits_data;
     float max_logit = logits_data[out_token];
 
@@ -52,16 +53,14 @@ int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
 /**
  * Initializes position ids based on attention mask and starting position
  */
-void initialize_position_ids(ov::Tensor& position_ids, 
-                            const ov::Tensor& attention_mask, 
-                            int64_t start_pos) {
-    OPENVINO_ASSERT(position_ids.get_element_type() == ov::element::i64, 
+void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos) {
+    OPENVINO_ASSERT(position_ids.get_element_type() == ov::element::i64,
                     "position_ids tensor element type should be an i64");
-    OPENVINO_ASSERT(position_ids.get_shape().size() == 2, 
+    OPENVINO_ASSERT(position_ids.get_shape().size() == 2,
                     "position_ids tensor should of rank 2 with shape [batch_size, seq_len]");
-    OPENVINO_ASSERT(attention_mask.get_element_type() == ov::element::i64, 
+    OPENVINO_ASSERT(attention_mask.get_element_type() == ov::element::i64,
                     "attention_mask tensor element type should be an i64");
-    OPENVINO_ASSERT(attention_mask.get_shape().size() == 2, 
+    OPENVINO_ASSERT(attention_mask.get_shape().size() == 2,
                     "attention_mask tensor should of rank 2 with shape [batch_size, seq_len]");
 
     const size_t batch_size = attention_mask.get_shape()[0];
@@ -96,7 +95,6 @@ void initialize_beam_inputs(const ov::Tensor& input_ids, const ov::Tensor& atten
     beam_idx.set_shape({input_shape.at(0)});
     std::fill_n(beam_idx.data<int32_t>(), input_shape.at(0), 0);
 }
-
 
 void set_attention_mask(ov::Tensor&& attention_mask, std::vector<int32_t> next_beams) {
     ov::Tensor original_mask{ov::element::i64, attention_mask.get_shape()};
@@ -184,6 +182,27 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
     else
         return std::nullopt;
 }
+
+/**
+ * Split config by core and compile configs
+ * There are not supported by `core.compile` function plugin options like `ENABLE_MMAP`
+ * Move this options to `core.set_property` config
+ */
+std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& plugin_config) {
+    const std::vector<std::string> unsupported_by_compile_options{"ENABLE_MMAP"};
+    ov::AnyMap core_config;
+    ov::AnyMap compile_config{plugin_config};
+
+    for (const auto option : unsupported_by_compile_options) {
+        auto iter = plugin_config.find(option);
+        if (iter != plugin_config.end()) {
+            core_config[option] = iter->second;
+            compile_config.erase(option);
+        }
+    }
+
+    return {core_config, compile_config};
+};
 
 }  // namespace utils
 }  // namespace genai
