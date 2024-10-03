@@ -50,8 +50,8 @@ def test_image_model_types(model_id, model_type, backend):
         os.remove(GT_FILE)
     except OSError:
         pass
-    shutil.rmtree("reference")
-    shutil.rmtree("target")
+    shutil.rmtree("reference", ignore_errors=True)
+    shutil.rmtree("target", ignore_errors=True)
 
     assert result.returncode == 0
     assert "Metrics for model" in result.stderr
@@ -93,6 +93,6 @@ def test_image_custom_dataset(model_id, model_type, backend):
         os.remove(GT_FILE)
     except OSError:
         pass
-    shutil.rmtree("reference")
+    shutil.rmtree("reference", ignore_errors=True)
 
     assert result.returncode == 0
