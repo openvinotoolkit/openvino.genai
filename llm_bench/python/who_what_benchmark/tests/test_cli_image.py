@@ -20,7 +20,7 @@ def run_wwb(args):
     ("model_id", "model_type", "backend"),
     [
         ("hf-internal-testing/tiny-stable-diffusion-torch", "sd", "hf"),
-        ("hf-internal-testing/tiny-stable-diffusion-openvino", "sd", "openvino"),
+        ("hf-internal-testing/tiny-stable-diffusion-torch", "sd", "openvino"), #"hf-internal-testing/tiny-stable-diffusion-openvino"
         ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "sd-xl", "hf"),
     ],
 )
