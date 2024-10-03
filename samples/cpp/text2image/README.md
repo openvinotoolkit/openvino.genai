@@ -1,10 +1,10 @@
 # Text to Image C++ Generation Pipeline
 
-Examples in this folder showcases inference of text to image models like Stable Diffusion 1.5, 2.1, LCM. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::Text2ImagePipeline` and uses a text prompt as input source.
+Examples in this folder showcase inference of text to image models like Stable Diffusion 1.5, 2.1, LCM. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::Text2ImagePipeline` and uses a text prompt as input source.
 
 There are two sample files:
- - `main.cpp` demonstrates basic usage of the text to image pipeline
- - `lora.cpp` shows how to apply LoRA adapters to the pipeline
+ - [`main.cpp`](./main.cpp) demonstrates basic usage of the text to image pipeline
+ - [`lora.cpp`](./lora.cpp) shows how to apply LoRA adapters to the pipeline
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -38,7 +38,7 @@ Prompt: `cyberpunk cityscape like Tokyo New York with tall buildings at dusk gol
 
 ## Supported models
 
-Models can be downloaded from [HiggingFace](https://huggingface.co). This sample can run the following list of models, but not limitied to:
+Models can be downloaded from [HiggingFace](https://huggingface.co/models). This sample can run the following list of models, but not limitied to:
 
 - [botp/stable-diffusion-v1-5](https://huggingface.co/botp/stable-diffusion-v1-5)
 - [stabilityai/stable-diffusion-2](https://huggingface.co/stabilityai/stable-diffusion-2)
@@ -48,11 +48,21 @@ Models can be downloaded from [HiggingFace](https://huggingface.co). This sample
 
 ## Run with optional LoRA adapters
 
-LoRA adapters can be connected to the pipeline and modify generated images to have certain style, details or quality. Adapters are supported in Safetensors format and can be downloaded from public sources like [Civitai](https://civitai.com) or [HuggingFace](https://huggingface.co) or trained by the user. Adapters compatible with a base model should be used only.
+LoRA adapters can be connected to the pipeline and modify generated images to have certain style, details or quality. Adapters are supported in Safetensors format and can be downloaded from public sources like [Civitai](https://civitai.com) or [HuggingFace](https://huggingface.co/models) or trained by the user. Adapters compatible with a base model should be used only. A weighted blend of multiple adapters can be applied by specifying multple adapter files with corresponding alpha parameters in command line. Check `lora.cpp` source code to learn how to enable adapters and specify them in each `generate` call.
 
-For example, download adapter file from https://civitai.com/models/67927/soulcard, save it as `soulcard.safetensors` and run `lora_stable_diffusion` executable:
+Here is an example how to run the sample with a single adapter. Download adapter file from https://civitai.com/models/67927/soulcard, save it as `soulcard.safetensors` and run `lora_stable_diffusion` executable:
 
-`./lora_stable_diffusion dreamlike_anime_1_0_ov/FP16 'curly unicorn in the forest, anime, line' soulcard.safetensors 0.7`
+`./lora_stable_diffusion dreamlike_anime_1_0_ov/FP16 'curly-haired unicorn in the forest, anime, line' soulcard.safetensors 0.7`
+
+The sample generates two images with and without adapters applied using the same prompt:
+   - `lora.bmp` with adapters applied
+   - `baseline.bmp` without adapters applied
+
+Check the difference:
+
+With adapter | Without adapter
+:---:|:---:
+![](./lora.bmp) | ![](./baseline.bmp)
 
 
 ## Note

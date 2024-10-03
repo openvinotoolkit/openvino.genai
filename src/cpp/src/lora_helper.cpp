@@ -1,17 +1,8 @@
 #include "lora_helper.hpp"
 
-namespace {
-
-using namespace ov;
-using namespace ov::genai;
-
-
-
-}
 
 namespace ov {
 namespace genai {
-
 
 std::optional<AnyMap> extract_adapters_from_properties (const AnyMap& properties, AdapterConfig* adapter_config) {
     auto adapters_iter = properties.find(AdaptersProperty::name());
@@ -32,7 +23,6 @@ void update_adapters_from_properties (const AnyMap& properties, AdapterConfig& a
         adapter_config = adapters_iter->second.as<AdapterConfig>();
     }
 }
-
 
 }
 }
