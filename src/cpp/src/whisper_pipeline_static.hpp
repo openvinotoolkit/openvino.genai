@@ -11,6 +11,7 @@
 #include "openvino/genai/streamer_base.hpp"
 
 #include "whisper_pipeline_base.hpp"
+#include "whisper/whisper_models.hpp"
 
 namespace ov {
 namespace genai {
@@ -27,6 +28,8 @@ public:
     DecodedResults generate(const RawSpeechInput& raw_speech_input,
                             OptionalWhisperGenerationConfig generation_config,
                             StreamerVariant streamer) override;
+private:
+    WhisperInitializedModels m_models;
 };
 
 }  // namespace genai
