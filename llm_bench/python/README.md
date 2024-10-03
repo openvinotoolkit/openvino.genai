@@ -100,20 +100,21 @@ python ./benchmark.py -h # for more information
 ```
 
 #### Benchmarking the Original PyTorch Model:
-To benchmark the original PyTorch model, first download the model locally and then run benchmark with `-f pytorch`
+To benchmark the original PyTorch model, first download the model locally and then run benchmark by specifying PyTorch as the framework with parameter `-f pt`
 
 ```bash
 # Download PyTorch Model
 huggingface-cli download meta-llama/Llama-2-7b-chat-hf --local-dir models/llama-2-7b-chat/pytorch
-# Benchmark PyTorch Model
-python benchmark.py -m models/llama-2-7b-chat/pytorch -n 2 -f pytorch
+# Benchmark with PyTorch Framework
+python benchmark.py -m models/llama-2-7b-chat/pytorch -n 2 -f pt
 ```
 
 > **Note:** If needed, You can install a specific OpenVINO version using pip:
 > ``` bash
 > # e.g. 
 > pip install openvino==2024.4.0
-> # Optional, install the latest openvino_nightly if needed
+> # Optional, install the openvino nightly package if needed.
+> # OpenVINO nightly is pre-release software and has not undergone full release validation or qualification. 
 > pip uninstall openvino
 > pip install --upgrade --pre openvino openvino-tokenizers --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 > ```
