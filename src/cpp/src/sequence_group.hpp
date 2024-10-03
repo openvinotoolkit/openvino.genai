@@ -576,29 +576,6 @@ public:
         m_generation_stream->push(std::move(outputs));
     }
 
-    // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
-    void notify_handle_echo_only() {
-        GenerationOutputs outputs;
-        // This method is called after scheduling and before sampling,
-        // so m_num_processed_tokens does not include recently forwarded tokens hence this is our starting position
-        // we return m_num_scheduled_tokens tokens as they were forwarded in the current step, meaning context length is our last position.
-        size_t first_token_position = m_num_processed_tokens;
-        size_t last_token_position = get_context_len();
-
-        GenerationOutput output;
-        output.generated_ids = std::vector<int64_t>(m_prompt_ids.begin() + first_token_position, m_prompt_ids.begin() + last_token_position);
-        output.generated_log_probs = std::vector<float>(m_prompt_log_probs.begin() + first_token_position, m_prompt_log_probs.begin() + last_token_position);
-        output.score = 0.0; // Should we accumulate prompt log probs here?
-        if (last_token_position == m_prompt_ids.size()) {
-            output.finish_reason = GenerationFinishReason::LENGTH;
-            set_generation_status(GenerationStatus::FINISHED);
-            m_sequences[0]->set_status(SequenceStatus::FINISHED); // for cleanup
-        }
-        output.finish_reason = GenerationFinishReason::NONE;
-        outputs.emplace(0, output);
-        m_generation_stream->push(std::move(outputs));
-    }
-
     void notify_handle() {
         if (out_of_memory()) {
             set_generation_status(GenerationStatus::IGNORED);
@@ -619,6 +596,30 @@ public:
                 push_outputs();
             }
         }
+    }
+
+    
+    // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
+    void notify_handle_echo_only() {
+        GenerationOutputs outputs;
+        // This method is called after scheduling and before sampling,
+        // so m_num_processed_tokens does not include recently forwarded tokens hence this is our starting position
+        // we return m_num_scheduled_tokens tokens as they were forwarded in the current step, meaning context length is our last position.
+        size_t first_token_position = m_num_processed_tokens;
+        size_t last_token_position = get_context_len();
+
+        GenerationOutput output;
+        output.generated_ids = std::vector<int64_t>(m_prompt_ids.begin() + first_token_position, m_prompt_ids.begin() + last_token_position);
+        output.generated_log_probs = std::vector<float>(m_prompt_log_probs.begin() + first_token_position, m_prompt_log_probs.begin() + last_token_position);
+        output.score = 0.0; // Should we accumulate prompt log probs here?
+        output.finish_reason = GenerationFinishReason::NONE;
+        if (last_token_position == get_prompt_len()) {
+            output.finish_reason = GenerationFinishReason::LENGTH;
+            set_generation_status(GenerationStatus::FINISHED);
+            m_sequences[0]->set_status(SequenceStatus::FINISHED); // for cleanup
+        }
+        outputs.emplace(0, output);
+        m_generation_stream->push(std::move(outputs));
     } 
 };
 }
