@@ -635,6 +635,11 @@ class OvMiniCPMV:
         if "vision_hidden_states" not in data:
             tgt_sizes = data["tgt_sizes"]
             pixel_values_list = data["pixel_values"]
+            # breakpoint()
+            # print(all_pixel_values.shape)
+            # for i in all_pixel_values[0, 0]:
+            #     print(f"{i[0]:.3f}, {i[1]:.3f}, ", end="")
+            # print()
             vision_hidden_states = []
             all_pixel_values = []
             img_cnt = []
@@ -671,6 +676,11 @@ class OvMiniCPMV:
                     vision_embedding = torch.cat(hs, dim=0)
                 else:
                     vision_embedding = torch.from_numpy(self.vpm([all_pixel_values, patch_attn_mask, tgt_sizes])[0])
+                # print(vision_embedding.shape)
+                # for i in vision_embedding[0]:
+                #     print(f"{i[0]:.3f}, {i[1]:.3f}, {i[2]:.3f}, ", end="")
+                # print()
+
                 vision_embedding = self.resampler(vision_embedding, tgt_sizes)
 
                 start = 0
@@ -776,6 +786,12 @@ class OvMiniCPMV:
 
         with torch.inference_mode():
             model_inputs["inputs_embeds"] = self.get_vllm_embedding(model_inputs)
+            # print(input_ids, input_ids.shape)
+            # for i in range(len(input_ids[0])):
+            #     print(f"d[{i}]={input_ids[0, i].item()};")
+            # for i in model_inputs["inputs_embeds"][0]:
+            #     print(f"{i[0]:.3f}, {i[1]:.3f}, {i[2]:.3f}, ", end="")
+            # print()
 
             if stream:
                 result = self._decode_stream(model_inputs["inputs_embeds"], tokenizer, **kwargs)
@@ -890,6 +906,7 @@ class OvMiniCPMV:
             generation_config["min_new_tokens"] = min_new_tokens
 
         generation_config.update((k, kwargs[k]) for k in generation_config.keys() & kwargs.keys())
+        generation_config = {"do_sample": False, "repetition_penalty": None}
 
         inputs.pop("image_sizes")
         with torch.inference_mode():
@@ -958,7 +975,7 @@ def main():
     # convert_vision_encoder(model, model_dir)
 
     ov_cpm = init_model(model_dir, "CPU")
-    print(ov_cpm.chat(Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
+    print(ov_cpm.chat(Image.open("/home/vzlobin/r/download.jpeg"), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
 
 if "__main__" == __name__:
     main()

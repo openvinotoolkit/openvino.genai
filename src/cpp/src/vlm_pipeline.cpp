@@ -351,12 +351,14 @@ DecodedResults VLMPipeline::generate(
             unk64 += m_vlm_config.unk;
         }
         images_prompt += m_vlm_config.image_start_token + unk64 + m_vlm_config.image_end_token;
-        ov::Shape slices_shape = embeds.slices.get_shape();
-        for (size_t row_idx = 0; row_idx < slices_shape.at(0); ++row_idx) {
-            for (size_t col_idx = 0; col_idx < slices_shape.at(1); ++col_idx) {
-                images_prompt += m_vlm_config.image_slice_start_token + unk64 + m_vlm_config.image_slice_end_token;
+        if (embeds.slices) {
+            ov::Shape slices_shape = embeds.slices.get_shape();
+            for (size_t row_idx = 0; row_idx < slices_shape.at(0); ++row_idx) {
+                for (size_t col_idx = 0; col_idx < slices_shape.at(1); ++col_idx) {
+                    images_prompt += m_vlm_config.image_slice_start_token + unk64 + m_vlm_config.image_slice_end_token;
+                }
+                images_prompt += '\n';
             }
-            images_prompt += '\n';
         }
         if ('\n' != *(images_prompt.end() - 1)) {
             // Image wasn't sliced, add \n to the end of image anyway.
@@ -379,7 +381,6 @@ DecodedResults VLMPipeline::generate(
         constexpr bool add_generation_prompt = true;
         new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
     }
-    std::cout << new_templated_chat_history << '\n';
     ov::Tensor special_token = m_tokenizer.encode("<image>").input_ids;
     size_t im_start_id = special_token.data<int64_t>()[0];
     special_token = m_tokenizer.encode("</image>").input_ids;
@@ -388,12 +389,7 @@ DecodedResults VLMPipeline::generate(
     size_t slice_start_id = special_token.data<int64_t>()[0];
     special_token = m_tokenizer.encode("</slice>").input_ids;
     size_t slice_end_id = special_token.data<int64_t>()[0];
-    std::cout << im_start_id << ' ' << im_end_id << ' ' << slice_start_id << ' ' << slice_end_id << '\n';
     ov::Tensor input_ids = m_tokenizer.encode(new_templated_chat_history).input_ids;
-    for (int i = 0; i < input_ids.get_size(); ++i) {
-        std::cout << input_ids.data<int64_t>()[i] << ' ';
-    }
-    std::cout << '\n';
     m_embedding.set_input_tensor(input_ids);
     m_embedding.infer();
     ov::Tensor inputs_embeds = m_embedding.get_output_tensor();
@@ -446,6 +442,11 @@ DecodedResults VLMPipeline::generate(
             }
         }
     }
+    // float* f = inputs_embeds.data<float>();
+    // for (size_t i = 0; i < inputs_embeds.get_shape().at(1); ++i) {
+    //     std::cout << std::fixed << std::setprecision(3) << f[i * inputs_embeds.get_shape().at(2)] << ", " << f[i * inputs_embeds.get_shape().at(2) + 1] << ", "  << f[i * inputs_embeds.get_shape().at(2) + 2] << ", ";
+    // }
+    // std::cout << '\n';
     m_language.set_tensor("inputs_embeds", inputs_embeds);
     size_t history_len = m_language.get_tensor("attention_mask").get_shape().at(1);
     m_language.get_tensor("attention_mask").set_shape({1, history_len + inputs_embeds.get_shape()[1]});

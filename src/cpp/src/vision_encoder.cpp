@@ -134,24 +134,48 @@ std::vector<std::vector<clip_image_u8>> slice_image(const clip_image_u8& img, co
 // in shape [NCHW], out shape: [N, C*kernel*kernel, H*W/kernel/kernel]
 ov::Tensor unfold(const ov::Tensor& images_tensor, size_t kernel) {
     ov::Shape images_shape = images_tensor.get_shape();
-    OPENVINO_ASSERT(4 == images_shape.size());
-    const size_t bs = images_shape.at(0), images_c = images_shape.at(1),
-        images_h = images_shape.at(2), images_w = images_shape.at(3),
-        new_c = images_c * kernel * kernel,
-        kernels_per_plane = images_h * images_w / kernel / kernel,
-        plane_size = images_h * images_w,
-        elem_size = images_c * plane_size,
-        kernels_per_row = images_w / kernel;
+
+    OPENVINO_ASSERT(4 == images_shape.size(), "Input tensor must be 4D (NCHW).");
+
+    const size_t bs = images_shape.at(0);
+    const size_t images_c = images_shape.at(1);
+    const size_t images_h = images_shape.at(2);
+    const size_t images_w = images_shape.at(3);
+
+    OPENVINO_ASSERT(images_h >= kernel && images_w >= kernel, "Input height and width must be greater than or equal to kernel size.");
+
+    const size_t new_c = images_c * kernel * kernel;
+    const size_t output_h = (images_h - kernel) / kernel + 1;
+    const size_t output_w = (images_w - kernel) / kernel + 1;
+    const size_t kernels_per_plane = output_h * output_w;
+
     ov::Tensor unfolded_tensor(ov::element::f32, {bs, new_c, kernels_per_plane});
+
     const float* images = images_tensor.data<float>();
     float* unfolded = unfolded_tensor.data<float>();
+
     for (size_t batch_idx = 0; batch_idx < bs; ++batch_idx) {
         for (size_t c_idx = 0; c_idx < images_c; ++c_idx) {
-            for (size_t h_idx = 0; h_idx < images_h; ++h_idx) {
-                for (size_t w_idx = 0; w_idx < images_w; ++w_idx) {
-                    size_t kernel_id = h_idx / kernel * kernels_per_row + w_idx / kernel;
-                    unfolded[batch_idx * new_c * kernels_per_plane + c_idx * kernel * kernel * kernels_per_plane + (images_h % kernel * kernel + images_w % kernel) * kernels_per_plane + kernel_id]
-                        = images[batch_idx * elem_size + c_idx * plane_size + h_idx * images_w + w_idx];
+            for (size_t h_out = 0; h_out < output_h; ++h_out) {
+                for (size_t w_out = 0; w_out < output_w; ++w_out) {
+                    size_t h_idx = h_out * kernel;  // Calculate input height index
+                    size_t w_idx = w_out * kernel;  // Calculate input width index
+
+                    for (size_t kh = 0; kh < kernel; ++kh) {
+                        for (size_t kw = 0; kw < kernel; ++kw) {
+                            size_t input_idx = (batch_idx * images_c * images_h * images_w) +
+                                               (c_idx * images_h * images_w) +
+                                               ((h_idx + kh) * images_w) +
+                                               (w_idx + kw);
+
+                            size_t unfolded_c_idx = (c_idx * kernel * kernel) + (kh * kernel) + kw;
+                            size_t unfolded_idx = (batch_idx * new_c * kernels_per_plane) +
+                                                  unfolded_c_idx * kernels_per_plane +
+                                                  (h_out * output_w + w_out);
+
+                            unfolded[unfolded_idx] = images[input_idx];
+                        }
+                    }
                 }
             }
         }
@@ -163,7 +187,14 @@ ov::Tensor preprocess_for_encoder(const ov::Tensor& images, size_t kernel) {
     ov::Shape images_shape = images.get_shape();
     OPENVINO_ASSERT(4 == images_shape.size());
     const size_t bs = images_shape.at(0), channels = images_shape.at(1);
+    // OK, but resize introduced diff
     ov::Tensor unfolded_tensor = unfold(images, kernel);
+    std::cout << unfolded_tensor.get_shape() << '\n';
+    float* f = unfolded_tensor.data<float>();
+    for (size_t i = 0; i < unfolded_tensor.get_shape().at(1); ++i) {
+        std::cout << std::fixed << std::setprecision(1) << f[i * unfolded_tensor.get_shape().at(2)] << ", " << f[i * unfolded_tensor.get_shape().at(2) + 1] << ", ";
+    }
+    std::cout << '\n';
     const ov::Shape& unfolded_shape = unfolded_tensor.get_shape();  // [N, C*kernel*kernel, H*W/kernel/kernel]
     const size_t d1 = unfolded_shape.at(1), d2 = unfolded_shape.at(2);
     ov::Tensor permuted_tensor{ov::element::f32, {bs, channels, kernel, unfolded_shape.at(2) * kernel}};  // [N, C, kernel, H*W/kernel]
@@ -205,6 +236,12 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     HeightWidth resized_source_size{resized_preprocessed.ny / patch_size, resized_preprocessed.nx / patch_size};
     ov::Tensor input_tensor{ov::element::f32, {1, 3, size_t(resized_preprocessed.ny), size_t(resized_preprocessed.nx)}, (void*)(resized_preprocessed.buf.data())};
     ov::Tensor pixel_values = preprocess_for_encoder(input_tensor, patch_size);
+    // std::cout << pixel_values.get_shape() << '\n';
+    // float* f = pixel_values.data<float>();
+    // for (size_t i = 0; i < pixel_values.get_shape().at(2); ++i) {
+    //     std::cout << std::fixed << std::setprecision(3) << f[i * pixel_values.get_shape().at(3)] << ", " << f[i * pixel_values.get_shape().at(3) + 1] << ", "  << f[i * pixel_values.get_shape().at(3) + 2] << ", ";
+    // }
+    // std::cout << '\n';
     encoder.set_tensor("pixel_values", pixel_values);
     ov::Tensor patch_attention_mask{ov::element::boolean, {pixel_values.get_shape().at(0), 1, resized_source_size.height * resized_source_size.width}};
     std::fill_n(patch_attention_mask.data<bool>(), patch_attention_mask.get_size(), true);
@@ -216,6 +253,11 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     encoder.set_tensor("tgt_sizes", tgt_sizes);
     encoder.infer();
     const ov::Tensor& output_tensor = encoder.get_output_tensor();
+    // float* f = output_tensor.data<float>();
+    // for (size_t i = 0; i < output_tensor.get_shape().at(1); ++i) {
+    //     std::cout << std::fixed << std::setprecision(3) << f[i * output_tensor.get_shape().at(2)] << ", " << f[i * output_tensor.get_shape().at(2) + 1] << ", "  << f[i * output_tensor.get_shape().at(2) + 2] << ", ";
+    // }
+    // std::cout << '\n';
     ov::Tensor resized_source{output_tensor.get_element_type(), output_tensor.get_shape()};
     output_tensor.copy_to(resized_source);
 
