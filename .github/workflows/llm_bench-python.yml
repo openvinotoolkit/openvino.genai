@@ -71,6 +71,7 @@ jobs:
     - name: WWB Tests
       run: |
         GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.WWB_PATH }}/requirements.txt
+        pip install git+https://github.com/huggingface/optimum.git
         GIT_CLONE_PROTECTION_ACTIVE=false pip install ${{ env.WWB_PATH }}
         python -m pytest llm_bench/python/who_what_benchmark/tests
   stateful:
@@ -90,6 +91,7 @@ jobs:
       - name: WWB Tests
         run: |
           GIT_CLONE_PROTECTION_ACTIVE=false pip install -r llm_bench/python/who_what_benchmark/requirements.txt
+          pip install git+https://github.com/huggingface/optimum.git
           GIT_CLONE_PROTECTION_ACTIVE=false pip install llm_bench/python/who_what_benchmark/
           pip install pytest
           python -m pytest llm_bench/python/who_what_benchmark/tests
