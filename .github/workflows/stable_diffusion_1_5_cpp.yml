@@ -71,12 +71,12 @@ jobs:
 
       - name: Download LoRA adapter
         run: |
-          wget -O ./build/samples/cpp/text2image/soulcard.safetensors https://civitai.com/api/download/models/72591
+          wget -O ./models/soulcard.safetensors https://civitai.com/api/download/models/72591
 
       - name: Run LoRA app
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          ./build/samples/cpp/text2image/lora_stable_diffusion ./models/dreamlike-art-dreamlike-anime-1.0/FP16 "curly-haired unicorn in the forest, anime, line" soulcard.safetensors 0.7
+          ./build/samples/cpp/text2image/lora_stable_diffusion ./models/dreamlike-art-dreamlike-anime-1.0/FP16 "curly-haired unicorn in the forest, anime, line" ./models/soulcard.safetensors 0.7
 
   stable_diffusion_1_5_cpp-windows:
       runs-on: windows-latest
