@@ -442,11 +442,6 @@ DecodedResults VLMPipeline::generate(
             }
         }
     }
-    // float* f = inputs_embeds.data<float>();
-    // for (size_t i = 0; i < inputs_embeds.get_shape().at(1); ++i) {
-    //     std::cout << std::fixed << std::setprecision(3) << f[i * inputs_embeds.get_shape().at(2)] << ", " << f[i * inputs_embeds.get_shape().at(2) + 1] << ", "  << f[i * inputs_embeds.get_shape().at(2) + 2] << ", ";
-    // }
-    // std::cout << '\n';
     m_language.set_tensor("inputs_embeds", inputs_embeds);
     size_t history_len = m_language.get_tensor("attention_mask").get_shape().at(1);
     m_language.get_tensor("attention_mask").set_shape({1, history_len + inputs_embeds.get_shape()[1]});

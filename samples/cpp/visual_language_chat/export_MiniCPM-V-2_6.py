@@ -671,7 +671,6 @@ class OvMiniCPMV:
                     vision_embedding = torch.cat(hs, dim=0)
                 else:
                     vision_embedding = torch.from_numpy(self.vpm([all_pixel_values, patch_attn_mask, tgt_sizes])[0])
-
                 vision_embedding = self.resampler(vision_embedding, tgt_sizes)
 
                 start = 0
@@ -957,8 +956,8 @@ def main():
     convert_llm(model, model_dir)
     del model.llm
     gc.collect()
-    convert_vision_encoder(model, model_dir)
 
+    convert_vision_encoder(model, model_dir)
     ov_cpm = init_model(model_dir, "CPU")
     print(ov_cpm.chat(Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
 

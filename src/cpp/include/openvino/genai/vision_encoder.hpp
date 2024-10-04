@@ -34,7 +34,7 @@ struct EncodedImage {
     ov::Tensor slices;
     /// @brief Flattened sizes of images used to compute embeddings
     /// stored in slices member divided by ProcessorConfig's patch_size.
-    std::vector<HeightWidth> slices_sizes; // TODO: replace with just one elem
+    std::vector<HeightWidth> slices_sizes;
 };
 
 /// @brief A class used to infer embeddings of an image using

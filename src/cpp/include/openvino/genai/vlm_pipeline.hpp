@@ -53,6 +53,7 @@ public:
     ChatHistory m_history;
     std::string m_templated_chat_history;
     size_t image_id = 0;  // Used to insert <image_id>i</image_id> per image (not a slice).
+
     explicit VLMPipeline(
         const std::filesystem::path& model_dir,
         const std::string& device="CPU",

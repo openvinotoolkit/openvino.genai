@@ -150,10 +150,8 @@ ov::Tensor unfold(const ov::Tensor& images_tensor, size_t kernel) {
     const size_t kernels_per_plane = output_h * output_w;
 
     ov::Tensor unfolded_tensor(ov::element::f32, {bs, new_c, kernels_per_plane});
-
     const float* images = images_tensor.data<float>();
     float* unfolded = unfolded_tensor.data<float>();
-
     for (size_t batch_idx = 0; batch_idx < bs; ++batch_idx) {
         for (size_t c_idx = 0; c_idx < images_c; ++c_idx) {
             for (size_t h_out = 0; h_out < output_h; ++h_out) {
