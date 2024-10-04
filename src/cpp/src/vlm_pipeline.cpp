@@ -338,10 +338,9 @@ DecodedResults VLMPipeline::generate(
     const StreamerVariant& streamer
 ) {
     std::string images_prompt;
-    EncodedImage embeds;
-    if (!rgbs.empty()) {
-        OPENVINO_ASSERT(1 == rgbs.size(), "TODO: Only a single image allowed");
-        embeds = m_vision_encoder.encode(rgbs.at(0));
+    std::vector<EncodedImage> embeds;
+    for (const ov::Tensor& rgb : rgbs) {
+        EncodedImage encoded_image = m_vision_encoder.encode(rgb);
         if (m_vlm_config.use_image_id) {
             images_prompt = m_vlm_config.im_id_start + std::to_string(image_id) + m_vlm_config.im_id_end;
             ++image_id;
@@ -351,8 +350,8 @@ DecodedResults VLMPipeline::generate(
             unk64 += m_vlm_config.unk;
         }
         images_prompt += m_vlm_config.im_start + unk64 + m_vlm_config.im_end;
-        if (embeds.slices) {
-            ov::Shape slices_shape = embeds.slices.get_shape();
+        if (encoded_image.slices) {
+            ov::Shape slices_shape = encoded_image.slices.get_shape();
             for (size_t row_idx = 0; row_idx < slices_shape.at(0); ++row_idx) {
                 for (size_t col_idx = 0; col_idx < slices_shape.at(1); ++col_idx) {
                     images_prompt += m_vlm_config.slice_start + unk64 + m_vlm_config.slice_end;
@@ -365,6 +364,7 @@ DecodedResults VLMPipeline::generate(
             // Strangely, \n isn't placed between </image><slice>.
             images_prompt += '\n';
         }
+        embeds.push_back(std::move(encoded_image));
     }
     images_prompt += prompt;
     ov::Tensor encoded_input;
@@ -402,36 +402,34 @@ DecodedResults VLMPipeline::generate(
         m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
         "Unexpected embedding size"
     );
-    if (!rgbs.empty()) {
-        ov::Tensor special_tokens = m_tokenizer.encode(
-            m_vlm_config.im_start
-            + m_vlm_config.im_end
-            + m_vlm_config.slice_start
-            + m_vlm_config.slice_end
-        ).input_ids;
-        OPENVINO_ASSERT(
-            4 == special_tokens.get_shape().at(1),
-            "Every special token must be represented with a single int."
-        );
-        size_t im_start_id = special_tokens.data<int64_t>()[0];
-        size_t im_end_id = special_tokens.data<int64_t>()[1];
-        size_t slice_start_id = special_tokens.data<int64_t>()[2];
-        size_t slice_end_id = special_tokens.data<int64_t>()[3];
-        int64_t* ids = encoded_input.data<int64_t>();
-        const ov::Tensor& resampled_source = resample(*this, embeds.resized_source, {embeds.resized_source_size});
+    ov::Tensor special_tokens = m_tokenizer.encode(
+        m_vlm_config.im_start
+        + m_vlm_config.im_end
+        + m_vlm_config.slice_start
+        + m_vlm_config.slice_end
+    ).input_ids;
+    OPENVINO_ASSERT(
+        4 == special_tokens.get_shape().at(1),
+        "Every special token must be represented with a single int."
+    );
+    size_t im_start_id = special_tokens.data<int64_t>()[0];
+    size_t im_end_id = special_tokens.data<int64_t>()[1];
+    size_t slice_start_id = special_tokens.data<int64_t>()[2];
+    size_t slice_end_id = special_tokens.data<int64_t>()[3];
+    size_t im_start_pos = 0, slice_start_pos = 0;
+    int64_t* begin = encoded_input.data<int64_t>();
+    int64_t* ids = begin;
+    size_t encoded_input_size = encoded_input.get_size();
+    const int64_t* end = ids + encoded_input_size;
+    float* input_embeds_data = input_embeds.data<float>();
+    for (const EncodedImage& encoded_image : embeds) {
+        const ov::Tensor& resampled_source = resample(*this, encoded_image.resized_source, {encoded_image.resized_source_size});
         float* emb = resampled_source.data<float>();
-        bool replacing = false;
-        for (size_t token_idx = 0; token_idx < inputs_embeds.get_shape().at(1); ++token_idx) {
-            if (im_start_id == ids[token_idx]) {
-                replacing = true;
-            }
-            if (replacing) {
-                std::copy_n(emb, resampled_source.get_size(), inputs_embeds.data<float>() + token_idx * m_vlm_config.hidden_size);
-                token_idx += resampled_source.get_shape().at(1);
-                replacing = false;
-                break;
-            }
+        ids = std::find(ids, end, im_start_id);
+        if (end == ids) {
+            break;
         }
+        ids = std::copy_n(emb, resampled_source.get_size(), input_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
         if (embeds.slices) {
             size_t token_idx = 0;
             const ov::Shape& slices_shape = embeds.slices.get_shape();
@@ -442,21 +440,11 @@ DecodedResults VLMPipeline::generate(
                     size_t d3 = slices_shape.at(3);
                     ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, embeds.slices.data<float>() + (i * slices_shape.at(1) + ja) * d2 * d3};
                     const ov::Tensor& vision_embed_tensor_i_j = resample(*this, encoded_view, {sliced_sizes.at(i * slices_shape.at(1) + ja)});
-                    for (; token_idx < inputs_embeds.get_shape().at(1); ++token_idx) {
-                        if (slice_start_id == ids[token_idx]) {
-                            replacing = true;
-                        }
-                        if (slice_end_id == ids[token_idx]) {
-                            replacing = false;
-                            break;
-                        }
-                        if (replacing) {
-                            std::copy_n(vision_embed_tensor_i_j.data<float>(), vision_embed_tensor_i_j.get_size(), inputs_embeds.data<float>() + token_idx * m_vlm_config.hidden_size);
-                            token_idx += vision_embed_tensor_i_j.get_shape().at(1);
-                            replacing = false;
-                            break;
-                        }
+                    ids = std::find(ids, end, slice_start_id);
+                    if (end == ids) {
+                        break;
                     }
+                    ids = std::copy_n(vision_embed_tensor_i_j.data<float>(), vision_embed_tensor_i_j.get_size(), input_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
                 }
             }
         }
@@ -552,13 +540,23 @@ DecodedResults VLMPipeline::generate(
     const ov::AnyMap& config_map
 ) {
     auto image = config_map.find(ov::genai::image.name());
+    auto images = config_map.find(ov::genai::images.name());
+    OPENVINO_ASSERT(
+        config_map.end() == image || config_map.end() == images,
+        "Only one property can be set: image of images."
+    );
+    std::vector<ov::Tensor> rgbs;
+    if (config_map.end() != image) {
+        rgbs = {image->second.as<ov::Tensor>()};
+    } if (config_map.end() != images) {
+        rgbs = images->second.as<std::vector<ov::Tensor>>();
+    }
     ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
     GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
     return generate(
         prompt,
-        config_map.end() == image ? std::vector<ov::Tensor>{}
-            : std::vector{image->second.as<ov::Tensor>()},
+        rgbs,
         config,
         utils::get_streamer_from_map(config_map)
     );
