@@ -697,22 +697,19 @@ jobs:
       - run: curl ${{ env.w_ov_link }} --output ov.zip
       - run: unzip -d ov ov.zip
       - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
-        shell: cmd
+      - run: l ov
       - run: cmake -DOpenVINO_DIR=./ov/runtime/cmake -B ./build/ ./
       - run: cmake --build ./build/ --config Release -j
       - run: python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
       - run: python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
       - run: >
-          set PATH=./ov/python:%PATH%
-          && set OPENVINO_LIB_PATHS=./ov/runtime/3rdparty/tbb/bin:./ov/runtime/bin/intel64/Release
-          && python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
+          OPENVINO_LIB_PATHS=./ov/runtime/3rdparty/tbb/bin;./ov/runtime/bin/intel64/Release
+          PYTHONPATH=./ov/python
+          python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
       - run: wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
-      - name: Run chat sample
-        run: |
-          source ./ov/setupvars.sh
+      - run: timeout 2m python ./samples/python/vlm_chat_sample/vlm_chat_sample.py ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11 <<< $'What is on the image?\nWhat is special on the image?\n'
           export PYTHONPATH=./build/:$PYTHONPATH
           printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
-          timeout 120s python ./samples/python/vlm_chat_sample/vlm_chat_sample.py ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11 < input.txt > ./pred.txt
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
