@@ -694,7 +694,8 @@ jobs:
         with:
           python-version: 3.12
       - run: mkdir ./ov/
-      - run: curl ${{ env.w_ov_link }} | tar --directory ./ov/ --strip-components 1 -x
+      - run: curl ${{ env.w_ov_link }} --output ov.zip
+      - run: tar --directory ./ov/ --strip-components 1 -xf ov.zip
       - run: cmake -DOpenVINO_DIR=./ov./runtime/cmake -B ./build/ ./
       - run: cmake --build ./build/ --config Release -j
       - name: Download and convert and model
