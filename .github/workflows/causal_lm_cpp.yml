@@ -698,7 +698,7 @@ jobs:
       - run: unzip -d ov ov.zip
       - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
       - run: ls ./ov/runtime/cmake
-      - run: cmake -DOpenVINO_DIR=./ov/runtime/cmake -B ./build/ ./
+      - run: OpenVINO_DIR=./ov/runtime/cmake cmake -B ./build/ ./
       - run: cmake --build ./build/ --config Release -j
       - run: python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
       - run: python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
@@ -707,6 +707,7 @@ jobs:
           PYTHONPATH=./ov/python
           python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
       - run: wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
+      - run: ls ./build/
       - run: PATH=./build/openvino_genai/;./ov/runtime/3rdparty/tbb/bin/;./ov/runtime/bin/intel64/Release timeout 2m ./build/vlm_chat_sample ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11 <<< $'What is on the image?\nWhat is special on the image?\n'
           export PYTHONPATH=./build/:$PYTHONPATH
 
