@@ -250,9 +250,7 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     tgt_sizes_data[1] = resized_source_size.width;
     encoder.set_tensor("tgt_sizes", tgt_sizes);
     encoder.infer();
-    const ov::Tensor& output_tensor = encoder.get_output_tensor();
-    ov::Tensor resized_source{output_tensor.get_element_type(), output_tensor.get_shape()};
-    output_tensor.copy_to(resized_source);
+    const ov::Tensor& resized_source = encoder.get_output_tensor();
 
     if (1 == preprocessed.size()) {
         return {std::move(resized_source), resized_source_size};
@@ -266,9 +264,6 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     size_t n_patches = size.height / patch_size * size.width / patch_size,
         old_hidden_size = resized_source.get_shape().at(2);
     ov::Tensor encoded_slices{ov::element::f32, {preprocessed.size() - 1, preprocessed.at(1).size(), n_patches, old_hidden_size}};
-    // там внутри есть какая-то операция которая констант фолдит батч и из-за этого нельзя использовать отличный от того что был при экспорте
-    // констант фолдит она его в торч скрипте
-    // Even though batch can't be used, it's still possible to use async.
     for (size_t row = 1; row < preprocessed.size(); ++row) {
         for (size_t col = 0; col < preprocessed.at(row).size(); ++col) {
             clip_image_f32& elem = preprocessed.at(row).at(col);
@@ -289,6 +284,8 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
             encoder.infer();
         }
     }
+    // Override prev output tensor that doesn't own memory.
+    encoder.set_output_tensor(resized_source);
     return {resized_source, resized_source_size, encoded_slices, sliced_sizes};
 }
 }
