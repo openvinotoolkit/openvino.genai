@@ -350,12 +350,12 @@ DecodedResults VLMPipeline::generate(
         for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
             unk64 += m_vlm_config.unk;
         }
-        images_prompt += m_vlm_config.image_start_token + unk64 + m_vlm_config.image_end_token;
+        images_prompt += m_vlm_config.im_start + unk64 + m_vlm_config.im_end;
         if (embeds.slices) {
             ov::Shape slices_shape = embeds.slices.get_shape();
             for (size_t row_idx = 0; row_idx < slices_shape.at(0); ++row_idx) {
                 for (size_t col_idx = 0; col_idx < slices_shape.at(1); ++col_idx) {
-                    images_prompt += m_vlm_config.image_slice_start_token + unk64 + m_vlm_config.image_slice_end_token;
+                    images_prompt += m_vlm_config.slice_start + unk64 + m_vlm_config.slice_end;
                 }
                 images_prompt += '\n';
             }
@@ -381,14 +381,20 @@ DecodedResults VLMPipeline::generate(
         constexpr bool add_generation_prompt = true;
         new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
     }
-    ov::Tensor special_token = m_tokenizer.encode("<image>").input_ids;
-    size_t im_start_id = special_token.data<int64_t>()[0];
-    special_token = m_tokenizer.encode("</image>").input_ids;
-    size_t im_end_id = special_token.data<int64_t>()[0];
-    special_token = m_tokenizer.encode("<slice>").input_ids;
-    size_t slice_start_id = special_token.data<int64_t>()[0];
-    special_token = m_tokenizer.encode("</slice>").input_ids;
-    size_t slice_end_id = special_token.data<int64_t>()[0];
+    ov::Tensor special_tokens = m_tokenizer.encode(
+        m_vlm_config.im_start
+        + m_vlm_config.im_end
+        + m_vlm_config.slice_start
+        + m_vlm_config.slice_end
+    ).input_ids;
+    OPENVINO_ASSERT(
+        4 == special_tokens.get_shape().at(1),
+        "Every special token must be represented with a single int."
+    );
+    size_t im_start_id = special_tokens.data<int64_t>()[0];
+    size_t im_end_id = special_tokens.data<int64_t>()[1];
+    size_t slice_start_id = special_tokens.data<int64_t>()[2];
+    size_t slice_end_id = special_tokens.data<int64_t>()[3];
     ov::Tensor input_ids = m_tokenizer.encode(new_templated_chat_history).input_ids;
     m_embedding.set_input_tensor(input_ids);
     m_embedding.infer();

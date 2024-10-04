@@ -21,15 +21,15 @@ public:
     /// slice.
     size_t query_num = 64;
     /// @brief A string denoting start of image embeddings for LLM.
-    std::string image_start_token = "<image>";
+    std::string im_start = "<image>";
     /// @brief A string denoting end of image embeddings for LLM.
-    std::string image_end_token = "</image>";
+    std::string im_end = "</image>";
     /// @brief A string denoting start of image slices row embeddings
     /// for LLM.
-    std::string image_slice_start_token = "<slice>";
+    std::string slice_start = "<slice>";
     /// @brief A string denoting end of image slices row embeddings
     /// for LLM.
-    std::string image_slice_end_token = "</slice>";
+    std::string slice_end = "</slice>";
     /// @brief Start each image (not a slice) with <image_id>i</image_id>.
     /// i is a number.
     bool use_image_id = true;
