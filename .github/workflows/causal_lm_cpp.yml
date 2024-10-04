@@ -681,7 +681,7 @@ jobs:
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
-  py-vlm_chat_sample-ubuntu:
+  cpp-vlm_chat_sample-ubuntu:
     runs-on: ubuntu-22.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -700,17 +700,31 @@ jobs:
           source ./ov/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release --target visual_language_chat -j
-      - name: Download and convert a model and an image
+      - name: Download and convert MiniCPM-V-2_6 model and an image
         run: |
           source ./ov/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
-      - run: >
+      - name: Run visual_language_chat sample - MiniCPM-V-2_6
+        run: >
           source ./ov/setupvars.sh
           && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11
           <<< $'What is on the image?\nWhat is special on the image?'
+      - name: Download and convert LLaVa 1.5 model and an image
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install git+https://github.com/huggingface/optimum-intel.git
+          optimum-cli export openvino --model llava-hf/llava-1.5-7b-hf ./llava_1_5_7b_ov/
+          wget https://llava-vl.github.io/static/images/monalisa.jpg
+      - name: Run visual_language_chat sample - LLaVa 1.5
+        run: >
+          source ./ov/setupvars.sh
+          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
+          <<< $'Who drew this painting?\nWhen did the painter live?'
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
