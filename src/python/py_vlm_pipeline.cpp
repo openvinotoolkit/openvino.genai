@@ -104,40 +104,46 @@ void init_vlm_pipeline(py::module_& m) {
         .def(py::init([](
             const std::string& model_path, 
             const std::string& device,
-            const std::map<std::string, py::object>& config
+            const std::map<std::string, py::object>& config,
+            const ov::Core& core
         ) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::VLMPipeline>(model_path, device, utils::properties_to_any_map(config));
+            return std::make_unique<ov::genai::VLMPipeline>(model_path, device, utils::properties_to_any_map(config), core);
         }),
         py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
         py::arg("device") = "CPU", "device on which inference will be done",
-        py::arg("config") = ov::AnyMap({}), "openvino.properties map"
+        py::arg("config") = ov::AnyMap({}), "openvino.properties map",
+        py::arg("core") = ov::Core(), "openvino.Core object",
         R"(
             VLMPipeline class constructor.
             model_path (str): Path to the model file.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
+            core (openvino.Core): openvino.Core instance.
         )")
 
         .def(py::init([](
             const std::string& model_path,
             const ov::genai::Tokenizer& tokenizer,
             const std::string& device,
-            const std::map<std::string, py::object>& config
+            const std::map<std::string, py::object>& config,
+            const ov::Core& core
         ) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::VLMPipeline>(model_path, tokenizer, device, utils::properties_to_any_map(config));
+            return std::make_unique<ov::genai::VLMPipeline>(model_path, tokenizer, device, utils::properties_to_any_map(config), core);
         }),
         py::arg("model_path"),
         py::arg("tokenizer"),
         py::arg("device") = "CPU",
-        py::arg("config") = ov::AnyMap({}), "openvino.properties map"
+        py::arg("config") = ov::AnyMap({}), "openvino.properties map",
+        py::arg("core") = ov::Core(), "openvino.Core object",
         R"(
             VLMPipeline class constructor for manualy created openvino_genai.Tokenizer.
             model_path (str): Path to the model file.
             tokenizer (openvino_genai.Tokenizer): tokenizer object.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
             Add {"scheduler_config": ov_genai.SchedulerConfig} to config properties to create continuous batching pipeline.
+            core (openvino.Core): openvino.Core instance.
         )")
         .def("start_chat", &ov::genai::VLMPipeline::start_chat)
         .def("finish_chat", &ov::genai::VLMPipeline::finish_chat) 
