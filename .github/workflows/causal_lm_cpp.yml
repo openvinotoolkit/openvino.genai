@@ -681,6 +681,36 @@ jobs:
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
+  cpp-vlm_chat_sample-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.12
+      - run: mkdir ./ov/
+      - run: curl ${{ env.w_ov_link }} | tar --directory ./ov/ --strip-components 1 -x
+      - run: cmake -DOpenVINO_DIR=./ov./runtime/cmake -B ./build/ ./
+      - run: cmake --build ./build/ --config Release -j
+      - name: Download and convert and model
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
+          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
+      - name: Run chat sample
+        run: |
+          source ./ov/setupvars.sh
+          export PYTHONPATH=./build/:$PYTHONPATH
+          printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
+          timeout 120s python ./samples/python/vlm_chat_sample/vlm_chat_sample.py ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11 < input.txt > ./pred.txt
+
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
     defaults:
