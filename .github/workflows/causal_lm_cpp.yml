@@ -695,16 +695,14 @@ jobs:
           python-version: 3.12
       - run: mkdir ./ov/
       - run: curl ${{ env.w_ov_link }} --output ov.zip
-      - run: tar --directory ./ov/ --strip-components 1 -xf ov.zip
+      - run: unzip -d ov ov.zip
+      - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
       - run: cmake -DOpenVINO_DIR=./ov./runtime/cmake -B ./build/ ./
       - run: cmake --build ./build/ --config Release -j
-      - name: Download and convert and model
-        run: |
-          source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
-          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
+      - run: python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+      - run: python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+      - run: OPENVINO_LIB_PATHS=./ov/python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
+      - run: wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
       - name: Run chat sample
         run: |
           source ./ov/setupvars.sh
