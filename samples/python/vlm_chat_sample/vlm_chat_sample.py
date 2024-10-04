@@ -59,7 +59,7 @@ def main():
             prompt = input('question:\n')
         except EOFError:
             break
-        pipe(prompt, image=image, generation_config=config, streamer=streamer)
+        pipe(prompt, [image], config, streamer)
         print('\n----------')
     pipe.finish_chat()
 
