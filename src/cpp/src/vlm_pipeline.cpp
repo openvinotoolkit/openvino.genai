@@ -333,15 +333,15 @@ ov::genai::VLMPipeline::~VLMPipeline() = default;
 
 DecodedResults VLMPipeline::generate(
     const std::string& prompt,
-    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& rgbs,
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
     std::string images_prompt;
     EncodedImage embeds;
-    if (!images.empty()) {
-        OPENVINO_ASSERT(1 == images.size(), "TODO: Only a single image allowed");
-        embeds = m_vision_encoder.encode(images.at(0));
+    if (!rgbs.empty()) {
+        OPENVINO_ASSERT(1 == rgbs.size(), "TODO: Only a single image allowed");
+        embeds = m_vision_encoder.encode(rgbs.at(0));
         if (m_vlm_config.use_image_id) {
             images_prompt = m_vlm_config.im_id_start + std::to_string(image_id) + m_vlm_config.im_id_end;
             ++image_id;
@@ -403,7 +403,7 @@ DecodedResults VLMPipeline::generate(
         m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
         "Unexpected embedding size"
     );
-    if (!images.empty()) {
+    if (!rgbs.empty()) {
         int64_t* ids = input_ids.data<int64_t>();
         const ov::Tensor& resampled_source = resample(*this, embeds.resized_source, {embeds.resized_source_size});
         float* emb = resampled_source.data<float>();
@@ -573,6 +573,10 @@ void VLMPipeline::start_chat(const std::string& system_message) {
     m_history = {{{"role", "system"}, {"content", system_message}}};
     constexpr bool add_generation_prompt = false;
     m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+}
+
+void VLMPipeline::set_chat_template(const std::string& new_template) {
+    m_tokenizer.set_chat_template(new_template);
 }
 
 GenerationConfig VLMPipeline::get_generation_config() const {
