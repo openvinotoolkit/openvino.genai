@@ -697,7 +697,7 @@ jobs:
       - run: curl ${{ env.w_ov_link }} --output ov.zip
       - run: unzip -d ov ov.zip
       - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
-      - run: cmake -DOpenVINO_DIR=./ov./runtime/cmake -B ./build/ ./
+      - run: cmake -DOpenVINO_DIR=./ov/runtime/cmake -B ./build/ ./
       - run: cmake --build ./build/ --config Release -j
       - run: python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
       - run: python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
