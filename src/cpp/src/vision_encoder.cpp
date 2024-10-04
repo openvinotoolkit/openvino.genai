@@ -186,26 +186,32 @@ ov::Tensor unfold(const ov::Tensor& images_tensor, size_t kernel) {
 ov::Tensor preprocess_for_encoder(const ov::Tensor& images, size_t kernel) {
     ov::Shape images_shape = images.get_shape();
     OPENVINO_ASSERT(4 == images_shape.size());
-    const size_t bs = images_shape.at(0), channels = images_shape.at(1);
-    // OK, but resize introduced diff
     ov::Tensor unfolded_tensor = unfold(images, kernel);
-    std::cout << unfolded_tensor.get_shape() << '\n';
-    float* f = unfolded_tensor.data<float>();
-    for (size_t i = 0; i < unfolded_tensor.get_shape().at(1); ++i) {
-        std::cout << std::fixed << std::setprecision(1) << f[i * unfolded_tensor.get_shape().at(2)] << ", " << f[i * unfolded_tensor.get_shape().at(2) + 1] << ", ";
-    }
-    std::cout << '\n';
     const ov::Shape& unfolded_shape = unfolded_tensor.get_shape();  // [N, C*kernel*kernel, H*W/kernel/kernel]
-    const size_t d1 = unfolded_shape.at(1), d2 = unfolded_shape.at(2);
-    ov::Tensor permuted_tensor{ov::element::f32, {bs, channels, kernel, unfolded_shape.at(2) * kernel}};  // [N, C, kernel, H*W/kernel]
-    const size_t new_len = permuted_tensor.get_shape().at(3);
+    const size_t bs = unfolded_shape[0];
+    const size_t d1 = unfolded_shape[1];
+    const size_t d2 = unfolded_shape[2];
+    const size_t channels = 3;
+    const size_t new_len = d2 * kernel;
+
+    ov::Tensor permuted_tensor{ov::element::f32, {bs, channels, kernel, new_len}};
     const float* unfolded = unfolded_tensor.data<float>();
     float* permuted = permuted_tensor.data<float>();
     for (size_t b_idx = 0; b_idx < bs; ++b_idx) {
-        for (size_t d1_idx = 0; d1_idx < d1; ++d1_idx) {
-            for (size_t d2_idx = 0; d2_idx < d2; ++d2_idx) {
-                permuted[b_idx * channels * kernel * new_len + d1_idx / (kernel * kernel) * kernel * new_len + d1_idx % (kernel * kernel) / kernel * new_len + d1_idx % kernel * d2 + d2_idx]
-                    = unfolded[b_idx * d1 * d2 + d1_idx * d2 + d2_idx];
+        for (size_t c_idx = 0; c_idx < channels; ++c_idx) {
+            for (size_t k1_idx = 0; k1_idx < kernel; ++k1_idx) {
+                for (size_t d2_idx = 0; d2_idx < d2; ++d2_idx) {
+                    for (size_t k2_idx = 0; k2_idx < kernel; ++k2_idx) {
+                        size_t unfolded_idx = b_idx * d1 * d2 +
+                                            (c_idx * kernel * kernel + k1_idx * kernel + k2_idx) * d2 +
+                                            d2_idx;
+                        size_t permuted_idx = b_idx * channels * kernel * new_len +
+                                            c_idx * kernel * new_len +
+                                            k1_idx * new_len +
+                                            d2_idx * kernel + k2_idx;
+                        permuted[permuted_idx] = unfolded[unfolded_idx];
+                    }
+                }
             }
         }
     }
@@ -236,12 +242,6 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     HeightWidth resized_source_size{resized_preprocessed.ny / patch_size, resized_preprocessed.nx / patch_size};
     ov::Tensor input_tensor{ov::element::f32, {1, 3, size_t(resized_preprocessed.ny), size_t(resized_preprocessed.nx)}, (void*)(resized_preprocessed.buf.data())};
     ov::Tensor pixel_values = preprocess_for_encoder(input_tensor, patch_size);
-    // std::cout << pixel_values.get_shape() << '\n';
-    // float* f = pixel_values.data<float>();
-    // for (size_t i = 0; i < pixel_values.get_shape().at(2); ++i) {
-    //     std::cout << std::fixed << std::setprecision(3) << f[i * pixel_values.get_shape().at(3)] << ", " << f[i * pixel_values.get_shape().at(3) + 1] << ", "  << f[i * pixel_values.get_shape().at(3) + 2] << ", ";
-    // }
-    // std::cout << '\n';
     encoder.set_tensor("pixel_values", pixel_values);
     ov::Tensor patch_attention_mask{ov::element::boolean, {pixel_values.get_shape().at(0), 1, resized_source_size.height * resized_source_size.width}};
     std::fill_n(patch_attention_mask.data<bool>(), patch_attention_mask.get_size(), true);
@@ -253,11 +253,6 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     encoder.set_tensor("tgt_sizes", tgt_sizes);
     encoder.infer();
     const ov::Tensor& output_tensor = encoder.get_output_tensor();
-    // float* f = output_tensor.data<float>();
-    // for (size_t i = 0; i < output_tensor.get_shape().at(1); ++i) {
-    //     std::cout << std::fixed << std::setprecision(3) << f[i * output_tensor.get_shape().at(2)] << ", " << f[i * output_tensor.get_shape().at(2) + 1] << ", "  << f[i * output_tensor.get_shape().at(2) + 2] << ", ";
-    // }
-    // std::cout << '\n';
     ov::Tensor resized_source{output_tensor.get_element_type(), output_tensor.get_shape()};
     output_tensor.copy_to(resized_source);
 

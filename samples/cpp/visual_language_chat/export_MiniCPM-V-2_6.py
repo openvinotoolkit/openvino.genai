@@ -635,11 +635,6 @@ class OvMiniCPMV:
         if "vision_hidden_states" not in data:
             tgt_sizes = data["tgt_sizes"]
             pixel_values_list = data["pixel_values"]
-            # breakpoint()
-            # print(all_pixel_values.shape)
-            # for i in all_pixel_values[0, 0]:
-            #     print(f"{i[0]:.3f}, {i[1]:.3f}, ", end="")
-            # print()
             vision_hidden_states = []
             all_pixel_values = []
             img_cnt = []
@@ -676,10 +671,6 @@ class OvMiniCPMV:
                     vision_embedding = torch.cat(hs, dim=0)
                 else:
                     vision_embedding = torch.from_numpy(self.vpm([all_pixel_values, patch_attn_mask, tgt_sizes])[0])
-                # print(vision_embedding.shape)
-                # for i in vision_embedding[0]:
-                #     print(f"{i[0]:.3f}, {i[1]:.3f}, {i[2]:.3f}, ", end="")
-                # print()
 
                 vision_embedding = self.resampler(vision_embedding, tgt_sizes)
 
@@ -786,12 +777,6 @@ class OvMiniCPMV:
 
         with torch.inference_mode():
             model_inputs["inputs_embeds"] = self.get_vllm_embedding(model_inputs)
-            # print(input_ids, input_ids.shape)
-            # for i in range(len(input_ids[0])):
-            #     print(f"d[{i}]={input_ids[0, i].item()};")
-            # for i in model_inputs["inputs_embeds"][0]:
-            #     print(f"{i[0]:.3f}, {i[1]:.3f}, {i[2]:.3f}, ", end="")
-            # print()
 
             if stream:
                 result = self._decode_stream(model_inputs["inputs_embeds"], tokenizer, **kwargs)
@@ -953,29 +938,29 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model_dir", type=Path)
     model_dir = parser.parse_args().model_dir
-    # model_id = "openbmb/MiniCPM-V-2_6"
-    # ckpt = model_dir / "ckpt"
-    # if not ckpt.exists():
-    #     snapshot_download(model_id, local_dir=ckpt, force_download=True)
-    #     patch_model_code(ckpt)
-    # model = AutoModel.from_pretrained(ckpt, trust_remote_code=True)
-    # model.eval()
-    # model.config.save_pretrained(model_dir)
-    # tokenizer = AutoTokenizer.from_pretrained(ckpt, trust_remote_code=True)
-    # tokenizer.save_pretrained(model_dir)
-    # ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
-    # ov.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
-    # ov.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
-    # processor = AutoProcessor.from_pretrained(ckpt, trust_remote_code=True)
-    # processor.save_pretrained(model_dir)
+    model_id = "openbmb/MiniCPM-V-2_6"
+    ckpt = model_dir / "ckpt"
+    if not ckpt.exists():
+        snapshot_download(model_id, local_dir=ckpt, force_download=True)
+        patch_model_code(ckpt)
+    model = AutoModel.from_pretrained(ckpt, trust_remote_code=True)
+    model.eval()
+    model.config.save_pretrained(model_dir)
+    tokenizer = AutoTokenizer.from_pretrained(ckpt, trust_remote_code=True)
+    tokenizer.save_pretrained(model_dir)
+    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
+    ov.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
+    ov.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
+    processor = AutoProcessor.from_pretrained(ckpt, trust_remote_code=True)
+    processor.save_pretrained(model_dir)
 
-    # convert_llm(model, model_dir)
-    # del model.llm
-    # gc.collect()
-    # convert_vision_encoder(model, model_dir)
+    convert_llm(model, model_dir)
+    del model.llm
+    gc.collect()
+    convert_vision_encoder(model, model_dir)
 
     ov_cpm = init_model(model_dir, "CPU")
-    print(ov_cpm.chat(Image.open("/home/vzlobin/r/download.jpeg"), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
+    print(ov_cpm.chat(Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
 
 if "__main__" == __name__:
     main()
