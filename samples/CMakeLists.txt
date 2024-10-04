@@ -26,6 +26,7 @@ install(DIRECTORY
             cpp/multinomial_causal_lm
             # Don't install prompt_lookup_decoding_lm and speculative_decoding_lm because they don't use openvino_genai library and arent verifyed yet.
             # Don't install continuous_batching_accuracy and continuous_batching_benchmark because they depend on json.
+            cpp/visual_language_chat
             cpp/whisper_speech_recognition
             cpp/stable_diffusion
             cpp/lora_greedy_causal_lm

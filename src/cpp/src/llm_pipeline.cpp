@@ -17,24 +17,6 @@
 #include "text_callback_streamer.hpp"
 #include "openvino/genai/lora_adapter.hpp"
 
-namespace {
-
-ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& fisrt, const ov::genai::TokenizedInputs& second){
-    auto first_size = fisrt.input_ids.get_size();
-    auto second_size = second.input_ids.get_size();
-    ov::Shape new_shape{1, first_size - second_size};
-
-    ov::Tensor new_input_ids(ov::element::i64, new_shape);
-    auto data_ptr = fisrt.input_ids.data<int64_t>();
-    std::copy(data_ptr + second_size, data_ptr + first_size, new_input_ids.data<int64_t>());
-
-    ov::Tensor new_attention_mask(ov::element::i64, new_shape);
-    std::fill_n(new_attention_mask.data<int64_t>(), new_shape[1], 1);
-
-    return {new_input_ids, new_attention_mask};
-}
-}
-
 namespace ov {
 namespace genai {
 
@@ -156,7 +138,7 @@ public:
                     encoded_input = new_chat_tokens;
                 } else {
                     auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens_));
-                    encoded_input = subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
+                    encoded_input = utils::subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
                 }
                 m_templated_chat_history = new_templated_chat_history;
                 // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied

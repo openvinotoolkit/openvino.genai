@@ -367,7 +367,7 @@ DecodedResults VLMPipeline::generate(
         }
     }
     images_prompt += prompt;
-    std::string new_templated_chat_history;
+    ov::Tensor encoded_input;
     if (m_is_chat_conversation) {
         // KV cache in model already contains prompts and answers from previous iterations.
         // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
@@ -379,24 +379,23 @@ DecodedResults VLMPipeline::generate(
         // KV cache contains it. So we have to add it manually or get it by tokenization all chat history.
         m_history.push_back({{"role", "user"}, {"content", images_prompt}});
         constexpr bool add_generation_prompt = true;
-        new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
+        if (0 == m_language.get_tensor("attention_mask").get_shape().at(1)) {
+            encoded_input = new_chat_tokens;
+        } else {
+            TokenizedInputs prev_chat_tokens = m_tokenizer.encode(
+                m_templated_chat_history
+            );
+            encoded_input = utils::subtract_chat_tokenized_inputs(
+                {new_chat_tokens}, prev_chat_tokens
+            ).input_ids;
+        }
+        m_templated_chat_history = std::move(new_templated_chat_history);
+    } else {
+        encoded_input = m_tokenizer.encode(images_prompt).input_ids;
     }
-    ov::Tensor special_tokens = m_tokenizer.encode(
-        m_vlm_config.im_start
-        + m_vlm_config.im_end
-        + m_vlm_config.slice_start
-        + m_vlm_config.slice_end
-    ).input_ids;
-    OPENVINO_ASSERT(
-        4 == special_tokens.get_shape().at(1),
-        "Every special token must be represented with a single int."
-    );
-    size_t im_start_id = special_tokens.data<int64_t>()[0];
-    size_t im_end_id = special_tokens.data<int64_t>()[1];
-    size_t slice_start_id = special_tokens.data<int64_t>()[2];
-    size_t slice_end_id = special_tokens.data<int64_t>()[3];
-    ov::Tensor input_ids = m_tokenizer.encode(new_templated_chat_history).input_ids;
-    m_embedding.set_input_tensor(input_ids);
+    m_embedding.set_input_tensor(encoded_input);
     m_embedding.infer();
     ov::Tensor inputs_embeds = m_embedding.get_output_tensor();
     OPENVINO_ASSERT(
@@ -404,7 +403,21 @@ DecodedResults VLMPipeline::generate(
         "Unexpected embedding size"
     );
     if (!rgbs.empty()) {
-        int64_t* ids = input_ids.data<int64_t>();
+        ov::Tensor special_tokens = m_tokenizer.encode(
+            m_vlm_config.im_start
+            + m_vlm_config.im_end
+            + m_vlm_config.slice_start
+            + m_vlm_config.slice_end
+        ).input_ids;
+        OPENVINO_ASSERT(
+            4 == special_tokens.get_shape().at(1),
+            "Every special token must be represented with a single int."
+        );
+        size_t im_start_id = special_tokens.data<int64_t>()[0];
+        size_t im_end_id = special_tokens.data<int64_t>()[1];
+        size_t slice_start_id = special_tokens.data<int64_t>()[2];
+        size_t slice_end_id = special_tokens.data<int64_t>()[3];
+        int64_t* ids = encoded_input.data<int64_t>();
         const ov::Tensor& resampled_source = resample(*this, embeds.resized_source, {embeds.resized_source_size});
         float* emb = resampled_source.data<float>();
         bool replacing = false;
@@ -519,22 +532,19 @@ DecodedResults VLMPipeline::generate(
         streamer_ptr->end();
     }
 
+    std::string decoded_results = m_tokenizer.decode(generated);
     if (m_is_chat_conversation) {
-        // auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history);
-        // if (m_is_cache_empty) {
-        //     encoded_input = new_chat_tokens;
-        // } else {
-        //     auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history);
-        //     encoded_input = subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
-        // }
-        // m_templated_chat_history = new_templated_chat_history;
+        // Tail of chat template is missing in KV cache.
+        // Find the tail to concatenate it with the next input prompt.
+        m_templated_chat_history.append(decoded_results);
+        m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
     } else {
         for (auto& variable : m_language.query_state()) {
             variable.reset();
         }
         m_language.get_tensor("attention_mask").set_shape({1, 0});
     }
-    return {{m_tokenizer.decode(generated)}};
+    return {{std::move(decoded_results)}};
 }
 
 DecodedResults VLMPipeline::generate(
