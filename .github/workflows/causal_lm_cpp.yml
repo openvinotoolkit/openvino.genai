@@ -700,7 +700,7 @@ jobs:
         run: >
           curl ${{ env.m_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           && brew install coreutils scons
-      - run: cmake -DOpenVINO_DIR=./ov/runtime/cmake/ -DCMAKE_BUILD_TYPE=Release -B ./build/ ./
+      - run: cmake -DOpenVINO_DIR=ov/runtime/cmake/ -DCMAKE_BUILD_TYPE=Release -B ./build/ ./
       - run: cmake --build ./build/ --config Release --target visual_language_chat -j
       - name: Download and convert a model and an image
         run: |
