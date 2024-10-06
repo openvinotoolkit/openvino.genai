@@ -692,12 +692,11 @@ jobs:
       - uses: actions/setup-python@v4
         with: {python-version: 3.12}
       - run: mkdir ./ov/
-      - if: ${{ ubuntu-20.04-16-core == matrix.runs-on }}
+      - if: ${{ 'ubuntu-20.04-16-core' == runs-on }}
         run: >
-          echo ${{ matrix.runs-on }} &&
           curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           && sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - if: ${{ macos-12 == matrix.runs-on }}
+      - if: ${{ 'macos-12' == runs-on }}
         run: >
           curl ${{ env.m_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           && brew install coreutils scons
@@ -711,8 +710,7 @@ jobs:
           python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
       - run: >
-          source ./ov/setupvars.sh
-          && timeout 2m ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11
+          timeout 2m ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11
           <<< $'What is on the image?\nWhat is special on the image?'
 
   cpp-continuous-batching-ubuntu:
