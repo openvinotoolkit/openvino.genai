@@ -703,11 +703,11 @@ jobs:
           && brew install coreutils scons
       - run: OpenVINO_DIR=./ov/runtime/cmake/ cmake -DCMAKE_BUILD_TYPE=Release -B ./build/ ./
       - run: LD_LIBRARY_PATH=${{ github.workspace }}/ov/runtime/3rdparty/tbb/lib/:$LD_LIBRARY_PATH cmake --build ./build/ --config Release --target visual_language_chat -j
-      - name: Download and convert MiniCPM-V-2_6
-        run: |
+        timeout-minutes: 1
+      - run: OpenVINO_DIR=./ov/runtime/cmake/ python -m pip install --upgrade-strategy eager ./thirdparty/openvino_tokenizers/[transformers] -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+      - run: >
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager ./thirdparty/openvino_tokenizers/[transformers] -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
+          && python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
       - run: wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
       - run: >
           LD_LIBRARY_PATH=${{ github.workspace }}/ov/runtime/3rdparty/tbb/lib/:$LD_LIBRARY_PATH
