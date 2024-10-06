@@ -701,19 +701,10 @@ jobs:
         run: >
           curl ${{ env.m_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           && brew install coreutils scons
-      - run: >
-          OpenVINO_DIR=./ov/runtime/cmake/
-          TBB_DIR=./ov/runtime/3rdparty/tbb/lib/cmake
-          cmake -DCMAKE_BUILD_TYPE=Release -B ./build/ ./
+      - run: OpenVINO_DIR=./ov/runtime/cmake/ cmake -DCMAKE_BUILD_TYPE=Release -B ./build/ ./
       - run: >
           LD_LIBRARY_PATH=${{ github.workspace }}/ov/runtime/3rdparty/tbb/lib/:$LD_LIBRARY_PATH
           cmake --build ./build/ --config Release --target visual_language_chat -j
-      - run: >
-          LD_LIBRARY_PATH=${{ github.workspace }}/ov/runtime/3rdparty/tbb/lib/:$LD_LIBRARY_PATH
-          DYLD_LIBRARY_PATH=${{ github.workspace }}/ov/runtime/3rdparty/tbb/lib/:$DYLD_LIBRARY_PATH
-          ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11
-          <<< $'What is on the image?\nWhat is special on the image?'
-        timeout-minutes: 2
       - run: >
           source ./ov/setupvars.sh
           && python -m pip install --upgrade-strategy eager ./thirdparty/openvino_tokenizers/[transformers] -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
@@ -721,6 +712,11 @@ jobs:
           source ./ov/setupvars.sh
           && python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
       - run: wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
+      - run: >
+          source ./ov/setupvars.sh
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11
+          <<< $'What is on the image?\nWhat is special on the image?'
+        timeout-minutes: 2
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
