@@ -710,6 +710,7 @@ jobs:
           cmake --build ./build/ --config Release --target visual_language_chat -j
       - run: >
           LD_LIBRARY_PATH=${{ github.workspace }}/ov/runtime/3rdparty/tbb/lib/:$LD_LIBRARY_PATH
+          DYLD_LIBRARY_PATH=${{ github.workspace }}/ov/runtime/3rdparty/tbb/lib/:$DYLD_LIBRARY_PATH
           ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11
           <<< $'What is on the image?\nWhat is special on the image?'
         timeout-minutes: 2
