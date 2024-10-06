@@ -684,8 +684,7 @@ jobs:
   visual_language_sample:
     strategy:
       fail-fast: false
-      matrix:
-        runs-on: [ubuntu-20.04-16-core, macos-12]
+      matrix: {runs-on: [ubuntu-20.04-16-core, macos-12]}
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
@@ -693,12 +692,12 @@ jobs:
       - uses: actions/setup-python@v4
         with: {python-version: 3.12}
       - run: mkdir ./ov/
-      - if: ubuntu-20.04-16-core == ${{ matrix.runs-on }}
+      - if: ${{ ubuntu-20.04-16-core == matrix.runs-on }}
         run: >
           echo ${{ matrix.runs-on }} &&
           curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           && sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - if: macos-12 == ${{ matrix.runs-on }}
+      - if: ${{ macos-12 == matrix.runs-on }}
         run: >
           curl ${{ env.m_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           && brew install coreutils scons
