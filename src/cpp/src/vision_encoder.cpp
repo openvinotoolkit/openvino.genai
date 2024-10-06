@@ -285,7 +285,7 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
         }
     }
     // Override prev output tensor that doesn't own memory.
-    encoder.set_output_tensor(resized_source);
+    encoder.set_output_tensor(ov::Tensor{ov::element::f32, {0, 0, old_hidden_size}});
     return {resized_source, resized_source_size, encoded_slices, sliced_sizes};
 }
 }
