@@ -250,7 +250,9 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     tgt_sizes_data[1] = resized_source_size.width;
     encoder.set_tensor("tgt_sizes", tgt_sizes);
     encoder.infer();
-    const ov::Tensor& resized_source = encoder.get_output_tensor();
+    const ov::Tensor& output_tensor = encoder.get_output_tensor();
+    ov::Tensor resized_source{ov::element::f32, output_tensor.get_shape()};
+    output_tensor.copy_to(resized_source);
 
     if (1 == preprocessed.size()) {
         return {std::move(resized_source), resized_source_size};
@@ -280,12 +282,12 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
             tgt_sizes_data[0] = sliced_sizes.back().height;
             tgt_sizes_data[1] = sliced_sizes.back().width;
             encoder.set_tensor("tgt_sizes", tgt_sizes);
+            const ov::Tensor& old = encoder.get_output_tensor();
             encoder.set_output_tensor({ov::element::f32, {1, n_patches, old_hidden_size}, encoded_slices.data<float>() + ((row - 1) * preprocessed.at(row).size() + col) * n_patches * old_hidden_size});
             encoder.infer();
+            encoder.set_output_tensor(old);
         }
     }
-    // Override prev output tensor that doesn't own memory.
-    encoder.set_output_tensor(ov::Tensor{ov::element::f32, {0, 0, old_hidden_size}});
     return {resized_source, resized_source_size, encoded_slices, sliced_sizes};
 }
 }

@@ -342,7 +342,7 @@ DecodedResults VLMPipeline::generate(
     for (const ov::Tensor& rgb : rgbs) {
         EncodedImage encoded_image = m_vision_encoder.encode(rgb);
         if (m_vlm_config.use_image_id) {
-            images_prompt = m_vlm_config.im_id_start + std::to_string(image_id) + m_vlm_config.im_id_end;
+            images_prompt += m_vlm_config.im_id_start + std::to_string(image_id) + m_vlm_config.im_id_end;
             ++image_id;
         }
         std::string unk64;
@@ -380,7 +380,6 @@ DecodedResults VLMPipeline::generate(
         m_history.push_back({{"role", "user"}, {"content", images_prompt}});
         constexpr bool add_generation_prompt = true;
         std::string new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-        std::cout << new_templated_chat_history << '\n';
         ov::Tensor new_chat_tokens = m_tokenizer.encode(new_templated_chat_history).input_ids;
         if (0 == m_language.get_tensor("attention_mask").get_shape().at(1)) {
             encoded_input = new_chat_tokens;
@@ -419,10 +418,6 @@ DecodedResults VLMPipeline::generate(
     int64_t slice_end_id = special_tokens.data<int64_t>()[3];
     int64_t im_start_pos = 0, slice_start_pos = 0;
     int64_t* begin = encoded_input.data<int64_t>();
-    for (size_t cont = 0; cont < encoded_input.get_size(); ++cont) {
-        std::cout << begin[cont] << ", ";
-    }
-    std::cout << '\n';
     int64_t* ids = begin;
     size_t encoded_input_size = encoded_input.get_size();
     int64_t* end = ids + encoded_input_size;
@@ -431,11 +426,9 @@ DecodedResults VLMPipeline::generate(
         const ov::Tensor& resampled_source = resample(*this, encoded_image.resized_source, {encoded_image.resized_source_size});
         float* emb = resampled_source.data<float>();
         ids = std::find(ids, end, im_start_id);
-        std::cout << std::distance(begin, ids) << '\n';
         OPENVINO_ASSERT(end != ids);
         std::copy_n(emb, resampled_source.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
         ids += m_vlm_config.query_num;
-        std::cout << std::distance(begin, ids) << '\n';
         if (encoded_image.slices) {
             size_t token_idx = 0;
             const ov::Shape& slices_shape = encoded_image.slices.get_shape();
@@ -447,11 +440,9 @@ DecodedResults VLMPipeline::generate(
                     ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, encoded_image.slices.data<float>() + (i * slices_shape.at(1) + ja) * d2 * d3};
                     const ov::Tensor& vision_embed_tensor_i_j = resample(*this, encoded_view, {sliced_sizes.at(i * slices_shape.at(1) + ja)});
                     ids = std::find(ids, end, slice_start_id);
-        std::cout << std::distance(begin, ids) << '\n';
                     OPENVINO_ASSERT(end != ids);
                     std::copy_n(vision_embed_tensor_i_j.data<float>(), vision_embed_tensor_i_j.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
                     ids += m_vlm_config.query_num;
-        std::cout << std::distance(begin, ids) << '\n';
                 }
             }
         }
