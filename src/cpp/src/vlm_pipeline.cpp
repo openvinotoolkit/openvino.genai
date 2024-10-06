@@ -412,39 +412,37 @@ DecodedResults VLMPipeline::generate(
         4 == special_tokens.get_shape().at(1),
         "Every special token must be represented with a single int."
     );
-    size_t im_start_id = special_tokens.data<int64_t>()[0];
-    size_t im_end_id = special_tokens.data<int64_t>()[1];
-    size_t slice_start_id = special_tokens.data<int64_t>()[2];
-    size_t slice_end_id = special_tokens.data<int64_t>()[3];
-    size_t im_start_pos = 0, slice_start_pos = 0;
+    int64_t im_start_id = special_tokens.data<int64_t>()[0];
+    int64_t im_end_id = special_tokens.data<int64_t>()[1];
+    int64_t slice_start_id = special_tokens.data<int64_t>()[2];
+    int64_t slice_end_id = special_tokens.data<int64_t>()[3];
+    int64_t im_start_pos = 0, slice_start_pos = 0;
     int64_t* begin = encoded_input.data<int64_t>();
     int64_t* ids = begin;
     size_t encoded_input_size = encoded_input.get_size();
-    const int64_t* end = ids + encoded_input_size;
-    float* input_embeds_data = input_embeds.data<float>();
+    int64_t* end = ids + encoded_input_size;
+    float* inputs_embeds_data = inputs_embeds.data<float>();
     for (const EncodedImage& encoded_image : embeds) {
         const ov::Tensor& resampled_source = resample(*this, encoded_image.resized_source, {encoded_image.resized_source_size});
         float* emb = resampled_source.data<float>();
         ids = std::find(ids, end, im_start_id);
-        if (end == ids) {
-            break;
-        }
-        ids = std::copy_n(emb, resampled_source.get_size(), input_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
-        if (embeds.slices) {
+        OPENVINO_ASSERT(end != ids);
+        std::copy_n(emb, resampled_source.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
+        ids += m_vlm_config.hidden_size;
+        if (encoded_image.slices) {
             size_t token_idx = 0;
-            const ov::Shape& slices_shape = embeds.slices.get_shape();
-            const std::vector<HeightWidth>& sliced_sizes = embeds.slices_sizes;
+            const ov::Shape& slices_shape = encoded_image.slices.get_shape();
+            const std::vector<HeightWidth>& sliced_sizes = encoded_image.slices_sizes;
             for (size_t i = 0; i < slices_shape.at(0); ++i) {
                 for (size_t ja = 0; ja < slices_shape.at(1); ++ja) {
                     size_t d2 = slices_shape.at(2);
                     size_t d3 = slices_shape.at(3);
-                    ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, embeds.slices.data<float>() + (i * slices_shape.at(1) + ja) * d2 * d3};
+                    ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, encoded_image.slices.data<float>() + (i * slices_shape.at(1) + ja) * d2 * d3};
                     const ov::Tensor& vision_embed_tensor_i_j = resample(*this, encoded_view, {sliced_sizes.at(i * slices_shape.at(1) + ja)});
                     ids = std::find(ids, end, slice_start_id);
-                    if (end == ids) {
-                        break;
-                    }
-                    ids = std::copy_n(vision_embed_tensor_i_j.data<float>(), vision_embed_tensor_i_j.get_size(), input_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
+                    OPENVINO_ASSERT(end != ids);
+                    std::copy_n(vision_embed_tensor_i_j.data<float>(), vision_embed_tensor_i_j.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
+                    ids += m_vlm_config.hidden_size;
                 }
             }
         }

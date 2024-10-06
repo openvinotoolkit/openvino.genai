@@ -681,25 +681,30 @@ jobs:
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
-  py-vlm_chat_sample-ubuntu:
-    runs-on: ubuntu-22.04-16-cores
+  visual_language_sample:
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [ubuntu-20.04-16-core, macos-12]
+    runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.11
-      - name: Install OpenVINO
-        run: |
-          mkdir ./ov/
+          python-version: 3.12
+      - run: mkdir ./ov/
+      - if: ubuntu-20.04-16-core == ${{ matrix.runs-on }}
+        run: >
           curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
-          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - name: Build app
-        run: |
-          source ./ov/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target visual_language_chat -j
+          && sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - if: macos-12 == ${{ matrix.runs-on }}
+        run: >
+          curl ${{ env.m_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          && brew install coreutils scons
+      - run: cmake -DOpenVINO_DIR=./ov/runtime/cmake/ -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+      - run: cmake --build ./build/ --config Release --target visual_language_chat -j
       - name: Download and convert a model and an image
         run: |
           source ./ov/setupvars.sh
@@ -707,9 +712,9 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
-      - run: |
+      - run: >
           source ./ov/setupvars.sh
-          timeout 2m ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11
+          && timeout 2m ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11
           <<< $'What is on the image?\nWhat is special on the image?'
 
   cpp-continuous-batching-ubuntu:

@@ -10,10 +10,11 @@ bool print_subword(std::string&& subword) {
 }
 
 int main(int argc, char* argv[]) {
-    if (3 != argc) {
+    if (4 != argc) {
         throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE>");
     }
     ov::Tensor image = utils::load_image(argv[2]);
+    ov::Tensor image2 = utils::load_image(argv[3]);
     std::string device = "CPU";  // GPU can be used as well
     ov::AnyMap enable_compile_cache;
     if ("GPU" == device) {
@@ -31,7 +32,7 @@ int main(int argc, char* argv[]) {
     }
     pipe.generate(
         prompt,
-        ov::genai::images(std::vector{image, image}),
+        ov::genai::images(std::vector{image2, image}),
         ov::genai::streamer(print_subword)
     );
     std::cout << "\n----------\n"
