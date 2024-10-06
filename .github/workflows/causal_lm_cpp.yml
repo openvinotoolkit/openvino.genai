@@ -685,7 +685,7 @@ jobs:
     strategy:
       fail-fast: false
       # Windows fails to compile Jinja2Cpp.
-      matrix: {runs-on: [ubuntu-20.04-4-cores, macos-12]}
+      matrix: {runs-on: [ubuntu-20.04-4-cores, macos-13]}
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
@@ -697,12 +697,12 @@ jobs:
         run: >
           curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           && sudo ./ov/install_dependencies/install_openvino_dependencies.sh
-      - if: ${{ 'macos-12' == matrix.runs-on }}
+      - if: ${{ 'macos-13' == matrix.runs-on }}
         run: >
           curl ${{ env.m_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           && brew install coreutils scons
       - run: OpenVINO_DIR=./ov/runtime/cmake/ cmake -DCMAKE_BUILD_TYPE=Release -B ./build/ ./
-      - run: LD_LYBRARY_PATH=./ov/runtime/3rdparty/tbb/lib/:$LD_LYBRARY_PATH cmake --build ./build/ --config Release --target visual_language_chat -j
+      - run: source ./ov/setupvars.sh cmake --build ./build/ --config Release --target visual_language_chat -j 10
       - name: Download and convert a model and an image
         run: |
           source ./ov/setupvars.sh
