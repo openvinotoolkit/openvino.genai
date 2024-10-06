@@ -701,8 +701,8 @@ jobs:
         run: >
           curl ${{ env.m_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           && brew install coreutils scons
-      - run: LD_LYBRARY_PATH=./ov/runtime/3rdparty/tbb/lib/ OpenVINO_DIR=./ov/runtime/cmake/ cmake -DCMAKE_BUILD_TYPE=Release -B ./build/ ./
-      - run: cmake --build ./build/ --config Release --target visual_language_chat -j
+      - run: OpenVINO_DIR=./ov/runtime/cmake/ cmake -DCMAKE_BUILD_TYPE=Release -B ./build/ ./
+      - run: LD_LYBRARY_PATH=./ov/runtime/3rdparty/tbb/lib/:$LD_LYBRARY_PATH cmake --build ./build/ --config Release --target visual_language_chat -j
       - name: Download and convert a model and an image
         run: |
           source ./ov/setupvars.sh
