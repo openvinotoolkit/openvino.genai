@@ -958,8 +958,8 @@ def main():
     gc.collect()
 
     convert_vision_encoder(model, model_dir)
-    ov_cpm = init_model(model_dir, "CPU")
-    print(ov_cpm.chat(Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
+    # ov_cpm = init_model(model_dir, "CPU")
+    # print(ov_cpm.chat(Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
 
 if "__main__" == __name__:
     main()
