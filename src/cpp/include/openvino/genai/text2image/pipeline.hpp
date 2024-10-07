@@ -13,6 +13,7 @@
 
 #include "openvino/genai/visibility.hpp"
 
+#include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/text2image/clip_text_model.hpp"
 #include "openvino/genai/text2image/unet2d_condition_model.hpp"
 #include "openvino/genai/text2image/autoencoder_kl.hpp"
@@ -81,6 +82,8 @@ public:
         int64_t width = -1;
         size_t num_inference_steps = 50;
 
+        AdapterConfig adapters;
+
         void update_generation_config(const ov::AnyMap& config_map);
 
         // checks whether is config is valid
@@ -95,6 +98,13 @@ public:
     explicit Text2ImagePipeline(const std::string& root_dir);
 
     Text2ImagePipeline(const std::string& root_dir, const std::string& device, const ov::AnyMap& properties = {});
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    Text2ImagePipeline(const std::string& root_dir,
+                  const std::string& device,
+                  Properties&&... properties)
+        : Text2ImagePipeline(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     // creates either LCM or SD pipeline from building blocks
     static Text2ImagePipeline stable_diffusion(
