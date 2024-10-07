@@ -17,7 +17,9 @@ def get_ov_model(model_dir):
     from transformers import AutoModel, AutoTokenizer, AutoProcessor
     import os
     import openvino_tokenizers
+    import openvino as ov
     from pathlib import Path
+    import gc
 
     model_id = "openbmb/MiniCPM-V-2_6"
     ckpt = Path(os.path.join(model_dir, "ckpt"))
@@ -30,8 +32,8 @@ def get_ov_model(model_dir):
     tokenizer = AutoTokenizer.from_pretrained(ckpt, trust_remote_code=True)
     tokenizer.save_pretrained(model_dir)
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
-    ov.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
-    ov.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
+    ov.save_model(ov_tokenizer, os.path.join(model_dir, "openvino_tokenizer.xml"))
+    ov.save_model(ov_detokenizer, os.path.join(model_dir, "openvino_detokenizer.xml"))
     processor = AutoProcessor.from_pretrained(ckpt, trust_remote_code=True)
     processor.save_pretrained(model_dir)
 
