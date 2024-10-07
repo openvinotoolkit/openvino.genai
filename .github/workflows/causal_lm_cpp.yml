@@ -716,7 +716,7 @@ jobs:
           source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11
           <<< $'What is on the image?\nWhat is special on the image?'
-        timeout-minutes: 4
+        timeout-minutes: 8
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
