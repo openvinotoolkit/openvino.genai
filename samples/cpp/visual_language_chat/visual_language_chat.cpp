@@ -26,9 +26,7 @@ int main(int argc, char* argv[]) try {
 
     pipe.start_chat();
     std::cout << "question:\n";
-    if (!std::getline(std::cin, prompt)) {
-        throw std::runtime_error("std::cin failed");
-    }
+    std::getline(std::cin, prompt);
     pipe.generate(
         prompt,
         ov::genai::image(image),
