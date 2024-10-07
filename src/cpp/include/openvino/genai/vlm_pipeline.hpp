@@ -65,37 +65,14 @@ public:
     explicit VLMPipeline(
         const std::filesystem::path& model_dir,
         const std::string& device="CPU",
-        const ov::AnyMap device_config={},
-        ov::Core core=ov::Core{}
-    ) : VLMPipeline{
-        model_dir,
-        Tokenizer(model_dir.string(), device_config),
-        device,
-        device_config,
-        core
-    } {}
-
-    /// @brief Construct a pipeline form a folder containing model IRs
-    /// and from a Tokenizer instance.
-    /// @param model_dir A folder to read model IRs.
-    /// @param tokenizer An instance of Tokenizer to use.
-    /// @param device Inference device.
-    /// @param device_config A config to pass to ov::Core.set_property()
-    /// and ov::Core::compile_model().
-    /// @param core ov::Core instance to use.
-    VLMPipeline(
-        const std::filesystem::path& model_dir,
-        const ov::genai::Tokenizer& tokenizer,
-        const std::string& device="CPU",
-        const ov::AnyMap device_config={},
-        ov::Core core=ov::Core{}
+        const ov::AnyMap device_config={}
     );
 
     /// @brief Default destructor.
     ~VLMPipeline();
 
     /// @brief Generate a response given a prompt and any number of
-    /// uint8 RGB images.
+    /// uint8 RGB images with [HWC] layout.
     /// @param prompt A prompt to respond to.
     /// @param images Images to be prepended to a prompt.
     /// @param generation_config A config to follow for text generation.
@@ -120,7 +97,7 @@ public:
     /// @brief Generate a response given a prompt and arbitrary number
     /// of ov::Property instances.
     /// Example:
-    /// generate("text", image(std::move(rgb)), do_sample(true));
+    /// generate("text", image(rgb), do_sample(true));
     /// @param prompt A prompt to respond to.
     /// @param ...properties ov::Property instances to be combined into
     /// ov::AnyMap.
@@ -166,7 +143,7 @@ private:
 
 /*
  * utils that allow to use generate() in the following way:
- * pipe.generate(prompt, ov::genai::image(std::move(image_tensor))).
+ * pipe.generate(prompt, ov::genai::image(image_tensor)).
 */
 static constexpr ov::Property<ov::Tensor> image{"image"};
 static constexpr ov::Property<std::vector<ov::Tensor>> images{"images"};

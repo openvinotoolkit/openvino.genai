@@ -94,7 +94,7 @@ ov::Tensor process_prompt(ov::InferRequest& embedding, const ov::Tensor& prompt,
     return embed_output_tensor;
 }
 
-ov::Tensor concatenate(const ov::Tensor& first, const ov::Tensor& second) {
+ov::Tensor concatenate_last_dim(const ov::Tensor& first, const ov::Tensor& second) {
     size_t res_d_0 = first.get_shape().at(0);
     size_t res_d_1 = first.get_shape().at(1);
     OPENVINO_ASSERT(second.get_shape().at(0) == res_d_0);
@@ -187,7 +187,7 @@ ov::Tensor get_1d_sincos_pos_embed_from_grid_new(size_t embed_dim, const ov::Ten
     std::transform(out_data, out_data + out.get_size(), emb_cos_data, [](float arg) {
         return std::cos(arg);
     });
-    return concatenate(emb_sin, emb_cos); // (H, W, D)
+    return concatenate_last_dim(emb_sin, emb_cos); // (H, W, D)
 }
 
 ov::Tensor get_2d_sincos_pos_embed_from_grid(size_t embed_dim, const ov::Tensor& grid) {
@@ -201,13 +201,13 @@ ov::Tensor get_2d_sincos_pos_embed_from_grid(size_t embed_dim, const ov::Tensor&
     end_w.at(0) = 2;
     ov::Tensor emb_h = get_1d_sincos_pos_embed_from_grid_new(embed_dim / 2, ov::Tensor{grid, begin_h, end_h});  // (H, W, D/2)
     ov::Tensor emb_w = get_1d_sincos_pos_embed_from_grid_new(embed_dim / 2, ov::Tensor{grid, begin_w, end_w});  // (H, W, D/2)
-    return concatenate(emb_h, emb_w);
+    return concatenate_last_dim(emb_h, emb_w);
 }
 
 /// image_size: image_size or (image_height, image_width)
 /// return:
 /// pos_embed: [image_height, image_width, embed_dim]
-ov::Tensor get_2d_sincos_pos_embed(size_t embed_dim, const HeightWidth& image_size) {
+ov::Tensor get_2d_sincos_pos_embed(size_t embed_dim, const ImageSize& image_size) {
     size_t grid_h_size = image_size.height, grid_w_size = image_size.width;
     ov::Tensor grid(ov::element::f32, {2, grid_h_size, grid_w_size});
     float* data = grid.data<float>();
@@ -223,14 +223,14 @@ ov::Tensor get_2d_sincos_pos_embed(size_t embed_dim, const HeightWidth& image_si
 }
 
 void adjust_pos_cache(
-    const std::vector<HeightWidth>& target_sizes,
+    const std::vector<ImageSize>& target_sizes,
     size_t hidden_size,
     ov::Tensor& pos_embed_cache
 ) {
-    size_t max_h = std::max_element(target_sizes.begin(), target_sizes.end(), [](const HeightWidth& left, const HeightWidth& right) {
+    size_t max_h = std::max_element(target_sizes.begin(), target_sizes.end(), [](const ImageSize& left, const ImageSize& right) {
         return left.height < right.height;
     })->height;
-    size_t max_w = std::max_element(target_sizes.begin(), target_sizes.end(), [](const HeightWidth& left, const HeightWidth& right) {
+    size_t max_w = std::max_element(target_sizes.begin(), target_sizes.end(), [](const ImageSize& left, const ImageSize& right) {
         return left.width < right.width;
     })->width;
     size_t allocated_height, allocated_width;
@@ -250,10 +250,10 @@ void adjust_pos_cache(
     }
 }
 
-ov::Tensor resample(VLMPipeline& pipe, const ov::Tensor& encoded_image, const std::vector<HeightWidth>& target_sizes) {
+ov::Tensor resample(VLMPipeline& pipe, const ov::Tensor& encoded_image, const std::vector<ImageSize>& target_sizes) {
     size_t bs = encoded_image.get_shape().at(0);
     std::vector<size_t> patch_len{target_sizes.size()};
-    std::transform(target_sizes.begin(), target_sizes.end(), patch_len.begin(), [](const HeightWidth& height_width) {
+    std::transform(target_sizes.begin(), target_sizes.end(), patch_len.begin(), [](const ImageSize& height_width) {
         return height_width.height * height_width.width;
     });
     adjust_pos_cache(
@@ -301,25 +301,23 @@ class ov::genai::VLMPipeline::VLMPipelineImpl {
 
 VLMPipeline::VLMPipeline(
     const std::filesystem::path& model_dir,
-    const Tokenizer& tokenizer,
     const std::string& device,
-    const ov::AnyMap device_config,
-    ov::Core core
+    const ov::AnyMap device_config
 ) :
     m_vlm_config{
         utils::from_config_json_if_exists<ov::genai::VLMConfig>(
             model_dir, "config.json"
         )
     },
-    m_tokenizer{tokenizer},
-    m_vision_encoder(model_dir, device, device_config, core),
-    m_resampler{core.compile_model(
+    m_tokenizer{Tokenizer(model_dir.string(), device_config)},
+    m_vision_encoder(model_dir, device, device_config, ov::Core{}),
+    m_resampler{ov::Core{}.compile_model(
         model_dir / "resampler.xml", device, device_config
     ).create_infer_request()},
-    m_embedding{core.compile_model(
+    m_embedding{ov::Core{}.compile_model(
         model_dir / "embed_tokens.xml", device, device_config
     ).create_infer_request()},
-    m_language{core.compile_model(
+    m_language{ov::Core{}.compile_model(
         model_dir / "language_model.xml", device, device_config
     ).create_infer_request()},
     m_pos_embed_cache{
@@ -432,13 +430,12 @@ DecodedResults VLMPipeline::generate(
         if (encoded_image.slices) {
             size_t token_idx = 0;
             const ov::Shape& slices_shape = encoded_image.slices.get_shape();
-            const std::vector<HeightWidth>& sliced_sizes = encoded_image.slices_sizes;
             for (size_t i = 0; i < slices_shape.at(0); ++i) {
                 for (size_t ja = 0; ja < slices_shape.at(1); ++ja) {
                     size_t d2 = slices_shape.at(2);
                     size_t d3 = slices_shape.at(3);
                     ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, encoded_image.slices.data<float>() + (i * slices_shape.at(1) + ja) * d2 * d3};
-                    const ov::Tensor& vision_embed_tensor_i_j = resample(*this, encoded_view, {sliced_sizes.at(i * slices_shape.at(1) + ja)});
+                    const ov::Tensor& vision_embed_tensor_i_j = resample(*this, encoded_view, {encoded_image.slices_size});
                     ids = std::find(ids, end, slice_start_id);
                     OPENVINO_ASSERT(end != ids);
                     std::copy_n(vision_embed_tensor_i_j.data<float>(), vision_embed_tensor_i_j.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);

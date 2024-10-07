@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) try {
     }
     pipe.generate(
         prompt,
-        ov::genai::image(std::move(image)),
+        ov::genai::image(image),
         ov::genai::streamer(print_subword)
     );
     std::cout << "\n----------\n"
