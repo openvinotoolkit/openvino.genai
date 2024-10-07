@@ -236,12 +236,10 @@ ov::Tensor prepare_vis_position_ids(
     size_t max_im_h = pixel_values.get_shape().at(2), max_im_w = pixel_values.get_shape().at(3);
     size_t max_nb_patches_h = max_im_h / patch_size, max_nb_patches_w = max_im_w / patch_size;
     std::vector<float> boundaries(1.0f * num_patches_per_side - 1);
-    OPENVINO_ASSERT(69 == boundaries.size());
     std::generate(boundaries.begin(), boundaries.end(), [num_patches_per_side, val = 0.0f]() mutable {
         val += 1.0f / num_patches_per_side;
         return val;
     });
-    OPENVINO_ASSERT(2.0f / num_patches_per_side == boundaries.at(1));
     size_t position_ids_batch_elem = max_nb_patches_h * max_nb_patches_w;
     ov::Tensor position_ids{ov::element::i64, {batch_size, position_ids_batch_elem}};
     // throw std::runtime_error("");
@@ -249,26 +247,21 @@ ov::Tensor prepare_vis_position_ids(
     std::fill_n(res_data, position_ids.get_size(), 0);
 
     for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-        auto [nb_patches_h, nb_patches_w] = tgt_sizes.at(batch_idx);
+        size_t nb_patches_h = tgt_sizes.at(batch_idx).height;
+        size_t nb_patches_w = tgt_sizes.at(batch_idx).widht;
 
         std::vector<float> fractional_coords_h(nb_patches_h);
-        OPENVINO_ASSERT(26 == fractional_coords_h.size());
         std::generate(fractional_coords_h.begin(), fractional_coords_h.end(), [nb_patches_h, val = -1.0f / nb_patches_h]() mutable {
             val += 1.0f / nb_patches_h;
             return val;
         });
-        OPENVINO_ASSERT(0.5f == fractional_coords_h.at(13));
         std::vector<float> fractional_coords_w(nb_patches_w);
-        OPENVINO_ASSERT(39 == fractional_coords_w.size());
         std::generate(fractional_coords_w.begin(), fractional_coords_w.end(), [nb_patches_w, val = -1.0f / nb_patches_w]() mutable {
             val += 1.0f / nb_patches_w;
             return val;
         });
 
         std::vector<int64_t> bucket_coords_h = bucket_size_right(fractional_coords_h, boundaries);
-        if(std::vector<int64_t>{0,  2,  5,  8, 10, 13, 16, 18, 21, 24, 26, 29, 32, 35, 37, 40, 43, 45, 48, 51, 53, 56, 59, 61, 64, 67} != bucket_coords_h) {
-            OPENVINO_THROW("kek");
-        }
         std::vector<int64_t> bucket_coords_w = bucket_size_right(fractional_coords_w, boundaries);
 
         std::vector<int64_t> pos_ids(bucket_coords_h.size() * bucket_coords_w.size());
