@@ -431,6 +431,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
         size_t actual_seq_len = sequence_group->get_num_scheduled_tokens(); // points to a token which needs to be sampled
         size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
 
+        std::cout << "#### sequence_group_logits_data \n";
+
         const float * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
 
         size_t num_prompt_tokens_processed = sequence_group->get_num_processed_tokens();
@@ -447,11 +449,17 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
             sequence_group->append_prompt_log_prob(1.0);
 
         for (int i = 0; i < actual_seq_len - exclude_last_logprob; i++) {
+
+            std::cout << "#### token_logits \n";
+
             const float* token_logits = (sequence_group_logits_data + (num_prompt_tokens_processed + i) * vocab_size);
 
             int64_t token_id = sequence_group->get_prompt_ids()[num_prompt_tokens_processed + i + 1];
+
+            std::cout << "#### token_logits[token_id] \n";
             float token_logit = token_logits[token_id];
 
+            std::cout << "#### max val \n";
             // finding max value for log softmax
             float max_value = -std::numeric_limits<float>::infinity();
             size_t max_index = 0;
@@ -461,6 +469,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
                     max_index = i;
                 }
             }
+
+            std::cout << "#### log softmax \n";
 
             // apply log softmax to token logit
             float log_sum = std::log(std::accumulate(
@@ -473,7 +483,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
         currently_processed_tokens += padded_amount_of_processed_tokens * num_running_sequences;
         // For max_new_tokens == 0, we don't reach sampling so need to notify handle separately
         if(sequence_group->get_sampling_parameters().max_new_tokens == 0) {
+            std::cout << "#### notify echo only begin\n";
             sequence_group->notify_handle_echo_only();
+            std::cout << "#### notify echo only begin\n";
         }
     }
 }

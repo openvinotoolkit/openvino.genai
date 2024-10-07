@@ -609,13 +609,16 @@ public:
         size_t last_token_position = get_context_len();
 
         GenerationOutput output;
+        std::cout << "####  notify_handle_echo_only generated_ids assign \n";
         output.generated_ids = std::vector<int64_t>(m_prompt_ids.begin() + first_token_position, m_prompt_ids.begin() + last_token_position);
+        std::cout << "####  notify_handle_echo_only log_probs assign \n";
         output.generated_log_probs = std::vector<float>(m_prompt_log_probs.begin() + first_token_position, m_prompt_log_probs.begin() + last_token_position);
         output.score = 0.0; // Should we accumulate prompt log probs here?
         output.finish_reason = GenerationFinishReason::NONE;
         if (last_token_position == get_prompt_len()) {
             output.finish_reason = GenerationFinishReason::LENGTH;
             set_generation_status(GenerationStatus::FINISHED);
+            std::cout << "####  finishing sequence \n";
             m_sequences[0]->set_status(SequenceStatus::FINISHED); // for cleanup
         }
         outputs.emplace(0, output);
