@@ -248,7 +248,7 @@ ov::Tensor prepare_vis_position_ids(
 
     for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
         size_t nb_patches_h = tgt_sizes.at(batch_idx).height;
-        size_t nb_patches_w = tgt_sizes.at(batch_idx).widht;
+        size_t nb_patches_w = tgt_sizes.at(batch_idx).width;
 
         std::vector<float> fractional_coords_h(nb_patches_h);
         std::generate(fractional_coords_h.begin(), fractional_coords_h.end(), [nb_patches_h, val = -1.0f / nb_patches_h]() mutable {
