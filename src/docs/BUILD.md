@@ -43,7 +43,7 @@ OpenVINO GenAI can be built as an extra module during the OpenVINO build process
 1. Clone OpenVINO and OpenVINO GenAI repositories:
     ```sh
     git clone --recursive https://github.com/openvinotoolkit/openvino.git
-    git clone --recursive https://github.com/openvinotoolkit/openvino_genai.git
+    git clone --recursive https://github.com/openvinotoolkit/openvino.genai.git
     ```
 2. Configure CMake with OpenVINO extra modules:
     ```sh
