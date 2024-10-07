@@ -19,6 +19,40 @@ dependencies = [
     "openvino_tokenizers~=2024.5.0.0.dev"
 ]
 
+[tool.black]
+exclude = '''
+(
+  README\.md|
+  SECURITY\.md|
+  LICENSE|
+  third-party-programs\.txt|
+  tests/python_tests/README\.md|
+  llm_bench/python/README\.md|
+  llm_bench/python/doc/IMAGE_GEN\.md|
+  llm_bench/python/doc/NOTES\.md|
+  llm_bench/python/who_what_benchmark/README\.md|
+  samples/cpp/beam_search_casual_lm/README\.md|
+  samples/cpp/benchmark_genai/README\.md|
+  samples/cpp/chat_sample/README\.md|
+  samples/cpp/greedy_casual_lm/README\.md|
+  samples/cpp/multinomial_casual_lm/README\.md|
+  samples/cpp/prompt_lookup_decoding_lm/README\.md|
+  samples/cpp/speculative_decoding_lm/README\.md|
+  samples/cpp/stable_diffusion/README\.md|
+  samples/cpp/whisper_speech_recognition/README\.md|
+  samples/python/beam_search_casual_lm/README\.md|
+  samples/python/benchmark_genai/README\.md|
+  samples/python/chat_sample/README\.md|
+  samples/python/greedy_casual_lm/README\.md|
+  samples/python/multinomial_casual_lm/README\.md|
+  samples/python/whisper_speech_recognition/README\.md|
+  src/README\.md|
+  src/docs/BUILD\.md|
+  src/docs/DOCKER\.md|
+  src/docs/SUPPORTED_MODELS\.md
+)
+'''
+
 [tool.py-build-cmake.module]
 directory = "src/python"
 

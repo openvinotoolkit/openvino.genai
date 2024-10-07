@@ -11,19 +11,35 @@ class StableDiffusionHook:
         self.vae_decoder_step_count = 0
 
     def get_text_encoder_latency(self):
-        return (self.text_encoder_time / self.text_encoder_step_count) * 1000 if self.text_encoder_step_count > 0 else 0
+        return (
+            (self.text_encoder_time / self.text_encoder_step_count) * 1000
+            if self.text_encoder_step_count > 0
+            else 0
+        )
 
     def get_1st_unet_latency(self):
         return self.unet_time_list[0] * 1000 if len(self.unet_time_list) > 0 else 0
 
     def get_2nd_unet_latency(self):
-        return sum(self.unet_time_list[1:]) / (len(self.unet_time_list) - 1) * 1000 if len(self.unet_time_list) > 1 else 0
+        return (
+            sum(self.unet_time_list[1:]) / (len(self.unet_time_list) - 1) * 1000
+            if len(self.unet_time_list) > 1
+            else 0
+        )
 
     def get_unet_latency(self):
-        return (sum(self.unet_time_list) / len(self.unet_time_list)) * 1000 if len(self.unet_time_list) > 0 else 0
+        return (
+            (sum(self.unet_time_list) / len(self.unet_time_list)) * 1000
+            if len(self.unet_time_list) > 0
+            else 0
+        )
 
     def get_vae_decoder_latency(self):
-        return (self.vae_decoder_time / self.vae_decoder_step_count) * 1000 if self.vae_decoder_step_count > 0 else 0
+        return (
+            (self.vae_decoder_time / self.vae_decoder_step_count) * 1000
+            if self.vae_decoder_step_count > 0
+            else 0
+        )
 
     def get_text_encoder_step_count(self):
         return self.text_encoder_step_count
@@ -53,6 +69,7 @@ class StableDiffusionHook:
             self.text_encoder_time += text_encoder_time
             self.text_encoder_step_count += 1
             return r
+
         pipe.text_encoder.request = my_text_encoder
 
     def new_unet(self, pipe):
@@ -66,6 +83,7 @@ class StableDiffusionHook:
             self.unet_time_list.append(unet_time)
             self.unet_step_count += 1
             return r
+
         pipe.unet.request = my_unet
 
     def new_vae_decoder(self, pipe):
@@ -79,4 +97,5 @@ class StableDiffusionHook:
             self.vae_decoder_time += vae_decoder_time
             self.vae_decoder_step_count += 1
             return r
+
         pipe.vae_decoder.request = my_vae_decoder

@@ -6,7 +6,7 @@ from tqdm import tqdm
 from .whowhat_metrics import DivergencyMetric, SimilarityMetric
 
 default_data = {
-    "en" : {
+    "en": {
         "questions": [
             "Who is Mark Twain?",
             "Who is William Shakespeare?",
@@ -43,8 +43,7 @@ default_data = {
             "谁是威廉-莎士比亚?",
             "阿加莎-克里斯蒂是谁?",
             "芭芭拉-卡特兰是谁?",
-            "丹妮尔-斯蒂尔是谁?"
-            "谁是哈罗德-罗宾斯?",
+            "丹妮尔-斯蒂尔是谁?" "谁是哈罗德-罗宾斯?",
             "乔治-西默农是谁?",
             "伊妮德-布莱顿是谁?",
             "西德尼-谢尔顿是谁?",
@@ -189,8 +188,15 @@ class Evaluator:
 
         return res
 
+<<<<<<< Updated upstream
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
         def default_gen_answer(model, tokenizer, question, max_new_tokens, crop_question):
+=======
+    def _generate_data(self, model, gen_answer_fn=None):
+        def default_gen_answer(
+            model, tokenizer, question, max_new_tokens, crop_question
+        ):
+>>>>>>> Stashed changes
             inputs = self.tokenizer(question, return_tensors="pt")
 
             tokens = model.generate(**inputs, max_new_tokens=max_new_tokens)
@@ -211,15 +217,22 @@ class Evaluator:
                 data = pd.DataFrame.from_dict(data)
         else:
             if self.language is None:
-                print("No language detecting in the base model or ground truth data. Taking language from target model.")
+                print(
+                    "No language detecting in the base model or ground truth data. Taking language from target model."
+                )
                 self.language = autodetect_language(model)
             data = pd.DataFrame.from_dict(default_data[self.language])
 
         questions = data["questions"]
 
         answers = []
-        prompts = questions.values if self.num_samples is None else questions.values[:self.num_samples]
+        prompts = (
+            questions.values
+            if self.num_samples is None
+            else questions.values[: self.num_samples]
+        )
 
+<<<<<<< Updated upstream
         if generation_config is None:
             for q in tqdm(prompts, desc="Evaluate pipeline"):
                 answers.append(gen_answer_fn(model, self.tokenizer, q, self.max_new_tokens, self._crop_question))
@@ -235,6 +248,14 @@ class Evaluator:
                             answers.append(ans.m_generation_ids[0])
 
                         batch.clear()
+=======
+        for q in tqdm(prompts, desc="Evaluate pipeline"):
+            answers.append(
+                gen_answer_fn(
+                    model, self.tokenizer, q, self.max_new_tokens, self._crop_question
+                )
+            )
+>>>>>>> Stashed changes
 
         res_data = {"questions": list(prompts), "answers": answers}
         df = pd.DataFrame(res_data)

@@ -16,9 +16,35 @@ env:
   l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/l_openvino_toolkit_ubuntu20_2024.5.0.dev20240830_x86_64.tgz
   m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/m_openvino_toolkit_macos_12_6_2024.5.0.dev20240830_x86_64.tgz
   w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/w_openvino_toolkit_windows_2024.5.0.dev20240830_x86_64.zip
+
 jobs:
+  lint-checks:
+    name: Run Pre-Commit Lint Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up Python 3.x
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - name: Install dependencies
+        run: |
+          pip install black flake8 pre-commit
+      - name: Run Black
+        run: black --check .
+      - name: Check Git Diff
+        run: git --no-pager diff --check $(git hash-object -t tree /dev/null)
+      - name: Prohibit non-ASCII characters in file names
+        run: |
+          test $(git diff --name-only --diff-filter=A -z $(git hash-object -t tree /dev/null) | LC_ALL=C tr -d '[ -~]\0' | wc -c) == 0
+      - name: Check for non-ASCII characters in files
+        run: "! git grep -n '[^ -~]' -- ':(exclude)SECURITY.md' ':(exclude)LICENSE' ':(exclude)third-party-programs.txt' ':(exclude)tests/python_tests/README.md' ':(exclude)llm_bench/python/README.md' ':(exclude)samples/cpp/beam_search_casual_lm/README.md' ':(exclude)samples/cpp/benchmark_genai/README.md' ':(exclude)samples/cpp/chat_sample/README.md' ':(exclude)samples/cpp/greedy_casual_lm/README.md' ':(exclude)samples/cpp/multinomial_causal_lm/README.md' ':(exclude)samples/cpp/prompt_lookup_decoding_lm/README.md' ':(exclude)samples/cpp/speculative_decoding_lm/README.md' ':(exclude)samples/cpp/stable_diffusion/README.md' ':(exclude)samples/cpp/whisper_speech_recognition/README.md' ':(exclude)samples/python/beam_search_casual_lm/README.md' ':(exclude)samples/python/benchmark_genai/README.md' ':(exclude)samples/python/chat_sample/README.md' ':(exclude)samples/python/greedy_casual_lm/README.md' ':(exclude)samples/python/multinomial_causal_lm/README.md' ':(exclude)samples/python/whisper_speech_recognition/README.md' ':(exclude)src/README.md' ':(exclude)src/docs/BUILD.md' ':(exclude)src/docs/DOCKER.md' ':(exclude)src/docs/SUPPORTED_MODELS.md'"
+
   cpp-multinomial-greedy_causal_lm-ubuntu:
+    name: Build and Test C++ Multinomial Greedy Causal LM
     runs-on: ubuntu-20.04-8-cores
+    needs: lint-checks
     defaults:
       run:
         shell: bash
@@ -45,19 +71,20 @@ jobs:
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           optimum-cli export openvino --trust-remote-code --weight-format fp16 --model openlm-research/open_llama_3b_v2 open_llama_3b_v2
-      - run: >
+      - name: Run C++ Multinomial Causal LM
+        run: |
           . ./ov/setupvars.sh
-          && PYTHONPATH=./build/:$PYTHONPATH timeout 25s
-          ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
-      - run: >
+          PYTHONPATH=./build/:$PYTHONPATH timeout 25s ./build/samples/cpp/multinomial_causal_lm/multinomial_causal_lm ./open_llama_3b_v2/ a
+      - name: Run Python Multinomial Causal LM
+        run: |
           . ./ov/setupvars.sh
-          && PYTHONPATH=./build/:$PYTHONPATH timeout 25s
-          ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
-      - run: >
+          PYTHONPATH=./build/:$PYTHONPATH timeout 25s ./samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./open_llama_3b_v2/ b
+      - name: Compare Outputs
+        run: |
           . ./ov/setupvars.sh
-          && export PYTHONPATH=./build/:$PYTHONPATH
-          && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
-          | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
+          export PYTHONPATH=./build/:$PYTHONPATH
+          timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0" | \
+          diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
 
   cpp-beam_search_causal_lm-ubuntu:
     strategy:

@@ -28,10 +28,10 @@ class MemConsumption:
                 try:
                     memory_full_info = process.memory_full_info()
                     rss_mem_data = memory_full_info.rss
-                    if sys.platform.startswith('linux'):
+                    if sys.platform.startswith("linux"):
                         shared_mem_data = memory_full_info.shared
                         uss_mem_data = rss_mem_data - shared_mem_data
-                    elif sys.platform.startswith('win'):
+                    elif sys.platform.startswith("win"):
                         uss_mem_data = memory_full_info.uss
                         shared_mem_data = rss_mem_data - uss_mem_data
                     else:
@@ -70,9 +70,21 @@ class MemConsumption:
         """Return the data."""
         self.g_data_event.wait()
         self.g_data_event.clear()
-        max_rss_mem = self.g_max_rss_mem_consumption / float(2**20) if self.g_max_rss_mem_consumption > -1 else -1
-        max_shared_mem = self.g_max_shared_mem_consumption / float(2**20) if self.g_max_shared_mem_consumption > -1 else -1
-        max_uss_mem = self.g_max_uss_mem_consumption / float(2**20) if self.g_max_uss_mem_consumption > -1 else -1
+        max_rss_mem = (
+            self.g_max_rss_mem_consumption / float(2**20)
+            if self.g_max_rss_mem_consumption > -1
+            else -1
+        )
+        max_shared_mem = (
+            self.g_max_shared_mem_consumption / float(2**20)
+            if self.g_max_shared_mem_consumption > -1
+            else -1
+        )
+        max_uss_mem = (
+            self.g_max_uss_mem_consumption / float(2**20)
+            if self.g_max_uss_mem_consumption > -1
+            else -1
+        )
         return max_rss_mem, max_shared_mem, max_uss_mem
 
     def clear_max_memory_consumption(self):

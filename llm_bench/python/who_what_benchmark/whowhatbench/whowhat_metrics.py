@@ -1,6 +1,7 @@
 """
 Metrics for text similarity
 """
+
 from difflib import SequenceMatcher
 
 import numpy as np
@@ -68,9 +69,7 @@ def evaluate_divergency(tokenizer, data_gold, data_prediction):
             fdt_list.append(fdt)
 
             num_matched = sum(block.size for block in blocks)
-            sdt = (
-                len(b_indexes) - num_matched
-            )
+            sdt = len(b_indexes) - num_matched
             sdt_list.append(sdt)
             sdt_norm = sdt / len(b_indexes)
             sdtn_list.append(sdt_norm)
