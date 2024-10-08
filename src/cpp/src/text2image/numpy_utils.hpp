@@ -43,6 +43,6 @@ void rescale_zero_terminal_snr(std::vector<float>& betas);
 // np.interp(...) implementation
 std::vector<float> interp(const std::vector<std::int64_t>& x, const std::vector<size_t>& xp, const std::vector<float>& fp);
 
-}// namespace ov
-}// namespace genai
-}// namespace txt2img_utils
+} // namespace ov
+} // namespace genai
+} // namespace numpy_utils

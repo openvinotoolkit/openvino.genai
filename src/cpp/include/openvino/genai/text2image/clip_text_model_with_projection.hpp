@@ -21,6 +21,7 @@ public:
     struct Config {
         size_t max_position_embeddings = 77;
         size_t hidden_size = 512;
+        size_t num_hidden_layers = 33;
 
         explicit Config(const std::string& config_path);
     };
