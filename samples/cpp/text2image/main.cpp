@@ -19,11 +19,11 @@ namespace {
         size_t img_size = output.get_size() / out_shape[0];
 
         ov::Tensor image(output.get_element_type(), img_shape);
-        u_int8_t* out_data = output.data<u_int8_t>();
-        u_int8_t* img_data = image.data<u_int8_t>();
+        uint8_t* out_data = output.data<uint8_t>();
+        uint8_t* img_data = image.data<uint8_t>();
 
         for (int img_num = 0; img_num < out_shape[0]; ++img_num) {
-            std::memcpy(img_data, out_data + img_size * img_num, img_size * sizeof(u_int8_t));
+            std::memcpy(img_data, out_data + img_size * img_num, img_size * sizeof(uint8_t));
 
             char img_name[25];
             sprintf(img_name, "image_%d.bmp", img_num);
