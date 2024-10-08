@@ -51,7 +51,9 @@ file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp", "${CMAKE
 
 set(TARGET_NAME openvino_genai)
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
-add_dependencies(${TARGET_NAME} openvino_tokenizers)
+if(TARGET openvino_tokenizers)
+    add_dependencies(${TARGET_NAME} openvino_tokenizers)
+endif()
 add_library(openvino::genai ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME}
