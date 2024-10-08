@@ -22,7 +22,7 @@ from common import TESTS_ROOT
 def load_prompts_dataset(file_name : str) -> Dict[str, List[str]]:
     file_path = TESTS_ROOT / 'data' / file_name
     with open(file_path, 'r') as f:
-        return {"questions": [s for s in f]}
+        return {"prompts": [s for s in f]}
 
 def get_scheduler_config(num_kv_blocks: int) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
@@ -118,7 +118,7 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(converted_model, t
 
     data_dict = load_prompts_dataset(test_struct.prompt_file)
 
-    evaluator = whowhatbench.Evaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
+    evaluator = whowhatbench.TextEvaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
                                        generation_config=generation_config,
                                        generation_config_base=generation_config,
                                        max_new_tokens=test_struct.max_new_tokens, seqs_per_request=seqs_per_request)
