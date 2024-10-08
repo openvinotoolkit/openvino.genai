@@ -61,9 +61,9 @@ jobs:
 
       - name: Download and convert models and tokenizer
         run: |
-          wget -O ./models/soulcard.safetensors https://civitai.com/api/download/models/72591
           source openvino_sd_cpp/bin/activate
           optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --weight-format fp16 --task stable-diffusion models/dreamlike-art-dreamlike-anime-1.0/FP16
+          wget -O ./models/soulcard.safetensors https://civitai.com/api/download/models/72591
 
       - name: Run main app
         run: |
@@ -122,9 +122,9 @@ jobs:
 
         - name: Download and convert models and tokenizer
           run: |
-            Invoke-WebRequest -Uri 'https://civitai.com/api/download/models/72591' -OutFile 'soulcard.safetensors'
             . "./openvino_sd_cpp/Scripts/Activate.ps1"
             optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 models/dreamlike-art-dreamlike-anime-1.0/FP16
+            Invoke-WebRequest -Uri 'https://civitai.com/api/download/models/72591' -OutFile 'models/soulcard.safetensors'
 
         - name: Run main app
           run: |
