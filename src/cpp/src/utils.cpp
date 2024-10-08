@@ -195,6 +195,20 @@ std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& p
     return {core_config, compile_config};
 };
 
+ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
+    auto minuend_size = minuend.input_ids.get_size();
+    auto subtrahend_size = subtrahend.input_ids.get_size();
+    ov::Shape new_shape{1, minuend_size - subtrahend_size};
+
+    ov::Tensor new_input_ids(ov::element::i64, new_shape);
+    auto data_ptr = minuend.input_ids.data<int64_t>();
+    std::copy(data_ptr + subtrahend_size, data_ptr + minuend_size, new_input_ids.data<int64_t>());
+
+    ov::Tensor new_attention_mask(ov::element::i64, new_shape);
+    std::fill_n(new_attention_mask.data<int64_t>(), new_shape[1], 1);
+
+    return {new_input_ids, new_attention_mask};
+}
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
