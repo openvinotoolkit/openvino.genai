@@ -88,7 +88,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     // put candidates to model KV cache
     for (const auto& candidate : m_draft_pipeline->get_generated_sequences()) {
         auto update_result = m_main_pipeline->update_generated_sequence(candidate);
-        update_sequence_info.insert({{candidate.request_id, {update_result.to_insert, 0}}});
+        update_sequence_info.insert({{candidate.request_id, update_result}});
     }
 
     // validate candidates and generate 1 new token
@@ -103,6 +103,8 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     for (auto& request : m_left_gen_len) {
         auto updated_seq_info = update_sequence_info[request.first];
         OPENVINO_ASSERT(updated_seq_info.to_insert >= updated_seq_info.to_remove);
+        float acceptance_rate = 1 - static_cast<float>(updated_seq_info.to_remove) / updated_seq_info.to_insert; 
+        m_sd_metrics.update_acceptance_rate(request.first, acceptance_rate);
         auto num_matches = updated_seq_info.to_insert - updated_seq_info.to_remove;
         if (request.second > num_matches) {
             request.second -= (num_matches + 1);
