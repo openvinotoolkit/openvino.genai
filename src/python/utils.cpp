@@ -161,4 +161,67 @@ std::string ov_tokenizers_module_path() {
     return py::str(py::module_::import("openvino_tokenizers").attr("_ext_path"));
 }
 
+
+ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs) {
+    if(!config.has_value() && kwargs.empty())
+        return std::nullopt;
+
+    ov::genai::GenerationConfig res_config;
+    if(config.has_value())
+        res_config = *config;
+ 
+    for (const auto& item : kwargs) {
+        std::string key = py::cast<std::string>(item.first);
+        py::object value = py::cast<py::object>(item.second);
+
+        if (item.second.is_none()) {
+            // Even if argument key name does not fit GenerationConfig name 
+            // it's not an eror if it's not defined. 
+            // Some HF configs can have parameters for methods currenly unsupported in ov_genai
+            // but if their values are not set / None, then this should not block 
+            // us from reading such configs, e.g. {"typical_p": None, 'top_p': 1.0,...}
+            return res_config;
+        }
+        
+        if (key == "max_new_tokens") {
+            res_config.max_new_tokens = py::cast<int>(item.second);
+        } else if (key == "max_length") {
+            res_config.max_length = py::cast<int>(item.second);
+        } else if (key == "ignore_eos") {
+            res_config.ignore_eos = py::cast<bool>(item.second);
+        } else if (key == "num_beam_groups") {
+            res_config.num_beam_groups = py::cast<int>(item.second);
+        } else if (key == "num_beams") {
+            res_config.num_beams = py::cast<int>(item.second);
+        } else if (key == "diversity_penalty") {
+            res_config.diversity_penalty = py::cast<float>(item.second);
+        } else if (key == "length_penalty") {
+            res_config.length_penalty = py::cast<float>(item.second);
+        } else if (key == "num_return_sequences") {
+            res_config.num_return_sequences = py::cast<int>(item.second);
+        } else if (key == "no_repeat_ngram_size") {
+            res_config.no_repeat_ngram_size = py::cast<int>(item.second);
+        } else if (key == "stop_criteria") {
+            res_config.stop_criteria = py::cast<StopCriteria>(item.second);
+        } else if (key == "temperature") {
+            res_config.temperature = py::cast<float>(item.second);
+        } else if (key == "top_p") {
+            res_config.top_p = py::cast<float>(item.second);
+        } else if (key == "top_k") {
+            res_config.top_k = py::cast<int>(item.second);
+        } else if (key == "do_sample") {
+            res_config.do_sample = py::cast<bool>(item.second);
+        } else if (key == "repetition_penalty") {
+            res_config.repetition_penalty = py::cast<float>(item.second);
+        } else if (key == "eos_token_id") {
+            res_config.set_eos_token_id(py::cast<int>(item.second));
+        } else {
+            throw(std::invalid_argument("'" + key + "' is incorrect GenerationConfig parameter name. "
+                                        "Use help(openvino_genai.GenerationConfig) to get list of acceptable parameters."));
+        }
+    }
+
+    return res_config;
+}
+
 }  // namespace ov::genai::pybind::utils
