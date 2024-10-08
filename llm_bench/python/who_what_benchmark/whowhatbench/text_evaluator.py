@@ -3,11 +3,12 @@ from typing import Any, Union
 import pandas as pd
 from tqdm import tqdm
 
-from .whowhat_metrics import DivergencyMetric, SimilarityMetric
+from .registry import register_evaluator, BaseEvaluator
+from .whowhat_metrics import TextDivergency, TextSimilarity
 
 default_data = {
-    "en" : {
-        "questions": [
+    "en": {
+        "prompts": [
             "Who is Mark Twain?",
             "Who is William Shakespeare?",
             "Who is Agatha Christie?",
@@ -38,12 +39,12 @@ default_data = {
         ],
     },
     "cn": {
-        "questions": [
+        "prompts": [
             "马克吐温是谁?",
             "谁是威廉-莎士比亚?",
             "阿加莎-克里斯蒂是谁?",
             "芭芭拉-卡特兰是谁?",
-            "丹妮尔-斯蒂尔是谁?"
+            "丹妮尔-斯蒂尔是谁?",
             "谁是哈罗德-罗宾斯?",
             "乔治-西默农是谁?",
             "伊妮德-布莱顿是谁?",
@@ -86,7 +87,10 @@ def autodetect_language(model):
     return model2language.get(model.config.model_type, "en")
 
 
-class Evaluator:
+@register_evaluator(
+    "text-generation", "text-generation-with-past", "text2text-generation"
+)
+class TextEvaluator(BaseEvaluator):
     def __init__(
         self,
         base_model: Any = None,
@@ -102,7 +106,7 @@ class Evaluator:
         gen_answer_fn=None,
         generation_config=None,
         generation_config_base=None,
-        seqs_per_request=None
+        seqs_per_request=None,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -127,7 +131,9 @@ class Evaluator:
                 self.language = autodetect_language(base_model)
 
         if base_model:
-            self.gt_data = self._generate_data(base_model, gen_answer_fn, generation_config=generation_config)
+            self.gt_data = self._generate_data(
+                base_model, gen_answer_fn, generation_config=generation_config
+            )
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
@@ -138,10 +144,10 @@ class Evaluator:
         self.similarity = None
         self.divergency = None
         if "similarity" in self.metrics:
-            self.similarity = SimilarityMetric(similarity_model_id)
+            self.similarity = TextSimilarity(similarity_model_id)
         if "divergency" in self.metrics:
             assert tokenizer is not None
-            self.divergency = DivergencyMetric(tokenizer)
+            self.divergency = TextDivergency(tokenizer)
 
         self.last_cmp = None
 
@@ -151,7 +157,7 @@ class Evaluator:
     def score(self, model, gen_answer_fn=None):
         predictions = self._generate_data(model, gen_answer_fn, self.generation_config)
 
-        all_metrics_per_question = {}
+        all_metrics_per_prompt = {}
         all_metrics = {}
 
         if self.similarity:
@@ -159,23 +165,23 @@ class Evaluator:
                 self.gt_data, predictions
             )
             all_metrics.update(metric_dict)
-            all_metrics_per_question.update(metric_per_question)
+            all_metrics_per_prompt.update(metric_per_question)
 
         if self.divergency:
             metric_dict, metric_per_question = self.divergency.evaluate(
                 self.gt_data, predictions
             )
             all_metrics.update(metric_dict)
-            all_metrics_per_question.update(metric_per_question)
+            all_metrics_per_prompt.update(metric_per_question)
 
-        self.last_cmp = all_metrics_per_question
-        self.last_cmp["questions"] = predictions["questions"].values
+        self.last_cmp = all_metrics_per_prompt
+        self.last_cmp["prompts"] = predictions["prompts"].values
         self.last_cmp["source_model"] = self.gt_data["answers"].values
         self.last_cmp["optimized_model"] = predictions["answers"].values
         self.last_cmp = pd.DataFrame(self.last_cmp)
-        self.last_cmp.rename(columns={"questions": "prompt"}, inplace=True)
+        self.last_cmp.rename(columns={"prompts": "prompt"}, inplace=True)
 
-        return pd.DataFrame(all_metrics_per_question), pd.DataFrame([all_metrics])
+        return pd.DataFrame(all_metrics_per_prompt), pd.DataFrame([all_metrics])
 
     def worst_examples(self, top_k: int = 5, metric="similarity"):
         assert self.last_cmp is not None
@@ -190,12 +196,12 @@ class Evaluator:
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(model, tokenizer, question, max_new_tokens, crop_question):
-            inputs = self.tokenizer(question, return_tensors="pt")
+        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question):
+            inputs = self.tokenizer(prompt, return_tensors="pt")
 
             tokens = model.generate(**inputs, max_new_tokens=max_new_tokens)
             out = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
-            return out[len(question) :] if crop_question else out
+            return out[len(prompt) :] if crop_question else out
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
 
@@ -204,39 +210,58 @@ class Evaluator:
                 data = pd.read_csv(self.test_data)
             else:
                 if isinstance(self.test_data, dict):
-                    assert "questions" in self.test_data
+                    assert "prompts" in self.test_data
                     data = dict(self.test_data)
                 else:
-                    data = {"questions": list(self.test_data)}
+                    data = {"prompts": list(self.test_data)}
                 data = pd.DataFrame.from_dict(data)
         else:
             if self.language is None:
-                print("No language detecting in the base model or ground truth data. Taking language from target model.")
+                print(
+                    "No language detecting in the base model or ground truth data. Taking language from target model."
+                )
                 self.language = autodetect_language(model)
             data = pd.DataFrame.from_dict(default_data[self.language])
 
-        questions = data["questions"]
+        prompt_data = data["prompts"]
 
         answers = []
-        prompts = questions.values if self.num_samples is None else questions.values[:self.num_samples]
+        prompts = (
+            prompt_data.values
+            if self.num_samples is None
+            else prompt_data.values[: self.num_samples]
+        )
 
         if generation_config is None:
-            for q in tqdm(prompts, desc="Evaluate pipeline"):
-                answers.append(gen_answer_fn(model, self.tokenizer, q, self.max_new_tokens, self._crop_question))
+            for p in tqdm(prompts, desc="Evaluate pipeline"):
+                answers.append(
+                    gen_answer_fn(
+                        model,
+                        self.tokenizer,
+                        p,
+                        self.max_new_tokens,
+                        self._crop_question,
+                    )
+                )
         else:
-            with tqdm(total=len(questions.values)) as progress_bar:
+            with tqdm(total=len(prompt_data.values)) as progress_bar:
                 batch = []
-                for q_idx, q in enumerate(questions.values):
+                for p_idx, p in enumerate(prompt_data.values):
                     progress_bar.update(1)
-                    batch.append(q)
-                    if len(batch) == self.seqs_per_request or q_idx == len(questions.values) - 1:
-                        ans_batch = model.generate(batch, [generation_config] * len(batch))
+                    batch.append(p)
+                    if (
+                        len(batch) == self.seqs_per_request
+                        or p_idx == len(prompt_data.values) - 1
+                    ):
+                        ans_batch = model.generate(
+                            batch, [generation_config] * len(batch)
+                        )
                         for ans in ans_batch:
                             answers.append(ans.m_generation_ids[0])
 
                         batch.clear()
 
-        res_data = {"questions": list(prompts), "answers": answers}
+        res_data = {"prompts": list(prompts), "answers": answers}
         df = pd.DataFrame(res_data)
         df["language"] = self.language
 
