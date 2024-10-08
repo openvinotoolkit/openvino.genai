@@ -338,31 +338,48 @@ DecodedResults VLMPipeline::generate(
     std::string images_prompt;
     std::vector<EncodedImage> embeds;
     for (const ov::Tensor& rgb : rgbs) {
-        EncodedImage encoded_image = m_vision_encoder.encode(rgb);
-        if (m_vlm_config.use_image_id) {
-            images_prompt += m_vlm_config.im_id_start + std::to_string(image_id) + m_vlm_config.im_id_end;
-            ++image_id;
+        ov::Tensor reshaped = rgb;
+        ov::Shape rgb_shape = rgb.get_shape();
+        switch (rgb_shape.size()) {
+            case 3:
+                reshaped.set_shape({1, rgb_shape.at(0), rgb_shape.at(1), rgb_shape.at(2)});
+                break;
+            case 4: break;
+            default: OPENVINO_THROW("Input image must have [NHWC] or [HWC] layout");
         }
-        std::string unk64;
-        for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
-            unk64 += m_vlm_config.unk;
-        }
-        images_prompt += m_vlm_config.im_start + unk64 + m_vlm_config.im_end;
-        if (encoded_image.slices) {
-            ov::Shape slices_shape = encoded_image.slices.get_shape();
-            for (size_t row_idx = 0; row_idx < slices_shape.at(0); ++row_idx) {
-                for (size_t col_idx = 0; col_idx < slices_shape.at(1); ++col_idx) {
-                    images_prompt += m_vlm_config.slice_start + unk64 + m_vlm_config.slice_end;
+        ov::Shape reshaped_shape = reshaped.get_shape();
+        for (size_t batch_idx = 0; batch_idx < reshaped_shape.at(0); ++batch_idx) {
+            ov::Tensor single_image{
+                ov::element::u8,
+                {1, reshaped_shape.at(1), reshaped_shape.at(2), reshaped_shape.at(3)},
+                reshaped.data<uint8_t>() + batch_idx * reshaped_shape.at(1) * reshaped_shape.at(1) * reshaped_shape.at(1)
+            };
+            EncodedImage encoded_image = m_vision_encoder.encode(single_image);
+            if (m_vlm_config.use_image_id) {
+                images_prompt += m_vlm_config.im_id_start + std::to_string(image_id) + m_vlm_config.im_id_end;
+                ++image_id;
+            }
+            std::string unk64;
+            for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
+                unk64 += m_vlm_config.unk;
+            }
+            images_prompt += m_vlm_config.im_start + unk64 + m_vlm_config.im_end;
+            if (encoded_image.slices) {
+                ov::Shape slices_shape = encoded_image.slices.get_shape();
+                for (size_t row_idx = 0; row_idx < slices_shape.at(0); ++row_idx) {
+                    for (size_t col_idx = 0; col_idx < slices_shape.at(1); ++col_idx) {
+                        images_prompt += m_vlm_config.slice_start + unk64 + m_vlm_config.slice_end;
+                    }
+                    images_prompt += '\n';
                 }
+            }
+            if ('\n' != *(images_prompt.end() - 1)) {
+                // Image wasn't sliced, add \n to the end of image anyway.
+                // Strangely, \n isn't placed between </image><slice>.
                 images_prompt += '\n';
             }
+            embeds.push_back(std::move(encoded_image));
         }
-        if ('\n' != *(images_prompt.end() - 1)) {
-            // Image wasn't sliced, add \n to the end of image anyway.
-            // Strangely, \n isn't placed between </image><slice>.
-            images_prompt += '\n';
-        }
-        embeds.push_back(std::move(encoded_image));
     }
     images_prompt += prompt;
     ov::Tensor encoded_input;

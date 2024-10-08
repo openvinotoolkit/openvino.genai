@@ -72,7 +72,7 @@ public:
     ~VLMPipeline();
 
     /// @brief Generate a response given a prompt and any number of
-    /// uint8 RGB images with [HWC] layout.
+    /// uint8 RGB images with [NHWC] or [HWC] layout.
     /// @param prompt A prompt to respond to.
     /// @param images Images to be prepended to a prompt.
     /// @param generation_config A config to follow for text generation.
