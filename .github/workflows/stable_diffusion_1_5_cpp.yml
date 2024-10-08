@@ -61,6 +61,7 @@ jobs:
 
       - name: Download and convert models and tokenizer
         run: |
+          wget -O ./models/soulcard.safetensors https://civitai.com/api/download/models/72591
           source openvino_sd_cpp/bin/activate
           optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --weight-format fp16 --task stable-diffusion models/dreamlike-art-dreamlike-anime-1.0/FP16
 
@@ -68,10 +69,6 @@ jobs:
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           ./build/samples/cpp/text2image/stable_diffusion ./models/dreamlike-art-dreamlike-anime-1.0/FP16 "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"
-
-      - name: Download LoRA adapter
-        run: |
-          wget -O ./models/soulcard.safetensors https://civitai.com/api/download/models/72591
 
       - name: Run LoRA app
         run: |
@@ -123,15 +120,21 @@ jobs:
             python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
             python -m pip install -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 
-        - name: Download and convert models and tokenizer
-          run: |
-            . "./openvino_sd_cpp/Scripts/Activate.ps1"
-            optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 models/dreamlike-art-dreamlike-anime-1.0/FP16
+        # - name: Download and convert models and tokenizer
+        #   run: |
+        #     Invoke-WebRequest -Uri 'https://civitai.com/api/download/models/72591' -OutFile 'soulcard.safetensors'
+        #     . "./openvino_sd_cpp/Scripts/Activate.ps1"
+        #     optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 models/dreamlike-art-dreamlike-anime-1.0/FP16
 
-        - name: Run app
+        - name: Run main app
           run: |
             . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-            ./build/samples/cpp/text2image/Release/stable_diffusion.exe  ./models/dreamlike-art-dreamlike-anime-1.0/FP16 "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"
+            "./build/samples/cpp/text2image/Release/stable_diffusion.exe" ./models/dreamlike-art-dreamlike-anime-1.0/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+
+        - name: Run LoRA app
+          run: |
+            . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+            "./build/samples/cpp/text2image/lora_stable_diffusion.exe" ./models/dreamlike-art-dreamlike-anime-1.0/FP16 "curly-haired unicorn in the forest, anime, line" ./models/soulcard.safetensors 0.7
 
   Overall_Status:
     name: ci/gha_overall_status_stable_diffusion
