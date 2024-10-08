@@ -533,7 +533,6 @@ DecodedResults VLMPipeline::generate(
 
     DecodedResults results;
     results.texts = {std::move(decoded_results)};
-    std::cout << "initt metrics" << std::endl;
 
     // TODO: implement performance metrics
     results.perf_metrics = ov::genai::PerfMetrics();
