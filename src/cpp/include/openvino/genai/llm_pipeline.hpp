@@ -148,7 +148,7 @@ public:
         const ov::genai::Tokenizer& tokenizer,
         OptionalGenerationConfig generation_config=std::nullopt
     );
-
+//
     /**
     * @brief Constructs a LLMPipeline when ov::genai::Tokenizer is initialized manually using file from the different dirs.
     *
