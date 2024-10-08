@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <cmath>
 
-
 namespace ov {
 namespace genai {
 namespace numpy_utils {

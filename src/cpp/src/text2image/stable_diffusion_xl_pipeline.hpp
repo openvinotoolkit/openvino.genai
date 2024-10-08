@@ -8,7 +8,6 @@
 
 #include "utils.hpp"
 
-
 namespace ov {
 namespace genai {
 
@@ -197,8 +196,6 @@ public:
                 std::memcpy(encoder_hidden_states_data + step + ehs_1_shape[2], ehs_2_data + offset_2, ehs_2_shape[2] * sizeof(float));
             }
         }
-
-        
 
         // replicate encoder hidden state to UNet model
         if (generation_config.num_images_per_prompt == 1) {
