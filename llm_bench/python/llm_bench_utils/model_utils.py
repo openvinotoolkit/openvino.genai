@@ -214,7 +214,7 @@ def get_config(config):
         try:
             ov_config = json.loads(config)
         except Exception:
-             raise RuntimeError(f'==Parse config:{config} failiure, json format is incorrect ==')
+            raise RuntimeError(f'==Parse config:{config} failiure, json format is incorrect ==')
     return ov_config
 
 
