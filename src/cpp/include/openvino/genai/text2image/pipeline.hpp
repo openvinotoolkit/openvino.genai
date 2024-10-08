@@ -110,11 +110,10 @@ public:
 
     // creates either LCM or SD pipeline from building blocks
     static Text2ImagePipeline stable_diffusion(
-        const std::shared_ptr<Scheduler>& scheduler_type, // scheduler
-        const CLIPTextModel& clip_text_model,             // text_encoder
-        const UNet2DConditionModel& unet,                 // unet
-        const AutoencoderKL& vae_decoder);                // vae
-
+        const std::shared_ptr<Scheduler>& scheduler_type,
+        const CLIPTextModel& clip_text_model,
+        const UNet2DConditionModel& unet,
+        const AutoencoderKL& vae_decoder);
 
     // creates either LCM or SD pipeline from building blocks
     static Text2ImagePipeline latent_consistency_model(
@@ -123,7 +122,7 @@ public:
         const UNet2DConditionModel& unet,
         const AutoencoderKL& vae_decoder);
 
-    // creates either SDXL pipeline from building blocks
+    // creates SDXL pipeline from building blocks
     static Text2ImagePipeline stable_diffusion_xl(
         const std::shared_ptr<Scheduler>& scheduler_type,
         const CLIPTextModel& clip_text_model,
