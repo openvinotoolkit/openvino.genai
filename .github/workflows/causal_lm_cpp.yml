@@ -203,7 +203,6 @@ jobs:
 
   cpp-greedy_causal_lm-windows:
     runs-on: windows-latest
-    if: ${{ false }} # TODO: fix Windows
     env:
       PYTHONIOENCODING: "utf8"
     defaults:
@@ -218,6 +217,8 @@ jobs:
           python-version: 3.9
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.29
       - run: curl --output ov.zip ${{ env.w_ov_link }}
       - run: unzip -d ov ov.zip
       - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
@@ -726,7 +727,6 @@ jobs:
 
   cpp-continuous-batching-windows:
     runs-on: windows-latest
-    if: ${{ false }} # TODO: fix Windows
     env:
       PYTHONIOENCODING: "utf8"
     defaults:
@@ -741,6 +741,8 @@ jobs:
           python-version: 3.9
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.29
       - name: Install OpenVINO
         run: |
           curl --output ov.zip ${{ env.w_ov_link }}
