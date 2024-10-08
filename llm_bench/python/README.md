@@ -159,14 +159,15 @@ For example, `--load_config config.json` as following will result in streams.num
 ``` 
 `<NUMBER>` is the number of total physical cores in 2 sockets.
 
-## 6. Additional Resources
-
-- **Error Troubleshooting:** Check the [NOTES.md](./doc/NOTES.md) for solutions to known issues.
-- **Image Generation Configuration:** Refer to [IMAGE_GEN.md](./doc/IMAGE_GEN.md) for setting parameters for image generation models.
-- **CPU Threading**
+## 6. CPU Threading
 
 OpenVINO uses [oneTBB](https://github.com/oneapi-src/oneTBB/) as default threading library, while Torch uses [OpenMP](https://www.openmp.org/). Both threading libraries have ['busy-wait spin'](https://gcc.gnu.org/onlinedocs/libgomp/GOMP_005fSPINCOUNT.html) by default. So in LLM pipeline, when inference on CPU with OpenVINO and postprocessing with Torch(For example: greedy search or beam search), there is threading overhead in the switching between inference(OpenVINO with oneTBB) and postprocessing (Torch with OpenMP).
 
 **Alternative solutions**
-1. Use --genai option which uses OpenVINO genai APIs instead of optimum-intel APIs and executes postprocessing with OpenVINO genai APIs.
+1. Use --genai option which uses OpenVINO genai APIs instead of optimum-intel APIs. In this case postprocessing is executed with OpenVINO genai APIs.
 2. Without --genai option which uses optimum-intel APIs, set environment variable [OMP_WAIT_POLICY](https://gcc.gnu.org/onlinedocs/libgomp/OMP_005fWAIT_005fPOLICY.html) to PASSIVE which will disable OpenMP 'busy-wait', and benchmark.py will also limit the Torch thread number to avoid using CPU cores which is in 'busy-wait' by OpenVINO inference.
+
+## 7. Additional Resources
+
+- **Error Troubleshooting:** Check the [NOTES.md](./doc/NOTES.md) for solutions to known issues.
+- **Image Generation Configuration:** Refer to [IMAGE_GEN.md](./doc/IMAGE_GEN.md) for setting parameters for image generation models.
