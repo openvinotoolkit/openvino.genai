@@ -121,10 +121,6 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;
-    // std::vector<GenerationResult>
-    // generate(const std::vector<std::string>& prompts,
-    //          std::vector<ov::genai::GenerationConfig> sampling_params,
-    //          const StreamerVariant& streamer) override;
 
     // for speculative decoding
     void finish_request(int64_t request_id = -1);

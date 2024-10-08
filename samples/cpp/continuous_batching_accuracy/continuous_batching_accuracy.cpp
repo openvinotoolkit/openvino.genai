@@ -47,6 +47,9 @@ int main(int argc, char* argv[]) try {
     const std::string device = result["device"].as<std::string>();
     const bool use_prefix = result["use_prefix"].as<bool>();
 
+    // to check the speculative decoding scenario
+    const bool is_speculative_decoding = !draft_models_path.empty();
+
     std::string prefix_str =
         "You are an advanced language model designed to assist users by providing accurate, "
         "relevant, and helpful information. Your responses should be accurate, concise, contextual, "
@@ -62,10 +65,14 @@ int main(int argc, char* argv[]) try {
         "What is OpenVINO?",
     };
 
-    std::vector<ov::genai::GenerationConfig> sampling_params_examples {
+    std::vector<ov::genai::GenerationConfig> sampling_params_examples = !is_speculative_decoding ?
+    std::vector<ov::genai::GenerationConfig>{
         ov::genai::beam_search(),
         ov::genai::greedy(),
         ov::genai::multinomial(),
+    } : std::vector<ov::genai::GenerationConfig>{
+        ov::genai::speculative_decoding_greedy(),
+        ov::genai::speculative_decoding_multinomial(),
     };
 
     std::vector<std::string> prompts(num_prompts);
@@ -100,7 +107,7 @@ int main(int argc, char* argv[]) try {
     scheduler_config.enable_prefix_caching = use_prefix;
 
     ov::AnyMap plugin_config;
-    if (!draft_models_path.empty()) {
+    if (is_speculative_decoding) {
         plugin_config.insert({{ov::genai::draft_model.name(), draft_models_path}});
     }
 

@@ -199,7 +199,8 @@ class SequenceGroup {
     size_t m_num_scheduled_tokens = 0;
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
-
+    // flag to enable/disable token generation, e.g. in speculative decoding scenario
+    bool m_is_gen_paused = false;
 
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, bool enable_prefix_caching)
         : m_request_id(request_id),
@@ -241,9 +242,13 @@ public:
         return m_prompt_ids.size();
     }
 
+    void pause_generation(bool status) {
+        m_is_gen_paused = status;
+    }
+
     // a sequence group can generate new tokens if it already proccessed m_max_content_len before
     bool can_generate_tokens() const {
-        return m_max_content_len >= get_prompt_len();
+        return m_max_content_len >= get_prompt_len() && !m_is_gen_paused;
     }
 
     Sequence::Ptr operator[] (size_t index) {

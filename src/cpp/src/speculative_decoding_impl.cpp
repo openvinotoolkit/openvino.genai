@@ -12,10 +12,10 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     const std::string& main_models_path,
     const std::string& draft_models_path,
-    const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& plugin_config) {
+    const ov::AnyMap& plugin_config,
+    const ov::AnyMap& tokenizer_plugin_config) {
     ov::Core core;
     std::shared_ptr<ov::Model> main_model = core.read_model(main_models_path + "/openvino_model.xml"),
                                draft_model = core.read_model(draft_models_path + "/openvino_model.xml");
@@ -47,8 +47,15 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     set_kv_cache_type_and_shape(main_model, main_device_config);
     set_kv_cache_type_and_shape(draft_model, draft_device_config);
 
-    m_main_pipeline = std::make_shared<ContinuousBatchingImpl>(core, main_model, tokenizer, main_device_config, main_scheduler_config, device, plugin_config, true);
-    m_draft_pipeline = std::make_shared<ContinuousBatchingImpl>(core, draft_model, tokenizer, draft_device_config, draft_scheduler_config, device, plugin_config, false);
+    // main and draft model can have different tokenizers
+    // to do: support retokenization: 154103
+    Tokenizer main_model_tokenizer(main_models_path, tokenizer_plugin_config),
+              draft_model_tokenizer(draft_models_path, tokenizer_plugin_config);
+    
+    m_tokenizer = main_model_tokenizer;
+
+    m_main_pipeline = std::make_shared<ContinuousBatchingImpl>(core, main_model, main_model_tokenizer, main_device_config, main_scheduler_config, device, plugin_config, true);
+    m_draft_pipeline = std::make_shared<ContinuousBatchingImpl>(core, draft_model, draft_model_tokenizer, draft_device_config, draft_scheduler_config, device, plugin_config, false);
 }
 
 GenerationHandle
@@ -71,55 +78,32 @@ bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::has_non_finished_reque
     return m_main_pipeline->has_non_finished_requests();
 }
 
-void ContinuousBatchingPipeline::SpeculativeDecodingImpl::update_strategy(size_t num_matches) {
-    // dynamically adjust number of generated candidates based on number of matches
-    // we want to balance the benefits of getting candidates tokens correct with the
-    // cost of forecasting incorrect candidates tokens.
-    if (m_num_candidates == 0) {
-        return;
-    }
-    if (num_matches == m_num_candidates) {
-        m_num_candidates = std::min(m_num_candidates + 2, m_max_num_candidates);
-    } else {
-        m_num_candidates = std::max(int64_t(m_num_candidates) - 1, int64_t(1));
-    }
-}
-
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
-    std::vector<ov::genai::ContinuousBatchingPipeline::ContinuousBatchingImpl::GeneratedSequence> candidate_sequences;
-    // find minimum(candidates_number, seq_len) to generate candidates
-    size_t min_candidates_number = m_num_candidates;
-    for (auto& request : m_to_generate_length) {
-        if (request.second < min_candidates_number && request.second > 0) {
-            min_candidates_number = request.second;
-        }
-    }
-    // generate candidates by speculative model
-    for (size_t i = 0; i < min_candidates_number; ++i) {
-        m_draft_pipeline->step();
-    }
+    // generate candidates by draft model
+    m_draft_pipeline->step();
 
+
+    // to generate num_matches statistic
+    std::map<int64_t, ContinuousBatchingPipeline::ContinuousBatchingImpl::UpdateSeqResult> update_sequence_info;
     // put candidates to model KV cache
-    candidate_sequences = m_draft_pipeline->get_generated_sequences();
-    for (const auto& candidate : candidate_sequences) {
-        m_main_pipeline->update_generated_sequence(candidate);
+    for (const auto& candidate : m_draft_pipeline->get_generated_sequences()) {
+        auto update_result = m_main_pipeline->update_generated_sequence(candidate);
+        update_sequence_info.insert({{candidate.request_id, {update_result.to_insert, 0}}});
     }
 
     // validate candidates and generate 1 new token
     m_main_pipeline->step();
 
-    auto checked_sequences = m_main_pipeline->get_generated_sequences();
-    size_t max_removed_token_cnt = 0;
-    for (const auto& checked_sequence : checked_sequences) {
+    for (const auto& checked_sequence : m_main_pipeline->get_generated_sequences()) {
         auto update_result = m_draft_pipeline->update_generated_sequence(checked_sequence);
-        max_removed_token_cnt = std::max(max_removed_token_cnt, update_result.to_remove);
+        update_sequence_info[checked_sequence.request_id].to_remove = update_result.to_remove; 
     }
-    OPENVINO_ASSERT(m_max_num_candidates >= max_removed_token_cnt);
-    auto num_matches = m_max_num_candidates - max_removed_token_cnt;
-    update_strategy(num_matches);
 
-    // update to generate tokens
-    for (auto& request : m_to_generate_length) {
+    // update to left generation len
+    for (auto& request : m_left_gen_len) {
+        auto updated_seq_info = update_sequence_info[request.first];
+        OPENVINO_ASSERT(updated_seq_info.to_insert >= updated_seq_info.to_remove);
+        auto num_matches = updated_seq_info.to_insert - updated_seq_info.to_remove;
         if (request.second > num_matches) {
             request.second -= (num_matches + 1);
         } else {
@@ -198,12 +182,4 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     OPENVINO_ASSERT(results.size() == input_ids.size());
     return results;
 }
-
-// std::vector<GenerationResult>
-// ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<std::string>& prompts,
-//                                                               std::vector<ov::genai::GenerationConfig> sampling_params,
-//                                                               const StreamerVariant& streamer) {
-//     return m_main_pipeline->generate(prompts, sampling_params, streamer);
-// }
-
 }

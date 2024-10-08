@@ -36,6 +36,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const std::string& device,
     const ov::AnyMap& plugin_config,
     bool is_validation_mode_enabled) {
+    m_tokenizer = tokenizer;
     m_is_validation_mode_enabled = is_validation_mode_enabled;
     init(model, scheduler_config, plugin_config,  device_config, core);
 }
@@ -44,6 +45,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
     m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
     m_awaiting_requests.clear();
+    for (const auto& request : m_requests) {
+        request->pause_generation(false);
+    }
 }
 
 GenerationHandle
@@ -92,108 +96,129 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     _pull_awaiting_requests();
 
     m_pipeline_metrics.requests = m_requests.size();
-    Scheduler::Output scheduler_output;
-    {
-        static ManualTimer timer("scheduling");
-        timer.start();
-        scheduler_output = m_scheduler->schedule(m_requests);
-        m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
-        m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
-        m_pipeline_metrics.max_cache_usage =
-            std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
-        _register_step_cache_usage(scheduler_output.m_cache_usage);
-        m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
-        m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
-        timer.end();
-    }
 
-    // if no tokens were scheduled, we are out of memory
-    if (scheduler_output.m_total_num_scheduled_tokens == 0) {
-        for (size_t i = 0; i < m_requests.size(); ++i) {
-            SequenceGroup::Ptr sequence_group = m_requests[i];
-            sequence_group->set_out_of_memory();
-            sequence_group->notify_handle();
+    size_t iteration_number = 0;
+    // cycle to generate several tokens per one iteration, e.g. for speculative decoding case
+    bool to_generate = true;
+    while (to_generate) {
+        Scheduler::Output scheduler_output;
+        {
+            static ManualTimer timer("scheduling");
+            timer.start();
+            scheduler_output = m_scheduler->schedule(m_requests);
+            m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
+            m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
+            m_pipeline_metrics.max_cache_usage =
+                std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
+            _register_step_cache_usage(scheduler_output.m_cache_usage);
+            m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
+            m_cache_manager->copy_blocks(scheduler_output.m_block_copy_map);
+            timer.end();
         }
-        _free_non_running_requests();
-        return;
-    }
 
-    ov::Tensor logits;
-    {
-        static ManualTimer timer("forward");
-        timer.start();
-        logits = m_model_runner->forward(m_requests, scheduler_output);
-        timer.end();
+        // if no tokens were scheduled, we are out of memory
+        if (scheduler_output.m_total_num_scheduled_tokens == 0) {
+            for (size_t i = 0; i < m_requests.size(); ++i) {
+                SequenceGroup::Ptr sequence_group = m_requests[i];
+                sequence_group->set_out_of_memory();
+                sequence_group->notify_handle();
+            }
+            _free_non_running_requests();
+            return;
+        }
 
-        ov::InferRequest infer_request = m_model_runner->get_infer_request();
-        ov::CompiledModel compiled_model = infer_request.get_compiled_model();
-        const bool is_profiling_enabled = compiled_model.get_property(ov::enable_profiling);
+        ov::Tensor logits;
+        {
+            static ManualTimer timer("forward");
+            timer.start();
+            logits = m_model_runner->forward(m_requests, scheduler_output);
+            timer.end();
 
-        // collect detailed statistic
-        if (is_profiling_enabled) {
-            std::vector<ov::ProfilingInfo> profiling_info = m_model_runner->get_infer_request().get_profiling_info();
-            for (const ov::ProfilingInfo& info : profiling_info) {
-                double current_time = info.real_time.count();
-                if (info.node_type == "PagedAttentionExtension") {
-                    m_perf.m_paged_attention_time_ms += current_time;
-                } else if (info.node_type == "FullyConnected") {
-                    m_perf.m_matmul_time_ms += current_time;
+            ov::InferRequest infer_request = m_model_runner->get_infer_request();
+            ov::CompiledModel compiled_model = infer_request.get_compiled_model();
+            const bool is_profiling_enabled = compiled_model.get_property(ov::enable_profiling);
+
+            // collect detailed statistic
+            if (is_profiling_enabled) {
+                std::vector<ov::ProfilingInfo> profiling_info = m_model_runner->get_infer_request().get_profiling_info();
+                for (const ov::ProfilingInfo& info : profiling_info) {
+                    double current_time = info.real_time.count();
+                    if (info.node_type == "PagedAttentionExtension") {
+                        m_perf.m_paged_attention_time_ms += current_time;
+                    } else if (info.node_type == "FullyConnected") {
+                        m_perf.m_matmul_time_ms += current_time;
+                    }
+                    m_perf.m_infer_total_ms += current_time;
                 }
-                m_perf.m_infer_total_ms += current_time;
             }
         }
-    }
 
-#ifdef DEBUG_CACHE_STATE_DUMP
+    #ifdef DEBUG_CACHE_STATE_DUMP
 
-    CacheStateDumper dumper(CacheStateDumper::get_run_id_for_generation_step(step_count, "before_eviction"));
-    dumper.dump_cache_state(*m_scheduler, m_requests, step_count);
-#endif
-    const auto& sched_config = m_scheduler->get_config();
+        CacheStateDumper dumper(CacheStateDumper::get_run_id_for_generation_step(step_count, "before_eviction"));
+        dumper.dump_cache_state(*m_scheduler, m_requests, step_count);
+    #endif
+        const auto& sched_config = m_scheduler->get_config();
 
-    // evict unimportant blocks from KV cache, if requested
-    if (sched_config.use_cache_eviction) {
-        maybe_evict_cache_blocks(sched_config);
-    }
-
-#ifdef DEBUG_CACHE_STATE_DUMP
-    CacheStateDumper dumper_after(CacheStateDumper::get_run_id_for_generation_step(step_count, "eviction"));
-    dumper_after.dump_cache_state(*m_scheduler, m_requests, step_count);
-    step_count++;
-#endif
-
-    SamplerOutput sampler_output;
-    {
-        static ManualTimer timer("sample");
-        timer.start();
-        sampler_output = m_sampler->sample(m_requests, logits);
-        timer.end();
-    }
-
-    // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
-    {
-        static ManualTimer timer("fork / free sequence");
-        timer.start();
-
-        for (const auto& pair : sampler_output.m_forked_sequences) {
-            uint64_t parent_id = pair.first;
-            const std::list<uint64_t>& child_ids = pair.second;
-            for (auto& child_id : child_ids)
-                m_scheduler->fork_sequence(parent_id, child_id);
+        // evict unimportant blocks from KV cache, if requested
+        if (sched_config.use_cache_eviction) {
+            maybe_evict_cache_blocks(sched_config);
         }
 
-        for (auto seq_id : sampler_output.m_dropped_sequences)
-            m_scheduler->free_sequence(seq_id);
+    #ifdef DEBUG_CACHE_STATE_DUMP
+        CacheStateDumper dumper_after(CacheStateDumper::get_run_id_for_generation_step(step_count, "eviction"));
+        dumper_after.dump_cache_state(*m_scheduler, m_requests, step_count);
+        step_count++;
+    #endif
 
-        timer.end();
-    }
+        SamplerOutput sampler_output;
+        {
+            static ManualTimer timer("sample");
+            timer.start();
+            sampler_output = m_sampler->sample(m_requests, logits, m_is_validation_mode_enabled);
+            timer.end();
+        }
 
-    // notify requests dropped by handle
-    {
-        static ManualTimer timer("notify requests dropped by handle");
-        timer.start();
-        _notify_requests_dropped_by_handle();
-        timer.end();
+        // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
+        {
+            static ManualTimer timer("fork / free sequence");
+            timer.start();
+
+            for (const auto& pair : sampler_output.m_forked_sequences) {
+                uint64_t parent_id = pair.first;
+                const std::list<uint64_t>& child_ids = pair.second;
+                for (auto& child_id : child_ids)
+                    m_scheduler->fork_sequence(parent_id, child_id);
+            }
+
+            for (auto seq_id : sampler_output.m_dropped_sequences)
+                m_scheduler->free_sequence(seq_id);
+
+            timer.end();
+        }
+
+        // notify requests dropped by handle
+        {
+            static ManualTimer timer("notify requests dropped by handle");
+            timer.start();
+            _notify_requests_dropped_by_handle();
+            timer.end();
+        }
+
+        to_generate = false;
+        for (auto& request : m_requests) {
+            const auto& sampling_params = request->get_sampling_parameters();
+            if (!sampling_params.is_speculative_decoding()) {
+                to_generate = false;
+                break;
+            }
+            if (sampling_params.num_assistant_tokens_schedule == NumAssistatantTokensScheduleType::CONSTANT &&
+                sampling_params.num_assistant_tokens <= iteration_number) {
+                request->pause_generation(true);
+            }
+            to_generate |= request->can_generate_tokens();
+        }
+        iteration_number += 1;
     }
 
     // free non running requests for current step
@@ -271,50 +296,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     OPENVINO_ASSERT(results.size() == input_ids.size());
     return results;
 }
-
-// std::vector<GenerationResult>
-// ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<std::string>& prompts,
-//                                                              std::vector<ov::genai::GenerationConfig> sampling_params,
-//                                                              const StreamerVariant& streamer) {
-//     std::vector<ov::Tensor> input_ids;
-//     static ManualTimer timer("tokenize");
-//     if (m_is_chat_conversation) {
-//         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
-//         m_history.push_back({{"role", "user"}, {"content", prompts.at(0)}});
-//         constexpr bool add_generation_prompt = true;
-//         std::string history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-//         timer.start();
-//         input_ids.push_back(m_tokenizer.encode(history).input_ids);
-//         timer.end();
-//     } else {
-//         input_ids.reserve(prompts.size());
-//         for (const std::string& prompt : prompts) {
-//             timer.start();
-//             input_ids.push_back(m_tokenizer.encode(prompt).input_ids);
-//             timer.end();
-//         }
-//     }
-//     std::vector<EncodedGenerationResult> encoded = generate(input_ids, sampling_params, streamer);
-//     std::vector<GenerationResult> decoded;
-//     decoded.reserve(encoded.size());
-//     for (EncodedGenerationResult& res : encoded) {
-//         std::vector<std::string> generated;
-//         generated.reserve(res.m_generation_ids.size());
-//         for (size_t idx = 0; idx < res.m_generation_ids.size(); ++idx) {
-//             generated.push_back(m_tokenizer.decode(res.m_generation_ids.at(idx)));
-//             if (m_is_chat_conversation && 0 == idx) {
-//                 m_history.push_back({{"role", "assistant"}, {"content", generated.back()}});
-//             }
-//         }
-//         decoded.push_back(GenerationResult{
-//             res.m_request_id,
-//             std::move(generated),
-//             std::move(res.m_scores),
-//             res.m_status
-//         });
-//     }
-//     return decoded;
-// }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_requests() {
     std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
@@ -437,6 +418,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::UpdateSeqResult
 ContinuousBatchingPipeline::ContinuousBatchingImpl::update_generated_sequence(
     const ContinuousBatchingPipeline::ContinuousBatchingImpl::GeneratedSequence& candidate_sequence) {
     _pull_awaiting_requests();
+
     bool is_empty_generated_tokens = false;
     for (auto& request : m_requests) {
         if (candidate_sequence.request_id == request->get_request_id()) {

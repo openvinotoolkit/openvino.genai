@@ -52,7 +52,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     if (draft_model.empty()) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(model_path, tokenizer, scheduler_config, device, plugin_config);
     } else {
-        m_impl = std::make_shared<SpeculativeDecodingImpl>(model_path, draft_model, tokenizer, scheduler_config, device, plugin_config_without_draft_model);
+        m_impl = std::make_shared<SpeculativeDecodingImpl>(model_path, draft_model, scheduler_config, device, plugin_config_without_draft_model);
     }
 }
 
