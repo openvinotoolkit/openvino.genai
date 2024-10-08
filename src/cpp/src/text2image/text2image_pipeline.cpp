@@ -62,9 +62,10 @@ Text2ImagePipeline::Text2ImagePipeline(const std::string& root_dir) {
     const std::string class_name = get_class_name(root_dir);
 
     if (class_name == "StableDiffusionPipeline" || 
-        class_name == "LatentConsistencyModelPipeline"||
-        class_name == "StableDiffusionXLPipeline")   {
+        class_name == "LatentConsistencyModelPipeline")   {
         m_impl = std::make_shared<StableDiffusionPipeline>(root_dir);
+    } else if (class_name == "StableDiffusionXLPipeline") {
+        m_impl = std::make_shared<StableDiffusionXLPipeline>(root_dir);
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }

@@ -22,6 +22,7 @@ public:
     struct Config {
         size_t max_position_embeddings = 77;
         size_t hidden_size = 512;
+        size_t num_hidden_layers = 13;
 
         explicit Config(const std::string& config_path);
     };
@@ -57,8 +58,6 @@ public:
     void set_adapters(const AdapterConfig& adapters);
 
     ov::Tensor infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance);
-
-    // ov::Tensor get_tensor(const std::string& output);
 
     ov::Tensor get_output_tensor(const size_t idx);
 

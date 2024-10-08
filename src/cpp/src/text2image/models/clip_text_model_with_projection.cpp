@@ -24,7 +24,7 @@ CLIPTextModelWithProjection::Config::Config(const std::string& config_path) {
 }
 
 CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string root_dir) :
-    m_clip_tokenizer(root_dir + "/../tokenizer"),
+    m_clip_tokenizer(root_dir + "/../tokenizer_2"),
     m_config(root_dir + "/config.json") {
     m_model = ov::Core().read_model(root_dir + "/openvino_model.xml");
 }

@@ -74,6 +74,6 @@ std::vector<float> interp(const std::vector<std::int64_t>& x, const std::vector<
     return interp_res;
 }
 
-}// namespace ov
-}// namespace genai
-}// namespace txt2img_utils
+} // namespace ov
+} // namespace genai
+} // namespace numpy_utils

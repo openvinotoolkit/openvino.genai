@@ -113,7 +113,7 @@ public:
 
         const size_t batch_size_multiplier = do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Unet accepts 2x batch in case of CFG
         m_clip_text_encoder->reshape(batch_size_multiplier);
-        // TODO: m_unet reshape
+        m_clip_text_encoder_with_projection->reshape(batch_size_multiplier);
         m_unet->reshape(num_images_per_prompt * batch_size_multiplier, height, width, m_clip_text_encoder->get_config().max_position_embeddings);
         m_vae_decoder->reshape(num_images_per_prompt, height, width);
     }
@@ -164,23 +164,24 @@ public:
         }
 
         ov::Tensor add_text_embeds = m_clip_text_encoder_with_projection->infer(positive_prompt, generation_config.negative_prompt, batch_size_multiplier > 1);
-
         m_clip_text_encoder->infer(positive_prompt, generation_config.negative_prompt, batch_size_multiplier > 1);
-        // ov::Tensor encoder_hidden_states_1 = m_clip_text_encoder->get_tensor("hidden_states.11");
-        ov::Tensor encoder_hidden_states_1 = m_clip_text_encoder->get_output_tensor(13);
-        // ov::Tensor encoder_hidden_states_2 = m_clip_text_encoder_with_projection->get_tensor("hidden_states.31");
-        ov::Tensor encoder_hidden_states_2 = m_clip_text_encoder_with_projection->get_output_tensor(33);
 
+        // prompt_embeds = prompt_embeds.hidden_states[-2]
+        size_t idx_hidden_state_1 = m_clip_text_encoder->get_config().num_hidden_layers;
+        ov::Tensor encoder_hidden_states_1 = m_clip_text_encoder->get_output_tensor(idx_hidden_state_1);
+        size_t idx_hidden_state_2 = m_clip_text_encoder_with_projection->get_config().num_hidden_layers;
+        ov::Tensor encoder_hidden_states_2 = m_clip_text_encoder_with_projection->get_output_tensor(idx_hidden_state_2);
 
         ov::Shape ehs_1_shape = encoder_hidden_states_1.get_shape();
         ov::Shape ehs_2_shape = encoder_hidden_states_2.get_shape();
 
         OPENVINO_ASSERT(ehs_1_shape[0] == ehs_2_shape[0] && ehs_1_shape[1] == ehs_2_shape[1],
-                    "Tensors for concatenation must have the same dimensions");
+                        "Tensors for concatenation must have the same dimensions");
     
+        // concatenate hidden_states from two encoders
         ov::Shape encoder_hidden_states_shape = {ehs_1_shape[0], ehs_1_shape[1], ehs_1_shape[2] + ehs_2_shape[2]};
         ov::Tensor encoder_hidden_states(encoder_hidden_states_1.get_element_type(), encoder_hidden_states_shape);
-        
+
         const float* ehs_1_data = encoder_hidden_states_1.data<const float>();
         const float* ehs_2_data = encoder_hidden_states_2.data<const float>();
         float* encoder_hidden_states_data = encoder_hidden_states.data<float>();
@@ -196,6 +197,8 @@ public:
                 std::memcpy(encoder_hidden_states_data + step + ehs_1_shape[2], ehs_2_data + offset_2, ehs_2_shape[2] * sizeof(float));
             }
         }
+
+        
 
         // replicate encoder hidden state to UNet model
         if (generation_config.num_images_per_prompt == 1) {
@@ -320,7 +323,7 @@ private:
         m_generation_config.width = unet_config.sample_size * vae_scale_factor;
 
         if (class_name == "StableDiffusionXLPipeline") {
-            m_generation_config.guidance_scale = 7.5f;
+            m_generation_config.guidance_scale = 5.0f;
             m_generation_config.num_inference_steps = 50;
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
