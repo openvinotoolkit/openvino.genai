@@ -22,13 +22,13 @@ namespace {
         u_int8_t* out_data = output.data<u_int8_t>();
         u_int8_t* img_data = image.data<u_int8_t>();
 
-        for (size_t img_num = 0; img_num < out_shape[0]; ++img_num) {
-            std::memcpy(img_data, out_data + img_size*img_num, img_size * sizeof(u_int8_t));
+        for (int img_num = 0; img_num < out_shape[0]; ++img_num) {
+            std::memcpy(img_data, out_data + img_size * img_num, img_size * sizeof(u_int8_t));
 
-            std::stringstream img_name;
-            img_name << "image_" << img_num << ".bmp";
+            char img_name[25];
+            sprintf(img_name, "image_%d.bmp", img_num);
 
-            imwrite(img_name.str(), image, true);
+            imwrite(img_name, image, true);
         }
     }
 
