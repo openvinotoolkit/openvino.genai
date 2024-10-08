@@ -10,7 +10,7 @@ from PIL import Image
 from openvino import Tensor
 
 
-def streamer(subword: str):
+def streamer(subword: str) -> bool:
     '''
 
     Args:
@@ -21,10 +21,19 @@ def streamer(subword: str):
     '''
     print(subword, end='', flush=True)
 
-    return False
+    # No value is returned as in this example we don't want to stop the generation in this method.
+    # "return None" will be treated the same as "return False".
 
 
-def read_image(path):
+def read_image(path: str) -> Tensor:
+    '''
+
+    Args:
+        path: The path to the image.
+
+    Returns: the ov.Tensor containing the image.
+
+    '''
     pic = Image.open(path)
     image_data = np.array(pic.getdata()).reshape(1, 3, pic.size[1], pic.size[0]).astype(np.byte)
     return Tensor(image_data)

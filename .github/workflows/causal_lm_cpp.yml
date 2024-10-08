@@ -696,7 +696,7 @@ jobs:
       - name: Install OpenVINO
         run: |
           mkdir ./ov/
-          curl ${{ env.l_u22_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          curl ${{ env.l_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
           sudo ./ov/install_dependencies/install_openvino_dependencies.sh
       - name: Build app
         run: |
