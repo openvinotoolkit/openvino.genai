@@ -184,8 +184,6 @@ static constexpr ov::Property<NumAssistatantTokensScheduleType> num_assistant_to
 static constexpr ov::Property<float> assistant_confidence_threshold{"assistant_confidence_threshold"};
 static constexpr ov::Property<size_t> num_assistant_tokens{"num_assistant_tokens"};
 
-static constexpr AdaptersProperty adapters;
-
 // Predefined Configs
 OPENVINO_GENAI_EXPORTS GenerationConfig beam_search();
 OPENVINO_GENAI_EXPORTS GenerationConfig greedy();
