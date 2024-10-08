@@ -70,7 +70,7 @@ jobs:
           ./build/samples/cpp/text2image/stable_diffusion ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"
 
   lcm_dreamshaper_v7_cpp-windows:
-    runs-on: windows-latest
+    runs-on: aks-win-16-cores-32gb
     defaults:
       run:
         shell: pwsh
