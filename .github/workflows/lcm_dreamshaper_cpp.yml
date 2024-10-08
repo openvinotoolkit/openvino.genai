@@ -122,7 +122,7 @@ jobs:
       - name: Run app
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          "./build/samples/cpp/text2image/Release/lcm_dreamshaper.exe"  ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"
+          & "./build/samples/cpp/text2image/Release/lcm_dreamshaper.exe"  ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"
 
   Overall_Status:
     name: ci/gha_overall_status_lcm
