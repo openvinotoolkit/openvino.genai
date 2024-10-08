@@ -65,6 +65,7 @@ public:
     SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled = false);
     void set_seed(size_t seed) { rng_engine.seed(seed); }
     void clear_beam_search_info(uint64_t request_id);
+    std::vector<int32_t> get_beam_idxs(SequenceGroup::CPtr sequence_group);
 };
 
 class Sampler::GroupBeamSearcher {
@@ -109,5 +110,6 @@ public:
 
     void select_next_tokens(const ov::Tensor& logits, SamplerOutput& sampler_output);
     void finalize(SamplerOutput& sampler_output);
+    std::vector<int32_t> get_beam_idxs();
 };
 }
