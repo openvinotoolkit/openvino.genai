@@ -204,11 +204,17 @@ def get_use_case(model_name_or_path):
 
 
 def get_config(config):
-    with open(config, 'r') as f:
+    if Path(config).is_file():
+        with open(config, 'r') as f:
+            try:
+                ov_config = json.load(f)
+            except Exception:
+                raise RuntimeError(f'==Parse file:{config} failiure, json format is incorrect ==')
+    else:
         try:
-            ov_config = json.load(f)
+            ov_config = json.loads(config)
         except Exception:
-            raise RuntimeError(f'==Parse file:{config} failiure, json format is incorrect ==')
+            raise RuntimeError(f'==Parse config:{config} failiure, json format is incorrect ==')
     return ov_config
 
 
