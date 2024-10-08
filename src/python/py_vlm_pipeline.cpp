@@ -137,9 +137,9 @@ void init_vlm_pipeline(py::module_& m) {
             tokenizer (openvino_genai.Tokenizer): tokenizer object.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
         )")
-        .def("start_chat", &ov::genai::VLMPipeline::start_chat)
+        .def("start_chat", &ov::genai::VLMPipeline::start_chat, py::arg("system_message") = "")
         .def("finish_chat", &ov::genai::VLMPipeline::finish_chat) 
-        .def("get_generation_config", static_cast<const ov::genai::GenerationConfig& (ov::genai::VLMPipeline::*)() const>(&ov::genai::VLMPipeline::get_generation_config))
+        .def("get_generation_config", &ov::genai::VLMPipeline::get_generation_config)
         .def(
             "generate", 
             [](ov::genai::VLMPipeline& pipe, 

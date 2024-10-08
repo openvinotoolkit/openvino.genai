@@ -704,21 +704,19 @@ jobs:
           source ./ov/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
           cmake --build ./build/ --config Release --target visual_language_chat -j
-      - name: Download and convert and model
+      - name: Download and convert a model and an image
         run: |
           source ./ov/setupvars.sh
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
           
-      - name: Run chat sample
+      - name: Run chat chat sample
         run: |
           source ./ov/setupvars.sh
-          export PYTHONPATH=./build/:$PYTHONPATH
-          printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
-          timeout 120s python ./samples/python/vlm_chat_sample/vlm_chat_sample.py ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11 < input.txt > ./pred.txt || ( [[ $? -eq 124 ]] && \
-          echo "Timeout reached, but it's excpected." )
+          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11
+          <<< $'What is on the image?\nWhat is special on the image?'
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores

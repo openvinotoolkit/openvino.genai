@@ -163,6 +163,7 @@ private:
     class VLMPipelineImpl;
     std::unique_ptr<VLMPipelineImpl> m_pimpl;
 };
+
 /*
  * utils that allow to use generate() in the following way:
  * pipe.generate(prompt, ov::genai::image(std::move(image_tensor))).
