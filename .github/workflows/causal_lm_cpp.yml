@@ -684,9 +684,6 @@ jobs:
 
   py-vlm_chat_sample-ubuntu:
     runs-on: ubuntu-22.04-16-cores
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
