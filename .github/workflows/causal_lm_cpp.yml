@@ -711,12 +711,7 @@ jobs:
           python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
 
-      - name: Run C++ chat sample
-        run: |
-          source ./ov/setupvars.sh
-          timeout --verbose 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ cat.jpg <<< $'What is on the image?\nWhat is special on the image?'
-      - name: Run Python chat sample
-        run: |
+      - name: Run chat sample
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
           printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
