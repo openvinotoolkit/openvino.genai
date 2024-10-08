@@ -682,7 +682,11 @@ jobs:
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
+<<<<<<< HEAD
   visual_chat_sample-ubuntu:
+=======
+  py-vlm_chat_sample-ubuntu:
+>>>>>>> c67ddd58652c6ac5aab1b3c9fff0036fb9f4a692
     runs-on: ubuntu-22.04-16-cores
     defaults:
       run:
@@ -703,7 +707,11 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+<<<<<<< HEAD
           cmake --build ./build/ --config Release --target visual_language_chat -j
+=======
+          cmake --build ./build/ --config Release -j
+>>>>>>> c67ddd58652c6ac5aab1b3c9fff0036fb9f4a692
       - name: Download and convert and model
         run: |
           source ./ov/setupvars.sh
@@ -711,11 +719,21 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
+<<<<<<< HEAD
 
       - name: Run chat sample
           source ./ov/setupvars.sh
           printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
           timeout 120s python ./samples/python/vlm_chat_sample/vlm_chat_sample.py ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11 < input.txt > ./pred.txt || ( [[ $? -eq 124 ]] && \
+=======
+          
+      - name: Run chat sample
+        run: |
+          source ./ov/setupvars.sh
+          export PYTHONPATH=./build/:$PYTHONPATH
+          printf 'What is on the image?\n' > ./input.txt
+          timeout 300s python ./samples/python/vlm_chat_sample/vlm_chat_sample.py ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11 < input.txt > ./pred.txt || ( [[ $? -eq 124 ]] && \
+>>>>>>> c67ddd58652c6ac5aab1b3c9fff0036fb9f4a692
           echo "Timeout reached, but it's excpected." )
 
   cpp-continuous-batching-ubuntu:

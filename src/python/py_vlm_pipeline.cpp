@@ -109,7 +109,7 @@ void init_vlm_pipeline(py::module_& m) {
             ScopedVar env_manager(utils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::VLMPipeline>(model_path, device, utils::properties_to_any_map(config));
         }),
-        py::arg("model_path"), "folder with exported model files", 
+        py::arg("model_path"), "folder with exported model files",
         py::arg("device") = "CPU", "device on which inference will be done",
         py::arg("config") = ov::AnyMap({}), "openvino.properties map"
         R"(

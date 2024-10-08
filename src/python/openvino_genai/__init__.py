@@ -17,7 +17,7 @@ from .py_generate_pipeline import (
     EncodedResults,
     GenerationConfig,
     GenerationResult,
-    LLMPipeline, 
+    LLMPipeline,
     VLMPipeline,
     PerfMetrics,
     RawPerfMetrics,
