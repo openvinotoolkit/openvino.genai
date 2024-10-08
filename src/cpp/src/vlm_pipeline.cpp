@@ -294,6 +294,54 @@ ov::Tensor resample(VLMPipeline& pipe, const ov::Tensor& encoded_image, const st
     pipe.m_resampler.infer();
     return pipe.m_resampler.get_output_tensor();  // [N, query_num, new_hidden_size]
 }
+
+ov::Tensor merge_text_and_image_embeddings_llava(
+    const ov::Tensor& input_ids,
+    const ov::Tensor& text_embeds,
+    const ov::Tensor& image_embeds,
+    int64_t image_token_index
+) {
+    auto text_embeds_shape = text_embeds.get_shape();
+    auto image_embeds_shape = image_embeds.get_shape();
+
+    OPENVINO_ASSERT(
+        text_embeds_shape[2] == image_embeds_shape[2],
+        "Incompatible shapes between text_embeds and image_embeds"
+    );
+
+    size_t text_embeds_seq_length = text_embeds_shape[1];
+    size_t hidden_size = text_embeds_shape[2];
+    size_t image_embeds_seq_length = image_embeds_shape[1];
+
+    size_t merged_seq_length = text_embeds_seq_length + (image_embeds_seq_length - 1);
+
+    ov::Tensor merged_embeds(text_embeds.get_element_type(), {BATCH_SIZE, merged_seq_length, hidden_size});
+
+    const int64_t* input_ids_data = input_ids.data<const int64_t>();
+    const float* text_embeds_data = text_embeds.data<const float>();
+    const float* image_embeds_data = image_embeds.data<const float>();
+    float* merged_data = merged_embeds.data<float>();
+
+
+    size_t merged_idx = 0;
+    for (size_t s = 0; s < text_embeds_seq_length; ++s) {
+        if (input_ids_data[s] == image_token_index) {
+            for (size_t i = 0; i < image_embeds_seq_length; ++i) {
+                std::copy_n(image_embeds_data + i * hidden_size,
+                            hidden_size,
+                            merged_data + merged_idx * hidden_size);
+                merged_idx++;
+            }
+        } else {
+            std::copy_n(text_embeds_data + s * hidden_size,
+                        hidden_size,
+                        merged_data + merged_idx * hidden_size);
+            merged_idx++;
+        }
+    }
+
+    return merged_embeds;
+}
 }
 
 class ov::genai::VLMPipeline::VLMPipelineImpl {
@@ -624,7 +672,7 @@ ov::Tensor VLMPipeline::get_inputs_embeds_llava(const std::string& prompt, const
 
         int64_t image_token_index = 32000; // TODO Consider getting from m_vlm_config.image_token_index or config.json
 
-        return merge_text_and_image_embeddings(input_ids, text_embeds, image_embeds, image_token_index);
+        return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_index);
     }
 }
 
