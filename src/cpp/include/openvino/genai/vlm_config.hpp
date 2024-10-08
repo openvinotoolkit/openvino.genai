@@ -12,24 +12,35 @@ namespace ov::genai {
 /// change VLMPipeline's behavior. Corresponds to config.json.
 class OPENVINO_GENAI_EXPORTS VLMConfig {
 public:
-    /// @brief The size of a single embedding returned by a resampler.
+    /// @brief A size of a single embedding returned by a resampler.
     /// Used to initialize positional embeddings for resampler input.
     size_t hidden_size = 2304;
-    /// @brief multiply embeddings by this value.
+    /// @brief Multiply embeddings by this value.
     float scale_emb = 1.0f;
-    /// @brief the number of <unk> to insert into the prompt per image
+    /// @brief A number of embedding vectors representing an image
     /// slice.
     size_t query_num = 64;
-    /// @brief A string denoting start of image embeddings for LLM.
-    std::string image_start_token = "<image>";
-    /// @brief A string denoting end of image embeddings for LLM.
-    std::string image_end_token = "</image>";
-    /// @brief A string denoting start of image slices row embeddings
-    /// for LLM.
-    std::string image_slice_start_token = "<slice>";
-    /// @brief A string denoting end of image slices row embeddings
-    /// for LLM.
-    std::string image_slice_end_token = "</slice>";
+    /// @brief A string token denoting start of image embeddings for an
+    /// LLM.
+    std::string im_start = "<image>";
+    /// @brief A string token denoting end of image embeddings for an
+    /// LLM.
+    std::string im_end = "</image>";
+    /// @brief A string token denoting start of image slices row
+    /// embeddings for an LLM.
+    std::string slice_start = "<slice>";
+    /// @brief A string token denoting end of image slices row
+    /// embeddings for LLM.
+    std::string slice_end = "</slice>";
+    /// @brief Start each image (not a slice) with
+    /// <image_id>i</image_id>. i is a number.
+    bool use_image_id = true;
+    /// @brief A string token denoting start of image number region.
+    std::string im_id_start = "<image_id>";
+    /// @brief A string token denoting end of image number region.
+    std::string im_id_end = "</image_id>";
+    /// @brief A placeholder for image embeddings in text.
+    std::string unk = "<unk>";
     /// @brief Default constructor.
     VLMConfig() = default;
     /// @brief Construct VLMConfig from values in json_path.

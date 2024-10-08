@@ -1,8 +1,6 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#pragma once
-
 #include <openvino/genai/vision_encoder.hpp>
 #include "clip.hpp"
 #include "utils.hpp"
@@ -136,24 +134,46 @@ std::vector<std::vector<clip_image_u8>> slice_image(const clip_image_u8& img, co
 // in shape [NCHW], out shape: [N, C*kernel*kernel, H*W/kernel/kernel]
 ov::Tensor unfold(const ov::Tensor& images_tensor, size_t kernel) {
     ov::Shape images_shape = images_tensor.get_shape();
-    OPENVINO_ASSERT(4 == images_shape.size());
-    const size_t bs = images_shape.at(0), images_c = images_shape.at(1),
-        images_h = images_shape.at(2), images_w = images_shape.at(3),
-        new_c = images_c * kernel * kernel,
-        kernels_per_plane = images_h * images_w / kernel / kernel,
-        plane_size = images_h * images_w,
-        elem_size = images_c * plane_size,
-        kernels_per_row = images_w / kernel;
+
+    OPENVINO_ASSERT(4 == images_shape.size(), "Input tensor must be 4D (NCHW).");
+
+    const size_t bs = images_shape.at(0);
+    const size_t images_c = images_shape.at(1);
+    const size_t images_h = images_shape.at(2);
+    const size_t images_w = images_shape.at(3);
+
+    OPENVINO_ASSERT(images_h >= kernel && images_w >= kernel, "Input height and width must be greater than or equal to kernel size.");
+
+    const size_t new_c = images_c * kernel * kernel;
+    const size_t output_h = (images_h - kernel) / kernel + 1;
+    const size_t output_w = (images_w - kernel) / kernel + 1;
+    const size_t kernels_per_plane = output_h * output_w;
+
     ov::Tensor unfolded_tensor(ov::element::f32, {bs, new_c, kernels_per_plane});
     const float* images = images_tensor.data<float>();
     float* unfolded = unfolded_tensor.data<float>();
     for (size_t batch_idx = 0; batch_idx < bs; ++batch_idx) {
         for (size_t c_idx = 0; c_idx < images_c; ++c_idx) {
-            for (size_t h_idx = 0; h_idx < images_h; ++h_idx) {
-                for (size_t w_idx = 0; w_idx < images_w; ++w_idx) {
-                    size_t kernel_id = h_idx / kernel * kernels_per_row + w_idx / kernel;
-                    unfolded[batch_idx * new_c * kernels_per_plane + c_idx * kernel * kernel * kernels_per_plane + (images_h % kernel * kernel + images_w % kernel) * kernels_per_plane + kernel_id]
-                        = images[batch_idx * elem_size + c_idx * plane_size + h_idx * images_w + w_idx];
+            for (size_t h_out = 0; h_out < output_h; ++h_out) {
+                for (size_t w_out = 0; w_out < output_w; ++w_out) {
+                    size_t h_idx = h_out * kernel;  // Calculate input height index
+                    size_t w_idx = w_out * kernel;  // Calculate input width index
+
+                    for (size_t kh = 0; kh < kernel; ++kh) {
+                        for (size_t kw = 0; kw < kernel; ++kw) {
+                            size_t input_idx = (batch_idx * images_c * images_h * images_w) +
+                                               (c_idx * images_h * images_w) +
+                                               ((h_idx + kh) * images_w) +
+                                               (w_idx + kw);
+
+                            size_t unfolded_c_idx = (c_idx * kernel * kernel) + (kh * kernel) + kw;
+                            size_t unfolded_idx = (batch_idx * new_c * kernels_per_plane) +
+                                                  unfolded_c_idx * kernels_per_plane +
+                                                  (h_out * output_w + w_out);
+
+                            unfolded[unfolded_idx] = images[input_idx];
+                        }
+                    }
                 }
             }
         }
@@ -164,19 +184,32 @@ ov::Tensor unfold(const ov::Tensor& images_tensor, size_t kernel) {
 ov::Tensor preprocess_for_encoder(const ov::Tensor& images, size_t kernel) {
     ov::Shape images_shape = images.get_shape();
     OPENVINO_ASSERT(4 == images_shape.size());
-    const size_t bs = images_shape.at(0), channels = images_shape.at(1);
     ov::Tensor unfolded_tensor = unfold(images, kernel);
     const ov::Shape& unfolded_shape = unfolded_tensor.get_shape();  // [N, C*kernel*kernel, H*W/kernel/kernel]
-    const size_t d1 = unfolded_shape.at(1), d2 = unfolded_shape.at(2);
-    ov::Tensor permuted_tensor{ov::element::f32, {bs, channels, kernel, unfolded_shape.at(2) * kernel}};  // [N, C, kernel, H*W/kernel]
-    const size_t new_len = permuted_tensor.get_shape().at(3);
+    const size_t bs = unfolded_shape[0];
+    const size_t d1 = unfolded_shape[1];
+    const size_t d2 = unfolded_shape[2];
+    const size_t channels = 3;
+    const size_t new_len = d2 * kernel;
+
+    ov::Tensor permuted_tensor{ov::element::f32, {bs, channels, kernel, new_len}};
     const float* unfolded = unfolded_tensor.data<float>();
     float* permuted = permuted_tensor.data<float>();
     for (size_t b_idx = 0; b_idx < bs; ++b_idx) {
-        for (size_t d1_idx = 0; d1_idx < d1; ++d1_idx) {
-            for (size_t d2_idx = 0; d2_idx < d2; ++d2_idx) {
-                permuted[b_idx * channels * kernel * new_len + d1_idx / (kernel * kernel) * kernel * new_len + d1_idx % (kernel * kernel) / kernel * new_len + d1_idx % kernel * d2 + d2_idx]
-                    = unfolded[b_idx * d1 * d2 + d1_idx * d2 + d2_idx];
+        for (size_t c_idx = 0; c_idx < channels; ++c_idx) {
+            for (size_t k1_idx = 0; k1_idx < kernel; ++k1_idx) {
+                for (size_t d2_idx = 0; d2_idx < d2; ++d2_idx) {
+                    for (size_t k2_idx = 0; k2_idx < kernel; ++k2_idx) {
+                        size_t unfolded_idx = b_idx * d1 * d2 +
+                                            (c_idx * kernel * kernel + k1_idx * kernel + k2_idx) * d2 +
+                                            d2_idx;
+                        size_t permuted_idx = b_idx * channels * kernel * new_len +
+                                            c_idx * kernel * new_len +
+                                            k1_idx * new_len +
+                                            d2_idx * kernel + k2_idx;
+                        permuted[permuted_idx] = unfolded[unfolded_idx];
+                    }
+                }
             }
         }
     }

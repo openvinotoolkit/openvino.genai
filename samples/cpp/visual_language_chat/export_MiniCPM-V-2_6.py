@@ -890,6 +890,7 @@ class OvMiniCPMV:
             generation_config["min_new_tokens"] = min_new_tokens
 
         generation_config.update((k, kwargs[k]) for k in generation_config.keys() & kwargs.keys())
+        generation_config = {"do_sample": False, "repetition_penalty": None}
 
         inputs.pop("image_sizes")
         with torch.inference_mode():

@@ -1,8 +1,6 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#pragma once
-
 #include "openvino/genai/vlm_pipeline.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "vlm_sampling.hpp"
@@ -296,125 +294,10 @@ ov::Tensor resample(VLMPipeline& pipe, const ov::Tensor& encoded_image, const st
     pipe.m_resampler.infer();
     return pipe.m_resampler.get_output_tensor();  // [N, query_num, new_hidden_size]
 }
-
-ov::Tensor get_image_embedding(const EncodedImage& encoded_image, Tokenizer& tokenizer, ov::InferRequest& embedding, VLMPipeline& pipe) {
-    size_t embedding_len = 0;
-
-    std::string user_prompt = "<用户>";
-    const ov::Tensor& input_ids = tokenizer.encode(user_prompt).input_ids;
-
-    auto input_len = input_ids.get_size();
-    embedding_len += input_len;
-
-    embedding.set_input_tensor(input_ids);
-    embedding.infer();
-
-    const ov::Tensor& embed_output_tensor = embedding.get_output_tensor();
-
-    ov::Shape out_shape = embed_output_tensor.get_shape();
-    float* data = embed_output_tensor.data<float>();
-
-    size_t embedding_dim = out_shape[out_shape.size() - 1];
-
-    for (size_t idx = 0; idx < embed_output_tensor.get_size(); idx++) {
-        data[idx] = data[idx] * pipe.m_vlm_config.scale_emb;
-    }
-
-    //compute inputs_embedding length
-    embedding_len += 2;
-    constexpr size_t n_img_pos = 64;  // RESAMPLER query_num minicpmv-2 64, minicpmv-2.5 96
-    embedding_len += n_img_pos;
-
-    const ov::Tensor& slices = encoded_image.slices;
-    if (slices) {
-        const ov::Shape& slices_shape = slices.get_shape();
-        embedding_len += 1;
-        for (size_t i = 0; i < slices_shape.at(0); ++i) {
-            for (size_t j = 0; j < slices_shape.at(1); ++j) {
-                embedding_len += 2;
-                embedding_len += n_img_pos;
-
-                if (j == slices_shape.at(1) - 1) {
-                    embedding_len += 1;
-                }
-            }
-        }
-
-        embedding_len += 1;
-    }
-
-    ov::Tensor imgEmbedding = ov::Tensor(ov::element::f32, {1, embedding_len, embedding_dim});
-    auto imgEmbedData = imgEmbedding.data<float>();
-
-    //copy <用户> embedding info
-    memcpy(imgEmbedData, data, embed_output_tensor.get_byte_size());
-    imgEmbedData += embed_output_tensor.get_size();
-
-    //get special token embedding info
-    user_prompt = "\n<image></image><slice></slice>";
-    embedding.set_input_tensor(tokenizer.encode(user_prompt).input_ids);
-    embedding.infer();
-
-    const ov::Tensor& embed_spec_tensor = embedding.get_output_tensor();
-    data = embed_spec_tensor.data<float>();
-
-    for (size_t idx = embedding_dim; idx < embed_spec_tensor.get_size(); idx++) {
-        data[idx] = data[idx] * pipe.m_vlm_config.scale_emb;
-    }
-
-    //fill "<image>" embedding
-    std::copy(data + embedding_dim * 2, data + embedding_dim * 3, imgEmbedData);
-    imgEmbedData += embedding_dim;
-
-    const ov::Tensor& vision_embded_tensor = resample(pipe, encoded_image.resized_source, {encoded_image.resized_source_size});
-    //fill image_embed_slices[0][0]
-    std::copy_n(vision_embded_tensor.data<float>(), vision_embded_tensor.get_size(), imgEmbedData);
-    imgEmbedData += n_img_pos * embedding_dim;
-
-    //fill "</image>" embedding
-    std::copy(data + embedding_dim * 3, data + embedding_dim * 4, imgEmbedData);
-    imgEmbedData += embedding_dim;
-
-    if (slices) {
-        const ov::Shape& slices_shape = slices.get_shape();
-        const std::vector<HeightWidth>& sliced_sizes = encoded_image.slices_sizes;
-        //fill "<slice>" embedding
-        std::copy(data + embedding_dim * 4, data + embedding_dim * 5, imgEmbedData);
-        imgEmbedData += embedding_dim;
-
-        for (size_t i = 0; i < slices_shape.at(0); ++i) {
-            for (size_t j = 0; j < slices_shape.at(1); ++j) {
-                //fill "<image>" embedding
-                std::copy(data + embedding_dim * 2, data + embedding_dim * 3, imgEmbedData);
-                imgEmbedData += embedding_dim;
-
-                //Resampler inference with OpenVINO
-                size_t d2 = slices_shape.at(2);
-                size_t d3 = slices_shape.at(3);
-                ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, slices.data<float>() + (i * slices_shape.at(1) + j) * d2 * d3};
-                const ov::Tensor& vision_embed_tensor_i_j = resample(pipe, encoded_view, {sliced_sizes.at(i * slices_shape.at(1) + j)});
-                // fill image_embed_slices[i][j]
-                std::copy_n(vision_embed_tensor_i_j.data<float>(), vision_embed_tensor_i_j.get_size(), imgEmbedData);
-                imgEmbedData += n_img_pos * embedding_dim;
-
-                //fill "</image>" embedding
-                std::copy(data + embedding_dim * 3, data + embedding_dim * 4, imgEmbedData);
-                imgEmbedData += embedding_dim;
-
-                if (j == slices_shape.at(1) - 1) {
-                    //fill "\n" embedding
-                    std::copy(data + embedding_dim, data + embedding_dim * 1, imgEmbedData);
-                    imgEmbedData += embedding_dim;
-                }
-            }
-        }
-        //fill "</slice>" embedding
-        std::copy(data + embedding_dim * 5, data + embedding_dim * 6, imgEmbedData);
-        imgEmbedData += embedding_dim;
-    }
-    return imgEmbedding;
 }
-}
+
+class ov::genai::VLMPipeline::VLMPipelineImpl {
+};
 
 VLMPipeline::VLMPipeline(
     const std::filesystem::path& model_dir,
@@ -442,36 +325,128 @@ VLMPipeline::VLMPipeline(
     m_pos_embed_cache{
         get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70})
     },
-    is_chat_conversation{false} {
+    m_is_chat_conversation{false} {
         m_language.get_tensor("attention_mask").set_shape({1, 0});
     }
 
+ov::genai::VLMPipeline::~VLMPipeline() = default;
+
 DecodedResults VLMPipeline::generate(
     const std::string& prompt,
-    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& rgbs,
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    std::string wrapped = images.empty() ?
-        "<用户>" + prompt + "<AI>" : prompt + "<AI>";
-    ov::Tensor input_ids = m_tokenizer.encode(wrapped).input_ids;
-    ov::Tensor inputs_embeds;
-    if (images.empty()) {
-        //<用户> + prompt + <AI> LLM first input
-        inputs_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
-    } else {
-        OPENVINO_ASSERT(1 == images.size(), "Only a single image allowed");
-        EncodedImage embeds = m_vision_encoder.encode(images.at(0));
-        ov::Tensor imgEmbedTensor = get_image_embedding(embeds, m_tokenizer, m_embedding, *this);
-
-        ov::Shape img_embed_shape = imgEmbedTensor.get_shape();
-        OPENVINO_ASSERT(
-            m_vlm_config.hidden_size == img_embed_shape.at(2),
-            "Unexpected embedding size");
-
-        //<用户> + image embedding + prompt + <AI> LLM first input
-        ov::Tensor prompt_tensor = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
-        inputs_embeds = concatenate_mid_dim(imgEmbedTensor, prompt_tensor);
+    std::string images_prompt;
+    EncodedImage embeds;
+    if (!rgbs.empty()) {
+        OPENVINO_ASSERT(1 == rgbs.size(), "TODO: Only a single image allowed");
+        embeds = m_vision_encoder.encode(rgbs.at(0));
+        if (m_vlm_config.use_image_id) {
+            images_prompt = m_vlm_config.im_id_start + std::to_string(image_id) + m_vlm_config.im_id_end;
+            ++image_id;
+        }
+        std::string unk64;
+        for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
+            unk64 += m_vlm_config.unk;
+        }
+        images_prompt += m_vlm_config.im_start + unk64 + m_vlm_config.im_end;
+        if (embeds.slices) {
+            ov::Shape slices_shape = embeds.slices.get_shape();
+            for (size_t row_idx = 0; row_idx < slices_shape.at(0); ++row_idx) {
+                for (size_t col_idx = 0; col_idx < slices_shape.at(1); ++col_idx) {
+                    images_prompt += m_vlm_config.slice_start + unk64 + m_vlm_config.slice_end;
+                }
+                images_prompt += '\n';
+            }
+        }
+        if ('\n' != *(images_prompt.end() - 1)) {
+            // Image wasn't sliced, add \n to the end of image anyway.
+            // Strangely, \n isn't placed between </image><slice>.
+            images_prompt += '\n';
+        }
+    }
+    images_prompt += prompt;
+    std::string new_templated_chat_history;
+    if (m_is_chat_conversation) {
+        // KV cache in model already contains prompts and answers from previous iterations.
+        // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
+        // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
+        // <bos token> will be inserted on every iteration.
+        // So actual pipeline calculates input_ids for whole chat history + for whole chat history without the new prompt
+        // and takes only the difference between them.
+        // The chat history cannot be saved as already encoded tokens because generate call doesn't return <eos> token, but
+        // KV cache contains it. So we have to add it manually or get it by tokenization all chat history.
+        m_history.push_back({{"role", "user"}, {"content", images_prompt}});
+        constexpr bool add_generation_prompt = true;
+        new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+    }
+    ov::Tensor special_tokens = m_tokenizer.encode(
+        m_vlm_config.im_start
+        + m_vlm_config.im_end
+        + m_vlm_config.slice_start
+        + m_vlm_config.slice_end
+    ).input_ids;
+    OPENVINO_ASSERT(
+        4 == special_tokens.get_shape().at(1),
+        "Every special token must be represented with a single int."
+    );
+    size_t im_start_id = special_tokens.data<int64_t>()[0];
+    size_t im_end_id = special_tokens.data<int64_t>()[1];
+    size_t slice_start_id = special_tokens.data<int64_t>()[2];
+    size_t slice_end_id = special_tokens.data<int64_t>()[3];
+    ov::Tensor input_ids = m_tokenizer.encode(new_templated_chat_history).input_ids;
+    m_embedding.set_input_tensor(input_ids);
+    m_embedding.infer();
+    ov::Tensor inputs_embeds = m_embedding.get_output_tensor();
+    OPENVINO_ASSERT(
+        m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
+        "Unexpected embedding size"
+    );
+    if (!rgbs.empty()) {
+        int64_t* ids = input_ids.data<int64_t>();
+        const ov::Tensor& resampled_source = resample(*this, embeds.resized_source, {embeds.resized_source_size});
+        float* emb = resampled_source.data<float>();
+        bool replacing = false;
+        for (size_t token_idx = 0; token_idx < inputs_embeds.get_shape().at(1); ++token_idx) {
+            if (im_start_id == ids[token_idx]) {
+                replacing = true;
+            }
+            if (replacing) {
+                std::copy_n(emb, resampled_source.get_size(), inputs_embeds.data<float>() + token_idx * m_vlm_config.hidden_size);
+                token_idx += resampled_source.get_shape().at(1);
+                replacing = false;
+                break;
+            }
+        }
+        if (embeds.slices) {
+            size_t token_idx = 0;
+            const ov::Shape& slices_shape = embeds.slices.get_shape();
+            const std::vector<HeightWidth>& sliced_sizes = embeds.slices_sizes;
+            for (size_t i = 0; i < slices_shape.at(0); ++i) {
+                for (size_t ja = 0; ja < slices_shape.at(1); ++ja) {
+                    size_t d2 = slices_shape.at(2);
+                    size_t d3 = slices_shape.at(3);
+                    ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, embeds.slices.data<float>() + (i * slices_shape.at(1) + ja) * d2 * d3};
+                    const ov::Tensor& vision_embed_tensor_i_j = resample(*this, encoded_view, {sliced_sizes.at(i * slices_shape.at(1) + ja)});
+                    for (; token_idx < inputs_embeds.get_shape().at(1); ++token_idx) {
+                        if (slice_start_id == ids[token_idx]) {
+                            replacing = true;
+                        }
+                        if (slice_end_id == ids[token_idx]) {
+                            replacing = false;
+                            break;
+                        }
+                        if (replacing) {
+                            std::copy_n(vision_embed_tensor_i_j.data<float>(), vision_embed_tensor_i_j.get_size(), inputs_embeds.data<float>() + token_idx * m_vlm_config.hidden_size);
+                            token_idx += vision_embed_tensor_i_j.get_shape().at(1);
+                            replacing = false;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
     m_language.set_tensor("inputs_embeds", inputs_embeds);
     size_t history_len = m_language.get_tensor("attention_mask").get_shape().at(1);
@@ -513,7 +488,6 @@ DecodedResults VLMPipeline::generate(
     }, streamer);
     std::vector<int64_t> generated;
     while (true) {  //(out_token != eos_token_id)
-        //out_token embedding
         m_embedding.get_input_tensor().data<int64_t>()[0] = out_token;
         m_embedding.infer();
         const ov::Tensor& embed_prompt_tensor = m_embedding.get_output_tensor();
@@ -545,31 +519,22 @@ DecodedResults VLMPipeline::generate(
         streamer_ptr->end();
     }
 
-    if (!is_chat_conversation) {
+    if (m_is_chat_conversation) {
+        // auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history);
+        // if (m_is_cache_empty) {
+        //     encoded_input = new_chat_tokens;
+        // } else {
+        //     auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history);
+        //     encoded_input = subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
+        // }
+        // m_templated_chat_history = new_templated_chat_history;
+    } else {
         for (auto& variable : m_language.query_state()) {
             variable.reset();
         }
         m_language.get_tensor("attention_mask").set_shape({1, 0});
     }
-
-    DecodedResults results;
-    results.texts = {m_tokenizer.decode(generated)};
-
-    // TODO: implement performance metrics
-    results.perf_metrics = ov::genai::PerfMetrics();
-    results.perf_metrics.m_evaluated = false;
-    results.perf_metrics.generate_duration = {0, 0};
-    results.perf_metrics.inference_duration= {0, 0};
-    results.perf_metrics.tokenization_duration = {0, 0};
-    results.perf_metrics.detokenization_duration= {0, 0};
-    results.perf_metrics.ttft = {0, 0};
-    results.perf_metrics.tpot= {0, 0};
-    results.perf_metrics.ipot= {0, 0};
-    results.perf_metrics.throughput= {0, 0};
-    results.perf_metrics.num_generated_tokens = generated.size();
-    results.perf_metrics.num_input_tokens= 0;
-
-    return results;
+    return {{m_tokenizer.decode(generated)}};
 }
 
 DecodedResults VLMPipeline::generate(
@@ -589,10 +554,35 @@ DecodedResults VLMPipeline::generate(
     );
 }
 
-GenerationConfig& VLMPipeline::get_generation_config() {
+void VLMPipeline::start_chat(const std::string& system_message) {
+    m_is_chat_conversation = true;
+    bool have_state = 0 != m_language.get_tensor("attention_mask").get_size();
+    if (have_state) {
+        // Resetting state may be slow.
+        for (ov::VariableState& variable : m_language.query_state()) {
+            variable.reset();
+        }
+        // Since if is already introduced, move all resetting here.
+        m_language.get_tensor("attention_mask").set_shape({1, 0});
+        m_history.clear();
+        m_templated_chat_history.clear();
+    }
+    if (system_message.empty()) {
+        return;
+    }
+    m_history = {{{"role", "system"}, {"content", system_message}}};
+    constexpr bool add_generation_prompt = false;
+    m_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+}
+
+void VLMPipeline::set_chat_template(const std::string& new_template) {
+    m_tokenizer.set_chat_template(new_template);
+}
+
+GenerationConfig VLMPipeline::get_generation_config() const {
     return m_generation_config;
 }
 
-const GenerationConfig& VLMPipeline::get_generation_config() const {
-    return m_generation_config;
+void VLMPipeline::set_generation_config(const GenerationConfig& new_config) {
+    m_generation_config = new_config;
 }

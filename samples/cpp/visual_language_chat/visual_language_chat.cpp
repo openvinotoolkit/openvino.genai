@@ -6,7 +6,7 @@
 #include <openvino/runtime/intel_gpu/properties.hpp>
 
 bool print_subword(std::string&& subword) {
-    return !(std::cout << subword);
+    return !(std::cout << subword << std::flush);
 }
 
 int main(int argc, char* argv[]) try {

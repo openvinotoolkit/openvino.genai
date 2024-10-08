@@ -2,8 +2,6 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#pragma once
-
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "load_image.hpp"
