@@ -491,7 +491,7 @@ private:
 
 // Builds LoRA subgraph that consists of several matrix and element-wise multiplications with optional data type conversions and reshapes
 // to build a consistent graph.
-NodePtr tensors_multiplication(NodePtr input, const NodeVector multipliers, ov::Output<ov::Node> target, bool transpose_weights, size_t alpha_pos) {
+NodePtr tensors_multiplication(NodePtr input, const NodeVector multipliers, ov::Output<ov::Node> target, bool transpose_weights, size_t alpha_pos, bool transpose_in_end) {
     const auto target_type = target.get_element_type();
     const auto target_shape = target.get_partial_shape();
     const auto target_rank = target_shape.rank().get_length();
@@ -516,7 +516,7 @@ NodePtr tensors_multiplication(NodePtr input, const NodeVector multipliers, ov::
         }
     }
 
-    if(target_rank == 4 && target_shape[-1].is_static() && target_shape[-1].get_length() > 1) {  // FIXME: Check all potentially permuted dimensions, not only the last one
+    if(transpose_in_end) {
         // FIXME: Check the dimensions we really need to move, currently it is hardcoded 2 + 2 dimensions that usually appears in 2D Convolution case
         // where we need to apply LoRA for the first two dimensions (channels) while interpreting two last dimensions (spatial )
         // TODO: Stash transposition constant to reuse
@@ -648,7 +648,7 @@ public:
             for(auto multiplier : adapter) {
                 parameters.push_back(std::make_shared<v0::Parameter>(multiplier->get_output_element_type(0), multiplier->get_output_partial_shape(0)));
             }
-            auto result = std::make_shared<v0::Result>(tensors_multiplication(nullptr, NodeVector{parameters.begin() + 1, parameters.end()}, target, false, 1));
+            auto result = std::make_shared<v0::Result>(tensors_multiplication(nullptr, NodeVector{parameters.begin() + 1, parameters.end()}, target, false, 1, false));
             auto weights_model = std::make_shared<ov::Model>(ov::ResultVector{result}, parameters);
             fusers.insert(signature, weights_model);
         }
@@ -699,6 +699,7 @@ public:
 
         auto target_rank = target.get_partial_shape().rank().get_length();
         auto consumers = target.get_target_inputs();
+        bool transpose_in_end = false;
 
         // FIXME: Should check rank of activations instead of target rank
         if(target_rank == 4 && target.get_partial_shape()[target_rank - 3].get_length() > 1) {
@@ -707,10 +708,11 @@ public:
             auto transposition = v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int>{2, 3, 0, 1});
             auto transpose = register_new_node<v1::Transpose>(activations, transposition);
             activations = transpose;
+            transpose_in_end = true;
         }
 
         NodeVector lora_variables{lora_weight.A, lora_weight.alpha, lora_weight.B};
-        replacement = tensors_multiplication(activations.get_node_shared_ptr(), lora_variables, target, true, 1);
+        replacement = tensors_multiplication(activations.get_node_shared_ptr(), lora_variables, target, true, 1, transpose_in_end);
 
         for (auto consumer : consumers) {
             consumer.replace_source_output(replacement->output(0));
@@ -843,7 +845,7 @@ struct AdapterControllerImpl {
     }
 
     struct ConfigChanged {
-        bool mode;
+        bool mode = false;
         bool alpha = false;
         bool adapter = false;
 
@@ -872,25 +874,28 @@ struct AdapterControllerImpl {
         return diff;
     }
 
-    void apply (ov::InferRequest& infer_request, const AdapterConfig& config) {
+    void apply (ov::InferRequest& infer_request, std::optional<AdapterConfig> config) {
         // FIXME: If a part of LoRA state tensors are not set here, then need to carefully reset state in LLMPipeline where global reset is called after the generation
-
-        const auto diff = compare_configs(current_config, config);
-        OPENVINO_ASSERT(
-            !diff.mode || config.get_mode() == AdapterConfig::MODE_AUTO,  // MODE_AUTO in this call means that mode is not changed
-            "AdapterConfig::mode cannot be changed and should be configured once for a model at the initialization");
-        OPENVINO_ASSERT(
-            config.get_mode() == AdapterConfig::MODE_AUTO || config.get_mode() == AdapterConfig::MODE_DYNAMIC || config.get_mode() == AdapterConfig::MODE_STATIC_RANK || (!diff.alpha && !diff.adapter),
-            "Cannot change adapters and/or the alphas when not one of the dynamic modes are used.");
+        ConfigChanged diff;
+        if(config) {
+            diff = compare_configs(current_config, *config);
+            OPENVINO_ASSERT(
+                !diff.mode || config->get_mode() == AdapterConfig::MODE_AUTO,  // MODE_AUTO in this call means that mode is not changed
+                "AdapterConfig::mode cannot be changed and should be configured once for a model at the initialization");
+            OPENVINO_ASSERT(
+                config->get_mode() == AdapterConfig::MODE_AUTO || config->get_mode() == AdapterConfig::MODE_DYNAMIC || config->get_mode() == AdapterConfig::MODE_STATIC_RANK || (!diff.alpha && !diff.adapter),
+                "Cannot change adapters and/or the alphas when not one of the dynamic modes are used.");
+            current_config = *config;
+        }
         if(need_full_apply) {
             need_full_apply = false;
-            set_new_adapter_tensors(infer_request, config);
+            set_new_adapter_tensors(infer_request);
         } else if(diff) {
             if(diff.adapter) {
-                set_new_adapter_tensors(infer_request, config);
+                set_new_adapter_tensors(infer_request);
             } else {
                 OPENVINO_ASSERT(diff.alpha);
-                set_new_adapter_alphas(infer_request, config);
+                set_new_adapter_alphas(infer_request);
             }
         }
     }
@@ -899,13 +904,12 @@ struct AdapterControllerImpl {
         need_full_apply = full_apply;
     }
 
-    void set_new_adapter_alphas (ov::InferRequest& infer_request, const AdapterConfig& config) {
+    void set_new_adapter_alphas (ov::InferRequest& infer_request) {
         // FIXME: Provide more economical way to update only alphas
-        set_new_adapter_tensors(infer_request, config);
+        set_new_adapter_tensors(infer_request);
     }
 
-    void set_new_adapter_tensors (ov::InferRequest& infer_request, const AdapterConfig& config) {
-        current_config = config;       // FIXME: Keep the old config to map to cached LoRA state tensors instead of the current approach where we start from scratch each time
+    void set_new_adapter_tensors (ov::InferRequest& infer_request) {
         if(current_config.get_mode() != AdapterConfig::MODE_AUTO && current_config.get_mode() != AdapterConfig::MODE_DYNAMIC && current_config.get_mode() != AdapterConfig::MODE_STATIC_RANK ) {
             return;
         }
@@ -1163,10 +1167,6 @@ struct AdapterControllerImpl {
         }
         return new_tensors;
     }
-
-    void apply (ov::InferRequest& infer_request) {
-        return apply(infer_request, current_config);
-    }
 };
 
 
@@ -1207,13 +1207,13 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
 
 
 // Call it every time when adapter config is changed; if adapter was configured as a static one, this call is not required
-void AdapterController::apply(ov::InferRequest& request, const AdapterConfig& config) {
-    return m_pimpl->apply(request, config);
-}
-
-
-void AdapterController::apply(ov::InferRequest& request){
-    return m_pimpl->apply(request);
+void AdapterController::apply(ov::InferRequest& request, const std::optional<AdapterConfig>& config) {
+    OPENVINO_ASSERT(m_pimpl || !config || !*config,
+        "Adapters are passed to AdapterController but it was not configured to use adapters. "
+        "Enable using adapters by pass them in the constructor first.");
+    if (m_pimpl) {
+        m_pimpl->apply(request, config);
+    }
 }
 
 

@@ -1,144 +1,169 @@
-# Benchmarking script for large language models
+# Benchmarking Script for Large Language Models
 
-This script provides a unified approach to estimate performance for Large Language Models.
-It is based on pipelines provided by Optimum-Intel and allows to estimate performance for
-pytorch and openvino models, using almost the same code and precollected models.
+This script provides a unified approach to estimate performance for Large Language Models (LLMs). It leverages pipelines provided by Optimum-Intel and allows performance estimation for PyTorch and OpenVINO models using nearly identical code and pre-collected models.
 
-## Usage 
 
-### 1. Start a Python virtual environment
+### 1. Prepare Python Virtual Environment for LLM Benchmarking
    
 ``` bash
-python3 -m venv python-env
-source python-env/bin/activate
+python3 -m venv ov-llm-bench-env
+source ov-llm-bench-env/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+
+git clone  https://github.com/openvinotoolkit/openvino.genai.git
+cd openvino.genai/llm_bench/python/
+pip install -r requirements.txt  
 ```
+
 > Note:
-> If you are using an existing python environment, recommend following command to use all the dependencies with latest versions:  
-> pip install -U --upgrade-strategy eager -r requirements.txt
+> For existing Python environments, run the following command to ensure that all dependencies are installed with the latest versions:  
+> `pip install -U --upgrade-strategy eager -r requirements.txt`
 
-### 2. Convert a model to OpenVINO IR
-   
-The optimum-cli tool allows you to convert models from Hugging Face to the OpenVINO IR format. More detailed info about tool usage can be found in [Optimum Intel documentation](https://huggingface.co/docs/optimum/main/en/intel/openvino/export)
+#### (Optional) Hugging Face Login :
 
-Prerequisites:
-install conversion dependencies using `requirements.txt`
-
-Usage:
+Login to Hugging Face if you want to use non-public models:
 
 ```bash
-optimum-cli export openvino --model <MODEL_NAME> --weight-format <PRECISION> <OUTPUT_DIR>
+huggingface-cli login
 ```
 
-Paramters:
-* `--model <MODEL_NAME>` - <MODEL_NAME> model_id for downloading from huggngface_hub (https://huggingface.co/models) or path with directory where pytorch model located. 
-* `--weight-format` - precision for model conversion fp32, fp16, int8, int4
-* `<OUTPUT_DIR>` - output directory for saving OpenVINO model.
+### 2. Convert Model to OpenVINO IR Format
+   
+The `optimum-cli` tool simplifies converting Hugging Face models to OpenVINO IR format. 
+- Detailed documentation can be found in the [Optimum-Intel documentation](https://huggingface.co/docs/optimum/main/en/intel/openvino/export). 
+- To learn more about weight compression, see the [NNCF Weight Compression Guide](https://docs.openvino.ai/2024/openvino-workflow/model-optimization-guide/weight-compression.html).
+- For additional guidance on running inference with OpenVINO for LLMs, see the [OpenVINO LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html).
 
-Usage example:
+**Usage:**
+
+```bash
+optimum-cli export openvino --model <MODEL_ID> --weight-format <PRECISION> <OUTPUT_DIR>
+
+optimum-cli export openvino -h # For detailed information
+```
+
+* `--model <MODEL_ID>` : model_id for downloading from [huggngface_hub](https://huggingface.co/models) or path with directory where pytorch model located. 
+* `--weight-format <PRECISION>` : precision for model conversion. Available options: `fp32, fp16, int8, int4, mxfp4`
+* `<OUTPUT_DIR>`: output directory for saving generated OpenVINO model.
+
+**NOTE:** 
+- Models larger than 1 billion parameters are exported to the OpenVINO format with 8-bit weights by default. You can disable it with `--weight-format fp32`.
+
+**Example:**
 ```bash
 optimum-cli export openvino --model meta-llama/Llama-2-7b-chat-hf --weight-format fp16 models/llama-2-7b-chat
 ```
+**Resulting file structure:**
 
-the result of running the command will have the following file structure:
-
-    |-llama-2-7b-chat
-      |-pytorch
-        |-dldt
-           |-FP16
-              |-openvino_model.xml
-              |-openvino_model.bin
-              |-config.json
-              |-generation_config.json
-              |-tokenizer_config.json
-              |-tokenizer.json
-              |-tokenizer.model
-              |-special_tokens_map.json
-
-### 3. Benchmarking
-
-Prerequisites:
-install benchmarking dependencies using `requirements.txt`
-
-``` bash
-pip install -r requirements.txt
-```
-note: **You can specify the installed OpenVINO version through pip install**
-``` bash
-# e.g. 
-pip install openvino==2023.3.0
+```console
+    models
+    └── llama-2-7b-chat
+        ├── config.json
+        ├── generation_config.json
+        ├── openvino_detokenizer.bin
+        ├── openvino_detokenizer.xml
+        ├── openvino_model.bin
+        ├── openvino_model.xml
+        ├── openvino_tokenizer.bin
+        ├── openvino_tokenizer.xml
+        ├── special_tokens_map.json
+        ├── tokenizer_config.json
+        ├── tokenizer.json
+        └── tokenizer.model
 ```
 
-### 4. Run the following command to test the performance of one LLM model
+### 3. Benchmark LLM Model
+
+To benchmark the performance of the LLM, use the following command:
+
 ``` bash
 python benchmark.py -m <model> -d <device> -r <report_csv> -f <framework> -p <prompt text> -n <num_iters>
 # e.g.
-python benchmark.py -m models/llama-2-7b-chat/pytorch/dldt/FP32 -n 2
-python benchmark.py -m models/llama-2-7b-chat/pytorch/dldt/FP32 -p "What is openvino?" -n 2
-python benchmark.py -m models/llama-2-7b-chat/pytorch/dldt/FP32 -pf prompts/llama-2-7b-chat_l.jsonl -n 2
+python benchmark.py -m models/llama-2-7b-chat/ -n 2
+python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2
+python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jsonl -n 2
 ```
-Parameters:
-* `-m` - model path
-* `-d` - inference device (default=cpu)
-* `-r` - report csv
-* `-f` - framework (default=ov)
-* `-p` - interactive prompt text
-* `-pf` - path of JSONL file including interactive prompts
-* `-n` - number of benchmarking iterations, if the value greater 0, will exclude the first iteration. (default=0)
-* `-ic` - limit the output token size (default 512) of text_gen and code_gen models.
 
+**Parameters:**
+- `-m`: Path to the model.
+- `-d`: Inference device (default: CPU).
+- `-r`: Path to the CSV report.
+- `-f`: Framework (default: ov).
+- `-p`: Interactive prompt text.
+- `-pf`: Path to a JSONL file containing prompts.
+- `-n`: Number of iterations (default: 0, the first iteration is excluded).
+- `-ic`: Limit the output token size (default: 512) for text generation and code generation models.
 
+**Additional options:**
 ``` bash
 python ./benchmark.py -h # for more information
 ```
 
-## Running `torch.compile()`
-
-The option `--torch_compile_backend` uses `torch.compile()` to speed up
-the PyTorch code by compiling it into optimized kernels using a selected backend.
-
-Prerequisites: install benchmarking dependencies using requirements.txt
-
-``` bash
-pip install -r requirements.txt
-```
-
-In order to run the `torch.compile()` on CUDA GPU, install additionally the nightly PyTorch version:
+#### Benchmarking the Original PyTorch Model:
+To benchmark the original PyTorch model, first download the model locally and then run benchmark by specifying PyTorch as the framework with parameter `-f pt`
 
 ```bash
-pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu118
+# Download PyTorch Model
+huggingface-cli download meta-llama/Llama-2-7b-chat-hf --local-dir models/llama-2-7b-chat/pytorch
+# Benchmark with PyTorch Framework
+python benchmark.py -m models/llama-2-7b-chat/pytorch -n 2 -f pt
 ```
 
-Add the option `--torch_compile_backend` with the desired backend: `pytorch` or `openvino` (default) while running the benchmarking script:
+> **Note:** If needed, You can install a specific OpenVINO version using pip:
+> ``` bash
+> # e.g. 
+> pip install openvino==2024.4.0
+> # Optional, install the openvino nightly package if needed.
+> # OpenVINO nightly is pre-release software and has not undergone full release validation or qualification. 
+> pip uninstall openvino
+> pip install --upgrade --pre openvino openvino-tokenizers --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+> ```
+
+## 4. Benchmark LLM with `torch.compile()`
+
+The `--torch_compile_backend` option enables you to use `torch.compile()` to accelerate PyTorch models by compiling them into optimized kernels using a specified backend.
+
+Before benchmarking, you need to download the original PyTorch model. Use the following command to download the model locally:
+
+```bash
+huggingface-cli download meta-llama/Llama-2-7b-chat-hf --local-dir models/llama-2-7b-chat/pytorch
+```
+
+To run the benchmarking script with `torch.compile()`, use the `--torch_compile_backend` option to specify the backend. You can choose between `pytorch` or `openvino` (default). Example:
 
 ```bash
 python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino
 ```
 
-## Run on 2 sockets platform
+> **Note:** To use `torch.compile()` with CUDA GPUs, you need to install the nightly version of PyTorch:
+>
+> ```bash
+> pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu118
+> ```
 
-benchmark.py sets openvino.properties.streams.num(1) by default
 
-| OpenVINO version    | Behaviors                                       |
+## 5. Running on 2-Socket Platforms
+
+The benchmarking script sets `openvino.properties.streams.num(1)` by default. For multi-socket platforms, use `numactl` on Linux or the `--load_config` option to modify behavior.
+
+| OpenVINO Version    | Behaviors                                       |
 |:--------------------|:------------------------------------------------|
-| Before 2024.0.0 | streams.num(1) <br>execute on 2 sockets. |
-| 2024.0.0 | streams.num(1) <br>execute on the same socket as the APP is running on. |
+| Before 2024.0.0     | streams.num(1) <br>execute on 2 sockets.        |
+| 2024.0.0            | streams.num(1) <br>execute on the same socket as the APP is running on. |
 
-numactl on Linux or --load_config for benchmark.py can be used to change the behaviors.
+For example, `--load_config config.json` as following will result in streams.num(1) and execute on 2 sockets.
+```json
+{
+  "INFERENCE_NUM_THREADS": <NUMBER>
+} 
+``` 
+`<NUMBER>` is the number of total physical cores in 2 sockets.
 
-For example, --load_config config.json as following in OpenVINO 2024.0.0 will result in streams.num(1) and execute on 2 sockets.
-```
-{"INFERENCE_NUM_THREADS":<NUMBER>}
-```
-`<NUMBER>` is the number of total physical cores in 2 sockets
+## 6. Additional Resources
 
-## Additional Resources
-### 1. NOTE
-> If you encounter any errors, please check **[NOTES.md](./doc/NOTES.md)** which provides solutions to the known errors.
-### 2. Image generation
-> To configure more parameters for image generation models, reference to **[IMAGE_GEN.md](./doc/IMAGE_GEN.md)**
-### 3. CPU Threading
+- **Error Troubleshooting:** Check the [NOTES.md](./doc/NOTES.md) for solutions to known issues.
+- **Image Generation Configuration:** Refer to [IMAGE_GEN.md](./doc/IMAGE_GEN.md) for setting parameters for image generation models.
+- **CPU Threading**
 
 OpenVINO uses [oneTBB](https://github.com/oneapi-src/oneTBB/) as default threading library, while Torch uses [OpenMP](https://www.openmp.org/). Both threading libraries have ['busy-wait spin'](https://gcc.gnu.org/onlinedocs/libgomp/GOMP_005fSPINCOUNT.html) by default. So in LLM pipeline, when inference on CPU with OpenVINO and postprocessing with Torch(For example: greedy search or beam search), there is threading overhead in the switching between inference(OpenVINO with oneTBB) and postprocessing (Torch with OpenMP).
 
