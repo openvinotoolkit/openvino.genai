@@ -38,7 +38,7 @@ Prompt: `cyberpunk cityscape like Tokyo New York with tall buildings at dusk gol
 
 ## Supported models
 
-Models can be downloaded from [HiggingFace](https://huggingface.co/models). This sample can run the following list of models, but not limitied to:
+Models can be downloaded from [HuggingFace](https://huggingface.co/models). This sample can run the following list of models, but not limitied to:
 
 - [botp/stable-diffusion-v1-5](https://huggingface.co/botp/stable-diffusion-v1-5)
 - [stabilityai/stable-diffusion-2](https://huggingface.co/stabilityai/stable-diffusion-2)
