@@ -202,7 +202,7 @@ jobs:
           echo "Multi prompt" passed
 
   cpp-greedy_causal_lm-windows:
-    runs-on: aks-win-16-cores-32gb
+    runs-on: windows-2019-16-core
     env:
       PYTHONIOENCODING: "utf8"
     defaults:
@@ -726,7 +726,7 @@ jobs:
           timeout 200s ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 10 --dynamic_split_fuse --max_batch_size 256 --max_input_len 256 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
   cpp-continuous-batching-windows:
-    runs-on: aks-win-16-cores-32gb
+    runs-on: windows-2019-16-core
     env:
       PYTHONIOENCODING: "utf8"
     defaults:
