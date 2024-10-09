@@ -67,8 +67,7 @@ ov::Tensor encode(ov::InferRequest& request,
                     ". Actual size: ",
                     mel_data.size(),
                     ".");
-    ov::Tensor input_tensor(ov::element::f32, { 1, feature_size, nb_max_frames }, mel_data.data());
-    request.set_tensor("input_features", input_tensor);
+    copy_to_tensor(mel_data, request.get_tensor("input_features"));
     request.infer();
     return request.get_tensor("last_hidden_state");
 }
