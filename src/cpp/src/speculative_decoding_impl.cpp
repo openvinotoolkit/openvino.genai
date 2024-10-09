@@ -11,38 +11,51 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     const std::string& main_models_path,
-    const std::string& draft_models_path,
-    const SchedulerConfig& scheduler_config,
-    const std::string& device,
-    const ov::AnyMap& plugin_config,
+    const SchedulerConfig& main_scheduler_config,
+    const std::string& main_device,
+    const ov::AnyMap& main_plugin_config,
+    const ov::genai::ModelDesc draft_model_desc,
     const ov::AnyMap& tokenizer_plugin_config) {
     ov::Core core;
-    std::shared_ptr<ov::Model> main_model = core.read_model(main_models_path + "/openvino_model.xml"),
-                               draft_model = core.read_model(draft_models_path + "/openvino_model.xml");
+    std::string openvino_model_name = "/openvino_model.xml",
+                draft_model_path = draft_model_desc.model_path;
 
-    apply_paged_attention_transformations(main_model, scheduler_config.use_cache_eviction);
-    apply_paged_attention_transformations(draft_model, scheduler_config.use_cache_eviction);
+    std::shared_ptr<ov::Model> main_model = core.read_model(main_models_path + openvino_model_name),
+                               draft_model = core.read_model(draft_model_path + openvino_model_name);
 
-    ov::genai::SchedulerConfig main_scheduler_config = scheduler_config,
-                               draft_scheduler_config = scheduler_config;
-    
-    // split KV cache to 2 caches for main and draft models
-    size_t main_model_cache_size = get_kv_cache_size(main_model),
-           draft_model_cache_size = get_kv_cache_size(draft_model);
-    auto k = static_cast<float>(draft_model_cache_size) / (main_model_cache_size + draft_model_cache_size);
+    apply_paged_attention_transformations(main_model, main_scheduler_config.use_cache_eviction);
+    apply_paged_attention_transformations(draft_model, main_scheduler_config.use_cache_eviction);
 
-    size_t main_cache_size = scheduler_config.cache_size * (1 - k),
-           draft_cache_size = scheduler_config.cache_size * k;
-    if (draft_cache_size == 0) {
-        main_cache_size -= main_cache_size > 1 ? 1 : 0;
-        draft_cache_size = 1;
+    std::string draft_device = draft_model_desc.device;
+    bool is_draft_device_undefined = false;
+    if (draft_device.empty()) {
+        draft_device = main_device;
+        is_draft_device_undefined = true;
     }
 
-    main_scheduler_config.cache_size = main_cache_size;
-    draft_scheduler_config.cache_size = draft_cache_size;
+    ov::genai::SchedulerConfig main_scheduler_config_updated = main_scheduler_config,
+                               draft_scheduler_config = is_draft_device_undefined ? main_scheduler_config : draft_model_desc.scheduler_config;
+    if (is_draft_device_undefined) {
+        // split KV cache to 2 caches for main and draft models
+        size_t main_model_cache_size = get_kv_cache_size(main_model),
+            draft_model_cache_size = get_kv_cache_size(draft_model);
+        auto k = static_cast<float>(draft_model_cache_size) / (main_model_cache_size + draft_model_cache_size);
 
-    DeviceConfig main_device_config(core, main_scheduler_config, device, plugin_config),
-                 draft_device_config(core, draft_scheduler_config, device, plugin_config);
+        size_t main_cache_size = main_scheduler_config.cache_size * (1 - k),
+            draft_cache_size = main_scheduler_config.cache_size * k;
+        if (draft_cache_size == 0) {
+            main_cache_size -= main_cache_size > 1 ? 1 : 0;
+            draft_cache_size = 1;
+        }
+
+        main_scheduler_config_updated.cache_size = main_cache_size;
+        draft_scheduler_config.cache_size = draft_cache_size;
+    }
+
+    ov::AnyMap draft_plugin_config = is_draft_device_undefined ? main_plugin_config : draft_model_desc.plugin_config;
+
+    DeviceConfig main_device_config(core, main_scheduler_config, main_device, main_plugin_config),
+                 draft_device_config(core, draft_scheduler_config, draft_device, draft_plugin_config);
 
     set_kv_cache_type_and_shape(main_model, main_device_config);
     set_kv_cache_type_and_shape(draft_model, draft_device_config);
@@ -50,12 +63,13 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     // main and draft model can have different tokenizers
     // to do: support retokenization: 154103
     Tokenizer main_model_tokenizer(main_models_path, tokenizer_plugin_config),
-              draft_model_tokenizer(draft_models_path, tokenizer_plugin_config);
+              draft_model_tokenizer(draft_model_path, tokenizer_plugin_config);
     
     m_tokenizer = main_model_tokenizer;
 
-    m_main_pipeline = std::make_shared<ContinuousBatchingImpl>(core, main_model, main_model_tokenizer, main_device_config, main_scheduler_config, device, plugin_config, true);
-    m_draft_pipeline = std::make_shared<ContinuousBatchingImpl>(core, draft_model, draft_model_tokenizer, draft_device_config, draft_scheduler_config, device, plugin_config, false);
+    // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
+    m_main_pipeline = std::make_shared<ContinuousBatchingImpl>(core, main_model, main_model_tokenizer, main_device_config, main_scheduler_config, main_device, main_plugin_config, true);
+    m_draft_pipeline = std::make_shared<ContinuousBatchingImpl>(core, draft_model, draft_model_tokenizer, draft_device_config, draft_scheduler_config, draft_device, draft_plugin_config, false);
 }
 
 GenerationHandle
@@ -81,7 +95,6 @@ bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::has_non_finished_reque
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     // generate candidates by draft model
     m_draft_pipeline->step();
-
 
     // to generate num_matches statistic
     std::map<int64_t, ContinuousBatchingPipeline::ContinuousBatchingImpl::UpdateSeqResult> update_sequence_info;

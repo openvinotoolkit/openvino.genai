@@ -56,10 +56,10 @@ protected:
     
 public:
     SpeculativeDecodingImpl(const std::string& main_models_path,
-                            const std::string& draft_models_path,
                             const SchedulerConfig& scheduler_config,
                             const std::string& device,
                             const ov::AnyMap& plugin_config,
+                            const ov::genai::ModelDesc draft_model_desc,
                             const ov::AnyMap& tokenizer_config = {});
 
     GenerationHandle add_request(uint64_t request_id,
