@@ -14,10 +14,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const Tokenizer& tokenizer,
     const SchedulerConfig& scheduler_config,
     const std::string& device,
-    const ov::AnyMap& plugin_config,
-    bool is_validation_mode_enabled) {
+    const ov::AnyMap& plugin_config) {
     m_tokenizer = tokenizer;
-    m_is_validation_mode_enabled = is_validation_mode_enabled;
     ov::Core core;
 
     // The model can be compiled for GPU as well
@@ -188,7 +186,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     {
         static ManualTimer timer("sample");
         timer.start();
-        sampler_output = m_sampler->sample(m_requests, logits, m_is_validation_mode_enabled);
+        sampler_output = m_sampler->sample(m_requests, logits);
         timer.end();
     }
 

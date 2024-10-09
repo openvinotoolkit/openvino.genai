@@ -31,8 +31,6 @@ protected:
     size_t step_count = 0;
 #endif
 
-    bool m_is_validation_mode_enabled = false;
-
     void _free_non_running_requests();
     void _notify_requests_dropped_by_handle();
     void _register_step_cache_usage(float step_cache_usage);
@@ -45,21 +43,18 @@ public:
                            const Tokenizer& tokenizer,
                            const SchedulerConfig& scheduler_config,
                            const std::string& device,
-                           const ov::AnyMap& plugin_config,
-                           bool is_validation_mode_enabled = false);
+                           const ov::AnyMap& plugin_config);
 
     ContinuousBatchingImpl(const std::string& models_path,
                            const SchedulerConfig& scheduler_config,
                            const std::string& device,
                            const ov::AnyMap& llm_plugin_config,
-                           const ov::AnyMap& tokenizer_plugin_config,
-                           bool is_validation_mode_enabled = false)
+                           const ov::AnyMap& tokenizer_plugin_config)
     : ContinuousBatchingImpl{ models_path,
                               Tokenizer(models_path, tokenizer_plugin_config),
                               scheduler_config,
                               device,
-                              llm_plugin_config,
-                              is_validation_mode_enabled } {};
+                              llm_plugin_config } {};
 
 
     GenerationHandle add_request(uint64_t request_id,
