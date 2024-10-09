@@ -17,7 +17,7 @@ void print_array(T * array, size_t size) {
     std::cout << " ] " << std::endl;
 }
 
-void print_tensor(std::string name, ov::Tensor tensor) {
+inline void print_tensor(std::string name, ov::Tensor tensor) {
     std::cout << name;
     if (tensor.get_element_type() == ov::element::i32) {
         print_array(tensor.data<int>(), tensor.get_size());

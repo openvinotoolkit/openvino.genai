@@ -1,32 +1,86 @@
 import argparse
 import difflib
 import os
-
 import json
 import pandas as pd
+import logging
 from datasets import load_dataset
-from optimum.exporters import TasksManager
+from diffusers import DiffusionPipeline
 from optimum.intel.openvino import OVModelForCausalLM
 from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
 
-from . import Evaluator
+from optimum.exporters.tasks import TasksManager
+from optimum.intel import (
+    OVLatentConsistencyModelPipeline,
+    OVStableDiffusionPipeline,
+    OVStableDiffusionXLPipeline,
+)
 
-TasksManager._SUPPORTED_MODEL_TYPE["stablelm-epoch"] = TasksManager._SUPPORTED_MODEL_TYPE["llama"]
+import openvino_genai
+from whowhatbench import EVALUATOR_REGISTRY, MODELTYPE2TASK
+
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+TasksManager._SUPPORTED_MODEL_TYPE["stablelm-epoch"] = (
+    TasksManager._SUPPORTED_MODEL_TYPE["llama"]
+)
 NormalizedConfigManager._conf["stablelm-epoch"] = NormalizedTextConfig.with_args(
     num_layers="num_hidden_layers",
     num_attention_heads="num_attention_heads",
 )
 
 
-def load_model(model_id, device="CPU", ov_config=None):
+class GenAIModelWrapper:
+    """
+    A helper class to store additional attributes for GenAI models
+    """
+
+    def __init__(self, model, model_dir):
+        self.model = model
+        self.config = AutoConfig.from_pretrained(model_dir)
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return getattr(self, attr)
+        else:
+            return getattr(self.model, attr)
+
+
+def load_text_genai_pipeline(model_dir, device="CPU"):
+    try:
+        import openvino_genai
+    except ImportError:
+        logger.error("Failed to import openvino_genai package. Please install it.")
+        exit(-1)
+    logger.info("Using OpenVINO GenAI API")
+    return GenAIModelWrapper(openvino_genai.LLMPipeline(model_dir, device), model_dir)
+
+
+def load_text_model(
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+):
+    if use_hf:
+        logger.info("Using HF Transformers API")
+        return AutoModelForCausalLM.from_pretrained(
+            model_id, trust_remote_code=True, device_map=device.lower()
+        )
+
+    if use_genai:
+        return load_text_genai_pipeline(model_id, device)
+
     if ov_config:
         with open(ov_config) as f:
             ov_options = json.load(f)
     else:
         ov_options = None
     try:
-        model = OVModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, device=device, ov_config=ov_options)
+        model = OVModelForCausalLM.from_pretrained(
+            model_id, trust_remote_code=True, device=device, ov_config=ov_options
+        )
     except ValueError:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
         model = OVModelForCausalLM.from_pretrained(
@@ -35,9 +89,65 @@ def load_model(model_id, device="CPU", ov_config=None):
             trust_remote_code=True,
             use_cache=True,
             device=device,
-            ov_config=ov_options
+            ov_config=ov_options,
         )
     return model
+
+
+TEXT2IMAGE_TASK2CLASS = {
+    "sd": OVStableDiffusionPipeline,
+    "sd-xl": OVStableDiffusionXLPipeline,
+    "sd-lcm": OVLatentConsistencyModelPipeline,
+}
+
+
+def load_text2image_model(
+    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+):
+    if ov_config:
+        with open(ov_config) as f:
+            ov_options = json.load(f)
+    else:
+        ov_options = None
+
+    if use_hf:
+        return DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True)
+
+    TEXT2IMAGEPipeline = TEXT2IMAGE_TASK2CLASS[model_type]
+
+    try:
+        model = TEXT2IMAGEPipeline.from_pretrained(
+            model_id, trust_remote_code=True, device=device, ov_config=ov_options
+        )
+    except ValueError:
+        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        model = TEXT2IMAGEPipeline.from_pretrained(
+            model_id,
+            config=config,
+            trust_remote_code=True,
+            use_cache=True,
+            device=device,
+            ov_config=ov_options,
+        )
+    return model
+
+
+def load_model(
+    model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+):
+    from .registry import MODELTYPE2TASK
+
+    if model_id is None:
+        return None
+
+    if model_type == "text":
+        return load_text_model(model_id, device, ov_config, use_hf, use_genai)
+    elif MODELTYPE2TASK[model_type] == "image-generation":
+        return load_text2image_model(
+            model_type, model_id, device, ov_config, use_hf, use_genai
+        )
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}")
 
 
 def load_prompts(args):
@@ -57,7 +167,7 @@ def load_prompts(args):
 
     res = data[args.dataset_field]
 
-    res = {"questions": list(res)}
+    res = {"prompts": list(res)}
 
     return res
 
@@ -91,7 +201,14 @@ def parse_args():
         "I defined and not exists them will be generated by base_model evaluation.",
     )
     parser.add_argument(
-        "--text-encoder",
+        "--model-type",
+        type=str,
+        choices=["text", "sd", "sd-xl", "sd-lcm"],
+        default="text",
+        help="Indicated the model type, e.g. 'text', 'sd'.",
+    )
+    parser.add_argument(
+        "--data-encoder",
         type=str,
         default="sentence-transformers/all-mpnet-base-v2",
         help="Model for measurement of similarity between base_model and target_model."
@@ -109,7 +226,7 @@ def parse_args():
     parser.add_argument(
         "--dataset-field",
         type=str,
-        default="questions",
+        default="text",
         help="The name of field in dataset for prompts. For example question or context in squad."
         "Will be used only if dataset is defined.",
     )
@@ -149,6 +266,23 @@ def parse_args():
         type=str,
         default=None,
         help="Path to the JSON file that contains OpenVINO Runtime configuration.",
+    )
+    parser.add_argument(
+        "--language",
+        type=str,
+        choices=["en", "cn"],
+        default=None,
+        help="Used to select default prompts based on the primary model language, e.g. 'en', 'ch'.",
+    )
+    parser.add_argument(
+        "--hf",
+        action="store_true",
+        help="Use AutoModelForCausalLM from transformers library to instantiate the model.",
+    )
+    parser.add_argument(
+        "--genai",
+        action="store_true",
+        help="Use LLMPipeline from transformers library to instantiate the model.",
     )
 
     return parser.parse_args()
@@ -204,39 +338,123 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
+def genai_gen_answer(model, tokenizer, question, max_new_tokens, skip_question):
+    config = openvino_genai.GenerationConfig()
+    config.max_new_tokens = max_new_tokens
+    out = model.generate(question, config)
+    return out
+
+
+def get_evaluator(base_model, args):
+    # config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+    # task = TasksManager.infer_task_from_model(config._name_or_path)
+    # TODO: Add logic to auto detect task based on model_id (TaskManager does not work for locally saved models)
+    task = MODELTYPE2TASK[args.model_type]
+
+    try:
+        EvaluatorCLS = EVALUATOR_REGISTRY[task]
+        prompts = load_prompts(args)
+
+        if task == "text-generation":
+            tokenizer = load_tokenizer(args)
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                tokenizer=tokenizer,
+                similarity_model_id=args.data_encoder,
+                num_samples=args.num_samples,
+                language=args.language,
+                gen_answer_fn=genai_gen_answer if args.genai else None,
+            )
+        elif task == "image-generation":
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+            )
+        else:
+            raise ValueError(f"Unsupported task: {task}")
+
+    except KeyError:
+        raise ValueError(
+            f"Attempted to load evaluator for '{task}', but no evaluator for this model type found!"
+            "Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}"
+        )
+
+
+def print_text_results(evaluator):
+    metric_of_interest = "similarity"
+    worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
+    for i, e in enumerate(worst_examples):
+        ref_text = ""
+        actual_text = ""
+        diff = ""
+        for l1, l2 in zip(
+            e["source_model"].splitlines(), e["optimized_model"].splitlines()
+        ):
+            if l1 == "" and l2 == "":
+                continue
+            ref_text += l1 + "\n"
+            actual_text += l2 + "\n"
+            diff += diff_strings(l1, l2) + "\n"
+
+        logger.info(
+            "--------------------------------------------------------------------------------------"
+        )
+        logger.info("## Reference text %d:\n%s", i + 1, ref_text)
+        logger.info("## Actual text %d:\n%s", i + 1, actual_text)
+        logger.info("## Diff %d: ", i + 1)
+        logger.info(diff)
+
+
+def print_image_results(evaluator):
+    metric_of_interest = "similarity"
+    worst_examples = evaluator.worst_examples(top_k=1, metric=metric_of_interest)
+    for i, e in enumerate(worst_examples):
+        logger.info(
+            "--------------------------------------------------------------------------------------"
+        )
+        logger.info(f"Top-{i+1} example:")
+        logger.info(e)
+
+
 def main():
     args = parse_args()
     check_args(args)
 
-    prompts = load_prompts(args)
-    tokenizer = load_tokenizer(args)
     if args.gt_data and os.path.exists(args.gt_data):
-        evaluator = Evaluator(
-            base_model=None,
-            gt_data=args.gt_data,
-            test_data=prompts,
-            tokenizer=tokenizer,
-            similarity_model_id=args.text_encoder,
-            num_samples=args.num_samples,
-        )
+        evaluator = get_evaluator(None, args)
     else:
-        base_model = load_model(args.base_model, args.device, args.ov_config)
-        evaluator = Evaluator(
-            base_model=base_model,
-            test_data=prompts,
-            tokenizer=tokenizer,
-            similarity_model_id=args.text_encoder,
-            num_samples=args.num_samples,
+        base_model = load_model(
+            args.model_type,
+            args.base_model,
+            args.device,
+            args.ov_config,
+            args.hf,
+            args.genai,
         )
+        evaluator = get_evaluator(base_model, args)
+
         if args.gt_data:
             evaluator.dump_gt(args.gt_data)
         del base_model
 
     if args.target_model:
-        target_model = load_model(args.target_model, args.device, args.ov_config)
-        all_metrics_per_question, all_metrics = evaluator.score(target_model)
-        print("Metrics for model: ", args.target_model)
-        print(all_metrics)
+        target_model = load_model(
+            args.model_type,
+            args.target_model,
+            args.device,
+            args.ov_config,
+            args.hf,
+            args.genai,
+        )
+        all_metrics_per_question, all_metrics = evaluator.score(
+            target_model, genai_gen_answer if args.genai else None
+        )
+        logger.info("Metrics for model: %s", args.target_model)
+        logger.info(all_metrics)
 
         if args.output:
             if not os.path.exists(args.output):
@@ -246,25 +464,11 @@ def main():
             df = pd.DataFrame(all_metrics)
             df.to_csv(os.path.join(args.output, "metrics.csv"))
 
-    if args.verbose:
-        metric_of_interest = "similarity"
-        worst_examples = evaluator.worst_examples(top_k=5, metric=metric_of_interest)
-        for i, e in enumerate(worst_examples):
-            ref_text = ""
-            actual_text = ""
-            diff = ""
-            for l1, l2 in zip(e["source_model"].splitlines(), e["optimized_model"].splitlines()):
-                if l1 == "" and l2 == "":
-                    continue
-                ref_text += l1 + "\n"
-                actual_text += l2 + "\n"
-                diff += diff_strings(l1, l2) + "\n"
-
-            print("--------------------------------------------------------------------------------------")
-            print("## Reference text {}:\n".format(i + 1), ref_text)
-            print("## Actual text {}:\n".format(i + 1), actual_text)
-            print("## Diff {}: ".format(i + 1))
-            print(diff)
+    if args.verbose and args.target_model is not None:
+        if args.model_type == "text":
+            print_text_results(evaluator)
+        elif "sd" in args.model_type:
+            print_image_results(evaluator)
 
 
 if __name__ == "__main__":

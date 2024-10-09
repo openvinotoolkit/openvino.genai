@@ -106,10 +106,22 @@ def gen_data_to_csv(result, iter_data, pretrain_time):
     result['output_size'] = iter_data['output_size']
     result['latency(ms)'] = round(latency, 5) if latency != '' else latency
     result['result_md5'] = iter_data['result_md5']
-    result['1st_latency(ms)'] = round(first_latency, 5) if first_latency != '' else first_latency
-    result['2nd_avg_latency(ms)'] = round(other_latency, 5) if other_latency != '' else other_latency
-    result['1st_infer_latency(ms)'] = round(first_token_infer_latency, 5) if first_token_infer_latency != '' else first_token_infer_latency
-    result['2nd_infer_avg_latency(ms)'] = round(other_token_infer_latency, 5) if other_token_infer_latency != '' else other_token_infer_latency
+    if first_latency < 0:
+        result['1st_latency(ms)'] = 'NA'
+    else:
+        result['1st_latency(ms)'] = round(first_latency, 5) if first_latency != '' else first_latency
+    if other_latency < 0:
+        result['2nd_avg_latency(ms)'] = 'NA'
+    else:
+        result['2nd_avg_latency(ms)'] = round(other_latency, 5) if other_latency != '' else other_latency
+    if first_token_infer_latency < 0:
+        result['1st_infer_latency(ms)'] = 'NA'
+    else:
+        result['1st_infer_latency(ms)'] = round(first_token_infer_latency, 5) if first_token_infer_latency != '' else first_token_infer_latency
+    if other_token_infer_latency < 0:
+        result['2nd_infer_avg_latency(ms)'] = 'NA'
+    else:
+        result['2nd_infer_avg_latency(ms)'] = round(other_token_infer_latency, 5) if other_token_infer_latency != '' else other_token_infer_latency
     result['max_rss_mem(MB)'] = round(rss_mem, 5) if rss_mem != '' else rss_mem
     result['max_uss_mem(MB)'] = round(uss_mem, 5) if uss_mem != '' else uss_mem
     result['max_shared_mem(MB)'] = round(shared_mem, 5) if shared_mem != '' else shared_mem

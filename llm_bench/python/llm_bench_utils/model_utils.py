@@ -25,24 +25,25 @@ def get_prompts(args):
             else:
                 raise RuntimeError('== prompt should not be empty string ==')
         else:
-            input_prompt = args['prompt_file']
-            if input_prompt.endswith('.jsonl'):
-                if os.path.exists(input_prompt):
-                    log.info(f'Read prompts from {input_prompt}')
-                    with open(input_prompt, 'r', encoding='utf-8') as f:
-                        for line in f:
-                            data = json.loads(line)
-                            if 'prompt' in data:
-                                if data['prompt'] != '':
-                                    prompts_list.append(data['prompt'])
+            input_prompt_list = args['prompt_file']
+            for input_prompt in input_prompt_list:
+                if input_prompt.endswith('.jsonl'):
+                    if os.path.exists(input_prompt):
+                        log.info(f'Read prompts from {input_prompt}')
+                        with open(input_prompt, 'r', encoding='utf-8') as f:
+                            for line in f:
+                                data = json.loads(line)
+                                if 'prompt' in data:
+                                    if data['prompt'] != '':
+                                        prompts_list.append(data['prompt'])
+                                    else:
+                                        raise RuntimeError(f'== prompt in prompt file:{input_prompt} should not be empty string ==')
                                 else:
-                                    raise RuntimeError('== prompt should not be empty string ==')
-                            else:
-                                raise RuntimeError('== key word "prompt" does not exist in prompt file ==')
+                                    raise RuntimeError(f'== key word "prompt" does not exist in prompt file:{input_prompt} ==')
+                    else:
+                        raise RuntimeError(f'== The prompt file:{input_prompt} does not exist ==')
                 else:
-                    raise RuntimeError('== The prompt file does not exist ==')
-            else:
-                raise RuntimeError('== The prompt file should be ended with .jsonl ==')
+                    raise RuntimeError(f'== The prompt file:{input_prompt} should be ended with .jsonl ==')
     return prompts_list
 
 
@@ -59,34 +60,35 @@ def get_image_param_from_prompt_file(args):
             else:
                 raise RuntimeError('== prompt should not be empty string ==')
         else:
-            input_prompt = args['prompt_file']
-            if input_prompt.endswith('.jsonl'):
-                if os.path.exists(input_prompt):
-                    log.info(f'Read prompts from {input_prompt}')
-                    with open(input_prompt, 'r', encoding='utf-8') as f:
-                        for line in f:
-                            image_param = {}
-                            data = json.loads(line)
-                            if 'prompt' in data:
-                                if data['prompt'] != '':
-                                    image_param['prompt'] = data['prompt']
+            input_prompt_list = args['prompt_file']
+            for input_prompt in input_prompt_list:
+                if input_prompt.endswith('.jsonl'):
+                    if os.path.exists(input_prompt):
+                        log.info(f'Read prompts from {input_prompt}')
+                        with open(input_prompt, 'r', encoding='utf-8') as f:
+                            for line in f:
+                                image_param = {}
+                                data = json.loads(line)
+                                if 'prompt' in data:
+                                    if data['prompt'] != '':
+                                        image_param['prompt'] = data['prompt']
+                                    else:
+                                        raise RuntimeError('== prompt in prompt file:{input_prompt} should not be empty string ==')
                                 else:
-                                    raise RuntimeError('== prompt should not be empty string ==')
-                            else:
-                                raise RuntimeError('== key word "prompt" does not exist in prompt file ==')
-                            if 'width' in data:
-                                image_param['width'] = int(data['width'])
-                            if 'height' in data:
-                                image_param['height'] = int(data['height'])
-                            if 'steps' in data:
-                                image_param['steps'] = int(data['steps'])
-                            if 'guidance_scale' in data:
-                                image_param['guidance_scale'] = float(data['guidance_scale'])
-                            image_param_list.append(image_param)
+                                    raise RuntimeError(f'== key word "prompt" does not exist in prompt file:{input_prompt} ==')
+                                if 'width' in data:
+                                    image_param['width'] = int(data['width'])
+                                if 'height' in data:
+                                    image_param['height'] = int(data['height'])
+                                if 'steps' in data:
+                                    image_param['steps'] = int(data['steps'])
+                                if 'guidance_scale' in data:
+                                    image_param['guidance_scale'] = float(data['guidance_scale'])
+                                image_param_list.append(image_param)
+                    else:
+                        raise RuntimeError(f'== The prompt file:{input_prompt} does not exist ==')
                 else:
-                    raise RuntimeError('== The prompt file does not exist ==')
-            else:
-                raise RuntimeError('== The prompt file should be ended with .jsonl ==')
+                    raise RuntimeError(f'== The prompt file:{input_prompt} should be ended with .jsonl ==')
     return image_param_list
 
 
@@ -134,6 +136,7 @@ def analyze_args(args):
     model_args['subsequent'] = args.subsequent
     model_args['output_dir'] = args.output_dir
     model_args['genai'] = args.genai
+    model_args["use_cb"] = args.use_cb
     model_args['devices'] = args.device
     model_args['prompt_index'] = [] if args.prompt_index is not None else None
     if model_args['prompt_index'] is not None:
@@ -162,6 +165,13 @@ def analyze_args(args):
         log.info(f"PT Config={model_args['config']}")
     model_args['model_type'] = get_model_type(model_name, use_case, model_framework)
     model_args['model_name'] = model_name
+
+    if args.use_cb and not args.genai:
+        raise RuntimeError("Continious batching mode supported only via OpenVINO GenAI")
+    cb_config = None
+    if args.cb_config:
+        cb_config = get_config(args.cb_config)
+    model_args["cb_config"] = cb_config
     return model_path, model_framework, model_args, model_name
 
 
@@ -194,11 +204,17 @@ def get_use_case(model_name_or_path):
 
 
 def get_config(config):
-    with open(config, 'r') as f:
+    if Path(config).is_file():
+        with open(config, 'r') as f:
+            try:
+                ov_config = json.load(f)
+            except Exception:
+                raise RuntimeError(f'==Parse file:{config} failiure, json format is incorrect ==')
+    else:
         try:
-            ov_config = json.load(f)
+            ov_config = json.loads(config)
         except Exception:
-            raise RuntimeError(f'==Parse file:{config} failiure, json format is incorrect ==')
+            raise RuntimeError(f'==Parse config:{config} failiure, json format is incorrect ==')
     return ov_config
 
 

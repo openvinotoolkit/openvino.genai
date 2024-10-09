@@ -6,6 +6,9 @@
 
 namespace ov {
 namespace genai {
+
+std::mutex Sequence::m_counter_mutex;
+
 size_t Sequence::_make_hash(size_t content_length) {
         auto sequence_group = get_sequence_group_ptr();
         auto block_size = sequence_group->get_block_size();

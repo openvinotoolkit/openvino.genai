@@ -1,10 +1,15 @@
 """
 Metrics for text similarity
 """
+
 from difflib import SequenceMatcher
+from PIL import Image
+import torch
+import torch.nn.functional as F
 
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
+from transformers import CLIPImageProcessor, CLIPModel
 from tqdm import tqdm
 
 
@@ -68,9 +73,7 @@ def evaluate_divergency(tokenizer, data_gold, data_prediction):
             fdt_list.append(fdt)
 
             num_matched = sum(block.size for block in blocks)
-            sdt = (
-                len(b_indexes) - num_matched
-            )
+            sdt = len(b_indexes) - num_matched
             sdt_list.append(sdt)
             sdt_norm = sdt / len(b_indexes)
             sdtn_list.append(sdt_norm)
@@ -104,7 +107,7 @@ def evaluate_divergency(tokenizer, data_gold, data_prediction):
     return metric_dict, metric_per_question
 
 
-class SimilarityMetric:
+class TextSimilarity:
     def __init__(self, model_id) -> None:
         self.model = SentenceTransformer(model_id)
 
@@ -112,9 +115,47 @@ class SimilarityMetric:
         return evaluate_similarity(self.model, gt, prediction)
 
 
-class DivergencyMetric:
+class TextDivergency:
     def __init__(self, tokenizer) -> None:
         self.tokenizer = tokenizer
 
     def evaluate(self, gt, prediction):
         return evaluate_divergency(self.tokenizer, gt, prediction)
+
+
+# Image metrics
+def evaluate_image_similarity(processor, model, data_gold, data_prediction):
+    images_gold = data_gold["images"].values
+    images_prediction = data_prediction["images"].values
+
+    metric_per_image = []
+    for gold, prediction in tqdm(
+        zip(images_gold, images_prediction), desc="Image Similarity evaluation"
+    ):
+        gold_image = Image.open(gold)
+        prediction_image = Image.open(prediction)
+
+        gold_inputs = processor(images=gold_image, return_tensors="pt")["pixel_values"]
+        prediction_inputs = processor(images=prediction_image, return_tensors="pt")[
+            "pixel_values"
+        ]
+
+        with torch.no_grad():
+            gold_outputs = model.get_image_features(gold_inputs)
+            prediction_outputs = model.get_image_features(prediction_inputs)
+
+        cos_sim = F.cosine_similarity(gold_outputs, prediction_outputs)
+        print("cos_sim: ", cos_sim.item())
+        metric_per_image.append(cos_sim.item())
+
+    metric_dict = {"similarity": np.mean(metric_per_image)}
+    return metric_dict, {"similarity": metric_per_image}
+
+
+class ImageSimilarity:
+    def __init__(self, model_id) -> None:
+        self.processor = CLIPImageProcessor.from_pretrained(model_id)
+        self.model = CLIPModel.from_pretrained(model_id).eval()
+
+    def evaluate(self, gt, prediction):
+        return evaluate_image_similarity(self.processor, self.model, gt, prediction)

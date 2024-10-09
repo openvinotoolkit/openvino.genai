@@ -13,16 +13,21 @@ if hasattr(os, "add_dll_directory"):
 
 from .py_generate_pipeline import (
     ContinuousBatchingPipeline,
-    DecodedResults, 
-    EncodedResults, 
-    GenerationConfig, 
+    DecodedResults,
+    EncodedResults,
+    GenerationConfig,
     GenerationResult,
     LLMPipeline, 
+    VLMPipeline, 
     PerfMetrics,
     RawPerfMetrics,
     SchedulerConfig,
     StopCriteria,
-    StreamerBase, 
+    StreamerBase,
     TokenizedInputs,
-    Tokenizer
+    Tokenizer,
+    WhisperGenerationConfig,
+    WhisperPipeline,
+    CacheEvictionConfig,
+    AggregationMode,
 )

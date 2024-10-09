@@ -1,4 +1,4 @@
-name: macOS (12, Python 3.8)
+name: macOS (12, Python 3.9)
 on:
   workflow_dispatch:
   pull_request:
@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.8'
-  OV_BRANCH: 'master'
+  PYTHON_VERSION: '3.9'
+  OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   OV_TARBALL: ''
 
 permissions: read-all # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
@@ -227,7 +227,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/tools --upgrade-strategy eager
-          python -m pytest ./tests/python_tests/
+          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
 
@@ -236,7 +236,71 @@ jobs:
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
           python -c "from openvino_genai import LLMPipeline"
-          python -m pytest ./tests/python_tests/
+          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py
+
+  genai_python_lib_whisper:
+    name: OpenVINO genai extension whisper tests (cmake + wheel)
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    runs-on: macos-13
+
+    env:
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@v4
+        with:
+          name: openvino_package
+          path: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${OV_INSTALL_DIR}
+            tar -xzf openvino_package.tar.gz -C ${OV_INSTALL_DIR} --strip-components=1
+          popd
+
+      - name: Install build dependencies
+        run: brew install coreutils ninja scons
+
+      - name: Build genai
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+
+      - name: Test bindings
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/tools --upgrade-strategy eager
+          python -m pytest ./tests/python_tests/test_whisper_generate_api.py
+        env:
+          PYTHONPATH: "./build/:$PYTHONPATH"
+
+      - name: Test bindings (wheel)
+        run: |
+          source ${OV_INSTALL_DIR}/setupvars.sh
+          python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
+          python -c "from openvino_genai import LLMPipeline"
+          python -m pytest ./tests/python_tests/test_whisper_generate_api.py
 
   genai_package:
     name: OpenVINO genai extension (install to OpenVINO package)
@@ -322,11 +386,11 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+          timeout 26s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
 
   Overall_Status:
-    name: ci/gha_overall_status_linux
-    needs: [openvino_download, openvino_build, genai_python_lib, genai_package]
+    name: ci/gha_overall_status_macos
+    needs: [openvino_download, openvino_build, genai_python_lib, genai_package, genai_python_lib_whisper]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

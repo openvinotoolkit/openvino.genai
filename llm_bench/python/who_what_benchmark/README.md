@@ -46,7 +46,6 @@ metrics_per_prompt, metrics = evaluator.score(optimized_model, test_data=prompts
 
 ### Installing
 
-* git clone https://github.com/andreyanufr/who_what_benchmark.git
 * python -m venv eval_env
 * source eval_env/bin/activate
 * pip install -r requirements.txt
@@ -56,27 +55,36 @@ metrics_per_prompt, metrics = evaluator.score(optimized_model, test_data=prompts
 ```sh
 wwb --help
 
-# run ground truth generation for uncompressed model on the first 32 samples from squad dataset
-# ground truth will be saved in llama_2_7b_squad_gt.csv file
+# Run ground truth generation for uncompressed model on the first 32 samples from squad dataset
+# Ground truth will be saved in llama_2_7b_squad_gt.csv file
 wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_squad_gt.csv --dataset squad --split validation[:32] --dataset-field question
 
-# run comparison with compressed model on the first 32 samples from squad dataset
+# Run comparison with compressed model on the first 32 samples from squad dataset
 wwb --target-model /home/user/models/Llama_2_7b_chat_hf_int8 --gt-data llama_2_7b_squad_gt.csv --dataset squad --split validation[:32] --dataset-field question
 
-# output will be like this
+# Output will be like this
 #   similarity        FDT        SDT  FDT norm  SDT norm
 # 0    0.972823  67.296296  20.592593  0.735127  0.151505
 
-# run ground truth generation for uncompressed model on internal set of questions
-# ground truth will be saved in llama_2_7b_squad_gt.csv file
+# Run ground truth generation for uncompressed model on internal set of questions
+# Ground truth will be saved in llama_2_7b_squad_gt.csv file
 wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv
 
-# run comparison with compressed model on internal set of questions
+# Run comparison with compressed model on internal set of questions
 wwb --target-model /home/user/models/Llama_2_7b_chat_hf_int8 --gt-data llama_2_7b_wwb_gt.csv
 
-## Control the number of samples and use verbose mode to see the difference in the results
+# Use --num-samples to control the number of samples
 wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv --num-samples 10
+
+# Use -v for verbose mode to see the difference in the results
 wwb --target-model /home/user/models/Llama_2_7b_chat_hf_int8 --gt-data llama_2_7b_wwb_gt.csv  --num-samples 10 -v
+
+# Use --hf AutoModelForCausalLM to instantiate the model from model_id/folder
+wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv --hf
+
+# Use --language parameter to control the language of promts
+# Autodetection works for basic Chinese models 
+wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv --hf
 ```
 
 ### Supported metrics

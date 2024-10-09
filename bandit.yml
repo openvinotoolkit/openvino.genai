@@ -131,7 +131,7 @@ any_other_function_with_shell_equals_true:
   - subprocess.check_output
   - subprocess.run
 assert_used:
-  skips: []
+  skips: ["llm_bench/python/who_what_benchmark/tests/test_*.py"]
 hardcoded_tmp_directory:
   tmp_dirs:
   - /tmp

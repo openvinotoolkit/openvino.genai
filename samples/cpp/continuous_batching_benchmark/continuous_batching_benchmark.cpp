@@ -14,6 +14,7 @@
 #include <nlohmann/json.hpp>
 #include <cxxopts.hpp>
 
+#include "openvino/genai/cache_eviction.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_handle.hpp"
@@ -121,6 +122,7 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
 
         ov::genai::GenerationConfig greedy_search = ov::genai::greedy();
         greedy_search.max_new_tokens = std::min(max_output_len, output_len);
+        greedy_search.ignore_eos = true;
         greedy_search.repetition_penalty = 1.0;
         greedy_search.frequency_penalty = 0.0;
         greedy_search.presence_penalty = 0.0;
@@ -228,14 +230,16 @@ public:
 
     GenerationMetrics get_metrics() {
         GenerationMetrics generation_metrics;
-        for (auto& sequenceInfoPair : sequences_info) {
-            generation_metrics.mean_ttft += sequenceInfoPair.second.ttft;
-            generation_metrics.mean_tpot += sequenceInfoPair.second.mean_tpot;
-            generation_metrics.num_output_tokens += sequenceInfoPair.second.num_output_tokens;
+        if (!sequences_info.empty()) {
+            for (auto& sequenceInfoPair : sequences_info) {
+                generation_metrics.mean_ttft += sequenceInfoPair.second.ttft;
+                generation_metrics.mean_tpot += sequenceInfoPair.second.mean_tpot;
+                generation_metrics.num_output_tokens += sequenceInfoPair.second.num_output_tokens;
+            }
+            generation_metrics.mean_ttft /= sequences_info.size();
+            generation_metrics.mean_tpot /= sequences_info.size();
+            generation_metrics.num_input_tokens = input_len;
         }
-        generation_metrics.mean_ttft /= sequences_info.size();
-        generation_metrics.mean_tpot /= sequences_info.size();
-        generation_metrics.num_input_tokens = input_len;
         return generation_metrics;
     }
 };
@@ -437,6 +441,7 @@ int main(int argc, char* argv[]) try {
     ("cache_size", "Size of memory used for KV cache in GB. Default: 16", cxxopts::value<size_t>()->default_value("16"))
     ("device", "Target device to run the model. Default: CPU", cxxopts::value<std::string>()->default_value("CPU"))
     ("device_config", "Plugin configuration JSON. Example: '{\"MODEL_DISTRIBUTION_POLICY\":\"TENSOR_PARALLEL\",\"PERF_COUNT\":true}' Default: {\"PERF_COUNT\":true}", cxxopts::value<std::string>()->default_value("{\"PERF_COUNT\":true}"))
+    ("use_cache_eviction", "Whether to use cache eviction", cxxopts::value<bool>()->default_value("false"))
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -464,6 +469,7 @@ int main(int argc, char* argv[]) try {
     const std::string device = result["device"].as<std::string>();
     const std::string device_config = result["device_config"].as<std::string>();
     const size_t cache_size = result["cache_size"].as<size_t>();
+    const bool use_cache_eviction = result["use_cache_eviction"].as<bool>();
 
     // Create requests for generation
     Dataset dataset = filtered_dataset(models_path, dataset_path, num_prompts, max_input_len, max_output_len);
@@ -483,7 +489,11 @@ int main(int argc, char* argv[]) try {
     scheduler_config.cache_size = cache_size,
     scheduler_config.block_size = get_default_block_size(device),
     scheduler_config.dynamic_split_fuse = dynamic_split_fuse,
-    scheduler_config.max_num_seqs = 256, // not used if dynamic_split_fuse=True
+    scheduler_config.max_num_seqs = 256; // not used if dynamic_split_fuse=True
+    if (use_cache_eviction) {
+        scheduler_config.use_cache_eviction = true;
+        scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(32, 32, 128, ov::genai::AggregationMode::NORM_SUM);
+    }
 
     std::cout << "Benchmarking parameters: " << std::endl;
     std::cout << "\tMax number of batched tokens: " << scheduler_config.max_num_batched_tokens << std::endl;

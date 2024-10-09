@@ -36,6 +36,7 @@ public:
 
     Tokenizer m_tokenizer;
     GenerationConfig m_generation_config;
+    std::optional<AdapterController> m_adapter_controller;
 
     float m_load_time_ms  = 0;
 };

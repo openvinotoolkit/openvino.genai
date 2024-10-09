@@ -10,6 +10,7 @@
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "lora_adapter.hpp"
 
 namespace ov {
 namespace genai {
@@ -24,9 +25,9 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
 
 /**
  * @brief Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
- * and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will 
+ * and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
  * be used while greedy and beam search parameters will not affect decoding at all.
- * 
+ *
  * Generic parameters:
  * @param max_length the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
  *        `max_new_tokens`. Its effect is overridden by `max_new_tokens`, if also set.
@@ -34,10 +35,11 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  * @param ignore_eos if set to true, then generation will not stop even if <eos> token is met.
  * @param eos_token_id token_id of <eos> (end of sentence)
  * @param min_new_tokens set 0 probability for eos_token_id for the first eos_token_id generated tokens. Ignored for non continuous batching.
+ *
  * @param stop_strings vector of strings that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
  * @param include_stop_str_in_output if set to true stop string that matched generation will be included in generation output (default: false)
  * @param stop_token_ids vector of tokens that will cause pipeline to stop generating further tokens. Ignored for non continuous batching.
- * 
+ *
  * Beam search specific parameters:
  * @param num_beams number of beams for beam search. 1 disables beam search.
  * @param num_beam_groups number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
@@ -49,11 +51,11 @@ enum class StopCriteria { EARLY, HEURISTIC, NEVER };
  *        `length_penalty` < 0.0 encourages shorter sequences.
  * @param num_return_sequences the number of sequences to return for grouped beam search decoding per batch element. num_return_sequences must be less or equel to num_beams.
  * @param no_repeat_ngram_size if set to int > 0, all ngrams of that size can only occur once.
- * @param stop_criteria controls the stopping condition for grouped beam search. It accepts the following values: 
- *        "EARLY", where the generation stops as soon as there are `num_beams` complete candidates; "HEURISTIC", where an 
+ * @param stop_criteria controls the stopping condition for grouped beam search. It accepts the following values:
+ *        "EARLY", where the generation stops as soon as there are `num_beams` complete candidates; "HEURISTIC", where an
  *        "HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
  *        "NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
- * 
+ *
  * Random sampling parameters:
  * @param temperature the value used to modulate token probabilities for random sampling.
  * @param top_p - if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
@@ -76,7 +78,7 @@ public:
     size_t max_length = SIZE_MAX;
     bool ignore_eos = false;
     size_t min_new_tokens = 0;
-    
+
     std::set<std::string> stop_strings;
     // Default setting in vLLM (and OpenAI API) is not to include stop string in the output
     bool include_stop_str_in_output = false;
@@ -90,7 +92,7 @@ public:
     size_t num_return_sequences = 1;
     size_t no_repeat_ngram_size = std::numeric_limits<size_t>::max();
     StopCriteria stop_criteria = StopCriteria::HEURISTIC;
-    
+
     // Multinomial
     float temperature = 1.0f;
     float top_p = 1.0f;
@@ -104,6 +106,9 @@ public:
     // EOS special token
     int64_t eos_token_id = -1;
 
+    // Optional adapters
+    AdapterConfig adapters;
+
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
      */
@@ -113,13 +118,13 @@ public:
     bool is_greedy_decoding() const;
     bool is_beam_search() const;
     bool is_multinomial() const;
-    void update_generation_config(const ov::AnyMap& config_map = {});
-    
+    void update_generation_config(const ov::AnyMap& config_map);
+
     template <typename... Properties>
     util::EnableIfAllStringAny<void, Properties...> update_generation_config(Properties&&... properties) {
         return update_generation_config(AnyMap{std::forward<Properties>(properties)...});
     }
-    
+
     /// @brief checks that are no conflicting parameters, e.g. do_sample=true and num_beams > 1.
     /// @throws Exception if config is invalid.
     void validate() const;

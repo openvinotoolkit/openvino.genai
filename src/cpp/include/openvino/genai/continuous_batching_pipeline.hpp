@@ -13,20 +13,45 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/visibility.hpp"
+#include "cache_eviction.hpp"
 
 namespace ov::genai {
-struct PipelineMetrics { 
-    // All requests as viewed by the pipeline
+
+/**
+ * @brief Contains general pipeline metrics, either aggregated throughout the lifetime of the generation pipeline
+ * or measured at the previous generation step.
+ */
+struct PipelineMetrics {
+    /**
+     * Number of requests to be processed by the pipeline.
+     */
     size_t requests = 0;
-    // Requests scheduled for processing
+
+    /**
+     * Number of requests that were scheduled for processing at the previous step of the pipeline.
+     */
     size_t scheduled_requests = 0;
-    // Percentage of KV cache usage
+
+    /**
+    * Percentage of KV cache usage in the last generation step.
+    */
     float cache_usage = 0.0;
+
+    /**
+    * Max KV cache usage during the lifetime of the pipeline in %
+    */
+    float max_cache_usage = 0.0;
+
+    /**
+    * Running average of the KV cache usage during the lifetime of the pipeline, with max window size of 1000 steps
+    */
+    float avg_cache_usage = 0.0;
 };
 
 class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {
-    class Impl;
-    std::shared_ptr<Impl> m_impl;
+    class ImplInterface;
+    class ContinuousBatchingImpl;
+    std::shared_ptr<ImplInterface> m_impl;
 
 public:
     ContinuousBatchingPipeline(const std::string& models_path,
@@ -56,7 +81,11 @@ public:
 
     ov::genai::GenerationConfig get_config() const;
 
-    PipelineMetrics get_metrics() const;
+    /**
+     * Allows to get the current pipeline metrics.
+     * @return The struct with pipeline metrics for the previous generation step.
+     */
+    ov::genai::PipelineMetrics get_metrics() const;
 
     GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids, const ov::genai::GenerationConfig& sampling_params);
     GenerationHandle add_request(uint64_t request_id, const std::string& prompt, const ov::genai::GenerationConfig& sampling_params);

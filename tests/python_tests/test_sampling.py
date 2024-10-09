@@ -21,7 +21,8 @@ from common import run_test_pipeline, get_models_list, get_model_and_tokenizer, 
     get_beam_search, get_beam_search_min_and_max_tokens, get_beam_search_with_single_stop_string, \
     get_beam_search_with_multiple_stop_strings, get_beam_search_with_multiple_stop_strings_no_match, get_multinomial_max_and_min_token, \
     get_multinomial_temperature_and_frequence_penalty, get_multinomial_temperature_and_presence_penalty, \
-    generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty, get_scheduler_config
+    generate_and_compare_with_hf, get_multinomial_temperature_and_repetition_penalty, get_scheduler_config, \
+    run_continuous_batching
 
 
 @pytest.mark.precommit
@@ -290,7 +291,6 @@ RANDOM_SAMPLING_TEST_CASES = [
 
 
 @pytest.mark.precommit
-@pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
 @pytest.mark.parametrize("test_struct", RANDOM_SAMPLING_TEST_CASES,
         ids=["multinomial_temperature",
              "multinomial_temperature_and_top_p",
@@ -315,7 +315,11 @@ def test_individual_generation_configs_random(tmp_path, test_struct: RandomSampl
     model_path : Path = tmp_path / model_id
     save_ov_model_from_optimum(model, hf_tokenizer, model_path)
 
-    generate_and_compare_with_reference_text(model_path, prompts, test_struct.ref_texts, generation_configs, DEFAULT_SCHEDULER_CONFIG)
+    # run multinomial without comparison with reference
+    _ = run_continuous_batching(model_path, DEFAULT_SCHEDULER_CONFIG, prompts, generation_configs)
+
+    # Reference comparison is not performed as sampling results are non-deterministic.
+    # Discrete_distribution impl depends on platform, model inference results may depend on CPU.
 
 
 

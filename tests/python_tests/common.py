@@ -12,6 +12,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import GenerationConfig as HFGenerationConfig
 from typing import List, Tuple
 
+TESTS_ROOT = Path(__file__).parent
 
 def get_greedy() -> GenerationConfig:
     generation_config = GenerationConfig()
@@ -230,7 +231,7 @@ def get_test_dataset() -> Tuple[List[str], List[GenerationConfig]]:
         get_greedy(),
         get_beam_search(),
         get_greedy(),
-        get_beam_search()
+        get_beam_search(),
     ]
     return (prompts, generation_configs)
 

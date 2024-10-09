@@ -8,10 +8,6 @@ def print_metrics(
         iter_num, iter_data, tms=None, tms_infer=None, warm_up=False, max_rss_mem=-1, max_shared_mem=-1,
         max_uss_mem=-1, stable_diffusion=None, tokenization_time=None, batch_size=1
 ):
-    if tms is None:
-        tms = []
-    if tms_infer is None:
-        tms_infer = []
     iter_str = str(iter_num)
     if warm_up:
         iter_str = 'warm-up'
@@ -36,25 +32,27 @@ def print_metrics(
     if output_str != '':
         output_str = ' '.join(['[{}]'.format(iter_str), output_str])
         log.info(output_str)
-    if len(tms) > 0:
+    if tms is not None:
         iter_data['first_token_latency'] = tms[0] * 1000 if len(tms) > 0 else -1
         iter_data['other_tokens_avg_latency'] = sum(tms[1:]) / (len(tms) - 1) * 1000 if len(tms) > 1 else -1
+        first_token_latency = 'NA' if iter_data['first_token_latency'] == -1 else f"{iter_data['first_token_latency']:.2f} ms/{latency_unit}"
+        other_token_latency = 'NA' if iter_data['other_tokens_avg_latency'] == -1 else f"{iter_data['other_tokens_avg_latency']:.2f} ms/{latency_unit}"
         log.info(
-            f"[{iter_str}] First token latency: {iter_data['first_token_latency']:.2f} ms/{latency_unit}, "
-            f"other tokens latency: {iter_data['other_tokens_avg_latency']:.2f} ms/{latency_unit}, len of tokens: {len(tms)} * {batch_size}",
+            f"[{iter_str}] First token latency: {first_token_latency}, "
+            f"other tokens latency: {other_token_latency}, len of tokens: {len(tms)} * {batch_size}",
         )
-    else:
-        if tokenization_time:
+        if len(tms) == 0:
             log.warning(f'[{iter_str}] No hook data output for first token latency and other tokens latency')
-    if len(tms_infer) > 0:
+    if tms_infer is not None:
         iter_data['first_token_infer_latency'] = tms_infer[0] * 1000 if len(tms_infer) > 0 else -1
         iter_data['other_tokens_infer_avg_latency'] = sum(tms_infer[1:]) / (len(tms_infer) - 1) * 1000 if len(tms_infer) > 1 else -1
+        first_infer_latency = 'NA' if iter_data['first_token_infer_latency'] == -1 else f"{iter_data['first_token_infer_latency']:.2f} ms/infer"
+        other_infer_latency = 'NA' if iter_data['other_tokens_infer_avg_latency'] == -1 else f"{iter_data['other_tokens_infer_avg_latency']:.2f} ms/infer"
         log.info(
-            f"[{iter_str}] First infer latency: {iter_data['first_token_infer_latency']:.2f} ms/infer, "
-            f"other infers latency: {iter_data['other_tokens_infer_avg_latency']:.2f} ms/infer, inference count: {len(tms_infer)}",
+            f"[{iter_str}] First infer latency: {first_infer_latency}, "
+            f"other infers latency: {other_infer_latency}, inference count: {len(tms_infer)}",
         )
-    else:
-        if tokenization_time:
+        if len(tms_infer) == 0:
             log.warning(f'[{iter_str}] No hook data output for first infer latency and other infers latency')
     if stable_diffusion is not None:
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion)
@@ -112,8 +110,10 @@ def print_ldm_unet_vqvae_infer_latency(iter_num, iter_data, tms=None, warm_up=Fa
     iter_data['first_token_infer_latency'] = iter_data['first_token_latency']
     iter_data['other_tokens_infer_avg_latency'] = iter_data['other_tokens_avg_latency']
 
-    log.info(f"[{iter_str}] First step of unet latency: {iter_data['first_token_latency']:.2f} ms/step, "
-             f"other steps of unet latency: {iter_data['other_tokens_avg_latency']:.2f} ms/step",)
+    first_token_latency = 'NA' if iter_data['first_token_latency'] == -1 else f"{iter_data['first_token_latency']:.2f} ms/step"
+    other_token_latency = 'NA' if iter_data['other_tokens_avg_latency'] == -1 else f"{iter_data['other_tokens_avg_latency']:.2f} ms/step"
+    log.info(f"[{iter_str}] First step of unet latency: {first_token_latency}, "
+             f"other steps of unet latency: {other_token_latency}",)
     if len_tms > 1:
         log.info(f"[{iter_str}] Unet latency: {(sum(tms[0:(len_tms - 1)]) / (len_tms - 1)) * 1000:.2f} ms/step, "
                  f"vqvae decoder latency: {tms[len_tms - 1] * 1000:.2f} ms/step, "
@@ -149,14 +149,17 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
                     latency_unit = '{}tokens'.format(batch_size)
                 else:
                     latency_unit = '{}steps'.format(batch_size)
+            avg_1st_token_latency = 'NA' if avg_1st_token_latency < 0 else f'{avg_1st_token_latency:.2f} ms/{latency_unit}'
+            avg_2nd_tokens_latency = 'NA' if avg_2nd_tokens_latency < 0 else f'{avg_2nd_tokens_latency:.2f} ms/{latency_unit}'
+            avg_2nd_token_tput = 'NA' if avg_2nd_tokens_latency == 'NA' else f'{avg_2nd_token_tput:.2f} {latency_unit}s/s'
             if is_text_gen is True:
-                prompt_dict[p_idx] = '\n[ INFO ] [Average] Prompt[{}] Input token size: {}, 1st token lantency: {:.2f} ms/{}, ' \
-                    '2nd tokens latency: {:.2f} ms/{}, 2nd tokens throughput: {:.2f} tokens/s' \
-                    .format(p_idx, avg_input_size, avg_1st_token_latency, latency_unit, avg_2nd_tokens_latency, latency_unit, avg_2nd_token_tput)
+                prompt_dict[p_idx] = '\n[ INFO ] [Average] Prompt[{}] Input token size: {}, 1st token lantency: {}, ' \
+                    '2nd token lantency: {}, 2nd tokens throughput: {}' \
+                    .format(p_idx, avg_input_size, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput)
             else:
-                prompt_dict[p_idx] = '\n[ INFO ] [Average] Prompt[{}] 1st step of unet latency {:.2f} ms/{}, ' \
-                    '2nd steps of unet latency: {:.2f} ms/{}, 2nd steps throughput: {:.2f} steps/s' \
-                    .format(p_idx, avg_1st_token_latency, latency_unit, avg_2nd_tokens_latency, latency_unit, avg_2nd_token_tput)
+                prompt_dict[p_idx] = '\n[ INFO ] [Average] Prompt[{}] 1st step of unet latency: {}, ' \
+                    '2nd steps of unet latency: {}, 2nd steps throughput: {}' \
+                    .format(p_idx, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput)
 
 
 def print_average(iter_data_list, prompt_idx_list, batch_size, is_text_gen=False):
