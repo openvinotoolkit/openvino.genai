@@ -73,7 +73,6 @@ EncodedResults greedy_decoding(
     bool all_are_eos = std::all_of(eos_met.begin(), eos_met.end(), [](int elem) { return elem == 1; });
     if (!generation_config.ignore_eos && all_are_eos)
         return results;
-    
 
     for (size_t i = 0; i < max_new_tokens - 1; ++i) {
         if (position_ids.has_value())
