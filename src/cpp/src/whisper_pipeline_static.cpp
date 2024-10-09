@@ -42,6 +42,19 @@ void suppress_tokens(ov::Tensor& logits, const size_t batch_idx, const std::vect
     }
 }
 
+template <typename T>
+void fill_tensor(ov::Tensor tensor, T fill_val) {
+    auto* tensor_data = tensor.data<T>();
+    std::fill(tensor_data, tensor_data + tensor.get_size(), fill_val);
+}
+
+template <typename T>
+void copy_to_tensor(const std::vector<T>& src_vec, ov::Tensor dst_tensor) {
+    auto* dst_ptr = dst_tensor.data<T>();
+    OPENVINO_ASSERT(src_vec.size() == dst_tensor.get_size());
+    std::copy(src_vec.begin(), src_vec.end(), dst_ptr);
+}
+
 ov::Tensor encode(ov::InferRequest& request,
                   std::vector<float>& mel_data,
                   const size_t feature_size,
@@ -69,7 +82,7 @@ ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, si
     return ov::Tensor(tensor, start_shape, end_shape);
 }
 
-void copy_cross_attn_key_value(ov::InferRequest& source, ov::InferRequest& dest) {
+void set_cross_attn_key_value(ov::InferRequest& source, ov::InferRequest& dest) {
     // NB: Source outputs:
     // present_key_values.0.encoder.key
     // present_key_values.0.encoder.value
@@ -83,13 +96,9 @@ void copy_cross_attn_key_value(ov::InferRequest& source, ov::InferRequest& dest)
         if (source_output_name.find("encoder") == std::string::npos) {
             continue;
         }
-
         std::string with_past_input_name =
             std::regex_replace(source_output_name, std::regex("present"), "past");
-
-        auto src_kv_tensor = source.get_tensor(source_output_name);
-        auto dst_kv_tensor = dest.get_tensor(with_past_input_name);
-        src_kv_tensor.copy_to(dst_kv_tensor);
+        dest.set_tensor(with_past_input_name, source.get_tensor(source_output_name));
     }
 }
 
@@ -127,14 +136,10 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
                std::vector<int32_t>& input_ids,
                const ov::genai::WhisperGenerationConfig& config,
                bool do_suppress_tokens = true) {
-    decoder.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
-
-    ov::Tensor input_ids_tensor(ov::element::i32, { 1, input_ids.size() }, input_ids.data());
-    decoder.set_tensor("input_ids", input_ids_tensor);
-
-    std::vector<ov::float16> attention_mask(input_ids.size(), 1);
-    ov::Tensor attention_mask_tensor(ov::element::f16, { 1, attention_mask.size() }, attention_mask.data());
-    decoder.set_tensor("attention_mask", attention_mask_tensor);
+    // NB: Fill decoder inputs
+    encoder_hidden_state.copy_to(decoder.get_tensor("encoder_hidden_states"));
+    copy_to_tensor(input_ids, decoder.get_tensor("input_ids"));
+    fill_tensor<ov::float16>(decoder.get_tensor("attention_mask"), 1);
 
     decoder.infer();
 
@@ -170,14 +175,12 @@ int64_t decode_with_past(ov::InferRequest& decoder_with_past,
 
 void zero_past_key_values(ov::InferRequest& request) {
     for (auto& input : request.get_compiled_model().inputs()) {
-        std::string input_name = input.get_any_name();
-        if (input_name.find("decoder") == std::string::npos ||
-            input_name.find("past_key_values") == std::string::npos) {
+        std::string past_key_value_decoder_name = input.get_any_name();
+        if (past_key_value_decoder_name.find("decoder") == std::string::npos ||
+            past_key_value_decoder_name.find("past_key_values") == std::string::npos) {
             continue;
         }
-        auto dst_kv_tensor = request.get_tensor(input_name);
-        auto* tensor_ptr = dst_kv_tensor.data<float>();
-        std::fill(tensor_ptr, tensor_ptr + dst_kv_tensor.get_size(), 0u);
+        fill_tensor<float>(request.get_tensor(past_key_value_decoder_name), 0);
     }
 }
 
@@ -191,7 +194,7 @@ void prepare_decoder_with_past(ov::InferRequest& decoder_with_past, ov::InferReq
     // NB: Zero past_key_values.*.decoder.value tensors
     zero_past_key_values(decoder_with_past);
     // NB: Copy KV-caches from decoder
-    copy_cross_attn_key_value(decoder, decoder_with_past);
+    set_cross_attn_key_value(decoder, decoder_with_past);
     update_past_key_value(decoder, decoder_with_past);
 };
 
