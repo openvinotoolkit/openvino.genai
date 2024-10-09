@@ -25,11 +25,12 @@ All scenarios are run on top of OpenVINO Runtime that supports inference on CPU,
 
 OpenVINO™ GenAI library provides transparent way to use state of the art generation optimizations:
 - Speculative decoding that employs two models of different size and uses large model to periodically correct results of small model. See [here](https://pytorch.org/blog/hitchhikers-guide-speculative-decoding/) for more detailed overview
-- Lookahead decoding that attempts to guess multiple tokens based on historical context and corrects this guess using LLMs. See [here](https://lmsys.org/blog/2023-11-21-lookahead-decoding/) for more detailed overview
 - KVCache token eviction algorithm that reduces size of the KVCache by pruning less impacting tokens.
 
 Additionally, OpenVINO™ GenAI library implements continuous batching approach to use OpenVINO within LLM serving. Continuous batching library could be used in LLM serving frameworks and supports following features:
 - Prefix caching that caches fragments of previous generation requests and corresponding KVCache entries internally and uses them in case of repeated query. See [here](https://google.com) for more detailed overview
+
+Continuous batching functionality is used within OpenVINO Model Server (OVMS) to serve LLMs, see [here](https://docs.openvino.ai/2024/ovms_docs_llm_reference.html) for more details.
 
 ## Installing OpenVINO GenAI
 
@@ -47,7 +48,7 @@ Additionally, OpenVINO™ GenAI library implements continuous batching approach 
 
 ## Performing text generation 
 <details>
-For more examples check out our [LLM Cheat Sheet](https://docs.openvino.ai)
+For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 ### Converting and compressing text generation model from Hugging Face library
 
@@ -92,7 +93,7 @@ int main(int argc, char* argv[]) {
 ## Performing image generation
 
 <details>
-For more examples check out our [LLM Cheat Sheet](https://docs.openvino.ai)
+For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 ### Converting and compressing image generation model from Hugging Face library
 
@@ -138,7 +139,7 @@ int main(int argc, char* argv[]) {
 
 ## Speech to text processing using Whisper Pipeline
 <details>
-For more examples check out our [LLM Cheat Sheet](https://docs.openvino.ai)
+For more examples check out our [LLM Inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 
 NOTE: Whisper Pipeline requires preprocessing of audio input (to adjust sampling rate and normalize)
  
@@ -231,6 +232,7 @@ int main(int argc, char* argv[]) try {
 
 ## Additional materials
 
+- [List of supported models](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/SUPPORTED_MODELS.md) (NOTE: models can work, but were not tried yet)
 - [OpenVINO LLM inference Guide](https://docs.openvino.ai/2024/learn-openvino/llm_inference_guide.html)
 - [Optimum-intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
 
