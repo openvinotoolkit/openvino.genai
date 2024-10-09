@@ -683,7 +683,7 @@ jobs:
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
-  py-vlm_chat_sample-ubuntu:
+  cpp-vlm_chat_sample-ubuntu:
     runs-on: ubuntu-22.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -715,6 +715,43 @@ jobs:
           source ./ov/setupvars.sh
           && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11
           <<< $'What is on the image?\nWhat is special on the image?'
+
+  py-vlm_chat_sample-ubuntu:
+    runs-on: ubuntu-22.04-16-cores
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_u22_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Build app
+        run: |
+          source ./ov/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+      - name: Download and convert and model
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
+          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
+          
+      - name: Run chat sample
+        run: |
+          source ./ov/setupvars.sh
+          export PYTHONPATH=./build/:$PYTHONPATH
+          printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
+          timeout 120s python ./samples/python/vlm_chat_sample/vlm_chat_sample.py ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11 < input.txt > ./pred.txt
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
