@@ -18,7 +18,7 @@ enum class OPENVINO_GENAI_EXPORTS VLMModelType {
 
 inline VLMModelType to_vlm_model_type(const std::string& value) {
     static const std::unordered_map<std::string, VLMModelType> model_types_map = {
-        {"minicpm", VLMModelType::MINICPM},
+        {"minicpmv", VLMModelType::MINICPM},
         {"llava", VLMModelType::LLAVA}
     };
 
