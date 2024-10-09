@@ -165,8 +165,10 @@ void GenerationConfig::validate() const {
     if (is_speculative_decoding()) {
         if (assistant_confidence_threshold != 0.f) {
             OPENVINO_ASSERT(num_assistant_tokens == 0);
+            OPENVINO_ASSERT(num_assistant_tokens_schedule == NumAssistatantTokensScheduleType::HEURISTIC);
         } else {
             OPENVINO_ASSERT(num_assistant_tokens > 0);
+            OPENVINO_ASSERT(num_assistant_tokens_schedule == NumAssistatantTokensScheduleType::CONSTANT);
         };
     }
 }

@@ -101,3 +101,43 @@ TEST(GenerationConfigTest, valid_frequency_penalty) {
     config.frequency_penalty = -2.0;
     EXPECT_NO_THROW(config.validate());
 }
+
+TEST(GenerationConfigTest, invalid_static_spec_decoding) {
+    GenerationConfig config = speculative_decoding_greedy();
+    config.num_assistant_tokens_schedule = NumAssistatantTokensScheduleType::CONSTANT;
+    config.num_assistant_tokens = 0;
+    config.assistant_confidence_threshold = 0.5;
+    EXPECT_THROW(config.validate(), ov::Exception);
+    config.num_assistant_tokens_schedule = NumAssistatantTokensScheduleType::HEURISTIC;
+    config.num_assistant_tokens = 5;
+    config.assistant_confidence_threshold = 0;
+    EXPECT_THROW(config.validate(), ov::Exception);
+}
+
+TEST(GenerationConfigTest, valid_static_spec_decoding) {
+    GenerationConfig config = speculative_decoding_greedy();
+    config.num_assistant_tokens_schedule = NumAssistatantTokensScheduleType::CONSTANT;
+    config.num_assistant_tokens = 5;
+    config.assistant_confidence_threshold = 0;
+    EXPECT_NO_THROW(config.validate());
+}
+
+TEST(GenerationConfigTest, invalid_dynamic_spec_decoding) {
+    GenerationConfig config = speculative_decoding_greedy();
+    config.num_assistant_tokens_schedule = NumAssistatantTokensScheduleType::HEURISTIC;
+    config.num_assistant_tokens = 5;
+    config.assistant_confidence_threshold = 0.5;
+    EXPECT_THROW(config.validate(), ov::Exception);
+    config.num_assistant_tokens_schedule = NumAssistatantTokensScheduleType::CONSTANT;
+    config.num_assistant_tokens = 0;
+    config.assistant_confidence_threshold = 0.5;
+    EXPECT_THROW(config.validate(), ov::Exception);
+}
+
+TEST(GenerationConfigTest, valid_dynamic_spec_decoding) {
+    GenerationConfig config = speculative_decoding_greedy();
+    config.num_assistant_tokens_schedule = NumAssistatantTokensScheduleType::HEURISTIC;
+    config.assistant_confidence_threshold = 0.5;
+    config.num_assistant_tokens = 0;
+    EXPECT_NO_THROW(config.validate());
+}
