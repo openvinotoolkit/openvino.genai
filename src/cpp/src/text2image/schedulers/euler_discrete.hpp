@@ -12,27 +12,29 @@
 namespace ov {
 namespace genai {
 
-class DDIMScheduler : public IScheduler {
+class EulerDiscreteScheduler : public IScheduler {
 public:
     struct Config {
         int32_t num_train_timesteps = 1000;
         float beta_start = 0.0001f, beta_end = 0.02f;
         BetaSchedule beta_schedule = BetaSchedule::SCALED_LINEAR;
         std::vector<float> trained_betas = {};
-        bool clip_sample = true, set_alpha_to_one = true;
+        FinalSigmaType final_sigmas_type = FinalSigmaType::ZERO;
+        InterpolationType interpolation_type = InterpolationType::LINEAR;
+        float sigma_max = 0.0f, sigma_min = 0.0f;
         size_t steps_offset = 0;
         PredictionType prediction_type = PredictionType::EPSILON;
-        bool thresholding = false;
-        float dynamic_thresholding_ratio = 0.995f, clip_sample_range = 1.0f, sample_max_value = 1.0f;
         TimestepSpacing timestep_spacing = TimestepSpacing::LEADING;
+        TimestepType timestep_type = TimestepType::DISCRETE;
         bool rescale_betas_zero_snr = false;
+        bool use_karras_sigmas = false, use_exponential_sigmas = false, use_beta_sigmas = false;
 
         Config() = default;
         explicit Config(const std::string& scheduler_config_path);
     };
 
-    explicit DDIMScheduler(const std::string scheduler_config_path);
-    explicit DDIMScheduler(const Config& scheduler_config);
+    explicit EulerDiscreteScheduler(const std::string scheduler_config_path);
+    explicit EulerDiscreteScheduler(const Config& scheduler_config);
 
     void set_timesteps(size_t num_inference_steps) override;
 
@@ -47,11 +49,11 @@ public:
 private:
     Config m_config;
 
-    std::vector<float> m_alphas_cumprod;
-    float m_final_alpha_cumprod;
-
-    size_t m_num_inference_steps;
+    std::vector<float> m_alphas_cumprod, m_sigmas;
     std::vector<int64_t> m_timesteps;
+    size_t m_num_inference_steps;
+
+    size_t m_step_index = -1;
 };
 
 } // namespace genai

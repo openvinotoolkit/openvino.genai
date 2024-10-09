@@ -16,6 +16,7 @@
 #include "utils.hpp"
 #include "text_callback_streamer.hpp"
 #include "openvino/genai/lora_adapter.hpp"
+#include "lora_helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -76,12 +77,8 @@ public:
         LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(model_path))
     {
         ov::Core core;
-        auto adapters_iter = plugin_config.find(ov::genai::adapters.name());
-        if (adapters_iter != plugin_config.end()) {
-            m_generation_config.adapters = adapters_iter->second.as<AdapterConfig>();
-            auto filtered_plugin_config = plugin_config;
-            filtered_plugin_config.erase(ov::genai::adapters.name());
-            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(filtered_plugin_config);
+        if(auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
+            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(*filtered_plugin_config);
             core.set_property(core_plugin_config);
             auto model = core.read_model(model_path / "openvino_model.xml");
             m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable
