@@ -854,15 +854,17 @@ def main():
         if 'cpu' in args.device.lower():
             env_omp = os.getenv('OMP_WAIT_POLICY')
             if env_omp is None or env_omp != 'PASSIVE':
-                log.warning(f'It is recommended to set the environment variable OMP_WAIT_POLICY to PASSIVE, '
-                            f'so that OpenVINO inference can use all CPU resources without waiting.')
+                log.warning(
+                            "It is recommended to set the environment variable OMP_WAIT_POLICY to PASSIVE, "
+                            f"so that OpenVINO inference can use all CPU resources without waiting.")
             original_torch_thread_nums = torch.get_num_threads()
             if model_args['num_beams'] > 1:
                 torch.set_num_threads(int(original_torch_thread_nums / 2))
             else:
                 torch.set_num_threads(1)
-            log.info(f"The num_beams is {model_args['num_beams']}, update Torch thread num from "
-                    f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
+            log.info(
+                    f"The num_beams is {model_args['num_beams']}, update Torch thread num from "
+                    f"{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.")
     log.info(out_str)
     if args.memory_consumption:
         mem_consumption.start_collect_mem_consumption_thread()
