@@ -10,10 +10,11 @@ add_subdirectory(cpp/greedy_causal_lm)
 add_subdirectory(cpp/lora_greedy_causal_lm)
 add_subdirectory(cpp/multinomial_causal_lm)
 add_subdirectory(cpp/prompt_lookup_decoding_lm)
+add_subdirectory(cpp/visual_language_chat)
 add_subdirectory(cpp/speculative_decoding_lm)
 add_subdirectory(cpp/benchmark_genai)
 add_subdirectory(cpp/whisper_speech_recognition)
-add_subdirectory(cpp/stable_diffusion)
+add_subdirectory(cpp/text2image)
 
 install(FILES requirements.txt DESTINATION samples
         COMPONENT cpp_samples_genai)
@@ -26,7 +27,7 @@ install(DIRECTORY
             # Don't install prompt_lookup_decoding_lm and speculative_decoding_lm because they don't use openvino_genai library and arent verifyed yet.
             # Don't install continuous_batching_accuracy and continuous_batching_benchmark because they depend on json.
             cpp/whisper_speech_recognition
-            cpp/stable_diffusion
+            cpp/text2image
             cpp/lora_greedy_causal_lm
         DESTINATION samples/cpp COMPONENT cpp_samples_genai)
 
@@ -36,6 +37,6 @@ install(DIRECTORY
             python/greedy_causal_lm
             python/multinomial_causal_lm
             python/whisper_speech_recognition
-            # python/stable_diffusion
+            # python/text2image
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)

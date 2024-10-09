@@ -1,0 +1,121 @@
+// Copyright (C) 2023-2024 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#pragma once
+
+#include "openvino/genai/processor_config.hpp"
+#include <openvino/openvino.hpp>
+
+namespace ov::genai {
+/// @brief A pair describing image size.
+struct HeightWidth {
+    /// @brief Height of a corresponding image.
+    size_t height;
+    /// @brief Width of a corresponding image.
+    size_t width;
+};
+
+/// @brief Embeddings of a given image. The number of slices is no
+/// greater than ProcessorConfig's max_slice_nums.
+struct EncodedImage {
+    /// @brief Embeddings of a resized image based on ProcessorConfig's
+    /// scale_resolution. The tensor's shape is
+    /// [N, H*W, hidden_size]. [N, 1014, 1152] is a possible example for
+    /// openbmb/MiniCPM-V-2. Only batch 1 is supported.
+    ov::Tensor resized_source;
+    /// @brief A size of an image used to compute embeddings for
+    /// divided by ProcessorConfig's patch_size.
+    HeightWidth resized_source_size;
+    /// @brief Embeddings of images obtained from a source image by
+    /// slicing at no more than max_slice_nums pieces and resizing.
+    /// The tensor's shape is
+    /// [slice_y, slice_x, number_of_embeddings, embedding_size].
+    /// slices_sizes.size() == slice_y * slice_x.
+    ov::Tensor slices;
+    /// @brief Flattened sizes of images used to compute embeddings
+    /// stored in slices member divided by ProcessorConfig's patch_size.
+    std::vector<HeightWidth> slices_sizes;
+};
+
+/// @brief A class used to infer embeddings of an image using
+/// ov::InferRequest and configured by ProcessorConfig.
+class OPENVINO_GENAI_EXPORTS VisionEncoder {
+public:
+    /// @brief A model for image encoding.
+    ov::InferRequest m_encoder;
+    /// @brief A config to follow.
+    ProcessorConfig m_processor_config;
+
+    /// @brief Construct from an already compiled model and a config.
+    /// @param encoder Compiled model.
+    /// @param processor_config Initial config.
+    explicit VisionEncoder(
+        const ov::InferRequest& encoder,
+        const ProcessorConfig& processor_config=ProcessorConfig{}
+    ) : m_encoder{encoder}, m_processor_config{processor_config} {}
+
+    /// @brief Construct the encoder from model_dir.
+    /// @param model_dir A folder containing openvino_embedding.xml and
+    /// preprocessor_config.json.
+    /// @param device A device to compile the encoder for.
+    /// @param device_config A config to be passed to
+    /// ov::Core::compile_model().
+    /// @param core ov::Core to be used to compile the model.
+    explicit VisionEncoder(
+        const std::filesystem::path& model_dir,
+        const std::string& device="CPU",
+        const ov::AnyMap device_config={},
+        ov::Core core=ov::Core{}
+    );
+
+    /// @brief Compute embeddings of an image.
+    /// @param image An image to infer embeddings for. Image shape must be
+    /// [1CHW]. Only batch 1 is supported.
+    /// @return Resulting embeddings for the resized source image and
+    /// its slices.
+    EncodedImage encode(const ov::Tensor& image) {
+        return encode(image, m_processor_config);
+    }
+
+    /// @brief Compute embeddings of an image given ProcessorConfig.
+    /// @param image An image to infer embeddings for. Image shape must be
+    /// [1CHW]. Only batch 1 is supported.
+    /// @param config A config to follow instead of the config obtained
+    /// in constructors.
+    /// @return Resulting embeddings for the resized source image and
+    /// its slices.
+    EncodedImage encode(
+        const ov::Tensor& image, const ProcessorConfig& config
+    );
+
+    /// @brief Compute embeddings of an image given
+    /// ProcessorConfig members.
+    /// @param image An image to infer embeddings for. Image shape must be
+    /// [1CHW]. Only batch 1 is supported.
+    /// @param config_map A config or its members values to follow
+    /// instead of the config obtained in constructors.
+    /// @return Resulting embeddings for the resized source image and
+    /// its slices.
+    EncodedImage encode(
+        const ov::Tensor& image, const ov::AnyMap& config_map
+    );
+
+    /// @brief Compute embeddings of an image given
+    /// ProcessorConfig members.
+    /// @param image An image to infer embeddings for. Image shape must be
+    /// [1CHW]. Only batch 1 is supported.
+    /// @param ...properties A config or its members values to follow
+    /// instead of the config obtained in constructors.
+    /// @return Resulting embeddings for the resized source image and
+    /// its slices.
+    template <typename... Properties>
+    util::EnableIfAllStringAny<EncodedImage, Properties...> encode(
+        const ov::Tensor& image,
+        Properties&&... properties
+    ) {
+        return encode(
+            image, AnyMap{std::forward<Properties>(properties)...}
+        );
+    }
+};
+}
