@@ -683,7 +683,7 @@ jobs:
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
-  visual_chat_sample-ubuntu:
+  visual_language_chat_sample-ubuntu:
     runs-on: ubuntu-22.04-16-cores
     steps:
       - uses: actions/checkout@v4
