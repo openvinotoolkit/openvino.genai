@@ -159,13 +159,13 @@ For example, `--load_config config.json` as following will result in streams.num
 ``` 
 `<NUMBER>` is the number of total physical cores in 2 sockets.
 
-## 6. CPU Threading
+## 6. Execution on CPU device
 
-OpenVINO uses [oneTBB](https://github.com/oneapi-src/oneTBB/) as default threading library, while Torch uses [OpenMP](https://www.openmp.org/). Both threading libraries have ['busy-wait spin'](https://gcc.gnu.org/onlinedocs/libgomp/GOMP_005fSPINCOUNT.html) by default. So in LLM pipeline, when inference on CPU with OpenVINO and postprocessing with Torch(For example: greedy search or beam search), there is threading overhead in the switching between inference(OpenVINO with oneTBB) and postprocessing (Torch with OpenMP).
+OpenVINO is by default bult with [oneTBB](https://github.com/oneapi-src/oneTBB/) threading library, while Torch uses [OpenMP](https://www.openmp.org/). Both threading libraries have ['busy-wait spin'](https://gcc.gnu.org/onlinedocs/libgomp/GOMP_005fSPINCOUNT.html) by default. When running LLM pipeline on CPU device, there is threading overhead in the switching between inference on CPU with OpenVINO (oneTBB) and postprocessing (For example: greedy search or beam search) with Torch (OpenMP).
 
 **Alternative solutions**
-1. Use --genai option which uses OpenVINO genai APIs instead of optimum-intel APIs. In this case postprocessing is executed with OpenVINO genai APIs.
-2. Without --genai option which uses optimum-intel APIs, set environment variable [OMP_WAIT_POLICY](https://gcc.gnu.org/onlinedocs/libgomp/OMP_005fWAIT_005fPOLICY.html) to PASSIVE which will disable OpenMP 'busy-wait', and benchmark.py will also limit the Torch thread number to avoid using CPU cores which is in 'busy-wait' by OpenVINO inference.
+1. Use --genai option which uses OpenVINO genai API instead of optimum-intel API. In this case postprocessing is executed with OpenVINO genai API.
+2. Without --genai option which uses optimum-intel API, set environment variable [OMP_WAIT_POLICY](https://gcc.gnu.org/onlinedocs/libgomp/OMP_005fWAIT_005fPOLICY.html) to PASSIVE which will disable OpenMP 'busy-wait', and benchmark.py will also limit the Torch thread number to avoid using CPU cores which is in 'busy-wait' by OpenVINO inference.
 
 ## 7. Additional Resources
 
