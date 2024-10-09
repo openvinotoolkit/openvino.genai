@@ -36,6 +36,8 @@ def main():
         streamer=streamer,
     )
 
+    print()
+
     for chunk in result.chunks:
         print(f"timestamps: [{chunk.start_ts}, {chunk.end_ts}] text: {chunk.text}")
 

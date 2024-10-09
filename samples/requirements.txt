@@ -3,3 +3,4 @@ optimum[openvino]==1.22.0
 einops==0.8.0  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
 diffusers==0.30.3
+librosa # For Whisper

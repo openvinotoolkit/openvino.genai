@@ -447,3 +447,62 @@ def test_return_timestamps_max_new_tokens(model_descr, test_sample):
         else:
             assert opt_chunk["timestamp"][1] == None
             assert round(genai_chunk.end_ts, 2) == -1.0
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "test_sample",
+    [
+        *get_samples_from_dataset(language="en", length=20, long_form=True),
+    ],
+)
+@pytest.mark.precommit
+def test_longform_audio(model_descr, test_sample):
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    # def read_wav(filepath):
+    #     import librosa
+
+    #     raw_speech, samplerate = librosa.load(filepath, sr=16000)
+    #     return raw_speech
+
+    # test_sample = read_wav("./meanwhile_failed.wav")
+    # test_sample = test_sample[: 16000 * 30]
+
+    expected = opt_pipe(
+        test_sample,
+        return_timestamps=True,
+        generate_kwargs={"language": "en"},
+    )
+
+    genai_result = pipe.generate(
+        test_sample,
+        return_timestamps=True,
+        language="<|en|>",
+    )
+
+    # print()
+    # print(genai_result.texts[0])
+    # print(expected["text"])
+    # global test_no
+    # if genai_result.texts[0] != expected["text"]:
+    #     import soundfile as sf
+
+    #     # Write out audio as 24bit PCM WAV
+    #     sf.write(f"meanwhile_failed.wav", test_sample, 16000)
+
+    assert genai_result.texts[0] == expected["text"]
+
+    assert len(genai_result.chunks) == len(expected["chunks"])
+
+    for opt_chunk, genai_chunk in zip(expected["chunks"], genai_result.chunks):
+        assert opt_chunk["text"] == genai_chunk.text
+        assert opt_chunk["timestamp"][0] == round(genai_chunk.start_ts, 2)
+        if opt_chunk["timestamp"][1]:
+            assert opt_chunk["timestamp"][1] == round(genai_chunk.end_ts, 2)
+        else:
+            assert opt_chunk["timestamp"][1] == None
+            assert round(genai_chunk.end_ts, 2) == -1.0
+
+
+# test_longform_audio(get_whisper_models_list(tiny_only=True)[0], [])
