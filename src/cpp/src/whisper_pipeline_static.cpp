@@ -127,10 +127,14 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
                std::vector<int32_t>& input_ids,
                const ov::genai::WhisperGenerationConfig& config,
                bool do_suppress_tokens = true) {
-    // FIXME: Is this input connected with anything???
     decoder.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
+
     ov::Tensor input_ids_tensor(ov::element::i32, { 1, input_ids.size() }, input_ids.data());
     decoder.set_tensor("input_ids", input_ids_tensor);
+
+    std::vector<ov::float16> attention_mask(input_ids.size(), 1);
+    ov::Tensor attention_mask_tensor(ov::element::f16, { 1, attention_mask.size() }, attention_mask.data());
+    decoder.set_tensor("attention_mask", attention_mask_tensor);
 
     decoder.infer();
 
@@ -164,6 +168,19 @@ int64_t decode_with_past(ov::InferRequest& decoder_with_past,
     return output_token;
 }
 
+void zero_past_key_values(ov::InferRequest& request) {
+    for (auto& input : request.get_compiled_model().inputs()) {
+        std::string input_name = input.get_any_name();
+        if (input_name.find("decoder") == std::string::npos ||
+            input_name.find("past_key_values") == std::string::npos) {
+            continue;
+        }
+        auto dst_kv_tensor = request.get_tensor(input_name);
+        auto* tensor_ptr = dst_kv_tensor.data<float>();
+        std::fill(tensor_ptr, tensor_ptr + dst_kv_tensor.get_size(), 0u);
+    }
+}
+
 void prepare_decoder_with_past(ov::InferRequest& decoder_with_past, ov::InferRequest& decoder) {
     // NB: Prepare attetion mask to be in a format [1, 1, 1, 0, 0, 0, 0, ..., 1]
     auto attention_mask = decoder_with_past.get_tensor("attention_mask");
@@ -171,6 +188,8 @@ void prepare_decoder_with_past(ov::InferRequest& decoder_with_past, ov::InferReq
     std::fill(attention_mask_ptr, attention_mask_ptr + 3u, 1);
     std::fill(attention_mask_ptr + 3u, attention_mask_ptr + attention_mask.get_size() - 1, 0);
     attention_mask_ptr[attention_mask.get_size() - 1] = 1;
+    // NB: Zero past_key_values.*.decoder.value tensors
+    zero_past_key_values(decoder_with_past);
     // NB: Copy KV-caches from decoder
     copy_cross_attn_key_value(decoder, decoder_with_past);
     update_past_key_value(decoder, decoder_with_past);
