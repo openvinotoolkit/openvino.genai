@@ -5,6 +5,7 @@
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "continuous_batching_impl.hpp"
+#include "continuous_batching_for_speculative_decoding_impl.hpp"
 
 namespace ov::genai {
 
@@ -49,7 +50,7 @@ public:
 
 class ContinuousBatchingPipeline::SpeculativeDecodingImpl : public ContinuousBatchingPipeline::ImplInterface {
 protected:
-    std::shared_ptr<ContinuousBatchingImpl> m_main_pipeline, m_draft_pipeline;
+    std::shared_ptr<ContinuousBatchingForSpeculativeDecodingImpl> m_main_pipeline, m_draft_pipeline;
     // left generation length per request {request_id, len}
     std::map<int64_t, size_t> m_left_gen_len;
     SpeculativeDecodingMetrics m_sd_metrics;

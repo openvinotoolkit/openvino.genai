@@ -58,7 +58,7 @@ class Sampler {
 public:
     Sampler(Tokenizer & tokenizer) : m_tokenizer(tokenizer) {};
 
-    SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logitss, bool is_validation_mode_enabled);
+    SamplerOutput sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logitss, bool is_validation_mode_enabled = false);
     void set_seed(size_t seed) { rng_engine.seed(seed); }
     void clear_beam_search_info(uint64_t request_id);
 };

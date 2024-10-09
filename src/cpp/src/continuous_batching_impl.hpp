@@ -31,7 +31,7 @@ protected:
     size_t step_count = 0;
 #endif
 
-    bool m_is_validation_mode_enabled = false;
+    ContinuousBatchingImpl() = default;
 
     void _free_non_running_requests();
     void _notify_requests_dropped_by_handle();
@@ -41,12 +41,11 @@ protected:
 
     void maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
 
-    inline void
-    init(std::shared_ptr<ov::Model> model,
-         const SchedulerConfig& scheduler_config,
-         const ov::AnyMap& plugin_config,
-         const DeviceConfig& device_config,
-         ov::Core& core) {
+    void init(std::shared_ptr<ov::Model> model,
+              const SchedulerConfig& scheduler_config,
+              const ov::AnyMap& plugin_config,
+              const DeviceConfig& device_config,
+              ov::Core& core) {
         ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
 
         // setup KV caches
@@ -97,15 +96,6 @@ public:
                            const ov::AnyMap& tokenizer_plugin_config)
     : ContinuousBatchingImpl{models_path, Tokenizer(models_path, tokenizer_plugin_config), scheduler_config, device, llm_plugin_config} {}
 
-    ContinuousBatchingImpl(ov::Core& core,
-                           const std::shared_ptr<ov::Model>& model,
-                           const Tokenizer& tokenizer,
-                           const DeviceConfig& device_config,
-                           const SchedulerConfig& scheduler_config,
-                           const std::string& device,
-                           const ov::AnyMap& plugin_config,
-                           bool is_validation_mode_enabled = false);
-
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  ov::genai::GenerationConfig sampling_params) override;
@@ -121,28 +111,5 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;
-
-    // for speculative decoding
-    void finish_request(int64_t request_id = -1);
-
-    struct GeneratedSequence {
-        uint64_t request_id = 0, sequence_id = 0;
-        std::vector<int64_t> token_ids;
-        std::vector<float> log_probs;
-
-        GeneratedSequence(uint64_t req_id, uint64_t seq_id, const  std::vector<int64_t>& generated_token_ids, const std::vector<float>& generated_log_probs) :
-            request_id(req_id),
-            sequence_id(seq_id),
-            token_ids(generated_token_ids),
-            log_probs(generated_log_probs) {};
-    };
-
-    struct UpdateSeqResult {
-        size_t to_insert, to_remove;
-        UpdateSeqResult(size_t _to_insert = 0, size_t _to_remove = 0) : to_insert(_to_insert), to_remove(_to_remove) {};
-    };
-
-    std::vector<GeneratedSequence> get_generated_sequences();
-    UpdateSeqResult update_generated_sequence(const GeneratedSequence& new_sequence);
 };
 }

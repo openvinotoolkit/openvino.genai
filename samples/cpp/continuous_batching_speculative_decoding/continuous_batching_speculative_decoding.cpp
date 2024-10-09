@@ -21,6 +21,7 @@ int main(int argc, char* argv[]) try {
     ("n,num_prompts", "A number of prompts", cxxopts::value<size_t>()->default_value("1"))
     ("dynamic_split_fuse", "Whether to use dynamic split-fuse or vLLM scheduling", cxxopts::value<bool>()->default_value("false"))
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
+    ("a,draft_model", "Path to assisting model base directory", cxxopts::value<std::string>()->default_value("."))
     ("d,device", "Target device to run the model", cxxopts::value<std::string>()->default_value("CPU"))
     ("use_prefix", "Whether to use a prefix or not", cxxopts::value<bool>()->default_value("false"))
     ("h,help", "Print usage");
@@ -42,6 +43,7 @@ int main(int argc, char* argv[]) try {
     const size_t num_prompts = result["num_prompts"].as<size_t>();
     const bool dynamic_split_fuse = result["dynamic_split_fuse"].as<bool>();
     const std::string models_path = result["model"].as<std::string>();
+    const std::string draft_models_path = result["draft_model"].as<std::string>();
     const std::string device = result["device"].as<std::string>();
     const bool use_prefix = result["use_prefix"].as<bool>();
 
@@ -60,10 +62,9 @@ int main(int argc, char* argv[]) try {
         "What is OpenVINO?",
     };
 
-    std::vector<ov::genai::GenerationConfig> sampling_params_examples {
-        ov::genai::beam_search(),
-        ov::genai::greedy(),
-        ov::genai::multinomial(),
+    std::vector<ov::genai::GenerationConfig> sampling_params_examples = {
+        ov::genai::speculative_decoding_greedy(),
+        ov::genai::speculative_decoding_multinomial(),
     };
 
     std::vector<std::string> prompts(num_prompts);
@@ -97,9 +98,11 @@ int main(int argc, char* argv[]) try {
     scheduler_config.max_num_seqs = 2;
     scheduler_config.enable_prefix_caching = use_prefix;
 
+    ov::AnyMap plugin_config{{ov::genai::draft_model.name(), ov::genai::ModelDesc(draft_models_path)}};
+
     // It's possible to construct a Tokenizer from a different path.
     // If the Tokenizer isn't specified, it's loaded from the same folder.
-    ov::genai::ContinuousBatchingPipeline pipe(models_path, ov::genai::Tokenizer{models_path}, scheduler_config, device);
+    ov::genai::ContinuousBatchingPipeline pipe(models_path, ov::genai::Tokenizer{models_path}, scheduler_config, device, plugin_config);
 
     if (use_prefix) {
         std::cout << "Running inference for prefix to compute the shared prompt's KV cache..." << std::endl;

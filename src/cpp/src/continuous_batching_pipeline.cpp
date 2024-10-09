@@ -10,18 +10,18 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "continuous_batching_impl.hpp"
-#include "speculative_decoding_impl.hpp"
+#include "speculative_decoding/speculative_decoding_impl.hpp"
 #include "timer.hpp"
 #include "debug_utils.hpp"
 #include "cache_state_dumper.hpp"
 
 using namespace ov::genai;
 
-inline std::string
+inline ov::genai::ModelDesc
 extract_draft_model_from_config(ov::AnyMap& config) {
-    std::string draft_model;
+    ov::genai::ModelDesc draft_model("");
     if (config.find(ov::genai::draft_model.name()) != config.end()) {
-        draft_model = config.at(ov::genai::draft_model.name()).as<std::string>();
+        draft_model = config.at(ov::genai::draft_model.name()).as<ov::genai::ModelDesc>();
         config.erase(ov::genai::draft_model.name());
     }
     return draft_model;
@@ -34,7 +34,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::string& model
                                                         const ov::AnyMap& tokenizer_plugin_config) {
     auto llm_plugin_config_without_draft_model = llm_plugin_config;
     auto draft_model = extract_draft_model_from_config(llm_plugin_config_without_draft_model);
-    if (draft_model.empty()) {
+    if (draft_model.model_path.empty()) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(models_path, scheduler_config, device, llm_plugin_config, tokenizer_plugin_config);
     } else {
         m_impl = std::make_shared<SpeculativeDecodingImpl>(models_path, scheduler_config, device, llm_plugin_config_without_draft_model, draft_model, tokenizer_plugin_config);
@@ -49,7 +49,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const ov::AnyMap& plugin_config) {
     auto plugin_config_without_draft_model = plugin_config;
     auto draft_model = extract_draft_model_from_config(plugin_config_without_draft_model);
-    if (draft_model.empty()) {
+    if (draft_model.model_path.empty()) {
         m_impl = std::make_shared<ContinuousBatchingImpl>(model_path, tokenizer, scheduler_config, device, plugin_config);
     } else {
         m_impl = std::make_shared<SpeculativeDecodingImpl>(model_path, scheduler_config, device, plugin_config_without_draft_model, draft_model);

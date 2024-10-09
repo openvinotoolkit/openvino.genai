@@ -5,6 +5,7 @@
 #include "speculative_decoding_impl.hpp"
 #include "paged_attention_transformations.hpp"
 
+
 namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
@@ -68,8 +69,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     m_tokenizer = main_model_tokenizer;
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
-    m_main_pipeline = std::make_shared<ContinuousBatchingImpl>(core, main_model, main_model_tokenizer, main_device_config, main_scheduler_config, main_device, main_plugin_config, true);
-    m_draft_pipeline = std::make_shared<ContinuousBatchingImpl>(core, draft_model, draft_model_tokenizer, draft_device_config, draft_scheduler_config, draft_device, draft_plugin_config, false);
+    m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core, main_model, main_model_tokenizer, main_device_config, main_scheduler_config, main_device, main_plugin_config, true);
+    m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core, draft_model, draft_model_tokenizer, draft_device_config, draft_scheduler_config, draft_device, draft_plugin_config, false);
 }
 
 GenerationHandle
@@ -94,10 +95,10 @@ bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::has_non_finished_reque
 
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     // generate candidates by draft model
-    m_draft_pipeline->step();
+    m_draft_pipeline->multistep();
 
     // to generate num_matches statistic
-    std::map<int64_t, ContinuousBatchingPipeline::ContinuousBatchingImpl::UpdateSeqResult> update_sequence_info;
+    std::map<int64_t, ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::UpdateSeqResult> update_sequence_info;
     // put candidates to model KV cache
     for (const auto& candidate : m_draft_pipeline->get_generated_sequences()) {
         auto update_result = m_main_pipeline->update_generated_sequence(candidate);
