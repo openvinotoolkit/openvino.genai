@@ -41,6 +41,9 @@ public:
     size_t crop_size_width = 336;
     size_t size_shortest_edge = 336;
 
+    // llava-next specific config params
+    std::vector<std::pair<int, int>> image_grid_pinpoints{{336, 672}, {672, 336}, {672, 672}, {1008, 336}, {336, 1008}};
+
     /// @brief Default constructor
     ProcessorConfig() = default;
     /// @brief Construct ProcessorConfig from values in json_path.

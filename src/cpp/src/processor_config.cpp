@@ -35,4 +35,9 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
     if (parsed.contains("size")) {
         size_shortest_edge = parsed.at("size").at("shortest_edge");
     }
+
+    // Setting llava-next config params
+    if (parsed.contains("image_grid_pinpoints")) {
+        image_grid_pinpoints = parsed.at("image_grid_pinpoints").get<std::vector<std::pair<int, int>>>();
+    }
 }
