@@ -492,8 +492,25 @@ DecodedResults VLMPipeline::generate(
             variable.reset();
         }
         m_language.get_tensor("attention_mask").set_shape({1, 0});
-    }
-    return {{m_tokenizer.decode(generated)}};
+    } 
+    DecodedResults results;
+    results.texts = {m_tokenizer.decode(generated)};
+
+    // TODO: implement performance metrics
+    results.perf_metrics = ov::genai::PerfMetrics();
+    results.perf_metrics.m_evaluated = false;
+    results.perf_metrics.generate_duration = {0, 0};
+    results.perf_metrics.inference_duration= {0, 0};
+    results.perf_metrics.tokenization_duration = {0, 0};
+    results.perf_metrics.detokenization_duration= {0, 0};
+    results.perf_metrics.ttft = {0, 0};
+    results.perf_metrics.tpot= {0, 0};
+    results.perf_metrics.ipot= {0, 0};
+    results.perf_metrics.throughput= {0, 0};
+    results.perf_metrics.num_generated_tokens = generated.size();
+    results.perf_metrics.num_input_tokens= 0;
+
+    return results;
 }
 
 DecodedResults VLMPipeline::generate(
