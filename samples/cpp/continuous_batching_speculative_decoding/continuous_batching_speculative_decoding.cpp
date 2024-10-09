@@ -12,6 +12,20 @@ void print_generation_result(const ov::genai::GenerationResult& generation_resul
     }
 }
 
+ov::genai::GenerationConfig speculative_decoding_multinomial() {
+    auto speculative_decoding_multinomial_config = ov::genai::multinomial();
+    speculative_decoding_multinomial_config.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::CONSTANT;
+    speculative_decoding_multinomial_config.num_assistant_tokens = 5;
+    return speculative_decoding_multinomial_config;
+}
+
+ov::genai::GenerationConfig speculative_decoding_greedy() {
+    auto speculative_decoding_greedy_config = ov::genai::greedy();
+    speculative_decoding_greedy_config.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::HEURISTIC;
+    speculative_decoding_greedy_config.assistant_confidence_threshold = 0.4f;
+    return speculative_decoding_greedy_config;
+}
+
 int main(int argc, char* argv[]) try {
     // Command line options
 
@@ -63,8 +77,8 @@ int main(int argc, char* argv[]) try {
     };
 
     std::vector<ov::genai::GenerationConfig> sampling_params_examples = {
-        ov::genai::speculative_decoding_greedy(),
-        ov::genai::speculative_decoding_multinomial(),
+        speculative_decoding_greedy(),
+        speculative_decoding_multinomial(),
     };
 
     std::vector<std::string> prompts(num_prompts);

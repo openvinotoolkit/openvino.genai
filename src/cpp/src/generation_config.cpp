@@ -203,19 +203,5 @@ GenerationConfig multinomial() {
     return multinomial_config;
 }
 
-GenerationConfig speculative_decoding_multinomial() {
-    auto speculative_decoding_multinomial_config = multinomial();
-    speculative_decoding_multinomial_config.num_assistant_tokens_schedule = NumAssistatantTokensScheduleType::CONSTANT;
-    speculative_decoding_multinomial_config.num_assistant_tokens = 5;
-    return speculative_decoding_multinomial_config;
-}
-
-GenerationConfig speculative_decoding_greedy() {
-    auto speculative_decoding_greedy_config = greedy();
-    speculative_decoding_greedy_config.num_assistant_tokens_schedule = NumAssistatantTokensScheduleType::HEURISTIC;
-    speculative_decoding_greedy_config.assistant_confidence_threshold = 0.4f;
-    return speculative_decoding_greedy_config;
-}
-
 }  // namespace genai
 }  // namespace ov

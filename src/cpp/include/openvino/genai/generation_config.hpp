@@ -211,7 +211,5 @@ static constexpr ov::Property<ModelDesc> draft_model{"draft_model"};
 OPENVINO_GENAI_EXPORTS GenerationConfig beam_search();
 OPENVINO_GENAI_EXPORTS GenerationConfig greedy();
 OPENVINO_GENAI_EXPORTS GenerationConfig multinomial();
-OPENVINO_GENAI_EXPORTS GenerationConfig speculative_decoding_multinomial();
-OPENVINO_GENAI_EXPORTS GenerationConfig speculative_decoding_greedy();
 }  // namespace genai
 }  // namespace ov
