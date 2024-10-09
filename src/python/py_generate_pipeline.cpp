@@ -50,6 +50,7 @@ std::vector<float> get_ms(const T& instance, U T::*member) {
 }
 
 void init_whisper_pipeline(py::module_& m);
+void init_vlm_pipeline(py::module_& m);
 
 namespace {
 
@@ -310,68 +311,6 @@ auto cache_eviction_config_docstring = R"(
     :type aggregation_mode: openvino_genai.AggregationMode
 )";
 
-OptionalGenerationConfig update_config_from_kwargs(const OptionalGenerationConfig& config, const py::kwargs& kwargs) {
-    if(!config.has_value() && kwargs.empty())
-        return std::nullopt;
-
-    GenerationConfig res_config;
-    if(config.has_value())
-        res_config = *config;
- 
-    for (const auto& item : kwargs) {
-        std::string key = py::cast<std::string>(item.first);
-        py::object value = py::cast<py::object>(item.second);
-
-        if (item.second.is_none()) {
-            // Even if argument key name does not fit GenerationConfig name 
-            // it's not an eror if it's not defined. 
-            // Some HF configs can have parameters for methods currenly unsupported in ov_genai
-            // but if their values are not set / None, then this should not block 
-            // us from reading such configs, e.g. {"typical_p": None, 'top_p': 1.0,...}
-            return res_config;
-        }
-        
-        if (key == "max_new_tokens") {
-            res_config.max_new_tokens = py::cast<int>(item.second);
-        } else if (key == "max_length") {
-            res_config.max_length = py::cast<int>(item.second);
-        } else if (key == "ignore_eos") {
-            res_config.ignore_eos = py::cast<bool>(item.second);
-        } else if (key == "num_beam_groups") {
-            res_config.num_beam_groups = py::cast<int>(item.second);
-        } else if (key == "num_beams") {
-            res_config.num_beams = py::cast<int>(item.second);
-        } else if (key == "diversity_penalty") {
-            res_config.diversity_penalty = py::cast<float>(item.second);
-        } else if (key == "length_penalty") {
-            res_config.length_penalty = py::cast<float>(item.second);
-        } else if (key == "num_return_sequences") {
-            res_config.num_return_sequences = py::cast<int>(item.second);
-        } else if (key == "no_repeat_ngram_size") {
-            res_config.no_repeat_ngram_size = py::cast<int>(item.second);
-        } else if (key == "stop_criteria") {
-            res_config.stop_criteria = py::cast<StopCriteria>(item.second);
-        } else if (key == "temperature") {
-            res_config.temperature = py::cast<float>(item.second);
-        } else if (key == "top_p") {
-            res_config.top_p = py::cast<float>(item.second);
-        } else if (key == "top_k") {
-            res_config.top_k = py::cast<int>(item.second);
-        } else if (key == "do_sample") {
-            res_config.do_sample = py::cast<bool>(item.second);
-        } else if (key == "repetition_penalty") {
-            res_config.repetition_penalty = py::cast<float>(item.second);
-        } else if (key == "eos_token_id") {
-            res_config.set_eos_token_id(py::cast<int>(item.second));
-        } else {
-            throw(std::invalid_argument("'" + key + "' is incorrect GenerationConfig parameter name. "
-                                        "Use help(openvino_genai.GenerationConfig) to get list of acceptable parameters."));
-        }
-    }
-
-    return res_config;
-}
-
 py::list handle_utf8_results(const std::vector<std::string>& decoded_res) {
     // pybind11 decodes strings similar to Pythons's
     // bytes.decode('utf-8'). It raises if the decoding fails.
@@ -392,26 +331,10 @@ py::object call_common_generate(
     const utils::PyBindStreamerVariant& py_streamer, 
     const py::kwargs& kwargs
 ) {
-    auto updated_config = update_config_from_kwargs(config, kwargs);
+    auto updated_config = ov::genai::pybind::utils::update_config_from_kwargs(config, kwargs);
     py::object results;
     EncodedInputs tensor_data;
-    StreamerVariant streamer = std::monostate();
-    
-    std::visit(utils::overloaded {
-    [&streamer](const std::function<bool(py::str)>& py_callback){
-        // Wrap python streamer with manual utf-8 decoding. Do not rely
-        // on pybind automatic decoding since it raises exceptions on incomplete strings.
-        auto callback_wrapped = [&py_callback](std::string subword) -> bool {
-            auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-            return py_callback(py::reinterpret_borrow<py::str>(py_str));
-        };
-        streamer = callback_wrapped;
-    },
-    [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
-        streamer = streamer_cls;
-    },
-    [](std::monostate none){ /*streamer is already a monostate */ }
-    }, py_streamer);
+    StreamerVariant streamer = ov::genai::pybind::utils::pystreamer_to_streamer(py_streamer);
 
     // Call suitable generate overload for each type of input.
     std::visit(utils::overloaded {
@@ -635,7 +558,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
      // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
         .def(py::init<std::string>(), py::arg("json_path"), "path where generation_config.json is stored")
-        .def(py::init([](py::kwargs kwargs) { return *update_config_from_kwargs(GenerationConfig(), kwargs); }))
+        .def(py::init([](py::kwargs kwargs) { return *ov::genai::pybind::utils::update_config_from_kwargs(GenerationConfig(), kwargs); }))
         .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
         .def_readwrite("max_length", &GenerationConfig::max_length)
         .def_readwrite("ignore_eos", &GenerationConfig::ignore_eos)
@@ -840,4 +763,7 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
     
     // init whisper bindings
     init_whisper_pipeline(m);
+
+    // init vlm pipeline
+    init_vlm_pipeline(m);
 }

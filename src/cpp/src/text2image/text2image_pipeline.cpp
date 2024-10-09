@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "text2image/stable_diffusion_pipeline.hpp"
+#include "text2image/stable_diffusion_xl_pipeline.hpp"
 
 #include <ctime>
 #include <cstdlib>
@@ -44,7 +45,8 @@ void Text2ImagePipeline::GenerationConfig::update_generation_config(const ov::An
     read_anymap_param(properties, "height", height);
     read_anymap_param(properties, "width", width);
     read_anymap_param(properties, "num_inference_steps", num_inference_steps);
- 
+    read_anymap_param(properties, "adapters", adapters);
+
     validate();
 }
 
@@ -60,8 +62,10 @@ Text2ImagePipeline::Text2ImagePipeline(const std::string& root_dir) {
     const std::string class_name = get_class_name(root_dir);
 
     if (class_name == "StableDiffusionPipeline" || 
-        class_name == "LatentConsistencyModelPipeline") {
+        class_name == "LatentConsistencyModelPipeline")   {
         m_impl = std::make_shared<StableDiffusionPipeline>(root_dir);
+    } else if (class_name == "StableDiffusionXLPipeline") {
+        m_impl = std::make_shared<StableDiffusionXLPipeline>(root_dir);
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
@@ -70,15 +74,17 @@ Text2ImagePipeline::Text2ImagePipeline(const std::string& root_dir) {
 Text2ImagePipeline::Text2ImagePipeline(const std::string& root_dir, const std::string& device, const ov::AnyMap& properties) {
     const std::string class_name = get_class_name(root_dir);
 
-    if (class_name == "StableDiffusionPipeline" || 
+    if (class_name == "StableDiffusionPipeline" ||
         class_name == "LatentConsistencyModelPipeline") {
         m_impl = std::make_shared<StableDiffusionPipeline>(root_dir, device, properties);
+    } else if (class_name == "StableDiffusionXLPipeline") {
+        m_impl = std::make_shared<StableDiffusionXLPipeline>(root_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
 }
 
-Text2ImagePipeline::Text2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl) 
+Text2ImagePipeline::Text2ImagePipeline(const std::shared_ptr<DiffusionPipeline>& impl)
     : m_impl(impl) {
     assert(m_impl != nullptr);
 }
@@ -102,6 +108,20 @@ Text2ImagePipeline Text2ImagePipeline::latent_consistency_model(
     const UNet2DConditionModel& unet,
     const AutoencoderKL& vae_decoder) {
     return stable_diffusion(scheduler, clip_text_model, unet, vae_decoder);
+}
+
+Text2ImagePipeline Text2ImagePipeline::stable_diffusion_xl(
+    const std::shared_ptr<Scheduler>& scheduler,
+        const CLIPTextModel& clip_text_model,
+        const CLIPTextModelWithProjection& clip_text_model_with_projection,
+        const UNet2DConditionModel& unet,
+        const AutoencoderKL& vae_decoder) {
+    auto impl = std::make_shared<StableDiffusionXLPipeline>(clip_text_model, clip_text_model_with_projection, unet, vae_decoder);
+
+    assert(scheduler != nullptr);
+    impl->set_scheduler(scheduler);
+
+    return Text2ImagePipeline(impl);
 }
 
 Text2ImagePipeline::GenerationConfig Text2ImagePipeline::get_generation_config() const {
