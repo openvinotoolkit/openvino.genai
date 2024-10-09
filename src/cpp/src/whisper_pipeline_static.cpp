@@ -263,6 +263,15 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
     return { false, output_tokens };
 }
 
+bool check_decoder_model_compatibility(const std::shared_ptr<ov::Model>& decoder) {
+    for (auto input : decoder->inputs()) {
+        if (input.get_any_name() == "attention_mask") {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 namespace ov {
@@ -279,6 +288,11 @@ StaticWhisperPipeline::StaticWhisperPipeline(const std::filesystem::path& model_
         auto encoder_model = core.read_model(model_path / "openvino_encoder_model.xml");
         auto decoder_model = core.read_model(model_path / "openvino_decoder_model.xml");
         auto decoder_with_past_model = core.read_model(model_path / "openvino_decoder_with_past_model.xml");
+
+        // TODO: Support models produced by optimum-cli
+        if (!check_decoder_model_compatibility(decoder_model)) {
+            OPENVINO_THROW("StaticWhisperPipeline expects decoder model has \"attention_mask\" input!");
+        }
 
         // TODO: There must be model reshape to eliminate dynamism!
 
