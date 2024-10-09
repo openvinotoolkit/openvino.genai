@@ -133,7 +133,7 @@ void update_past_key_value(ov::InferRequest& source,
 
 int64_t decode(ov::Tensor& encoder_hidden_state,
                ov::InferRequest& decoder,
-               std::vector<int32_t>& input_ids,
+               const std::vector<int32_t>& input_ids,
                const ov::genai::WhisperGenerationConfig& config,
                bool do_suppress_tokens = true) {
     // NB: Fill decoder inputs
@@ -198,13 +198,41 @@ void prepare_decoder_with_past(ov::InferRequest& decoder_with_past, ov::InferReq
     update_past_key_value(decoder, decoder_with_past);
 };
 
+std::vector<int32_t> prepare_input_ids(const ov::genai::WhisperGenerationConfig& config) {
+    if (!config.is_multilingual) {
+        // TODO: For future development
+        OPENVINO_THROW("StaticWhisperPipeline doesn't support multilingual models!");
+    }
+
+    int32_t language_token_id;
+    if (config.language.has_value()) {
+        std::string language = *config.language;
+        if (config.lang_to_id.count(language)) {
+            language_token_id = static_cast<int32_t>(config.lang_to_id.at(language));
+        }
+    } else {
+        // TODO: For future development
+        OPENVINO_THROW("StaticWhisperPipeline doesn't support automatical language detection!");
+    }
+
+    int32_t task_token_id = static_cast<int32_t>(config.transcribe_token_id);
+    if (config.task.has_value() && *config.task == "translate") {
+        task_token_id = static_cast<int32_t>(config.translate_token_id);
+    }
+
+    return std::vector<int32_t>{ static_cast<int32_t>(config.decoder_start_token_id),
+                                 language_token_id,
+                                 task_token_id,
+                                 static_cast<int32_t>(config.no_timestamps_token_id) };
+}
+
 std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_state,
                                                   const ov::genai::WhisperGenerationConfig& config,
                                                   ov::genai::WhisperInitializedModels& models,
                                                   const size_t max_new_tokens,
                                                   const std::shared_ptr<ov::genai::StreamerBase> streamer) {
-    // FIXME: These values shouldn't be hardcoded!
-    std::vector<int32_t> input_ids = { 50258, 50259, 50359, 50363 };
+    const auto input_ids = prepare_input_ids(config);
+
     int64_t output_token = decode(encoder_hidden_state, models.decoder, input_ids, config);
     std::vector<int64_t> output_tokens{ output_token };
 
@@ -249,18 +277,15 @@ StaticWhisperPipeline::StaticWhisperPipeline(const std::filesystem::path& model_
                               WhisperFeatureExtractor{(model_path / "preprocessor_config.json").string()}) {
         ov::Core core;
 
-        // FIXME: Only for debug...
-        std::string device = "CPU";
-
         auto encoder_model = core.read_model(model_path / "openvino_encoder_model.xml");
         auto decoder_model = core.read_model(model_path / "openvino_decoder_model.xml");
         auto decoder_with_past_model = core.read_model(model_path / "openvino_decoder_with_past_model.xml");
 
         // TODO: There must be model reshape to eliminate dynamism!
 
-        m_models.encoder = core.compile_model(encoder_model, device).create_infer_request();
-        m_models.decoder = core.compile_model(decoder_model, device).create_infer_request();
-        m_models.decoder_with_past = core.compile_model(decoder_with_past_model, device).create_infer_request();
+        m_models.encoder = core.compile_model(encoder_model, "NPU").create_infer_request();
+        m_models.decoder = core.compile_model(decoder_model, "NPU").create_infer_request();
+        m_models.decoder_with_past = core.compile_model(decoder_with_past_model, "NPU").create_infer_request();
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {
