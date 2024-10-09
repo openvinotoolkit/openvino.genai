@@ -317,3 +317,62 @@ clip_image_f32 clip_image_preprocess(clip_ctx& ctx, const clip_image_u8& img) {
     }
     return res;
 }
+
+std::vector<clip_image_u8> get_image_patches(
+    const clip_image_u8& image, 
+    const std::vector<std::pair<int, int>>& image_grid_pinpoints,
+    const std::pair<int, int>& size,
+    int patch_size
+) {
+    std::vector<clip_image_u8> patches;
+
+    // Get image dimensions
+    int orig_width = image.nx;
+    int orig_height = image.ny;
+
+    // Resize base patch
+    int base_patch_width = size.first;
+    int base_patch_height = size.second;
+    clip_image_u8 base_patch;
+    bicubic_resize(image, base_patch, base_patch_width, base_patch_height);
+    
+    patches.push_back(base_patch);
+
+    // Select best resolution for patching
+    auto best_resolution = select_best_resolution({orig_width, orig_height}, image_grid_pinpoints);
+    int width = best_resolution.first;
+    int height = best_resolution.second;
+
+    // Resize and pad image for patching
+    clip_image_u8 resized_image;
+    resize_and_pad_image(image, resized_image, best_resolution);
+
+    // Calculate patch dimensions
+    int patches_w = width / patch_size;
+    int patches_h = height / patch_size;
+
+    // Extract patches
+    for (int h = 0; h < patches_h; ++h) {
+        for (int w = 0; w < patches_w; ++w) {
+            clip_image_u8 patch;
+            patch.nx = patch_size;
+            patch.ny = patch_size;
+            patch.buf.resize(3 * patch_size * patch_size);
+
+            for (int y = 0; y < patch_size; ++y) {
+                for (int x = 0; x < patch_size; ++x) {
+                    for (int c = 0; c < 3; ++c) {
+                        int src_y = h * patch_size + y;
+                        int src_x = w * patch_size + x;
+                        int src_idx = (src_y * width + src_x) * 3 + c;
+                        int dst_idx = (y * patch_size + x) * 3 + c;
+                        patch.buf[dst_idx] = resized_image.buf[src_idx];
+                    }
+                }
+            }
+            patches.push_back(patch);
+        }
+    }
+
+    return patches;
+}

@@ -51,4 +51,12 @@ bool bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_wid
 
 /** preprocess img and store the result in res_imgs, pad_to_square may be overriden to false depending on model configuration */
 clip_image_f32 clip_image_preprocess(struct clip_ctx& ctx, const clip_image_u8& img);
+
+std::vector<clip_image_u8> get_image_patches(
+    const clip_image_u8& image, 
+    const std::vector<std::pair<int, int>>& image_grid_pinpoints,
+    const std::pair<int, int>& size,
+    int patch_size
+);
+
 #endif // CLIP_H
