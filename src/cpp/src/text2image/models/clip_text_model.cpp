@@ -22,6 +22,7 @@ CLIPTextModel::Config::Config(const std::string& config_path) {
 
     read_json_param(data, "max_position_embeddings", max_position_embeddings);
     read_json_param(data, "hidden_size", hidden_size);
+    read_json_param(data, "num_hidden_layers", num_hidden_layers);
 }
 
 CLIPTextModel::CLIPTextModel(const std::string root_dir) :
@@ -109,6 +110,10 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
     m_request.infer();
 
     return m_request.get_output_tensor(0);
+}
+
+ov::Tensor CLIPTextModel::get_output_tensor(const size_t idx) {
+    return m_request.get_output_tensor(idx);
 }
 
 } // namespace genai

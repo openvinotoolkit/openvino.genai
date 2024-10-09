@@ -153,15 +153,6 @@ ov::Tensor extend_attention(ov::Tensor attention_mask) {
     return new_atten_mask;
 }
 
-ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path) {
-    auto config_file_path = model_path / "generation_config.json";
-    if (std::filesystem::exists(config_file_path)) {
-        return ov::genai::GenerationConfig((config_file_path).string());
-    } else {
-        return ov::genai::GenerationConfig{};
-    }
-}
-
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
     ov::genai::StreamerVariant streamer = std::monostate();
 
@@ -181,6 +172,22 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
         return config_map.at(CONFIG_ARG_NAME).as<ov::genai::GenerationConfig>();
     else
         return std::nullopt;
+}
+
+ProcessorConfig from_any_map(
+    const ov::AnyMap& config_map,
+    const ProcessorConfig& initial
+) {
+    auto iter = config_map.find("processor_config");
+    ProcessorConfig extracted_config = config_map.end() != iter ?
+        iter->second.as<ProcessorConfig>() : initial;
+    using utils::read_anymap_param;
+    read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
+    read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
+    read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
+    read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
+    read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
+    return extracted_config;
 }
 
 /**

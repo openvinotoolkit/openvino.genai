@@ -1464,7 +1464,8 @@ def main():
     add_stateful_model_arguments(parser)
 
     args = parser.parse_args()
-    log.warning("[DEPRECATED] Not for production use! Please use the 'optimum-intel' to generate the IRs. For details, please check: https://github.com/openvinotoolkit/openvino.genai/blob/master/llm_bench/python/README.md#2-convert-model-to-openvino-ir-format")
+    log.warning("[DEPRECATED] Not for production use! Please use the 'optimum-intel' to generate the IRs. For details, please check:"
+                " https://github.com/openvinotoolkit/openvino.genai/blob/master/llm_bench/python/README.md#2-convert-model-to-openvino-ir-format")
     log.info(f"openvino runtime version: {get_version()}")
     model_type = get_convert_model_type(args.model_id.lower())
     converter = converters[model_type]

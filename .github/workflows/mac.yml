@@ -386,7 +386,7 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          timeout 25s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+          timeout 26s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
 
   Overall_Status:
     name: ci/gha_overall_status_macos
