@@ -751,7 +751,7 @@ jobs:
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
           printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
-          timeout 120s python ./samples/python/vlm_chat_sample/vlm_chat_sample.py ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11 < input.txt > ./pred.txt
+          timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11 < input.txt > ./pred.txt
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
