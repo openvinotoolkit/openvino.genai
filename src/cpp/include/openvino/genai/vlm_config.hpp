@@ -6,14 +6,15 @@
 #include "openvino/genai/visibility.hpp"
 #include <openvino/runtime/properties.hpp>
 #include <filesystem>
+#include "vlm_model_type.hpp"
 
 namespace ov::genai {
 /// @brief A Configuration class passed to VLMPipeline and used to
 /// change VLMPipeline's behavior. Corresponds to config.json.
 class OPENVINO_GENAI_EXPORTS VLMConfig {
 public:
-    /// @brief A string denoting model type.
-    std::string model_type = "";
+    /// @brief A enum denoting model type.
+    VLMModelType model_type;
     /// @brief A size of a single embedding returned by a resampler.
     /// Used to initialize positional embeddings for resampler input.
     size_t hidden_size = 2304;

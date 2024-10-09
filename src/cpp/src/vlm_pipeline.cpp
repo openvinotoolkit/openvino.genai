@@ -360,9 +360,9 @@ VLMPipeline::VLMPipeline(
         )
     },
     m_tokenizer{tokenizer},
-    m_vision_encoder(model_dir, device, device_config, core, m_vlm_config.model_type),
+    m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, core),
     m_is_chat_conversation{false} {
-        if (m_vlm_config.model_type == "minicpmv") {
+        if (m_vlm_config.model_type == VLMModelType::MINICPM) {
             m_resampler = core.compile_model(
                 model_dir / "resampler.xml", device, device_config
             ).create_infer_request();
@@ -376,7 +376,7 @@ VLMPipeline::VLMPipeline(
             ).create_infer_request();
 
             m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
-        } else if (m_vlm_config.model_type == "llava") {
+        } else if (m_vlm_config.model_type == VLMModelType::LLAVA) {
             m_language = core.compile_model(
                 model_dir / "openvino_language_model.xml", device, device_config
             ).create_infer_request();
@@ -399,9 +399,9 @@ DecodedResults VLMPipeline::generate(
     const StreamerVariant& streamer
 ) {
     ov::Tensor inputs_embeds;
-    if (m_vlm_config.model_type == "minicpmv") {
+    if (m_vlm_config.model_type == VLMModelType::MINICPM) {
         inputs_embeds = get_inputs_embeds_minicpm(prompt, rgbs);
-    } else if (m_vlm_config.model_type == "llava") {
+    } else if (m_vlm_config.model_type == VLMModelType::LLAVA) {
         inputs_embeds = get_inputs_embeds_llava(prompt, rgbs);
     }
 

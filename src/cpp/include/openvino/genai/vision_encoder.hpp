@@ -5,6 +5,7 @@
 
 #include "openvino/genai/processor_config.hpp"
 #include <openvino/openvino.hpp>
+#include "vlm_model_type.hpp"
 
 namespace ov::genai {
 /// @brief A pair describing image size.
@@ -41,8 +42,8 @@ struct EncodedImage {
 /// ov::InferRequest and configured by ProcessorConfig.
 class OPENVINO_GENAI_EXPORTS VisionEncoder {
 public:
-    /// @brief A string denoting model type.
-    std::string model_type;
+    /// @brief A enum denoting model type.
+    VLMModelType model_type;
     /// @brief A model for image encoding.
     ov::InferRequest m_encoder;
     /// @brief A config to follow.
@@ -68,10 +69,10 @@ public:
     /// @param core ov::Core to be used to compile the model.
     explicit VisionEncoder(
         const std::filesystem::path& model_dir,
+        const VLMModelType model_type,
         const std::string& device="CPU",
         const ov::AnyMap device_config={},
-        ov::Core core=ov::Core{},
-        std::string model_type=""
+        ov::Core core=ov::Core{}
     );
 
     /// @brief Compute embeddings of an image.
