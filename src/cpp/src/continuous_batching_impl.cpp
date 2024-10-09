@@ -31,9 +31,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
     m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
     m_awaiting_requests.clear();
-    for (const auto& request : m_requests) {
-        request->pause_generation(false);
-    }
 }
 
 GenerationHandle

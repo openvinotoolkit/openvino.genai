@@ -145,6 +145,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
     static ManualTimer multistep_timer("multistep()");
     multistep_timer.start();
 
+    for (const auto& request : m_requests) {
+        request->pause_generation(false);
+    }
+
     size_t iteration_number = 0;
     // cycle to generate several tokens per one iteration for speculative decoding case
     bool to_generate = true;
