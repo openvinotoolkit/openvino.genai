@@ -376,7 +376,7 @@ VLMPipeline::VLMPipeline(
             ).create_infer_request();
 
             m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
-        } else if (m_vlm_config.model_type == VLMModelType::LLAVA) {
+        } else if (m_vlm_config.model_type == VLMModelType::LLAVA || m_vlm_config.model_type == VLMModelType::LLAVA_NEXT) {
             m_language = core.compile_model(
                 model_dir / "openvino_language_model.xml", device, device_config
             ).create_infer_request();
@@ -403,6 +403,8 @@ DecodedResults VLMPipeline::generate(
         inputs_embeds = get_inputs_embeds_minicpm(prompt, rgbs);
     } else if (m_vlm_config.model_type == VLMModelType::LLAVA) {
         inputs_embeds = get_inputs_embeds_llava(prompt, rgbs);
+    } else if (m_vlm_config.model_type == VLMModelType::LLAVA_NEXT) {
+        inputs_embeds = get_inputs_embeds_llava_next(prompt, rgbs);
     }
 
     m_language.set_tensor("inputs_embeds", inputs_embeds);
@@ -573,6 +575,28 @@ ov::Tensor VLMPipeline::get_inputs_embeds_llava(const std::string& prompt, const
         OPENVINO_ASSERT(1 == images.size(), "Only a single image allowed");
         EncodedImage encoded_image = m_vision_encoder.encode(images.at(0));
         ov::Tensor image_embeds = encoded_image.resized_source;
+        
+        ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+
+        int64_t image_token_index = 32000; // TODO Consider getting from m_vlm_config.image_token_index or config.json
+
+        return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_index);
+    }
+}
+
+ov::Tensor VLMPipeline::get_inputs_embeds_llava_next(const std::string& prompt, const std::vector<ov::Tensor>& images) {
+    std::string image_token = "<image>"; // TODO Consider getting from vlm_config or json
+    // TODO Consider moving prompt formatting to separate function for each model family
+    std::string formatted_prompt = "[INST] " + (images.empty() ? prompt : image_token + "\n" + prompt) + " [/INST]";
+    ov::Tensor input_ids = m_tokenizer.encode(formatted_prompt).input_ids;
+    if (images.empty()) {
+        return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
+    } else {
+        OPENVINO_ASSERT(1 == images.size(), "Only a single image allowed");
+        EncodedImage encoded_image = m_vision_encoder.encode(images.at(0));
+        ov::Tensor image_embeds = encoded_image.resized_source;
+
+        // TODO Post-process image imbeds - resize, unpad and pack
         
         ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
 
