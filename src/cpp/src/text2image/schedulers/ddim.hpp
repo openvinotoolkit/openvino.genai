@@ -52,8 +52,6 @@ private:
 
     size_t m_num_inference_steps;
     std::vector<int64_t> m_timesteps;
-
-    void rescale_zero_terminal_snr(std::vector<float>& betas);
 };
 
 } // namespace genai

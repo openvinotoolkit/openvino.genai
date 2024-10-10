@@ -26,12 +26,10 @@ int main(int argc, char* argv[]) try {
 
     pipe.start_chat();
     std::cout << "question:\n";
-    if (!std::getline(std::cin, prompt)) {
-        throw std::runtime_error("std::cin failed");
-    }
+    std::getline(std::cin, prompt);
     pipe.generate(
         prompt,
-        ov::genai::image(std::move(image)),
+        ov::genai::image(image),
         ov::genai::streamer(print_subword)
     );
     std::cout << "\n----------\n"

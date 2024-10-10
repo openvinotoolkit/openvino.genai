@@ -92,7 +92,9 @@ private:
 
 class AdaptersProperty : public ov::Property<AdapterConfig> {
 public:
-    constexpr AdaptersProperty() : ov::Property<AdapterConfig>("adapters") {}
+    inline constexpr static const char* name () { return "adapters"; }
+
+    constexpr AdaptersProperty() : ov::Property<AdapterConfig>(name()) {}
 
     inline std::pair<std::string, ov::Any> operator()(const AdapterConfig& config) const {
         return ov::Property<AdapterConfig>::operator()(config);
@@ -154,6 +156,9 @@ public:
 };
 
 
+static constexpr AdaptersProperty adapters;
+
+
 class OPENVINO_GENAI_EXPORTS AdapterController {
 
     std::shared_ptr<AdapterControllerImpl> m_pimpl;
@@ -165,14 +170,11 @@ public:
 
     AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix, std::string device = "");
 
-    // Call it every time when adapter config is changed; if adapter is configured as a static one, this call is not required
-    void apply(ov::InferRequest& request, const AdapterConfig& config);
+    // Apply adapters configured in the current config set last time, or set and use new config given as optional `config` argument
+    void apply(ov::InferRequest& request, const std::optional<AdapterConfig>& config = std::nullopt);
 
     // the next call of apply will set all adapter tensors regardless of config change, use this method if full state.reset is called for the controlled model
     void force_full_apply(bool full_apply = true);
-
-    // Apply the same config that was used last time (in initialization or in previous call to apply).
-    void apply(ov::InferRequest& request);
 
     operator bool() const {
         return bool(m_pimpl);

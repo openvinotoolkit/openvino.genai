@@ -23,7 +23,7 @@ Prepare audio file in wav format with sampling rate 16k Hz.
 
 Output: text transcription of `sample.wav`
 
-Models can be downloaded from [OpenAI HiggingFace](https://huggingface.co/openai).
+Models can be downloaded from [OpenAI HuggingFace](https://huggingface.co/openai).
 
 Supported Models:
 [openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny)

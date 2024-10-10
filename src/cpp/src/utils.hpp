@@ -86,20 +86,7 @@ ProcessorConfig from_any_map(
 
 std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& plugin_config);
 
-inline ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& fisrt, const ov::genai::TokenizedInputs& second){
-    auto first_size = fisrt.input_ids.get_size();
-    auto second_size = second.input_ids.get_size();
-    ov::Shape new_shape{1, first_size - second_size};
-
-    ov::Tensor new_input_ids(ov::element::i64, new_shape);
-    auto data_ptr = fisrt.input_ids.data<int64_t>();
-    std::copy(data_ptr + second_size, data_ptr + first_size, new_input_ids.data<int64_t>());
-
-    ov::Tensor new_attention_mask(ov::element::i64, new_shape);
-    std::fill_n(new_attention_mask.data<int64_t>(), new_shape[1], 1);
-
-    return {new_input_ids, new_attention_mask};
-}
+ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
