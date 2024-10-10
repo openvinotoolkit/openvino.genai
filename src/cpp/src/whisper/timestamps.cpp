@@ -72,10 +72,8 @@ ov::genai::ExtractedSegments extract_segments(const std::vector<int64_t>& tokens
                                                        tokens.end());
     }
 
-    // of timestamps generated in pairs <ts><ts><eos>
-    // in case of speech continuation to the next chunk token_start will have value
-    // in case of single ending timestamp <ts><eos>
-    // there is no more speech in the next chunks
+    // last timestamps generated in pairs <ts><ts><eos> -> speech segment continuation to the next chunk -> token_start will have value
+    // single ending timestamp <ts><eos> -> no more speech till the end of current chunk -> set offset to the end of frame
     if (!token_start.has_value()) {
         extracted_segments.last_offset = nb_max_frames;
     }

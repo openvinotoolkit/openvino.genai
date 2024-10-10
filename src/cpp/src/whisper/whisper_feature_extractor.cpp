@@ -325,12 +325,8 @@ std::vector<float> pad(const std::vector<float>& raw_speech,
 
     size_t total_pad_length;
 
-    // pad to minimum length required
-    if (raw_speech.size() < minimum_length) {
-        total_pad_length = minimum_length + 2 * reflect_pad_size;
-    } else {
-        total_pad_length = raw_speech.size() + 2 * reflect_pad_size;
-    }
+    // pad to minimum length if needed
+    total_pad_length = std::max(raw_speech.size(), minimum_length) + 2 * reflect_pad_size;
 
     padded_raw_speech.resize(total_pad_length, 0.f);
 
