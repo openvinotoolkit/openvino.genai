@@ -86,6 +86,7 @@ ProcessorConfig from_any_map(
 
 std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& plugin_config);
 
+ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

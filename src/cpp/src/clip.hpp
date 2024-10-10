@@ -1,8 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef CLIP_H
-#define CLIP_H
+#pragma once
 
 #include <vector>
 #include <numeric>
@@ -25,6 +24,8 @@ struct clip_ctx {
     std::vector<uint8_t> buf_compute_meta;
 
     projector_type proj_type = PROJECTOR_TYPE_RESAMPLER;
+    size_t patch_size = 0;
+    size_t image_size = 0;
 };
 
 // RGB uint8 image
@@ -58,5 +59,3 @@ std::vector<clip_image_u8> get_image_patches(
     const std::pair<int, int>& size,
     int patch_size
 );
-
-#endif // CLIP_H

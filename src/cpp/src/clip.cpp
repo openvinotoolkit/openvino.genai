@@ -6,9 +6,6 @@
 // I'll gradually clean and extend it
 // Note: Even when using identical normalized image inputs (see normalize_image_u8_to_f32()) we have a significant difference in resulting embeddings compared to pytorch
 
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.hpp"
-
 #include <cassert>
 #include <cmath>
 #include <cstdlib>
