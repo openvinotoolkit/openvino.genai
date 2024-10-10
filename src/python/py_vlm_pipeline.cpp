@@ -118,25 +118,6 @@ void init_vlm_pipeline(py::module_& m) {
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
         )")
 
-        .def(py::init([](
-            const std::string& model_path,
-            const ov::genai::Tokenizer& tokenizer,
-            const std::string& device,
-            const std::map<std::string, py::object>& config
-        ) {
-            ScopedVar env_manager(utils::ov_tokenizers_module_path());
-            return std::make_unique<ov::genai::VLMPipeline>(model_path, tokenizer, device, utils::properties_to_any_map(config));
-        }),
-        py::arg("model_path"),
-        py::arg("tokenizer"),
-        py::arg("device") = "CPU",
-        py::arg("config") = ov::AnyMap({}), "openvino.properties map"
-        R"(
-            VLMPipeline class constructor for manualy created openvino_genai.Tokenizer.
-            model_path (str): Path to the folder with exported model files.
-            tokenizer (openvino_genai.Tokenizer): tokenizer object.
-            device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
-        )")
         .def("start_chat", &ov::genai::VLMPipeline::start_chat, py::arg("system_message") = "")
         .def("finish_chat", &ov::genai::VLMPipeline::finish_chat) 
         .def("get_generation_config", &ov::genai::VLMPipeline::get_generation_config)
