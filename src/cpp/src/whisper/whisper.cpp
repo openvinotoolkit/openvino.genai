@@ -76,7 +76,8 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
                ov::InferRequest& decoder,
                std::vector<int64_t>& input_ids,
                const ov::genai::WhisperGenerationConfig& config,
-               bool apply_logit_processors = true) {
+               const bool apply_logit_processors = true,
+               const bool return_timestamps = false) {
     decoder.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
 
     ov::Tensor input_ids_tensor(ov::element::i64, {1, input_ids.size()}, input_ids.data());
@@ -90,7 +91,7 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
         ov::genai::do_suppress_tokens(output_tensor, 0, config.begin_suppress_tokens);
         ov::genai::do_suppress_tokens(output_tensor, 0, config.suppress_tokens);
 
-        if (config.return_timestamps) {
+        if (return_timestamps) {
             ov::genai::process_whisper_timestamp_logits(output_tensor, 0, config, {}, true);
         }
     }
@@ -105,6 +106,7 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
                          int64_t input_id,
                          const size_t cache_position,
                          const ov::genai::WhisperGenerationConfig& config,
+                         const bool return_timestamps,
                          const std::vector<int64_t>& generated_tokens) {
     decoder_with_past.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
 
@@ -122,7 +124,7 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
 
     ov::genai::do_suppress_tokens(output_tensor, 0, config.suppress_tokens);
 
-    if (config.return_timestamps) {
+    if (return_timestamps) {
         ov::genai::process_whisper_timestamp_logits(output_tensor, 0, config, generated_tokens);
     }
 
@@ -135,15 +137,15 @@ int64_t detect_language(ov::Tensor& encoder_hidden_state,
                         ov::InferRequest decoder,
                         const ov::genai::WhisperGenerationConfig& config) {
     std::vector<int64_t> input_ids{config.decoder_start_token_id};
-    int64_t output_token = decode(encoder_hidden_state, decoder, input_ids, config, false);
+    int64_t output_token = decode(encoder_hidden_state, decoder, input_ids, config, false, false);
 
     return output_token;
 }
 
-std::vector<int64_t> prepare_input_ids(ov::Tensor& encoder_hidden_state,
-                                       ov::InferRequest decoder,
-                                       const ov::genai::WhisperGenerationConfig& config,
-                                       const bool return_timestamps) {
+std::vector<int64_t> prepare_init_ids(ov::Tensor& encoder_hidden_state,
+                                      ov::InferRequest decoder,
+                                      const ov::genai::WhisperGenerationConfig& config,
+                                      const bool return_timestamps) {
     if (!config.is_multilingual) {
         return std::vector<int64_t>{config.decoder_start_token_id, config.no_timestamps_token_id};
     }
@@ -176,12 +178,11 @@ std::vector<int64_t> prepare_input_ids(ov::Tensor& encoder_hidden_state,
 std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_state,
                                                   const ov::genai::WhisperGenerationConfig& config,
                                                   ov::genai::WhisperInitializedModels& models,
+                                                  std::vector<int64_t> init_ids,
                                                   const size_t max_new_tokens,
                                                   const bool return_timestamps,
                                                   const std::shared_ptr<ov::genai::StreamerBase> streamer) {
-    std::vector<int64_t> input_ids = prepare_input_ids(encoder_hidden_state, models.decoder, config, return_timestamps);
-
-    int64_t output_token = decode(encoder_hidden_state, models.decoder, input_ids, config);
+    int64_t output_token = decode(encoder_hidden_state, models.decoder, init_ids, config, true, return_timestamps);
 
     std::vector<int64_t> output_tokens{output_token};
 
@@ -200,8 +201,9 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
         auto output_token = decode_with_past(encoder_hidden_state,
                                              models.decoder_with_past,
                                              output_tokens.back(),
-                                             input_ids.size() + output_tokens.size() - 1,
+                                             init_ids.size() + output_tokens.size() - 1,
                                              config,
+                                             return_timestamps,
                                              output_tokens);
 
         if (i == 0) {
@@ -241,6 +243,7 @@ std::pair<std::vector<int64_t>, std::optional<std::vector<Segment>>> whisper_gen
     // long-form audio processing requires timestamps to be enabled
     const bool return_timestamps = config.return_timestamps || !is_shortform;
 
+    std::vector<int64_t> init_ids;
     std::vector<int64_t> output_tokens;
     size_t max_new_tokens = config.get_max_new_tokens();
 
@@ -262,9 +265,15 @@ std::pair<std::vector<int64_t>, std::optional<std::vector<Segment>>> whisper_gen
                                                 feature_extractor.feature_size,
                                                 feature_extractor.nb_max_frames);
 
+        // prepare init_ids just once for whole input
+        if (init_ids.empty()) {
+            init_ids = prepare_init_ids(hidden_state_tensor, models.decoder, config, return_timestamps);
+        }
+
         auto [cancelled, chunk_output_tokens] = full_decode(hidden_state_tensor,
                                                             config,
                                                             models,
+                                                            init_ids,
                                                             max_new_tokens - output_tokens.size(),
                                                             return_timestamps,
                                                             streamer);
@@ -299,7 +308,7 @@ std::pair<std::vector<int64_t>, std::optional<std::vector<Segment>>> whisper_gen
         streamer->end();
     }
 
-    // return_timestamps wasn't enabled by user
+    // if return_timestamps wasn't enabled by user
     if (!config.return_timestamps) {
         return {output_tokens, std::nullopt};
     }

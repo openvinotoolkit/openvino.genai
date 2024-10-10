@@ -383,7 +383,7 @@ def test_language_autodetect(model_descr, test_sample):
     ],
 )
 @pytest.mark.precommit
-def test_return_timestamps(model_descr, test_sample):
+def test_return_timestamps_short_form(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
     # long form audio not supported yet
     test_sample = test_sample[: 16000 * 30]
@@ -416,7 +416,7 @@ def test_return_timestamps(model_descr, test_sample):
     ],
 )
 @pytest.mark.precommit
-def test_return_timestamps_max_new_tokens(model_descr, test_sample):
+def test_return_timestamps_max_new_tokens_short_form(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
     # long form audio not supported yet
     test_sample = test_sample[: 16000 * 30]
@@ -453,43 +453,23 @@ def test_return_timestamps_max_new_tokens(model_descr, test_sample):
 @pytest.mark.parametrize(
     "test_sample",
     [
-        *get_samples_from_dataset(language="en", length=20, long_form=True),
+        *get_samples_from_dataset(language="en", length=10, long_form=True),
+        *get_samples_from_dataset(language="fr", length=10, long_form=True),
     ],
 )
 @pytest.mark.precommit
-def test_longform_audio(model_descr, test_sample):
+def test_longform_audio_return_timestamps(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
-
-    # def read_wav(filepath):
-    #     import librosa
-
-    #     raw_speech, samplerate = librosa.load(filepath, sr=16000)
-    #     return raw_speech
-
-    # test_sample = read_wav("./meanwhile_failed.wav")
-    # test_sample = test_sample[: 16000 * 30]
 
     expected = opt_pipe(
         test_sample,
         return_timestamps=True,
-        generate_kwargs={"language": "en"},
     )
 
     genai_result = pipe.generate(
         test_sample,
         return_timestamps=True,
-        language="<|en|>",
     )
-
-    # print()
-    # print(genai_result.texts[0])
-    # print(expected["text"])
-    # global test_no
-    # if genai_result.texts[0] != expected["text"]:
-    #     import soundfile as sf
-
-    #     # Write out audio as 24bit PCM WAV
-    #     sf.write(f"meanwhile_failed.wav", test_sample, 16000)
 
     assert genai_result.texts[0] == expected["text"]
 
@@ -505,4 +485,23 @@ def test_longform_audio(model_descr, test_sample):
             assert round(genai_chunk.end_ts, 2) == -1.0
 
 
-# test_longform_audio(get_whisper_models_list(tiny_only=True)[0], [])
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "test_sample",
+    [
+        *get_samples_from_dataset(language="en", length=3, long_form=True),
+        *get_samples_from_dataset(language="sp", length=3, long_form=True),
+    ],
+)
+@pytest.mark.precommit
+def test_longform_audio(model_descr, test_sample):
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    expected = opt_pipe(test_sample)
+
+    genai_result = pipe.generate(test_sample)
+
+    assert genai_result.texts[0] == expected["text"]
+
+    assert "chunks" not in expected
+    assert genai_result.chunks == None

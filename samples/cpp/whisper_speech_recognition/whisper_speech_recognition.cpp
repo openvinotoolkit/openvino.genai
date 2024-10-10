@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) try {
     ov::genai::WhisperPipeline pipeline{model_path};
 
     ov::genai::WhisperGenerationConfig config{model_path + "/generation_config.json"};
-    // config.max_new_tokens = 100;
+    config.max_new_tokens = 100;
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";
     config.task = "transcribe";

@@ -68,12 +68,12 @@ def get_whisper_models_list(tiny_only=False):
         precommit_models = ["openai/whisper-tiny"]
 
     nightly_models = []
-    pytest.run_marker = "precommit"
+
     if pytest.run_marker == "precommit":
         model_ids = precommit_models
     else:
         model_ids = nightly_models
-    pytest.selected_model_ids = []
+
     if pytest.selected_model_ids:
         model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
     # pytest.set_trace()
