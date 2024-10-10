@@ -11,6 +11,26 @@
 namespace ov {
 namespace genai {
 
+struct WhisperFeatures {
+    size_t feature_size;
+    size_t n_frames;
+
+    // flattened 2d array with shape [feature_size, n_frames]
+    std::vector<float> data;
+
+    /**
+     * Return frames with specific offset
+     * Pad to min_frames if needed
+     *
+     *     v offset
+     * ****xxxxx****
+     * ****xxxxx****
+     * ****xxxxx****
+     *
+     */
+    std::vector<float> get_data_with_offset(const size_t frame_offset, const size_t min_frames);
+};
+
 class WhisperFeatureExtractor {
 public:
     size_t feature_size = 80;
@@ -24,12 +44,12 @@ public:
     explicit WhisperFeatureExtractor(const std::string& preprocessor_json_path);
 
     /**
-     * @brief Create a flattened 2d log-mel spectrogram [feature_size, nb_max_frames] from raw speech data
+     * @brief Create a flattened 2d log-mel spectrogram [feature_size, n_frames] from raw speech data
      *
      * @see [huggingface introduction to audio
      * data](https://huggingface.co/learn/audio-course/chapter1/audio_data#mel-spectrogram)
      */
-    std::vector<float> extract(const std::vector<float>& raw_speech);
+    WhisperFeatures extract(const std::vector<float>& raw_speech);
 
 private:
     std::vector<float> sin_vals;
