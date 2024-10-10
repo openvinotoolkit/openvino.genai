@@ -683,7 +683,7 @@ jobs:
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
-  py-vlm_chat_sample-ubuntu:
+  visual_language_chat_sample-ubuntu:
     runs-on: ubuntu-22.04-16-cores
     steps:
       - uses: actions/checkout@v4
@@ -708,12 +708,12 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
-          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11
+          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
           
       - name: Run chat chat sample
         run: >
           source ./ov/setupvars.sh
-          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ d5fbbd1a-d484-415c-88cb-9986625b7b11
+          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ cat.jpg
           <<< $'What is on the image?\nWhat is special on the image?'
 
   cpp-continuous-batching-ubuntu:
@@ -859,6 +859,7 @@ jobs:
             cpp-beam_search_causal_lm-Qwen-7B-Chat, cpp-beam_search_causal_lm-Qwen1_5-7B-Chat, cpp-beam_search_causal_lm-Phi-2,
             cpp-beam_search_causal_lm-notus-7b-v1, cpp-speculative_decoding_lm-ubuntu, cpp-prompt_lookup_decoding_lm-ubuntu,
             cpp-Phi-1_5, cpp-greedy_causal_lm-redpajama-3b-chat, cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu,
+            visual_language_chat_sample-ubuntu,
             cpp-continuous-batching-windows, cpp-continuous-batching-macos]
     if: ${{ always() }}
     runs-on: ubuntu-latest

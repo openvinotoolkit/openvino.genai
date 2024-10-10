@@ -1,9 +1,11 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-find_package(OpenVINOGenAI REQUIRED PATHS
-    "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
-    ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+find_package(OpenVINOGenAI REQUIRED
+    PATHS
+        "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
+        ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+    NO_CMAKE_FIND_ROOT_PATH
 )
 
 file(DOWNLOAD
@@ -14,11 +16,11 @@ file(DOWNLOAD
 add_executable(visual_language_chat visual_language_chat.cpp load_image.cpp)
 target_include_directories(visual_language_chat PRIVATE "${CMAKE_CURRENT_SOUCE_DIR}" "${CMAKE_BINARY_DIR}")
 target_link_libraries(visual_language_chat PRIVATE openvino::genai)
+
 set_target_properties(visual_language_chat PROPERTIES
-    COMPILE_PDB_NAME chat_sample
+    COMPILE_PDB_NAME visual_language_chat
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
-target_compile_features(visual_language_chat PRIVATE cxx_std_11)
 
 install(TARGETS visual_language_chat
         RUNTIME DESTINATION samples_bin/

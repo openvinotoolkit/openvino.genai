@@ -14,6 +14,7 @@ namespace ov::genai {
 /// preprocessor_config.json.
 class OPENVINO_GENAI_EXPORTS ProcessorConfig {
 public:
+    size_t image_size = 980;
     /// @brief Dimensions of the smaller, non-overlapping patches that the
     /// input image is divided into before being fed into the
     /// transformer model. Used to divide image height and width.
