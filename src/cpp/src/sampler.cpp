@@ -561,7 +561,7 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
 }
 
 
-SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits) {
+SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled) {
     const float * logits_data = logits.data<float>();
     ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3);
@@ -595,6 +595,11 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                     OPENVINO_ASSERT(num_running_sequences == 1);
                 }
                 auto register_new_token = [&](const Token& sampled_token_id, Sequence::Ptr running_sequence) {
+                    if (!is_validation_mode_enabled &&
+                        std::fabs(sampled_token_id.m_log_prob) < sampling_params.assistant_confidence_threshold &&
+                        sampling_params.num_assistant_tokens_schedule == NumAssistatantTokensScheduleType::HEURISTIC) {
+                            sequence_group->pause_generation(true);
+                        }
                     logit_processor.register_new_generated_token(sampled_token_id.m_index);
                     running_sequence->append_token(sampled_token_id.m_index, sampled_token_id.m_log_prob);
                 };

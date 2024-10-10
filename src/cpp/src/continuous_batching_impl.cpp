@@ -16,50 +16,21 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const std::string& device,
     const ov::AnyMap& plugin_config) {
     m_tokenizer = tokenizer;
-    ov::Core core;
 
+    ov::Core core;
     // The model can be compiled for GPU as well
     std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
-
     DeviceConfig device_config(core, scheduler_config, device, plugin_config);
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
+    init(model, scheduler_config, plugin_config,  device_config, core);
+}
 
-    ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
-
-    // setup KV caches
-    m_cache_manager = std::make_shared<CacheManager>(device_config, core);
-    for (size_t decoder_layer_id = 0; decoder_layer_id < device_config.get_num_layers(); ++decoder_layer_id) {
-        infer_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_key_cache(decoder_layer_id));
-        infer_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_value_cache(decoder_layer_id));
-    }
-
-    SchedulerConfig updated_config = scheduler_config;
-    // update KV number in scheduler config
-    if (scheduler_config.num_kv_blocks != device_config.get_num_kv_blocks()) {
-        updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
-    }
-
-    bool can_use_partial_preemption = true;
-    if (device_config.get_device().find("GPU") != std::string::npos && !updated_config.dynamic_split_fuse) {
-        // in case of executing a `vLLM-like` pipeline, it's better not to use partial eviction on the GPU,
-        // as it may lead to performance slowdown
-        can_use_partial_preemption = false;
-    }
-
-    m_scheduler = std::make_shared<Scheduler>(updated_config, device_config.get_num_layers(), can_use_partial_preemption);
-    // and finally create model runner
-    bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
-    if (is_use_cache_eviction) {
-        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers(), true);
-    } else {
-        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers());
-    }
-    m_sampler = std::make_shared<Sampler>(m_tokenizer);
-    m_sampler->set_seed(m_generation_config.rng_seed);
-
-    // read default generation config
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
+    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+    m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
+    m_awaiting_requests.clear();
 }
 
 GenerationHandle
@@ -105,13 +76,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     step_timer.start();
 
     // Pull awaiting requests
-    {
-        std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
-        m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
-        m_awaiting_requests.clear();
-    }
+    _pull_awaiting_requests();
 
     m_pipeline_metrics.requests = m_requests.size();
+
     Scheduler::Output scheduler_output;
     {
         static ManualTimer timer("scheduling");
@@ -292,50 +260,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     return results;
 }
 
-std::vector<GenerationResult>
-ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<std::string>& prompts,
-                                                             std::vector<ov::genai::GenerationConfig> sampling_params,
-                                                             const StreamerVariant& streamer) {
-    std::vector<ov::Tensor> input_ids;
-    static ManualTimer timer("tokenize");
-    if (m_is_chat_conversation) {
-        OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
-        m_history.push_back({{"role", "user"}, {"content", prompts.at(0)}});
-        constexpr bool add_generation_prompt = true;
-        std::string history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-        timer.start();
-        input_ids.push_back(m_tokenizer.encode(history).input_ids);
-        timer.end();
-    } else {
-        input_ids.reserve(prompts.size());
-        for (const std::string& prompt : prompts) {
-            timer.start();
-            input_ids.push_back(m_tokenizer.encode(prompt).input_ids);
-            timer.end();
-        }
-    }
-    std::vector<EncodedGenerationResult> encoded = generate(input_ids, sampling_params, streamer);
-    std::vector<GenerationResult> decoded;
-    decoded.reserve(encoded.size());
-    for (EncodedGenerationResult& res : encoded) {
-        std::vector<std::string> generated;
-        generated.reserve(res.m_generation_ids.size());
-        for (size_t idx = 0; idx < res.m_generation_ids.size(); ++idx) {
-            generated.push_back(m_tokenizer.decode(res.m_generation_ids.at(idx)));
-            if (m_is_chat_conversation && 0 == idx) {
-                m_history.push_back({{"role", "assistant"}, {"content", generated.back()}});
-            }
-        }
-        decoded.push_back(GenerationResult{
-            res.m_request_id,
-            std::move(generated),
-            std::move(res.m_scores),
-            res.m_status
-        });
-    }
-    return decoded;
-}
-
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_requests() {
     std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
     while (requests_iterator != m_requests.end()) {
@@ -411,4 +335,5 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::maybe_evict_cache_block
         seq_group_ptr->register_token_eviction(num_blocks_evicted * sched_config.block_size);
     }
 }
+
 }

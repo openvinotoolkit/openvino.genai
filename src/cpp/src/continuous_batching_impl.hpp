@@ -31,6 +31,8 @@ protected:
     size_t step_count = 0;
 #endif
 
+    ContinuousBatchingImpl() = default;
+
     void _free_non_running_requests();
     void _notify_requests_dropped_by_handle();
     void _register_step_cache_usage(float step_cache_usage);
@@ -38,6 +40,48 @@ protected:
     float _get_current_running_average_cache_usage() const;
 
     void maybe_evict_cache_blocks(const SchedulerConfig& sched_config);
+
+    void init(std::shared_ptr<ov::Model> model,
+              const SchedulerConfig& scheduler_config,
+              const ov::AnyMap& plugin_config,
+              const DeviceConfig& device_config,
+              ov::Core& core) {
+        ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
+
+        // setup KV caches
+        m_cache_manager = std::make_shared<CacheManager>(device_config, core);
+        for (size_t decoder_layer_id = 0; decoder_layer_id < device_config.get_num_layers(); ++decoder_layer_id) {
+            infer_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_key_cache(decoder_layer_id));
+            infer_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_value_cache(decoder_layer_id));
+        }
+
+        SchedulerConfig updated_config = scheduler_config;
+        // update KV number in scheduler config
+        if (scheduler_config.num_kv_blocks != device_config.get_num_kv_blocks()) {
+            updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
+        }
+
+        bool can_use_partial_preemption = true;
+        if (device_config.get_device().find("GPU") != std::string::npos && !updated_config.dynamic_split_fuse) {
+            // in case of executing a `vLLM-like` pipeline, it's better not to use partial eviction on the GPU,
+            // as it may lead to performance slowdown
+            can_use_partial_preemption = false;
+        }
+
+        m_scheduler = std::make_shared<Scheduler>(updated_config, device_config.get_num_layers(), can_use_partial_preemption);
+        // and finally create model runner
+        bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
+        if (is_use_cache_eviction) {
+            m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers(), true);
+        } else {
+            m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers());
+        }
+        m_sampler = std::make_shared<Sampler>(m_tokenizer);
+        m_sampler->set_seed(m_generation_config.rng_seed);
+    };
+
+    void _pull_awaiting_requests();
+
 public:
     ContinuousBatchingImpl(const std::string& models_path,
                            const Tokenizer& tokenizer,
@@ -50,8 +94,7 @@ public:
                            const std::string& device,
                            const ov::AnyMap& llm_plugin_config,
                            const ov::AnyMap& tokenizer_plugin_config)
-    : ContinuousBatchingImpl{models_path, Tokenizer(models_path, tokenizer_plugin_config), scheduler_config, device, llm_plugin_config} {};
-
+    : ContinuousBatchingImpl{models_path, Tokenizer(models_path, tokenizer_plugin_config), scheduler_config, device, llm_plugin_config} {}
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
@@ -67,10 +110,6 @@ public:
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) override;
-    std::vector<GenerationResult>
-    generate(const std::vector<std::string>& prompts,
-             std::vector<ov::genai::GenerationConfig> sampling_params,
              const StreamerVariant& streamer) override;
 };
 }

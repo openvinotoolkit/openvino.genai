@@ -115,6 +115,10 @@ bool GenerationConfig::is_multinomial() const {
     return do_sample;
 }
 
+bool GenerationConfig::is_speculative_decoding() const {
+    return num_assistant_tokens_schedule != NumAssistatantTokensScheduleType::NONE;
+}
+
 void GenerationConfig::validate() const {
     OPENVINO_ASSERT(!do_sample || num_beams == 1, 
                     "Beam search with sampling is not supported yet. "
@@ -158,6 +162,15 @@ void GenerationConfig::validate() const {
         OPENVINO_ASSERT(frequency_penalty >= -2.0f && frequency_penalty <= 2.0f, "frequence_penalty penalty must be a [-2; +2]");
         OPENVINO_ASSERT(presence_penalty >= -2.0f && presence_penalty <= 2.0f, "presence_penalty penalty must be a [-2; +2]");
     }
+    if (is_speculative_decoding()) {
+        if (assistant_confidence_threshold != 0.f) {
+            OPENVINO_ASSERT(num_assistant_tokens == 0);
+            OPENVINO_ASSERT(num_assistant_tokens_schedule == NumAssistatantTokensScheduleType::HEURISTIC);
+        } else {
+            OPENVINO_ASSERT(num_assistant_tokens > 0);
+            OPENVINO_ASSERT(num_assistant_tokens_schedule == NumAssistatantTokensScheduleType::CONSTANT);
+        };
+    }
 }
 
 GenerationConfig beam_search() {
@@ -189,5 +202,6 @@ GenerationConfig multinomial() {
     multinomial_config.max_new_tokens = 30;
     return multinomial_config;
 }
+
 }  // namespace genai
 }  // namespace ov
