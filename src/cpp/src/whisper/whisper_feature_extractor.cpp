@@ -1,17 +1,11 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "whisper_feature_extractor.hpp"
-
-#include <openvino/openvino.hpp>
-#include <string>
-#include <vector>
-
-#include "openvino/genai/visibility.hpp"
-
 #ifdef _WIN32
 #    define _USE_MATH_DEFINES
 #endif
+
+#include "whisper_feature_extractor.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -20,10 +14,13 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <openvino/core/except.hpp>
+#include <openvino/openvino.hpp>
+#include <string>
 #include <thread>
 #include <vector>
 
 #include "../utils.hpp"
+#include "openvino/genai/visibility.hpp"
 
 namespace {
 using ov::genai::WhisperFeatures;
