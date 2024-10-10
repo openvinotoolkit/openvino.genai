@@ -17,6 +17,8 @@ using ov::genai::RawSpeechInput;
 using ov::genai::StreamerBase;
 using ov::genai::StreamerVariant;
 using ov::genai::Tokenizer;
+using ov::genai::WhisperDecodedResultChunk;
+using ov::genai::WhisperDecodedResults;
 using ov::genai::WhisperGenerationConfig;
 using ov::genai::WhisperPipeline;
 
@@ -41,6 +43,25 @@ auto whisper_generate_docstring = R"(
 
     :return: return results in encoded, or decoded form depending on inputs type
     :rtype: DecodedResults
+)";
+
+auto whisper_decoded_results_docstring = R"(
+    Structure to store resulting batched text outputs and scores for each batch.
+    The first num_return_sequences elements correspond to the first batch element.
+
+    Parameters: 
+    texts:      vector of resulting sequences.
+    scores:     scores for each sequence.
+    metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
+    shunks:     chunk of resulting sequences with timestamps
+)";
+
+auto whisper_decoded_result_chunk = R"(
+    Structure to store decoded text with corresponding timestamps
+
+    :param start_ts chunk start time in seconds
+    :param end_ts   chunk end time in seconds
+    :param text     chunk text
 )";
 
 auto whisper_generation_config_docstring = R"(
@@ -133,6 +154,8 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
             res_config.no_timestamps_token_id = py::cast<int>(item.second);
         } else if (key == "begin_timestamps_token_id") {
             res_config.begin_timestamps_token_id = py::cast<int>(item.second);
+        } else if (key == "max_initial_timestamp_index") {
+            res_config.max_initial_timestamp_index = py::cast<size_t>(item.second);
         } else if (key == "begin_suppress_tokens") {
             res_config.begin_suppress_tokens = py::cast<std::vector<int64_t>>(item.second);
         } else if (key == "suppress_tokens") {
@@ -145,6 +168,8 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
             res_config.lang_to_id = py::cast<std::map<std::string, int64_t>>(item.second);
         } else if (key == "task") {
             res_config.task = py::cast<std::string>(item.second);
+        } else if (key == "return_timestamps") {
+            res_config.return_timestamps = py::cast<bool>(item.second);
         } else if (key == "eos_token_id") {
             res_config.set_eos_token_id(py::cast<int>(item.second));
         } else {
@@ -170,25 +195,18 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 
     auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
 
-    StreamerVariant streamer = std::monostate();
-
-    std::visit(utils::overloaded{[&streamer](const std::function<bool(py::str)>& py_callback) {
-                                     // Wrap python streamer with manual utf-8 decoding. Do not rely
-                                     // on pybind automatic decoding since it raises exceptions on incomplete strings.
-                                     auto callback_wrapped = [&py_callback](std::string subword) -> bool {
-                                         auto py_str =
-                                             PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-                                         return py_callback(py::reinterpret_borrow<py::str>(py_str));
-                                     };
-                                     streamer = callback_wrapped;
-                                 },
-                                 [&streamer](std::shared_ptr<StreamerBase> streamer_cls) {
-                                     streamer = streamer_cls;
-                                 },
-                                 [](std::monostate none) { /*streamer is already a monostate */ }},
-               py_streamer);
+    StreamerVariant streamer = ov::genai::pybind::utils::pystreamer_to_streamer(py_streamer);
 
     return py::cast(pipe.generate(raw_speech_input, updated_config, streamer));
+}
+
+py::str handle_utf8_text(const std::string& text) {
+    // pybind11 decodes strings similar to Pythons's
+    // bytes.decode('utf-8'). It raises if the decoding fails.
+    // generate() may return incomplete Unicode points if max_new_tokens
+    // was reached. Replace such points with � instead of raising an exception
+    PyObject* py_s = PyUnicode_DecodeUTF8(text.data(), text.length(), "replace");
+    return py::reinterpret_steal<py::object>(py_s);
 }
 }  // namespace
 
@@ -211,12 +229,25 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("translate_token_id", &WhisperGenerationConfig::translate_token_id)
         .def_readwrite("transcribe_token_id", &WhisperGenerationConfig::transcribe_token_id)
         .def_readwrite("begin_timestamps_token_id", &WhisperGenerationConfig::begin_timestamps_token_id)
+        .def_readwrite("max_initial_timestamp_index", &WhisperGenerationConfig::max_initial_timestamp_index)
         .def_readwrite("no_timestamps_token_id", &WhisperGenerationConfig::no_timestamps_token_id)
         .def_readwrite("is_multilingual", &WhisperGenerationConfig::is_multilingual)
         .def_readwrite("language", &WhisperGenerationConfig::language)
         .def_readwrite("lang_to_id", &WhisperGenerationConfig::lang_to_id)
         .def_readwrite("task", &WhisperGenerationConfig::task)
+        .def_readwrite("return_timestamps", &WhisperGenerationConfig::return_timestamps)
         .def("set_eos_token_id", &WhisperGenerationConfig::set_eos_token_id);
+
+    py::class_<WhisperDecodedResultChunk>(m, "WhisperDecodedResultChunk", whisper_decoded_result_chunk)
+        .def(py::init<>())
+        .def_readonly("start_ts", &WhisperDecodedResultChunk::start_ts)
+        .def_readonly("end_ts", &WhisperDecodedResultChunk::end_ts)
+        .def_property_readonly("text", [](WhisperDecodedResultChunk& chunk) {
+            return handle_utf8_text(chunk.text);
+        });
+
+    py::class_<WhisperDecodedResults, DecodedResults>(m, "WhisperDecodedResults", whisper_decoded_results_docstring)
+        .def_readonly("chunks", &WhisperDecodedResults::chunks);
 
     py::class_<WhisperPipeline>(m, "WhisperPipeline")
         .def(py::init([](const std::string& model_path,

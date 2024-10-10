@@ -189,11 +189,14 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
     cb = kwargs.get("use_cb", False)
     if cb:
         log.info("Continuous Batching mode activated")
+        default_cb_config = {"cache_size": 1}
+        if "GPU" in device:
+            default_cb_config["block_size"] = 16
         scheduler_config = openvino_genai.SchedulerConfig()
-        scheduler_params = kwargs.get("cb_config") or {"cache_size": 1}
+        scheduler_params = kwargs.get("cb_config") or default_cb_config
         if scheduler_params:
             log.info(f"Scheduler parameters:\n{scheduler_params}")
-        
+
             for param, value in scheduler_params.items():
                 setattr(scheduler_config, param, value)
         ov_config["scheduler_config"] = scheduler_config
@@ -209,19 +212,24 @@ def create_genai_text_gen_model(model_path, device, ov_config, **kwargs):
             self.token_generation_time = []
             self.generated_tokens = []
             self.start_time = time.perf_counter()
+
         def put(self, token_id):
             self.token_generation_time.append(time.perf_counter() - self.start_time)
             self.generated_tokens.append(token_id)
             self.start_time = time.perf_counter()
             return False
+
         def reset(self):
             self.token_generation_time = []
             self.generated_tokens = []
             self.start_time = time.perf_counter()
+
         def end(self):
             pass
+
         def get_tokens(self):
             return self.generated_tokens
+
         def get_time_list(self):
             return self.token_generation_time
     streamer = TokenStreamer(llm_pipe.get_tokenizer()) if cb else None

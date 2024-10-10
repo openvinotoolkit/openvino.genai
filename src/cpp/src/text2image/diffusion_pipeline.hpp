@@ -1,6 +1,8 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#pragma once
+
 #include <fstream>
 
 #include "text2image/schedulers/ischeduler.hpp"

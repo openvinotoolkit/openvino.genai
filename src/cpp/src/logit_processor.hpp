@@ -365,8 +365,12 @@ public:
         }
     }
 
-    void increment_gen_tokens() {
-        ++m_generated_tokens;
+    void update_generated_len(size_t updated_len) {
+        m_generated_tokens = updated_len;
+    }
+
+    size_t get_generated_len() {
+        return m_generated_tokens;
     }
 
     void register_new_generated_token(int64_t new_token_id) {
@@ -377,4 +381,10 @@ public:
             it->second++;
         }
     }
+
+    void decrease_generated_token_occurance(int64_t token_id) {
+        OPENVINO_ASSERT(m_unique_generated_token_ids->count(token_id) > 0);
+        m_unique_generated_token_ids->at(token_id)--;
+    }
+
 };
