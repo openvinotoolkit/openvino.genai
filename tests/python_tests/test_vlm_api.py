@@ -90,7 +90,7 @@ def test_vlm_pipeline(tmp_path, generation_config, links):
 
     pipe(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
     for prompt in prompts[1:]:
-        pipe.generate(prompt, generation_config, streamer)
+        pipe.generate(prompt, generation_config=generation_config, streamer=streamer)
 
     pipe.finish_chat()
 
