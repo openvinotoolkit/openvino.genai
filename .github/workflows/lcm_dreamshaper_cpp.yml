@@ -70,7 +70,7 @@ jobs:
           ./build/samples/cpp/text2image/stable_diffusion ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"
 
   lcm_dreamshaper_v7_cpp-windows:
-    runs-on: windows-2019-16-core
+    runs-on: windows-latest
     defaults:
       run:
         shell: pwsh
@@ -87,11 +87,6 @@ jobs:
             Expand-Archive openvino_package.zip -DestinationPath ./tmp
             mv ./tmp/*/* .
           popd
-
-      - name: Configure Developer Command Prompt for Microsoft Visual C++
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        with:
-          toolset: 14.29
 
       - name: Build app
         run: |

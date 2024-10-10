@@ -203,7 +203,7 @@ jobs:
           echo "Multi prompt" passed
 
   cpp-greedy_causal_lm-windows:
-    runs-on: windows-2019-16-core
+    runs-on: windows-latest
     env:
       PYTHONIOENCODING: "utf8"
     defaults:
@@ -216,10 +216,6 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.9
-      - name: Configure Developer Command Prompt for Microsoft Visual C++
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        with:
-          toolset: 14.29
       - run: curl --output ov.zip ${{ env.w_ov_link }}
       - run: unzip -d ov ov.zip
       - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
@@ -760,7 +756,7 @@ jobs:
           timeout 200s ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 10 --dynamic_split_fuse --max_batch_size 256 --max_input_len 256 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
   cpp-continuous-batching-windows:
-    runs-on: windows-2019-16-core
+    runs-on: windows-latest
     env:
       PYTHONIOENCODING: "utf8"
     defaults:
@@ -773,10 +769,6 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.9
-      - name: Configure Developer Command Prompt for Microsoft Visual C++
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        with:
-          toolset: 14.29
       - name: Install OpenVINO
         run: |
           curl --output ov.zip ${{ env.w_ov_link }}
