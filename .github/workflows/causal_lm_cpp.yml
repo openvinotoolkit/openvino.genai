@@ -258,7 +258,7 @@ jobs:
           && python samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
       - run: fc .\cpp.txt .\py.txt
 
-  cpp-beam_search_causal_lm-Qwen-7B-Chat:
+  cpp-greedy_causal_lm-Qwen-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
     defaults:
       run:
