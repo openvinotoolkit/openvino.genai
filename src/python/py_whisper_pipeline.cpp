@@ -170,23 +170,7 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 
     auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
 
-    StreamerVariant streamer = std::monostate();
-
-    std::visit(utils::overloaded{[&streamer](const std::function<bool(py::str)>& py_callback) {
-                                     // Wrap python streamer with manual utf-8 decoding. Do not rely
-                                     // on pybind automatic decoding since it raises exceptions on incomplete strings.
-                                     auto callback_wrapped = [&py_callback](std::string subword) -> bool {
-                                         auto py_str =
-                                             PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-                                         return py_callback(py::reinterpret_borrow<py::str>(py_str));
-                                     };
-                                     streamer = callback_wrapped;
-                                 },
-                                 [&streamer](std::shared_ptr<StreamerBase> streamer_cls) {
-                                     streamer = streamer_cls;
-                                 },
-                                 [](std::monostate none) { /*streamer is already a monostate */ }},
-               py_streamer);
+    StreamerVariant streamer = ov::genai::pybind::utils::pystreamer_to_streamer(py_streamer);
 
     return py::cast(pipe.generate(raw_speech_input, updated_config, streamer));
 }

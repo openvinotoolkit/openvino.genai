@@ -8,6 +8,7 @@
 #include "openvino/runtime/core.hpp"
 
 #include "utils.hpp"
+#include "lora_helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -36,7 +37,13 @@ UNet2DConditionModel::UNet2DConditionModel(const std::string& root_dir,
                         const std::string& device,
                         const ov::AnyMap& properties) :
     UNet2DConditionModel(root_dir) {
-    compile(device, properties);
+    AdapterConfig adapters;
+    if(auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
+        m_adapter_controller = AdapterController(m_model, adapters, "lora_unet", device);
+        compile(device, *filtered_properties);
+    } else {
+        compile(device, properties);
+    }
 }
 
 UNet2DConditionModel::UNet2DConditionModel(const UNet2DConditionModel&) = default;
@@ -64,7 +71,7 @@ UNet2DConditionModel& UNet2DConditionModel::reshape(int batch_size, int height, 
             name_to_shape[input_name][0] = 1;
         } else if (input_name == "sample") {
             name_to_shape[input_name] = {batch_size, name_to_shape[input_name][1], height, width};
-        } else if (input_name == "time_ids") {
+        } else if (input_name == "time_ids" || input_name == "text_embeds") {
             name_to_shape[input_name][0] = batch_size;
         } else if (input_name == "encoder_hidden_states") {
             name_to_shape[input_name][0] = batch_size;
@@ -90,6 +97,10 @@ UNet2DConditionModel& UNet2DConditionModel::compile(const std::string& device, c
 void UNet2DConditionModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
     OPENVINO_ASSERT(m_request, "UNet model must be compiled first");
     m_request.set_tensor(tensor_name, encoder_hidden_states);
+}
+
+void UNet2DConditionModel::set_adapters(const AdapterConfig& adapters) {
+    m_adapter_controller.apply(m_request, adapters);
 }
 
 ov::Tensor UNet2DConditionModel::infer(ov::Tensor sample, ov::Tensor timestep) {
