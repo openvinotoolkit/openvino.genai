@@ -16,7 +16,8 @@ endif()
 set(TEST_TARGET_NAME "tests_continuous_batching")
 file(GLOB tests_src "*.cpp")
 file(GLOB src_files "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sequence_group.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/cache_eviction.cpp")
+                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/cache_eviction.cpp"
+                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sampler.cpp")
 
 add_executable(${TEST_TARGET_NAME} ${tests_src}
         block_allocator.cpp)
