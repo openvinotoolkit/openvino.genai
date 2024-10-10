@@ -433,7 +433,7 @@ public:
         m_num_validated_tokens = k;
     }
 
-    size_t get_num_validated_tokens() {
+    size_t get_num_tokens_to_validate() {
         return m_num_validated_tokens;
     }
 

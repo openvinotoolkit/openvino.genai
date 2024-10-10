@@ -665,7 +665,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
         size_t decrease_context_len_per_seq_group = 0;
         if (sequence_group->requires_sampling()) {
             // get number of token to be validated
-            auto num_tokens_to_process = sequence_group->get_num_validated_tokens();
+            auto num_tokens_to_process = sequence_group->get_num_tokens_to_validate();
             if (sampling_params.is_greedy_decoding() || sampling_params.is_multinomial()) {
                 std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
                 if (sampling_params.is_greedy_decoding()) {
@@ -712,13 +712,13 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         bool is_extend_sequence = token_offset == 0,
                              // flag to update generated length of sequence group in logit processor
                              is_update_len_logit_processor = running_sequence_id == num_running_sequences - 1,
-                             is_validation_failed = true;
+                             is_validation_passed = true;
                         if (is_validation_mode_enabled) {
-                            is_validation_failed = validate_candidate(running_sequences[running_sequence_id], token_offset, sampled_token_id, is_extend_sequence, decrease_context_len_per_seq_group);
+                            is_validation_passed = validate_candidate(running_sequences[running_sequence_id], token_offset, sampled_token_id, is_extend_sequence, decrease_context_len_per_seq_group);
                         }
                         register_new_token(sampled_token_id, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_update_len_logit_processor);
                         // to exit from sampling in case of failed token validation
-                        if (!is_validation_failed) {
+                        if (!is_validation_passed) {
                             break;
                         }
                     }
