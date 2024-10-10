@@ -597,7 +597,25 @@ ov::Tensor VLMPipeline::get_inputs_embeds_llava_next(const std::string& prompt, 
         ov::Tensor image_embeds = encoded_image.resized_source;
 
         // TODO Post-process image imbeds - resize, unpad and pack
-        
+        // 1. get image_num_patches - TODO Consider getting image_num_patches from pixel_values shape (in m_vision_encoder)
+        // 2. Format pixel_values 5-dim shape [1, 5, 3, 336, 336] to 4-dim shape [5, 3, 336, 336] - TODO Move to m_vision_encoder
+        // 3. Read image_newline tensor
+        //      image_newline = torch.tensor(self.config.image_newline)
+        // 4. Split image_embeds tensor by image_num_patches (e.g. [5]) - Tesnor -> [Tensor]
+        //      image_features = torch.split(torch.from_numpy(vision_embeds), image_num_patches, dim=0)
+        // 5. Pack image features (and add image_newline tensor)
+            // image_features, feature_lens = self.pack_image_features(
+            //     image_features,
+            //     image_sizes,
+            //     image_newline=image_newline,
+            // )
+
+        // Create image_newline tensor with data from config
+        size_t hidden_size = image_embeds.get_shape().at(2);
+        ov::Tensor image_newline(image_embeds.get_element_type(), {hidden_size});
+        float* image_newline_data = image_newline.data<float>();
+        std::copy(m_vlm_config.image_newline.begin(), m_vlm_config.image_newline.end(), image_newline_data);
+
         ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
 
         int64_t image_token_index = 32000; // TODO Consider getting from m_vlm_config.image_token_index or config.json
