@@ -26,8 +26,8 @@ int32_t main(int32_t argc, char* argv[]) try {
     ov::Tensor image = pipe.generate(prompt,
         ov::genai::random_generator(std::make_shared<ov::genai::CppStdGenerator>(42)),
         ov::genai::width(512),
-        ov::genai::height(896),
-        ov::genai::num_inference_steps(20));
+        ov::genai::height(512),
+        ov::genai::num_inference_steps(10));
     imwrite("lora.bmp", image, true);
 
     std::cout << "Generating image without LoRA adapters applied, resulting image will be in baseline.bmp\n";
@@ -35,8 +35,8 @@ int32_t main(int32_t argc, char* argv[]) try {
         ov::genai::adapters(),  // passing adapters in generate overrides adapters set in the constructor; adapters() means no adapters
         ov::genai::random_generator(std::make_shared<ov::genai::CppStdGenerator>(42)),
         ov::genai::width(512),
-        ov::genai::height(896),
-        ov::genai::num_inference_steps(20));
+        ov::genai::height(512),
+        ov::genai::num_inference_steps(10));
     imwrite("baseline.bmp", image, true);
 
     return EXIT_SUCCESS;

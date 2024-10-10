@@ -99,7 +99,8 @@ public:
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(*filtered_plugin_config);
             core.set_property(core_plugin_config);
             auto model = core.read_model(model_path / "openvino_model.xml");
-            m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable
+            m_generation_config.adapters.set_tensor_name_prefix("base_model.model.model.");
+            m_adapter_controller = AdapterController(model, m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
             m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
             m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
         } else {

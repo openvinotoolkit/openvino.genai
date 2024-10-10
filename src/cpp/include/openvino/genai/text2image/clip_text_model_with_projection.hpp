@@ -7,6 +7,7 @@
 
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -54,12 +55,15 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
+    void set_adapters(const AdapterConfig& adapters);
+
     ov::Tensor infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance);
 
     ov::Tensor get_output_tensor(const size_t idx);
 
 private:
     Config m_config;
+    AdapterController m_adapter_controller;
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
 

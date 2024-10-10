@@ -46,7 +46,7 @@ extern "C" {
 #define FP16_BF16_TENSORS_SUPPORTED_IN_STATE 0
 
 // FIXME: Remove or move to a dedicated common header
-#ifdef NDEBUG
+#if false
     #define DEBUG_PRINT(X) do {} while(false)
 #else
     #define DEBUG_PRINT(X) do { std::cerr << "[ DEBUG ] " << X << "\n"; } while(false)
@@ -255,18 +255,30 @@ using LoRAParametersGetter = std::function<std::optional<LoRAParameters>(NodePtr
 // It works for a single LoRA adapter.
 // Returns std::nullopt, if there is no LoRA adapter for a given layer name.
 struct LoRAWeightGetterDefault {
-    // TODO: Add filtering by tensor name prefix
     const LoRATensors* lora_tensors;
     const std::string prefix;
     mutable std::set<std::string> used_tensors;
 
     LoRAWeightGetterDefault (const LoRATensors* lora_tensors, const std::string& prefix) : lora_tensors(lora_tensors), prefix(prefix) {}
 
-    std::optional<LoRANode> operator() (const std::string& name) const {
+    std::optional<LoRANode> operator() (const std::string& orig_name) const {
+        std::string name = orig_name;
+        name = std::regex_replace(name, std::regex("mid_block.attentions.0"), "middle_block_1");
+        name = std::regex_replace(name, std::regex("down_blocks"), "output_blocks");
+        name = std::regex_replace(name, std::regex("up_blocks"), "input_blocks");
+        name = std::regex_replace(name, std::regex("attentions\\."), "");
+        // if(name != orig_name) {
+        //     DEBUG_PRINT("names are different: " << orig_name << "  -->  " << name);
+        // }
         std::string name_with_underscores = name;
         // TODO: Investigate what is the root cause for this replacement in the name. Customize mapping or change PT FE to produce correct weight names.
         std::replace(name_with_underscores.begin(), name_with_underscores.end(), '.', '_');
-        auto it = std::find_if(lora_tensors->begin(), lora_tensors->end(), [this, name, name_with_underscores](const LoRATensors::value_type& pair){
+
+        std::string orig_name_with_underscores = orig_name;
+        std::replace(orig_name_with_underscores.begin(), orig_name_with_underscores.end(), '.', '_');
+        std::vector<std::string> variants{orig_name, name, name_with_underscores, orig_name_with_underscores};
+        //std::cerr << "Node name: " << name << "\n";
+        auto it = std::find_if(lora_tensors->begin(), lora_tensors->end(), [this, variants](const LoRATensors::value_type& pair){
             std::string lora_name = pair.first;
             // TODO: Make this filtering for prefix once in ctor as a more efficient solution
             if(lora_name.find(prefix) == 0) {
@@ -275,7 +287,7 @@ struct LoRAWeightGetterDefault {
                 return false;
             }
             // TODO: Should it be an exact match instead of substring taking into account that we should provide custom mapper for names?
-            return name.find(lora_name) != std::string::npos || name_with_underscores.find(lora_name) != std::string::npos;
+            return variants.end() != std::find_if(variants.begin(), variants.end(), [lora_name](const std::string& name) { return name.find(lora_name) != std::string::npos; });
         });
         if(it != lora_tensors->end()) {
             used_tensors.insert(it->first);
@@ -762,13 +774,11 @@ bool operator< (const Adapter& a, const Adapter& b) {
 
 struct AdapterControllerImpl {
     std::vector<LoRAVarIDs> variable_ids;
-    const std::string prefix;
     AdapterConfig current_config;
     bool need_full_apply = true;
     InferRequestSignatureCache lora_state_evaluators;
 
-    AdapterControllerImpl(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix) :
-        prefix(prefix),
+    AdapterControllerImpl(std::shared_ptr<ov::Model> model, const AdapterConfig& config) :
         current_config(config),  // FIXME: Compare current and passed configs and change incrementally
         lora_state_evaluators("CPU")    // FIXME: Try to run on the same device that is used for model inference
     {
@@ -781,7 +791,7 @@ struct AdapterControllerImpl {
 
         for(auto const& adapter : current_config.get_adapters()) {
             auto adapter_impl = get_adapter_impl(adapter);
-            params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->tensors, prefix));
+            params_getter.weight_getter.push_back(LoRAWeightGetterDefault(&adapter_impl->tensors, config.get_tensor_name_prefix().value_or("")));
             // TODO: Instead of aggregating types over all tensors in each adapter, make decision per node in LoRAWeightStateGetter
             /*if(params_getter.type != ov::element::f32)*/ {  // FIXME: Implement element_type tolerant code when state is set and uncomment this condition
                 for(auto const& tensor : adapter_impl->tensors) {
@@ -914,11 +924,13 @@ struct AdapterControllerImpl {
             return;
         }
 
+        DEBUG_PRINT("APPLY CALLED FOR");
+
         std::vector<LoRAWeightGetter> weight_getters;
         const auto& adapters = current_config.get_adapters();
         weight_getters.reserve(adapters.size());
         for(const auto& adapter: adapters) {
-            weight_getters.emplace_back(LoRAWeightGetterDefault(&get_adapter_impl(adapter)->tensors, prefix));
+            weight_getters.emplace_back(LoRAWeightGetterDefault(&get_adapter_impl(adapter)->tensors, current_config.get_tensor_name_prefix().value_or("")));
         }
 
         auto state = infer_request.query_state();
@@ -1170,7 +1182,7 @@ struct AdapterControllerImpl {
 };
 
 
-AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, const std::string& prefix, std::string device)
+AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, std::string device)
 {
     // If AdapterConfig::MODE_AUTO is used, then set real mode depending on the device capabilities
     // TODO: Remove this code when devices become aligned on their capabilities for LoRA adapaters
@@ -1187,7 +1199,7 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
         if(default_mode != default_modes.end()) {
             AdapterConfig updated_config = config;
             updated_config.set_mode(default_mode->second);
-            m_pimpl = std::make_shared<AdapterControllerImpl>(model, updated_config, prefix);
+            m_pimpl = std::make_shared<AdapterControllerImpl>(model, updated_config);
             return;
         } else {
             std::string device_msg;
@@ -1202,7 +1214,7 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
                 << "To avoid this warning set one of the AdapterConfig::Mode values except MODE_AUTO.";
         }
     }
-    m_pimpl = std::make_shared<AdapterControllerImpl>(model, config, prefix);
+    m_pimpl = std::make_shared<AdapterControllerImpl>(model, config);
 }
 
 

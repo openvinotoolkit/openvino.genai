@@ -39,7 +39,10 @@ UNet2DConditionModel::UNet2DConditionModel(const std::string& root_dir,
     UNet2DConditionModel(root_dir) {
     AdapterConfig adapters;
     if(auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
-        m_adapter_controller = AdapterController(m_model, adapters, "lora_unet", device);
+        adapters.set_tensor_name_prefix(adapters.get_tensor_name_prefix().value_or("lora_unet"));
+        std::cerr << "DEBUG PRINT: " << *adapters.get_tensor_name_prefix() << '\n';
+        ov::serialize(m_model, "/workspaces/openvino/unet_xl.before.lora.xml");
+        m_adapter_controller = AdapterController(m_model, adapters, device);
         compile(device, *filtered_properties);
     } else {
         compile(device, properties);
