@@ -39,11 +39,11 @@ void Text2ImagePipeline::GenerationConfig::update_generation_config(const ov::An
     read_anymap_param(properties, SD_GENERATION_CONFIG, *this);
 
     // then try per-parameter values
-    read_anymap_param(properties, "prompt2", prompt2);
-    read_anymap_param(properties, "prompt2", prompt2);
+    read_anymap_param(properties, "prompt_2", prompt_2);
+    read_anymap_param(properties, "prompt_3", prompt_3);
     read_anymap_param(properties, "negative_prompt", negative_prompt);
-    read_anymap_param(properties, "negative_prompt2", negative_prompt2);
-    read_anymap_param(properties, "negative_prompt3", negative_prompt3);
+    read_anymap_param(properties, "negative_prompt_2", negative_prompt_2);
+    read_anymap_param(properties, "negative_prompt_3", negative_prompt_3);
     read_anymap_param(properties, "num_images_per_prompt", num_images_per_prompt);
     read_anymap_param(properties, "random_generator", random_generator);
     read_anymap_param(properties, "guidance_scale", guidance_scale);
