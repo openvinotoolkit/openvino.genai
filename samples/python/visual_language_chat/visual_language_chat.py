@@ -54,12 +54,20 @@ def main():
     config.max_new_tokens = 100
 
     pipe.start_chat()
+    try:
+        prompt = input('question:\n')
+    except EOFError:
+        pipe.finish_chat()
+        return
+    pipe(prompt, image=image, generation_config=config, streamer=streamer)
+    print('\n----------')
+
     while True:
         try:
             prompt = input('question:\n')
         except EOFError:
             break
-        pipe(prompt, image=image, generation_config=config, streamer=streamer)
+        pipe(prompt, generation_config=config, streamer=streamer)
         print('\n----------')
     pipe.finish_chat()
 
