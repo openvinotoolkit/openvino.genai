@@ -28,20 +28,6 @@
 namespace {
 using ov::genai::WhisperFeatures;
 
-struct whisper_mel {
-    int n_len;
-    int n_mel;
-
-    std::vector<float> data;
-};
-
-// todo: use at initialization step
-struct whisper_filters {
-    const size_t n_mel;
-    const size_t n_fft;  // 1 + (N_FFT / 2)
-    std::vector<float> data;
-};
-
 static bool hann_window(const size_t length, const bool periodic, std::vector<float>& output) {
     if (output.size() < length) {
         output.resize(length);
@@ -152,17 +138,16 @@ static void log_mel_spectrogram_worker_thread(int ith,
                                               int frame_size,
                                               int frame_step,
                                               int n_threads,
-                                              const whisper_filters& filters,
+                                              const std::vector<float>& mel_filter,
                                               WhisperFeatures& features,
                                               const std::vector<float>& sin_vals,
                                               const std::vector<float>& cos_vals) {
     std::vector<float> fft_in(frame_size, 0.0);
     std::vector<float> fft_out(2 * frame_size);
-    int n_fft = filters.n_fft;
+    int n_fft = 1 + (frame_size / 2);
     int i = ith;
 
-    // make sure n_fft == 1 + (WHISPER_N_FFT / 2), bin_0 to bin_nyquist
-    assert(n_fft == 1 + (frame_size / 2));
+    OPENVINO_ASSERT(mel_filter.size() == n_fft * features.feature_size);
 
     // calculate FFT only when fft_in are not all zero
     for (; i < std::min(n_samples / frame_step + 1, int(features.n_frames)); i += n_threads) {
@@ -193,15 +178,13 @@ static void log_mel_spectrogram_worker_thread(int ith,
             // unroll loop (suggested by GH user @lunixbochs)
             int k = 0;
             for (k = 0; k < n_fft - 3; k += 4) {
-                sum += fft_out[k + 0] * filters.data[j * n_fft + k + 0] +
-                       fft_out[k + 1] * filters.data[j * n_fft + k + 1] +
-                       fft_out[k + 2] * filters.data[j * n_fft + k + 2] +
-                       fft_out[k + 3] * filters.data[j * n_fft + k + 3];
+                sum += fft_out[k + 0] * mel_filter[j * n_fft + k + 0] + fft_out[k + 1] * mel_filter[j * n_fft + k + 1] +
+                       fft_out[k + 2] * mel_filter[j * n_fft + k + 2] + fft_out[k + 3] * mel_filter[j * n_fft + k + 3];
             }
 
             // handle n_fft remainder
             for (; k < n_fft; k++) {
-                sum += fft_out[k] * filters.data[j * n_fft + k];
+                sum += fft_out[k] * mel_filter[j * n_fft + k];
             }
 
             sum = log10(std::max(sum, 1e-10));
@@ -374,8 +357,6 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
                                               const std::vector<float>& mel_filter,
                                               const std::vector<float>& sin_vals,
                                               const std::vector<float>& cos_vals) {
-    whisper_filters filters{feature_size, 1 + n_fft / 2, mel_filter};
-
     // Hanning window (Use cosf to eliminate difference)
     // ref: https://pytorch.org/docs/stable/generated/torch.hann_window.html
     // ref: https://github.com/openai/whisper/blob/main/whisper/audio.py#L147
@@ -386,7 +367,7 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
     auto padded_raw_speech = pad(raw_speech, sampling_rate * 30, reflect_pad_size);
 
     WhisperFeatures features;
-    features.feature_size = filters.n_mel;
+    features.feature_size = feature_size;
     // https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/SpectralOps.cpp#L936
     // Calculate number of frames + remove the last frame
     features.n_frames = (padded_raw_speech.size() - n_fft) / hop_length;
@@ -403,7 +384,7 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
                                       n_fft,
                                       hop_length,
                                       n_threads,
-                                      std::cref(filters),
+                                      std::cref(mel_filter),
                                       std::ref(features),
                                       std::cref(sin_vals),
                                       std::cref(cos_vals));
@@ -417,7 +398,7 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
                                           n_fft,
                                           hop_length,
                                           n_threads,
-                                          filters,
+                                          mel_filter,
                                           features,
                                           sin_vals,
                                           cos_vals);
