@@ -80,7 +80,6 @@ def test_vlm_pipeline(tmp_path, generation_config, links):
         print(word, end="")
         return False
 
-
     model_path = get_ov_model(os.path.join(tmp_path, "miniCPM"))
     images = []
     for link in links:
@@ -88,17 +87,10 @@ def test_vlm_pipeline(tmp_path, generation_config, links):
 
     pipe = VLMPipeline(model_path, "CPU")
     pipe.start_chat()
-    for prompt in prompts:
 
-        def run_pipeline():
-            pipe.generate(prompt, images, generation_config, streamer)
-
-        # TODO: Currently the generation hangs in endless loop, so the timeout is needed
-        # Remove subprocess usage with timeout when endless loop is fixed
-        p1 = Process(target=run_pipeline)
-        p1.start()
-        p1.join(timeout=60)
-        p1.terminate()
+    pipe(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
+    for prompt in prompts[1:]:
+        pipe.generate(prompt, generation_config, streamer)
 
     pipe.finish_chat()
 
