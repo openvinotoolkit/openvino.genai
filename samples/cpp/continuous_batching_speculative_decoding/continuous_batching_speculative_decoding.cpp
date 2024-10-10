@@ -6,24 +6,10 @@
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 
-void print_generation_result(const ov::genai::GenerationResult& generation_result) {
-    for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
-        std::cout << "Answer " << output_id << " (" << generation_result.m_scores[output_id] << ") : " << generation_result.m_generation_ids[output_id] << std::endl;
+void print_generation_result(const std::vector<std::string>& texts, const std::vector<float>& log_probs) {
+    for (size_t output_id = 0; output_id < texts.size(); ++output_id) {
+        std::cout << "Answer " << output_id << " (" << log_probs[output_id] << ") : " << texts[output_id] << std::endl;
     }
-}
-
-ov::genai::GenerationConfig speculative_decoding_multinomial() {
-    auto speculative_decoding_multinomial_config = ov::genai::multinomial();
-    speculative_decoding_multinomial_config.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::CONSTANT;
-    speculative_decoding_multinomial_config.num_assistant_tokens = 5;
-    return speculative_decoding_multinomial_config;
-}
-
-ov::genai::GenerationConfig speculative_decoding_greedy() {
-    auto speculative_decoding_greedy_config = ov::genai::greedy();
-    speculative_decoding_greedy_config.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::HEURISTIC;
-    speculative_decoding_greedy_config.assistant_confidence_threshold = 0.4f;
-    return speculative_decoding_greedy_config;
 }
 
 int main(int argc, char* argv[]) try {
@@ -56,8 +42,8 @@ int main(int argc, char* argv[]) try {
 
     const size_t num_prompts = result["num_prompts"].as<size_t>();
     const bool dynamic_split_fuse = result["dynamic_split_fuse"].as<bool>();
-    const std::string models_path = result["model"].as<std::string>();
-    const std::string draft_models_path = result["draft_model"].as<std::string>();
+    const std::string model_path = result["model"].as<std::string>();
+    const std::string draft_model_path = result["draft_model"].as<std::string>();
     const std::string device = result["device"].as<std::string>();
     const bool use_prefix = result["use_prefix"].as<bool>();
 
@@ -76,18 +62,19 @@ int main(int argc, char* argv[]) try {
         "What is OpenVINO?",
     };
 
-    std::vector<ov::genai::GenerationConfig> sampling_params_examples = {
-        speculative_decoding_greedy(),
-        speculative_decoding_multinomial(),
-    };
+    // sampling param for speulative decoding
+    ov::genai::GenerationConfig generation_config = ov::genai::greedy();
+    {
+        generation_config.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::CONSTANT;
+        generation_config.num_assistant_tokens = 5;
+
+        // generation_config.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::HEURISTIC;
+        // generation_config.assistant_confidence_threshold = 0.4f;
+    }
 
     std::vector<std::string> prompts(num_prompts);
-    std::vector<ov::genai::GenerationConfig> sampling_params(num_prompts);
-
-    for (size_t request_id = 0; request_id < num_prompts; ++request_id) {
-        prompts[request_id] = use_prefix ? prefix_str + prompt_examples[request_id % prompt_examples.size()]
-                                         : prompt_examples[request_id % prompt_examples.size()];
-        sampling_params[request_id] = sampling_params_examples[request_id % sampling_params_examples.size()];
+    for (size_t i = 0; i < num_prompts; ++i) {
+        prompts[i] = prompt_examples[i % prompt_examples.size()];
     }
 
     // Perform the inference
@@ -112,46 +99,28 @@ int main(int argc, char* argv[]) try {
     scheduler_config.max_num_seqs = 2;
     scheduler_config.enable_prefix_caching = use_prefix;
 
-    ov::AnyMap plugin_config{{ov::genai::draft_model.name(), ov::genai::ModelDesc(draft_models_path)}};
+    ov::AnyMap plugin_config{
+        { ov::genai::scheduler_config.name(), scheduler_config },
+        // device to run draft pipeline. Can be different with the main pipeline.
+        // in case of same devices, plugin_config will be reused for both pipeline, KV cache will be splitted for main and draft pipeline
+        { ov::genai::draft_model.name(), ov::genai::ModelDesc(draft_model_path, device) },
+    };
 
     // It's possible to construct a Tokenizer from a different path.
     // If the Tokenizer isn't specified, it's loaded from the same folder.
-    ov::genai::ContinuousBatchingPipeline pipe(models_path, ov::genai::Tokenizer{models_path}, scheduler_config, device, plugin_config);
+    ov::genai::LLMPipeline pipe(model_path, ov::genai::Tokenizer{model_path}, device, plugin_config);
 
     if (use_prefix) {
         std::cout << "Running inference for prefix to compute the shared prompt's KV cache..." << std::endl;
-        std::vector<ov::genai::GenerationResult> generation_results = pipe.generate({prefix_str}, {ov::genai::greedy()});
-        ov::genai::GenerationResult& generation_result = generation_results.front();
-        OPENVINO_ASSERT(generation_result.m_status == ov::genai::GenerationStatus::FINISHED);
+        auto generation_results = pipe.generate(prefix_str, ov::genai::greedy());
     }
 
-    std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, sampling_params);
-
-    for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
-        const ov::genai::GenerationResult & generation_result = generation_results[request_id];
+    for (size_t request_id = 0; request_id < prompts.size(); ++request_id) {
+        ov::genai::DecodedResults generation_results = pipe.generate(prompts[request_id], generation_config);
         std::cout << "Question: " << prompts[request_id] << std::endl;
-        switch (generation_result.m_status)
-        {
-        case ov::genai::GenerationStatus::FINISHED:
-            print_generation_result(generation_result);
-            break;
-        case ov::genai::GenerationStatus::IGNORED:
-            std::cout << "Request was ignored due to lack of memory." <<std::endl;
-            if (generation_result.m_generation_ids.size() > 0) {
-                std::cout << "Partial result:" << std::endl;
-                print_generation_result(generation_result);
-            }
-            break;
-        case ov::genai::GenerationStatus::DROPPED_BY_PIPELINE:
-            std::cout << "Request was aborted." <<std::endl;
-            if (generation_result.m_generation_ids.size() > 0) {
-                std::cout << "Partial result:" << std::endl;
-                print_generation_result(generation_result);
-            }
-            break;   
-        default:
-            break;
-        }
+        const std::vector<std::string>& text_results = generation_results.texts;
+        const std::vector<float>& log_prob_results = generation_results.scores;
+        print_generation_result(text_results, log_prob_results);
         std::cout << std::endl;
     }
 } catch (const std::exception& error) {

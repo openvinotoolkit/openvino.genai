@@ -150,26 +150,6 @@ public:
     void validate() const;
 };
 
-/**
-* @brief ModelDesc serves to activate speculative decoding model in continuous batching pipeline.
-* Create SpeculativeDecodingImpl and fill it with sutable values.
-*/
-struct ModelDesc {
-    std::string model_path;
-    std::string device;
-    ov::genai::SchedulerConfig scheduler_config;
-    ov::AnyMap plugin_config;
-
-    ModelDesc(const std::string& model_path,
-              const std::string& device = "",
-              const ov::genai::SchedulerConfig& scheduler_config = {},
-              const ov::AnyMap& plugin_config = {}) :
-        model_path(model_path),
-        device(device),
-        scheduler_config(scheduler_config),
-        plugin_config(plugin_config) {}
-};
-
 /*
  * utils that allow to use generate and operator() in the following way:
  * pipe.generate(input_ids, ov::genai::max_new_tokens(200), ov::genai::temperature(1.0f),...)
@@ -204,8 +184,6 @@ static constexpr ov::Property<size_t> rng_seed{"rng_seed"};
 static constexpr ov::Property<NumAssistatantTokensScheduleType> num_assistant_tokens_schedule{"num_assistant_tokens_schedule"};
 static constexpr ov::Property<float> assistant_confidence_threshold{"assistant_confidence_threshold"};
 static constexpr ov::Property<size_t> num_assistant_tokens{"num_assistant_tokens"};
-
-static constexpr ov::Property<ModelDesc> draft_model{"draft_model"};
 
 // Predefined Configs
 OPENVINO_GENAI_EXPORTS GenerationConfig beam_search();

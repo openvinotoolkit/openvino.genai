@@ -29,7 +29,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
 
     std::string draft_device = draft_model_desc.device;
     bool is_draft_device_undefined = false;
-    if (draft_device.empty()) {
+    if (draft_device.empty() || draft_device == main_device) {
         draft_device = main_device;
         is_draft_device_undefined = true;
     }
@@ -43,7 +43,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
         auto k = static_cast<float>(draft_model_cache_size) / (main_model_cache_size + draft_model_cache_size);
 
         size_t main_cache_size = main_scheduler_config.cache_size * (1 - k),
-            draft_cache_size = main_scheduler_config.cache_size * k;
+               draft_cache_size = main_scheduler_config.cache_size * k;
         if (draft_cache_size == 0) {
             main_cache_size -= main_cache_size > 1 ? 1 : 0;
             draft_cache_size = 1;

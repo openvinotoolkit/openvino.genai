@@ -31,6 +31,29 @@ using StringInputs = std::variant<std::string, std::vector<std::string>>;
 static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_config"};
 
 /**
+* @brief ModelDesc serves to activate speculative decoding model in continuous batching pipeline.
+* Create SpeculativeDecodingImpl and fill it with sutable values.
+* In case of empty device speculative decoding will be run with the same configuration as main_pipeline.
+*/
+struct ModelDesc {
+    std::string model_path;
+    std::string device;
+    ov::genai::SchedulerConfig scheduler_config;
+    ov::AnyMap plugin_config;
+
+    ModelDesc(const std::string& model_path,
+              const std::string& device = "",
+              const ov::AnyMap& plugin_config = {},
+              const ov::genai::SchedulerConfig& scheduler_config = {}) :
+        model_path(model_path),
+        device(device),
+        plugin_config(plugin_config),
+        scheduler_config(scheduler_config) {}
+};
+
+static constexpr ov::Property<ModelDesc> draft_model{"draft_model"};
+
+/**
 * @brief Structure to store resulting batched tokens and scores for each batch sequence.
 * The first num_return_sequences elements correspond to the first batch element.
 * In the case if results decoded with beam search and random sampling scores contain
