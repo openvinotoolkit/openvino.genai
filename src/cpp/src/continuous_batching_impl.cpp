@@ -457,7 +457,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
 
         size_t num_running_sequences = sequence_group->num_running_seqs();
         OPENVINO_ASSERT(num_running_sequences == 1);
-        size_t actual_seq_len = sequence_group->get_num_scheduled_tokens(); // points to a token which needs to be sampled
+        size_t actual_seq_len = sequence_group->get_num_scheduled_tokens();
         size_t padded_amount_of_processed_tokens = std::max(actual_seq_len, batch_seq_len);
 
         const float * sequence_group_logits_data = logits_data + vocab_size * currently_processed_tokens;
@@ -475,13 +475,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
         if (num_prompt_tokens_processed == 0)
             sequence_group->append_prompt_log_prob(1.0);
 
-        for (int i = 0; i < actual_seq_len - exclude_last_logprob; i++) {
-            const float* token_logits = (sequence_group_logits_data + (num_prompt_tokens_processed + i) * vocab_size);
-
-            int64_t token_id = sequence_group->get_prompt_ids()[num_prompt_tokens_processed + i + 1];
+        for (int token_logits_offset = 0, token_id_offset = num_prompt_tokens_processed + 1;
+             token_logits_offset < actual_seq_len - exclude_last_logprob;
+             token_logits_offset++, token_id_offset++) {
+            
+            const float* token_logits = (sequence_group_logits_data + token_logits_offset * vocab_size);
+            int64_t token_id = sequence_group->get_prompt_ids()[token_id_offset];
             float token_logit = token_logits[token_id];
 
-            // finding max value for log softmax
+            // find max value for log softmax
             float max_value = -std::numeric_limits<float>::infinity();
             size_t max_index = 0;
             for (size_t i = 0; i < vocab_size; ++i) {
