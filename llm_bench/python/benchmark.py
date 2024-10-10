@@ -15,7 +15,7 @@ import numpy as np
 from openvino.runtime import get_version
 import PIL
 import hashlib
-import llm_bench_utils.metrics_print
+import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.output_csv
 import traceback
 from transformers import set_seed, pipeline
@@ -44,6 +44,7 @@ whisper_hook = WhisperHook()
 
 def gen_iterate_data(
     iter_idx='',
+    loop_idx='',
     in_size='',
     infer_count='',
     out_size='',
@@ -55,19 +56,24 @@ def gen_iterate_data(
     max_uss_mem='',
     prompt_idx='',
     tokenization_time=[],
+    first_token_latency='',
+    other_token_latency='',
+    first_infer_latency='',
+    other_infers_latency=''
 ):
     iter_data = {}
     iter_data['iteration'] = iter_idx
+    iter_data['loop'] = loop_idx
     iter_data['input_size'] = in_size
     iter_data['infer_count'] = infer_count
     iter_data['output_size'] = out_size
     iter_data['generation_time'] = gen_time
     iter_data['latency'] = latency
     iter_data['result_md5'] = res_md5
-    iter_data['first_token_latency'] = ''
-    iter_data['other_tokens_avg_latency'] = ''
-    iter_data['first_token_infer_latency'] = ''
-    iter_data['other_tokens_infer_avg_latency'] = ''
+    iter_data['first_token_latency'] = first_token_latency
+    iter_data['other_tokens_avg_latency'] = other_token_latency
+    iter_data['first_token_infer_latency'] = first_infer_latency
+    iter_data['other_tokens_infer_avg_latency'] = other_infers_latency
     iter_data['max_rss_mem_consumption'] = max_rss_mem
     iter_data['max_shared_mem_consumption'] = max_shared_mem
     iter_data['max_uss_mem_consumption'] = max_uss_mem
@@ -173,6 +179,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
             log.warning(f'Output token size({generated_token_size}) is not equal to infer count({len(tm_infer_list)})')
     iter_data = gen_iterate_data(
         num,
+        '',
         input_token_size * args['batch_size'],
         len(tm_infer_list),
         num_tokens,
@@ -186,7 +193,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         tokenization_time=(tok_encode_time, tok_decode_time)
     )
     iter_data_list.append(iter_data)
-    llm_bench_utils.metrics_print.print_metrics(
+    metrics_print.print_metrics(
         num,
         iter_data,
         tm_list,
@@ -196,14 +203,15 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
         tokenization_time=(tok_encode_time, tok_decode_time),
-        batch_size=args['batch_size']
+        batch_size=args['batch_size'],
+        prompt_idx=prompt_index
     )
     if num > 0:
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
-            llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+            metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
             if num == 1:
                 # if the device is CPU, throw exception
                 if args['devices'].lower().startswith('cpu') is True:
@@ -212,7 +220,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
                 # throw exception
                 assert (result_md5_list == prev_md5)
     else:
-        llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+        metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
     if bench_hook is not None:
         bench_hook.clear_time_list()
         bench_hook.clear_time_infer_list()
@@ -279,6 +287,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
     )
     iter_data = gen_iterate_data(
         num,
+        '',
         input_token_size * args['batch_size'],
         len(tm_list),
         num_tokens,
@@ -292,7 +301,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         tokenization_time=tokenization_time
     )
     iter_data_list.append(iter_data)
-    llm_bench_utils.metrics_print.print_metrics(
+    metrics_print.print_metrics(
         num,
         iter_data,
         tm_list.tolist(),
@@ -302,14 +311,15 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
         tokenization_time=tokenization_time,
-        batch_size=args['batch_size']
+        batch_size=args['batch_size'],
+        prompt_idx=prompt_index
     )
     if num > 0:
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
-            llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+            metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
             if num == 1:
                 # if the device is CPU, throw exception
                 if args['devices'].lower().startswith('cpu') is True:
@@ -318,7 +328,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
                 # throw exception
                 assert (result_md5_list == prev_md5)
     else:
-        llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+        metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
 
 
 def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_index, streamer, model_precision, proc_id):
@@ -382,6 +392,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
     iter_data = gen_iterate_data(
         num,
+        '',
         input_token_size * args['batch_size'],
         len(tm_list),
         num_tokens,
@@ -395,7 +406,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         tokenization_time=(tok_encode_time, tok_decode_time)
     )
     iter_data_list.append(iter_data)
-    llm_bench_utils.metrics_print.print_metrics(
+    metrics_print.print_metrics(
         num,
         iter_data,
         tm_list,
@@ -405,14 +416,15 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
         tokenization_time=(tok_encode_time, tok_decode_time),
-        batch_size=args['batch_size']
+        batch_size=args['batch_size'],
+        prompt_idx=prompt_index
     )
     if num > 0:
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
             log.warning(f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
-            llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+            metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
             if num == 1:
                 # if the device is CPU, throw exception
                 if args['devices'].lower().startswith('cpu') is True:
@@ -421,7 +433,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
                 # throw exception
                 assert (result_md5_list == prev_md5)
     else:
-        llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0])
+        metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
     streamer.reset()
 
 
@@ -458,16 +470,16 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(text_list):
                 if num == 0:
-                    log.info(f'[warm-up] Input text: {input_text}')
+                    log.info(f'[warm-up][P{prompt_idx_list[idx]}] Input text: {input_text}')
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_idx_list[idx], bench_hook, model_precision, proc_id)
     else:
         for idx, input_text in enumerate(text_list):
             for num in range(num_iters + 1):
                 if num == 0:
-                    log.info(f'[warm-up] Input text: {input_text}')
+                    log.info(f'[warm-up][P{prompt_idx_list[idx]}] Input text: {input_text}')
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_idx_list[idx], bench_hook, model_precision, proc_id)
 
-    llm_bench_utils.metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
+    metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time
 
 
@@ -479,7 +491,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     nsteps = image_param.get('steps', DEFAULT_INFERENCE_STEPS if 'lcm' not in args["model_name"] else LCM_DEFAULT_INFERENCE_STEPS)
     guidance_scale = image_param.get('guidance_scale', None)
     log.info(
-        f"[{'warm-up' if num == 0 else num}] Input params: Batch_size={args['batch_size']}, "
+        f"[{'warm-up' if num == 0 else num}][P{image_id}] Input params: Batch_size={args['batch_size']}, "
         f'steps={nsteps}, width={image_width}, height={image_height}, guidance_scale={guidance_scale}'
     )
     result_md5_list = []
@@ -522,16 +534,17 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         prompt_idx=image_id,
     )
     iter_data_list.append(iter_data)
-    llm_bench_utils.metrics_print.print_metrics(
+    metrics_print.print_metrics(
         num,
         iter_data,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
         max_uss_mem=max_uss_mem_consumption,
-        stable_diffusion=stable_diffusion_hook
+        stable_diffusion=stable_diffusion_hook,
+        prompt_idx=image_id
     )
-    llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn)
+    metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn, prompt_idx=image_id)
     stable_diffusion_hook.clear_statistics()
 
 
@@ -571,7 +584,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
             for num in range(num_iters + 1):
                 run_image_generation(image_param, num, prompt_idx_list[image_id], pipe, args, iter_data_list, proc_id)
 
-    llm_bench_utils.metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
+    metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
     return iter_data_list, pretrain_time
 
 
@@ -604,7 +617,7 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
     resize_image_width = img.get('width', DEFAULT_SUPER_RESOLUTION_WIDTH)
     resize_image_height = img.get('height', DEFAULT_SUPER_RESOLUTION_HEIGHT)
     log.info(
-        f"[{'warm-up' if num == 0 else num}] Input params: steps={nsteps}, "
+        f"[{'warm-up' if num == 0 else num}][P{image_id}] Input params: steps={nsteps}, "
         f'resize_width={resize_image_width}, resize_height={resize_image_height}'
     )
     low_res_img = PIL.Image.open(img['prompt']).convert('RGB')
@@ -638,16 +651,17 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         prompt_idx=image_id,
     )
     iter_data_list.append(iter_data)
-    llm_bench_utils.metrics_print.print_metrics(
+    metrics_print.print_metrics(
         num,
         iter_data,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
-        max_uss_mem=max_uss_mem_consumption
+        max_uss_mem=max_uss_mem_consumption,
+        prompt_idx=image_id
     )
-    llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn)
-    llm_bench_utils.metrics_print.print_ldm_unet_vqvae_infer_latency(num, iter_data, tm_list, warm_up=(num == 0))
+    metrics_print.print_generated(num, warm_up=(num == 0), generated=rslt_img_fn, prompt_idx=image_id)
+    metrics_print.print_ldm_unet_vqvae_infer_latency(num, iter_data, tm_list, warm_up=(num == 0), prompt_idx=image_id)
 
 
 def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_iters):
@@ -698,10 +712,10 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
             if num == 0:
                 if args["output_dir"] is not None:
                     llm_bench_utils.output_file.output_image_input_text(str(img['prompt']), args, prompt_idx_list[image_id], None, proc_id)
-            log.info(f"[{'warm-up' if num == 0 else num}] Input image={img['prompt']}")
+            log.info(f"[{'warm-up' if num == 0 else num}][P{prompt_idx_list[image_id]}] Input image={img['prompt']}")
             run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, prompt_idx_list[image_id], tm_list, proc_id)
             tm_list.clear()
-    llm_bench_utils.metrics_print.print_average(iter_data_list, prompt_idx_list, 1, False)
+    metrics_print.print_average(iter_data_list, prompt_idx_list, 1, False)
 
     return iter_data_list, pretrain_time
 
@@ -728,26 +742,27 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_promp
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
-    iter_data = gen_iterate_data(
-        iter_idx=num,
-        gen_time=generation_time,
-        res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_shared_mem=max_shared_mem_consumption,
-        max_uss_mem=max_uss_mem_consumption,
-        prompt_idx=prompt_id,
-    )
-    iter_data_list.append(iter_data)
-    tm_list = []
-    tm_infer_list = []
-    if whisper_hook is not None:
-        tm_list = whisper_hook.get_time_list()
-        tm_infer_list = whisper_hook.get_time_infer_list()
-    llm_bench_utils.metrics_print.print_metrics(
+    
+    latency_list = whisper_hook.get_whisper_latency()
+    for loop_idx, data in enumerate(latency_list):
+        iter_data = gen_iterate_data(
+            iter_idx=num,
+            loop_idx=loop_idx,
+            gen_time=generation_time,
+            res_md5=result_md5_list,
+            max_rss_mem=max_rss_mem_consumption,
+            max_shared_mem=max_shared_mem_consumption,
+            max_uss_mem=max_uss_mem_consumption,
+            prompt_idx=prompt_id,
+            first_token_latency=data['dec_1st_token_time'],
+            other_token_latency=data['dec_2nd_tokens_time'],
+            first_infer_latency=data['dec_1st_infer_time'],
+            other_infers_latency=data['dec_2nd_infers_time']
+        )
+        iter_data_list.append(iter_data)
+    metrics_print.print_metrics(
         num,
         iter_data,
-        tm_list,
-        tm_infer_list,
         warm_up=(num == 0),
         max_rss_mem=max_rss_mem_consumption,
         max_shared_mem=max_shared_mem_consumption,
@@ -760,7 +775,7 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_promp
         if result_md5_list != prev_md5:
             log.warning(f"[{num}] Prompt[{prompt_id}]'s md5 {result_md5_list} "
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
-            llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text)
+            metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text, prompt_idx=prompt_id)
             if num == 1:
                 # if the device is CPU, throw exception
                 if args['devices'].lower().startswith('cpu') is True:
@@ -769,7 +784,7 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_promp
                 # throw exception
                 assert (result_md5_list == prev_md5)
     else:
-        llm_bench_utils.metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text)
+        metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text, prompt_idx=prompt_id)
     whisper_hook.clear_statistics()
 
 
@@ -808,12 +823,15 @@ def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters):
     )
     if framework == "ov":
         whisper_hook.new_text_encoder(pipe)
+        whisper_hook.new_text_encoder_request(pipe)
         whisper_hook.new_generate(pipe)
         whisper_hook.new_text_sample(pipe)
     md5_list = {num : {} for num in range(num_iters + 1)}
     for num in range(num_iters + 1):
         for idx, audio_prompt in enumerate(audio_list):
-            run_speech_2txt_generation(pipe, args, num, md5_list, prompt_idx_list[idx], audio_prompt, iter_data_list) 
+            run_speech_2txt_generation(pipe, args, num, md5_list, prompt_idx_list[idx], audio_prompt, iter_data_list)
+    metrics_print.print_average(iter_data_list, prompt_idx_list, 1, True, 0)
+
     return iter_data_list, pretrain_time
 
 
