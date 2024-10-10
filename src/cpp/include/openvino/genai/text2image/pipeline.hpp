@@ -19,6 +19,7 @@
 #include "openvino/genai/text2image/clip_text_model_with_projection.hpp"
 #include "openvino/genai/text2image/unet2d_condition_model.hpp"
 #include "openvino/genai/text2image/autoencoder_kl.hpp"
+#include "openvino/genai/text2image/sd3_transformer_2d_model.hpp"
 
 namespace ov {
 namespace genai {
@@ -57,7 +58,8 @@ public:
             LCM,
             LMS_DISCRETE,
             DDIM,
-            EULER_DISCRETE
+            EULER_DISCRETE,
+            FLOW_MATCH_EULER_DISCRETE
         };
 
         static std::shared_ptr<Scheduler> from_config(const std::filesystem::path& scheduler_config_path,
@@ -131,6 +133,14 @@ public:
         const UNet2DConditionModel& unet,
         const AutoencoderKL& vae_decoder);
 
+    // creates SD3 pipeline from building blocks
+    static Text2ImagePipeline stable_diffusion_3(
+        const std::shared_ptr<Scheduler>& scheduler_type,
+        const CLIPTextModelWithProjection& clip_text_model,
+        const CLIPTextModelWithProjection& clip_text_model_with_projection,
+        const AutoencoderKL& vae_decoder,
+        const SD3Transformer2DModel& transformer);
+
     GenerationConfig get_generation_config() const;
     void set_generation_config(const GenerationConfig& generation_config);
 
@@ -160,6 +170,7 @@ private:
 
     class StableDiffusionPipeline;
     class StableDiffusionXLPipeline;
+    class StableDiffusion3Pipeline;
 };
 
 //

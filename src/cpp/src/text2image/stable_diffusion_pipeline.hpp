@@ -130,14 +130,16 @@ public:
     }
 
     void compile(const std::string& device, const ov::AnyMap& properties) override {
+        std::cout << "compile" << std::endl;
         m_clip_text_encoder->compile(device, properties);
-        m_unet->compile(device, properties);
+        // m_unet->compile(device, properties);
         m_vae_decoder->compile(device, properties);
         update_adapters_from_properties(properties, m_generation_config.adapters);
     }
 
     ov::Tensor generate(const std::string& positive_prompt,
                         const ov::AnyMap& properties) override {
+        std::cout << "generate" << std::endl;
         GenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 

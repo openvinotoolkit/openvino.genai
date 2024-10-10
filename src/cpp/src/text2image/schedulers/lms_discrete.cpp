@@ -187,6 +187,10 @@ std::vector<int64_t> LMSDiscreteScheduler::get_timesteps() const {
     return m_timesteps;
 }
 
+std::vector<float> LMSDiscreteScheduler::get_float_timesteps() const {
+    return std::vector<float>();
+}
+
 std::map<std::string, ov::Tensor> LMSDiscreteScheduler::step(ov::Tensor noise_pred, ov::Tensor latents, size_t inference_step) {
     const float sigma = m_sigmas[inference_step];
 

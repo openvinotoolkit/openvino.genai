@@ -258,6 +258,10 @@ std::vector<int64_t> EulerDiscreteScheduler::get_timesteps() const {
     return m_timesteps;
 }
 
+std::vector<float> EulerDiscreteScheduler::get_float_timesteps() const {
+    return std::vector<float>();
+}
+
 float EulerDiscreteScheduler::get_init_noise_sigma() const {
     float max_sigma = *std::max_element(m_sigmas.begin(), m_sigmas.end());
 
