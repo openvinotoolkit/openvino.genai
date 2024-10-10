@@ -277,9 +277,9 @@ bool check_decoder_model_compatibility(const std::shared_ptr<ov::Model>& decoder
 namespace ov {
 namespace genai {
 
-StaticWhisperPipeline::StaticWhisperPipeline(const std::filesystem::path& model_path,
-                                             const ov::genai::Tokenizer& tokenizer,
-                                             const ov::AnyMap& plugin_config)
+    WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesystem::path& model_path,
+                                                                  const ov::genai::Tokenizer& tokenizer,
+                                                                  const ov::AnyMap& plugin_config)
     : WhisperPipelineImplBase(from_config_json_if_exists(model_path),
                               tokenizer,
                               WhisperFeatureExtractor{(model_path / "preprocessor_config.json").string()}) {
@@ -306,14 +306,14 @@ StaticWhisperPipeline::StaticWhisperPipeline(const std::filesystem::path& model_
         }
 }
 
-StaticWhisperPipeline::StaticWhisperPipeline(const std::filesystem::path& model_path,
-                                             const ov::AnyMap& plugin_config)
+WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesystem::path& model_path,
+                                                              const ov::AnyMap& plugin_config)
     : StaticWhisperPipeline(model_path, model_path.string(), plugin_config) {
 }
 
-DecodedResults StaticWhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
-                                               OptionalWhisperGenerationConfig generation_config,
-                                               StreamerVariant streamer) {
+DecodedResults WhisperPipeline::StaticWhisperPipeline::generate(const RawSpeechInput& raw_speech_input,
+                                                                OptionalWhisperGenerationConfig generation_config,
+                                                                StreamerVariant streamer) {
         WhisperGenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
         config.validate();
 

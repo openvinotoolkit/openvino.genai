@@ -16,7 +16,7 @@
 namespace ov {
 namespace genai {
 
-class StaticWhisperPipeline : public WhisperPipelineImplBase {
+class WhisperPipeline::StaticWhisperPipeline : public WhisperPipeline::WhisperPipelineImplBase {
 public:
     StaticWhisperPipeline(const std::filesystem::path& model_path,
                           const ov::genai::Tokenizer& tokenizer,

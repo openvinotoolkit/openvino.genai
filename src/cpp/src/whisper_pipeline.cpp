@@ -45,7 +45,7 @@ std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& 
                                       ov::genai::WhisperFeatureExtractor& feature_extractor,
                                       const std::shared_ptr<StreamerBase> streamer);
 
-class WhisperPipelineStatefulImpl : public WhisperPipelineImplBase {
+class WhisperPipeline::WhisperPipelineStatefulImpl : public WhisperPipeline::WhisperPipelineImplBase {
 public:
     ov::genai::WhisperInitializedModels m_models;
 

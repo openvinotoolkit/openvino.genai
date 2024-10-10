@@ -11,7 +11,7 @@
 namespace ov {
 namespace genai {
 
-class WhisperPipelineImplBase {
+class WhisperPipeline::WhisperPipelineImplBase {
 public:
     WhisperPipelineImplBase(const WhisperGenerationConfig& config,
                             const Tokenizer& tokenizer,
