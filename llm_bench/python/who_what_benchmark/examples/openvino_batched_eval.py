@@ -6,7 +6,13 @@ import whowhatbench
 from whowhatbench.wwb import load_dataset
 from optimum.intel.openvino import OVModelForCausalLM
 
-from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationConfig, CacheEvictionConfig, AggregationMode
+from openvino_genai import (
+    ContinuousBatchingPipeline,
+    SchedulerConfig,
+    GenerationConfig,
+    CacheEvictionConfig,
+    AggregationMode,
+)
 
 from openvino_tokenizers import convert_tokenizer
 from openvino import serialize
@@ -18,12 +24,16 @@ SEQS_PER_REQUEST = 5
 MAX_SEQUENCES = 100
 
 
-model = OVModelForCausalLM.from_pretrained(model_id, export=True, trust_remote_code=True)
+model = OVModelForCausalLM.from_pretrained(
+    model_id, export=True, trust_remote_code=True
+)
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 model_path = PosixPath(tempfile.gettempdir()) / model_id
 model.save_pretrained(model_path)
 
-ov_tokenizer, ov_detokenizer = convert_tokenizer(tokenizer, with_detokenizer=True, skip_special_tokens=True)
+ov_tokenizer, ov_detokenizer = convert_tokenizer(
+    tokenizer, with_detokenizer=True, skip_special_tokens=True
+)
 serialize(ov_tokenizer, model_path / "openvino_tokenizer.xml")
 serialize(ov_detokenizer, model_path / "openvino_detokenizer.xml")
 
@@ -48,24 +58,39 @@ generation_config = GenerationConfig()
 generation_config.num_return_sequences = 1
 generation_config.max_new_tokens = MAX_NEW_TOKENS
 
-data = load_dataset(path='squad', name=None, split='validation')["context"]
-data_dict = {"questions": list(dict({k: None for k in data}).keys())[:MAX_SEQUENCES]}
+data = load_dataset(path="squad", name=None, split="validation")["context"]
+data_dict = {"prompts": list(dict({k: None for k in data}).keys())[:MAX_SEQUENCES]}
 
-model_cb_noopt = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config_noopt, "CPU", {})
-model_cb_opt = ContinuousBatchingPipeline(model_path.absolute().as_posix(), scheduler_config_opt, "CPU", {})
+model_cb_noopt = ContinuousBatchingPipeline(
+    model_path.absolute().as_posix(), scheduler_config_noopt, "CPU", {}
+)
+model_cb_opt = ContinuousBatchingPipeline(
+    model_path.absolute().as_posix(), scheduler_config_opt, "CPU", {}
+)
 
 
-GT_DATA_FILE = 'gt_data.csv'
+GT_DATA_FILE = "gt_data.csv"
 
 if os.path.exists(GT_DATA_FILE):
-    evaluator = whowhatbench.Evaluator(base_model=model_cb_noopt, gt_data=GT_DATA_FILE, tokenizer=tokenizer,
-                                       test_data=data_dict, generation_config=generation_config,
-                                       max_new_tokens=MAX_NEW_TOKENS, seqs_per_request=3)
+    evaluator = whowhatbench.TextEvaluator(
+        base_model=model_cb_noopt,
+        gt_data=GT_DATA_FILE,
+        tokenizer=tokenizer,
+        test_data=data_dict,
+        generation_config=generation_config,
+        max_new_tokens=MAX_NEW_TOKENS,
+        seqs_per_request=3,
+    )
 else:
-    evaluator = whowhatbench.Evaluator(base_model=model_cb_noopt, tokenizer=tokenizer, test_data=data_dict,
-                                       generation_config=generation_config, max_new_tokens=MAX_NEW_TOKENS,
-                                       seqs_per_request=3)
-    evaluator.dump_gt('gt_data.csv')
+    evaluator = whowhatbench.TextEvaluator(
+        base_model=model_cb_noopt,
+        tokenizer=tokenizer,
+        test_data=data_dict,
+        generation_config=generation_config,
+        max_new_tokens=MAX_NEW_TOKENS,
+        seqs_per_request=3,
+    )
+    evaluator.dump_gt("gt_data.csv")
 
 
 all_metrics_per_question, all_metrics = evaluator.score(model_cb_opt)
@@ -89,8 +114,18 @@ for metric in metrics:
 pipeline_opt_metrics = model_cb_opt.get_metrics()
 pipeline_noopt_metrics = model_cb_noopt.get_metrics()
 
-print(f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
-print(f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}")
-max_optimization_ratio = (pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage)
-avg_optimization_ratio = (pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage)
-print(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
+print(
+    f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}"
+)
+print(
+    f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}"
+)
+max_optimization_ratio = (
+    pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage
+)
+avg_optimization_ratio = (
+    pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage
+)
+print(
+    f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x"
+)

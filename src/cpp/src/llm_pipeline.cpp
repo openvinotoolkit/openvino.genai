@@ -16,24 +16,7 @@
 #include "utils.hpp"
 #include "text_callback_streamer.hpp"
 #include "openvino/genai/lora_adapter.hpp"
-
-namespace {
-
-ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& fisrt, const ov::genai::TokenizedInputs& second){
-    auto first_size = fisrt.input_ids.get_size();
-    auto second_size = second.input_ids.get_size();
-    ov::Shape new_shape{1, first_size - second_size};
-
-    ov::Tensor new_input_ids(ov::element::i64, new_shape);
-    auto data_ptr = fisrt.input_ids.data<int64_t>();
-    std::copy(data_ptr + second_size, data_ptr + first_size, new_input_ids.data<int64_t>());
-
-    ov::Tensor new_attention_mask(ov::element::i64, new_shape);
-    std::fill_n(new_attention_mask.data<int64_t>(), new_shape[1], 1);
-
-    return {new_input_ids, new_attention_mask};
-}
-}
+#include "lora_helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -94,19 +77,17 @@ public:
         LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(model_path))
     {
         ov::Core core;
-        auto adapters_iter = plugin_config.find(ov::genai::adapters.name());
-        if (adapters_iter != plugin_config.end()) {
-            m_generation_config.adapters = adapters_iter->second.as<AdapterConfig>();
-            auto filtered_plugin_config = plugin_config;
-            filtered_plugin_config.erase(ov::genai::adapters.name());
-            core.set_property(device, filtered_plugin_config);
+        if(auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
+            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(*filtered_plugin_config);
+            core.set_property(core_plugin_config);
             auto model = core.read_model(model_path / "openvino_model.xml");
             m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable
-            m_model_runner = core.compile_model(model, device).create_infer_request();
+            m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
             m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
         } else {
-            core.set_property(device, plugin_config);
-            m_model_runner = core.compile_model(model_path / "openvino_model.xml", device).create_infer_request();
+            auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
+            core.set_property(core_plugin_config);
+            m_model_runner = core.compile_model(model_path / "openvino_model.xml", device, compile_plugin_config).create_infer_request();
         }
 
         // If eos_token_id was not provided, take value
@@ -154,7 +135,7 @@ public:
                     encoded_input = new_chat_tokens;
                 } else {
                     auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens_));
-                    encoded_input = subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
+                    encoded_input = utils::subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
                 }
                 m_templated_chat_history = new_templated_chat_history;
                 // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied

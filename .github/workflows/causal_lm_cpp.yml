@@ -14,6 +14,7 @@ concurrency:
 
 env:
   l_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/l_openvino_toolkit_ubuntu20_2024.5.0.dev20240830_x86_64.tgz
+  l_u22_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/l_openvino_toolkit_ubuntu22_2024.5.0.dev20240830_x86_64.tgz 
   m_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/m_openvino_toolkit_macos_12_6_2024.5.0.dev20240830_x86_64.tgz
   w_ov_link: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/w_openvino_toolkit_windows_2024.5.0.dev20240830_x86_64.zip
 jobs:
@@ -202,8 +203,7 @@ jobs:
           echo "Multi prompt" passed
 
   cpp-greedy_causal_lm-windows:
-    runs-on: windows-latest
-    if: ${{ false }} # TODO: fix Windows
+    runs-on: windows-2019-16-core
     env:
       PYTHONIOENCODING: "utf8"
     defaults:
@@ -218,6 +218,8 @@ jobs:
           python-version: 3.9
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.29
       - run: curl --output ov.zip ${{ env.w_ov_link }}
       - run: unzip -d ov ov.zip
       - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
@@ -681,6 +683,39 @@ jobs:
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
+  visual_language_chat_sample-ubuntu:
+    runs-on: ubuntu-22.04-16-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+      - name: Install OpenVINO
+        run: |
+          mkdir ./ov/
+          curl ${{ env.l_u22_ov_link }} | tar --directory ./ov/ --strip-components 1 -xz
+          sudo ./ov/install_dependencies/install_openvino_dependencies.sh
+      - name: Build app
+        run: |
+          source ./ov/setupvars.sh
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release --target visual_language_chat -j
+      - name: Download and convert a model and an image
+        run: |
+          source ./ov/setupvars.sh
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+          python ./samples/cpp/visual_language_chat/export_MiniCPM-V-2_6.py ./miniCPM-V-2_6/
+          wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
+          
+      - name: Run chat chat sample
+        run: >
+          source ./ov/setupvars.sh
+          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ cat.jpg
+          <<< $'What is on the image?\nWhat is special on the image?'
+
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
     defaults:
@@ -725,8 +760,7 @@ jobs:
           timeout 200s ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 10 --dynamic_split_fuse --max_batch_size 256 --max_input_len 256 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
   cpp-continuous-batching-windows:
-    runs-on: windows-latest
-    if: ${{ false }} # TODO: fix Windows
+    runs-on: windows-2019-16-core
     env:
       PYTHONIOENCODING: "utf8"
     defaults:
@@ -741,6 +775,8 @@ jobs:
           python-version: 3.9
       - name: Configure Developer Command Prompt for Microsoft Visual C++
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.29
       - name: Install OpenVINO
         run: |
           curl --output ov.zip ${{ env.w_ov_link }}
@@ -823,6 +859,7 @@ jobs:
             cpp-beam_search_causal_lm-Qwen-7B-Chat, cpp-beam_search_causal_lm-Qwen1_5-7B-Chat, cpp-beam_search_causal_lm-Phi-2,
             cpp-beam_search_causal_lm-notus-7b-v1, cpp-speculative_decoding_lm-ubuntu, cpp-prompt_lookup_decoding_lm-ubuntu,
             cpp-Phi-1_5, cpp-greedy_causal_lm-redpajama-3b-chat, cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu,
+            visual_language_chat_sample-ubuntu,
             cpp-continuous-batching-windows, cpp-continuous-batching-macos]
     if: ${{ always() }}
     runs-on: ubuntu-latest

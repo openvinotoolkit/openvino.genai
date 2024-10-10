@@ -57,12 +57,16 @@ public:
           m_feature_extractor{(model_path / "preprocessor_config.json").string()},
           m_model_config{(model_path / "config.json").string()} {
         ov::Core core;
-        core.set_property(device, plugin_config);
+        auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
+        core.set_property(core_plugin_config);
 
-        m_models.encoder = core.compile_model(model_path / "openvino_encoder_model.xml", device).create_infer_request();
-        m_models.decoder = core.compile_model(model_path / "openvino_decoder_model.xml", device).create_infer_request();
+        m_models.encoder = core.compile_model(model_path / "openvino_encoder_model.xml", device, compile_plugin_config)
+                               .create_infer_request();
+        m_models.decoder = core.compile_model(model_path / "openvino_decoder_model.xml", device, compile_plugin_config)
+                               .create_infer_request();
         m_models.decoder_with_past =
-            core.compile_model(model_path / "openvino_decoder_with_past_model.xml", device).create_infer_request();
+            core.compile_model(model_path / "openvino_decoder_with_past_model.xml", device, compile_plugin_config)
+                .create_infer_request();
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {

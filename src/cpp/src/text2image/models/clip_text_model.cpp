@@ -8,6 +8,7 @@
 #include "openvino/runtime/core.hpp"
 
 #include "utils.hpp"
+#include "lora_helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -21,6 +22,7 @@ CLIPTextModel::Config::Config(const std::string& config_path) {
 
     read_json_param(data, "max_position_embeddings", max_position_embeddings);
     read_json_param(data, "hidden_size", hidden_size);
+    read_json_param(data, "num_hidden_layers", num_hidden_layers);
 }
 
 CLIPTextModel::CLIPTextModel(const std::string root_dir) :
@@ -33,7 +35,13 @@ CLIPTextModel::CLIPTextModel(const std::string& root_dir,
                 const std::string& device,
                 const ov::AnyMap& properties) :
     CLIPTextModel(root_dir) {
-    compile(device, properties);
+    AdapterConfig adapters;
+    if(auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
+        m_adapter_controller = AdapterController(m_model, adapters, "lora_te", device);
+        compile(device, *filtered_properties);
+    } else {
+        compile(device, properties);
+    }
 }
 
 CLIPTextModel::CLIPTextModel(const CLIPTextModel&) = default;
@@ -62,6 +70,10 @@ CLIPTextModel& CLIPTextModel::compile(const std::string& device, const ov::AnyMa
     m_model.reset();
 
     return *this;
+}
+
+void CLIPTextModel::set_adapters(const AdapterConfig& adapters) {
+    m_adapter_controller.apply(m_request, adapters);
 }
 
 ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance) {
@@ -98,6 +110,10 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
     m_request.infer();
 
     return m_request.get_output_tensor(0);
+}
+
+ov::Tensor CLIPTextModel::get_output_tensor(const size_t idx) {
+    return m_request.get_output_tensor(idx);
 }
 
 } // namespace genai

@@ -67,11 +67,10 @@ jobs:
       - name: Run app
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          ./build/samples/cpp/stable_diffusion/stable_diffusion ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"
+          ./build/samples/cpp/text2image/stable_diffusion ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"
 
   lcm_dreamshaper_v7_cpp-windows:
-    runs-on: windows-latest
-    if: ${{ false }} # TODO: fix Windows
+    runs-on: windows-2019-16-core
     defaults:
       run:
         shell: pwsh
@@ -88,6 +87,11 @@ jobs:
             Expand-Archive openvino_package.zip -DestinationPath ./tmp
             mv ./tmp/*/* .
           popd
+
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.29
 
       - name: Build app
         run: |
@@ -116,9 +120,9 @@ jobs:
           optimum-cli export openvino --model SimianLuo/LCM_Dreamshaper_v7 --task stable-diffusion --weight-format fp16 models/lcm_dreamshaper_v7/FP16
 
       - name: Run app
-        run: |
+        run: >
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
-          ./build/samples/cpp/stable_diffusion/Release/lcm_dreamshaper.exe  ./models/lcm_dreamshaper_v7/FP16 "cyberpunk cityscape like Tokyo New York  with tall buildings at dusk golden hour cinematic lighting"
+          & "./build/samples/cpp/text2image/Release/stable_diffusion.exe ./models/lcm_dreamshaper_v7/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting'"
 
   Overall_Status:
     name: ci/gha_overall_status_lcm
