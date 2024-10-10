@@ -701,7 +701,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target visual_language_chat -j
+          cmake --build ./build/ --config Release --target visual_language_chat py_generate_pipeline -j
       - name: Download and convert MiniCPM-V-2_6 model and an image
         run: |
           source ./ov/setupvars.sh
@@ -727,6 +727,13 @@ jobs:
           source ./ov/setupvars.sh
           && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
+
+      - name: Run python chat sample
+        run: |
+          source ./ov/setupvars.sh
+          export PYTHONPATH=./build/:$PYTHONPATH
+          printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
+          timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./miniCPM-V-2_6/ cat.jpg < input.txt > ./pred.txt
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
