@@ -30,6 +30,8 @@ inline bool is_stop_token_id_hit(int64_t generated_token, const std::set<int64_t
     return false;
 }
 
+std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx);
+
 struct SamplerOutput {
     // IDs of sequences that need to be dropped
     std::vector<uint64_t> m_dropped_sequences;

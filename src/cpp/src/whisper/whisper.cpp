@@ -1,32 +1,24 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include "whisper.hpp"
+
 #include <iostream>
 #include <openvino/openvino.hpp>
 #include <regex>
 #include <thread>
 
 #include "../utils.hpp"
+#include "logit_processor.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
+#include "timestamps.hpp"
+#include "whisper_config.hpp"
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
 
 namespace {
-
-void suppress_tokens(ov::Tensor& logits, const size_t batch_idx, const std::vector<int64_t>& suppress_tokens) {
-    OPENVINO_ASSERT(logits.get_shape()[0] >= batch_idx, "logits batch size doesn't match the number of beams");
-
-    size_t vocab_size = logits.get_shape().back();
-    size_t batch_offset = batch_idx * logits.get_shape()[1] * vocab_size;
-    size_t sequence_offset = (logits.get_shape()[1] - 1) * vocab_size;
-    float* logits_data = logits.data<float>() + batch_offset + sequence_offset;
-
-    for (auto supress_token : suppress_tokens) {
-        logits_data[supress_token] = -std::numeric_limits<float>::infinity();
-    }
-}
 
 ov::Tensor encode(ov::InferRequest& request,
                   std::vector<float>& mel_data,
@@ -84,7 +76,7 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
                ov::InferRequest& decoder,
                std::vector<int64_t>& input_ids,
                const ov::genai::WhisperGenerationConfig& config,
-               bool do_suppress_tokens = true) {
+               bool apply_logit_processors = true) {
     decoder.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
 
     ov::Tensor input_ids_tensor(ov::element::i64, {1, input_ids.size()}, input_ids.data());
@@ -94,9 +86,13 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
 
     auto output_tensor = decoder.get_tensor("logits");
 
-    if (do_suppress_tokens) {
-        suppress_tokens(output_tensor, 0, config.begin_suppress_tokens);
-        suppress_tokens(output_tensor, 0, config.suppress_tokens);
+    if (apply_logit_processors) {
+        ov::genai::do_suppress_tokens(output_tensor, 0, config.begin_suppress_tokens);
+        ov::genai::do_suppress_tokens(output_tensor, 0, config.suppress_tokens);
+
+        if (config.return_timestamps) {
+            ov::genai::process_whisper_timestamp_logits(output_tensor, 0, config, {}, true);
+        }
     }
 
     int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
@@ -108,7 +104,8 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
                          ov::InferRequest& decoder_with_past,
                          int64_t input_id,
                          const size_t cache_position,
-                         const ov::genai::WhisperGenerationConfig& config) {
+                         const ov::genai::WhisperGenerationConfig& config,
+                         const std::vector<int64_t>& generated_tokens) {
     decoder_with_past.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
 
     std::vector<int64_t> input_ids = {input_id};
@@ -123,7 +120,11 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
 
     auto output_tensor = decoder_with_past.get_tensor("logits");
 
-    suppress_tokens(output_tensor, 0, config.suppress_tokens);
+    ov::genai::do_suppress_tokens(output_tensor, 0, config.suppress_tokens);
+
+    if (config.return_timestamps) {
+        ov::genai::process_whisper_timestamp_logits(output_tensor, 0, config, generated_tokens);
+    }
 
     int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
 
@@ -161,6 +162,10 @@ std::vector<int64_t> prepare_input_ids(ov::Tensor& encoder_hidden_state,
         task_token_id = config.translate_token_id;
     }
 
+    if (config.return_timestamps) {
+        return std::vector<int64_t>{config.decoder_start_token_id, language_token_id, task_token_id};
+    }
+
     return std::vector<int64_t>{config.decoder_start_token_id,
                                 language_token_id,
                                 task_token_id,
@@ -178,7 +183,8 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 
     std::vector<int64_t> output_tokens{output_token};
 
-    if (streamer && streamer->put(output_token)) {
+    bool is_timestamp = output_token >= config.begin_timestamps_token_id;
+    if (!is_timestamp && streamer && streamer->put(output_token)) {
         return {true, output_tokens};
     }
 
@@ -193,7 +199,8 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
                                              models.decoder_with_past,
                                              output_tokens.back(),
                                              input_ids.size() + output_tokens.size() - 1,
-                                             config);
+                                             config,
+                                             output_tokens);
 
         if (i == 0) {
             set_past_key_value(models.decoder_with_past, models.decoder_with_past);
@@ -204,8 +211,9 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
         }
 
         output_tokens.push_back(output_token);
+        bool is_timestamp = output_token >= config.begin_timestamps_token_id;
 
-        if (streamer && streamer->put(output_token)) {
+        if (!is_timestamp && streamer && streamer->put(output_token)) {
             return {true, output_tokens};
         }
     }
@@ -232,11 +240,13 @@ namespace genai {
 //          remove eos tokens if not finished yet
 //          remove pad tokens
 // 7. Concatenate output tokens
-std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& config,
-                                      const RawSpeechInput& raw_speech,
-                                      ov::genai::WhisperInitializedModels& models,
-                                      WhisperFeatureExtractor& feature_extractor,
-                                      const std::shared_ptr<StreamerBase> streamer) {
+std::pair<std::vector<int64_t>, std::optional<std::vector<Segment>>> whisper_generate(
+    const ov::genai::WhisperGenerationConfig& config,
+    const ov::genai::WhisperConfig& model_config,
+    const RawSpeechInput& raw_speech,
+    ov::genai::WhisperInitializedModels& models,
+    WhisperFeatureExtractor& feature_extractor,
+    const std::shared_ptr<StreamerBase> streamer) {
     std::vector<int64_t> output_tokens;
     size_t max_new_tokens = config.get_max_new_tokens();
 
@@ -267,7 +277,19 @@ std::vector<int64_t> whisper_generate(const ov::genai::WhisperGenerationConfig& 
         }
     }
 
-    return output_tokens;
+    if (streamer) {
+        streamer->end();
+    }
+
+    std::optional<std::vector<Segment>> segments = std::nullopt;
+    if (config.return_timestamps) {
+        // 0.02 by default
+        const float time_precision =
+            static_cast<float>(feature_extractor.chunk_length) / model_config.max_source_positions;
+        std::tie(output_tokens, segments) = ov::genai::extract_segments(output_tokens, config, time_precision);
+    }
+
+    return {output_tokens, segments};
 }
 }  // namespace genai
 }  // namespace ov
