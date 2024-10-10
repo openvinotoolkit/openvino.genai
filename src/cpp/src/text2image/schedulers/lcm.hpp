@@ -62,7 +62,7 @@ private:
     std::vector<int64_t> m_timesteps;
 
     uint32_t m_seed;
-    std::vector<std::mt19937> m_gen;
+    std::mt19937 m_gen;
     std::normal_distribution<float> m_normal;
 
     std::vector<float> threshold_sample(const std::vector<float>& flat_sample);
