@@ -2,7 +2,7 @@
 # Copyright (C) 2023-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
-from transformers import AutoConfig
+from transformers import AutoConfig, AutoProcessor
 from openvino.runtime import Core
 import openvino as ov
 import logging as log
@@ -277,6 +277,34 @@ def create_ldm_super_resolution_model(model_path, device, **kwargs):
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, from_pretrained_time
+
+
+def create_speech_2txt_model(model_path, device, **kwargs):
+    """Create speech generation model.
+
+    - model_path: can be model_path or IR path
+    - device: can be CPU
+    - model_type:
+    """
+    default_model_type = DEFAULT_MODEL_CLASSES[kwargs['use_case']]
+    model_type = kwargs.get('model_type', default_model_type)
+    model_class = OV_MODEL_CLASSES_MAPPING.get(model_type, OV_MODEL_CLASSES_MAPPING[default_model_type])
+    model_path = Path(model_path)
+    model_path_existed = model_path.exists()
+    # load model
+    if not model_path_existed:
+        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+    else:
+        start = time.perf_counter()
+        ov_model = model_class.from_pretrained(
+            model_path,
+            device=device
+        )
+        end = time.perf_counter()
+    from_pretrained_time = end - start
+    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    processor = AutoProcessor.from_pretrained(model_path)
+    return ov_model, processor, from_pretrained_time
 
 
 def is_genai_available(log_msg=False):

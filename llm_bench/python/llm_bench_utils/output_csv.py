@@ -40,7 +40,7 @@ def output_comments(result, use_case, writer):
         comment_list.append('prompt_idx: Image Index')
     comment_list.append('tokenization_time: Tokenizer encode time')
     comment_list.append('detokenization_time: Tokenizer decode time')
-    comment_list.append('pretrain_time: Total time of load model and compile model')
+    comment_list.append('compile_time: Total time of load model and compile model')
     comment_list.append('generation_time: Time for one interaction. (e.g. The duration of  answering one question or generating one picture)')
     comment_list.append('iteration=0: warm-up; iteration=avg: average (exclude warm-up);iteration=mini: minimum value (exclude warm-up);'
                         'iteration=median: median value (exclude warm-up);')
@@ -99,7 +99,8 @@ def gen_data_to_csv(result, iter_data, pretrain_time):
     token_time = iter_data['tokenization_time']
     detoken_time = iter_data['detokenization_time']
     result['iteration'] = str(iter_data['iteration'])
-    result['pretrain_time(s)'] = pretrain_time
+    result['loop'] = str(iter_data['loop'])
+    result['compile_time(s)'] = pretrain_time
     result['input_size'] = iter_data['input_size']
     result['infer_count'] = iter_data['infer_count']
     result['generation_time(s)'] = round(generation_time, 5) if generation_time != '' else generation_time
@@ -133,10 +134,12 @@ def gen_data_to_csv(result, iter_data, pretrain_time):
 def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision):
     header = [
         'iteration',
+        'prompt_idx',
+        'loop',
         'model',
         'framework',
         'device',
-        'pretrain_time(s)',
+        'compile_time(s)',
         'input_size',
         'infer_count',
         'generation_time(s)',
@@ -148,7 +151,6 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         'max_rss_mem(MB)',
         'max_uss_mem(MB)',
         'max_shared_mem(MB)',
-        'prompt_idx',
         '1st_infer_latency(ms)',
         '2nd_infer_avg_latency(ms)',
         'num_beams',
@@ -167,13 +169,13 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             result['model'] = model
             result['framework'] = framework
             result['device'] = device
-            result['pretrain_time(s)'] = round(pretrain_time, 5)
+            result['compile_time(s)'] = round(pretrain_time, 5)
             result['precision'] = model_precision
             result['num_beams'] = model_args['num_beams']
             result['batch_size'] = model_args['batch_size']
             for i in range(len(iter_data_list)):
                 iter_data = iter_data_list[i]
-                pre_time = '' if i > 0 else result['pretrain_time(s)']
+                pre_time = '' if i > 0 else result['compile_time(s)']
                 gen_data_to_csv(result, iter_data, pre_time)
                 writer.writerow(result)
 
