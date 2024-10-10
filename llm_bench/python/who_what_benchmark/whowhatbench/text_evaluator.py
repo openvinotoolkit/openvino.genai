@@ -199,7 +199,7 @@ class TextEvaluator(BaseEvaluator):
         def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question):
             inputs = self.tokenizer(prompt, return_tensors="pt")
 
-            tokens = model.generate(**inputs, max_new_tokens=max_new_tokens)
+            tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens)
             out = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
             return out[len(prompt) :] if crop_question else out
 
