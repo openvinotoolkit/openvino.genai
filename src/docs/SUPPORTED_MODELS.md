@@ -1,5 +1,7 @@
 # OpenVINO™ GenAI: Supported Models
 
+## Large language models
+
 <table>
   <tbody style="vertical-align: top;">
     <tr>
@@ -154,6 +156,27 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
 
 > [!NOTE]
 > Models should belong to the same family and have the same tokenizers.
+
+## Visual language models
+
+<table>
+  <tbody style="vertical-align: top;">
+    <tr>
+      <th>Architecture</th>
+      <th>Models</th>
+      <th>Example HuggingFace Models</th>
+    </tr>
+    <tr>
+      <td><code>MiniCPM-V-2_6</code></td>
+      <td>MiniCPMV</td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/openbmb/MiniCPM-V-2_6"><code>openbmb/MiniCPM-V-2_6</code></a></li>
+        </ul>
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 Some models may require access request submission on the Hugging Face page to be downloaded.
 

@@ -94,7 +94,12 @@ public:
                            const std::string& device,
                            const ov::AnyMap& llm_plugin_config,
                            const ov::AnyMap& tokenizer_plugin_config)
-    : ContinuousBatchingImpl{models_path, Tokenizer(models_path, tokenizer_plugin_config), scheduler_config, device, llm_plugin_config} {}
+    : ContinuousBatchingImpl{ models_path,
+                              Tokenizer(models_path, tokenizer_plugin_config),
+                              scheduler_config,
+                              device,
+                              llm_plugin_config } {};
+
 
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,

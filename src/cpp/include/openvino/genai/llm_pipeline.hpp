@@ -293,7 +293,7 @@ private:
 };
 
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(StreamerVariant func);
-std::pair<std::string, Any> generation_config(const GenerationConfig& config);
+OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const GenerationConfig& config);
 
 }  // namespace genai
 }  // namespace ov
