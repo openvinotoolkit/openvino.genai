@@ -66,7 +66,7 @@ jobs:
         python ./llm_bench/python/benchmark.py -m ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16/ -d cpu -n 1
     - name: Test tiny-stable-diffusion on Linux
       run: |
-        optimum-cli export openvino --model segmind/tiny-sd --trust-remote-code --weight-format fp16 ./ov_models/tiny-sd
+        optimum-cli export openvino --model segmind/tiny-sd --trust-remote-code --weight-format fp16 ./ov_models/tiny-sd/pytorch/dldt/FP16/
         python ./llm_bench/python/benchmark.py -m ./ov_models/tiny-sd/pytorch/dldt/FP16/ -pf ./llm_bench/python/prompts/stable-diffusion.jsonl -d cpu -n 1
     - name: WWB Tests
       run: |
