@@ -363,6 +363,22 @@ ProcessorConfig from_any_map(
     return extracted_config;
 }
 
+ProcessorConfig from_any_map(
+    const ov::AnyMap& config_map,
+    const ProcessorConfig& initial
+) {
+    auto iter = config_map.find("processor_config");
+    ProcessorConfig extracted_config = config_map.end() != iter ?
+        iter->second.as<ProcessorConfig>() : initial;
+    using utils::read_anymap_param;
+    read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
+    read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
+    read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
+    read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
+    read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
+    return extracted_config;
+}
+
 // TODO Consider moving to clip.cpp or separate dedicated file
 clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const ProcessorConfig& config) {
     bool do_resize = true;

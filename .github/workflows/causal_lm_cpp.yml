@@ -203,7 +203,7 @@ jobs:
           echo "Multi prompt" passed
 
   cpp-greedy_causal_lm-windows:
-    runs-on: windows-2019-16-core
+    runs-on: windows-latest
     env:
       PYTHONIOENCODING: "utf8"
     defaults:
@@ -216,10 +216,6 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.9
-      - name: Configure Developer Command Prompt for Microsoft Visual C++
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        with:
-          toolset: 14.29
       - run: curl --output ov.zip ${{ env.w_ov_link }}
       - run: unzip -d ov ov.zip
       - run: dirs=(ov/*) && mv ov/*/* ov && rmdir "${dirs[@]}"
@@ -701,7 +697,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
-          cmake --build ./build/ --config Release --target visual_language_chat -j
+          cmake --build ./build/ --config Release --target visual_language_chat py_generate_pipeline -j
       - name: Download and convert MiniCPM-V-2_6 model and an image
         run: |
           source ./ov/setupvars.sh
@@ -727,6 +723,13 @@ jobs:
           source ./ov/setupvars.sh
           && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
+
+      - name: Run python chat sample
+        run: |
+          source ./ov/setupvars.sh
+          export PYTHONPATH=./build/:$PYTHONPATH
+          printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
+          timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./miniCPM-V-2_6/ cat.jpg < input.txt > ./pred.txt
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
@@ -772,7 +775,7 @@ jobs:
           timeout 200s ./build/samples/cpp/continuous_batching_benchmark/continuous_batching_benchmark -n 10 --dynamic_split_fuse --max_batch_size 256 --max_input_len 256 -m ./TinyLlama-1.1B-Chat-v1.0/ --dataset ./ShareGPT_V3_unfiltered_cleaned_split.json --cache_size 1
 
   cpp-continuous-batching-windows:
-    runs-on: windows-2019-16-core
+    runs-on: windows-latest
     env:
       PYTHONIOENCODING: "utf8"
     defaults:
@@ -785,10 +788,6 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.9
-      - name: Configure Developer Command Prompt for Microsoft Visual C++
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        with:
-          toolset: 14.29
       - name: Install OpenVINO
         run: |
           curl --output ov.zip ${{ env.w_ov_link }}

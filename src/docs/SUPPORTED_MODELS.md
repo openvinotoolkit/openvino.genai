@@ -167,11 +167,20 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
       <th>Example HuggingFace Models</th>
     </tr>
     <tr>
-      <td><code>MiniCPM-V-2_6</code></td>
       <td>MiniCPMV</td>
+      <td><code>MiniCPM-V-2_6</code></td>
       <td>
         <ul>
           <li><a href="https://huggingface.co/openbmb/MiniCPM-V-2_6"><code>openbmb/MiniCPM-V-2_6</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td>LLaVA</td>
+      <td><code>LLaVA-v1.5</code></td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/llava-hf/llava-1.5-7b-hf"><code>llava-hf/llava-1.5-7b-hf</code></a></li>
         </ul>
       </td>
     </tr>
