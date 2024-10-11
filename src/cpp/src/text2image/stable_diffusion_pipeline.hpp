@@ -270,7 +270,7 @@ private:
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
         }
     }
-        
+
     void check_image_size(const int height, const int width) const override {
         assert(m_unet != nullptr);
         const size_t vae_scale_factor = m_unet->get_vae_scale_factor();
