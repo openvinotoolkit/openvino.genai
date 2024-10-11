@@ -14,7 +14,7 @@ class OPENVINO_GENAI_EXPORTS VLMConfig {
 public:
     /// @brief A size of a single embedding returned by a resampler.
     /// Used to initialize positional embeddings for resampler input.
-    size_t hidden_size = 2304;
+    size_t hidden_size = 3584;
     /// @brief Multiply embeddings by this value.
     float scale_emb = 1.0f;
     /// @brief A number of embedding vectors representing an image
