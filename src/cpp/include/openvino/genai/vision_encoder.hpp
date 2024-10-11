@@ -45,12 +45,9 @@ public:
     /// @brief A enum denoting model type.
     VLMModelType model_type;
     /// @brief A model for image encoding.
-    ov::InferRequest m_encoder;
+    ov::InferRequest m_vision_encoder;
     /// @brief A config to follow.
     ProcessorConfig m_processor_config;
-
-    // LLaVa specific members
-    ov::InferRequest m_vision_embeddings;
 
     /// @brief Construct from an already compiled model and a config.
     /// @param encoder Compiled model.
@@ -58,7 +55,7 @@ public:
     explicit VisionEncoder(
         const ov::InferRequest& encoder,
         const ProcessorConfig& processor_config=ProcessorConfig{}
-    ) : m_encoder{encoder}, m_processor_config{processor_config} {}
+    ) : m_vision_encoder{encoder}, m_processor_config{processor_config} {}
 
     /// @brief Construct the encoder from model_dir.
     /// @param model_dir A folder containing openvino_embedding.xml and
