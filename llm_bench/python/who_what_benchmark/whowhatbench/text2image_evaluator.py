@@ -17,6 +17,11 @@ default_data = {
         "Illustration of an astronaut sitting in outer space, moon behind him",
         "A vintage illustration of a retro computer, vaporwave aesthetic, light pink and light blue",
         "A view from beautiful alien planet, very beautiful, surealism, retro astronaut on the first plane, 8k photo",
+        "red car in snowy forest, epic vista, beautiful landscape, 4k, 8k",
+        "A raccoon trapped inside a glass jar full of colorful candies, the background is steamy with vivid colors",
+        "cute cat 4k, high-res, masterpiece, best quality, soft lighting, dynamic angle",
+        "A cat holding a sign that says hello OpenVINO",
+        "A small cactus with a happy face in the Sahara desert.",
     ],
 }
 
