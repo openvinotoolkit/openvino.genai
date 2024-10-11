@@ -139,6 +139,9 @@ public:
 private:
     class VLMPipelineImpl;
     std::unique_ptr<VLMPipelineImpl> m_pimpl;
+
+    ov::Tensor get_inputs_embeds_minicpm(const std::string& prompt, const std::vector<ov::Tensor>& images);
+    ov::Tensor get_inputs_embeds_llava(const std::string& prompt, const std::vector<ov::Tensor>& images);
 };
 
 /*
