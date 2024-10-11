@@ -78,7 +78,6 @@ void enable_npuw_dq_if_allowed(ov::AnyMap& config,
                                const std::shared_ptr<ov::Model>& model) {
     if (allow_to_enable_npuw_dq(model)) {
         config["NPUW_DQ"] = "YES";
-        pop_option(config, "NPUW_ONLINE_AVOID");
     }
 }
 
@@ -212,33 +211,31 @@ void merge_config_with(ov::AnyMap& lhs, const ov::AnyMap& rhs) {
     }
 }
 
-ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model) {
+ov::AnyMap get_baseline_common_config() {
     ov::AnyMap config = {
-        { "NPU_USE_NPUW", "YES" },
+        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add_RMSNorm" },
+        { "NPU_USE_NPUW",  "YES" },
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
-        { "NPUW_DCOFF_SCALE",  "YES" },
-        { "NPUW_WEIGHTS_BANK",  "shared" },
-        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
-        { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
+        { "NPUW_DCOFF_SCALE", "YES"}
     };
+    return config;
+}
+
+ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
+    auto config = get_baseline_common_config();
     enable_npuw_dq_if_allowed(config, model);
     return config;
 }
 
+ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model) {
+    return get_default_common_config(model);
+}
+
 ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model) {
-    ov::AnyMap config = {
-        { "NPU_USE_NPUW", "YES" },
-        { "NPUW_FOLD", "YES" },
-        { "NPUW_DCOFF_TYPE", "f16" },
-        { "NPUW_DCOFF_SCALE", "YES" },
-        { "NPU_COMPILATION_MODE_PARAMS", "compute-layers-with-higher-precision=Sqrt,Power,ReduceMean,Add" },
-        { "NPUW_PARALLEL_COMPILE", "YES" },
-        { "NPUW_FUNCALL_ASYNC", "YES" },
-        { "NPUW_WEIGHTS_BANK",  "shared" },
-        { "NPUW_ONLINE_AVOID", "P:RMSNorm/NPU" }
-    };
-    enable_npuw_dq_if_allowed(config, model);
+    auto config = get_default_common_config(model);
+    config["NPUW_FUNCALL_ASYNC"] = "YES";
+    config["NPUW_PARALLEL_COMPILE"] = "YES";
     return config;
 }
 
