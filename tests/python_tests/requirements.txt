@@ -32,3 +32,4 @@ sacremoses
 librosa
 soundfile
 datasets
+git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
