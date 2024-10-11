@@ -715,7 +715,6 @@ jobs:
           source ./ov/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install git+https://github.com/huggingface/optimum-intel.git
           optimum-cli export openvino --model llava-hf/llava-1.5-7b-hf ./llava_1_5_7b_ov/
           wget https://llava-vl.github.io/static/images/monalisa.jpg
       - name: Run visual_language_chat sample - LLaVa 1.5
