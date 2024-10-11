@@ -18,6 +18,7 @@ from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
 import llm_bench_utils.hook_sample as hook_sample
 import llm_bench_utils.hook_sample_v43 as hook_sample_v43
+import llm_bench_utils.hook_sample_v45 as hook_sample_v45
 from packaging import version
 
 
@@ -361,5 +362,5 @@ class GreedySearchHook:
         trans_version = version.parse(transformers.__version__)
         if trans_version >= version.parse('4.45.0'):
             model._sample = hook_sample_v45.new_sample.__get__(model, model.__class__)
-        elseif trans_version >= version.parse('4.43.0'):
+        elif trans_version >= version.parse('4.43.0'):
             model._sample = hook_sample_v43.new_sample.__get__(model, model.__class__)         
