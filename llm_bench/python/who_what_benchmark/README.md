@@ -55,7 +55,7 @@ metrics_per_prompt, metrics = evaluator.score(optimized_model, test_data=prompts
 * source eval_env/bin/activate
 * pip install -r requirements.txt
 
-### CLI example
+### CLI example for text-generation models
 
 ```sh
 wwb --help
