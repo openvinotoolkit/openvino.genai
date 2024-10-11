@@ -51,6 +51,8 @@ public:
     // Begin timestamps token id.
     int64_t begin_timestamps_token_id = 50364;
 
+    size_t max_initial_timestamp_index = 50;
+
     bool is_multilingual = true;
 
     // Language token to use for generation in the form of <|en|>.
@@ -64,6 +66,16 @@ public:
     // Task to use for generation, either “translate” or “transcribe”.
     // Can be set for multilingual models only.
     std::optional<std::string> task = std::nullopt;
+
+    // If `true` the pipeline will return timestamps along the text for *segments* of words in the text.
+    // For instance, if you get
+    // WhisperDecodedResultChunk
+    //      start_ts = 0.5
+    //      end_ts = 1.5
+    //      text = " Hi there!"
+    // then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
+    // Note that a segment of text refers to a sequence of one or more words, rather than individual words.
+    bool return_timestamps = false;
 
     // A list containing tokens that will be supressed at the beginning of the sampling process.
     std::vector<int64_t> begin_suppress_tokens;
@@ -105,6 +117,7 @@ static constexpr ov::Property<int64_t> no_timestamps_token_id{"no_timestamps_tok
 static constexpr ov::Property<int64_t> begin_timestamps_token_id{"begin_timestamps_token_id"};
 static constexpr ov::Property<std::string> language{"language"};
 static constexpr ov::Property<std::string> task{"task"};
+static constexpr ov::Property<bool> return_timestamps{"return_timestamps"};
 static constexpr ov::Property<std::map<std::string, int64_t>> lang_to_id{"lang_to_id"};
 
 }  // namespace genai
