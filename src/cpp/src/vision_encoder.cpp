@@ -363,22 +363,6 @@ ProcessorConfig from_any_map(
     return extracted_config;
 }
 
-ProcessorConfig from_any_map(
-    const ov::AnyMap& config_map,
-    const ProcessorConfig& initial
-) {
-    auto iter = config_map.find("processor_config");
-    ProcessorConfig extracted_config = config_map.end() != iter ?
-        iter->second.as<ProcessorConfig>() : initial;
-    using utils::read_anymap_param;
-    read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
-    read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
-    read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
-    read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
-    read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
-    return extracted_config;
-}
-
 // TODO Consider moving to clip.cpp or separate dedicated file
 clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const ProcessorConfig& config) {
     bool do_resize = true;
@@ -499,10 +483,10 @@ ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorC
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config, ov::Core core) :
     model_type(model_type) {
         if (model_type == VLMModelType::MINICPM) {
-            m_encoder = core.compile_model(model_dir / "image_encoder.xml", device, device_config).create_infer_request();
-        } else if (model_type == VLMModelType::LLAVA || model_type == VLMModelType::LLAVA_NEXT) {
+            m_vision_encoder = core.compile_model(model_dir / "image_encoder.xml", device, device_config).create_infer_request();
+        } else if (model_type == VLMModelType::LLAVA) {
             // Vision embeddings model is merged with multi modal projector at model export stage by optimum-intel
-            m_vision_embeddings = core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config).create_infer_request();
+            m_vision_encoder = core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config).create_infer_request();
         }
         m_processor_config = ov::genai::utils::from_config_json_if_exists<ov::genai::ProcessorConfig>(
             model_dir, "preprocessor_config.json"
@@ -531,16 +515,16 @@ EncodedImage VisionEncoder::encode_minicpm(const ov::Tensor& image, const Proces
     ctx_clip.image_size = m_processor_config.image_size;
     std::copy(config.norm_mean.begin(), config.norm_mean.end(), ctx_clip.image_mean);
     std::copy(config.norm_std.begin(), config.norm_std.end(), ctx_clip.image_std);
-    return llava_image_embed_make_with_bytes_slice(ctx_clip, image, m_encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
+    return llava_image_embed_make_with_bytes_slice(ctx_clip, image, m_vision_encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
 }
 
 EncodedImage VisionEncoder::encode_llava(const ov::Tensor& image, const ProcessorConfig& config) {
     ov::Tensor pixel_values = get_pixel_values_llava(image, config);
 
-    m_vision_embeddings.set_tensor("pixel_values", pixel_values);
-    m_vision_embeddings.infer();
+    m_vision_encoder.set_tensor("pixel_values", pixel_values);
+    m_vision_encoder.infer();
 
-    ov::Tensor image_features = m_vision_embeddings.get_output_tensor();
+    ov::Tensor image_features = m_vision_encoder.get_output_tensor();
     ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
 
     return {image_features, resized_source_size};
@@ -549,10 +533,10 @@ EncodedImage VisionEncoder::encode_llava(const ov::Tensor& image, const Processo
 EncodedImage VisionEncoder::encode_llava_next(const ov::Tensor& image, const ProcessorConfig& config) {
     ov::Tensor pixel_values = get_pixel_values_llava_next(image, config);
 
-    m_vision_embeddings.set_tensor("pixel_values", pixel_values);
-    m_vision_embeddings.infer();
+    m_vision_encoder.set_tensor("pixel_values", pixel_values);
+    m_vision_encoder.infer();
 
-    ov::Tensor image_features = m_vision_embeddings.get_output_tensor();
+    ov::Tensor image_features = m_vision_encoder.get_output_tensor();
     ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
 
     return {image_features, resized_source_size};
