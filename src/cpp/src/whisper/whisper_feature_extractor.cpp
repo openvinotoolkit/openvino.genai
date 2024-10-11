@@ -318,14 +318,10 @@ void fill_sin_cos_table(std::vector<float>& sin_vals, std::vector<float>& cos_va
 std::vector<float> pad(const std::vector<float>& raw_speech,
                        const size_t minimum_length,
                        const size_t reflect_pad_size) {
-    std::vector<float> padded_raw_speech;
-
-    size_t total_pad_length;
-
     // pad to minimum length if needed
-    total_pad_length = std::max(raw_speech.size(), minimum_length) + 2 * reflect_pad_size;
+    size_t total_pad_length = std::max(raw_speech.size(), minimum_length) + 2 * reflect_pad_size;
 
-    padded_raw_speech.resize(total_pad_length, 0.f);
+    std::vector<float> padded_raw_speech(total_pad_length, 0.f);
 
     std::copy(raw_speech.begin(), raw_speech.end(), padded_raw_speech.begin() + reflect_pad_size);
 
