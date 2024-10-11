@@ -15,7 +15,8 @@ int32_t main(int32_t argc, char* argv[]) try {
     ov::Tensor image = pipe.generate(prompt,
         ov::genai::width(512),
         ov::genai::height(512),
-        ov::genai::num_inference_steps(20));
+        ov::genai::num_inference_steps(20),
+        ov::genai::num_images_per_prompt(1));
 
     // writes `num_images_per_prompt` images by pattern name
     imwrite("image_%d.bmp", image, true);
