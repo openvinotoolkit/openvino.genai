@@ -15,6 +15,7 @@ from common import get_greedy, get_image_by_link, get_beam_search, get_greedy, g
 
 def get_ov_model(model_dir):
     os.system("optimum-cli export openvino -m openbmb/MiniCPM-V-2_6 " + model_dir + " --trust-remote-code")
+    os.system("convert_tokenizer openbmb/MiniCPM-V-2_6 --with-detokenizer --trust-remote-code -o " + model_dir)
     return model_dir
 
 

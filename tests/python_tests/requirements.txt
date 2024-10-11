@@ -1,5 +1,5 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-optimum[openvino]==1.22.0
+git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
 onnx==1.16.1
 pytest
 llm_bench/python/who_what_benchmark
@@ -32,4 +32,3 @@ sacremoses
 librosa
 soundfile
 datasets
-git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
