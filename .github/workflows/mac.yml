@@ -184,7 +184,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-13-large
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -248,7 +248,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-13
+    runs-on: macos-13-large
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
