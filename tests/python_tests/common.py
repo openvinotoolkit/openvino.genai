@@ -434,5 +434,7 @@ def get_image_by_link(link):
     import numpy as np
 
     image = Image.open(requests.get(link, stream=True).raw)
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
     image_data = np.array(image.getdata(), dtype=np.byte).reshape(1, 3, image.size[1], image.size[0])
     return Tensor(image_data)
