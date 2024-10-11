@@ -357,9 +357,9 @@ class GreedySearchHook:
     def new_forward(self, model):
         """Define a new greedy search function."""
         model._greedy_search = new_greedy_search.__get__(model, model.__class__)
-        max_sample_version = version.parse('4.43.0')
+        model._sample = hook_sample.new_sample.__get__(model, model.__class__)
         trans_version = version.parse(transformers.__version__)
-        if trans_version >= max_sample_version:
-            model._sample = hook_sample_v43.new_sample.__get__(model, model.__class__)
-        else:
-            model._sample = hook_sample.new_sample.__get__(model, model.__class__)
+        if trans_version >= version.parse('4.45.0'):
+            model._sample = hook_sample_v45.new_sample.__get__(model, model.__class__)
+        elseif trans_version >= version.parse('4.43.0'):
+            model._sample = hook_sample_v43.new_sample.__get__(model, model.__class__)         
