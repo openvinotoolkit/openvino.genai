@@ -545,6 +545,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         SchedulerConfig scheduler_config;
         scheduler_config.cache_size = 1;
         scheduler_config.enable_prefix_caching = true;
+        scheduler_config.max_num_batched_tokens = 2048;
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(
             model_path,
             tokenizer,
