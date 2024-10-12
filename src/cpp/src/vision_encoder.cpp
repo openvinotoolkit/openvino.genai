@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <openvino/genai/vision_encoder.hpp>
+#include "vision_encoder.hpp"
 #include "clip.hpp"
 #include "utils.hpp"
 
