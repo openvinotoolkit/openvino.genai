@@ -147,6 +147,6 @@ void imwrite(const std::string& name, ov::Tensor images, bool convert_bgr2rgb) {
 
         std::cout << "Try to write image" << img_num << " " << img_name << std::endl;
         ov::Tensor image(images.get_element_type(), img_shape, img_data);
-        imwrite_single_image(img_name, image, true);
+        // imwrite_single_image(img_name, image, true);
     }
 }
