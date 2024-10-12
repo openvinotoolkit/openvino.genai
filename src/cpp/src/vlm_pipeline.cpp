@@ -63,36 +63,6 @@ ov::Tensor concatenate_last_dim(const ov::Tensor& first, const ov::Tensor& secon
     return res;
 }
 
-ov::Tensor concatenate_mid_dim(const ov::Tensor& first, const ov::Tensor& second) {
-    size_t res_d_0 = first.get_shape().at(0);
-    size_t res_d_2 = first.get_shape().at(2);
-    OPENVINO_ASSERT(second.get_shape().at(0) == res_d_0);
-    OPENVINO_ASSERT(second.get_shape().at(2) == res_d_2);
-    size_t res_d_1 = first.get_shape().at(1) + second.get_shape().at(1);
-    ov::Tensor res{first.get_element_type(), {res_d_0, res_d_1, res_d_2}};
-    float* first_data = first.data<float>();
-    float* second_data = second.data<float>();
-    float* res_data = res.data<float>();
-    for (size_t i = 0; i < res_d_0; ++i) {
-        size_t j = 0;
-        for (; j < first.get_shape().at(1); ++j) {
-            std::copy_n(
-                first_data + i * first.get_shape().at(1) * res_d_2 + j * res_d_2,
-                res_d_2,
-                res_data + i * res_d_1 * res_d_2 + j * res_d_2
-            );
-        }
-        for (size_t k = 0; k < second.get_shape().at(1); ++k, ++j) {
-            std::copy_n(
-                second_data + i * second.get_shape().at(1) * res_d_2 + k * res_d_2,
-                res_d_2,
-                res_data + i * res_d_1 * res_d_2 + j * res_d_2
-            );
-        }
-    }
-    return res;
-}
-
 /// embed_dim: output dimension for each position
 /// pos: a list of positions to be encoded: size (H, W)
 /// out: (H, W, D)
@@ -274,7 +244,7 @@ public:
     bool m_is_chat_conversation;
     ChatHistory m_history;
     std::string m_templated_chat_history;
-    size_t image_id = 0;  // Used to insert <image_id>i</image_id> per image (not a slice).
+    size_t m_image_id = 0;  // Used to insert <image_id>i</image_id> per image (not a slice).
 
     VLMPipelineImpl(
         const std::filesystem::path& model_dir,
@@ -521,8 +491,8 @@ public:
                 };
                 EncodedImage encoded_image = m_vision_encoder.encode(single_image);
                 if (m_vlm_config.use_image_id) {
-                    images_prompt += m_vlm_config.im_id_start + std::to_string(image_id) + m_vlm_config.im_id_end;
-                    ++image_id;
+                    images_prompt += m_vlm_config.im_id_start + std::to_string(m_image_id) + m_vlm_config.im_id_end;
+                    ++m_image_id;
                 }
                 std::string unk64;
                 for (size_t idx = 0; idx < m_vlm_config.query_num; ++idx) {
