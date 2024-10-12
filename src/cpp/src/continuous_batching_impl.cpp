@@ -154,7 +154,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     {
         static ManualTimer timer("sample");
         timer.start();
-        sampler_output = m_sampler->sample(m_requests, logits);
+        sampler_output = m_sampler->sample(m_requests, logits, m_is_validation_mode_enabled);
         timer.end();
     }
 
@@ -270,7 +270,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
                     m_scheduler->free_sequence(sequence->get_id());
                 }
             }
-            m_sampler->clear_beam_search_info(request->get_request_id());
+            m_sampler->clear_request_info(request->get_request_id());
             requests_iterator = m_requests.erase(requests_iterator);
         } else {
             requests_iterator++;

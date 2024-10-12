@@ -565,13 +565,17 @@ void register_new_token(const Token& sampled_token_id,
                         Sequence::Ptr running_sequence,
                         LogitProcessor& logit_processor,
                         bool is_extend_sequence,
-                        bool is_update_len_logit_processor) {
+                        bool is_update_len_logit_processor,
+                        bool is_validation_mode_enabled) {
     logit_processor.register_new_generated_token(sampled_token_id.m_index);
     size_t generated_len = logit_processor.get_generated_len();
     if (is_extend_sequence) {
         running_sequence->append_token(sampled_token_id.m_index, sampled_token_id.m_log_prob);
     } else {
         // just update the token log prob in case of successfully validated token
+        if (generated_len >= running_sequence->get_generated_len()) {
+            auto a = 0;
+        }
         OPENVINO_ASSERT(generated_len < running_sequence->get_generated_len());
         running_sequence->update_generated_log_prob(generated_len, sampled_token_id.m_log_prob);
     }
@@ -580,8 +584,9 @@ void register_new_token(const Token& sampled_token_id,
         logit_processor.update_generated_len(++generated_len);
     }
     if (!is_validation_mode_enabled &&
-        std::fabs(sampled_token_id.m_log_prob) < sampling_params.assistant_confidence_threshold &&
-        sampling_params.num_assistant_tokens_schedule == NumAssistatantTokensScheduleType::HEURISTIC) {
+        logit_processor.is_dynamic_speculative_decoding() &&
+        std::fabs(sampled_token_id.m_log_prob) < logit_processor.get_assistant_confidence_threshold()) { 
+        auto sequence_group = running_sequence->get_sequence_group_ptr();
         sequence_group->pause_generation(true);
     }
 };
@@ -598,7 +603,7 @@ create_n_forked_sequences(SequenceGroup::Ptr sequence_group,
         const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
         const auto forked_seq_id = forked_sequence->get_id();
         forked_seq_ids.push_back(forked_seq_id);
-        register_new_token(sampled_tokens[i], forked_sequence, logit_processor, true, false);
+        register_new_token(sampled_tokens[i], forked_sequence, logit_processor, true, false, false);
     }
     return forked_seq_ids;
 }
@@ -643,8 +648,6 @@ validate_candidate(Sequence::Ptr running_sequence,
 SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                               ov::Tensor logits,
                               bool is_validation_mode_enabled) {
-
-SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups, ov::Tensor logits, bool is_validation_mode_enabled) {
     const float * logits_data = logits.data<float>();
     ov::Shape logits_shape = logits.get_shape();
     OPENVINO_ASSERT(logits_shape.size() == 3);
@@ -723,7 +726,7 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         if (is_validation_mode_enabled) {
                             is_validation_passed = validate_candidate(running_sequences[running_sequence_id], token_offset, sampled_token_id, is_extend_sequence, decrease_context_len_per_seq_group);
                         }
-                        register_new_token(sampled_token_id, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_update_len_logit_processor);
+                        register_new_token(sampled_token_id, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_update_len_logit_processor, is_validation_mode_enabled);
                         // to exit from sampling in case of failed token validation
                         if (!is_validation_passed) {
                             break;
@@ -785,8 +788,9 @@ void Sampler::update_logit_processor(uint64_t request_id, uint64_t token_id) {
     logit_processor.update_generated_len(gen_size - 1);
 }
 
-void Sampler::clear_beam_search_info(uint64_t request_id) { 
+void Sampler::clear_request_info(uint64_t request_id) { 
     m_beam_search_info.erase(request_id);
+    m_logit_processors.erase(request_id);
 }
 
 int64_t Sampler::GroupBeamSearcher::Group::finish(Beam beam, const ov::genai::GenerationConfig& sampling_params) {

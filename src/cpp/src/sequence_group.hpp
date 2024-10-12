@@ -598,7 +598,9 @@ public:
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
-            if (num_total_seqs() == 1&& (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output)) {
+            if (num_total_seqs() == 1 &&
+                (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output) &&
+                !m_sampling_params.is_speculative_decoding()) {
                 push_partial_outputs();
             } else if (has_finished() || out_of_memory()) {
                 push_outputs();

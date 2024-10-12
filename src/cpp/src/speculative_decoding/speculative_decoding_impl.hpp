@@ -10,6 +10,7 @@
 namespace ov::genai {
 
 class SpeculativeDecodingMetrics {
+    // percent of draft model using time + draft model gen tokens
     using AcceptanceRate = std::vector<float>;
     // { request_id, acceptance_rate }
     std::map<int64_t, AcceptanceRate> m_acceptance_rate;
@@ -54,6 +55,10 @@ protected:
     // left generation length per request {request_id, len}
     std::map<int64_t, size_t> m_left_gen_len;
     SpeculativeDecodingMetrics m_sd_metrics;
+
+    bool m_first_infer = false;
+
+    void first_step();
     
 public:
     SpeculativeDecodingImpl(const std::string& main_models_path,

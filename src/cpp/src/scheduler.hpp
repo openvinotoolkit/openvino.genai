@@ -338,9 +338,10 @@ private:
             if ((!sequence_group->can_generate_tokens() || recompute_evicted_sequences) && !sequence_group->is_waiting()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
-                OPENVINO_ASSERT(num_running_seqs == 1);
+                OPENVINO_ASSERT(num_running_seqs == 1 && !sequence_group->get_sampling_parameters().is_speculative_decoding() ||
+                                sequence_group->get_sampling_parameters().is_speculative_decoding());
                 // here we also assume that sequence must be scheduler in a single shot and has no already generated context
-                if (!m_config.enable_prefix_caching)
+                if (!m_config.enable_prefix_caching && !sequence_group->get_sampling_parameters().is_speculative_decoding())
                     OPENVINO_ASSERT(sequence_group->get_context_len() == 0);
 
                 size_t num_available_tokens_in_megabatch = m_config.max_num_batched_tokens - scheduler_output.m_total_num_scheduled_tokens;

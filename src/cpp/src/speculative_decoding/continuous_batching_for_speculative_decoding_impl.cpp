@@ -25,7 +25,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::f
             for (const auto& sequence : request->get_sequences()) {
                 m_scheduler->free_sequence(sequence->get_id());
             }
-            m_sampler->clear_beam_search_info(request->get_request_id());
+            m_sampler->clear_request_info(request->get_request_id());
             m_requests.pop_back();
         }
     } else {
@@ -37,7 +37,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::f
             for (const auto& sequence : request->get_sequences()) {
                 m_scheduler->free_sequence(sequence->get_id());
             }
-            m_sampler->clear_beam_search_info(request->get_request_id());
+            m_sampler->clear_request_info(request->get_request_id());
             m_requests.erase(m_requests.begin() + i);
             break;
         }
@@ -97,8 +97,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                                 }
                                 OPENVINO_ASSERT(gen_len_after < gen_len_before);
                                 for (size_t i = gen_len_after; i < gen_len_before; ++i) {
-                                    // todo
-                                    // m_sampler->update_logit_processor(request->get_request_id(), gen_ids_before[i]);
+                                    m_sampler->update_logit_processor(request->get_request_id(), gen_ids_before[i]);
                                 }
                             }
                         }
@@ -115,7 +114,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                         }
                     }
                 }
-                break;
+                // break;
             }
             if (!is_seq_exists) {
                 Sequence::Ptr new_sequence(new Sequence(candidate_sequence.sequence_id));
@@ -128,10 +127,11 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             }
             if (!is_empty_generated_tokens) {
                 if (to_remove_tokens > 0) {
-                    // request->decrease_processed_tokens(to_remove_tokens);
+                    auto num_processed_tokens = request->get_num_processed_tokens();
+                    request->update_processed_tokens_num(num_processed_tokens - to_remove_tokens);
                 }
                 // to validate tokens/extend kv-cache before generation
-                // request->set_validation_len(to_insert_tokens);
+                request->set_num_validated_tokens(to_insert_tokens);
             } else if (to_remove_tokens > 0) {
                 request->update_processed_tokens_num(request->get_prompt_len());
             }
@@ -153,6 +153,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
     // cycle to generate several tokens per one iteration for speculative decoding case
     bool to_generate = true;
     while (to_generate) {
+        iteration_number += 1;
         step();
 
         to_generate = false;
@@ -168,8 +169,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             }
             to_generate |= request->can_generate_tokens();
         }
-        iteration_number += 1;
     }
+    std::cout << "iteration_cnt:" << iteration_number << std::endl;
 
     multistep_timer.end();
 }

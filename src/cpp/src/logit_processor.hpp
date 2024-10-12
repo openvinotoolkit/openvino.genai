@@ -310,6 +310,11 @@ protected:
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
     size_t m_generated_tokens = 0;
 
+    // speculative decoding parameters
+    float m_assistant_confidence_threshold = 0.f;
+    bool m_is_dynamic_speculative_decoding = false;
+
+
 public:
     LogitProcessor(const ov::genai::GenerationConfig& sampling_params,
                    const LogitTransformers::TokenIds& input_ids) {
@@ -354,7 +359,20 @@ public:
                     m_logit_transformers.emplace_back(new LogitTransformers::TopKFilter(sampling_params.top_k));
                 }
             }
+            if (sampling_params.is_speculative_decoding() &&
+                sampling_params.num_assistant_tokens_schedule == ov::genai::NumAssistatantTokensScheduleType::HEURISTIC) {
+                m_is_dynamic_speculative_decoding = true;
+                m_assistant_confidence_threshold = sampling_params.assistant_confidence_threshold;
+            }
         }
+    }
+
+    bool is_dynamic_speculative_decoding() {
+        return m_is_dynamic_speculative_decoding;
+    }
+
+    float get_assistant_confidence_threshold() {
+        return m_assistant_confidence_threshold;
     }
 
     void apply(Logits& logits) {

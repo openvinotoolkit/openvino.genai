@@ -9,7 +9,6 @@
 
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
-    bool m_is_validation_mode_enabled = false;
 
 public:
     ContinuousBatchingForSpeculativeDecodingImpl(ov::Core& core,
