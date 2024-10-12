@@ -40,10 +40,9 @@ Continuous batching functionality is used within OpenVINO Model Server (OVMS) to
 
     # Install optimum-intel to be able to download, convert and optimize LLMs from Hugging Face
     # Optimum is not required to run models, only to convert and compress
-    pip install optimum[openvino]
+    pip install optimum-intel@git+https://github.com/huggingface/optimum-intel.git
 
     # (Optional) Install (TBD) to be able to download models from Model Scope
-    #pip install optimum[openvino]
 ```
 
 ## Performing text generation 
