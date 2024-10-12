@@ -135,6 +135,8 @@ void imwrite_single_image(const std::string& name, ov::Tensor image, bool conver
 
 
 void imwrite(const std::string& name, ov::Tensor images, bool convert_bgr2rgb) {
+    return;
+
     const ov::Shape shape = images.get_shape(), img_shape = {1, img_shape[1], img_shape[2], img_shape[3]};
     uint8_t* img_data = images.data<uint8_t>();
 
