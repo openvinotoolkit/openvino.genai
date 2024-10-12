@@ -244,7 +244,7 @@ public:
     bool m_is_chat_conversation;
     ChatHistory m_history;
     std::string m_templated_chat_history;
-    size_t m_image_id = 0;  // Used to insert <image_id>i</image_id> per image (not a slice).
+    size_t m_image_id;  // Used to insert <image_id>i</image_id> per image (not a slice).
 
     VLMPipelineImpl(
         const std::filesystem::path& model_dir,
@@ -258,7 +258,8 @@ public:
         },
         m_tokenizer{Tokenizer(model_dir.string(), device_config)},
         m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, ov::Core{}),
-        m_is_chat_conversation{false} {
+        m_is_chat_conversation{false},
+        m_image_id{0} {
             if (m_vlm_config.model_type == VLMModelType::MINICPM) {
                 m_resampler = ov::Core{}.compile_model(
                     model_dir / "resampler.xml", device, device_config
