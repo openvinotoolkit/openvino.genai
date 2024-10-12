@@ -1,6 +1,6 @@
 # OpenVINO™ GenAI
 
-![](src/docs/openvino_genai.png)
+![](src/docs/openvino_genai.jpg)
 
 OpenVINO™ GenAI is a library of most popular Generative AI model pipelines, optimized execution methods and samples that runs on top of highly performant [OpenVINO Runtime](https://github.com/openvinotoolkit/openvino).
 
