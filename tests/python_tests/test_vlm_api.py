@@ -105,5 +105,7 @@ def test_vlm_pipeline(tmp_path):
 
             pipe.finish_chat()
             gc.collect()
+    del pipe
+    gc.collect()
 
 
