@@ -479,7 +479,7 @@ jobs:
               predicted_greedy = f.readline()
           with open('predictions_prompt_lookup.txt', 'r') as f:
               predicted_prompt_lookup = f.readline()
-          assert predicted_greedy == predicted_prompt_lookup
+          assert predicted_greedy == predicted_prompt_lookup, "Expected {predicted_greedy}, actual {predicted_prompt_lookup}"
           "
           echo "Prompt lookup" passed
       - name: run and compare (model with seq_length_axis = 1)
