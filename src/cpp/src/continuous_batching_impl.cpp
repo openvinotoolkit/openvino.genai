@@ -4,6 +4,7 @@
 #include "text_callback_streamer.hpp"
 #include "continuous_batching_impl.hpp"
 #include "paged_attention_transformations.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
@@ -18,15 +19,18 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     m_tokenizer = tokenizer;
     ov::Core core;
 
+    auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
+    core.set_property(core_plugin_config);
+
     // The model can be compiled for GPU as well
     std::shared_ptr<ov::Model> model = core.read_model(models_path + "/openvino_model.xml");
 
-    DeviceConfig device_config(core, scheduler_config, device, plugin_config);
+    DeviceConfig device_config(core, scheduler_config, device, compile_plugin_config);
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
 
-    ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
+    ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), compile_plugin_config).create_infer_request();
 
     // setup KV caches
     m_cache_manager = std::make_shared<CacheManager>(device_config, core);
