@@ -25,7 +25,7 @@ class WhisperHook:
         if len(self.time_data) > 0:
             time_infer_list = copy.deepcopy(self.time_data[0]['dec_infer_time'])
         return time_infer_list
-    
+
     def get_whisper_latency(self):
         self.latency_list.clear()
         for data in self.time_data:
@@ -37,12 +37,12 @@ class WhisperHook:
             latency_data['dec_token_count'] = dec_token_count
             latency_data['dec_infer_count'] = dec_infer_count
             latency_data['dec_1st_token_time'] = round(data['dec_token_time'][0] * 1000, 2) if dec_token_count > 0 else 'NA'
-            latency_data['dec_2nd_tokens_time'] = round(sum(data['dec_token_time'][1:]) * 1000 / (dec_token_count - 1), 2) if dec_token_count > 1 else 'NA' 
+            latency_data['dec_2nd_tokens_time'] = round(sum(data['dec_token_time'][1:]) * 1000 / (dec_token_count - 1), 2) if dec_token_count > 1 else 'NA'
             latency_data['dec_1st_infer_time'] = round(data['dec_infer_time'][0] * 1000, 2) if dec_infer_count > 0 else 'NA'
             latency_data['dec_2nd_infers_time'] = round(sum(data['dec_infer_time'][1:]) * 1000 / (dec_infer_count - 1), 2) if dec_infer_count > 1 else 'NA'
             self.latency_list.append(latency_data)
         return self.latency_list
-    
+
     def print_whisper_latency(self, iter, prompt_idx):
         str = ''
         for idx, data in enumerate(self.latency_list):
@@ -69,7 +69,7 @@ class WhisperHook:
         old_text_encoder = pipe.model.encoder.forward
 
         def my_text_encoder(*args, **kwargs):
-            t1 = time.time()            
+            t1 = time.time()
             r = old_text_encoder(*args, **kwargs)
             t2 = time.time()
             text_encoder_token_time = t2 - t1
@@ -84,7 +84,7 @@ class WhisperHook:
 
         def my_text_encoder_request(*args, **kwargs):
             loop_data = {}
-            t1 = time.time()            
+            t1 = time.time()
             r = old_text_encoder_request(*args, **kwargs)
             t2 = time.time()
             text_encoder_infer_time = t2 - t1
@@ -92,7 +92,7 @@ class WhisperHook:
             self.time_data.append(loop_data)
             self.enc_infer_count += 1
             return r
-        pipe.model.encoder.request = my_text_encoder_request    
+        pipe.model.encoder.request = my_text_encoder_request
 
     def new_text_sample(self, pipe):
         self.greedy_hook = llm_bench_utils.hook_greedy_search.GreedySearchHook()
@@ -100,6 +100,7 @@ class WhisperHook:
 
     def new_generate(self, pipe):
         old_generate = pipe.model.generate
+
         def my_generate(attention_mask, **kwargs):
             r = old_generate(attention_mask, **kwargs)
             self.set_decoder_time_data()

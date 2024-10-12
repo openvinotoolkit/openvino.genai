@@ -743,7 +743,7 @@ def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_promp
         mem_consumption.end_collect_momory_consumption()
         max_rss_mem_consumption, max_shared_mem_consumption, max_uss_mem_consumption = mem_consumption.get_max_memory_consumption()
         mem_consumption.clear_max_memory_consumption()
-    
+
     latency_list = whisper_hook.get_whisper_latency()
     for loop_idx, data in enumerate(latency_list):
         iter_data = gen_iterate_data(
@@ -814,7 +814,7 @@ def run_speech_2txt_benchmark(model_path, framework, device, args, num_iters):
     if len(audio_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(input_audio_prompt_list)}, prompt idx: {prompt_idx_list}')
-    ov_model, processor, pretrain_time= FW_UTILS[framework].create_speech_2txt_model(model_path, device, **args)
+    ov_model, processor, pretrain_time = FW_UTILS[framework].create_speech_2txt_model(model_path, device, **args)
     pipe = pipeline(
         "automatic-speech-recognition",
         model=ov_model,
