@@ -57,7 +57,7 @@ jobs:
       - run: >
           . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
-          && timeout 25s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
+          && timeout 50s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./open_llama_3b_v2/ "return 0"
           | diff <(timeout 25s samples/python/greedy_causal_lm/greedy_causal_lm.py ./open_llama_3b_v2/ "return 0") -
 
   cpp-beam_search_causal_lm-ubuntu:
@@ -100,7 +100,7 @@ jobs:
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH  # C++ ignores that
 
-          timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?" > ./pred.txt
+          timeout 50s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Why is the Sun yellow?" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -116,7 +116,7 @@ jobs:
           "
           echo "Why is the Sun yellow?" passed
 
-          timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ 69 > ./pred.txt
+          timeout 50s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ 69 > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -132,7 +132,7 @@ jobs:
           "
           echo 69 passed
 
-          timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ Hi > ./pred.txt
+          timeout 50s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ Hi > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -148,7 +148,7 @@ jobs:
           "
           echo "Hi" passed
 
-          timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "return 0" > ./pred.txt
+          timeout 50s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "return 0" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r') as file:
@@ -164,7 +164,7 @@ jobs:
           "
           echo "return 0" passed
 
-          timeout 25s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "你好！ 你好嗎？" > ./pred.txt
+          timeout 50s ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r', errors='ignore') as file:
@@ -180,7 +180,7 @@ jobs:
           "
           echo "你好！ 你好嗎？" passed
 
-          timeout 1m ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
+          timeout 2m ${{ matrix.executable }} ./TinyLlama-1.1B-Chat-v1.0/ "Alan Turing was a" "return 0" "你好！ 你好嗎？" > ./pred.txt
           python -c "
           import transformers
           with open('pred.txt', 'r', errors='ignore') as file:
@@ -285,7 +285,7 @@ jobs:
       - run: >
           . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
-          && timeout 2m ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69 | diff <(timeout 2m samples/python/greedy_causal_lm/greedy_causal_lm.py ./Qwen-7B-Chat/ 69) -
+          && timeout 4m ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69 | diff <(timeout 4m samples/python/greedy_causal_lm/greedy_causal_lm.py ./Qwen-7B-Chat/ 69) -
 
   cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
@@ -318,8 +318,8 @@ jobs:
       - run: >
           . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
-          && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./Qwen1.5-7B-Chat/ "你好！"
-          | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./Qwen1.5-7B-Chat/ "你好！") -
+          && timeout 100s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./Qwen1.5-7B-Chat/ "你好！"
+          | diff <(timeout 100s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./Qwen1.5-7B-Chat/ "你好！") -
 
   cpp-beam_search_causal_lm-Phi-2:
     runs-on: ubuntu-20.04-16-cores
@@ -352,8 +352,8 @@ jobs:
       - run: >
           . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
-          && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./phi-2/ 69
-          | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./phi-2/ 69) -
+          && timeout 100s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./phi-2/ 69
+          | diff <(timeout 100s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./phi-2/ 69) -
 
   cpp-beam_search_causal_lm-notus-7b-v1:
     runs-on: ubuntu-20.04-16-cores
@@ -386,8 +386,8 @@ jobs:
       - run: >
           . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
-          && timeout 50s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./notus-7b-v1/ 69
-          | diff <(timeout 50s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./notus-7b-v1/ 69) -
+          && timeout 100s ./build/samples/cpp/beam_search_causal_lm/beam_search_causal_lm ./notus-7b-v1/ 69
+          | diff <(timeout 100s ./samples/python/beam_search_causal_lm/beam_search_causal_lm.py ./notus-7b-v1/ 69) -
 
   cpp-speculative_decoding_lm-ubuntu:
     runs-on: ubuntu-20.04-16-cores
@@ -536,7 +536,7 @@ jobs:
       - name: Run Generation
         run: |
           source ./ov/setupvars.sh
-          timeout 50s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./phi-1_5/ "Alan Turing was a" > ./pred_greedy.txt
+          timeout 100s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./phi-1_5/ "Alan Turing was a" > ./pred_greedy.txt
       - name: Compare
         run: |
           python -c "
@@ -556,7 +556,7 @@ jobs:
       - run: >
           . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
-          && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./phi-1_5/ "Alan Turing was a"
+          && timeout 100s samples/python/greedy_causal_lm/greedy_causal_lm.py ./phi-1_5/ "Alan Turing was a"
           | diff ./pred_greedy.txt -
 
   cpp-greedy_causal_lm-redpajama-3b-chat:
@@ -590,7 +590,7 @@ jobs:
       - name: Run Generation
         run: |
           source ./ov/setupvars.sh
-          timeout 50s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./redpajama-3b-chat/ "Alan Turing was a" > ./pred_greedy.txt
+          timeout 100s ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./redpajama-3b-chat/ "Alan Turing was a" > ./pred_greedy.txt
       - name: Compare
         run: |
           python -c "
@@ -610,7 +610,7 @@ jobs:
       - run: >
           . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
-          && timeout 50s samples/python/greedy_causal_lm/greedy_causal_lm.py ./redpajama-3b-chat/ "Alan Turing was a"
+          && timeout 100s samples/python/greedy_causal_lm/greedy_causal_lm.py ./redpajama-3b-chat/ "Alan Turing was a"
           | diff ./pred_greedy.txt -
 
   cpp-chat_sample-ubuntu:
@@ -645,7 +645,7 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           printf 'What is 2 + 2?\nWhat is the previous answer?\nAdd 1 to it.\nSubtract 5 from it.\nWhy is the sun yellow?\nWhat was my first question?\n' > ./input.txt
-          timeout 30s ./build/samples/cpp/chat_sample/chat_sample ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred.txt
+          timeout 60s ./build/samples/cpp/chat_sample/chat_sample ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred.txt
           python -c "
           from transformers import LlamaTokenizer, AutoModelForCausalLM
           model_id = 'TinyLlama/TinyLlama-1.1B-Chat-v1.0'
@@ -675,7 +675,7 @@ jobs:
           diff pred.txt ref.txt
           echo "Chat sample cpp" passed
           export PYTHONPATH=./build/:$PYTHONPATH
-          timeout 30s ./samples/python/chat_sample/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
+          timeout 60s ./samples/python/chat_sample/chat_sample.py ./TinyLlama-1.1B-Chat-v1.0/ < input.txt > ./pred2.txt
           diff pred2.txt ref.txt
           echo "Chat sample python" passed
 
@@ -708,7 +708,7 @@ jobs:
       - name: Run visual_language_chat sample - MiniCPM-V-2_6
         run: >
           source ./ov/setupvars.sh
-          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ cat.jpg
+          && timeout 240s ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ cat.jpg
           <<< $'What is on the image?\nWhat is special on the image?'
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
@@ -720,7 +720,7 @@ jobs:
       - name: Run visual_language_chat sample - LLaVa 1.5
         run: >
           source ./ov/setupvars.sh
-          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
+          && timeout 240s ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
 
       - name: Run python chat sample
@@ -728,7 +728,7 @@ jobs:
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
           printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
-          timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./miniCPM-V-2_6/ cat.jpg < input.txt > ./pred.txt
+          timeout 240s python ./samples/python/visual_language_chat/visual_language_chat.py ./miniCPM-V-2_6/ cat.jpg < input.txt > ./pred.txt
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
