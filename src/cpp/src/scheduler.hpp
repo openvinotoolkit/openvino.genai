@@ -368,8 +368,8 @@ private:
 
                 // add scheduling information
                 {
-                    Sequence::Ptr sequence = (*sequence_group)[0];
-                    uint64_t seq_id = sequence->get_id();
+                    // Sequence::Ptr sequence = (*sequence_group)[0];
+                    // uint64_t seq_id = sequence->get_id();
 
                     // and schedule tokens
                     sequence_group->schedule_tokens(sequence_len);
@@ -380,7 +380,10 @@ private:
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
-                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
+                        for (auto& sequence : sequence_group->get_running_sequences()) {
+                            uint64_t seq_id = sequence->get_id();
+                            scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
+                        }
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
                     }
 

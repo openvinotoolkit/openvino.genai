@@ -56,6 +56,7 @@ std::pair<size_t, size_t>
 get_prefix_len(const std::vector<Sequence::Ptr>& running_sequences,
                const ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::GeneratedSequences& candidates);
 
+// init request in case it was not started to be generated
 size_t init_request(SequenceGroup::Ptr request, const GeneratedSequences& candidates);
 };
 }
