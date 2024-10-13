@@ -10,6 +10,7 @@
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
 
+
 public:
     ContinuousBatchingForSpeculativeDecodingImpl(ov::Core& core,
                                                  const std::shared_ptr<ov::Model>& model,
@@ -24,7 +25,7 @@ public:
 
     void finish_request(int64_t request_id = -1);
 
-    void align_generated_sequence_len();
+    void align_all_sequence_len_in_request();
 
     struct GeneratedSequence {
         std::vector<int64_t> token_ids;
@@ -48,6 +49,13 @@ public:
     using GeneratedRequests = std::map<uint64_t, GeneratedSequences>;
 
     GeneratedRequests get_generated_requests();
-    UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates);
+    UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates, bool is_update_sampler);
+
+protected:
+std::pair<size_t, size_t>
+get_prefix_len(const std::vector<Sequence::Ptr>& running_sequences,
+               const ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::GeneratedSequences& candidates);
+
+size_t init_request(SequenceGroup::Ptr request, const GeneratedSequences& candidates);
 };
 }

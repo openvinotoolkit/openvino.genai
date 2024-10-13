@@ -63,9 +63,8 @@ public:
     void set_seed(size_t seed) { rng_engine.seed(seed); }
     void clear_request_info(uint64_t request_id);
 
-    void remove_token_from_logit_processor(uint64_t request_id, uint64_t token_id);
-    void insert_token_to_logit_processor(uint64_t request_id, uint64_t token_id);
-    void update_logit_processor_gen_len(uint64_t request_id, uint64_t updated_len);
+    LogitProcessor& get_logit_processor(uint64_t request_id);
+    void create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_parameters, const TokenIds& prompt);
 };
 
 class Sampler::GroupBeamSearcher {

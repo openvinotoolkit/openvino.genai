@@ -93,71 +93,148 @@ bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::has_non_finished_reque
     return m_main_pipeline->has_non_finished_requests();
 }
 
-void ContinuousBatchingPipeline::SpeculativeDecodingImpl::first_step() {
-    // to generate first token and create several sequences per request
-    m_draft_pipeline->step();
-    m_main_pipeline->step();
-
-    for (const auto& checked_sequence : m_main_pipeline->get_generated_requests()) {
-        m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second);
-    }
-}
-
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
-    // first infer
     // generate candidates by draft model
     m_draft_pipeline->multistep();
+
+    std::cout << "after step draft: " << std::endl;
+    for (const auto& req : m_draft_pipeline->get_generated_requests()) {
+        for (const auto& seq : req.second) {
+            std::cout << req.first << " " << seq.first << " | ";
+            for (const auto& token : seq.second.token_ids) {
+                std::cout << token << " ";
+            }
+            std::cout << std::endl;
+        }
+    }
+    std::cout << "after step main: " << std::endl;
+    for (const auto& req : m_main_pipeline->get_generated_requests()) {
+        for (const auto& seq : req.second) {
+            std::cout << req.first << " " << seq.first << " | ";
+            for (const auto& token : seq.second.token_ids) {
+                std::cout << token << " ";
+            }
+            std::cout << std::endl;
+        }
+    }
+    std::cout << std::endl;
 
     // to generate num_matches statistic
     std::map<int64_t, ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::UpdateRequestResult> update_sequence_info;
     // put candidates to model KV cache
     for (const auto& candidate : m_draft_pipeline->get_generated_requests()) {
-        auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second);
+        auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
         update_sequence_info.insert({{candidate.first, update_result}});
     }
 
+    // std::cout << "after update draft: " << std::endl;
+    // for (const auto& req : m_draft_pipeline->get_generated_requests()) {
+    //     for (const auto& seq : req.second) {
+    //         std::cout << req.first << " " << seq.first << " | ";
+    //         for (const auto& token : seq.second.token_ids) {
+    //             std::cout << token << " ";
+    //         }
+    //         std::cout << std::endl;
+    //     }
+    // }
+    // std::cout << "after update main: " << std::endl;
+    // for (const auto& req : m_main_pipeline->get_generated_requests()) {
+    //     for (const auto& seq : req.second) {
+    //         std::cout << req.first << " " << seq.first << " | ";
+    //         for (const auto& token : seq.second.token_ids) {
+    //             std::cout << token << " ";
+    //         }
+    //         std::cout << std::endl;
+    //     }
+    // }
+    // std::cout << std::endl;
+
     // validate candidates and generate 1 new token
     m_main_pipeline->step();
+
+    std::cout << "after step draft: " << std::endl;
+    for (const auto& req : m_draft_pipeline->get_generated_requests()) {
+        for (const auto& seq : req.second) {
+            std::cout << req.first << " " << seq.first << " | ";
+            for (const auto& token : seq.second.token_ids) {
+                std::cout << token << " ";
+            }
+            std::cout << std::endl;
+        }
+    }
+    std::cout << "after step main: " << std::endl;
+    for (const auto& req : m_main_pipeline->get_generated_requests()) {
+        for (const auto& seq : req.second) {
+            std::cout << req.first << " " << seq.first << " | ";
+            for (const auto& token : seq.second.token_ids) {
+                std::cout << token << " ";
+            }
+            std::cout << std::endl;
+        }
+    }
+    std::cout << std::endl;
 
 
     auto main_reuest = m_main_pipeline->get_generated_requests();
     auto draft_reuest = m_draft_pipeline->get_generated_requests();
 
-    std::cout << "after steo main: " << std::endl;
-    for (const auto& req : main_reuest) {
-        for (const auto& seq : req.second) {
-            std::cout << req.first << " " << seq.first << " | ";
-            for (const auto& token : seq.second.token_ids) {
-                std::cout << token << " ";
-            }
-            std::cout << std::endl;
-        }
-    }
-    std::cout << std::endl;
+    // std::cout << "after steo main: " << std::endl;
+    // for (const auto& req : main_reuest) {
+    //     for (const auto& seq : req.second) {
+    //         std::cout << req.first << " " << seq.first << " | ";
+    //         for (const auto& token : seq.second.token_ids) {
+    //             std::cout << token << " ";
+    //         }
+    //         std::cout << std::endl;
+    //     }
+    // }
+    // std::cout << std::endl;
 
 
-    m_main_pipeline->align_generated_sequence_len();
+    m_main_pipeline->align_all_sequence_len_in_request();
 
     main_reuest = m_main_pipeline->get_generated_requests();
     draft_reuest = m_draft_pipeline->get_generated_requests();
 
-    std::cout << "after align main: " << std::endl;
-    for (const auto& req : main_reuest) {
-        for (const auto& seq : req.second) {
-            std::cout << req.first << " " << seq.first << " | ";
-            for (const auto& token : seq.second.token_ids) {
-                std::cout << token << " ";
-            }
-            std::cout << std::endl;
-        }
-    }
-    std::cout << std::endl;
+    // std::cout << "after align main: " << std::endl;
+    // for (const auto& req : main_reuest) {
+    //     for (const auto& seq : req.second) {
+    //         std::cout << req.first << " " << seq.first << " | ";
+    //         for (const auto& token : seq.second.token_ids) {
+    //             std::cout << token << " ";
+    //         }
+    //         std::cout << std::endl;
+    //     }
+    // }
+    // std::cout << std::endl;
 
     for (const auto& checked_sequence : m_main_pipeline->get_generated_requests()) {
-        auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second);
+        auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
         // std::cout << "insert: " << update_result.inserted_tokens_cnt << std::endl;
     }
+
+    // std::cout << "after update draft: " << std::endl;
+    // for (const auto& req : m_draft_pipeline->get_generated_requests()) {
+    //     for (const auto& seq : req.second) {
+    //         std::cout << req.first << " " << seq.first << " | ";
+    //         for (const auto& token : seq.second.token_ids) {
+    //             std::cout << token << " ";
+    //         }
+    //         std::cout << std::endl;
+    //     }
+    // }
+    // std::cout << "after update main: " << std::endl;
+    // for (const auto& req : m_main_pipeline->get_generated_requests()) {
+    //     for (const auto& seq : req.second) {
+    //         std::cout << req.first << " " << seq.first << " | ";
+    //         for (const auto& token : seq.second.token_ids) {
+    //             std::cout << token << " ";
+    //         }
+    //         std::cout << std::endl;
+    //     }
+    // }
+    // std::cout << std::endl;
 
     // update to left generation len
     std::vector<int64_t> draft_requests_to_drop;

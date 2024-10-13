@@ -777,21 +777,14 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
     return sampler_output;
 }
 
-void Sampler::remove_token_from_logit_processor(uint64_t request_id, uint64_t token_id) {
+LogitProcessor& Sampler::get_logit_processor(uint64_t request_id) {
     OPENVINO_ASSERT(m_logit_processors.count(request_id));
-    auto& logit_processor = m_logit_processors.at(request_id);
-    logit_processor.decrease_generated_token_occurance(token_id);
+    return m_logit_processors.at(request_id);
 }
 
-void Sampler::insert_token_to_logit_processor(uint64_t request_id, uint64_t token_id) {
-    OPENVINO_ASSERT(m_logit_processors.count(request_id));
-    auto& logit_processor = m_logit_processors.at(request_id);
-    logit_processor.register_new_generated_token(token_id);
-}
 
-void Sampler::update_logit_processor_gen_len(uint64_t request_id, uint64_t updated_len) {
-    auto& logit_processor = m_logit_processors.at(request_id);
-    logit_processor.update_generated_len(updated_len);
+void Sampler::create_logit_processor(uint64_t request_id, const GenerationConfig& sampling_params, const TokenIds& prompt) {
+    m_logit_processors.insert({request_id, LogitProcessor(sampling_params, prompt)});
 }
 
 void Sampler::clear_request_info(uint64_t request_id) { 
