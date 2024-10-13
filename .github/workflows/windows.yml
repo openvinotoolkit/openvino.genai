@@ -257,7 +257,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2019-16-core
+    runs-on: windows-2019
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\\ov
