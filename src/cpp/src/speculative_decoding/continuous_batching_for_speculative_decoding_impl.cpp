@@ -96,7 +96,9 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_pr
            min_candidate_len = std::numeric_limits<size_t>::max();
     for (const auto& running_sequence : running_sequences) {
         const auto& sequence_id = running_sequence->get_grouped_id();
-        OPENVINO_ASSERT(candidates.count(sequence_id));
+        if (!candidates.count(sequence_id)) {
+            continue;
+        }
 
         const auto& candidate_sequence = candidates.at(sequence_id);
 
@@ -209,7 +211,9 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             std::tie(min_generated_tokens, min_candidate_len) = get_prefix_len(running_sequences, candidates);
 
             for (auto& running_sequence : running_sequences) {
-                OPENVINO_ASSERT(candidates.count(running_sequence->get_grouped_id()));
+                if (!candidates.count(running_sequence->get_grouped_id())) {
+                    continue;
+                }
 
                 result.removed_tokens_cnt = remove_tokens_from_sequence(running_sequence, min_generated_tokens, logit_processor);
 
