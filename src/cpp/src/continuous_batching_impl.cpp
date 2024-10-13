@@ -281,6 +281,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             }
         }
         m_sampler->clear_beam_search_info(request->get_request_id());
+        m_requests.erase(m_requests.begin());
     }
 
     for (size_t generation_idx = 0; generation_idx < generations.size(); ++generation_idx) {
