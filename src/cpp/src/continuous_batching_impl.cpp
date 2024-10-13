@@ -273,6 +273,16 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         streamer_ptr->end();
     }
 
+    if (!continue_generation && !m_requests.empty()) {
+        SequenceGroup::Ptr request = m_requests[0];
+        for (const auto& sequence: request->get_sequences()) {
+            if (m_scheduler->has_block_table(sequence->get_id())) {
+                m_scheduler->free_sequence(sequence->get_id());
+            }
+        }
+        m_sampler->clear_beam_search_info(request->get_request_id());
+    }
+
     for (size_t generation_idx = 0; generation_idx < generations.size(); ++generation_idx) {
         const auto& generation = generations[generation_idx];
         EncodedGenerationResult result;
