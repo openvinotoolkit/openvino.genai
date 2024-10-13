@@ -256,7 +256,7 @@ public:
 
     // a sequence group can generate new tokens if it already proccessed m_max_content_len before
     bool can_generate_tokens() const {
-        return m_max_content_len >= get_prompt_len() && !m_is_gen_paused;
+        return m_max_content_len + m_num_validated_tokens >= get_prompt_len() && !m_is_gen_paused;
     }
 
     Sequence::Ptr operator[] (size_t index) {

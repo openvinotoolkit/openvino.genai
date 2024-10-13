@@ -98,49 +98,80 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::first_step() {
     m_draft_pipeline->step();
     m_main_pipeline->step();
 
-    auto before = m_draft_pipeline->get_generated_sequences();
-    auto main = m_main_pipeline->get_generated_sequences();
-
-    for (const auto& checked_sequence : m_main_pipeline->get_generated_sequences()) {
-        m_draft_pipeline->update_generated_sequence(checked_sequence);
+    for (const auto& checked_sequence : m_main_pipeline->get_generated_requests()) {
+        m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second);
     }
-    
-    auto after = m_draft_pipeline->get_generated_sequences();
-    m_first_infer = true;
 }
 
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
-    if (!m_first_infer) {
-        first_step();
-    }
+    // first infer
     // generate candidates by draft model
     m_draft_pipeline->multistep();
 
     // to generate num_matches statistic
-    std::map<int64_t, ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::UpdateSeqResult> update_sequence_info;
+    std::map<int64_t, ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::UpdateRequestResult> update_sequence_info;
     // put candidates to model KV cache
-    for (const auto& candidate : m_draft_pipeline->get_generated_sequences()) {
-        auto update_result = m_main_pipeline->update_generated_sequence(candidate);
-        update_sequence_info.insert({{candidate.request_id, update_result}});
+    for (const auto& candidate : m_draft_pipeline->get_generated_requests()) {
+        auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second);
+        update_sequence_info.insert({{candidate.first, update_result}});
     }
 
     // validate candidates and generate 1 new token
     m_main_pipeline->step();
 
-    for (const auto& checked_sequence : m_main_pipeline->get_generated_sequences()) {
-        auto update_result = m_draft_pipeline->update_generated_sequence(checked_sequence);
-        update_sequence_info[checked_sequence.request_id].to_remove = update_result.to_remove; 
+
+    auto main_reuest = m_main_pipeline->get_generated_requests();
+    auto draft_reuest = m_draft_pipeline->get_generated_requests();
+
+    std::cout << "after steo main: " << std::endl;
+    for (const auto& req : main_reuest) {
+        for (const auto& seq : req.second) {
+            std::cout << req.first << " " << seq.first << " | ";
+            for (const auto& token : seq.second.token_ids) {
+                std::cout << token << " ";
+            }
+            std::cout << std::endl;
+        }
+    }
+    std::cout << std::endl;
+
+
+    m_main_pipeline->align_generated_sequence_len();
+
+    main_reuest = m_main_pipeline->get_generated_requests();
+    draft_reuest = m_draft_pipeline->get_generated_requests();
+
+    std::cout << "after align main: " << std::endl;
+    for (const auto& req : main_reuest) {
+        for (const auto& seq : req.second) {
+            std::cout << req.first << " " << seq.first << " | ";
+            for (const auto& token : seq.second.token_ids) {
+                std::cout << token << " ";
+            }
+            std::cout << std::endl;
+        }
+    }
+    std::cout << std::endl;
+
+    for (const auto& checked_sequence : m_main_pipeline->get_generated_requests()) {
+        auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second);
+        update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
+        // std::cout << "insert: " << update_result.inserted_tokens_cnt << std::endl;
     }
 
     // update to left generation len
     std::vector<int64_t> draft_requests_to_drop;
     for (auto& request : m_left_gen_len) {
         auto updated_seq_info = update_sequence_info[request.first];
-        OPENVINO_ASSERT(updated_seq_info.to_insert >= updated_seq_info.to_remove);
-        float acceptance_rate = 1 - static_cast<float>(updated_seq_info.to_remove) / updated_seq_info.to_insert; 
+        if (updated_seq_info.inserted_tokens_cnt == 0 && updated_seq_info.removed_tokens_cnt == 0) {
+            draft_requests_to_drop.push_back(request.first);
+        }
+        OPENVINO_ASSERT(updated_seq_info.inserted_tokens_cnt >= updated_seq_info.removed_tokens_cnt);
+        float acceptance_rate = 1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt; 
         m_sd_metrics.update_acceptance_rate(request.first, acceptance_rate);
-        auto num_matches = updated_seq_info.to_insert - updated_seq_info.to_remove;
-        std::cout << "num_matches: " << (updated_seq_info.to_insert - updated_seq_info.to_remove) << " left_len: " << request.second << std::endl;
+        auto num_matches = updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt;
+        std::cout << "num_matches: " << (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt) << " left_len: " << request.second << std::endl;
+        std::cout << "insert: " << updated_seq_info.inserted_tokens_cnt << " remove: " << updated_seq_info.removed_tokens_cnt << std::endl;
         request.second--;
         num_matches = std::min(num_matches, request.second);
         request.second -= (num_matches);
@@ -152,6 +183,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         m_draft_pipeline->finish_request(request_id);
         m_left_gen_len.erase(request_id);
     }
+    std::cout << "===============================================" << std::endl;
 }
 
 std::vector<EncodedGenerationResult>
@@ -178,11 +210,12 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         main_generations.push_back(m_main_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
 
         auto draft_sampling_params = sampling_params[request_id];
-        draft_sampling_params.max_new_tokens = SIZE_MAX;
-        draft_sampling_params.min_new_tokens = SIZE_MAX;
+        draft_sampling_params.max_new_tokens = SIZE_MAX - 1;
+        draft_sampling_params.min_new_tokens = SIZE_MAX - 1;
+        draft_sampling_params.ignore_eos = true;
         draft_generations.push_back(m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params));
-        // decrease generation len to generate last token by main model
-        m_left_gen_len.insert({ request_id, sampling_params[request_id].max_new_tokens - 1 });
+        // decrease generation len to generate first and last token by main model
+        m_left_gen_len.insert({ request_id, sampling_params[request_id].max_new_tokens - 2 });
     }
 
     std::vector<EncodedGenerationResult> results;

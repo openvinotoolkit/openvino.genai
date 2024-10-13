@@ -24,25 +24,30 @@ public:
 
     void finish_request(int64_t request_id = -1);
 
+    void align_generated_sequence_len();
+
     struct GeneratedSequence {
-        uint64_t request_id = 0, sequence_id = 0;
         std::vector<int64_t> token_ids;
         std::vector<float> log_probs;
 
-        GeneratedSequence(uint64_t req_id, uint64_t seq_id, const  std::vector<int64_t>& generated_token_ids, const std::vector<float>& generated_log_probs) :
-            request_id(req_id),
-            sequence_id(seq_id),
+        GeneratedSequence(const std::vector<int64_t>& generated_token_ids,
+                          const std::vector<float>& generated_log_probs) :
             token_ids(generated_token_ids),
             log_probs(generated_log_probs) {};
     };
 
-    struct UpdateSeqResult {
-        size_t to_insert, to_remove;
-        UpdateSeqResult(size_t _to_insert = 0, size_t _to_remove = 0) : to_insert(_to_insert), to_remove(_to_remove) {};
+    struct UpdateRequestResult {
+        size_t inserted_tokens_cnt, removed_tokens_cnt;
+
+        UpdateRequestResult(size_t to_insert = 0, size_t to_remove = 0) :
+            inserted_tokens_cnt(to_insert),
+            removed_tokens_cnt(to_remove) {};
     };
 
-    std::vector<GeneratedSequence> get_generated_sequences();
-    UpdateSeqResult update_generated_sequence(const GeneratedSequence& new_sequence);
+    using GeneratedSequences = std::map<uint64_t, GeneratedSequence>;
+    using GeneratedRequests = std::map<uint64_t, GeneratedSequences>;
 
+    GeneratedRequests get_generated_requests();
+    UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates);
 };
 }

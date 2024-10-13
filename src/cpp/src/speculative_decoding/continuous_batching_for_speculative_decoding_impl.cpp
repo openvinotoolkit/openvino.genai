@@ -44,101 +44,134 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::f
     }
 }
 
-std::vector<ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::GeneratedSequence>
-ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_generated_sequences() {
+void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::align_generated_sequence_len() {
+    for (auto& request : m_requests) {
+        auto rs = request->get_running_sequences();
+        if (rs.size() == 1) {
+            continue;
+        }
+        auto num_gen_tokens = request->get_num_processed_tokens() + request->get_num_tokens_to_validate() - request->get_prompt_len() + 1;
+        for (auto& sequence : rs) {
+            auto updated_len = sequence->get_generated_len();
+            OPENVINO_ASSERT(updated_len >= num_gen_tokens);
+            auto a = updated_len - num_gen_tokens;
+            if (a > 0) {
+                auto b = 0;
+            }
+            sequence->remove_last_tokens(a);
+            // remove from logit proc
+        }
+        m_sampler->update_logit_processor_gen_len(request->get_request_id(), num_gen_tokens);
+    }
+}
+
+
+ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::GeneratedRequests
+ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_generated_requests() {
     _pull_awaiting_requests();
-    std::vector<ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::GeneratedSequence> result;
+
+    ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::GeneratedRequests result;
     for (const auto& request : m_requests) {
-        const auto request_id = request->get_request_id();
-        for (const auto& sequence : request->get_sequences()) {
-            auto generated_ids = sequence->get_generated_ids();
-            auto log_probs = sequence->get_generated_log_probs();
-            result.emplace_back(request_id, sequence->get_grouped_id(), generated_ids, log_probs);
+        const auto& request_id = request->get_request_id();
+        if (!result.count(request_id)) {
+            result.insert({request_id, {{}} });
+        }
+        auto& generated_request = result[request_id];
+        for (const auto& sequence : request->get_running_sequences()) {
+            const auto& sequence_id = sequence->get_grouped_id();
+            OPENVINO_ASSERT(!generated_request.count(sequence_id));
+            generated_request.insert({{sequence_id, { sequence->get_generated_ids(), sequence->get_generated_log_probs() } }});
         }
     }
     return result;
 }
 
-ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::UpdateSeqResult
-ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update_generated_sequence(
-    const ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::GeneratedSequence& candidate_sequence) {
+ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::UpdateRequestResult
+ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update_request(uint64_t request_id,
+                                                                                         const ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::GeneratedSequences& candidates) {
     _pull_awaiting_requests();
 
-    bool is_empty_generated_tokens = false;
+    ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::UpdateRequestResult result{0, 0};
     for (auto& request : m_requests) {
-        if (candidate_sequence.request_id == request->get_request_id()) {
-            bool is_seq_exists = false;
-            // todo: iefode: multiseq
-            size_t to_remove_tokens = 0, to_insert_tokens = 0;
-            for (auto& sequence : request->get_sequences()) {
-                if (candidate_sequence.sequence_id == sequence->get_grouped_id()) {
-                    is_seq_exists = true;
-                    auto present_ids = sequence->get_generated_ids();
-                    const auto& candidate_ids = candidate_sequence.token_ids;
+        if (request_id != request->get_request_id()) {
+            continue;
+        }
+        size_t min_processed_tokens = std::numeric_limits<size_t>::max(),
+               min_candidate_len = std::numeric_limits<size_t>::max(),
+               prompt_len = request->get_prompt_len();
+        // size_t num_proccessed_tokens 
+        for (auto& running_sequence : request->get_running_sequences()) {
+            const auto& sequence_id = running_sequence->get_grouped_id();
+            if (candidates.count(sequence_id) == 0) {
+                continue;
+            }
+            OPENVINO_ASSERT(candidates.count(sequence_id));
 
-                    // remove extra tokens from sequence
-                    {
-                        auto token_idx = std::min(present_ids.size(), candidate_ids.size());
-                        if (token_idx) {
-                            while (token_idx-- > 0) {
-                                if (present_ids[token_idx] == candidate_ids[token_idx]) {
-                                    break;
-                                }
-                            }
-                            to_remove_tokens = present_ids.size() - (token_idx + 1);
-                            if (to_remove_tokens > 0) {
-                                const auto gen_ids_before = sequence->get_generated_ids();
-                                sequence->remove_last_tokens(to_remove_tokens);
-                                present_ids = sequence->get_generated_ids();
-                                const size_t gen_len_before = gen_ids_before.size(),
-                                            gen_len_after = present_ids.size();
-                                if (gen_len_after == 0) {
-                                    is_empty_generated_tokens = true;
-                                }
-                                OPENVINO_ASSERT(gen_len_after < gen_len_before);
-                                for (size_t i = gen_len_after; i < gen_len_before; ++i) {
-                                    m_sampler->update_logit_processor(request->get_request_id(), gen_ids_before[i]);
-                                }
-                            }
-                        }
-                    }
-                    // insert new tokens to sequence
-                    {
-                        OPENVINO_ASSERT(candidate_ids.size() >= present_ids.size());
-                        const auto& candidate_log_probs = candidate_sequence.log_probs;
-                        const size_t start_id = std::min(present_ids.size(), candidate_ids.size()),
-                                        stop_id = std::max(present_ids.size(), candidate_ids.size());
-                        to_insert_tokens = stop_id - start_id;
-                        for (size_t i = start_id; i < stop_id; ++i) {
-                            sequence->append_token(candidate_ids[i],  i < candidate_log_probs.size() ? candidate_log_probs[i] : 0.f);
-                        }
-                    }
+            const auto& candidate_sequence = candidates.at(sequence_id);
+
+            const std::vector<int64_t>& candidate_token_ids = candidate_sequence.token_ids,
+                                        running_token_ids = running_sequence->get_generated_ids();
+
+            const size_t candidate_sequence_gen_len = candidate_token_ids.size(),
+                         running_sequence_gen_len = running_sequence->get_generated_len();
+            
+            size_t min_generated_len = std::min(candidate_sequence_gen_len, running_sequence_gen_len);
+
+            for (size_t i = 0; i < min_generated_len; ++i) {
+                if (candidate_token_ids[i] != running_token_ids[i]) {
+                    min_generated_len = i;
+                    break;
                 }
-                // break;
             }
-            if (!is_seq_exists) {
-                Sequence::Ptr new_sequence(new Sequence(candidate_sequence.sequence_id));
-                const auto& generated_tokens = candidate_sequence.token_ids;
-                const auto& generated_log_probs = candidate_sequence.log_probs;
-                for (size_t i = 0; i < generated_tokens.size(); ++i) {
-                    new_sequence->append_token(generated_tokens[i], generated_log_probs[i]);
+
+            min_processed_tokens = std::min(min_generated_len, min_processed_tokens);
+            min_candidate_len = std::min(candidate_sequence_gen_len, min_candidate_len);
+        }
+        // remove extra tokens
+        if (request->get_num_processed_tokens() >= min_processed_tokens + prompt_len) {
+            result.removed_tokens_cnt = request->get_num_processed_tokens() - (min_processed_tokens + prompt_len) + 1;
+            auto updated_num_processed_tokens = request->get_num_processed_tokens() - result.removed_tokens_cnt;
+            request->update_processed_tokens_num(updated_num_processed_tokens);
+            
+            for (auto& running_sequence : request->get_running_sequences()) {
+                if (candidates.count(running_sequence->get_grouped_id()) == 0) {
+                    continue;
                 }
-                request->add_sequence(new_sequence);
-            }
-            if (!is_empty_generated_tokens) {
-                if (to_remove_tokens > 0) {
-                    auto num_processed_tokens = request->get_num_processed_tokens();
-                    request->update_processed_tokens_num(num_processed_tokens - to_remove_tokens);
+                auto running_sequence_gen_len = running_sequence->get_generated_len();
+                OPENVINO_ASSERT(running_sequence_gen_len >= min_processed_tokens);
+                const auto running_token_ids = running_sequence->get_generated_ids();
+                size_t updated_seq_lenght = running_sequence_gen_len - min_processed_tokens;
+                for (size_t i = min_processed_tokens; i < running_sequence_gen_len; ++i) {
+                    m_sampler->remove_token_from_logit_processor(request_id, running_token_ids[i]);
                 }
-                // to validate tokens/extend kv-cache before generation
-                request->set_num_validated_tokens(to_insert_tokens);
-            } else if (to_remove_tokens > 0) {
-                request->update_processed_tokens_num(request->get_prompt_len());
+                running_sequence->remove_last_tokens(updated_seq_lenght);
+                m_sampler->update_logit_processor_gen_len(request_id, min_processed_tokens);
+            }   
+        }
+        // add tokens from candidates
+        if (min_candidate_len > min_processed_tokens) {
+            result.inserted_tokens_cnt = min_candidate_len - min_processed_tokens;
+            
+            for (auto& running_sequence : request->get_running_sequences()) {
+                if (candidates.count(running_sequence->get_grouped_id()) == 0) {
+                    continue;
+                }
+                const auto& candidate_sequence = candidates.at(running_sequence->get_grouped_id());
+                const std::vector<int64_t>& candidate_token_ids = candidate_sequence.token_ids;
+                const std::vector<float>& candidate_token_log_probs = candidate_sequence.log_probs;
+
+                for (size_t i = min_processed_tokens; i < min_candidate_len; ++i) {
+                    running_sequence->append_token(candidate_token_ids[i], candidate_token_log_probs[i]);
+                    m_sampler->insert_token_to_logit_processor(request_id, candidate_token_ids[i]);
+                }
             }
-            return ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::UpdateSeqResult(to_insert_tokens, to_remove_tokens);
+            request->set_num_validated_tokens(result.inserted_tokens_cnt);
+            // if (min_processed_tokens > 0)
+            //     m_sampler->update_logit_processor_gen_len(request_id, min_processed_tokens + result.inserted_tokens_cnt);
         }
     }
-    return {0, 0};
+
+    return result;
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::multistep() {
@@ -170,7 +203,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             to_generate |= request->can_generate_tokens();
         }
     }
-    std::cout << "iteration_cnt:" << iteration_number << std::endl;
 
     multistep_timer.end();
 }
