@@ -720,8 +720,9 @@ jobs:
       - name: Run visual_language_chat sample - LLaVa 1.5
         run: >
           source ./ov/setupvars.sh
-          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
+        timeout-minutes: 4
 
       - name: Run python chat sample
         run: |
