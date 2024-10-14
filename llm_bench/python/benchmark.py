@@ -20,6 +20,7 @@ import llm_bench_utils.bench_speech as bench_speech
 
 mem_consumption = MemConsumption()
 
+
 def num_iters_type(x):
     x = int(x)
     if x < 0:
@@ -171,7 +172,8 @@ def main():
     if args.memory_consumption:
         mem_consumption.start_collect_mem_consumption_thread()
     try:
-        iter_data_list, pretrain_time, json_data_list = CASE_TO_BENCH[model_args['use_case']](model_path, framework, args.device, model_args, args.num_iters, mem_consumption)
+        iter_data_list, pretrain_time, json_data_list = CASE_TO_BENCH[model_args['use_case']](
+            model_path, framework, args.device, model_args, args.num_iters, mem_consumption)
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':

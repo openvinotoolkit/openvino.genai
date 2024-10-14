@@ -72,8 +72,10 @@ def output_avg_min_median(iter_data_list):
                         same_prompt_datas.append(iter_data)
                 else:
                     same_prompt_datas.append(iter_data)
-        key_word = ['input_size', 'infer_count', 'generation_time', 'output_size', 'latency', 'enc_token_latency', 'first_token_latency', 'other_tokens_avg_latency',
-                    'enc_infer_latency', 'first_token_infer_latency', 'other_tokens_infer_avg_latency', 'tokenization_time', 'detokenization_time']
+        key_word = ['input_size', 'infer_count', 'generation_time', 'output_size', 'latency',
+                    'enc_token_latency', 'first_token_latency', 'other_tokens_avg_latency',
+                    'enc_infer_latency', 'first_token_infer_latency', 'other_tokens_infer_avg_latency',
+                    'tokenization_time', 'detokenization_time']
         if len(same_prompt_datas) > 0:
             iters_idx = ['avg', 'mini', 'median']
             result[prompt_idx] = [copy.deepcopy(same_prompt_datas[0]) for i in range(3)]

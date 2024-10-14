@@ -17,6 +17,7 @@ FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
 whisper_hook = WhisperHook()
 
+
 def run_speech_2txt_generation(pipe, args, num, md5_list, prompt_id, audio_prompt, iter_data_list, json_data_list, mem_consumption):
     result_md5_list = []
     max_rss_mem_consumption = ''

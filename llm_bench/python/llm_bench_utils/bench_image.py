@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
-from pathlib import Path
 from PIL import Image
 import hashlib
 import logging as log
@@ -22,6 +21,7 @@ DEFAULT_IMAGE_WIDTH = 512
 DEFAULT_IMAGE_HEIGHT = 512
 
 stable_diffusion_hook = StableDiffusionHook()
+
 
 def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list, proc_id, mem_consumption):
     set_seed(args['seed'])

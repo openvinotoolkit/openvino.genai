@@ -66,7 +66,7 @@ def gen_json_data(
     max_uss_mem='',
     prompt_idx='',
     tokenization_time=[],
-    input_loop_data=None 
+    input_loop_data=None
 ):
     json_data = {}
     loop_data_list = []

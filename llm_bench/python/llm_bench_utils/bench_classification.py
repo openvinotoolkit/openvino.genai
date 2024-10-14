@@ -12,6 +12,7 @@ import llm_bench_utils.gen_output_data as gen_output_data
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
+
 def run_image_classification(model_path, framework, device, args, num_iters=10):
     if args['genai']:
         log.warning("GenAI pipeline is not supported for this task. Switched on default benchmarking")

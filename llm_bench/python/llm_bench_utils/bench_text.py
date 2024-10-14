@@ -21,7 +21,7 @@ FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
 
-def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, md5_list, 
+def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                         prompt_index, bench_hook, model_precision, proc_id, mem_consumption):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
@@ -166,7 +166,7 @@ def run_text_generation(input_text, num, model, tokenizer, args, iter_data_list,
         bench_hook.clear_time_infer_list()
 
 
-def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_index, 
+def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_index,
                               streamer, model_precision, proc_id, mem_consumption):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
@@ -416,14 +416,14 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
             for idx, input_text in enumerate(text_list):
                 if num == 0:
                     log.info(f'[warm-up][P{prompt_idx_list[idx]}] Input text: {input_text}')
-                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list, 
+                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                             prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
     else:
         for idx, input_text in enumerate(text_list):
             for num in range(num_iters + 1):
                 if num == 0:
                     log.info(f'[warm-up][P{prompt_idx_list[idx]}] Input text: {input_text}')
-                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list, 
+                text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                             prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
