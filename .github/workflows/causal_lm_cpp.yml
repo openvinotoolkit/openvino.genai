@@ -285,7 +285,7 @@ jobs:
       - run: >
           . ./ov/setupvars.sh
           && export PYTHONPATH=./build/:$PYTHONPATH
-          && timeout 2m ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69 | diff <(timeout 4m samples/python/greedy_causal_lm/greedy_causal_lm.py ./Qwen-7B-Chat/ 69) -
+          && timeout 2m ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./Qwen-7B-Chat/ 69 | diff <(timeout 2m samples/python/greedy_causal_lm/greedy_causal_lm.py ./Qwen-7B-Chat/ 69) -
 
   cpp-beam_search_causal_lm-Qwen1_5-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
@@ -708,7 +708,7 @@ jobs:
       - name: Run visual_language_chat sample - MiniCPM-V-2_6
         run: >
           source ./ov/setupvars.sh
-          && timeout 240s ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ cat.jpg
+          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./miniCPM-V-2_6/ cat.jpg
           <<< $'What is on the image?\nWhat is special on the image?'
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
@@ -729,7 +729,7 @@ jobs:
           source ./ov/setupvars.sh
           export PYTHONPATH=./build/:$PYTHONPATH
           printf 'What is on the image?\nWhat is special on the image?\n' > ./input.txt
-          timeout 240s python ./samples/python/visual_language_chat/visual_language_chat.py ./miniCPM-V-2_6/ cat.jpg < input.txt > ./pred.txt
+          timeout 120s python ./samples/python/visual_language_chat/visual_language_chat.py ./miniCPM-V-2_6/ cat.jpg < input.txt > ./pred.txt
 
   cpp-continuous-batching-ubuntu:
     runs-on: ubuntu-20.04-8-cores
