@@ -258,7 +258,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     bool continue_generation = true;
     while (has_non_finished_requests() && continue_generation) {
         step();
-        if (streamer_ptr) {
+        if (streamer_ptr && generations.at(0)->can_read()) {
             std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
             OPENVINO_ASSERT(1 == token.size());
             OPENVINO_ASSERT(1 == token.begin()->second.generated_ids.size());
@@ -304,7 +304,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<s
         constexpr bool add_generation_prompt = true;
         std::string history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
         timer.start();
-        input_ids.push_back(m_tokenizer.encode(history).input_ids);
+        // ov::genai::add_special_tokens(false) is aligned with stateful pipeline
+        input_ids.push_back(m_tokenizer.encode(history, ov::genai::add_special_tokens(false)).input_ids);
         timer.end();
     } else {
         input_ids.reserve(prompts.size());

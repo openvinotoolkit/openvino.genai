@@ -5,10 +5,11 @@
 
 #include "openvino/genai/processor_config.hpp"
 #include <openvino/openvino.hpp>
+#include "vlm_model_type.hpp"
 
 namespace ov::genai {
 /// @brief A pair describing image size.
-struct HeightWidth {
+struct ImageSize {
     /// @brief Height of a corresponding image.
     size_t height;
     /// @brief Width of a corresponding image.
@@ -25,24 +26,26 @@ struct EncodedImage {
     ov::Tensor resized_source;
     /// @brief A size of an image used to compute embeddings for
     /// divided by ProcessorConfig's patch_size.
-    HeightWidth resized_source_size;
+    ImageSize resized_source_size;
     /// @brief Embeddings of images obtained from a source image by
     /// slicing at no more than max_slice_nums pieces and resizing.
     /// The tensor's shape is
     /// [slice_y, slice_x, number_of_embeddings, embedding_size].
     /// slices_sizes.size() == slice_y * slice_x.
     ov::Tensor slices;
-    /// @brief Flattened sizes of images used to compute embeddings
+    /// @brief A size of images used to compute embeddings
     /// stored in slices member divided by ProcessorConfig's patch_size.
-    std::vector<HeightWidth> slices_sizes;
+    ImageSize slices_size;
 };
 
 /// @brief A class used to infer embeddings of an image using
 /// ov::InferRequest and configured by ProcessorConfig.
 class OPENVINO_GENAI_EXPORTS VisionEncoder {
 public:
+    /// @brief A enum denoting model type.
+    VLMModelType model_type;
     /// @brief A model for image encoding.
-    ov::InferRequest m_encoder;
+    ov::InferRequest m_vision_encoder;
     /// @brief A config to follow.
     ProcessorConfig m_processor_config;
 
@@ -52,7 +55,7 @@ public:
     explicit VisionEncoder(
         const ov::InferRequest& encoder,
         const ProcessorConfig& processor_config=ProcessorConfig{}
-    ) : m_encoder{encoder}, m_processor_config{processor_config} {}
+    ) : m_vision_encoder{encoder}, m_processor_config{processor_config} {}
 
     /// @brief Construct the encoder from model_dir.
     /// @param model_dir A folder containing openvino_embedding.xml and
@@ -63,6 +66,7 @@ public:
     /// @param core ov::Core to be used to compile the model.
     explicit VisionEncoder(
         const std::filesystem::path& model_dir,
+        const VLMModelType model_type,
         const std::string& device="CPU",
         const ov::AnyMap device_config={},
         ov::Core core=ov::Core{}
@@ -117,5 +121,14 @@ public:
             image, AnyMap{std::forward<Properties>(properties)...}
         );
     }
+
+private:
+    EncodedImage encode_minicpm(
+        const ov::Tensor& image, const ProcessorConfig& config
+    );
+
+    EncodedImage encode_llava(
+        const ov::Tensor& image, const ProcessorConfig& config
+    );
 };
 }

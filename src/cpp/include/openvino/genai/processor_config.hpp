@@ -14,6 +14,7 @@ namespace ov::genai {
 /// preprocessor_config.json.
 class OPENVINO_GENAI_EXPORTS ProcessorConfig {
 public:
+    size_t image_size = 980;
     /// @brief Dimensions of the smaller, non-overlapping patches that the
     /// input image is divided into before being fed into the
     /// transformer model. Used to divide image height and width.
@@ -33,6 +34,14 @@ public:
     /// Applied after norm_mean.
     /// llava calls it image_std.
     std::array<float, 3> norm_std{1.0f, 1.0f, 1.0f};
+
+    // llava specific config params
+    std::array<float, 3> image_mean{0.0f, 0.0f, 0.0f};
+    std::array<float, 3> image_std{1.0f, 1.0f, 1.0f};
+    size_t crop_size_height = 336;
+    size_t crop_size_width = 336;
+    size_t size_shortest_edge = 336;
+
     /// @brief Default constructor
     ProcessorConfig() = default;
     /// @brief Construct ProcessorConfig from values in json_path.

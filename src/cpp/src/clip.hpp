@@ -1,8 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef CLIP_H
-#define CLIP_H
+#pragma once
 
 #include <vector>
 #include <numeric>
@@ -25,6 +24,8 @@ struct clip_ctx {
     std::vector<uint8_t> buf_compute_meta;
 
     projector_type proj_type = PROJECTOR_TYPE_RESAMPLER;
+    size_t patch_size = 0;
+    size_t image_size = 0;
 };
 
 // RGB uint8 image
@@ -51,4 +52,3 @@ bool bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_wid
 
 /** preprocess img and store the result in res_imgs, pad_to_square may be overriden to false depending on model configuration */
 clip_image_f32 clip_image_preprocess(struct clip_ctx& ctx, const clip_image_u8& img);
-#endif // CLIP_H
