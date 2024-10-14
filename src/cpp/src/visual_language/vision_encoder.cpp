@@ -333,8 +333,8 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
                 patch_size
             );
             encoder.set_tensor("pixel_values", pixel_values);
-            ov::Tensor patch_attention_mask{ov::element::boolean, {1, 1, slices_size.height * slices_size.width}};
-            std::fill_n(patch_attention_mask.data<bool>(), patch_attention_mask.get_size(), true);
+            ov::Tensor patch_attention_mask{ov::element::f32, {1, 1, slices_size.height * slices_size.width}};
+            std::fill_n(patch_attention_mask.data<float>(), patch_attention_mask.get_size(), 1.0f);
             encoder.set_tensor("patch_attention_mask", patch_attention_mask);
             ov::Tensor position_ids = prepare_vis_position_ids(pixel_values, patch_attention_mask, {slices_size}, ctx_clip.patch_size, ctx_clip.image_size / ctx_clip.patch_size);
             encoder.set_tensor("position_ids", position_ids);
