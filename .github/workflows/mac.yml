@@ -227,7 +227,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/tools --upgrade-strategy eager
-          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py
+          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py  --ignore ./tests/python_tests/test_vlm_api.py
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
 
@@ -236,7 +236,7 @@ jobs:
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install . --verbose --find-links ${OV_INSTALL_DIR}/tools
           python -c "from openvino_genai import LLMPipeline"
-          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py
+          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py  --ignore ./tests/python_tests/test_vlm_api.py
 
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)
@@ -386,7 +386,7 @@ jobs:
         if: ${{ 'Release' == matrix.build-type }} # Python bindings can be built in Release only
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
-          timeout 26s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
+          timeout --verbose 27s ${OV_INSTALL_DIR}/samples/python/multinomial_causal_lm/multinomial_causal_lm.py ./TinyLlama-1.1B-Chat-v1.0/ 0
 
   Overall_Status:
     name: ci/gha_overall_status_macos

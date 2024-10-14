@@ -237,7 +237,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/tools --upgrade-strategy eager
-          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py
+          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
 
@@ -245,7 +245,7 @@ jobs:
         run: |
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose
-          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py
+          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py
 
   genai_python_lib_whisper:
     name: OpenVINO genai extension whisper tests (cmake + wheel)
@@ -310,6 +310,72 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install . --verbose
           python -m pytest ./tests/python_tests/test_whisper_generate_api.py
+
+
+  genai_python_lib_vlm:
+    name: OpenVINO genai VLM tests (cmake + wheel)
+    needs: [ openvino_download, openvino_build ]
+    if: |
+      always() &&
+      (needs.openvino_download.outputs.status == 'success' || needs.openvino_build.result == 'success')
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    runs-on: windows-2019-16-core
+
+    env:
+      OV_INSTALL_DIR: ${{ github.workspace }}\\ov
+      CMAKE_BUILD_PARALLEL_LEVEL: null
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Download OpenVINO package
+        uses: actions/download-artifact@v4
+        with:
+          name: openvino_package
+          path: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Extract OpenVINO packages
+        run: |
+          pushd ${{ env.OV_INSTALL_DIR }}
+            Expand-Archive openvino_package.zip -DestinationPath ./tmp
+            mv ./tmp/*/* .
+          popd
+
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+
+      - name: Build genai libs
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          cmake -DCMAKE_BUILD_TYPE=Release -S ./ -B ./build/
+          cmake --build ./build/ --config Release -j
+
+      - name: Test bindings
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/tools --upgrade-strategy eager
+          python -m pytest ./tests/python_tests/test_vlm_api.py
+        env:
+          PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
+
+      - name: Test bindings (wheel)
+        run: |
+          . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
+          python -m pip install . --verbose
+          python -m pytest ./tests/python_tests/test_vlm_api.py
+
 
   genai_package:
     name: OpenVINO genai extension (install to OpenVINO package)

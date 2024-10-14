@@ -82,12 +82,15 @@ public:
             core.set_property(core_plugin_config);
             auto model = core.read_model(model_path / "openvino_model.xml");
             m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable
+            utils::slice_matmul_statefull_model(model);
             m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
             m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
         } else {
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
             core.set_property(core_plugin_config);
-            m_model_runner = core.compile_model(model_path / "openvino_model.xml", device, compile_plugin_config).create_infer_request();
+            auto model = core.read_model(model_path / "openvino_model.xml");
+            utils::slice_matmul_statefull_model(model);
+            m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
         }
 
         // If eos_token_id was not provided, take value
@@ -129,12 +132,13 @@ public:
                 m_history.push_back({{"role", "user"}, {"content", prompt}});
                 constexpr bool add_generation_prompt = true;
                 auto new_templated_chat_history  = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-                bool add_special_tokens_ = false;  // Do not add special tokens is chat scenario.
-                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens_));
+                // Do not add special tokens in chat scenario to be aligned with HF.
+                bool add_special_tokens = false;  
+                auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens));
                 if (m_is_cache_empty) {
                     encoded_input = new_chat_tokens;
                 } else {
-                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens_));
+                    auto prev_chat_tokens = m_tokenizer.encode(m_templated_chat_history, ov::genai::add_special_tokens(add_special_tokens));
                     encoded_input = utils::subtract_chat_tokenized_inputs(new_chat_tokens, prev_chat_tokens);
                 }
                 m_templated_chat_history = new_templated_chat_history;

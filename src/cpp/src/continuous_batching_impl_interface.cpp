@@ -40,7 +40,8 @@ ContinuousBatchingPipeline::ImplInterface::generate(
         constexpr bool add_generation_prompt = true;
         std::string history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
         timer.start();
-        input_ids.push_back(m_tokenizer.encode(history).input_ids);
+        // ov::genai::add_special_tokens(false) is aligned with stateful pipeline
+        input_ids.push_back(m_tokenizer.encode(history, ov::genai::add_special_tokens(false)).input_ids);
         timer.end();
     } else {
         input_ids.reserve(prompts.size());

@@ -226,7 +226,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     bool continue_generation = true;
     while (has_non_finished_requests() && continue_generation) {
         step();
-        if (streamer_ptr) {
+        if (streamer_ptr && generations.at(0)->can_read()) {
             std::unordered_map<uint64_t, GenerationOutput> token = generations.at(0).get()->back();
             OPENVINO_ASSERT(1 == token.size());
             OPENVINO_ASSERT(1 == token.begin()->second.generated_ids.size());
