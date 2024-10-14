@@ -8,30 +8,6 @@
 #include <map>
 
 namespace ov::genai {
-
-class Timer {
-    double m_total;
-    decltype(std::chrono::steady_clock::now()) m_start;
-
-public:
-    Timer() :
-        m_total(0.) {
-    }
-
-    void start() {
-        m_start = std::chrono::steady_clock::now();
-    }
-
-    void end() {
-        auto m_end = std::chrono::steady_clock::now();
-        m_total += std::chrono::duration<double, std::milli>(m_end - m_start).count();
-    }
-
-    float get_duration_ms() {
-        return m_total / 1000.;
-    }
-};
-
 class SpeculativeDecodingMetrics {
     // percent of draft model using time + draft model gen tokens
     using AcceptanceRate = std::vector<float>;
@@ -59,5 +35,4 @@ public:
     float get_inference_duration_percentage();
 
 };
-
 }

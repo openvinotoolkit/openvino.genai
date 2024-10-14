@@ -95,14 +95,14 @@ bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::has_non_finished_reque
 
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     // generate candidates by draft model
-    Timer draft_timer;
+    static ManualTimer draft_timer("speculative_decoding: draft_model: multistep()");
     draft_timer.start();
     m_draft_pipeline->multistep();
     draft_timer.end();
     m_sd_metrics.draft_duration += draft_timer.get_duration_ms();
 
     // to generate num_matches statistic
-    std::map<int64_t, ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::UpdateRequestResult> update_sequence_info;
+    std::map<int64_t, UpdateRequestResult> update_sequence_info;
     // put candidates to model KV cache
     auto draft_generated_requests = m_draft_pipeline->get_generated_requests();
     for (const auto& candidate : m_draft_pipeline->get_generated_requests()) {
@@ -110,7 +110,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         update_sequence_info.insert({{candidate.first, update_result}});
     }
 
-    Timer main_timer;
+    static ManualTimer main_timer("speculative_decoding: main_model: step()");
     main_timer.start();
     m_main_pipeline->step();
     main_timer.end();
@@ -141,7 +141,7 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                               const std::vector<GenerationConfig>& sampling_params,
                                                               const StreamerVariant& streamer) {                                                  
-    Timer timer;
+    static ManualTimer timer("speculative_decoding: generate()");
     timer.start();
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
@@ -215,4 +215,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     m_sd_metrics.total_duration = timer.get_duration_ms();
     return results;
 }
+
+SpeculativeDecodingMetrics
+ContinuousBatchingPipeline::SpeculativeDecodingImpl::get_speculative_decoding_metrics() {
+    return m_sd_metrics;
+};
 }

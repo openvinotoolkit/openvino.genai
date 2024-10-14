@@ -39,9 +39,7 @@ public:
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) override;
 
-    SpeculativeDecodingMetrics get_speculative_decoding_metrics() {
-        return SpeculativeDecodingMetrics();
-    };
+    SpeculativeDecodingMetrics get_speculative_decoding_metrics();
 };
 
 }

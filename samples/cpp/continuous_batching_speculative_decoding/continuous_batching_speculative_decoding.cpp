@@ -63,11 +63,11 @@ int main(int argc, char* argv[]) try {
     };
 
     // sampling param for speulative decoding
-    // ov::genai::GenerationConfig generation_config = ov::genai::greedy();
-    ov::genai::GenerationConfig generation_config = ov::genai::multinomial();
+    ov::genai::GenerationConfig generation_config = ov::genai::greedy();
+    // ov::genai::GenerationConfig generation_config = ov::genai::multinomial();
     {
+        // generation_config.num_return_sequences = 1;
         generation_config.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::CONSTANT;
-        generation_config.num_return_sequences = 2;
         generation_config.num_assistant_tokens = 5;
 
         // generation_config.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::HEURISTIC;
