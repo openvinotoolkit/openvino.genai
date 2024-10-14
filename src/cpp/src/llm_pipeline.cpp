@@ -547,7 +547,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if (true) {
         SchedulerConfig scheduler_config;
         scheduler_config.cache_size = 1;
-        scheduler_config.enable_prefix_caching = true;
+        scheduler_config.enable_prefix_caching = false;
         scheduler_config.max_num_batched_tokens = 2048;
         scheduler_config.dynamic_split_fuse = false;
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(
@@ -582,7 +582,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if (true) {
         SchedulerConfig scheduler_config;
         scheduler_config.cache_size = 1;
-        scheduler_config.enable_prefix_caching = true;
+        scheduler_config.enable_prefix_caching = false;
         scheduler_config.max_num_batched_tokens = 2048;
         scheduler_config.dynamic_split_fuse = false;
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(
