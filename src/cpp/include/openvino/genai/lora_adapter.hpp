@@ -61,8 +61,8 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
     // user should set the prefix. If the prefix is set at the user side, it is not overriden by the pipeline logic.
     // Use nullopt to indicate that the prefix is not set from the user side and let a particular GenAI pipeline set the default value.
     // The default value is nullopt.
-    const std::optional<std::string>& get_tensor_name_prefix() const { return m_tensor_name_prefix; }
-    void set_tensor_name_prefix(const std::optional<std::string>& tensor_name_prefix) { m_tensor_name_prefix = tensor_name_prefix; }
+    const std::optional<std::string>& get_tensor_name_prefix() const { return tensor_name_prefix; }
+    void set_tensor_name_prefix(const std::optional<std::string>& _tensor_name_prefix) { tensor_name_prefix = _tensor_name_prefix; }
 
     AdapterConfig (Mode mode = MODE_AUTO);
 
@@ -86,6 +86,10 @@ struct OPENVINO_GENAI_EXPORTS AdapterConfig {
     AdapterConfig& remove(const Adapter&);
     const std::vector<Adapter>& get_adapters() const { return adapters; }
 
+    // Update adapters and alphas from other config. Mode and tensor_name_prefix are updated if they are set not to default values in other config.
+    // It means that if other.get_mode() == MODE_AUTO, it will not override value in this config. If tensor_name_prefix is not set (== nullopt) then it won't be updated either.
+    void update (const AdapterConfig& other);
+
     // Returns true if it is not a trivial config
     operator bool() const {
         return !adapters.empty();
@@ -96,7 +100,7 @@ private:
     Mode mode;
     std::vector<Adapter> adapters;
     std::vector<float> alphas;
-    std::optional<std::string> m_tensor_name_prefix;
+    std::optional<std::string> tensor_name_prefix;
 
 };
 
@@ -179,7 +183,7 @@ public:
 
     AdapterController() = default;
 
-    AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, std::string device = "");
+    AdapterController(std::shared_ptr<ov::Model> model, const AdapterConfig& config, std::string device);
 
     // Apply adapters configured in the current config set last time, or set and use new config given as optional `config` argument
     void apply(ov::InferRequest& request, const std::optional<AdapterConfig>& config = std::nullopt);

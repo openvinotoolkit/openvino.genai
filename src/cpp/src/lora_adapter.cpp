@@ -31,6 +31,8 @@
 
 #include "openvino/genai/lora_adapter.hpp"
 
+#include "lora_names_mapping.hpp"
+
 extern "C" {
     #include "safetensors.h"
 }
@@ -257,27 +259,15 @@ using LoRAParametersGetter = std::function<std::optional<LoRAParameters>(NodePtr
 struct LoRAWeightGetterDefault {
     const LoRATensors* lora_tensors;
     const std::string prefix;
-    mutable std::set<std::string> used_tensors;
+    //mutable std::set<std::string> used_tensors;
 
     LoRAWeightGetterDefault (const LoRATensors* lora_tensors, const std::string& prefix) : lora_tensors(lora_tensors), prefix(prefix) {}
 
-    std::optional<LoRANode> operator() (const std::string& orig_name) const {
-        std::string name = orig_name;
-        name = std::regex_replace(name, std::regex("mid_block.attentions.0"), "middle_block_1");
-        name = std::regex_replace(name, std::regex("down_blocks"), "output_blocks");
-        name = std::regex_replace(name, std::regex("up_blocks"), "input_blocks");
-        name = std::regex_replace(name, std::regex("attentions\\."), "");
-        // if(name != orig_name) {
-        //     DEBUG_PRINT("names are different: " << orig_name << "  -->  " << name);
-        // }
+    std::optional<LoRANode> operator() (const std::string& name) const {
         std::string name_with_underscores = name;
         // TODO: Investigate what is the root cause for this replacement in the name. Customize mapping or change PT FE to produce correct weight names.
         std::replace(name_with_underscores.begin(), name_with_underscores.end(), '.', '_');
-
-        std::string orig_name_with_underscores = orig_name;
-        std::replace(orig_name_with_underscores.begin(), orig_name_with_underscores.end(), '.', '_');
-        std::vector<std::string> variants{orig_name, name, name_with_underscores, orig_name_with_underscores};
-        //std::cerr << "Node name: " << name << "\n";
+        std::vector<std::string> variants{name, name_with_underscores};
         auto it = std::find_if(lora_tensors->begin(), lora_tensors->end(), [this, variants](const LoRATensors::value_type& pair){
             std::string lora_name = pair.first;
             // TODO: Make this filtering for prefix once in ctor as a more efficient solution
@@ -290,11 +280,31 @@ struct LoRAWeightGetterDefault {
             return variants.end() != std::find_if(variants.begin(), variants.end(), [lora_name](const std::string& name) { return name.find(lora_name) != std::string::npos; });
         });
         if(it != lora_tensors->end()) {
-            used_tensors.insert(it->first);
+            //used_tensors.insert(it->first);
             return it->second;
         }
         return std::nullopt;
     }
+
+    #if 0  // for debugging purposes
+    ~LoRAWeightGetterDefault () {
+        // figure out which tensors haven't been used
+        size_t unused = 0;
+        size_t used = 0;
+        for(auto const& tensor: *lora_tensors) {
+            if(tensor.first.find(prefix) == 0)
+                if(used_tensors.find(tensor.first) == used_tensors.end()) {
+                    DEBUG_PRINT("Unused LoRA Tensor: " << tensor.first);
+                    unused++;
+                } else {
+                    //DEBUG_PRINT("Unused LoRA Tensor: " << tensor.first);
+                    used++;
+                }
+        }
+        DEBUG_PRINT("Unused tensors total: " << unused);
+        DEBUG_PRINT("Used tensors total: " << used);
+    }
+    #endif
 };
 
 
@@ -751,7 +761,29 @@ class Adapter::Impl {
 public:
     Impl(const std::string& path) :
         tensors(group_lora_tensors(read_safetensors(path), default_lora_patterns()))
-    {}
+    {
+        std::set<std::string> keys;
+        for(const auto& kv: tensors) {
+            keys.insert(kv.first);
+        }
+        auto mapping = maybe_map_non_diffusers_lora_to_diffusers(keys);
+        if(!mapping.empty()) {
+            LoRATensors new_tensors;
+            for(const auto& kv: tensors) {
+                auto it = mapping.find(kv.first);
+                if(it == mapping.end()) {
+                    // pass
+                    DEBUG_PRINT("Passed lora name: " << kv.first);
+                    new_tensors[kv.first] = kv.second;
+                } else {
+                    // replace key
+                    DEBUG_PRINT("Replace lora name: " << kv.first << "  -->  " << it->second);
+                    new_tensors[it->second] = kv.second;
+                }
+            }
+            tensors = new_tensors;
+        }
+    }
 
     LoRATensors tensors;
 };
@@ -895,7 +927,7 @@ struct AdapterControllerImpl {
             OPENVINO_ASSERT(
                 config->get_mode() == AdapterConfig::MODE_AUTO || config->get_mode() == AdapterConfig::MODE_DYNAMIC || config->get_mode() == AdapterConfig::MODE_STATIC_RANK || (!diff.alpha && !diff.adapter),
                 "Cannot change adapters and/or the alphas when not one of the dynamic modes are used.");
-            current_config = *config;
+            current_config.update(*config);
         }
         if(need_full_apply) {
             need_full_apply = false;
@@ -923,8 +955,6 @@ struct AdapterControllerImpl {
         if(current_config.get_mode() != AdapterConfig::MODE_AUTO && current_config.get_mode() != AdapterConfig::MODE_DYNAMIC && current_config.get_mode() != AdapterConfig::MODE_STATIC_RANK ) {
             return;
         }
-
-        DEBUG_PRINT("APPLY CALLED FOR");
 
         std::vector<LoRAWeightGetter> weight_getters;
         const auto& adapters = current_config.get_adapters();
@@ -1301,6 +1331,20 @@ AdapterConfig& AdapterConfig::remove(const Adapter& adapter) {
     alphas.erase(alphas.begin() + index);
     adapters.erase(it);
     return *this;
+}
+
+
+void AdapterConfig::update (const AdapterConfig& other) {
+    adapters = other.adapters;
+    alphas = other.alphas;
+    if(other.mode != MODE_AUTO) {
+        mode = other.mode;
+    }
+    std::cerr << "current value of tensor_name_prefix: " << *tensor_name_prefix << "\n";
+    if(other.tensor_name_prefix) {
+        std::cerr << "UPDATED TENSOR NAME PREFIX: " << *other.tensor_name_prefix << "\n";
+        tensor_name_prefix = other.tensor_name_prefix;
+    }
 }
 
 
