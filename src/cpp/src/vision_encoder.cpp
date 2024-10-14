@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "vision_encoder.hpp"
-#include "clip.hpp"
+#include "visual_language/clip.hpp"
 #include "utils.hpp"
 
 using namespace ov::genai;

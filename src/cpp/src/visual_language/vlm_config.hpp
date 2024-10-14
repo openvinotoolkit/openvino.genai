@@ -4,7 +4,7 @@
 #pragma once
 
 #include "openvino/genai/visibility.hpp"
-#include "openvino/genai/vlm_model_type.hpp"
+#include "visual_language/vlm_model_type.hpp"
 #include <openvino/runtime/properties.hpp>
 #include <filesystem>
 

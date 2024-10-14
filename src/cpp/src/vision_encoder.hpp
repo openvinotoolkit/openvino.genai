@@ -4,8 +4,8 @@
 #pragma once
 
 #include <openvino/openvino.hpp>
-#include "processor_config.hpp"
-#include "openvino/genai/vlm_model_type.hpp"
+#include "visual_language/processor_config.hpp"
+#include "visual_language/vlm_model_type.hpp"
 
 namespace ov::genai {
 /// @brief A pair describing image size.

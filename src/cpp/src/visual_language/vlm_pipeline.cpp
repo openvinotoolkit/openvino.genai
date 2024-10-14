@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/vlm_pipeline.hpp"
+#include "openvino/genai/visual_language/vlm_pipeline.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "vlm_sampling.hpp"
 #include "clip.hpp"
