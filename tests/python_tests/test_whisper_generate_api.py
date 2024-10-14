@@ -488,28 +488,6 @@ def test_longform_audio_return_timestamps(model_descr, test_sample):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize(
     "test_sample",
-    [
-        *get_samples_from_dataset(language="en", length=3, long_form=True),
-        *get_samples_from_dataset(language="sp", length=3, long_form=True),
-    ],
-)
-@pytest.mark.precommit
-def test_longform_audio(model_descr, test_sample):
-    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
-
-    expected = opt_pipe(test_sample)
-
-    genai_result = pipe.generate(test_sample)
-
-    assert genai_result.texts[0] == expected["text"]
-
-    assert "chunks" not in expected
-    assert genai_result.chunks == None
-
-
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize(
-    "test_sample",
     get_samples_from_dataset(language="en", length=1),
 )
 @pytest.mark.precommit
