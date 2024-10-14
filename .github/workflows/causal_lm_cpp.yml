@@ -722,7 +722,7 @@ jobs:
           source ./ov/setupvars.sh
           && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
-        # timeout-minutes: 3
+        timeout-minutes: 4
 
       - name: Run python chat sample
         run: |
