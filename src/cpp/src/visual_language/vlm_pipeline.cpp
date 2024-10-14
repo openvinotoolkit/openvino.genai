@@ -21,6 +21,65 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 constexpr size_t BATCH_SIZE = 1;
 
+struct Args {
+    bool do_sample = false;
+    int top_k = 0;
+    float top_p = 0.7f;
+    float temp = 0.95f;
+    float repeat_penalty = 1.0f;
+};
+
+int64_t get_out_token_id(const std::vector<int>& input_ids, float* logits, size_t vocab_size, Args args) {
+    int64_t out_token;
+
+    // logits pre-process
+    if (args.repeat_penalty != 1.f) {
+        sampling_repetition_penalty(logits, logits + vocab_size, input_ids, args.repeat_penalty);
+    }
+
+    if (args.do_sample)
+    {
+        if (args.temp > 0) {
+            sampling_temperature(logits, logits + vocab_size, args.temp);
+        }
+
+        std::vector<TokenIdScore> token_scores(vocab_size);
+        for (int i = 0; i < vocab_size; i++) {
+            token_scores[i] = TokenIdScore(i, logits[i]);
+        }
+
+        // top_k sampling
+        if (0 < args.top_k && args.top_k < (int)token_scores.size()) {
+            sampling_top_k(token_scores.data(), token_scores.data() + args.top_k,
+                token_scores.data() + token_scores.size());
+            token_scores.resize(args.top_k);
+        }
+
+        // top_p sampling
+        if (0.f < args.top_p && args.top_p < 1.f) {
+            auto pos = sampling_top_p(token_scores.data(), token_scores.data() + token_scores.size(), args.top_p);
+            token_scores.resize(pos - token_scores.data());
+        }
+
+        // sample next token
+        sampling_softmax_inplace(token_scores.data(), token_scores.data() + token_scores.size());
+        for (size_t i = 0; i < token_scores.size(); i++) {
+            logits[i] = token_scores[i].score;
+        }
+
+        thread_local std::random_device rd;
+        thread_local std::mt19937 gen(rd());
+
+        std::discrete_distribution<> dist(logits, logits + token_scores.size());
+        out_token = token_scores[dist(gen)].id;
+    }
+    else {
+        out_token = std::max_element(logits, logits + vocab_size) - logits;
+    }
+
+    return out_token;
+}
+
 ov::Tensor process_prompt(ov::InferRequest& embedding, const ov::Tensor& prompt, float scale_emb) {
     embedding.set_input_tensor(prompt);
     embedding.infer();
@@ -63,57 +122,86 @@ ov::Tensor concatenate_last_dim(const ov::Tensor& first, const ov::Tensor& secon
     return res;
 }
 
+ov::Tensor concatenate_mid_dim(const ov::Tensor& first, const ov::Tensor& second) {
+    size_t res_d_0 = first.get_shape().at(0);
+    size_t res_d_2 = first.get_shape().at(2);
+    OPENVINO_ASSERT(second.get_shape().at(0) == res_d_0);
+    OPENVINO_ASSERT(second.get_shape().at(2) == res_d_2);
+    size_t res_d_1 = first.get_shape().at(1) + second.get_shape().at(1);
+    ov::Tensor res{first.get_element_type(), {res_d_0, res_d_1, res_d_2}};
+    float* first_data = first.data<float>();
+    float* second_data = second.data<float>();
+    float* res_data = res.data<float>();
+    for (size_t i = 0; i < res_d_0; ++i) {
+        size_t j = 0;
+        for (; j < first.get_shape().at(1); ++j) {
+            std::copy_n(
+                first_data + i * first.get_shape().at(1) * res_d_2 + j * res_d_2,
+                res_d_2,
+                res_data + i * res_d_1 * res_d_2 + j * res_d_2
+            );
+        }
+        for (size_t k = 0; k < second.get_shape().at(1); ++k, ++j) {
+            std::copy_n(
+                second_data + i * second.get_shape().at(1) * res_d_2 + k * res_d_2,
+                res_d_2,
+                res_data + i * res_d_1 * res_d_2 + j * res_d_2
+            );
+        }
+    }
+    return res;
+}
+
 /// embed_dim: output dimension for each position
 /// pos: a list of positions to be encoded: size (H, W)
 /// out: (H, W, D)
 ov::Tensor get_1d_sincos_pos_embed_from_grid_new(size_t embed_dim, const ov::Tensor& pos) {
     OPENVINO_ASSERT(embed_dim % 2 == 0);
-    OPENVINO_ASSERT(pos.get_shape().size() == 3);
-    OPENVINO_ASSERT(pos.get_shape().at(0) == 1);
-    size_t d0 = pos.get_shape().at(1);
-    size_t d1 = pos.get_shape().at(2);
-    size_t d2 = embed_dim / 2;
-    std::vector<float> omega(d2);
-    for (size_t idx = 0; idx < omega.size(); ++idx) {
-        omega.at(idx) = idx / (embed_dim / 2.0f);
-        omega.at(idx) = 1.0f / std::pow(10000.0f, omega.at(idx));  // (D/2,)
+    ov::Shape pos_shape = pos.get_shape();
+    size_t H = pos_shape[0];
+    size_t W = pos_shape[1];
+
+    std::vector<float> omega(embed_dim / 2);
+    for (size_t i = 0; i < omega.size(); ++i) {
+        omega[i] = 1.0f / std::pow(10000.0f, float(i) / (embed_dim / 2));
     }
-    const float* const pos_data = pos.data<float>();
-    ov::Tensor out(ov::element::f32, {d0, d1, d2});  // (H, W, D/2), outer product
-    float* out_data = out.data<float>();
-    for (size_t i = 0; i < d0; ++i) {
-        for (size_t j = 0; j < d1; ++j) {
-            for (size_t k = 0; k < d2; ++k) {
-                out_data[i * d1 * d2 + j * d2 + k]
-                    = pos_data[i * d1 + j] * omega[k];
+
+    std::vector<size_t> out_shape = {H, W, embed_dim};
+    ov::Tensor emb(ov::element::f32, out_shape);
+
+    float* pos_data = pos.data<float>();
+    float* emb_data = emb.data<float>();
+
+    size_t counter = 0;
+    for (size_t h = 0; h < H; ++h) {
+        for (size_t w = 0; w < W; ++w) {
+            for (size_t d = 0; d < embed_dim / 2; ++d) {
+                // Correctly access the 2D position grid
+                float value = omega[d] * pos_data[h * W + w];
+                // There should be sinf() and cosf(), but they don't exist on default Ubuntu20 gcc.
+                emb_data[h * W * embed_dim + w * embed_dim + d] = std::sin(double(value));
+                emb_data[h * W * embed_dim + w * embed_dim + d + (embed_dim / 2)] = std::cos(double(value));
             }
         }
     }
-
-    ov::Tensor emb_sin{out.get_element_type(), out.get_shape()};  // (H, W, D/2)
-    float* emb_sin_data = emb_sin.data<float>();
-    std::transform(out_data, out_data + out.get_size(), emb_sin_data, [](float arg) {
-        return std::sin(arg);
-    });
-    ov::Tensor emb_cos{out.get_element_type(), out.get_shape()};  // (H, W, D/2)
-    float* emb_cos_data = emb_cos.data<float>();
-    std::transform(out_data, out_data + out.get_size(), emb_cos_data, [](float arg) {
-        return std::cos(arg);
-    });
-    return concatenate_last_dim(emb_sin, emb_cos); // (H, W, D)
+    return emb;
 }
 
 ov::Tensor get_2d_sincos_pos_embed_from_grid(size_t embed_dim, const ov::Tensor& grid) {
     OPENVINO_ASSERT(embed_dim % 2 == 0);
-    // use half of dimensions to encode grid_h
-    ov::Coordinate begin_h{0, 0, 0};
-    ov::Coordinate end_h{grid.get_shape()};
-    end_h.at(0) = 1;
-    ov::Coordinate begin_w{1, 0, 0};
-    ov::Coordinate end_w{grid.get_shape()};
-    end_w.at(0) = 2;
-    ov::Tensor emb_h = get_1d_sincos_pos_embed_from_grid_new(embed_dim / 2, ov::Tensor{grid, begin_h, end_h});  // (H, W, D/2)
-    ov::Tensor emb_w = get_1d_sincos_pos_embed_from_grid_new(embed_dim / 2, ov::Tensor{grid, begin_w, end_w});  // (H, W, D/2)
+    ov::Shape grid_shape = grid.get_shape();
+    float* grid_data = grid.data<float>();
+    ov::Shape plane_shape{grid_shape.at(1), grid_shape.at(2)};
+    ov::Tensor emb_h = get_1d_sincos_pos_embed_from_grid_new(embed_dim / 2, ov::Tensor{
+        ov::element::f32,
+        plane_shape,
+        grid_data
+    });  // (H, W, D/2)
+    ov::Tensor emb_w = get_1d_sincos_pos_embed_from_grid_new(embed_dim / 2, ov::Tensor{
+        ov::element::f32,
+        plane_shape,
+        grid_data + plane_shape.at(0) * plane_shape.at(1)
+    });  // (H, W, D/2)
     return concatenate_last_dim(emb_h, emb_w);
 }
 
@@ -286,7 +374,7 @@ public:
             }
 
             m_language.get_tensor("attention_mask").set_shape({1, 0});
-        }
+    }
 
     DecodedResults generate(
         const std::string& prompt,
@@ -305,10 +393,10 @@ public:
         size_t history_len = m_language.get_tensor("attention_mask").get_shape().at(1);
         m_language.get_tensor("attention_mask").set_shape({1, history_len + inputs_embeds.get_shape()[1]});
         std::fill_n(m_language.get_tensor("attention_mask").data<int64_t>(), m_language.get_tensor("attention_mask").get_size(), 1);
-
+        
         m_language.get_tensor("position_ids").set_shape({1, inputs_embeds.get_shape().at(1)});
         std::iota(m_language.get_tensor("position_ids").data<int64_t>(), m_language.get_tensor("position_ids").data<int64_t>() + m_language.get_tensor("position_ids").get_size(), history_len);
-
+        
         m_language.get_tensor("beam_idx").set_shape({ BATCH_SIZE });
         m_language.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
@@ -354,7 +442,7 @@ public:
             m_language.set_tensor("inputs_embeds", embed_prompt_tensor);
             m_language.get_tensor("attention_mask").set_shape({ BATCH_SIZE, m_language.get_tensor("attention_mask").get_shape()[1] + 1 });
             std::fill_n(m_language.get_tensor("attention_mask").data<int64_t>(), m_language.get_tensor("attention_mask").get_size(), 1);
-            m_language.get_tensor("position_ids").data<int64_t>()[0] = int64_t(m_language.get_tensor("attention_mask").get_size() - 2);
+            m_language.get_tensor("position_ids").data<int64_t>()[0] = int64_t(m_language.get_tensor("attention_mask").get_size() - 1);
 
             m_language.infer();
 
@@ -461,7 +549,7 @@ public:
             OPENVINO_ASSERT(1 == images.size(), "Only a single image allowed");
             EncodedImage encoded_image = m_vision_encoder.encode(images.at(0));
             ov::Tensor image_embeds = encoded_image.resized_source;
-
+            
             ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
 
             int64_t image_token_index = 32000; // TODO Consider getting from m_vlm_config.image_token_index or config.json
@@ -578,6 +666,7 @@ public:
             float* emb = resampled_source.data<float>();
             ids = std::find(ids, end, im_start_id);
             OPENVINO_ASSERT(end != ids);
+            ++ids;
             std::copy_n(emb, resampled_source.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
             ids += m_vlm_config.query_num;
             if (encoded_image.slices) {
@@ -591,6 +680,7 @@ public:
                         const ov::Tensor& vision_embed_tensor_i_j = resample(*this, encoded_view, {encoded_image.slices_size});
                         ids = std::find(ids, end, slice_start_id);
                         OPENVINO_ASSERT(end != ids);
+                        ++ids;
                         std::copy_n(vision_embed_tensor_i_j.data<float>(), vision_embed_tensor_i_j.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
                         ids += m_vlm_config.query_num;
                     }
@@ -627,7 +717,7 @@ public:
             for (size_t h_idx = 0; h_idx < target_h; ++h_idx) {
                 for (size_t w_idx = 0; w_idx < target_w; ++w_idx) {
                     std::copy_n(
-                        cache_data + h_idx * _d1 + w_idx,
+                        cache_data + (h_idx * _d1 + w_idx) * embed_len,
                         embed_len,
                         pos_embed_data + (h_idx * target_w + w_idx) * bs * embed_len + i * embed_len
                     );
