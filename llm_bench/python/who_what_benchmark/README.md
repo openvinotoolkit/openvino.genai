@@ -95,13 +95,13 @@ wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv -
 ### Example of Stable Diffusion comparison
 ```sh
 # Export FP16 model
- optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format fp16 sd-lcm-fp16
+optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format fp16 sd-lcm-fp16
 # Export INT8 WOQ model
- optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format int8 sd-lcm-int8
+optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format int8 sd-lcm-int8
 # Collect the references
-wwb --base-model sd-lcm-fp16 --gt-data lcm_test/sd_xl.json --model-type sd-lcm
+wwb --base-model sd-lcm-fp16 --gt-data lcm_test/sd_xl.json --model-type text-to-image
 # Compute the metric
-wwb --target-model sd-lcm-int8 --gt-data lcm_test/sd_xl.json --model-type sd-lcm
+wwb --target-model sd-lcm-int8 --gt-data lcm_test/sd_xl.json --model-type text-to-image
 ```
 
 ### Supported metrics

@@ -26,7 +26,7 @@ default_data = {
 }
 
 
-@register_evaluator("image-generation")
+@register_evaluator("text-to-image")
 class Text2ImageEvaluator(BaseEvaluator):
     def __init__(
         self,
