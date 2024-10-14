@@ -163,7 +163,9 @@ insert_tokens_to_sequence(Sequence::Ptr& sequence,
 size_t
 init_request(
     SequenceGroup::Ptr request,
-    const GeneratedSequences& candidates) {
+    const GeneratedSequences& candidates,
+    LogitProcessor& logit_processor,
+    bool is_update_logit_processor) {
     size_t min_candidate_len = std::numeric_limits<size_t>::max();
     for (const auto& candidate_sequence : candidates) {
         min_candidate_len = std::min(candidate_sequence.second.token_ids.size(), min_candidate_len);
@@ -186,6 +188,9 @@ init_request(
 
         for (size_t i = 0; i < min_candidate_len; ++i) {
             sequence->append_token(token_ids[i], log_probs[i]);
+            if (is_update_logit_processor) {
+                logit_processor.register_new_generated_token(token_ids[i]);
+            }
         }
     }
     return min_candidate_len;
@@ -205,11 +210,12 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
 
         std::vector<Sequence::Ptr> running_sequences = request->get_running_sequences();
         size_t min_generated_tokens, min_candidate_len;
-        if (request->get_context_len() == 0) {
+        if (request->get_context_len() == 0 && !request->get_num_tokens_to_validate()) {
             // init request by sequences in case the pipeline was not started
-            result.inserted_tokens_cnt = init_request(request, candidates);
-            min_generated_tokens = result.inserted_tokens_cnt;
             m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
+            auto& logit_processor = m_sampler->get_logit_processor(request_id);
+            result.inserted_tokens_cnt = init_request(request, candidates, logit_processor, is_update_logit_processor);
+            min_generated_tokens = result.inserted_tokens_cnt;
             running_sequences = request->get_running_sequences();
         } else {
             // update existing sequences by the candidates

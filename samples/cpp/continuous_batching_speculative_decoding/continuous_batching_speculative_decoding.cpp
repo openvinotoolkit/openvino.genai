@@ -12,6 +12,42 @@ void print_generation_result(const std::vector<std::string>& texts, const std::v
     }
 }
 
+std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_examples() {
+    
+    // sampling param for speulative decoding
+    ov::genai::GenerationConfig generation_config_greedy_constant = ov::genai::greedy();
+    {
+        generation_config_greedy_constant.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::CONSTANT;
+        generation_config_greedy_constant.num_assistant_tokens = 5;
+    }
+
+    ov::genai::GenerationConfig generation_config_multinomial_constant = ov::genai::multinomial();
+    {
+        generation_config_multinomial_constant.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::CONSTANT;
+        generation_config_multinomial_constant.num_assistant_tokens = 5;
+        generation_config_multinomial_constant.num_return_sequences = 1;
+    }
+
+    ov::genai::GenerationConfig generation_config_greedy_dynamic = ov::genai::greedy();
+    {
+        generation_config_greedy_dynamic.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::HEURISTIC;
+        generation_config_greedy_dynamic.assistant_confidence_threshold = 0.4f;
+    }
+
+    ov::genai::GenerationConfig generation_config_multinomial_dynamic = ov::genai::multinomial();
+    {
+        generation_config_multinomial_dynamic.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::HEURISTIC;
+        generation_config_multinomial_dynamic.assistant_confidence_threshold = 0.4f;
+    }
+
+    return {
+        generation_config_greedy_constant,
+        generation_config_multinomial_constant,
+        generation_config_greedy_dynamic,
+        generation_config_multinomial_dynamic,
+    };
+}
+
 int main(int argc, char* argv[]) try {
     // Command line options
 
@@ -62,16 +98,10 @@ int main(int argc, char* argv[]) try {
         "What is OpenVINO?",
     };
 
-    // sampling param for speulative decoding
-    ov::genai::GenerationConfig generation_config = ov::genai::greedy();
-    // ov::genai::GenerationConfig generation_config = ov::genai::multinomial();
-    {
-        // generation_config.num_return_sequences = 1;
-        generation_config.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::CONSTANT;
-        generation_config.num_assistant_tokens = 5;
-
-        // generation_config.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::HEURISTIC;
-        // generation_config.assistant_confidence_threshold = 0.4f;
+    auto generation_config = get_spec_decoding_generation_config_examples();
+    auto default_config_size = generation_config.size();
+    for (size_t i = default_config_size; i < num_prompts; ++i) {
+        generation_config.push_back(generation_config[i % default_config_size]);
     }
 
     std::vector<std::string> prompts(num_prompts);
@@ -118,7 +148,7 @@ int main(int argc, char* argv[]) try {
     }
 
     for (size_t request_id = 0; request_id < prompts.size(); ++request_id) {
-        ov::genai::DecodedResults generation_results = pipe.generate(prompts[request_id], generation_config);
+        ov::genai::DecodedResults generation_results = pipe.generate(prompts[request_id], generation_config[request_id]);
         std::cout << "Question: " << prompts[request_id] << std::endl;
         const std::vector<std::string>& text_results = generation_results.texts;
         const std::vector<float>& log_prob_results = generation_results.scores;

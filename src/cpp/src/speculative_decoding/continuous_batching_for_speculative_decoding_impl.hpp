@@ -11,6 +11,8 @@
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
 public:
+    ContinuousBatchingForSpeculativeDecodingImpl() = default;
+
     ContinuousBatchingForSpeculativeDecodingImpl(ov::Core& core,
                                                  const std::shared_ptr<ov::Model>& model,
                                                  const Tokenizer& tokenizer,

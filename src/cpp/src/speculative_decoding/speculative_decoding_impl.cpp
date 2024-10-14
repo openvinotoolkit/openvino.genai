@@ -169,7 +169,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         draft_sampling_params.ignore_eos = true;
         draft_generations.push_back(m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params));
         // decrease generation len to generate last token by main model
-        // m_left_gen_len.insert({ request_id, sampling_params[request_id].max_new_tokens - 1 });
     }
 
     std::vector<EncodedGenerationResult> results;
