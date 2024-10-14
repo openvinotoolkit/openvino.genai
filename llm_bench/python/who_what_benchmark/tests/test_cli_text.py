@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_wwb(args):
+    print(" ".join(["wwb"] + args))
     logger.info(" ".join(["wwb"] + args))
     result = subprocess.run(["wwb"] + args, capture_output=True, text=True)
     logger.info(result)
@@ -202,6 +203,7 @@ def test_text_genai_model():
             "--genai",
         ]
     )
+    print(result)
     assert result.returncode == 0
     assert "Metrics for model" in result.stderr
     assert "## Reference text" not in result.stderr
