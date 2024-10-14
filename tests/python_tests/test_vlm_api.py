@@ -23,8 +23,6 @@ def get_ov_model(model_dir):
     export_MiniCPM = importlib.import_module("export_MiniCPM-V-2_6", "export_MiniCPM")
     convert_llm = getattr(export_MiniCPM, "convert_llm")
     convert_vision_encoder = getattr(export_MiniCPM, "convert_vision_encoder")
-    snapshot_download = getattr(export_MiniCPM, "snapshot_download")
-    patch_model_code = getattr(export_MiniCPM, "patch_model_code")
     from transformers import AutoModel, AutoTokenizer, AutoProcessor
     import os
     import openvino_tokenizers
@@ -34,6 +32,8 @@ def get_ov_model(model_dir):
     model_id = "openbmb/MiniCPM-V-2_6"
     ckpt = Path(os.path.join(model_dir, "ckpt"))
     if not ckpt.exists():
+        snapshot_download = getattr(export_MiniCPM, "snapshot_download")
+        patch_model_code = getattr(export_MiniCPM, "patch_model_code")
         snapshot_download(model_id, local_dir=ckpt, force_download=True)
         patch_model_code(ckpt)
     model = AutoModel.from_pretrained(ckpt, trust_remote_code=True)
