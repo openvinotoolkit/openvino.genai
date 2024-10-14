@@ -130,6 +130,7 @@ def print_ldm_unet_vqvae_infer_latency(iter_num, iter_data, tms=None, warm_up=Fa
 
 def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch_size, is_text_gen, loop_idx):
     for p_idx in prompt_idx_list:
+        avg_enc_token_latency = 0
         avg_1st_token_latency = 0
         avg_2nd_tokens_latency = 0
         avg_2nd_token_tput = 0
@@ -140,11 +141,13 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
             if iter_data['iteration'] == 0:
                 continue
             if iter_data['prompt_idx'] == p_idx:
+                avg_enc_token_latency += iter_data['enc_token_latency'] if iter_data['enc_token_latency'] != '' else 0
                 avg_1st_token_latency += iter_data['first_token_latency'] if iter_data['first_token_latency'] != '' else 0
                 avg_2nd_tokens_latency += iter_data['other_tokens_avg_latency'] if iter_data['other_tokens_avg_latency'] != '' else 0
                 avg_input_size += iter_data['input_size'] if iter_data['input_size'] != '' else 0
                 index_num = index_num + 1
         if index_num > 0:
+            avg_enc_token_latency = avg_enc_token_latency / index_num
             avg_1st_token_latency = avg_1st_token_latency / index_num
             avg_2nd_tokens_latency = avg_2nd_tokens_latency / index_num
             avg_input_size = int(avg_input_size / index_num)
@@ -156,15 +159,19 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
                     latency_unit = '{}tokens'.format(batch_size)
                 else:
                     latency_unit = '{}steps'.format(batch_size)
-            avg_input_size = 'NA' if avg_input_size == 0 else avg_input_size
             avg_1st_token_latency = 'NA' if avg_1st_token_latency < 0 else f'{avg_1st_token_latency:.2f} ms/{latency_unit}'
             avg_2nd_tokens_latency = 'NA' if avg_2nd_tokens_latency < 0 else f'{avg_2nd_tokens_latency:.2f} ms/{latency_unit}'
             avg_2nd_token_tput = 'NA' if avg_2nd_tokens_latency == 'NA' else f'{avg_2nd_token_tput:.2f} {latency_unit}s/s'
             prefix = f'[ INFO ] [Average] P[{p_idx}]L[{loop_idx}]' if loop_idx != -1 else f'[ INFO ] [Average] P[{p_idx}]'
             if is_text_gen is True:
-                prompt_dict[p_idx] = '\n{} Input token size: {}, 1st token lantency: {}, ' \
-                    '2nd token lantency: {}, 2nd tokens throughput: {}' \
-                    .format(prefix, avg_input_size, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput)
+                output_info = ''
+                if avg_input_size > 0:
+                    output_info += f' Input token size: {avg_input_size},'
+                if avg_enc_token_latency > 0:
+                    output_info += f' encoder token latency: {avg_enc_token_latency:.2f} ms/token,'    
+                prompt_dict[p_idx] = '\n{}{} 1st token lantency: {}, ' \
+                        '2nd token lantency: {}, 2nd tokens throughput: {}' \
+                        .format(prefix, output_info, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput) 
             else:
                 prompt_dict[p_idx] = '\n{} 1st step of unet latency: {}, ' \
                     '2nd steps of unet latency: {}, 2nd steps throughput: {}' \

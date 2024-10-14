@@ -30,8 +30,8 @@ class WhisperHook:
         self.latency_list.clear()
         for data in self.time_data:
             latency_data = {}
-            latency_data['enc_token_time'] = data['enc_token_time'] * 1000
-            latency_data['enc_infer_time'] = data['enc_infer_time'] * 1000
+            latency_data['enc_token_time'] = round(data['enc_token_time'] * 1000, 2)
+            latency_data['enc_infer_time'] = round(data['enc_infer_time'] * 1000, 2)
             dec_token_count = len(data['dec_token_time'])
             dec_infer_count = len(data['dec_infer_time'])
             latency_data['dec_token_count'] = dec_token_count

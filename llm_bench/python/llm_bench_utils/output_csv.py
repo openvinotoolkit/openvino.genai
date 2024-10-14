@@ -58,6 +58,7 @@ def output_comments(result, use_case, writer):
 
 def output_avg_min_median(iter_data_list):
     prompt_idxs = []
+    Is_loop_exist = True if (len(iter_data_list) > 0 and iter_data_list[0]['loop_idx'] != '') else False
     for iter_data in iter_data_list:
         prompt_idxs.append(iter_data['prompt_idx'])
     prompt_idxs = list(set(prompt_idxs))
@@ -66,9 +67,13 @@ def output_avg_min_median(iter_data_list):
         same_prompt_datas = []
         for iter_data in iter_data_list:
             if iter_data['prompt_idx'] == prompt_idx and iter_data['iteration'] > 0:
-                same_prompt_datas.append(iter_data)
-        key_word = ['input_size', 'infer_count', 'generation_time', 'output_size', 'latency', 'first_token_latency', 'other_tokens_avg_latency',
-                    'first_token_infer_latency', 'other_tokens_infer_avg_latency', 'tokenization_time', 'detokenization_time']
+                if Is_loop_exist:
+                    if iter_data['loop_idx'] == 0:
+                        same_prompt_datas.append(iter_data)
+                else:
+                    same_prompt_datas.append(iter_data)
+        key_word = ['input_size', 'infer_count', 'generation_time', 'output_size', 'latency', 'enc_token_latency', 'first_token_latency', 'other_tokens_avg_latency',
+                    'enc_infer_latency', 'first_token_infer_latency', 'other_tokens_infer_avg_latency', 'tokenization_time', 'detokenization_time']
         if len(same_prompt_datas) > 0:
             iters_idx = ['avg', 'mini', 'median']
             result[prompt_idx] = [copy.deepcopy(same_prompt_datas[0]) for i in range(3)]
@@ -89,6 +94,8 @@ def output_avg_min_median(iter_data_list):
 def gen_data_to_csv(result, iter_data, pretrain_time):
     generation_time = iter_data['generation_time']
     latency = iter_data['latency']
+    enc_token_latency = iter_data['enc_token_latency']
+    enc_infer_latency = iter_data['enc_infer_latency']
     first_latency = iter_data['first_token_latency']
     other_latency = iter_data['other_tokens_avg_latency']
     first_token_infer_latency = iter_data['first_token_infer_latency']
@@ -99,7 +106,7 @@ def gen_data_to_csv(result, iter_data, pretrain_time):
     token_time = iter_data['tokenization_time']
     detoken_time = iter_data['detokenization_time']
     result['iteration'] = str(iter_data['iteration'])
-    result['loop'] = str(iter_data['loop'])
+    result['loop_idx'] = str(iter_data['loop_idx'])
     result['compile_time(s)'] = pretrain_time
     result['input_size'] = iter_data['input_size']
     result['infer_count'] = iter_data['infer_count']
@@ -107,6 +114,8 @@ def gen_data_to_csv(result, iter_data, pretrain_time):
     result['output_size'] = iter_data['output_size']
     result['latency(ms)'] = round(latency, 5) if latency != '' else latency
     result['result_md5'] = iter_data['result_md5']
+    result['enc_token_latency(ms)'] = round(enc_token_latency, 5) if enc_token_latency != '' else enc_token_latency
+    result['enc_infer_latency(ms)'] = round(enc_infer_latency, 5) if enc_infer_latency != '' else enc_infer_latency
     if first_latency < 0:
         result['1st_latency(ms)'] = 'NA'
     else:
@@ -135,7 +144,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
     header = [
         'iteration',
         'prompt_idx',
-        'loop',
+        'loop_idx',
         'model',
         'framework',
         'device',
@@ -145,12 +154,14 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         'generation_time(s)',
         'output_size',
         'latency(ms)',
+        'enc_token_latency(ms)',
         '1st_latency(ms)',
         '2nd_avg_latency(ms)',
         'precision',
         'max_rss_mem(MB)',
         'max_uss_mem(MB)',
         'max_shared_mem(MB)',
+        'enc_infer_latency(ms)',
         '1st_infer_latency(ms)',
         '2nd_infer_avg_latency(ms)',
         'num_beams',
