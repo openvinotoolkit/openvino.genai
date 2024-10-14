@@ -157,6 +157,45 @@ The pipeline can work with other similar topologies produced by `optimum-intel` 
 > [!NOTE]
 > Models should belong to the same family and have the same tokenizers.
 
+## Text 2 image models
+
+<table>
+  <tbody style="vertical-align: top;">
+    <tr>
+      <th>Architecture</th>
+      <th>Example HuggingFace Models</th>
+    </tr>
+    <tr>
+      <td><code>Latent Consistency Model</code></td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/SimianLuo/LCM_Dreamshaper_v7"><code>SimianLuo/LCM_Dreamshaper_v7</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td><code>Stable Diffusion</code></td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/botp/stable-diffusion-v1-5"><code>botp/stable-diffusion-v1-5</code></a></li>
+          <li><a href="https://huggingface.co/dreamlike-art/dreamlike-anime-1.0"><code>dreamlike-art/dreamlike-anime-1.0</code></a></li>
+          <li><a href="https://huggingface.co/stabilityai/stable-diffusion-2"><code>stabilityai/stable-diffusion-2</code></a></li>
+          <li><a href="https://huggingface.co/stabilityai/stable-diffusion-2-1"><code>stabilityai/stable-diffusion-2-1</code></a></li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td><code>Stable Diffusion XL</code></td>
+      <td>
+        <ul>
+          <li><a href="https://huggingface.co/stabilityai/stable-diffusion-xl-base-0.9"><code>stabilityai/stable-diffusion-xl-base-0.9</code></a></li>
+          <li><a href="https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0"><code>stabilityai/stable-diffusion-xl-base-1.0</code></a></li>
+        </ul>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
 ## Visual language models
 
 <table>
