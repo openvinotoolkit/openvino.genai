@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "load_image.hpp"
-#include <openvino/genai/visual_language/vlm_pipeline.hpp>
+#include <openvino/genai/visual_language/pipeline.hpp>
 #include <openvino/runtime/intel_gpu/properties.hpp>
 
 bool print_subword(std::string&& subword) {
