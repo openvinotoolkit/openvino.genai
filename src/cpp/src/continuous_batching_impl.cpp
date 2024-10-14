@@ -259,15 +259,16 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     std::vector<EncodedGenerationResult> results;
     results.reserve(m_awaiting_requests.size());
 
-    auto drop_current_request = [&] () {
-        SequenceGroup::Ptr request = m_requests[0];
-        for (const auto& sequence: request->get_sequences()) {
-            if (m_scheduler->has_block_table(sequence->get_id())) {
-                m_scheduler->free_sequence(sequence->get_id());
+    auto drop_requests = [&] () {
+        for (const std::shared_ptr<ov::genai::SequenceGroup> request : m_requests) {
+            for (const auto& sequence: request->get_sequences()) {
+                if (m_scheduler->has_block_table(sequence->get_id())) {
+                    m_scheduler->free_sequence(sequence->get_id());
+                }
             }
+            m_sampler->clear_beam_search_info(request->get_request_id());
         }
-        m_sampler->clear_beam_search_info(request->get_request_id());
-        m_requests.erase(m_requests.begin());
+        m_requests.clear();
     };
 
     bool continue_generation = true;
@@ -275,7 +276,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         try {
             step();
         } catch (...) {
-            drop_current_request();
+            drop_requests();
             throw;
         }
         if (streamer_ptr && generations.at(0)->can_read()) {
@@ -290,7 +291,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     }
 
     if (!continue_generation) {
-        drop_current_request();
+        drop_requests();
     } else {
         OPENVINO_ASSERT(m_requests.empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
     }
@@ -330,7 +331,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<s
         constexpr bool add_generation_prompt = true;
         std::string history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
         timer.start();
-        input_ids.push_back(m_tokenizer.encode(history).input_ids);
+        // ov::genai::add_special_tokens(false) is aligned with stateful pipeline
+        input_ids.push_back(m_tokenizer.encode(history, ov::genai::add_special_tokens(false)).input_ids);
         timer.end();
     } else {
         input_ids.reserve(prompts.size());
