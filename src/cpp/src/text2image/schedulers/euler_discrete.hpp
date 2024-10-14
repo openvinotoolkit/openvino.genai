@@ -53,7 +53,7 @@ private:
     std::vector<int64_t> m_timesteps;
     size_t m_num_inference_steps;
 
-    size_t m_step_index = -1;
+    size_t m_step_index;
 };
 
 } // namespace genai
