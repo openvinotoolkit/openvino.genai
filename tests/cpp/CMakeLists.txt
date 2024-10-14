@@ -20,8 +20,11 @@ file(GLOB src_files "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sequence_group.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sampler.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/speculative_decoding/speculative_decoding_impl.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/speculative_decoding/continuous_batching_for_speculative_decoding_impl.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/paged_attention_transformations.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/speculative_decoding/speculative_decoding_metrics.cpp"
+                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/paged_attention_transformations.cpp"
+                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/continuous_batching_pipeline.cpp"
+                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/continuous_batching_impl.cpp"
+                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/continuous_batching_impl.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/text_callback_streamer.cpp")
 
 add_executable(${TEST_TARGET_NAME} ${tests_src}
