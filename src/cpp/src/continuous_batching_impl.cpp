@@ -73,7 +73,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
     sampling_params.set_eos_token_id(m_tokenizer.get_eos_token_id());
     sampling_params.validate();
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids,
-                                                                        sampling_params, 
+                                                                        sampling_params,
                                                                         m_scheduler->get_config().block_size,
                                                                         m_scheduler->get_config().enable_prefix_caching);
     sequence_group->set_sequence_group_ptr(sequence_group);
@@ -91,7 +91,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request
 GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
                                                                 const std::string& prompt,
-                                                                ov::genai::GenerationConfig sampling_params) {                           
+                                                                ov::genai::GenerationConfig sampling_params) {
     static ManualTimer timer("tokenize");
     timer.start();
     ov::Tensor input_ids = m_tokenizer.encode(prompt).input_ids;
@@ -286,6 +286,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             continue_generation = !streamer_ptr->put(token.begin()->second.generated_ids.at(0));
         }
     }
+
     if (streamer_ptr) {
         streamer_ptr->end();
     }
