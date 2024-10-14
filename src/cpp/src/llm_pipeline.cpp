@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 #include <openvino/openvino.hpp>
+#include "openvino/runtime/auto/properties.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -95,16 +96,23 @@ public:
         LLMPipelineImplBase(tokenizer, utils::from_config_json_if_exists(model_path))
     {
         ov::Core core;
+        ov::AnyMap meta_plugin_config = {};
+        if (device.rfind("AUTO") != std::string::npos) {
+            meta_plugin_config.emplace(ov::intel_auto::enable_startup_fallback(false));
+            meta_plugin_config.emplace(ov::intel_auto::enable_runtime_fallback(false));
+        }
         if(auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(*filtered_plugin_config);
             core.set_property(core_plugin_config);
             auto model = core.read_model(model_path / "openvino_model.xml");
             m_adapter_controller = AdapterController(model, m_generation_config.adapters, "base_model.model.model.", device);   // TODO: Make the prefix name configurable
+            compile_plugin_config.insert(meta_plugin_config.begin(), meta_plugin_config.end());
             m_model_runner = core.compile_model(model, device, compile_plugin_config).create_infer_request();
             m_adapter_controller->apply(m_model_runner, m_generation_config.adapters);
         } else {
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(plugin_config);
             core.set_property(core_plugin_config);
+            compile_plugin_config.insert(meta_plugin_config.begin(), meta_plugin_config.end());
             m_model_runner = core.compile_model(model_path / "openvino_model.xml", device, compile_plugin_config).create_infer_request();
         }
 
