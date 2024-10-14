@@ -23,10 +23,10 @@ import gc
 from openvino.runtime.passes import Manager, MatcherPass, WrapType, Matcher
 import time
 
-text_emb_path = Path("embed_tokens.xml")
-image_emb_path = Path("image_encoder.xml")
-resampler_path = Path("resampler.xml")
-llm_path = Path("language_model.xml")
+text_emb_path = Path("openvino_text_embeddings_model.xml")
+image_emb_path = Path("openvino_vision_embeddings_model.xml")
+resampler_path = Path("openvino_resampler_model.xml")
+llm_path = Path("openvino_language_model.xml")
 
 class InsertSlice(MatcherPass):
     def __init__(self):
@@ -596,8 +596,8 @@ class OvModelForCausalLMWithEmb(GenerationMixin):
         self.config.is_encoder_decoder = False
         self.generation_config = GenerationConfig.from_model_config(self.config)
         model_dir = Path(model_dir)
-        self.model = core.read_model(model_dir / "language_model.xml")
-        self.token_emb = core.read_model(model_dir / "embed_tokens.xml")
+        self.model = core.read_model(model_dir / "openvino_language_model.xml")
+        self.token_emb = core.read_model(model_dir / "openvino_text_embeddings_model.xml")
         if slice_lm_head:
             self.slice_lm_head()
         self.request = None

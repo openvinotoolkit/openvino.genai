@@ -10,8 +10,8 @@ It's not required to install [../../requirements.txt](../../requirements.txt) fo
 
 ```sh
 pip install --upgrade-strategy eager -r ../../requirements.txt
+optimum-cli export openvino -m openbmb/MiniCPM-V-2_6 miniCPM-V-2_6 --trust-remote-code
 ```
-# TODO: add optimum cli command for miniCPM-V-2_6 when available
 
 ## Run:
 [This image](https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11) can be used as a sample image.

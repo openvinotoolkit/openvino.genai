@@ -10,7 +10,7 @@ It's not required to install [../../requirements.txt](../../requirements.txt) fo
 
 ```sh
 pip install --upgrade-strategy eager -r ../../requirements.txt
-export_MiniCPM-V-2_6.py miniCPM-V-2_6
+optimum-cli export openvino -m openbmb/MiniCPM-V-2_6 MiniCPM-V-2_6 --trust-remote-code
 ```
 
 ## Run
