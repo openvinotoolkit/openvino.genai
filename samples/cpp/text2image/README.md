@@ -36,15 +36,6 @@ Prompt: `cyberpunk cityscape like Tokyo New York with tall buildings at dusk gol
 
    ![](./512x512.bmp)
 
-## Supported models
-
-Models can be downloaded from [HiggingFace](https://huggingface.co/models). This sample can run the following list of models, but not limitied to:
-
-- [botp/stable-diffusion-v1-5](https://huggingface.co/botp/stable-diffusion-v1-5)
-- [stabilityai/stable-diffusion-2](https://huggingface.co/stabilityai/stable-diffusion-2)
-- [stabilityai/stable-diffusion-2-1](https://huggingface.co/stabilityai/stable-diffusion-2-1)
-- [dreamlike-art/dreamlike-anime-1.0](https://huggingface.co/dreamlike-art/dreamlike-anime-1.0)
-- [SimianLuo/LCM_Dreamshaper_v7](https://huggingface.co/SimianLuo/LCM_Dreamshaper_v7)
 
 ## Run with optional LoRA adapters
 

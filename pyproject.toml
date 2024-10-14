@@ -33,6 +33,7 @@ find_python3 = true
 build_args = ["--parallel", "--target", "py_generate_pipeline"]
 install_args = ["--strip"]
 install_components = ["wheel_genai"]
+options = {"BUILD_TOKENIZERS" = "OFF"}
 
 [build-system]
 requires = [

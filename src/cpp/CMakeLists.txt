@@ -15,8 +15,8 @@ endif()
 
 function(ov_genai_build_jinja2cpp)
     FetchContent_Declare(jinja2cpp
-        URL https://github.com/jinja2cpp/Jinja2Cpp/archive/b32fbde7d98d13c34784c332c4a24a6f92c76e38.tar.gz
-        URL_HASH SHA256=7cc25ddbc438a5c874d404e100b4eccd8a331c195417f5487c48aebcf4b9e7fb)
+        URL https://github.com/ilya-lavrenov/Jinja2Cpp/archive/04073b62ec950eab6cdcb2c563c1c9bb7698f1ea.tar.gz
+        URL_HASH SHA256=9f2a346eec91a6a381fe8fd631e9c952fe7087882bbca7f0e4e42e75e680fc1b)
 
     FetchContent_GetProperties(jinja2cpp)
     if(NOT jinja2cpp_POPULATED)
@@ -35,6 +35,13 @@ function(ov_genai_build_jinja2cpp)
         option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
 
         add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
+
+        if(CMAKE_COMPILER_IS_GNUCXX OR OV_COMPILER_IS_CLANG OR (OV_COMPILER_IS_INTEL_LLVM AND UNIX))
+            target_compile_options(jinja2cpp PRIVATE -Wno-undef)
+        endif()
+        if(SUGGEST_OVERRIDE_SUPPORTED)
+            target_compile_options(jinja2cpp PRIVATE -Wno-suggest-override)
+        endif()
     endif()
 endfunction()
 
@@ -47,10 +54,13 @@ ov_genai_build_jinja2cpp()
 
 # Library
 
-file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp", "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
+file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 
 set(TARGET_NAME openvino_genai)
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
+if(TARGET openvino_tokenizers)
+    add_dependencies(${TARGET_NAME} openvino_tokenizers)
+endif()
 add_library(openvino::genai ALIAS ${TARGET_NAME})
 
 target_include_directories(${TARGET_NAME}

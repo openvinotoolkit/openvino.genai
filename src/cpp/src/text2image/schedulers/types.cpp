@@ -49,6 +49,8 @@ void read_json_param(const nlohmann::json& data, const std::string& name, Text2I
             param = Text2ImagePipeline::Scheduler::DDIM;
         else if (scheduler_type_str == "LMSDiscreteScheduler")
             param = Text2ImagePipeline::Scheduler::LMS_DISCRETE;
+        else if (scheduler_type_str == "EulerDiscreteScheduler")
+            param = Text2ImagePipeline::Scheduler::EULER_DISCRETE;
         else if (!scheduler_type_str.empty()) {
             OPENVINO_THROW("Unsupported value for 'prediction_type' ", scheduler_type_str);
         }
@@ -71,6 +73,48 @@ void read_json_param(const nlohmann::json& data, const std::string& name, Timest
     }
 }
 
+template <>
+void read_json_param(const nlohmann::json& data, const std::string& name, InterpolationType& param) {
+    if (data.contains(name) && data[name].is_string()) {
+        std::string interpolation_type = data[name].get<std::string>();
+        if (interpolation_type == "linear")
+            param = InterpolationType::LINEAR;
+        else if (interpolation_type == "log_linear")
+            param = InterpolationType::LOG_LINEAR;
+        else if (!interpolation_type.empty()) {
+            OPENVINO_THROW("Unsupported value for 'interpolation_type' ", interpolation_type);
+        }
+    }
+}
+
+template <>
+void read_json_param(const nlohmann::json& data, const std::string& name, FinalSigmaType& param) {
+    if (data.contains(name) && data[name].is_string()) {
+        std::string final_sigma_type = data[name].get<std::string>();
+        if (final_sigma_type == "zero")
+            param = FinalSigmaType::ZERO;
+        else if (final_sigma_type == "sigma_min")
+            param = FinalSigmaType::SIGMA_MIN;
+        else if (!final_sigma_type.empty()) {
+            OPENVINO_THROW("Unsupported value for 'final_sigma_type' ", final_sigma_type);
+        }
+    }
+}
+
+template <>
+void read_json_param(const nlohmann::json& data, const std::string& name, TimestepType& param) {
+    if (data.contains(name) && data[name].is_string()) {
+        std::string timestep_type = data[name].get<std::string>();
+        if (timestep_type == "discrete")
+            param = TimestepType::DISCRETE;
+        else if (timestep_type == "continuous")
+            param = TimestepType::CONTINUOUS;
+        else if (!timestep_type.empty()) {
+            OPENVINO_THROW("Unsupported value for 'timestep_type' ", timestep_type);
+        }
+    }
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
@@ -83,6 +127,8 @@ std::ostream& operator<<(std::ostream& os, const ov::genai::Text2ImagePipeline::
         return os << "LMSDiscreteScheduler";
     case ov::genai::Text2ImagePipeline::Scheduler::Type::DDIM:
         return os << "DDIMScheduler";
+    case ov::genai::Text2ImagePipeline::Scheduler::Type::EULER_DISCRETE:
+        return os << "EulerDiscreteScheduler";
     case ov::genai::Text2ImagePipeline::Scheduler::Type::AUTO:
         return os << "AutoScheduler";
     default:

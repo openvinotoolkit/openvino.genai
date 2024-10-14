@@ -22,6 +22,7 @@ CLIPTextModel::Config::Config(const std::string& config_path) {
 
     read_json_param(data, "max_position_embeddings", max_position_embeddings);
     read_json_param(data, "hidden_size", hidden_size);
+    read_json_param(data, "num_hidden_layers", num_hidden_layers);
 }
 
 CLIPTextModel::CLIPTextModel(const std::string root_dir) :
@@ -93,22 +94,26 @@ ov::Tensor CLIPTextModel::infer(const std::string& pos_prompt, const std::string
 
     if (do_classifier_free_guidance) {
         perform_tokenization(neg_prompt,
-                                ov::Tensor(input_ids, {current_batch_idx    , 0},
-                                                    {current_batch_idx + 1, m_config.max_position_embeddings}));
+                             ov::Tensor(input_ids, {current_batch_idx    , 0},
+                                                   {current_batch_idx + 1, m_config.max_position_embeddings}));
         ++current_batch_idx;
     } else {
         // Negative prompt is ignored when --guidanceScale < 1.0
     }
 
     perform_tokenization(pos_prompt,
-                            ov::Tensor(input_ids, {current_batch_idx    , 0},
-                                                {current_batch_idx + 1, m_config.max_position_embeddings}));
+                         ov::Tensor(input_ids, {current_batch_idx    , 0},
+                                               {current_batch_idx + 1, m_config.max_position_embeddings}));
 
     // text embeddings
     m_request.set_tensor("input_ids", input_ids);
     m_request.infer();
 
     return m_request.get_output_tensor(0);
+}
+
+ov::Tensor CLIPTextModel::get_output_tensor(const size_t idx) {
+    return m_request.get_output_tensor(idx);
 }
 
 } // namespace genai

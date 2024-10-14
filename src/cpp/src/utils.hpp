@@ -6,6 +6,7 @@
 #include <nlohmann/json.hpp>
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/processor_config.hpp"
 
 namespace ov {
 namespace genai {
@@ -64,14 +65,30 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
 const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 
-ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path);
+template<typename Config=ov::genai::GenerationConfig>
+Config from_config_json_if_exists(const std::filesystem::path& model_path, const char config_name[]="generation_config.json") {
+    auto config_file_path = model_path / config_name;
+    if (std::filesystem::exists(config_file_path)) {
+        return Config{(config_file_path).string()};
+    } else {
+        return Config{};
+    }
+}
 
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
 
+ProcessorConfig from_any_map(
+    const ov::AnyMap& config_map,
+    const ProcessorConfig& initial
+);
+
 std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& plugin_config);
 
+ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
+
+void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model);
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

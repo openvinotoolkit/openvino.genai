@@ -5,6 +5,14 @@
 
 #include <fstream>
 
+#include "openvino/op/add.hpp"
+#include "openvino/op/divide.hpp"
+#include "openvino/op/multiply.hpp"
+#include "openvino/op/matmul.hpp"
+#include "openvino/op/slice.hpp"
+#include "openvino/op/tanh.hpp"
+#include "openvino/op/transpose.hpp"
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -153,15 +161,6 @@ ov::Tensor extend_attention(ov::Tensor attention_mask) {
     return new_atten_mask;
 }
 
-ov::genai::GenerationConfig from_config_json_if_exists(const std::filesystem::path& model_path) {
-    auto config_file_path = model_path / "generation_config.json";
-    if (std::filesystem::exists(config_file_path)) {
-        return ov::genai::GenerationConfig((config_file_path).string());
-    } else {
-        return ov::genai::GenerationConfig{};
-    }
-}
-
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
     ov::genai::StreamerVariant streamer = std::monostate();
 
@@ -181,6 +180,22 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
         return config_map.at(CONFIG_ARG_NAME).as<ov::genai::GenerationConfig>();
     else
         return std::nullopt;
+}
+
+ProcessorConfig from_any_map(
+    const ov::AnyMap& config_map,
+    const ProcessorConfig& initial
+) {
+    auto iter = config_map.find("processor_config");
+    ProcessorConfig extracted_config = config_map.end() != iter ?
+        iter->second.as<ProcessorConfig>() : initial;
+    using utils::read_anymap_param;
+    read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
+    read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
+    read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
+    read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
+    read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
+    return extracted_config;
 }
 
 /**
@@ -204,6 +219,46 @@ std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& p
     return {core_config, compile_config};
 };
 
+ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
+    auto minuend_size = minuend.input_ids.get_size();
+    auto subtrahend_size = subtrahend.input_ids.get_size();
+    ov::Shape new_shape{1, minuend_size - subtrahend_size};
+
+    ov::Tensor new_input_ids(ov::element::i64, new_shape);
+    auto data_ptr = minuend.input_ids.data<int64_t>();
+    std::copy(data_ptr + subtrahend_size, data_ptr + minuend_size, new_input_ids.data<int64_t>());
+
+    ov::Tensor new_attention_mask(ov::element::i64, new_shape);
+    std::fill_n(new_attention_mask.data<int64_t>(), new_shape[1], 1);
+
+    return {new_input_ids, new_attention_mask};
+}
+
+void slice_matmul_statefull_model(std::shared_ptr<ov::Model> model) {
+    ov::Node* matmul = nullptr;
+    auto last_node = model->output(0).get_node()->input_value(0).get_node();
+    if (matmul = dynamic_cast<ov::op::v0::MatMul*>(last_node)) {
+    } else if(auto add = dynamic_cast<ov::op::v1::Add*>(last_node)) {
+        matmul = dynamic_cast<ov::op::v0::MatMul*>(add->input_value(0).get_node());
+    } else if (auto transpose = dynamic_cast<ov::op::v1::Transpose*>(last_node)) {
+        matmul = dynamic_cast<ov::op::v0::MatMul*>(transpose->input_value(0).get_node());
+    } else if (auto multiply = dynamic_cast<ov::op::v1::Multiply*>(last_node)) {
+        if (auto tanh = dynamic_cast<ov::op::v0::Tanh*>(multiply->input_value(0).get_node())) {
+            if (auto divide = dynamic_cast<ov::op::v1::Divide*>(tanh->input_value(0).get_node())) {
+                matmul = dynamic_cast<ov::op::v0::MatMul*>(divide->input_value(0).get_node());
+            }
+        }
+    }
+
+    if (matmul && matmul->input(0).get_partial_shape().rank().get_length() == 3) {
+        auto start = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
+        auto stop = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-2});
+        auto step = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
+        auto axis = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        auto slice = std::make_shared<ov::op::v8::Slice>(matmul->input_value(0), start, stop, step, axis);
+        matmul->input(0).replace_source_output(slice);
+    }
+}
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

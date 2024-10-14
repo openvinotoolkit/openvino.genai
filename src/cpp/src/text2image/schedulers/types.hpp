@@ -30,6 +30,21 @@ enum class TimestepSpacing {
     LEADING
 };
 
+enum class InterpolationType {
+    LINEAR,
+    LOG_LINEAR
+};
+
+enum class FinalSigmaType {
+    ZERO,
+    SIGMA_MIN
+};
+
+enum class TimestepType {
+    DISCRETE,
+    CONTINUOUS
+};
+
 namespace utils {
 
 template <>
@@ -43,6 +58,15 @@ void read_json_param(const nlohmann::json& data, const std::string& name, Text2I
 
 template <>
 void read_json_param(const nlohmann::json& data, const std::string& name, TimestepSpacing& param);
+
+template <>
+void read_json_param(const nlohmann::json& data, const std::string& name, InterpolationType& param);
+
+template <>
+void read_json_param(const nlohmann::json& data, const std::string& name, FinalSigmaType& param);
+
+template <>
+void read_json_param(const nlohmann::json& data, const std::string& name, TimestepType& param);
 
 }  // namespace utils
 }  // namespace genai
