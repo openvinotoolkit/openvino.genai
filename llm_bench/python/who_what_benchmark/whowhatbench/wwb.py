@@ -11,11 +11,7 @@ from optimum.utils import NormalizedConfigManager, NormalizedTextConfig
 from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
 
 from optimum.exporters.tasks import TasksManager
-from optimum.intel import (
-    OVLatentConsistencyModelPipeline,
-    OVStableDiffusionPipeline,
-    OVStableDiffusionXLPipeline,
-)
+from optimum.intel import OVPipelineForText2Image
 
 import openvino_genai
 from whowhatbench import EVALUATOR_REGISTRY, MODELTYPE2TASK
@@ -95,9 +91,7 @@ def load_text_model(
 
 
 TEXT2IMAGE_TASK2CLASS = {
-    "sd": OVStableDiffusionPipeline,
-    "sd-xl": OVStableDiffusionXLPipeline,
-    "sd-lcm": OVLatentConsistencyModelPipeline,
+    "text-to-image": OVPipelineForText2Image,
 }
 
 
@@ -142,7 +136,7 @@ def load_model(
 
     if model_type == "text":
         return load_text_model(model_id, device, ov_config, use_hf, use_genai)
-    elif MODELTYPE2TASK[model_type] == "image-generation":
+    elif MODELTYPE2TASK[model_type] == "text-to-image":
         return load_text2image_model(
             model_type, model_id, device, ov_config, use_hf, use_genai
         )
@@ -203,9 +197,9 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "sd", "sd-xl", "sd-lcm"],
+        choices=["text", "text-to-image"],
         default="text",
-        help="Indicated the model type, e.g. 'text', 'sd'.",
+        help="Indicated the model type, e.g. 'text' - for LLMs, 't2im' - for text-to-image pipelines.",
     )
     parser.add_argument(
         "--data-encoder",
@@ -367,7 +361,7 @@ def get_evaluator(base_model, args):
                 language=args.language,
                 gen_answer_fn=genai_gen_answer if args.genai else None,
             )
-        elif task == "image-generation":
+        elif task == "text-to-image":
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -467,7 +461,7 @@ def main():
     if args.verbose and args.target_model is not None:
         if args.model_type == "text":
             print_text_results(evaluator)
-        elif "sd" in args.model_type:
+        elif "text-to-image" in args.model_type:
             print_image_results(evaluator)
 
 
