@@ -35,6 +35,13 @@ function(ov_genai_build_jinja2cpp)
         option(RAPIDJSON_BUILD_DOC "Build rapidjson documentation." OFF)
 
         add_subdirectory("${jinja2cpp_SOURCE_DIR}" "${jinja2cpp_BINARY_DIR}" EXCLUDE_FROM_ALL)
+
+        if(CMAKE_COMPILER_IS_GNUCXX OR OV_COMPILER_IS_CLANG OR (OV_COMPILER_IS_INTEL_LLVM AND UNIX))
+            target_compile_options(jinja2cpp PRIVATE -Wno-undef)
+        endif()
+        if(SUGGEST_OVERRIDE_SUPPORTED)
+            target_compile_options(jinja2cpp PRIVATE -Wno-suggest-override)
+        endif()
     endif()
 endfunction()
 
