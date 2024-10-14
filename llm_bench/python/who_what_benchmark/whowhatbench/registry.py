@@ -1,12 +1,11 @@
 
 from abc import ABC, abstractmethod
-from typing import Any, Union, Type
 
 
 # Registry for evaluators
 EVALUATOR_REGISTRY = {}
 MODELTYPE2TASK = {
-    "text":  "text-generation",
+    "text": "text-generation",
     "text-to-image": "text-to-image",
 }
 
@@ -22,18 +21,16 @@ def register_evaluator(*names):
         return cls
 
     return decorate
-    
+
 
 class BaseEvaluator(ABC):
     @abstractmethod
     def dump_gt(self, csv_name: str):
         pass
 
-
     @abstractmethod
     def score(self, model, **kwargs):
         pass
-    
 
     @abstractmethod
     def worst_examples(self, top_k: int = 5, metric="similarity"):
