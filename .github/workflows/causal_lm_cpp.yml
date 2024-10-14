@@ -716,7 +716,6 @@ jobs:
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -U "optimum<1.23" --no-dependencies
-          python -m pip install -U "optimum<1.23" --no-dependencies
           optimum-cli export openvino -m openbmb/MiniCPM-V-2_6 MiniCPM-V-2_6 --trust-remote-code
           wget https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11 --output-document cat.jpg
       - name: Run visual_language_chat sample - MiniCPM-V-2_6
@@ -727,9 +726,6 @@ jobs:
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
           source ./ov/setupvars.sh
-          python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install --upgrade-strategy eager -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -U "optimum<1.23" --no-dependencies
           optimum-cli export openvino --model llava-hf/llava-1.5-7b-hf ./llava_1_5_7b_ov/
           wget https://llava-vl.github.io/static/images/monalisa.jpg
       - name: Run visual_language_chat sample - LLaVa 1.5
