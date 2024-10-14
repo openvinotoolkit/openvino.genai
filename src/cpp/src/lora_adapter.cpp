@@ -156,9 +156,7 @@ ConstantMap read_safetensors(const std::string& filename) {
             tensor.end_offset_bytes - tensor.begin_offset_bytes);
 
         auto type = safetensors_to_ov_element_type(tensor.dtype);
-        // TODO: Extend OV with a new Constant ctor that shares memory to avoid two stage Tensor->Constant initialization
-        ov::Tensor wrapper(type, shape, ptr);  // wraps existing memory, no ownership
-        auto constant = std::make_shared<v0::Constant>(wrapper);    // wraps existing memory, no ownership
+        auto constant = std::make_shared<v0::Constant>(type, shape, ptr, {});  // wraps existing memory, no ownership
         constant->get_rt_info()["__safetensors_buffer_holder"] = buffer;    // to automatically deallocate underlying memory buffer when last constant that holds it is destoyed
         tensors[name] = constant;
     }
