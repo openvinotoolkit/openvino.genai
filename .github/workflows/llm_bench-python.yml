@@ -91,6 +91,7 @@ jobs:
       - name: WWB Tests
         run: |
           GIT_CLONE_PROTECTION_ACTIVE=false pip install -r llm_bench/python/who_what_benchmark/requirements.txt
+          python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           pip install git+https://github.com/huggingface/optimum.git
           GIT_CLONE_PROTECTION_ACTIVE=false pip install llm_bench/python/who_what_benchmark/
           pip install pytest
