@@ -21,6 +21,8 @@
 
 namespace {
 
+// Test PR to check if pre-commit on master is broken.
+
 // todo: remove when openvino-tokenizers will support left padding
 ov::genai::TokenizedInputs pad_left(ov::Tensor& input_ids, ov::Tensor& attention_mask) {
     const size_t batch_size = input_ids.get_shape()[0];
