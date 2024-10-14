@@ -254,7 +254,7 @@ jobs:
           && python samples\python\greedy_causal_lm\greedy_causal_lm.py .\TinyLlama-1.1B-Chat-v1.0\ 69 > .\py.txt
       - run: fc .\cpp.txt .\py.txt
 
-  cpp-beam_search_causal_lm-Qwen-7B-Chat:
+  cpp-greedy_causal_lm-Qwen-7B-Chat:
     runs-on: ubuntu-20.04-16-cores
     defaults:
       run:
@@ -720,8 +720,9 @@ jobs:
       - name: Run visual_language_chat sample - LLaVa 1.5
         run: >
           source ./ov/setupvars.sh
-          && timeout 240s ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
+          && ./build/samples/cpp/visual_language_chat/visual_language_chat ./llava_1_5_7b_ov/ monalisa.jpg
           <<< $'Who drew this painting?\nWhen did the painter live?'
+        timeout-minutes: 4
 
       - name: Run python chat sample
         run: |
@@ -866,7 +867,7 @@ jobs:
   Overall_Status:
     name: ci/gha_overall_status_causal_lm
     needs: [cpp-multinomial-greedy_causal_lm-ubuntu, cpp-beam_search_causal_lm-ubuntu, cpp-greedy_causal_lm-windows,
-            cpp-beam_search_causal_lm-Qwen-7B-Chat, cpp-beam_search_causal_lm-Qwen1_5-7B-Chat, cpp-beam_search_causal_lm-Phi-2,
+            cpp-greedy_causal_lm-Qwen-7B-Chat, cpp-beam_search_causal_lm-Qwen1_5-7B-Chat, cpp-beam_search_causal_lm-Phi-2,
             cpp-beam_search_causal_lm-notus-7b-v1, cpp-speculative_decoding_lm-ubuntu, cpp-prompt_lookup_decoding_lm-ubuntu,
             cpp-Phi-1_5, cpp-greedy_causal_lm-redpajama-3b-chat, cpp-chat_sample-ubuntu, cpp-continuous-batching-ubuntu,
             visual_language_chat_sample-ubuntu,
