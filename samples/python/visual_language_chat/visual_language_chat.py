@@ -55,7 +55,7 @@ def main():
 
     pipe.start_chat()
     prompt = input('question:\n')
-    pipe(prompt, image=image, generation_config=config, streamer=streamer)
+    pipe.generate(prompt, image=image, generation_config=config, streamer=streamer)
     print('\n----------')
 
     while True:
@@ -63,7 +63,7 @@ def main():
             prompt = input('question:\n')
         except EOFError:
             break
-        pipe(prompt, generation_config=config, streamer=streamer)
+        pipe.generate(prompt, generation_config=config, streamer=streamer)
         print('\n----------')
     pipe.finish_chat()
 
