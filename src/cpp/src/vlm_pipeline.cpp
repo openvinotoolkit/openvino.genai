@@ -698,5 +698,6 @@ ov::Tensor VLMPipeline::get_inputs_embeds_minicpm(const std::string& prompt, con
             }
         }
     }
+
     return inputs_embeds;
 }
