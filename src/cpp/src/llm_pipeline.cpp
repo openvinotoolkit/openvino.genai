@@ -80,8 +80,12 @@ public:
         ov::Core core;
         ov::AnyMap meta_plugin_config = {};
         if (device.rfind("AUTO") != std::string::npos) {
-            meta_plugin_config.emplace(ov::intel_auto::enable_startup_fallback(false));
-            meta_plugin_config.emplace(ov::intel_auto::enable_runtime_fallback(false));
+            if (!plugin_config.count(ov::intel_auto::enable_startup_fallback.name())) {
+                meta_plugin_config.emplace(ov::intel_auto::enable_startup_fallback(false));
+            }
+            if (!plugin_config.count(ov::intel_auto::enable_runtime_fallback.name())) {
+                meta_plugin_config.emplace(ov::intel_auto::enable_runtime_fallback(false));
+            }
         }
         if(auto filtered_plugin_config = extract_adapters_from_properties(plugin_config, &m_generation_config.adapters)) {
             auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(*filtered_plugin_config);
