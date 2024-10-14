@@ -548,7 +548,6 @@ ov::genai::LLMPipeline::LLMPipeline(
         SchedulerConfig scheduler_config;
         scheduler_config.cache_size = 1;
         scheduler_config.enable_prefix_caching = false;
-        scheduler_config.dynamic_split_fuse = true;
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(
             model_path,
             tokenizer,
@@ -581,8 +580,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if (true) {
         SchedulerConfig scheduler_config;
         scheduler_config.cache_size = 1;
-        scheduler_config.max_num_batched_tokens = 256;
-        scheduler_config.dynamic_split_fuse = false;
+        scheduler_config.enable_prefix_caching = false;
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(
             path,
             scheduler_config,
