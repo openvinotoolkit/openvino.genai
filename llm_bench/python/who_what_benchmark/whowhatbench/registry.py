@@ -1,25 +1,12 @@
-from abc import ABC, abstractmethod
 
-from optimum.intel import (
-    OVLatentConsistencyModelPipeline,
-    OVStableDiffusionPipeline,
-    OVStableDiffusionXLPipeline,
-)
+from abc import ABC, abstractmethod
 
 
 # Registry for evaluators
 EVALUATOR_REGISTRY = {}
 MODELTYPE2TASK = {
     "text": "text-generation",
-    "sd": "image-generation",
-    "sd-xl": "image-generation",
-    "sd-lcm": "image-generation",
-}
-
-TEXT2IMAGE_TASK2CLASS = {
-    "sd": OVStableDiffusionPipeline,
-    "sd-xl": OVStableDiffusionXLPipeline,
-    "sd-lcm": OVLatentConsistencyModelPipeline,
+    "text-to-image": "text-to-image",
 }
 
 
