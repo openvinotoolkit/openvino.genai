@@ -10,6 +10,7 @@ from PIL import Image
 from openvino import Tensor
 
 
+
 def streamer(subword: str) -> bool:
     '''
 
