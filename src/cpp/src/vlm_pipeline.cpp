@@ -834,7 +834,10 @@ ov::Tensor VLMPipeline::get_inputs_embeds_llava(const std::string& prompt, const
 ov::Tensor VLMPipeline::get_inputs_embeds_llava_next(const std::string& prompt, const std::vector<ov::Tensor>& images) {
     std::string image_token = "<image>"; // TODO Consider getting from vlm_config or json
     // TODO Consider moving prompt formatting to separate function for each model family
-    std::string formatted_prompt = "[INST] " + (images.empty() ? prompt : image_token + "\n" + prompt) + " [/INST]";
+    // llava_v1_6_mistral_7b prompt
+    // std::string formatted_prompt = "[INST] " + (images.empty() ? prompt : image_token + "\n" + prompt) + " [/INST]";
+    // llava_v1_6_vicuna_7b prompt
+    std::string formatted_prompt = "USER: " + (images.empty() ? prompt : image_token + "\n" + prompt) + " ASSISTANT:";
     ov::Tensor input_ids = m_tokenizer.encode(formatted_prompt).input_ids;
     if (images.empty()) {
         return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
