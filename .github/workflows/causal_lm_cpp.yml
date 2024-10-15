@@ -747,8 +747,9 @@ jobs:
       - name: Run visual_language_chat sample - MiniCPM-V-2_6
         run: >
           source ./ov/setupvars.sh
-          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ cat.jpg
-          <<< $'What is on the image?\nWhat is special on the image?'
+          && timeout 120s ./build/samples/cpp/visual_language_chat/visual_language_chat ./MiniCPM-V-2_6/ lines.png
+          <<< $'What is unusual on this image?' | tee cpp.txt
+      - run: diff cpp.txt ref.txt
       - name: Download and convert LLaVa 1.5 model and an image
         run: |
           source ./ov/setupvars.sh
