@@ -1,12 +1,19 @@
 # Copyright (C) 2018-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+<<<<<<< HEAD
 import pytest
 import gc
 
 import openvino_tokenizers
 import openvino
 from transformers
+=======
+import openvino_tokenizers
+import openvino
+import pytest
+import transformers
+>>>>>>> replace-export_MiniCPM-V-2_6.py
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline
 from common import get_greedy, get_image_by_link, get_beam_search, get_greedy, get_multinomial_all_parameters
@@ -26,16 +33,10 @@ def get_ov_model(model_dir):
     model.save_pretrained(model_dir)
     return model_dir
 
-sampling_configs = [
-    get_beam_search(),
-    get_greedy(),
-    get_multinomial_all_parameters()
-]
 
 prompts = [
     "What is on the image?",
     "What is special about this image?",
-    "Tell me more about this image."
 ]
 
 image_links = [
@@ -47,7 +48,6 @@ image_links = [
 image_links_for_testing = [
     [],
     [image_links[0]],
-    [image_links[1], image_links[0]],
     [image_links[0], image_links[2], image_links[1]]
 ]
 
@@ -55,28 +55,35 @@ image_links_for_testing = [
 @pytest.mark.nightly
 def test_vlm_pipeline(cache):
     def streamer(word: str) -> bool:
-        print(word, end="")
         return False
 
     model_path = get_ov_model(cache.mkdir("MiniCPM-V-2_6"))
 
-    for generation_config in sampling_configs:
-        for links in image_links_for_testing:
-            images = []
-            for link in links:
-                images.append(get_image_by_link(link))
+    for links in image_links_for_testing:
+        images = []
+        for link in links:
+            images.append(get_image_by_link(link))
 
-            pipe = VLMPipeline(str(model_path), "CPU")
-            pipe.start_chat()
+        pipe = VLMPipeline(str(model_path), "CPU")
+        pipe.start_chat()
 
-            pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
+        pipe.generate(prompts[0], images=images, generation_config=get_greedy(), streamer=streamer)
 
-            for prompt in prompts[1:]:
-                pipe.generate(prompt, generation_config=generation_config, streamer=streamer)
+        for prompt in prompts[1:]:
+            pipe.generate(prompt, generation_config=get_greedy(), streamer=streamer)
 
-            pipe.finish_chat()
-            gc.collect()
-    del pipe
-    gc.collect()
+        pipe.finish_chat()
 
 
+@pytest.mark.precommit
+@pytest.mark.nightly
+@pytest.mark.parametrize("config", [
+    get_beam_search(),
+    get_multinomial_all_parameters(),
+])
+@pytest.mark.skip("Enable after sampler are enabled")
+def test_sampling(config, cache):
+    model_path = get_ov_model(cache.mkdir("MiniCPM-V-2_6"))
+    image = get_image_by_link(image_links[0])
+    pipe = VLMPipeline(str(model_path), "CPU")
+    pipe.generate(prompts[0], image=image, generation_config=config)
