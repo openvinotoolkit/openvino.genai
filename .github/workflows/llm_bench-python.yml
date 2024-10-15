@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9"]
+        python-version: ["3.10"]
 
     steps:
     - uses: actions/checkout@v4
@@ -62,17 +62,18 @@ jobs:
         python ./llm_bench/python/benchmark.py -m tiny-random-qwen -d cpu -n 1 -f pt
     - name: Test tiny-random-baichuan2 on Linux
       run: |
-        python ./llm_bench/python/convert.py --model_id katuni4ka/tiny-random-baichuan2 --output_dir ./ov_models/tiny-random-baichuan2 --precision FP16
+        optimum-cli export openvino --model katuni4ka/tiny-random-baichuan2 --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16
         python ./llm_bench/python/benchmark.py -m ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16/ -d cpu -n 1
     - name: Test tiny-stable-diffusion on Linux
       run: |
-        python ./llm_bench/python/convert.py --model_id segmind/tiny-sd --output_dir ./ov_models/tiny-sd --precision FP16
+        optimum-cli export openvino --model segmind/tiny-sd --trust-remote-code --weight-format fp16 ./ov_models/tiny-sd/pytorch/dldt/FP16/
         python ./llm_bench/python/benchmark.py -m ./ov_models/tiny-sd/pytorch/dldt/FP16/ -pf ./llm_bench/python/prompts/stable-diffusion.jsonl -d cpu -n 1
     - name: WWB Tests
       run: |
         GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.WWB_PATH }}/requirements.txt
         pip install git+https://github.com/huggingface/optimum.git
         GIT_CLONE_PROTECTION_ACTIVE=false pip install ${{ env.WWB_PATH }}
+        python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --force-reinstall
         python -m pytest llm_bench/python/who_what_benchmark/tests
   stateful:
     runs-on: ubuntu-20.04
@@ -80,7 +81,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.9
+          python-version: "3.10"
       - name: Test stateful
         run: |
           GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r llm_bench/python/requirements.txt
@@ -94,4 +95,5 @@ jobs:
           pip install git+https://github.com/huggingface/optimum.git
           GIT_CLONE_PROTECTION_ACTIVE=false pip install llm_bench/python/who_what_benchmark/
           pip install pytest
+          python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --force-reinstall
           python -m pytest llm_bench/python/who_what_benchmark/tests

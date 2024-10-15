@@ -1,5 +1,6 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-optimum[openvino]==1.22.0
+optimum-intel @ git+https://github.com/huggingface/optimum-intel.git
+numpy<2.0.0; sys_platform == 'darwin'
 onnx==1.16.1
 pytest
 llm_bench/python/who_what_benchmark

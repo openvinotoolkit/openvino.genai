@@ -4,6 +4,7 @@
 #pragma once
 
 #include "openvino/genai/visibility.hpp"
+#include "visual_language/vlm_model_type.hpp"
 #include <openvino/runtime/properties.hpp>
 #include <filesystem>
 
@@ -12,9 +13,11 @@ namespace ov::genai {
 /// change VLMPipeline's behavior. Corresponds to config.json.
 class OPENVINO_GENAI_EXPORTS VLMConfig {
 public:
+    /// @brief A enum denoting model type.
+    VLMModelType model_type;
     /// @brief A size of a single embedding returned by a resampler.
     /// Used to initialize positional embeddings for resampler input.
-    size_t hidden_size = 2304;
+    size_t hidden_size = 3584;
     /// @brief Multiply embeddings by this value.
     float scale_emb = 1.0f;
     /// @brief A number of embedding vectors representing an image

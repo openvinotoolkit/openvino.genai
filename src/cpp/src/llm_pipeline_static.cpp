@@ -477,12 +477,16 @@ DecodedResults StaticLLMPipeline::generate(
         prompt = std::get<std::string>(inputs);
     }
 
+    ov::genai::TokenizedInputs tokenized_input;
     if (m_is_chat_conversation) {
         m_history.push_back({{"role", "user"}, {"content", prompt}});
         constexpr bool add_generation_prompt = true;
         prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
+        tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
+    } else {
+        tokenized_input = m_tokenizer.encode(prompt);
     }
-    auto tokenized_input = m_tokenizer.encode(prompt);
 
     auto encode_stop_time =  std::chrono::steady_clock::now();
     auto encoded_results = generate(tokenized_input, config, streamer);
