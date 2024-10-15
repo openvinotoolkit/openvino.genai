@@ -298,6 +298,11 @@ ov::Tensor merge_text_and_image_embeddings_llava(
 
     return merged_embeds;
 }
+
+ov::Core singleton_core() {
+    static ov::Core core;
+    return core;
+}
 }
 
 class ov::genai::VLMPipeline::VLMPipelineImpl {
@@ -345,30 +350,31 @@ public:
             )
         },
         m_tokenizer{Tokenizer(model_dir.string(), device_config)},
-        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, ov::Core{}),
+        m_vision_encoder(model_dir, m_vlm_config.model_type, device, device_config, singleton_core()),
         m_is_chat_conversation{false},
         m_image_id{0} {
+            ov::Core core = singleton_core();
             if (m_vlm_config.model_type == VLMModelType::MINICPM) {
-                m_resampler = ov::Core{}.compile_model(
+                m_resampler = core.compile_model(
                     model_dir / "openvino_resampler_model.xml", device, device_config
                 ).create_infer_request();
 
-                m_embedding = ov::Core{}.compile_model(
+                m_embedding = core.compile_model(
                     model_dir / "openvino_text_embeddings_model.xml", device, device_config
                 ).create_infer_request();
 
-                m_language = ov::Core{}.compile_model(
+                m_language = core.compile_model(
                     model_dir / "openvino_language_model.xml", device, device_config
                 ).create_infer_request();
 
                 m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
             } else if (m_vlm_config.model_type == VLMModelType::LLAVA) {
-                m_language = ov::Core{}.compile_model(
+                m_language = core.compile_model(
                     model_dir / "openvino_language_model.xml", device, device_config
                 ).create_infer_request();
 
                 // Reusing the same m_embedding for llava text_embeddings model
-                m_embedding = ov::Core{}.compile_model(
+                m_embedding = core.compile_model(
                     model_dir / "openvino_text_embeddings_model.xml", device, device_config
                 ).create_infer_request();
             }
@@ -407,8 +413,6 @@ public:
 
         int64_t sequence_len = m_language.get_tensor("logits").get_shape().at(1) - 1;
         size_t vocab_size = m_language.get_tensor("logits").get_shape().back();
-        float* logits = m_language.get_tensor("logits").data<float>() + sequence_len * vocab_size;
-        int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
 
         m_language.get_tensor("inputs_embeds").set_shape({BATCH_SIZE, 1, m_vlm_config.hidden_size});
         m_language.get_tensor("position_ids").set_shape({ BATCH_SIZE, 1 });
@@ -431,6 +435,16 @@ public:
         }, streamer);
         std::vector<int64_t> generated;
         while (true) {  //(out_token != eos_token_id)
+            float *logits = m_language.get_tensor("logits").data<float>();
+            int64_t out_token = std::max_element(logits, logits + vocab_size) - logits;
+            generated.push_back(out_token);
+            // if (streamer_ptr && streamer_ptr->put(out_token)) {
+            //     break;
+            // }
+            std::cout << out_token << ", ";
+            if (out_token == eos_token_id) {
+                break;
+            }
             m_embedding.get_input_tensor().data<int64_t>()[0] = out_token;
             m_embedding.infer();
             const ov::Tensor& embed_prompt_tensor = m_embedding.get_output_tensor();
@@ -445,17 +459,6 @@ public:
             m_language.get_tensor("position_ids").data<int64_t>()[0] = int64_t(m_language.get_tensor("attention_mask").get_size() - 1);
 
             m_language.infer();
-
-            generated.push_back(out_token);
-            if (streamer_ptr && streamer_ptr->put(out_token)) {
-                break;
-            }
-            logits = m_language.get_tensor("logits").data<float>();
-
-            out_token = std::max_element(logits, logits + vocab_size) - logits;
-            if (out_token == eos_token_id) {
-                break;
-            }
         }
 
         if (streamer_ptr) {
@@ -474,6 +477,9 @@ public:
             }
             m_language.get_tensor("attention_mask").set_shape({1, 0});
         }
+        std::cout << '\n';
+        std::cout << eos_token_id << '\n';
+        std::cout << decoded_results << '\n';
         return {{std::move(decoded_results)}};
     }
 
