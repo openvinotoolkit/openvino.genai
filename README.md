@@ -6,6 +6,14 @@ Library is friendly to PC and laptop execution, optimized for resource consumpti
 
 ![Text generation using LLaMa 3.2 model running on Intel ARC770 dGPU](./samples/generation.gif)
 
+## Getting Started
+
+Please follow the following blogs to setup your own hands-on experience with C++ and Python samples.
+
+* [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
+* [How to run Llama 3.2 locally with OpenVINO™](https://medium.com/openvino-toolkit/how-to-run-llama-3-2-locally-with-openvino-60a0f3674549)
+
+
 ## Supported Generative AI scenarios
 
 OpenVINO™ GenAI library provides very lightweight C++ and Python APIs to run following Generative Scenarios:
@@ -111,7 +119,7 @@ optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task sta
 
 ### Run generation using Text2Image API in C++
 
-Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details)
+Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2024/get-started/install-openvino/install-openvino-genai.html#archive-installation) for additional setup details, or this blog for the hands-on instruction [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
 
 ```cpp
 #include "openvino/genai/text2image/pipeline.hpp"
