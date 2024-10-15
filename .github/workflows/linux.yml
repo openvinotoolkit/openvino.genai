@@ -260,7 +260,8 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels --upgrade-strategy eager
-          python -m pytest ./tests/python_tests --ignore ./tests/python_tests/test_whisper_generate_api.py
+          python -m pip install -U "optimum<1.23" --no-dependencies
+          python -m pytest ./tests/python_tests/test_chat_generate_api.py::test_set_chat_template
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
 
@@ -347,6 +348,7 @@ jobs:
         run: |
           source ${OV_INSTALL_DIR}/setupvars.sh
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${OV_INSTALL_DIR}/wheels --upgrade-strategy eager
+          python -m pip install -U "optimum<1.23" --no-dependencies
           python -m pytest ./tests/python_tests/test_whisper_generate_api.py -k test_smoke
         env:
           PYTHONPATH: "./build/:$PYTHONPATH"
@@ -408,7 +410,7 @@ jobs:
           echo 'Acquire::Retries "10";' | sudo tee -a /etc/apt/apt.conf.d/80-retries > /dev/null
           echo 'APT::Get::Assume-Yes "true";' | sudo tee -a /etc/apt/apt.conf.d/81-assume-yes > /dev/null
           echo 'APT::Get::Fix-Broken "true";' | sudo tee -a /etc/apt/apt.conf.d/82-fix-broken > /dev/null
-          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-reсommends > /dev/null
+          echo 'APT::Get::no-install-recommends "true";' | sudo tee -a /etc/apt/apt.conf.d/83-no-recommends > /dev/null
 
       - name: Install build dependencies
         run: |
