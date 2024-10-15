@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <openvino/runtime/core.hpp>
 #include "openvino/genai/generation_config.hpp"
+#include "json_utils.hpp"
 #include "utils.hpp"
 
 
