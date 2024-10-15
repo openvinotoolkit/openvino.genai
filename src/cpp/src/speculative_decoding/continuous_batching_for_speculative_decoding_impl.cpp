@@ -48,29 +48,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::f
     }
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::align_all_sequence_len_in_request() {
-    for (auto& request : m_requests) {
-        auto running_sequences = request->get_running_sequences();
-        // do not neeed in case of 1 sequence
-        if (running_sequences.size() == 1) {
-            continue;
-        }
-        auto& logit_processor = m_sampler->get_logit_processor(request->get_request_id());
-        auto min_generated_len = request->get_num_processed_tokens() + request->get_num_tokens_to_validate() - request->get_prompt_len() + 1;
-        for (auto& sequence : running_sequences) {
-            auto generated_tokens = sequence->get_generated_ids();
-            auto generated_len = generated_tokens.size();
-            OPENVINO_ASSERT(generated_len >= min_generated_len);
-            for (size_t i = min_generated_len; i < generated_len; ++i) {
-                logit_processor.decrease_generated_token_occurance(generated_tokens[i]);
-            }
-            sequence->remove_last_tokens(generated_len - min_generated_len);
-        }
-        logit_processor.update_generated_len(min_generated_len);
-    }
-}
-
-
 GeneratedRequests
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_generated_requests() {
     _pull_awaiting_requests();

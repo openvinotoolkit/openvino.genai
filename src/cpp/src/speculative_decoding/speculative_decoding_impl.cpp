@@ -93,6 +93,19 @@ bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::has_non_finished_reque
     return m_main_pipeline->has_non_finished_requests();
 }
 
+void print_generated_request(const ov::genai::GeneratedRequests& requests) {
+    for (const auto& request : requests) {
+        for (const auto& sequence : request.second) {
+            std::cout << "request_id: " << request.first << " | sequence_id: " << sequence.first << " | ";
+            for (const auto& token_id : sequence.second.token_ids) {
+                std::cout << token_id << " ";
+            }
+            std::cout << std::endl;
+        }
+        std::cout << std::endl;
+    }
+}
+
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     // generate candidates by draft model
     static ManualTimer draft_timer("speculative_decoding: draft_model: multistep()");
@@ -103,6 +116,11 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
     // to generate num_matches statistic
     std::map<int64_t, UpdateRequestResult> update_sequence_info;
+
+    // std::cout << "Draft before: " << std::endl;
+    // print_gen_req(m_draft_pipeline->get_generated_requests());
+    // std::cout << "Main before: " << std::endl;
+    // print_gen_req(m_main_pipeline->get_generated_requests());
     // put candidates to model KV cache
     auto draft_generated_requests = m_draft_pipeline->get_generated_requests();
     for (const auto& candidate : m_draft_pipeline->get_generated_requests()) {
@@ -116,13 +134,15 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     main_timer.end();
     m_sd_metrics.main_duration += main_timer.get_duration_ms();
 
-    m_main_pipeline->align_all_sequence_len_in_request();
-
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
     for (const auto& checked_sequence : main_generated_requests) {
         auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
     }
+    // std::cout << "Candidates " << std::endl;
+    // print_gen_req(m_draft_pipeline->get_generated_requests());
+    // std::cout << "Main after: " << std::endl;
+    // print_gen_req(m_main_pipeline->get_generated_requests());
 
     // finish draft request if the generation was complited
     for (const auto& draft_request : draft_generated_requests) {

@@ -61,10 +61,12 @@ int main(int argc, char* argv[]) try {
     };
 
     std::vector<ov::genai::GenerationConfig> sampling_params_examples {
-        ov::genai::beam_search(),
-        ov::genai::greedy(),
+        // ov::genai::beam_search(),
+        // ov::genai::greedy(),
         ov::genai::multinomial(),
     };
+
+    sampling_params_examples.begin()->num_return_sequences = 2;
 
     std::vector<std::string> prompts(num_prompts);
     std::vector<ov::genai::GenerationConfig> sampling_params(num_prompts);

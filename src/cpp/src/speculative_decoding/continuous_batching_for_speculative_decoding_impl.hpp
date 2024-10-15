@@ -23,7 +23,6 @@ public:
                                                  bool is_validation_mode_enabled);
 
     void multistep();
-    void align_all_sequence_len_in_request();
     void finish_request(int64_t request_id = -1);
 
     GeneratedRequests get_generated_requests();
