@@ -10,6 +10,7 @@
 
 #include "text_callback_streamer.hpp"
 #include "utils.hpp"
+#include "utils/ov_utils.hpp"
 #include "whisper/whisper.hpp"
 #include "whisper/whisper_config.hpp"
 #include "whisper/whisper_feature_extractor.hpp"

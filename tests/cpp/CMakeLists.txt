@@ -19,9 +19,8 @@ file(GLOB src_files "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sequence_group.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/cache_eviction.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sampler.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/speculative_decoding/*.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/paged_attention_transformations.cpp"
+                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/utils/*.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/continuous_batching*.cpp"
-                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/utils.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/text_callback_streamer.cpp")
 
 add_executable(${TEST_TARGET_NAME} ${tests_src}

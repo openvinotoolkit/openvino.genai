@@ -3,10 +3,16 @@
 
 #pragma once
 
+#include "openvino/core/any.hpp"
 #include "openvino/core/model.hpp"
 #include "device_config.hpp"
 
-namespace ov::genai {
+namespace ov {
+namespace genai {
+namespace utils {
+
+std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& plugin_config);
+
 /** Applies transformations to the ov::Model to enable paged attention inference.
  * @param model Pointer to the ov::Model representing one of the supported LLM architectures.
  * @param device_config Configuration struct for inferencing device specifics.
@@ -21,4 +27,7 @@ void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, boo
 size_t get_kv_cache_size(const std::shared_ptr<ov::Model> model);
 
 void set_kv_cache_type_and_shape(std::shared_ptr<ov::Model> model, DeviceConfig& device_config);
-}
+
+}  // namespace utils
+}  // namespace genai
+}  // namespace ov

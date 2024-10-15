@@ -3,8 +3,7 @@
 
 #include "text_callback_streamer.hpp"
 #include "continuous_batching_impl.hpp"
-#include "paged_attention_transformations.hpp"
-#include "utils.hpp"
+#include "utils/ov_utils.hpp"
 
 namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
@@ -29,7 +28,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     DeviceConfig device_config(core, scheduler_config, device, compile_plugin_config);
 
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
-    apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
+    utils::apply_paged_attention_transformations(model, device_config, is_need_per_layer_cache_control);
 
     init(model, scheduler_config, compile_plugin_config, device_config, core);
 }

@@ -3,7 +3,7 @@
 
 #include "text_callback_streamer.hpp"
 #include "speculative_decoding_impl.hpp"
-#include "paged_attention_transformations.hpp"
+#include "utils/ov_utils.hpp"
 
 
 namespace ov::genai {
@@ -24,8 +24,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     std::shared_ptr<ov::Model> main_model = core.read_model(main_models_path + openvino_model_name),
                                draft_model = core.read_model(draft_model_path + openvino_model_name);
 
-    apply_paged_attention_transformations(main_model, main_scheduler_config.use_cache_eviction);
-    apply_paged_attention_transformations(draft_model, main_scheduler_config.use_cache_eviction);
+    utils::apply_paged_attention_transformations(main_model, main_scheduler_config.use_cache_eviction);
+    utils::apply_paged_attention_transformations(draft_model, main_scheduler_config.use_cache_eviction);
 
     std::string draft_device = draft_model_desc.device;
     bool is_draft_device_undefined = false;
@@ -38,8 +38,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
                                draft_scheduler_config = is_draft_device_undefined ? main_scheduler_config : draft_model_desc.scheduler_config;
     if (is_draft_device_undefined) {
         // split KV cache to 2 caches for main and draft models
-        size_t main_model_cache_size = get_kv_cache_size(main_model),
-            draft_model_cache_size = get_kv_cache_size(draft_model);
+        size_t main_model_cache_size = utils::get_kv_cache_size(main_model),
+            draft_model_cache_size = utils::get_kv_cache_size(draft_model);
         auto k = static_cast<float>(draft_model_cache_size) / (main_model_cache_size + draft_model_cache_size);
 
         size_t main_cache_size = main_scheduler_config.cache_size * (1 - k),
@@ -58,8 +58,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     DeviceConfig main_device_config(core, main_scheduler_config, main_device, main_plugin_config),
                  draft_device_config(core, draft_scheduler_config, draft_device, draft_plugin_config);
 
-    set_kv_cache_type_and_shape(main_model, main_device_config);
-    set_kv_cache_type_and_shape(draft_model, draft_device_config);
+    utils::set_kv_cache_type_and_shape(main_model, main_device_config);
+    utils::set_kv_cache_type_and_shape(draft_model, draft_device_config);
 
     // main and draft model can have different tokenizers
     // to do: support retokenization: 154103
