@@ -34,6 +34,7 @@ protected:
     size_t step_count = 0;
 #endif
 
+    // used by tests only
     ContinuousBatchingImpl() = default;
 
     void _free_non_running_requests();

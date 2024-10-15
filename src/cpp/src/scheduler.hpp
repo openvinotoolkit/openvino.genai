@@ -247,10 +247,7 @@ private:
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
-                        for (auto& sequence : sequence_group->get_running_sequences()) {
-                            uint64_t seq_id = sequence->get_id();
-                            scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
-                        }
+                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
                     }
                 }
@@ -346,8 +343,7 @@ private:
             if ((!sequence_group->can_generate_tokens() || recompute_evicted_sequences) && !sequence_group->is_waiting()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
-                OPENVINO_ASSERT(num_running_seqs == 1 && !sequence_group->get_sampling_parameters().is_speculative_decoding() ||
-                                sequence_group->get_sampling_parameters().is_speculative_decoding());
+                OPENVINO_ASSERT(num_running_seqs == 1);
                 // here we also assume that sequence must be scheduler in a single shot and has no already generated context
                 if (!m_config.enable_prefix_caching)
                     OPENVINO_ASSERT(sequence_group->get_context_len() == 0);
@@ -374,6 +370,8 @@ private:
 
                 // add scheduling information
                 {
+                    Sequence::Ptr sequence = (*sequence_group)[0];
+                    uint64_t seq_id = sequence->get_id();
                     // and schedule tokens
                     sequence_group->schedule_tokens(sequence_len);
 
@@ -383,10 +381,8 @@ private:
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
-                        for (auto& sequence : sequence_group->get_running_sequences()) {
-                            uint64_t seq_id = sequence->get_id();
-                            scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
-                        }
+                        uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
+                        scheduler_output.m_block_tables[seq_id] = m_block_manager.get_block_tables(seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
                     }
 

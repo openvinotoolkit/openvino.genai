@@ -25,14 +25,6 @@ namespace genai {
 enum class StopCriteria { EARLY, HEURISTIC, NEVER };
 
 /**
- * @brief controls the number of candidates by draft model in speculative decoding. The following values are possible:
- *        "CONSTANT" generate the same candidates number step by step.
-          "HEURISTIC" stops generate candidates in case of token probability lower threshold.
-          "NONE" non speculative decoding scenario.
- */
-enum class NumAssistatantTokensScheduleType { CONSTANT, HEURISTIC, NONE };
-
-/**
  * @brief Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
  * and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
  * be used while greedy and beam search parameters will not affect decoding at all.
@@ -118,7 +110,6 @@ public:
     size_t rng_seed = 0;
 
     // Speculative decoding
-    NumAssistatantTokensScheduleType num_assistant_tokens_schedule = NumAssistatantTokensScheduleType::NONE;
     float assistant_confidence_threshold = 0.f;
     size_t num_assistant_tokens = 0;
 
@@ -181,7 +172,6 @@ static constexpr ov::Property<float> presence_penalty{"presence_penalty"};
 static constexpr ov::Property<float> frequency_penalty{"frequency_penalty"};
 static constexpr ov::Property<size_t> rng_seed{"rng_seed"};
 
-static constexpr ov::Property<NumAssistatantTokensScheduleType> num_assistant_tokens_schedule{"num_assistant_tokens_schedule"};
 static constexpr ov::Property<float> assistant_confidence_threshold{"assistant_confidence_threshold"};
 static constexpr ov::Property<size_t> num_assistant_tokens{"num_assistant_tokens"};
 

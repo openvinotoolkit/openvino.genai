@@ -48,6 +48,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::f
     }
 }
 
+bool 
+ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::is_pipeline_not_started() {
+    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+    return m_requests.empty() && !m_awaiting_requests.empty();
+}
+
 GeneratedRequests
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_generated_requests() {
     _pull_awaiting_requests();
@@ -253,8 +259,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             if (!sampling_params.is_speculative_decoding()) {
                 // generate only one token in case of non speculative decoding
                 request->pause_generation(true);
-            } else if (sampling_params.num_assistant_tokens_schedule == NumAssistatantTokensScheduleType::CONSTANT &&
-                sampling_params.num_assistant_tokens <= generated_tokens_cnt) {
+            } else if (sampling_params.num_assistant_tokens <= generated_tokens_cnt) {
                 request->pause_generation(true);
             }
             to_generate |= request->can_generate_tokens();

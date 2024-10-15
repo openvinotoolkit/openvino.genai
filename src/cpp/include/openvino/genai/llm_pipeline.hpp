@@ -31,29 +31,6 @@ using StringInputs = std::variant<std::string, std::vector<std::string>>;
 static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_config"};
 
 /**
-* @brief ModelDesc serves to activate speculative decoding model in continuous batching pipeline.
-* Create LLMPipeline and fill it with sutable values.
-* In case of empty device speculative decoding will be run with the same configuration as main_pipeline.
-*/
-struct ModelDesc {
-    std::string model_path;
-    std::string device;
-    ov::genai::SchedulerConfig scheduler_config;
-    ov::AnyMap plugin_config;
-
-    ModelDesc(const std::string& model_path,
-              const std::string& device = "",
-              const ov::AnyMap& plugin_config = {},
-              const ov::genai::SchedulerConfig& scheduler_config = {}) :
-        model_path(model_path),
-        device(device),
-        plugin_config(plugin_config),
-        scheduler_config(scheduler_config) {}
-};
-
-static constexpr ov::Property<ModelDesc> draft_model{"draft_model"};
-
-/**
 * @brief Structure to store resulting batched tokens and scores for each batch sequence.
 * The first num_return_sequences elements correspond to the first batch element.
 * In the case if results decoded with beam search and random sampling scores contain
@@ -294,6 +271,26 @@ private:
 
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(StreamerVariant func);
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const GenerationConfig& config);
+
+OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> draft_model(
+    const std::string& model_path,
+    const std::string& device = "",
+    const ov::AnyMap& plugin_config = {},
+    const SchedulerConfig& scheduler_cconfig = {} 
+);
+
+template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> draft_model(
+        const std::string& path,
+        const std::string& device="CPU",
+        Properties&&... properties) {
+    ov::AnyMap plugin_config = AnyMap{std::forward<Properties>(properties)...};
+    if (plugin_config.count(ov::genai::scheduler_config.name())) {
+        SchedulerConfig scheduler_config = plugin_config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
+        plugin_config.erase(ov::genai::scheduler_config.name());
+        return draft_model(path, device, plugin_config, scheduler_config);
+    }
+}
 
 }  // namespace genai
 }  // namespace ov

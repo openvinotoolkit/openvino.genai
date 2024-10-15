@@ -359,8 +359,7 @@ public:
                     m_logit_transformers.emplace_back(new LogitTransformers::TopKFilter(sampling_params.top_k));
                 }
             }
-            if (sampling_params.is_speculative_decoding() &&
-                sampling_params.num_assistant_tokens_schedule == ov::genai::NumAssistatantTokensScheduleType::HEURISTIC) {
+            if (sampling_params.assistant_confidence_threshold > 0) {
                 m_is_dynamic_speculative_decoding = true;
                 m_assistant_confidence_threshold = sampling_params.assistant_confidence_threshold;
             }

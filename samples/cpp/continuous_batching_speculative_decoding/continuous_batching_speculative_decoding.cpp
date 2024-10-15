@@ -23,26 +23,22 @@ std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_exa
     // sampling param for speulative decoding
     ov::genai::GenerationConfig generation_config_greedy_constant = ov::genai::greedy();
     {
-        generation_config_greedy_constant.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::CONSTANT;
         generation_config_greedy_constant.num_assistant_tokens = 5;
     }
 
     ov::genai::GenerationConfig generation_config_multinomial_constant = ov::genai::multinomial();
     {
-        generation_config_multinomial_constant.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::CONSTANT;
         generation_config_multinomial_constant.num_assistant_tokens = 5;
         generation_config_multinomial_constant.num_return_sequences = 1;
     }
 
     ov::genai::GenerationConfig generation_config_greedy_dynamic = ov::genai::greedy();
     {
-        generation_config_greedy_dynamic.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::HEURISTIC;
         generation_config_greedy_dynamic.assistant_confidence_threshold = 0.8f;
     }
 
     ov::genai::GenerationConfig generation_config_multinomial_dynamic = ov::genai::multinomial();
     {
-        generation_config_multinomial_dynamic.num_assistant_tokens_schedule = ov::genai::NumAssistatantTokensScheduleType::HEURISTIC;
         generation_config_multinomial_dynamic.assistant_confidence_threshold = 0.8f;
     }
 
@@ -97,7 +93,7 @@ int main(int argc, char* argv[]) try {
     // create dataset
 
     std::vector<std::string> prompt_examples = {
-        "What is OpenVINO?",
+        // "What is OpenVINO?",
         "How are you?",
         "What is your name?",
         "Tell me something about Canada",
@@ -146,7 +142,7 @@ int main(int argc, char* argv[]) try {
 
     // It's possible to construct a Tokenizer from a different path.
     // If the Tokenizer isn't specified, it's loaded from the same folder.
-    ov::genai::LLMPipeline pipe(model_path, device, ov::genai::draft_model(ov::genai::ModelDesc(draft_model_path, device)), ov::genai::scheduler_config(scheduler_config));
+    ov::genai::LLMPipeline pipe(model_path, device, ov::genai::draft_model(draft_model_path, device), ov::genai::scheduler_config(scheduler_config));
 
     if (use_prefix) {
         std::cout << "Running inference for prefix to compute the shared prompt's KV cache..." << std::endl;

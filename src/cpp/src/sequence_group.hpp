@@ -126,12 +126,22 @@ public:
         }
     }
 
-    GenerationOutput get_last_generation_output() {
+    GenerationOutput get_last_generation_output(size_t token_cnt = 1) {
         GenerationOutput output;
         OPENVINO_ASSERT(m_generated_ids.size());
         output.score = get_cumulative_log_probs();
-        output.generated_ids = std::vector<int64_t> {m_generated_ids.back()};
-        output.generated_log_probs = std::vector<float> {m_generated_log_probs.back()};
+
+        auto generated_token_id = get_generated_ids();
+        auto generated_log_probs = get_generated_log_probs();
+
+        OPENVINO_ASSERT(get_generated_len() >= token_cnt);
+        auto offset = get_generated_len() - token_cnt;
+
+        std::vector<int64_t> token_id(generated_token_id.begin() + offset, generated_token_id.end());
+        std::vector<float> log_probs(generated_log_probs.begin() + offset, generated_log_probs.end());
+
+        output.generated_ids = token_id;
+        output.generated_log_probs = log_probs;
         output.finish_reason = get_finish_reason();
         return output;
     }
@@ -573,13 +583,15 @@ public:
         m_generation_stream->push(std::move(outputs));
     }
 
-    void push_partial_outputs() {
+    void push_partial_outputs(size_t token_cnt = 1) {
         GenerationOutputs outputs;
         for (auto& sequence : m_sequences) {
             // todo: check seq.is_finished() to generate without several </s>
             // or is it ok to use padding?
-            const auto last_gen_token = sequence->get_last_generation_output();
-            outputs.emplace(sequence->get_grouped_id(), last_gen_token);
+            for (size_t i = 0; i < token_cnt; ++i) {
+                auto last_gen_token = sequence->get_last_generation_output(token_cnt);
+                outputs.emplace(sequence->get_grouped_id(), last_gen_token);
+            }
         }
         m_generation_stream->push(std::move(outputs));
     }
@@ -599,9 +611,12 @@ public:
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1 &&
-                (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output) &&
-                !m_sampling_params.is_speculative_decoding()) {
-                push_partial_outputs();
+                (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output)) {
+                auto previous_step_gen_len = get_num_processed_tokens() > 0 ? get_num_processed_tokens() - get_prompt_len() + 1 : 0;
+                auto generation_len = m_sequences.front()->get_generated_len();
+                OPENVINO_ASSERT(previous_step_gen_len < generation_len);
+                auto token_to_print = generation_len - previous_step_gen_len;
+                push_partial_outputs(token_to_print);
             } else if (has_finished() || out_of_memory()) {
                 push_outputs();
             }
