@@ -7,14 +7,14 @@ import argparse
 import logging as log
 import llm_bench_utils.model_utils
 from openvino.runtime import get_version
+import torch
 import traceback
 from llm_bench_utils.memory_profile import MemConsumption
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
-import llm_bench_utils.bench_text as bench_text
-import llm_bench_utils.bench_image as bench_image
-import llm_bench_utils.bench_ldm_sr as bench_ldm_sr
-import llm_bench_utils.bench_classification as bench_classification
+import task.text_generation as bench_text
+import task.image_generation as bench_image
+import task.super_resolution_generation as bench_ldm_sr
 
 
 mem_consumption = MemConsumption()
@@ -143,7 +143,6 @@ def get_argprser():
 CASE_TO_BENCH = {
     'text_gen': bench_text.run_text_generation_benchmark,
     'image_gen': bench_image.run_image_generation_benchmark,
-    'image_cls': bench_classification.run_image_classification,
     'code_gen': bench_text.run_text_generation_benchmark,
     'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
 }
