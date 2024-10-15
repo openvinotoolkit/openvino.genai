@@ -122,11 +122,9 @@ public:
             result.chunks = chunks;
         }
 
-        auto stop_time = std::chrono::steady_clock::now();
-
-        // If is called without tokenization then that stat will not be reported.
         auto& metrics = result.perf_metrics;
         metrics.load_time = this->m_load_time_ms;
+        auto stop_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
         result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(MicroSeconds(0.0f));
         metrics.evaluate_statistics(start_time);
