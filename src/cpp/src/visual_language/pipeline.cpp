@@ -255,7 +255,7 @@ ov::Tensor merge_text_and_image_embeddings_llava(
     const ov::Tensor& input_ids,
     const ov::Tensor& text_embeds,
     const ov::Tensor& image_embeds,
-    int64_t image_token_index
+    int64_t image_token_id
 ) {
     auto text_embeds_shape = text_embeds.get_shape();
     auto image_embeds_shape = image_embeds.get_shape();
@@ -281,7 +281,7 @@ ov::Tensor merge_text_and_image_embeddings_llava(
 
     size_t merged_idx = 0;
     for (size_t s = 0; s < text_embeds_seq_length; ++s) {
-        if (input_ids_data[s] == image_token_index) {
+        if (input_ids_data[s] == image_token_id) {
             for (size_t i = 0; i < image_embeds_seq_length; ++i) {
                 std::copy_n(image_embeds_data + i * hidden_size,
                             hidden_size,
@@ -801,7 +801,8 @@ public:
     }
 
     ov::Tensor get_inputs_embeds_llava(const std::string& prompt, const std::vector<ov::Tensor>& images) {
-        std::string image_token = "<image>"; // TODO Consider getting from vlm_config or json
+        std::string image_token = m_vlm_config.im_start;
+        // TODO Enable and reuse chat mode
         std::string formatted_prompt = "USER: " + (images.empty() ? prompt : image_token + "\n" + prompt) + " ASSISTANT:";
         ov::Tensor input_ids = m_tokenizer.encode(formatted_prompt).input_ids;
         if (images.empty()) {
@@ -813,21 +814,18 @@ public:
             
             ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
 
-            int64_t image_token_index = 32000; // TODO Consider getting from m_vlm_config.image_token_index or config.json
+            ov::Tensor encoded_image_token = m_tokenizer.encode(image_token, ov::genai::add_special_tokens(false)).input_ids;
+            int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
 
-            return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_index);
+            return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
         }
     }
 
     ov::Tensor get_inputs_embeds_llava_next(const std::string& prompt, const std::vector<ov::Tensor>& images) {
-        std::string image_token = "<image>"; // TODO Consider getting from vlm_config or json
-        // TODO Consider moving prompt formatting to separate function for each model family
-        // llava_v1_6_mistral_7b prompt
-        std::string formatted_prompt = "[INST] " + (images.empty() ? prompt : image_token + "\n" + prompt) + " [/INST]";
-        // llava_v1_6_vicuna_7b prompt
-        // std::string formatted_prompt = "USER: " + (images.empty() ? prompt : image_token + "\n" + prompt) + " ASSISTANT:";
-        // llama3_llava_next_8b prompt
-        // std::string formatted_prompt = "<|start_header_id|>user<|end_header_id|>\n\n" + (images.empty() ? prompt : image_token + "\n" + prompt) + "<|eot_id|><|start_header_id|>assistant<|end_header_id|>";
+        std::string image_token = m_vlm_config.im_start;
+        // TODO Enable and reuse chat mode
+        // TODO Support chat templates for different llava_next models
+        std::string formatted_prompt = "USER: " + (images.empty() ? prompt : image_token + "\n" + prompt) + " ASSISTANT:";
         ov::Tensor input_ids = m_tokenizer.encode(formatted_prompt).input_ids;
         if (images.empty()) {
             return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
@@ -847,9 +845,10 @@ public:
 
             ov::Tensor text_embeds = process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
 
-            int64_t image_token_index = 32000; // TODO Consider getting from m_vlm_config.image_token_index or config.json
+            ov::Tensor encoded_image_token = m_tokenizer.encode(image_token, ov::genai::add_special_tokens(false)).input_ids;
+            int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
 
-            return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_features, image_token_index);
+            return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_features, image_token_id);
         }
     }
 
