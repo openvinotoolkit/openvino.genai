@@ -444,8 +444,8 @@ def run_text_generation_benchmark(model_path, framework, device, args, num_iters
                 prompt_idx_list.append(i)
     if len(input_text_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
-    log.info(f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
-             f'prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}')
+    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(text_list)}, '
+             f"prompt idx: {prompt_idx_list}, num_beams: {args['num_beams']}")
 
     # if num_iters == 0, just output warm-up data
     if not use_genai:
@@ -853,6 +853,18 @@ def main():
         out_str += ', openvino runtime version: {}'.format(get_version())
         if model_args['config'].get('PREC_BF16') and model_args['config']['PREC_BF16'] is True:
             log.warning('[Warning] Param bf16/prec_bf16 only work for framework pt. It will be disabled.')
+        if 'cpu' in args.device.lower():
+            env_omp = os.getenv('OMP_WAIT_POLICY')
+            if env_omp is None or env_omp != 'PASSIVE':
+                log.warning("It is recommended to set the environment variable OMP_WAIT_POLICY to PASSIVE, "
+                            "so that OpenVINO inference can use all CPU resources without waiting.")
+            original_torch_thread_nums = torch.get_num_threads()
+            if model_args['num_beams'] > 1:
+                torch.set_num_threads(int(original_torch_thread_nums / 2))
+            else:
+                torch.set_num_threads(1)
+            log.info(f"The num_beams is {model_args['num_beams']}, update Torch thread num from "
+                     f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
     log.info(out_str)
     if args.memory_consumption:
         mem_consumption.start_collect_mem_consumption_thread()

@@ -6,7 +6,7 @@
 #include <nlohmann/json.hpp>
 
 #include "openvino/genai/llm_pipeline.hpp"
-#include "openvino/genai/processor_config.hpp"
+#include "visual_language/processor_config.hpp"
 
 namespace ov {
 namespace genai {
