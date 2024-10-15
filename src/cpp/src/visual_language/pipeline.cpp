@@ -480,9 +480,6 @@ public:
             }
             m_language.get_tensor("attention_mask").set_shape({1, 0});
         }
-        std::cout << '\n';
-        std::cout << eos_token_id << '\n';
-        std::cout << decoded_results << '\n';
         return {{std::move(decoded_results)}};
     }
 
