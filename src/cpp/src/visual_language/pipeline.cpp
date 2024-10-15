@@ -828,9 +828,19 @@ public:
     ov::Tensor get_inputs_embeds_llava_next(const std::string& prompt, const std::vector<ov::Tensor>& images) {
         std::string image_token = m_vlm_config.im_start;
         // TODO Enable and reuse chat mode
-        // TODO Support chat templates for different llava_next models
-        std::string formatted_prompt = "USER: " + (images.empty() ? prompt : image_token + "\n" + prompt) + " ASSISTANT:";
-        ov::Tensor input_ids = m_tokenizer.encode(formatted_prompt).input_ids;
+        std::string content = images.empty() ? prompt : image_token + "\n" + prompt;
+        ChatHistory m_history;
+        m_history.push_back({{"role", "user"}, {"content", content}});
+        constexpr bool add_generation_prompt = true;
+        std::string new_templated_chat_history;
+        try {
+            new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        } catch (const std::exception& error) {
+            // TODO Consider using template syntax instead of concatenating
+            new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt, "USER: " + content + " ASSISTANT:");
+        }
+         
+        ov::Tensor input_ids = m_tokenizer.encode(new_templated_chat_history).input_ids;
         if (images.empty()) {
             return process_prompt(m_embedding, input_ids, m_vlm_config.scale_emb);
         } else {
