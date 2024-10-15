@@ -300,7 +300,7 @@ ov::Tensor merge_text_and_image_embeddings_llava(
 }
 
 // It's not possible to pass a GPU tensor from one model to another GPU
-// mode on a different ov::Core instance.
+// model on a different ov::Core instance.
 ov::Core singleton_core() {
     static ov::Core core;
     return core;
