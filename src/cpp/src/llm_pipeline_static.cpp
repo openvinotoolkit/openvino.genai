@@ -217,13 +217,15 @@ ov::AnyMap get_baseline_common_config() {
         { "NPU_USE_NPUW",  "YES" },
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
-        { "NPUW_DCOFF_SCALE", "YES"}
+        { "NPUW_DCOFF_SCALE", "YES"},
+        { "NPUW_WEIGHTS_BANK" : "shared" }
     };
     return config;
 }
 
 ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
     auto config = get_baseline_common_config();
+    config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
     enable_npuw_dq_if_allowed(config, model);
     return config;
 }
@@ -234,8 +236,8 @@ ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model) {
 
 ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model) {
     auto config = get_default_common_config(model);
-    config["NPUW_FUNCALL_ASYNC"] = "YES";
-    config["NPUW_PARALLEL_COMPILE"] = "YES";
+    config.emplace("NPUW_FUNCALL_ASYNC", "YES");
+    config.emplace("NPUW_PARALLEL_COMPILE", "YES");
     return config;
 }
 
