@@ -218,7 +218,7 @@ ov::AnyMap get_baseline_common_config() {
         { "NPUW_FOLD", "YES" },
         { "NPUW_DCOFF_TYPE", "f16" },
         { "NPUW_DCOFF_SCALE", "YES"},
-        { "NPUW_WEIGHTS_BANK" : "shared" }
+        { "NPUW_WEIGHTS_BANK", "shared" }
     };
     return config;
 }
