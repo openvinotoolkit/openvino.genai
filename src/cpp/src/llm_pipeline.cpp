@@ -14,7 +14,6 @@
 #include "llm_pipeline_base.hpp"
 #include "llm_pipeline_static.hpp"
 #include "utils.hpp"
-#include "utils/ov_utils.hpp"
 #include "text_callback_streamer.hpp"
 #include "openvino/genai/lora_adapter.hpp"
 #include "lora_helper.hpp"

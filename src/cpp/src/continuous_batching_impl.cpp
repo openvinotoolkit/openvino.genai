@@ -3,7 +3,8 @@
 
 #include "text_callback_streamer.hpp"
 #include "continuous_batching_impl.hpp"
-#include "utils/ov_utils.hpp"
+#include "utils.hpp"
+#include "utils/paged_attention_transformations.hpp"
 
 namespace ov::genai {
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};

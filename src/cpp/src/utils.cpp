@@ -198,6 +198,27 @@ ProcessorConfig from_any_map(
     return extracted_config;
 }
 
+/**
+ * Split config by core and compile configs
+ * There are not supported by `core.compile` function plugin options like `ENABLE_MMAP`
+ * Move this options to `core.set_property` config
+ */
+std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& plugin_config) {
+    const std::vector<std::string> unsupported_by_compile_options{"ENABLE_MMAP"};
+    ov::AnyMap core_config;
+    ov::AnyMap compile_config{plugin_config};
+
+    for (const auto option : unsupported_by_compile_options) {
+        auto iter = plugin_config.find(option);
+        if (iter != plugin_config.end()) {
+            core_config[option] = iter->second;
+            compile_config.erase(option);
+        }
+    }
+
+    return {core_config, compile_config};
+};
+
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();
     auto subtrahend_size = subtrahend.input_ids.get_size();

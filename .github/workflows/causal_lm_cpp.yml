@@ -421,7 +421,7 @@ jobs:
       - name: run and compare
         run: |
           source ./ov/setupvars.sh
-          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm ./dolly-v2-3b/ ./dolly-v2-7b/ "Alan Turing was a" > predictions_speculative.txt
+          ./build/samples/cpp/speculative_decoding_lm/speculative_decoding_lm -a ./dolly-v2-3b/ -m ./dolly-v2-7b/ -n 5 > predictions_speculative.txt
           ./build/samples/cpp/greedy_causal_lm/greedy_causal_lm ./dolly-v2-7b/ "Alan Turing was a" > predictions_greedy.txt
           python -c "
           with open('predictions_greedy.txt', 'r') as f:
@@ -767,10 +767,6 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           timeout 50s ./build/samples/cpp/continuous_batching_accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
-      - name: Run speculative_decoding
-        run: |
-          source ./ov/setupvars.sh
-          timeout 50s ./build/samples/cpp/continuous_batching_speculative_decoding/continuous_batching_speculative_decoding -m ./TinyLlama-1.1B-Chat-v1.0/ -a ./TinyLlama-1.1B-Chat-v1.0/ -n 5
       - name: Run throughput_benchmark
         run: |
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
@@ -819,11 +815,6 @@ jobs:
           set PATH=.\build\openvino_genai\;%PATH%
           call .\ov\setupvars.bat
           .\build\samples\cpp\continuous_batching_accuracy\Release\continuous_batching_accuracy.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -n 5
-      - name: Run speculative_decoding
-        run: |
-          set PATH=.\build\openvino_genai\;%PATH%
-          call .\ov\setupvars.bat
-          .\build\samples\cpp\continuous_batching_speculative_decoding\Release\continuous_batching_speculative_decoding.exe -m .\TinyLlama-1.1B-Chat-v1.0\ -a .\TinyLlama-1.1B-Chat-v1.0\ -n 5
       - name: Run throughput_benchmark
         run: |
           curl -o .\ShareGPT_V3_unfiltered_cleaned_split.json -s -L "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json"
@@ -867,10 +858,6 @@ jobs:
         run: |
           source ./ov/setupvars.sh
           timeout 120s ./build/samples/cpp/continuous_batching_accuracy/continuous_batching_accuracy -m ./TinyLlama-1.1B-Chat-v1.0/ -n 5
-      - name: Run speculative_decoding
-        run: |
-          source ./ov/setupvars.sh
-          timeout 120s ./build/samples/cpp/continuous_batching_speculative_decoding/continuous_batching_speculative_decoding -m ./TinyLlama-1.1B-Chat-v1.0/ -a ./TinyLlama-1.1B-Chat-v1.0/ -n 5
       - name: Run throughput_benchmark
         run: |
           wget -q https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json

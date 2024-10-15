@@ -20,8 +20,16 @@ file(GLOB src_files "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sequence_group.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/sampler.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/speculative_decoding/*.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/utils/*.cpp"
+                    "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/utils.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/continuous_batching*.cpp"
                     "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src/text_callback_streamer.cpp")
+
+if(NOT TARGET nlohmann_json)
+    FetchContent_Declare(nlohmann_json
+        URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
+        URL_HASH SHA256=0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406)
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
 
 add_executable(${TEST_TARGET_NAME} ${tests_src}
         block_allocator.cpp)

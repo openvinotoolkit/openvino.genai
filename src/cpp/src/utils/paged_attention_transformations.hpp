@@ -11,7 +11,6 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-std::pair<ov::AnyMap, ov::AnyMap> split_core_complile_config(const ov::AnyMap& plugin_config);
 
 /** Applies transformations to the ov::Model to enable paged attention inference.
  * @param model Pointer to the ov::Model representing one of the supported LLM architectures.

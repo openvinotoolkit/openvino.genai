@@ -3,7 +3,8 @@
 
 #include "text_callback_streamer.hpp"
 #include "speculative_decoding_impl.hpp"
-#include "utils/ov_utils.hpp"
+#include "utils.hpp"
+#include "utils/paged_attention_transformations.hpp"
 
 
 namespace ov::genai {
@@ -18,6 +19,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     const ov::genai::ModelDesc draft_model_desc,
     const ov::AnyMap& tokenizer_plugin_config) {
     ov::Core core;
+    auto [core_plugin_config, compile_plugin_config] = ov::genai::utils::split_core_complile_config(main_plugin_config);
+    core.set_property(core_plugin_config);
+
     std::string openvino_model_name = "/openvino_model.xml",
                 draft_model_path = draft_model_desc.model_path;
 
@@ -53,9 +57,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
         draft_scheduler_config.cache_size = draft_cache_size;
     }
 
-    ov::AnyMap draft_plugin_config = is_draft_device_undefined ? main_plugin_config : draft_model_desc.plugin_config;
+    ov::AnyMap draft_plugin_config = is_draft_device_undefined ? compile_plugin_config : draft_model_desc.plugin_config;
 
-    DeviceConfig main_device_config(core, main_scheduler_config, main_device, main_plugin_config),
+    DeviceConfig main_device_config(core, main_scheduler_config, main_device, compile_plugin_config),
                  draft_device_config(core, draft_scheduler_config, draft_device, draft_plugin_config);
 
     utils::set_kv_cache_type_and_shape(main_model, main_device_config);
@@ -69,7 +73,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(
     m_tokenizer = main_model_tokenizer;
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
-    m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core, main_model, main_model_tokenizer, main_device_config, main_scheduler_config, main_device, main_plugin_config, true);
+    m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core, main_model, main_model_tokenizer, main_device_config, main_scheduler_config, main_device, compile_plugin_config, true);
     m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(core, draft_model, draft_model_tokenizer, draft_device_config, draft_scheduler_config, draft_device, draft_plugin_config, false);
 }
 
