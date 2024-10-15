@@ -484,7 +484,7 @@ VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMMo
     model_type(model_type) {
         if (model_type == VLMModelType::MINICPM) {
             m_vision_encoder = core.compile_model(model_dir / "image_encoder.xml", device, device_config).create_infer_request();
-        } else if (model_type == VLMModelType::LLAVA) {
+        } else if (model_type == VLMModelType::LLAVA || model_type == VLMModelType::LLAVA_NEXT) {
             // Vision embeddings model is merged with multi modal projector at model export stage by optimum-intel
             m_vision_encoder = core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config).create_infer_request();
         }
