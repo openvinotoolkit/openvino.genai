@@ -10,6 +10,7 @@
 
 #include "../utils.hpp"
 #include "logit_processor.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
@@ -18,12 +19,15 @@
 #include "whisper_feature_extractor.hpp"
 #include "whisper_models.hpp"
 
+using ov::genai::MicroSeconds;
+
 namespace {
 
 ov::Tensor encode(ov::InferRequest& request,
                   std::vector<float>& mel_data,
                   const size_t feature_size,
-                  const size_t nb_max_frames) {
+                  const size_t nb_max_frames,
+                  ov::genai::RawPerfMetrics& raw_metrics) {
     OPENVINO_ASSERT(mel_data.size() == feature_size * nb_max_frames,
                     "Mel spectrogram required size: ",
                     feature_size,
@@ -37,7 +41,10 @@ ov::Tensor encode(ov::InferRequest& request,
 
     request.set_tensor("input_features", input_tensor);
 
+    const auto infer_start = std::chrono::steady_clock::now();
     request.infer();
+    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+    raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
 
     // reset input tensor
     request.set_tensor("input_features", ov::Tensor(ov::element::f32, {0, feature_size, nb_max_frames}));
@@ -72,10 +79,22 @@ void set_past_key_value(ov::InferRequest& source, ov::InferRequest& dest) {
     }
 }
 
+void infer_with_perf_metrics(ov::InferRequest& request, ov::genai::RawPerfMetrics& raw_metrics) {
+    const auto infer_start = std::chrono::steady_clock::now();
+    request.infer();
+    const auto infer_end = std::chrono::steady_clock::now();
+    const auto infer_ms = ov::genai::PerfMetrics::get_microsec(infer_end - infer_start);
+    raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
+    raw_metrics.m_token_infer_durations.emplace_back(infer_ms);
+    raw_metrics.m_new_token_times.emplace_back(infer_end);
+    raw_metrics.m_batch_sizes.emplace_back(1);
+}
+
 int64_t decode(ov::Tensor& encoder_hidden_state,
                ov::InferRequest& decoder,
                std::vector<int64_t>& input_ids,
                const ov::genai::WhisperGenerationConfig& config,
+               ov::genai::RawPerfMetrics& raw_metrics,
                const bool apply_logit_processors = true,
                const bool return_timestamps = false) {
     decoder.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
@@ -83,7 +102,7 @@ int64_t decode(ov::Tensor& encoder_hidden_state,
     ov::Tensor input_ids_tensor(ov::element::i64, {1, input_ids.size()}, input_ids.data());
     decoder.set_tensor("input_ids", input_ids_tensor);
 
-    decoder.infer();
+    infer_with_perf_metrics(decoder, raw_metrics);
 
     auto output_tensor = decoder.get_tensor("logits");
 
@@ -106,6 +125,7 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
                          int64_t input_id,
                          const size_t cache_position,
                          const ov::genai::WhisperGenerationConfig& config,
+                         ov::genai::RawPerfMetrics& raw_metrics,
                          const bool return_timestamps,
                          const std::vector<int64_t>& generated_tokens) {
     decoder_with_past.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
@@ -118,7 +138,7 @@ int64_t decode_with_past(ov::Tensor& encoder_hidden_state,
     cache_position_tensor.set_shape({1});
     cache_position_tensor.data<int64_t>()[0] = cache_position;
 
-    decoder_with_past.infer();
+    infer_with_perf_metrics(decoder_with_past, raw_metrics);
 
     auto output_tensor = decoder_with_past.get_tensor("logits");
 
@@ -137,7 +157,17 @@ int64_t detect_language(ov::Tensor& encoder_hidden_state,
                         ov::InferRequest decoder,
                         const ov::genai::WhisperGenerationConfig& config) {
     std::vector<int64_t> input_ids{config.decoder_start_token_id};
-    int64_t output_token = decode(encoder_hidden_state, decoder, input_ids, config, false, false);
+
+    decoder.set_tensor("encoder_hidden_states", ov::Tensor{encoder_hidden_state});
+
+    ov::Tensor input_ids_tensor(ov::element::i64, {1, input_ids.size()}, input_ids.data());
+    decoder.set_tensor("input_ids", input_ids_tensor);
+
+    decoder.infer();
+
+    auto output_tensor = decoder.get_tensor("logits");
+
+    int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
 
     return output_token;
 }
@@ -181,8 +211,10 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
                                                   std::vector<int64_t> init_ids,
                                                   const size_t max_new_tokens,
                                                   const bool return_timestamps,
+                                                  ov::genai::RawPerfMetrics& raw_metrics,
                                                   const std::shared_ptr<ov::genai::StreamerBase> streamer) {
-    int64_t output_token = decode(encoder_hidden_state, models.decoder, init_ids, config, true, return_timestamps);
+    int64_t output_token =
+        decode(encoder_hidden_state, models.decoder, init_ids, config, raw_metrics, true, return_timestamps);
 
     std::vector<int64_t> output_tokens{output_token};
 
@@ -203,6 +235,7 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
                                              output_tokens.back(),
                                              init_ids.size() + output_tokens.size() - 1,
                                              config,
+                                             raw_metrics,
                                              return_timestamps,
                                              output_tokens);
 
@@ -230,23 +263,30 @@ std::pair<bool, std::vector<int64_t>> full_decode(ov::Tensor& encoder_hidden_sta
 namespace ov {
 namespace genai {
 
-std::pair<std::vector<int64_t>, std::optional<std::vector<Segment>>> whisper_generate(
-    const ov::genai::WhisperGenerationConfig& config,
-    const ov::genai::WhisperConfig& model_config,
-    const RawSpeechInput& raw_speech,
-    ov::genai::WhisperInitializedModels& models,
-    WhisperFeatureExtractor& feature_extractor,
-    const std::shared_ptr<StreamerBase> streamer) {
+WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig& config,
+                                       const ov::genai::WhisperConfig& model_config,
+                                       const RawSpeechInput& raw_speech,
+                                       ov::genai::WhisperInitializedModels& models,
+                                       WhisperFeatureExtractor& feature_extractor,
+                                       const std::shared_ptr<StreamerBase> streamer) {
     auto input_features = feature_extractor.extract(raw_speech);
 
     const bool is_shortform = input_features.n_frames <= feature_extractor.nb_max_frames;
     // long-form audio processing requires timestamps to be enabled
     const bool return_timestamps = config.return_timestamps || !is_shortform;
 
-    std::vector<int64_t> init_ids;
-    std::vector<int64_t> output_tokens;
     size_t max_new_tokens = config.get_max_new_tokens();
 
+    WhisperGenerateResult result;
+    RawPerfMetrics& raw_metrics = result.perf_metrics.raw_metrics;
+    result.perf_metrics.num_input_tokens = 0;
+    raw_metrics.m_new_token_times.reserve(max_new_tokens);
+    raw_metrics.m_batch_sizes.reserve(max_new_tokens);
+    raw_metrics.m_token_infer_durations.reserve(max_new_tokens);
+    raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+
+    std::vector<int64_t> init_ids;
+    std::vector<int64_t>& output_tokens = result.output_tokens;
     std::vector<Segment> segments;
 
     // 0.02 by default
@@ -263,7 +303,8 @@ std::pair<std::vector<int64_t>, std::optional<std::vector<Segment>>> whisper_gen
         ov::Tensor hidden_state_tensor = encode(models.encoder,
                                                 input_features_chunk,
                                                 feature_extractor.feature_size,
-                                                feature_extractor.nb_max_frames);
+                                                feature_extractor.nb_max_frames,
+                                                raw_metrics);
 
         // prepare init_ids just once for whole input
         if (init_ids.empty()) {
@@ -276,6 +317,7 @@ std::pair<std::vector<int64_t>, std::optional<std::vector<Segment>>> whisper_gen
                                                             init_ids,
                                                             max_new_tokens - output_tokens.size(),
                                                             return_timestamps,
+                                                            raw_metrics,
                                                             streamer);
 
         if (return_timestamps) {
@@ -310,10 +352,12 @@ std::pair<std::vector<int64_t>, std::optional<std::vector<Segment>>> whisper_gen
 
     // if return_timestamps wasn't enabled by user
     if (!config.return_timestamps) {
-        return {output_tokens, std::nullopt};
+        return result;
     }
 
-    return {output_tokens, segments};
+    result.segments = segments;
+
+    return result;
 }
 }  // namespace genai
 }  // namespace ov

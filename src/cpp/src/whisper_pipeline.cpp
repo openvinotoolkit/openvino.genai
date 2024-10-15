@@ -93,28 +93,45 @@ public:
             streamer_ptr = std::make_shared<TextCallbackStreamer>(m_tokenizer, *callback);
         }
 
-        auto [output_tokens, segments] = ov::genai::whisper_generate(config,
-                                                                     m_model_config,
-                                                                     raw_speech_input,
-                                                                     m_models,
-                                                                     m_feature_extractor,
-                                                                     streamer_ptr);
+        auto generate_result = ov::genai::whisper_generate(config,
+                                                           m_model_config,
+                                                           raw_speech_input,
+                                                           m_models,
+                                                           m_feature_extractor,
+                                                           streamer_ptr);
+        auto decode_start_time = std::chrono::steady_clock::now();
+        WhisperDecodedResults result{std::vector{m_tokenizer.decode(generate_result.output_tokens)}, std::vector{1.f}};
+        generate_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
 
-        WhisperDecodedResults decoded_results{std::vector{m_tokenizer.decode(output_tokens)}, std::vector{1.f}};
-        if (!segments.has_value()) {
-            return decoded_results;
+        result.perf_metrics = generate_result.perf_metrics;
+        auto& segments = generate_result.segments;
+
+        if (segments.has_value()) {
+            std::vector<WhisperDecodedResultChunk> chunks;
+            chunks.reserve((*segments).size());
+
+            for (auto& segment : *segments) {
+                decode_start_time = std::chrono::steady_clock::now();
+                chunks.push_back(
+                    WhisperDecodedResultChunk{segment.m_start, segment.m_end, m_tokenizer.decode(segment.m_tokens)});
+                result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
+                    PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
+            }
+
+            result.chunks = chunks;
         }
 
-        std::vector<WhisperDecodedResultChunk> chunks;
-        chunks.reserve((*segments).size());
+        auto stop_time = std::chrono::steady_clock::now();
 
-        for (auto& segment : *segments) {
-            chunks.push_back(
-                WhisperDecodedResultChunk{segment.m_start, segment.m_end, m_tokenizer.decode(segment.m_tokens)});
-        }
+        // If is called without tokenization then that stat will not be reported.
+        auto& metrics = result.perf_metrics;
+        metrics.load_time = this->m_load_time_ms;
+        metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+        result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(MicroSeconds(0.0f));
+        metrics.evaluate_statistics(start_time);
 
-        decoded_results.chunks = chunks;
-        return decoded_results;
+        return result;
     }
 };
 

@@ -35,6 +35,20 @@ int main(int argc, char* argv[]) try {
     for (auto& chunk : *result.chunks) {
         std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";
     }
+
+    std::cout << "\n";
+
+    std::cout << "get_load_time " << result.perf_metrics.get_load_time() << '\n';
+    std::cout << "get_num_generated_tokens " << result.perf_metrics.get_num_generated_tokens() << '\n';
+    std::cout << "get_num_input_tokens " << result.perf_metrics.get_num_input_tokens() << '\n';
+    std::cout << "get_ttft " << result.perf_metrics.get_ttft().mean << '\n';
+    std::cout << "get_tpot " << result.perf_metrics.get_tpot().mean << '\n';
+    std::cout << "get_ipot " << result.perf_metrics.get_ipot().mean << '\n';
+    std::cout << "get_throughput " << result.perf_metrics.get_throughput().mean << '\n';
+    std::cout << "get_inference_duration " << result.perf_metrics.get_inference_duration().mean << '\n';
+    std::cout << "get_generate_duration " << result.perf_metrics.get_generate_duration().mean << '\n';
+    std::cout << "get_tokenization_duration " << result.perf_metrics.get_tokenization_duration().mean << '\n';
+    std::cout << "get_detokenization_duration " << result.perf_metrics.get_detokenization_duration().mean << '\n';
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
