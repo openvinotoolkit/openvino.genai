@@ -6,6 +6,7 @@ import time
 import torch
 import warnings
 import logging as log
+import transformers
 from typing import Optional, Tuple, Union, List
 from transformers.generation.stopping_criteria import (
     EosTokenCriteria,
@@ -16,6 +17,9 @@ from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
 import llm_bench_utils.hook_sample as hook_sample
+import llm_bench_utils.hook_sample_v43 as hook_sample_v43
+import llm_bench_utils.hook_sample_v45 as hook_sample_v45
+from packaging import version
 
 
 logger = log.getLogger(__name__)
@@ -355,4 +359,8 @@ class GreedySearchHook:
         """Define a new greedy search function."""
         model._greedy_search = new_greedy_search.__get__(model, model.__class__)
         model._sample = hook_sample.new_sample.__get__(model, model.__class__)
-            
+        trans_version = version.parse(transformers.__version__)
+        if trans_version >= version.parse('4.45.0'):
+            model._sample = hook_sample_v45.new_sample.__get__(model, model.__class__)
+        elif trans_version >= version.parse('4.43.0'):
+            model._sample = hook_sample_v43.new_sample.__get__(model, model.__class__)         
