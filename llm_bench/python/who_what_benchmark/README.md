@@ -1,10 +1,15 @@
-# Simple Accuracy Benchmark for Optimized LLMs
+# Simple Accuracy Benchmark for Generative AI models
 
-Simple and quick accuracy test for compressed, quantized, pruned, distilled LLMs. It works with any model that suppors HuggingFace Transformers text generation API including:
-* HuggingFace Transformers compressed models via [Bitsandbytes](https://huggingface.co/docs/transformers/main_classes/quantization#transformers.BitsAndBytesConfig)
-* [GPTQ](https://huggingface.co/docs/transformers/main_classes/quantization#transformers.GPTQConfig) via HuggingFace API
-* Llama.cpp via [BigDL-LLM](https://github.com/intel-analytics/BigDL/tree/main/python/llm)
-* [OpenVINO](https://github.com/openvinotoolkit/openvino) and [NNCF](https://github.com/openvinotoolkit/nncf) via [Optimum-Intel](https://github.com/huggingface/optimum-intel)
+## Features
+
+* Simple and quick accuracy test for compressed, quantized, pruned, distilled LLMs. It works with any model that suppors HuggingFace Transformers text generation API including:
+    * HuggingFace Transformers compressed models via [Bitsandbytes](https://huggingface.co/docs/transformers/main_classes/quantization#transformers.BitsAndBytesConfig)
+    * [GPTQ](https://huggingface.co/docs/transformers/main_classes/quantization#transformers.GPTQConfig) via HuggingFace API
+    * Llama.cpp via [BigDL-LLM](https://github.com/intel-analytics/BigDL/tree/main/python/llm)
+    * [OpenVINO](https://github.com/openvinotoolkit/openvino) and [NNCF](https://github.com/openvinotoolkit/nncf) via [Optimum-Intel](https://github.com/huggingface/optimum-intel)
+    * Support of custom datasets of the user choice
+* Validation of text-to-image pipelines. Computes similarity score between generated images:
+    * Supports Diffusers library and Optimum-Intel via `Text2ImageEvaluator` class.
 
 The main idea is to compare similarity of text generation between baseline and optimized LLMs.
 
@@ -19,7 +24,7 @@ base_small = AutoModelForCausalLM.from_pretrained(model_id)
 optimized_model = AutoModelForCausalLM.from_pretrained(model_id, load_in_4bit=True, device_map="auto")
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 
-evaluator = whowhatbench.Evaluator(base_model=base_small, tokenizer=tokenizer)
+evaluator = whowhatbench.TextEvaluator(base_model=base_small, tokenizer=tokenizer)
 metrics_per_prompt, metrics = evaluator.score(optimized_model)
 
 metric_of_interest = "similarity"
@@ -50,7 +55,7 @@ metrics_per_prompt, metrics = evaluator.score(optimized_model, test_data=prompts
 * source eval_env/bin/activate
 * pip install -r requirements.txt
 
-### CLI example
+### CLI example for text-generation models
 
 ```sh
 wwb --help
@@ -85,6 +90,18 @@ wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv -
 # Use --language parameter to control the language of promts
 # Autodetection works for basic Chinese models 
 wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv --hf
+```
+
+### Example of Stable Diffusion comparison
+```sh
+# Export FP16 model
+optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format fp16 sd-lcm-fp16
+# Export INT8 WOQ model
+optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format int8 sd-lcm-int8
+# Collect the references
+wwb --base-model sd-lcm-fp16 --gt-data lcm_test/sd_xl.json --model-type text-to-image
+# Compute the metric
+wwb --target-model sd-lcm-int8 --gt-data lcm_test/sd_xl.json --model-type text-to-image
 ```
 
 ### Supported metrics

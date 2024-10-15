@@ -7,7 +7,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 #include <pybind11/functional.h>
-#include "openvino/genai/vlm_pipeline.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "../cpp/src/tokenizers_path.hpp"
 #include "./utils.hpp"
 
@@ -121,6 +121,7 @@ void init_vlm_pipeline(py::module_& m) {
         .def("start_chat", &ov::genai::VLMPipeline::start_chat, py::arg("system_message") = "")
         .def("finish_chat", &ov::genai::VLMPipeline::finish_chat) 
         .def("get_generation_config", &ov::genai::VLMPipeline::get_generation_config)
+        .def("set_generation_config", &ov::genai::VLMPipeline::set_generation_config)
         .def(
             "generate", 
             [](ov::genai::VLMPipeline& pipe, 
@@ -140,34 +141,6 @@ void init_vlm_pipeline(py::module_& m) {
         )
         .def(
             "generate", 
-            [](ov::genai::VLMPipeline& pipe, 
-                const std::string& prompt,
-                const py::kwargs& kwargs
-            ) {
-                return call_vlm_generate(pipe, prompt, kwargs);
-            },
-            py::arg("prompt"), "Input string",
-            (vlm_generate_kwargs_docstring + std::string(" \n ")).c_str()
-        )
-        .def(
-            "__call__", 
-            [](ov::genai::VLMPipeline& pipe, 
-                const std::string& prompt,
-                const std::vector<ov::Tensor>& images,
-                const ov::genai::GenerationConfig& generation_config, 
-                const utils::PyBindStreamerVariant& streamer,
-                const py::kwargs& kwargs
-            ) {
-                return call_vlm_generate(pipe, prompt, images, generation_config, streamer, kwargs);
-            },
-            py::arg("prompt"), "Input string",
-            py::arg("images"), "Input images",
-            py::arg("generation_config") = std::nullopt, "generation_config",
-            py::arg("streamer") = std::monostate(), "streamer",
-            (vlm_generate_docstring + std::string(" \n ")).c_str()
-        )
-        .def(
-            "__call__", 
             [](ov::genai::VLMPipeline& pipe, 
                 const std::string& prompt,
                 const py::kwargs& kwargs

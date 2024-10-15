@@ -26,15 +26,15 @@ def output_comments(result, use_case, writer):
         comment_list.append('prompt_idx: Index of prompts')
     elif use_case == 'image_gen':
         comment_list.append("infer_count: Tex2Image models' Inference(or Sampling) step size")
-        comment_list.append('1st_latency: First step lantency of unet')
+        comment_list.append('1st_latency: First step latency of unet')
         comment_list.append('2nd_avg_latency: Other steps latency of unet(exclude first step)')
         comment_list.append('1st_infer_latency: Same as 1st_latency')
         comment_list.append('2nd_infer_avg_latency: Same as 2nd_avg_latency')
         comment_list.append('prompt_idx: Index of prompts')
     elif use_case == 'ldm_super_resolution':
         comment_list.append("infer_count: Tex2Image models' Inference(or Sampling) step size")
-        comment_list.append('1st_latency: First step lantency of unet')
-        comment_list.append('2nd_avg_latency: Other steps lantency of unet(exclude first step)')
+        comment_list.append('1st_latency: First step latency of unet')
+        comment_list.append('2nd_avg_latency: Other steps latency of unet(exclude first step)')
         comment_list.append('1st_infer_latency: Same as 1st_latency')
         comment_list.append('2nd_infer_avg_latency: Same as 2nd_avg_latency')
         comment_list.append('prompt_idx: Image Index')

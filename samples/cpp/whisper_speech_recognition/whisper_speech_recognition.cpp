@@ -35,6 +35,7 @@ int main(int argc, char* argv[]) try {
     for (auto& chunk : *result.chunks) {
         std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";
     }
+
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
