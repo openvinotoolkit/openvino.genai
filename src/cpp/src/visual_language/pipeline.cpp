@@ -527,6 +527,10 @@ public:
 
     void finish_chat() {m_is_chat_conversation = false;}
 
+    Tokenizer get_tokenizer() const {
+        return m_tokenizer;
+    }
+
     void set_chat_template(const std::string& new_template) {
         m_tokenizer.set_chat_template(new_template);
     }
@@ -771,6 +775,10 @@ void VLMPipeline::finish_chat() {
 
 void VLMPipeline::set_chat_template(const std::string& new_template) {
     m_pimpl->set_chat_template(new_template);
+}
+
+Tokenizer VLMPipeline::get_tokenizer() const {
+    return m_pimpl->get_tokenizer();
 }
 
 GenerationConfig VLMPipeline::get_generation_config() const {
