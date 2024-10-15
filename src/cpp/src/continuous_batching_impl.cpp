@@ -39,6 +39,47 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests
     m_awaiting_requests.clear();
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::init(
+    std::shared_ptr<ov::Model> model,
+    const SchedulerConfig& scheduler_config,
+    const ov::AnyMap& plugin_config,
+    const DeviceConfig& device_config,
+    ov::Core& core) {
+    ov::InferRequest infer_request = core.compile_model(model, device_config.get_device(), plugin_config).create_infer_request();
+
+    // setup KV caches
+    m_cache_manager = std::make_shared<CacheManager>(device_config, core);
+    for (size_t decoder_layer_id = 0; decoder_layer_id < device_config.get_num_layers(); ++decoder_layer_id) {
+        infer_request.set_tensor(std::string("key_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_key_cache(decoder_layer_id));
+        infer_request.set_tensor(std::string("value_cache.") + std::to_string(decoder_layer_id), m_cache_manager->get_value_cache(decoder_layer_id));
+    }
+
+    SchedulerConfig updated_config = scheduler_config;
+    // update KV number in scheduler config
+    if (scheduler_config.num_kv_blocks != device_config.get_num_kv_blocks()) {
+        updated_config.num_kv_blocks = device_config.get_num_kv_blocks();
+    }
+
+    bool can_use_partial_preemption = true;
+    if (device_config.get_device().find("GPU") != std::string::npos && !updated_config.dynamic_split_fuse) {
+        // in case of executing a `vLLM-like` pipeline, it's better not to use partial eviction on the GPU,
+        // as it may lead to performance slowdown
+        can_use_partial_preemption = false;
+    }
+
+    m_scheduler = std::make_shared<Scheduler>(updated_config, device_config.get_num_layers(), can_use_partial_preemption);
+    // and finally create model runner
+    bool is_use_cache_eviction = m_scheduler->get_config().use_cache_eviction;
+    if (is_use_cache_eviction) {
+        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers(), true);
+    } else {
+        m_model_runner = std::make_shared<ModelRunner>(infer_request, updated_config, device_config.get_num_layers());
+    }
+    m_sampler = std::make_shared<Sampler>(m_tokenizer);
+    m_sampler->set_seed(m_generation_config.rng_seed);
+};
+
+
 GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
                                                                const ov::Tensor& input_ids,
@@ -90,6 +131,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     {
         static ManualTimer timer("scheduling");
         timer.start();
+        m_scheduler->clean_empty_blocks(m_requests);
         scheduler_output = m_scheduler->schedule(m_requests);
         m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
         m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;

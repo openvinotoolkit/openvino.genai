@@ -26,7 +26,7 @@ public:
         m_total += std::chrono::duration<double, std::milli>(m_end - m_start).count();
     }
 
-    float get_duration_ms() {
+    float get_duration_ms() const {
         return m_total / 1000.;
     }
 

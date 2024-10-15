@@ -205,7 +205,7 @@ class SequenceGroup {
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
     // max validation length within a group to check generated tokens
-    size_t m_num_validated_tokens = 0;
+    size_t m_num_validation_tokens = 0;
     // flag to enable/disable token generation, e.g. in speculative decoding scenario
     bool m_is_gen_paused = false;
 
@@ -256,7 +256,7 @@ public:
 
     // a sequence group can generate new tokens if it already proccessed m_max_content_len before
     bool can_generate_tokens() const {
-        return m_max_content_len + m_num_validated_tokens >= get_prompt_len() && !m_is_gen_paused;
+        return m_max_content_len + m_num_validation_tokens >= get_prompt_len() && !m_is_gen_paused;
     }
 
     Sequence::Ptr operator[] (size_t index) {
@@ -426,7 +426,7 @@ public:
 
     void clear_scheduled_tokens() {
         m_num_scheduled_tokens = 0;
-        m_num_validated_tokens = 0;
+        m_num_validation_tokens = 0;
     }
 
     bool is_scheduled() const {
@@ -435,12 +435,12 @@ public:
 
     void set_num_validated_tokens(size_t k) {
         // in case of non-prompt we need to take prev tokens + token to validate
-        // m_num_validated_tokens = get_num_processed_tokens() ? k + 1 : k;
-        m_num_validated_tokens = k;
+        // m_num_validation_tokens = get_num_processed_tokens() ? k + 1 : k;
+        m_num_validation_tokens = k;
     }
 
     size_t get_num_tokens_to_validate() {
-        return m_num_validated_tokens;
+        return m_num_validation_tokens;
     }
 
     size_t get_num_available_tokens_for_batching() const {
@@ -448,7 +448,7 @@ public:
         OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");
         // if sequence group has not finished, it has at least one token to process
         size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len);
-        return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validated_tokens;
+        return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validation_tokens;
     }
 
     // mark current schedule phase as finished and updates internal counters

@@ -32,7 +32,7 @@ static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_confi
 
 /**
 * @brief ModelDesc serves to activate speculative decoding model in continuous batching pipeline.
-* Create SpeculativeDecodingImpl and fill it with sutable values.
+* Create LLMPipeline and fill it with sutable values.
 * In case of empty device speculative decoding will be run with the same configuration as main_pipeline.
 */
 struct ModelDesc {

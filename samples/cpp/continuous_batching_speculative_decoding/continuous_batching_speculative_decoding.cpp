@@ -137,16 +137,16 @@ int main(int argc, char* argv[]) try {
     scheduler_config.max_num_seqs = 2;
     scheduler_config.enable_prefix_caching = use_prefix;
 
-    ov::AnyMap plugin_config{
-        { ov::genai::scheduler_config.name(), scheduler_config },
-        // device to run draft pipeline. Can be different with the main pipeline.
-        // in case of same devices, plugin_config will be reused for both pipeline, KV cache will be splitted for main and draft pipeline
-        { ov::genai::draft_model.name(), ov::genai::ModelDesc(draft_model_path, device) },
-    };
+    // ov::AnyMap plugin_config{
+    //     { ov::genai::scheduler_config.name(), scheduler_config },
+    //     // device to run draft pipeline. Can be different with the main pipeline.
+    //     // in case of same devices, plugin_config will be reused for both pipeline, KV cache will be splitted for main and draft pipeline
+    //     { ov::genai::draft_model.name(), ov::genai::ModelDesc(draft_model_path, device) },
+    // };
 
     // It's possible to construct a Tokenizer from a different path.
     // If the Tokenizer isn't specified, it's loaded from the same folder.
-    ov::genai::LLMPipeline pipe(model_path, ov::genai::Tokenizer{model_path}, device, plugin_config);
+    ov::genai::LLMPipeline pipe(model_path, device, ov::genai::draft_model(ov::genai::ModelDesc(draft_model_path, device)), ov::genai::scheduler_config(scheduler_config));
 
     if (use_prefix) {
         std::cout << "Running inference for prefix to compute the shared prompt's KV cache..." << std::endl;
