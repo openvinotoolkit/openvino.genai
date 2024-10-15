@@ -426,3 +426,15 @@ def run_test_pipeline(tmp_path: str, model_id: str, scheduler_params: dict = Non
 
 
 DEFAULT_SCHEDULER_CONFIG = get_scheduler_config({"num_kv_blocks": 300, "dynamic_split_fuse": True, "max_num_batched_tokens": 256, "max_num_seqs": 256})
+
+def get_image_by_link(link):
+    from PIL import Image
+    import requests
+    from openvino import Tensor
+    import numpy as np
+
+    image = Image.open(requests.get(link, stream=True).raw)
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    image_data = np.array((np.array(image.getdata()) - 128).astype(np.byte)).reshape(1, 3, image.size[1], image.size[0])
+    return Tensor(image_data)
