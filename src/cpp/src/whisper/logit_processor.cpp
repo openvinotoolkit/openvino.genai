@@ -47,7 +47,7 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
 
     if (last_was_timestamp) {
         if (penultimate_was_timestamp) {
-            // has to be timestamp
+            // has to be non-timestamp
             for (size_t i = timestamp_begin; i < vocab_size; i++) {
                 logits_data[i] = -std::numeric_limits<float>::infinity();
             }

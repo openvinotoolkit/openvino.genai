@@ -10,10 +10,16 @@
 namespace ov {
 namespace genai {
 
-std::pair<std::vector<int64_t>, std::vector<ov::genai::Segment>> extract_segments(
-    const std::vector<int64_t>& tokens,
-    const ov::genai::WhisperGenerationConfig& config,
-    const float time_precision);
+struct ExtractedSegments {
+    std::vector<ov::genai::Segment> segments;
+    size_t last_offset;
+    std::vector<int64_t> non_timestamp_tokens;
+};
+
+ExtractedSegments extract_segments(const std::vector<int64_t>& tokens,
+                                   const ov::genai::WhisperGenerationConfig& config,
+                                   const size_t nb_max_frames,
+                                   const float time_precision);
 
 }  // namespace genai
 }  // namespace ov
