@@ -8,7 +8,7 @@
 #include <regex>
 #include <thread>
 
-#include "../utils.hpp"
+#include "utils.hpp"
 #include "logit_processor.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/streamer_base.hpp"

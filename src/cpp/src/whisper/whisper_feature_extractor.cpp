@@ -19,7 +19,7 @@
 #include <thread>
 #include <vector>
 
-#include "../utils.hpp"
+#include "json_utils.hpp"
 #include "openvino/genai/visibility.hpp"
 
 namespace {
