@@ -46,7 +46,6 @@ image_links_for_testing = [
 @pytest.mark.nightly
 def test_vlm_pipeline(cache):
     def streamer(word: str) -> bool:
-        print(word, end="")
         return False
 
     model_path = get_ov_model(cache.mkdir("MiniCPM-V-2_6"))
