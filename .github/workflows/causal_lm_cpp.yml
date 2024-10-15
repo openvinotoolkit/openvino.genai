@@ -740,7 +740,7 @@ jobs:
           decoded = processor.tokenizer.batch_decode(result[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0]
           print(decoded)
           with open("ref.txt", "w") as f:
-              f.write(decoded, end="")
+              f.write(decoded + "\n")
 
       - name: Run visual_language_chat sample - MiniCPM-V-2_6
         run: >
