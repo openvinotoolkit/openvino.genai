@@ -3,7 +3,6 @@ optimum-intel @ git+https://github.com/eaidova/optimum-intel.git@ea/minicpmv
 numpy<2.0.0; sys_platform == 'darwin'
 onnx==1.16.1
 pytest
-llm_bench/python/who_what_benchmark
 
 # requirements for specific models
 # - hf-tiny-model-private/tiny-random-RoFormerForCausalLM
