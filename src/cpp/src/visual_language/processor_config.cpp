@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/processor_config.hpp"
+#include "processor_config.hpp"
 #include "utils.hpp"
 #include <fstream>
 
