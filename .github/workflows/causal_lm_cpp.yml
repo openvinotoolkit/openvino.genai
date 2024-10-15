@@ -735,12 +735,12 @@ jobs:
           processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
           prompt = processor.tokenizer.apply_chat_template([{"role": "user", "content": "(<image>./</image>)\nWhat is unusual on this image?"}], tokenize=False, add_generation_prompt=True)
           inputs = processor([prompt], [lines], return_tensors="pt")
-          model = OVModelForVisualCausalLM.from_pretrained("MiniCPM-V-2_6", trust_remote_code=True)
+          model = OVModelForVisualCausalLM.from_pretrained("MiniCPM-V-2_6", device="CPU", trust_remote_code=True)
           result = model.generate(**inputs, max_new_tokens=200)
           decoded = processor.tokenizer.batch_decode(result[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0]
           print(decoded)
           with open("ref.txt", "w") as f:
-              f.write(decoded + "\n")
+              f.write(f"question:\n{decoded}\n----------\nquestion:\n")
 
       - name: Run visual_language_chat sample - MiniCPM-V-2_6
         run: >
