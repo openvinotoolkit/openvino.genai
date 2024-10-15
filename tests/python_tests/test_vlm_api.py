@@ -1,57 +1,29 @@
 # Copyright (C) 2018-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import openvino_genai
 import pytest
 import gc
-import os
-import numpy as np
-from PIL import Image
-from multiprocessing import Process
 
+import openvino_tokenizers
+import openvino
+from transformers
+from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline
-from openvino import Tensor
 from common import get_greedy, get_image_by_link, get_beam_search, get_greedy, get_multinomial_all_parameters
 
 def get_ov_model(model_dir):
-    import sys
-    from pathlib import Path
-    #TODO: use optimum-intel
-
-    sys.path.append(str(Path(__file__).resolve().parents[2] / 'samples/cpp/visual_language_chat'))
-    import importlib
-    export_MiniCPM = importlib.import_module("export_MiniCPM-V-2_6", "export_MiniCPM")
-    convert_llm = getattr(export_MiniCPM, "convert_llm")
-    convert_vision_encoder = getattr(export_MiniCPM, "convert_vision_encoder")
-    from transformers import AutoModel, AutoTokenizer, AutoProcessor
-    import os
-    import openvino_tokenizers
-    import openvino as ov
-    import gc
-
+    if (model_dir / "openvino_language_model.xml").exists():
+        return model_dir
     model_id = "openbmb/MiniCPM-V-2_6"
-    ckpt = Path(os.path.join(model_dir, "ckpt"))
-    if not ckpt.exists():
-        snapshot_download = getattr(export_MiniCPM, "snapshot_download")
-        patch_model_code = getattr(export_MiniCPM, "patch_model_code")
-        snapshot_download(model_id, local_dir=ckpt, force_download=True)
-        patch_model_code(ckpt)
-    model = AutoModel.from_pretrained(ckpt, trust_remote_code=True)
-    model.eval()
+    processor = transformers.AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+    processor.tokenizer.save_pretrained(model_dir)
+    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(processor.tokenizer, with_detokenizer=True)
+    openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
+    openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
+    model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True)
     model.config.save_pretrained(model_dir)
-    tokenizer = AutoTokenizer.from_pretrained(ckpt, trust_remote_code=True)
-    tokenizer.save_pretrained(model_dir)
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
-    ov.save_model(ov_tokenizer, os.path.join(model_dir, "openvino_tokenizer.xml"))
-    ov.save_model(ov_detokenizer, os.path.join(model_dir, "openvino_detokenizer.xml"))
-    processor = AutoProcessor.from_pretrained(ckpt, trust_remote_code=True)
-    processor.save_pretrained(model_dir)
-
-    convert_llm(model, model_dir)
-    del model.llm
-    gc.collect()
-
-    convert_vision_encoder(model, model_dir)
+    model.generation_config.save_pretrained(model_dir)
+    model.save_pretrained(model_dir)
     return model_dir
 
 sampling_configs = [
@@ -80,14 +52,13 @@ image_links_for_testing = [
 ]
 
 @pytest.mark.precommit
-def test_vlm_pipeline(tmp_path):
-    import os
-
+@pytest.mark.nightly
+def test_vlm_pipeline(cache):
     def streamer(word: str) -> bool:
         print(word, end="")
         return False
 
-    model_path = get_ov_model(os.path.join(tmp_path, "miniCPM"))
+    model_path = get_ov_model(cache.mkdir("MiniCPM-V-2_6"))
 
     for generation_config in sampling_configs:
         for links in image_links_for_testing:
@@ -95,7 +66,7 @@ def test_vlm_pipeline(tmp_path):
             for link in links:
                 images.append(get_image_by_link(link))
 
-            pipe = VLMPipeline(model_path, "CPU")
+            pipe = VLMPipeline(str(model_path), "CPU")
             pipe.start_chat()
 
             pipe.generate(prompts[0], images=images, generation_config=generation_config, streamer=streamer)
