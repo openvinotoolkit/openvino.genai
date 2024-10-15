@@ -100,12 +100,15 @@ EulerDiscreteScheduler::EulerDiscreteScheduler(const Config& scheduler_config) :
         "support.");
 
     m_sigmas.push_back(0);
+
+    m_step_index = -1;
 }
 
 void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps) {
     // TODO: support `timesteps` and `sigmas` inputs
     m_timesteps.clear();
     m_sigmas.clear();
+    m_step_index = -1;
 
     m_num_inference_steps = num_inference_steps;
     std::vector<float> sigmas;

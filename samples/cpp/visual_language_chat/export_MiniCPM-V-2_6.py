@@ -282,8 +282,9 @@ def get_1d_sincos_pos_embed_from_grid_new(embed_dim, pos):
 
     out = np.einsum("hw,d->hwd", pos, omega)  # (H, W, D/2), outer product
 
-    emb_sin = np.sin(out)  # (H, W, D/2)
-    emb_cos = np.cos(out)  # (H, W, D/2)
+    # Align with C++ which always uses double
+    emb_sin = np.sin(out.astype(np.float64)).astype(np.float32)  # (H, W, D/2)
+    emb_cos = np.cos(out.astype(np.float64)).astype(np.float32)  # (H, W, D/2)
 
     emb = np.concatenate([emb_sin, emb_cos], axis=-1)  # (H, W, D)
     return emb
@@ -1117,14 +1118,13 @@ class OvMiniCPMV:
             generation_config = {"top_p": 0.8, "top_k": 100, "temperature": 0.7, "do_sample": True, "repetition_penalty": 1.05}
         else:
             generation_config = {
-                "repetition_penalty": 1.2,
+                "repetition_penalty": 1.0,
             }
 
         if min_new_tokens > 0:
             generation_config["min_new_tokens"] = min_new_tokens
 
         generation_config.update((k, kwargs[k]) for k in generation_config.keys() & kwargs.keys())
-        generation_config = {"do_sample": False, "repetition_penalty": None}
 
         inputs.pop("image_sizes")
         with torch.inference_mode():
@@ -1193,7 +1193,7 @@ def main():
 
     convert_vision_encoder(model, model_dir)
     # ov_cpm = init_model(model_dir, "CPU")
-    # print(ov_cpm.chat(Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer))
+    # print(ov_cpm.chat(Image.open(requests.get("https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", stream=True).raw), [{"role": "user", "content": "What is unusual on this image?"}], ov_cpm.processor.tokenizer, sampling=False))
 
 if "__main__" == __name__:
     main()
