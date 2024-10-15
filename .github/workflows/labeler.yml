@@ -5,7 +5,7 @@ on:
   pull_request_target:
     types: [opened, edited, synchronize]
     paths:
-      - llm_bench/python/**
+      - tools/llm_bench/python/**
       - .github/workflows/llm_bench-python.yml
 
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
