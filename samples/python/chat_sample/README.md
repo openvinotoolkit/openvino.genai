@@ -1,6 +1,10 @@
 # Python chat_sample that supports most popular models like LLaMA 3
 
-This example showcases inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample fearures `openvino_genai.LLMPipeline` and configures it for the chat scenario. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
+This example showcases the inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen`, and other models with the same signature. The application has a few configuration options, and we encourage the reader to explore and modify the source code to experiment with. For example, change the device for inference to GPU by modifying the device name. The sample fearures `openvino_genai.LLMPipeline` and configures it for the chat scenario. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/llm-chatbot) which provides an example of LLM-powered Chatbot in Python.
+
+To learn how to setup this, we also provided the following blog for full instruction.
+
+https://medium.com/openvino-toolkit/how-to-run-llama-3-2-locally-with-openvino-60a0f3674549
 
 ## Download and convert the model and tokenizers
 
