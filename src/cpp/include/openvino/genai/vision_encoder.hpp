@@ -5,6 +5,7 @@
 
 #include "openvino/genai/processor_config.hpp"
 #include <openvino/openvino.hpp>
+#include "vlm_model_type.hpp"
 
 namespace ov::genai {
 /// @brief A pair describing image size.
@@ -41,8 +42,10 @@ struct EncodedImage {
 /// ov::InferRequest and configured by ProcessorConfig.
 class OPENVINO_GENAI_EXPORTS VisionEncoder {
 public:
+    /// @brief A enum denoting model type.
+    VLMModelType model_type;
     /// @brief A model for image encoding.
-    ov::InferRequest m_encoder;
+    ov::InferRequest m_vision_encoder;
     /// @brief A config to follow.
     ProcessorConfig m_processor_config;
 
@@ -52,7 +55,7 @@ public:
     explicit VisionEncoder(
         const ov::InferRequest& encoder,
         const ProcessorConfig& processor_config=ProcessorConfig{}
-    ) : m_encoder{encoder}, m_processor_config{processor_config} {}
+    ) : m_vision_encoder{encoder}, m_processor_config{processor_config} {}
 
     /// @brief Construct the encoder from model_dir.
     /// @param model_dir A folder containing openvino_embedding.xml and
@@ -63,6 +66,7 @@ public:
     /// @param core ov::Core to be used to compile the model.
     explicit VisionEncoder(
         const std::filesystem::path& model_dir,
+        const VLMModelType model_type,
         const std::string& device="CPU",
         const ov::AnyMap device_config={},
         ov::Core core=ov::Core{}
@@ -117,5 +121,14 @@ public:
             image, AnyMap{std::forward<Properties>(properties)...}
         );
     }
+
+private:
+    EncodedImage encode_minicpm(
+        const ov::Tensor& image, const ProcessorConfig& config
+    );
+
+    EncodedImage encode_llava(
+        const ov::Tensor& image, const ProcessorConfig& config
+    );
 };
 }

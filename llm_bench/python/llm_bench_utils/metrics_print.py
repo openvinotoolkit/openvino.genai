@@ -146,8 +146,8 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
             avg_2nd_tokens_latency = 'NA' if avg_2nd_tokens_latency < 0 else f'{avg_2nd_tokens_latency:.2f} ms/{latency_unit}'
             avg_2nd_token_tput = 'NA' if avg_2nd_tokens_latency == 'NA' else f'{avg_2nd_token_tput:.2f} {latency_unit}s/s'
             if is_text_gen is True:
-                prompt_dict[p_idx] = '\n[ INFO ] [Average] Prompt[{}] Input token size: {}, 1st token lantency: {}, ' \
-                    '2nd token lantency: {}, 2nd tokens throughput: {}' \
+                prompt_dict[p_idx] = '\n[ INFO ] [Average] Prompt[{}] Input token size: {}, 1st token latency: {}, ' \
+                    '2nd token latency: {}, 2nd tokens throughput: {}' \
                     .format(p_idx, avg_input_size, avg_1st_token_latency, avg_2nd_tokens_latency, avg_2nd_token_tput)
             else:
                 prompt_dict[p_idx] = '\n[ INFO ] [Average] Prompt[{}] 1st step of unet latency: {}, ' \

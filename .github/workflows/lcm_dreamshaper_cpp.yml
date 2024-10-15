@@ -13,8 +13,8 @@ permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b
 
 env:
   PYTHON_VERSION: '3.9'
-  LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/l_openvino_toolkit_ubuntu20_2024.5.0.dev20240830_x86_64.tgz
-  WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16570-19eb02fe60b/w_openvino_toolkit_windows_2024.5.0.dev20240830_x86_64.zip
+  LINUX_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16993-9c432a3641a/l_openvino_toolkit_ubuntu20_2024.5.0.dev20241014_x86_64.tgz
+  WINDOWS_OV_ARCHIVE_URL: https://storage.openvinotoolkit.org/repositories/openvino/packages/nightly/2024.5.0-16993-9c432a3641a/w_openvino_toolkit_windows_2024.5.0.dev20241014_x86_64.zip
   OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
 concurrency:
