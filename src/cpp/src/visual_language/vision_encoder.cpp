@@ -285,7 +285,6 @@ EncodedImage llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const o
     std::vector<std::vector<ov::Tensor>> results;
     std::vector<std::vector<ImageSize>> sizes;
 
-    // std::vector<clip_image_f32*> img_res_v; // format N x H x W x RGB (N x 336 x 336 x 3), so interleaved RGB - different to the python implementation which is N x 3 x 336 x 336
     std::vector<std::vector<clip_image_f32>> preprocessed{imgs.size()};
     std::transform(imgs.begin(), imgs.end(), preprocessed.begin(), [&ctx_clip](const std::vector<clip_image_u8>& row) {
         std::vector<clip_image_f32> processed_row{row.size()};
