@@ -539,5 +539,15 @@ EncodedImage VisionEncoder::encode_llava_next(const ov::Tensor& image, const Pro
     ov::Tensor image_features = m_vision_encoder.get_output_tensor();
     ImageSize resized_source_size{config.crop_size_height / config.patch_size, config.crop_size_width / config.patch_size};
 
-    return {image_features, resized_source_size};
+    // Gen number of patches
+    ImageSize original_image_size{image.get_shape().at(2), image.get_shape().at(3)};
+    auto best_resolution = select_best_resolution({original_image_size.width, original_image_size.height}, config.image_grid_pinpoints);
+    int num_patches_w = best_resolution.first / config.size_shortest_edge;
+    int num_patches_h = best_resolution.second / config.size_shortest_edge;
+
+    EncodedImage encoded_image;
+    encoded_image.resized_source = image_features;
+    encoded_image.resized_source_size = resized_source_size;
+    encoded_image.patches_grid = {num_patches_h, num_patches_w};
+    return encoded_image;
 }
