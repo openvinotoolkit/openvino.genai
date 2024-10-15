@@ -37,7 +37,7 @@ class GenAIModelWrapper:
 
     def __init__(self, model, model_dir):
         self.model = model
-        self.config = AutoConfig.from_pretrained(model_dir)
+        self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
 
     def __getattr__(self, attr):
         if attr in self.__dict__:
