@@ -1,19 +1,10 @@
 # Copyright (C) 2018-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-<<<<<<< HEAD
-import pytest
-import gc
-
-import openvino_tokenizers
-import openvino
-from transformers
-=======
 import openvino_tokenizers
 import openvino
 import pytest
 import transformers
->>>>>>> replace-export_MiniCPM-V-2_6.py
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import VLMPipeline
 from common import get_greedy, get_image_by_link, get_beam_search, get_greedy, get_multinomial_all_parameters
