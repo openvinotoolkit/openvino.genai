@@ -62,7 +62,6 @@ def get_whisper_models_list(tiny_only=False):
         "openai/whisper-tiny",
         "openai/whisper-small.en",
         "openai/whisper-base",
-        "openai/whisper-base.en",
     ]
     if tiny_only:
         precommit_models = ["openai/whisper-tiny"]
