@@ -207,7 +207,8 @@ static void resize_and_pad_image(const clip_image_u8& image, clip_image_u8 &imag
  * @param possible_resolutions A list of possible resolutions in the format [(width1, height1), (width2, height2), ...].
  * @return The best fit resolution in the format (width, height).
  */
-static std::pair<int, int> select_best_resolution(const std::pair<int, int> & original_size, const std::vector<std::pair<int, int>> & possible_resolutions) {
+std::pair<int, int> select_best_resolution(const std::pair<int, int> & original_size, const std::vector<std::pair<int, int>> & possible_resolutions) {
+    // TODO Consider changing original_size and return value to (height, width) format
     int original_width = original_size.first;
     int original_height = original_size.second;
     std::pair<int, int> best_fit;
