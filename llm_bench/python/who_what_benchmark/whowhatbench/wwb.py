@@ -199,7 +199,7 @@ def parse_args():
         type=str,
         choices=["text", "text-to-image"],
         default="text",
-        help="Indicated the model type, e.g. 'text' - for LLMs, 't2im' - for text-to-image pipelines.",
+        help="Indicated the model type, e.g. 'text' - for causal text generation, 'text-to-image' - for image generation.",
     )
     parser.add_argument(
         "--data-encoder",
