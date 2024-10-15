@@ -273,7 +273,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
 
 
-def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, args, iter_data_list, md5_list, 
+def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                                           prompt_index, streamer, model_precision, proc_id, mem_consumption):
     set_seed(args['seed'])
     input_text_list = [input_text] * args['batch_size']
