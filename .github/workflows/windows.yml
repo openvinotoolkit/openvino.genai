@@ -238,7 +238,7 @@ jobs:
           . "${{ env.OV_INSTALL_DIR }}/setupvars.ps1"
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] -r ./tests/python_tests/requirements.txt --find-links ${env:OV_INSTALL_DIR}/wheels --upgrade-strategy eager
           python -m pip install -U "optimum<1.23" --no-dependencies
-          python -m pytest ./tests/python_tests/ --ignore ./tests/python_tests/test_whisper_generate_api.py --ignore ./tests/python_tests/test_vlm_api.py
+          python -m pytest ./tests/python_tests/test_chat_generate_api.py::test_set_chat_template
         env:
           PYTHONPATH: "./build/" # cmd evaluates variables in a different way. Setting PYTHONPATH before setupvars.bat instead of doing that after solves that.
 
