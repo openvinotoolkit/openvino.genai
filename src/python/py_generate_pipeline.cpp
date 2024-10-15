@@ -9,9 +9,9 @@
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include <openvino/runtime/auto/properties.hpp>
-#include "../cpp/src/tokenizers_path.hpp"
+#include "tokenizers_path.hpp"
 
-#include "./utils.hpp"
+#include "py_utils.hpp"
 
 namespace py = pybind11;
 namespace utils = ov::genai::pybind::utils;

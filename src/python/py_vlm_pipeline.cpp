@@ -8,8 +8,8 @@
 #include <pybind11/stl_bind.h>
 #include <pybind11/functional.h>
 #include "openvino/genai/visual_language/pipeline.hpp"
-#include "../cpp/src/tokenizers_path.hpp"
-#include "./utils.hpp"
+#include "tokenizers_path.hpp"
+#include "py_utils.hpp"
 
 namespace py = pybind11;
 namespace utils = ov::genai::pybind::utils;
