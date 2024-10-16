@@ -363,7 +363,6 @@ ProcessorConfig from_any_map(
     return extracted_config;
 }
 
-// TODO Consider moving to clip.cpp or separate dedicated file
 clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const ProcessorConfig& config) {
     bool do_resize = true;
     bool do_center_crop = true;
@@ -434,7 +433,6 @@ ov::Tensor get_pixel_values_llava(const ov::Tensor& image, const ProcessorConfig
 }
 
 ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorConfig& config) {
-    // TODO Consider moving to separate function and reuse
     // ov::Tensor to clip_image_u8
     clip_image_u8 input_image{
         int(image.get_shape().at(3)),
