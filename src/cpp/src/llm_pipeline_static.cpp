@@ -223,31 +223,19 @@ ov::AnyMap get_baseline_common_config() {
     return config;
 }
 
-struct NPUDesc {
-    bool support_max_mem_alloc_size;
-};
-
-ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model,
-                                     const std::optional<NPUDesc>& desc) {
+ov::AnyMap get_default_common_config(const std::shared_ptr<ov::Model>& model) {
     auto config = get_baseline_common_config();
-    if (desc.has_value() && desc->support_max_mem_alloc_size) {
-        config.emplace("NPUW_PMM", "NO");
-        config.emplace("NPUW_FUNCALL_FOR_ALL", "YES");
-    } else {
-        config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
-    }
+    config.emplace("NPUW_WEIGHTS_BANK_ALLOC", "CPU");
     enable_npuw_dq_if_allowed(config, model);
     return config;
 }
 
-ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model,
-                                      const std::optional<NPUDesc>& desc) {
-    return get_default_common_config(model, desc);
+ov::AnyMap get_default_prefill_config(const std::shared_ptr<ov::Model>& model) {
+    return get_default_common_config(model);
 }
 
-ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model,
-                                       const std::optional<NPUDesc>& desc) {
-    auto config = get_default_common_config(model, desc);
+ov::AnyMap get_default_generate_config(const std::shared_ptr<ov::Model>& model) {
+    auto config = get_default_common_config(model);
     config.emplace("NPUW_FUNCALL_ASYNC", "YES");
     config.emplace("NPUW_PARALLEL_COMPILE", "YES");
     return config;
@@ -334,16 +322,6 @@ void StaticLLMPipeline::setupAndCompileModels(
 
     ov::Core core;
 
-    std::optional<NPUDesc> desc;
-    auto all_devices = core.get_available_devices();
-    if (std::find(all_devices.begin(), all_devices.end(), "NPU") != all_devices.end()) {
-        const auto supported_properties = core.get_property("NPU", ov::supported_properties);
-        const bool support_max_mem_alloc_size = std::find(
-            supported_properties.begin(), supported_properties.end(), "NPU_MAX_MEM_ALLOC_SIZE"
-        ) != supported_properties.end();
-        desc = NPUDesc{ support_max_mem_alloc_size };
-    }
-
     // (1) Read the template model - this will be kvcache model
     m_kvcache_model = core.read_model(path / "openvino_model.xml");
     // (2) Expose KV-cache input and output layers from kvcache model
@@ -366,10 +344,10 @@ void StaticLLMPipeline::setupAndCompileModels(
     reshape_to_static(m_kvcache_model, 1u, m_kvcache_desc.total_size, axes);
     // (8) Compile both model
     auto prefill_config = pop_or_default(
-        pipeline_config, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model, desc)
+        pipeline_config, "PREFILL_CONFIG", get_default_prefill_config(m_prefill_model)
     );
     auto generate_config = pop_or_default(
-        pipeline_config, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model, desc)
+        pipeline_config, "GENERATE_CONFIG", get_default_generate_config(m_kvcache_model)
     );
     merge_config_with(prefill_config, pipeline_config);
     merge_config_with(generate_config, pipeline_config);
