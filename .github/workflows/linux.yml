@@ -60,6 +60,7 @@ jobs:
       run:
         shell: bash
     runs-on: ubuntu-20.04-16-cores
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     env:
       DEBIAN_FRONTEND: noninteractive # to prevent apt-get from waiting user input
       CMAKE_BUILD_TYPE: 'Release'
@@ -194,6 +195,7 @@ jobs:
       run:
         shell: bash
     runs-on: ubuntu-20.04-16-cores
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     env:
       CMAKE_GENERATOR: Unix Makefiles
       CMAKE_BUILD_PARALLEL_LEVEL: null
@@ -282,6 +284,7 @@ jobs:
       run:
         shell: bash
     runs-on: ubuntu-20.04-16-cores
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     env:
       CMAKE_GENERATOR: Unix Makefiles
       CMAKE_BUILD_PARALLEL_LEVEL: null
