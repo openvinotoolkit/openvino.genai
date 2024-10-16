@@ -89,6 +89,9 @@ public:
     /// model chat_template.
     /// @param new_template A new template to override with.
     void set_chat_template(const std::string& new_template);
+    /// @brief Get a Tokenizer used to tokenize input and detokenize
+    /// output.
+    ov::genai::Tokenizer get_tokenizer() const;
     /// @brief Extract GenerationConfig used to get default values.
     /// @return Default values used.
     GenerationConfig get_generation_config() const;
