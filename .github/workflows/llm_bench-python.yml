@@ -4,17 +4,19 @@
 name: llm_bench Python Test
 
 env:
-  LLM_BENCH_PYPATH: llm_bench/python
-  WWB_PATH: llm_bench/python/who_what_benchmark
+  LLM_BENCH_PYPATH: tools/llm_bench
+  WWB_PATH: tools/who_what_benchmark
 
 on:
   push:
     branches: [ "master" ]
     paths:
-      - llm_bench/python/**
+      - tools/llm_bench/**
+      - tools/who_what_benchmark/**
   pull_request:
     paths:
-      - llm_bench/python/**
+      - tools/llm_bench/**
+      - tools/who_what_benchmark/**
       - .github/workflows/llm_bench-python.yml
 
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
@@ -27,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9"]
+        python-version: ["3.10"]
 
     steps:
     - uses: actions/checkout@v4
@@ -59,39 +61,41 @@ jobs:
       run: |
         export GIT_LFS_SKIP_SMUDGE=0
         git clone --depth 1 https://huggingface.co/katuni4ka/tiny-random-qwen
-        python ./llm_bench/python/benchmark.py -m tiny-random-qwen -d cpu -n 1 -f pt
+        python ./tools/llm_bench/benchmark.py -m tiny-random-qwen -d cpu -n 1 -f pt
     - name: Test tiny-random-baichuan2 on Linux
       run: |
         optimum-cli export openvino --model katuni4ka/tiny-random-baichuan2 --trust-remote-code --weight-format fp16 ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16
-        python ./llm_bench/python/benchmark.py -m ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16/ -d cpu -n 1
+        python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-random-baichuan2/pytorch/dldt/FP16/ -d cpu -n 1
     - name: Test tiny-stable-diffusion on Linux
       run: |
         optimum-cli export openvino --model segmind/tiny-sd --trust-remote-code --weight-format fp16 ./ov_models/tiny-sd/pytorch/dldt/FP16/
-        python ./llm_bench/python/benchmark.py -m ./ov_models/tiny-sd/pytorch/dldt/FP16/ -pf ./llm_bench/python/prompts/stable-diffusion.jsonl -d cpu -n 1
+        python ./tools/llm_bench/benchmark.py -m ./ov_models/tiny-sd/pytorch/dldt/FP16/ -pf ./tools/llm_bench/prompts/stable-diffusion.jsonl -d cpu -n 1
     - name: WWB Tests
       run: |
         GIT_CLONE_PROTECTION_ACTIVE=false pip install -r ${{ env.WWB_PATH }}/requirements.txt
         pip install git+https://github.com/huggingface/optimum.git
         GIT_CLONE_PROTECTION_ACTIVE=false pip install ${{ env.WWB_PATH }}
-        python -m pytest llm_bench/python/who_what_benchmark/tests
+        python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --force-reinstall
+        python -m pytest tools/who_what_benchmark/tests
   stateful:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
         with:
-          python-version: 3.9
+          python-version: "3.10"
       - name: Test stateful
         run: |
-          GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r llm_bench/python/requirements.txt
+          GIT_CLONE_PROTECTION_ACTIVE=false python -m pip install -r tools/llm_bench/requirements.txt
           python -m pip uninstall --yes openvino
           python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python llm_bench/python/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir . --stateful
+          python tools/llm_bench/convert.py --model_id TinyLlama/TinyLlama-1.1B-Chat-v1.0 --output_dir . --stateful
           grep beam_idx pytorch/dldt/FP32/openvino_model.xml
       - name: WWB Tests
         run: |
-          GIT_CLONE_PROTECTION_ACTIVE=false pip install -r llm_bench/python/who_what_benchmark/requirements.txt
+          GIT_CLONE_PROTECTION_ACTIVE=false pip install -r tools/who_what_benchmark/requirements.txt
           pip install git+https://github.com/huggingface/optimum.git
-          GIT_CLONE_PROTECTION_ACTIVE=false pip install llm_bench/python/who_what_benchmark/
+          GIT_CLONE_PROTECTION_ACTIVE=false pip install tools/who_what_benchmark/
           pip install pytest
-          python -m pytest llm_bench/python/who_what_benchmark/tests
+          python -m pip install -U --pre openvino openvino-tokenizers openvino-genai --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly --force-reinstall
+          python -m pytest tools/who_what_benchmark/tests

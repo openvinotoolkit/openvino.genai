@@ -105,6 +105,8 @@ def test_vlm_pipeline(tmp_path):
 
             pipe.finish_chat()
             gc.collect()
+    tokenizer = pipe.get_tokenizer()
+    tokenizer.encode("")
     del pipe
     gc.collect()
 
