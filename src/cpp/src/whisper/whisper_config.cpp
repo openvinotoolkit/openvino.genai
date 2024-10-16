@@ -5,9 +5,10 @@
 
 #include <fstream>
 #include <nlohmann/json.hpp>
-#include <openvino/runtime/core.hpp>
 
-#include "utils.hpp"
+#include "openvino/core/except.hpp"
+
+#include "json_utils.hpp"
 
 namespace ov {
 namespace genai {

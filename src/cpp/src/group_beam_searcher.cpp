@@ -3,9 +3,10 @@
 
 #include <openvino/runtime/tensor.hpp>
 
+#include <cassert>
+
 #include "openvino/genai/llm_pipeline.hpp"
 #include "utils.hpp"
-
 namespace {
 
 // Modifyed Knuth–Morris–Pratt algorithm which returns tokens following after every needle occurance in haystack
