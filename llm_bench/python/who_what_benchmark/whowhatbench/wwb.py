@@ -335,6 +335,7 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
 def genai_gen_answer(model, tokenizer, question, max_new_tokens, skip_question):
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = max_new_tokens
+    config.do_sample = False
     out = model.generate(question, config)
     return out
 
