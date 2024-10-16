@@ -8,6 +8,7 @@ permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b
 jobs:
   bandit:
     runs-on: ubuntu-20.04
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v4

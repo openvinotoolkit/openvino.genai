@@ -1,23 +1,21 @@
-# https://github.com/actions/labeler
-name: label PRs
-
+name: "Pull Request Labeler"
 on:
-  pull_request_target:
-    types: [opened, edited, synchronize]
-    paths:
-      - tools/llm_bench/**
-      - .github/workflows/llm_bench-python.yml
+- pull_request_target
 
 permissions: read-all  # Required by https://github.com/ossf/scorecard/blob/e23b8ad91fd6a64a0a971ca4fc0a4d1650725615/docs/checks.md#token-permissions
 
 jobs:
-  labeler:
+  triage:
     permissions:
       contents: read
       pull-requests: write
     runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/labeler@v5
+    - uses: akladiev/labeler@eeac5941e7fb6f980d47e038ac0665168851c874 # v4.3.1
       with:
-        configuration-path: '.github/label_config.yml'
+        repo-token: "${{ secrets.GITHUB_TOKEN }}"
+        configuration-path: '.github/labeler.yml'
+        sync-labels: 'true'
+        dot: 'true'
+        non-matching-label: 'no-match-files'
