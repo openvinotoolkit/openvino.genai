@@ -532,7 +532,7 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr & sequen
     std::vector<int64_t> dropped_seq_ids;
     for (auto& running_sequence : sequence_group->get_running_sequences()) {
         const auto generated_len = running_sequence->get_generated_len();
-        if (sampling_params.max_new_tokens == generated_len || 
+        if (sampling_params.max_new_tokens <= generated_len || 
             is_stop_token_id_hit(running_sequence->get_generated_ids().back(), sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
             // stop sequence by max_new_tokens or stop token (eos included)
             running_sequence->set_status(SequenceStatus::FINISHED);
@@ -609,17 +609,13 @@ create_n_forked_sequences(SequenceGroup::Ptr sequence_group,
     return forked_seq_ids;
 }
 
-bool
-is_continue_to_sample_tokens(Sequence::Ptr running_sequence,
-                             size_t token_idx,
-                             size_t max_gen_len,
-                             size_t& max_removed_tokens_per_request) {
-    if (max_gen_len == 0) {
-        running_sequence->remove_last_tokens(token_idx);
-        max_removed_tokens_per_request = std::max(max_removed_tokens_per_request, token_idx);
-        return false;
-    }
-    return true;
+void
+stop_sample_tokens(Sequence::Ptr running_sequence,
+                   size_t token_idx,
+                   size_t max_gen_len,
+                   size_t& max_removed_tokens_per_request) {
+    running_sequence->remove_last_tokens(token_idx);
+    max_removed_tokens_per_request = std::max(max_removed_tokens_per_request, token_idx);
 }
 
 void
@@ -707,8 +703,12 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         // calculate token offset from the end of logit
                         size_t token_offset = num_tokens_to_process - i;
                         // max counter of needed to be sampled tokens
-                        size_t max_num_sampled_token = sampling_params.max_new_tokens + token_offset - running_sequence->get_generated_len();
-                        if (!is_continue_to_sample_tokens(running_sequence, token_offset, max_num_sampled_token, max_removed_tokens_per_request)) {
+                        OPENVINO_ASSERT(running_sequence->get_generated_len() >= token_offset);
+                        size_t generated_and_verified_len = running_sequence->get_generated_len() - token_offset;
+                        OPENVINO_ASSERT(sampling_params.max_new_tokens >= generated_and_verified_len);
+                        size_t max_num_sampled_token = sampling_params.max_new_tokens - generated_and_verified_len;
+                        if (max_num_sampled_token == 0) {
+                            stop_sample_tokens(running_sequence, token_offset, max_num_sampled_token, max_removed_tokens_per_request);
                             break;
                         }
                         

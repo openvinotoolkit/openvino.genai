@@ -144,9 +144,11 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         auto request_id = draft_request.first;
         if (!main_generated_requests.count(request_id)) {
             m_draft_pipeline->finish_request(request_id);
+            // in case of some requests not to started, unlock generation of next request
+            m_draft_pipeline->unlock_next_request_generation();
         }
         auto updated_seq_info = update_sequence_info[request_id];
-        float acceptance_rate = 1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt; 
+        float acceptance_rate = 1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate);
         m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
     }

@@ -24,6 +24,7 @@ public:
 
     void multistep();
     void finish_request(int64_t request_id = -1);
+    void unlock_next_request_generation();
 
     GeneratedRequests get_generated_requests();
     UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates, bool is_update_logit_processor);
