@@ -19,9 +19,9 @@ def run_wwb(args):
 @pytest.mark.parametrize(
     ("model_id", "model_type", "backend"),
     [
-        ("hf-internal-testing/tiny-stable-diffusion-torch", "sd", "hf"),
-        ("hf-internal-testing/tiny-stable-diffusion-torch", "sd", "openvino"),
-        ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "sd-xl", "hf"),
+        ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "hf"),
+        ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "openvino"),
+        ("hf-internal-testing/tiny-stable-diffusion-xl-pipe", "text-to-image", "hf"),
     ],
 )
 def test_image_model_types(model_id, model_type, backend):
@@ -61,7 +61,7 @@ def test_image_model_types(model_id, model_type, backend):
 @pytest.mark.parametrize(
     ("model_id", "model_type", "backend"),
     [
-        ("hf-internal-testing/tiny-stable-diffusion-torch", "sd", "hf"),
+        ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "hf"),
     ],
 )
 def test_image_custom_dataset(model_id, model_type, backend):

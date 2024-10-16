@@ -1,13 +1,13 @@
 # https://github.com/actions/labeler
 
-# Add label to the PRs changing files under llm_bench/
+# Add label to the PRs changing files under tools/llm_bench/
 llm_bench:
 - changed-files:
   - any-glob-to-any-file:
-    - 'llm_bench/**'
+    - 'tools/llm_bench/**'
     - '.github/workflows/llm_bench-python.yml'
-
+# Add label to the PRs changing files under tools/who_what_benchmark/
 WWB:
 - changed-files:
   - any-glob-to-any-file:
-    - 'llm_bench/python/who_what_benchmark/**'
+    - 'tools/who_what_benchmark/**'

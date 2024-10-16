@@ -1,16 +1,11 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "whisper_feature_extractor.hpp"
-
-#include <string>
-#include <vector>
-
-#include "openvino/genai/visibility.hpp"
-
 #ifdef _WIN32
 #    define _USE_MATH_DEFINES
 #endif
+
+#include "whisper_feature_extractor.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -19,26 +14,16 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <openvino/core/except.hpp>
+#include <openvino/openvino.hpp>
+#include <string>
 #include <thread>
 #include <vector>
 
-#include "../utils.hpp"
+#include "json_utils.hpp"
+#include "openvino/genai/visibility.hpp"
 
 namespace {
-
-struct whisper_mel {
-    int n_len;
-    int n_len_org;
-    int n_mel;
-
-    std::vector<float> data;
-};
-
-struct whisper_filters {
-    const size_t n_mel;
-    const size_t n_fft;  // 1 + (N_FFT / 2)
-    std::vector<float> data;
-};
+using ov::genai::WhisperFeatures;
 
 static bool hann_window(const size_t length, const bool periodic, std::vector<float>& output) {
     if (output.size() < length) {
@@ -150,20 +135,19 @@ static void log_mel_spectrogram_worker_thread(int ith,
                                               int frame_size,
                                               int frame_step,
                                               int n_threads,
-                                              const whisper_filters& filters,
-                                              whisper_mel& mel,
+                                              const std::vector<float>& mel_filter,
+                                              WhisperFeatures& features,
                                               const std::vector<float>& sin_vals,
                                               const std::vector<float>& cos_vals) {
     std::vector<float> fft_in(frame_size, 0.0);
     std::vector<float> fft_out(2 * frame_size);
-    int n_fft = filters.n_fft;
+    int n_fft = 1 + (frame_size / 2);
     int i = ith;
 
-    // make sure n_fft == 1 + (WHISPER_N_FFT / 2), bin_0 to bin_nyquist
-    assert(n_fft == 1 + (frame_size / 2));
+    OPENVINO_ASSERT(mel_filter.size() == n_fft * features.feature_size);
 
     // calculate FFT only when fft_in are not all zero
-    for (; i < std::min(n_samples / frame_step + 1, mel.n_len); i += n_threads) {
+    for (; i < std::min(n_samples / frame_step + 1, int(features.n_frames)); i += n_threads) {
         const int offset = i * frame_step;
 
         // apply Hanning window (~10% faster)
@@ -185,34 +169,32 @@ static void log_mel_spectrogram_worker_thread(int ith,
         }
 
         // mel spectrogram
-        for (int j = 0; j < mel.n_mel; j++) {
+        for (int j = 0; j < features.feature_size; j++) {
             double sum = 0.0;
 
             // unroll loop (suggested by GH user @lunixbochs)
             int k = 0;
             for (k = 0; k < n_fft - 3; k += 4) {
-                sum += fft_out[k + 0] * filters.data[j * n_fft + k + 0] +
-                       fft_out[k + 1] * filters.data[j * n_fft + k + 1] +
-                       fft_out[k + 2] * filters.data[j * n_fft + k + 2] +
-                       fft_out[k + 3] * filters.data[j * n_fft + k + 3];
+                sum += fft_out[k + 0] * mel_filter[j * n_fft + k + 0] + fft_out[k + 1] * mel_filter[j * n_fft + k + 1] +
+                       fft_out[k + 2] * mel_filter[j * n_fft + k + 2] + fft_out[k + 3] * mel_filter[j * n_fft + k + 3];
             }
 
             // handle n_fft remainder
             for (; k < n_fft; k++) {
-                sum += fft_out[k] * filters.data[j * n_fft + k];
+                sum += fft_out[k] * mel_filter[j * n_fft + k];
             }
 
             sum = log10(std::max(sum, 1e-10));
 
-            mel.data[j * mel.n_len + i] = sum;
+            features.data[j * features.n_frames + i] = sum;
         }
     }
 
     // Otherwise fft_out are all zero
     double sum = log10(1e-10);
-    for (; i < mel.n_len; i += n_threads) {
-        for (int j = 0; j < mel.n_mel; j++) {
-            mel.data[j * mel.n_len + i] = sum;
+    for (; i < features.n_frames; i += n_threads) {
+        for (int j = 0; j < features.feature_size; j++) {
+            features.data[j * features.n_frames + i] = sum;
         }
     }
 }
@@ -333,52 +315,52 @@ void fill_sin_cos_table(std::vector<float>& sin_vals, std::vector<float>& cos_va
     }
 }
 
-std::vector<float> mel_spectrogram_convert_audio(const std::vector<float>& raw_speech,
-                                                 const size_t sampling_rate,
-                                                 const size_t feature_size,
-                                                 const size_t n_fft,
-                                                 const size_t hop_length,
-                                                 const size_t n_threads,
-                                                 const std::vector<float>& mel_filter,
-                                                 const std::vector<float>& sin_vals,
-                                                 const std::vector<float>& cos_vals) {
-    const float* samples = raw_speech.data();
-    const int n_samples = raw_speech.size();
-    whisper_filters filters{feature_size, 1 + n_fft / 2, mel_filter};
-    whisper_mel mel;
+std::vector<float> pad(const std::vector<float>& raw_speech,
+                       const size_t minimum_length,
+                       const size_t reflect_pad_size) {
+    // pad to minimum length if needed
+    size_t total_pad_length = std::max(raw_speech.size(), minimum_length) + 2 * reflect_pad_size;
 
+    std::vector<float> padded_raw_speech(total_pad_length, 0.f);
+
+    std::copy(raw_speech.begin(), raw_speech.end(), padded_raw_speech.begin() + reflect_pad_size);
+
+    // reflect pad
+    std::reverse_copy(padded_raw_speech.begin() + reflect_pad_size + 1,
+                      padded_raw_speech.begin() + reflect_pad_size + 1 + reflect_pad_size,
+                      padded_raw_speech.begin());
+
+    std::reverse_copy(padded_raw_speech.end() - reflect_pad_size - 1 - reflect_pad_size,
+                      padded_raw_speech.end() - reflect_pad_size - 1,
+                      padded_raw_speech.end() - reflect_pad_size);
+
+    return padded_raw_speech;
+}
+
+WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_speech,
+                                              const size_t sampling_rate,
+                                              const size_t feature_size,
+                                              const size_t n_fft,
+                                              const size_t hop_length,
+                                              const size_t n_threads,
+                                              const std::vector<float>& mel_filter,
+                                              const std::vector<float>& sin_vals,
+                                              const std::vector<float>& cos_vals) {
     // Hanning window (Use cosf to eliminate difference)
     // ref: https://pytorch.org/docs/stable/generated/torch.hann_window.html
     // ref: https://github.com/openai/whisper/blob/main/whisper/audio.py#L147
     std::vector<float> hann;
     hann_window(n_fft, true, hann);
 
-    // Calculate the length of padding
-    int64_t stage_1_pad = sampling_rate * 30;
-    int64_t stage_2_pad = n_fft / 2;
+    const size_t reflect_pad_size = n_fft / 2;
+    auto padded_raw_speech = pad(raw_speech, sampling_rate * 30, reflect_pad_size);
 
-    // Initialize a vector and copy data from C array to it.
-    std::vector<float> samples_padded;
-    samples_padded.resize(n_samples + stage_1_pad + stage_2_pad * 2);
-    std::copy(samples, samples + n_samples, samples_padded.begin() + stage_2_pad);
-
-    // pad 30 seconds of zeros at the end of audio (480,000 samples) + reflective pad 200 samples at the end of audio
-    std::fill(samples_padded.begin() + n_samples + stage_2_pad,
-              samples_padded.begin() + n_samples + stage_1_pad + 2 * stage_2_pad,
-              0);
-
-    // reflective pad 200 samples at the beginning of audio
-    std::reverse_copy(samples + 1, samples + 1 + stage_2_pad, samples_padded.begin());
-    // eric tmp
-    samples_padded.resize(stage_1_pad + stage_2_pad * 2);
-
-    mel.n_mel = filters.n_mel;
+    WhisperFeatures features;
+    features.feature_size = feature_size;
     // https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/SpectralOps.cpp#L936
     // Calculate number of frames + remove the last frame
-    mel.n_len = (samples_padded.size() - n_fft) / hop_length;
-    // Calculate semi-padded sample length to ensure compatibility
-    mel.n_len_org = 1 + (n_samples + stage_2_pad - n_fft) / hop_length;
-    mel.data.resize(mel.n_mel * mel.n_len);
+    features.n_frames = (padded_raw_speech.size() - n_fft) / hop_length;
+    features.data.resize(features.feature_size * features.n_frames);
 
     {
         std::vector<std::thread> workers(n_threads - 1);
@@ -386,13 +368,13 @@ std::vector<float> mel_spectrogram_convert_audio(const std::vector<float>& raw_s
             workers[iw] = std::thread(log_mel_spectrogram_worker_thread,
                                       iw + 1,
                                       std::cref(hann),
-                                      samples_padded,
-                                      n_samples + stage_2_pad,
+                                      padded_raw_speech,
+                                      raw_speech.size() + reflect_pad_size,
                                       n_fft,
                                       hop_length,
                                       n_threads,
-                                      std::cref(filters),
-                                      std::ref(mel),
+                                      std::cref(mel_filter),
+                                      std::ref(features),
                                       std::cref(sin_vals),
                                       std::cref(cos_vals));
         }
@@ -400,13 +382,13 @@ std::vector<float> mel_spectrogram_convert_audio(const std::vector<float>& raw_s
         // main thread
         log_mel_spectrogram_worker_thread(0,
                                           hann,
-                                          samples_padded,
-                                          n_samples + stage_2_pad,
+                                          padded_raw_speech,
+                                          raw_speech.size() + reflect_pad_size,
                                           n_fft,
                                           hop_length,
                                           n_threads,
-                                          filters,
-                                          mel,
+                                          mel_filter,
+                                          features,
                                           sin_vals,
                                           cos_vals);
 
@@ -417,29 +399,46 @@ std::vector<float> mel_spectrogram_convert_audio(const std::vector<float>& raw_s
 
     // clamping and normalization
     double mmax = -1e20;
-    for (int i = 0; i < mel.n_mel * mel.n_len; i++) {
-        if (mel.data[i] > mmax) {
-            mmax = mel.data[i];
+    for (int i = 0; i < features.feature_size * features.n_frames; i++) {
+        if (features.data[i] > mmax) {
+            mmax = features.data[i];
         }
     }
 
     mmax -= 8.0;
 
-    for (int i = 0; i < mel.n_mel * mel.n_len; i++) {
-        if (mel.data[i] < mmax) {
-            mel.data[i] = mmax;
+    for (int i = 0; i < features.feature_size * features.n_frames; i++) {
+        if (features.data[i] < mmax) {
+            features.data[i] = mmax;
         }
 
-        mel.data[i] = (mel.data[i] + 4.0) / 4.0;
+        features.data[i] = (features.data[i] + 4.0) / 4.0;
     }
 
-    return mel.data;
+    return features;
 }
 
 }  // namespace
 
 namespace ov {
 namespace genai {
+
+std::vector<float> WhisperFeatures::get_data_with_offset(const size_t frame_offset, const size_t min_frames) {
+    OPENVINO_ASSERT(n_frames > frame_offset);
+
+    size_t copy_size = std::min(n_frames - frame_offset, min_frames);
+    std::vector<float> offset_data;
+
+    for (size_t i = 0; i < feature_size; i++) {
+        size_t offset = frame_offset + (i * n_frames);
+        std::copy(data.begin() + offset, data.begin() + offset + copy_size, std::back_inserter(offset_data));
+        if (copy_size < min_frames) {
+            std::fill_n(std::back_inserter(offset_data), min_frames - copy_size, 0);
+        }
+    }
+
+    return offset_data;
+}
 
 WhisperFeatureExtractor::WhisperFeatureExtractor(const std::string& preprocessor_json_path) {
     init_parameters(preprocessor_json_path);
@@ -480,7 +479,7 @@ void WhisperFeatureExtractor::init_mel_filter() {
     }
 }
 
-std::vector<float> WhisperFeatureExtractor::extract(const std::vector<float>& raw_speech) {
+WhisperFeatures WhisperFeatureExtractor::extract(const std::vector<float>& raw_speech) {
     size_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
     return mel_spectrogram_convert_audio(raw_speech,
                                          sampling_rate,

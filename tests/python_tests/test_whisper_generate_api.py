@@ -132,6 +132,25 @@ def test_whisper_on_hf_dataset(model_descr, dataset_id):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "test_sample",
+    get_samples_from_dataset(language="en", length=1),
+)
+@pytest.mark.precommit
+def test_smoke(model_descr, test_sample):
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    expected = opt_pipe(test_sample)
+
+    genai_result = pipe.generate(test_sample)
+
+    assert genai_result.texts[0] == expected["text"]
+
+    assert "chunks" not in expected
+    assert genai_result.chunks == None
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.precommit
 def test_whisper_config_constructor(model_descr):
     model_id, path = model_descr
@@ -383,7 +402,7 @@ def test_language_autodetect(model_descr, test_sample):
     ],
 )
 @pytest.mark.precommit
-def test_return_timestamps(model_descr, test_sample):
+def test_return_timestamps_short_form(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
     # long form audio not supported yet
     test_sample = test_sample[: 16000 * 30]
@@ -416,7 +435,7 @@ def test_return_timestamps(model_descr, test_sample):
     ],
 )
 @pytest.mark.precommit
-def test_return_timestamps_max_new_tokens(model_descr, test_sample):
+def test_return_timestamps_max_new_tokens_short_form(model_descr, test_sample):
     model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
     # long form audio not supported yet
     test_sample = test_sample[: 16000 * 30]
@@ -447,3 +466,90 @@ def test_return_timestamps_max_new_tokens(model_descr, test_sample):
         else:
             assert opt_chunk["timestamp"][1] == None
             assert round(genai_chunk.end_ts, 2) == -1.0
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "test_sample",
+    [
+        *get_samples_from_dataset(language="en", length=10, long_form=True),
+        *get_samples_from_dataset(language="fr", length=10, long_form=True),
+    ],
+)
+@pytest.mark.precommit
+def test_longform_audio_return_timestamps(model_descr, test_sample):
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    expected = opt_pipe(
+        test_sample,
+        return_timestamps=True,
+    )
+
+    genai_result = pipe.generate(
+        test_sample,
+        return_timestamps=True,
+    )
+
+    assert genai_result.texts[0] == expected["text"]
+
+    assert len(genai_result.chunks) == len(expected["chunks"])
+
+    for opt_chunk, genai_chunk in zip(expected["chunks"], genai_result.chunks):
+        assert opt_chunk["text"] == genai_chunk.text
+        assert opt_chunk["timestamp"][0] == round(genai_chunk.start_ts, 2)
+        if opt_chunk["timestamp"][1]:
+            assert opt_chunk["timestamp"][1] == round(genai_chunk.end_ts, 2)
+        else:
+            assert opt_chunk["timestamp"][1] == None
+            assert round(genai_chunk.end_ts, 2) == -1.0
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "test_sample",
+    [
+        *get_samples_from_dataset(language="en", length=3, long_form=True),
+        *get_samples_from_dataset(language="sp", length=3, long_form=True),
+    ],
+)
+@pytest.mark.precommit
+def test_longform_audio(model_descr, test_sample):
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    expected = opt_pipe(test_sample, return_timestamps=True)
+
+    genai_result = pipe.generate(test_sample)
+
+    assert genai_result.texts[0] == expected["text"]
+
+    assert genai_result.chunks == None
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "test_sample",
+    [
+        *get_samples_from_dataset(language="en", length=1),
+    ],
+)
+@pytest.mark.precommit
+def test_perf_metrics(model_descr, test_sample):
+    model_id, path, opt_pipe, pipe = read_whisper_model(model_descr)
+
+    result = pipe.generate(test_sample)
+
+    perf_metrics = result.perf_metrics
+
+    assert perf_metrics is not None
+
+    assert perf_metrics.get_load_time() > 0
+    assert perf_metrics.get_num_generated_tokens() > 0
+    assert perf_metrics.get_num_input_tokens() == 0
+    assert perf_metrics.get_ttft().mean > 0
+    assert perf_metrics.get_tpot().mean > 0
+    assert perf_metrics.get_ipot().mean > 0
+    assert perf_metrics.get_throughput().mean > 0
+    assert perf_metrics.get_inference_duration().mean > 0
+    assert perf_metrics.get_generate_duration().mean > 0
+    assert perf_metrics.get_tokenization_duration().mean == 0
+    assert perf_metrics.get_detokenization_duration().mean > 0
