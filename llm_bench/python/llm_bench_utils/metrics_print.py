@@ -13,8 +13,6 @@ def print_metrics(
         iter_str = 'warm-up'
     output_str = ''
     latency_unit = 'token'
-    if batch_size > 1:
-        latency_unit = '{}tokens'.format(batch_size)
     if iter_data['input_size'] != '':
         output_str += 'Input token size: {}, '.format(iter_data['input_size'])
     if iter_data['output_size'] != '':
@@ -33,8 +31,8 @@ def print_metrics(
         output_str = ' '.join(['[{}]'.format(iter_str), output_str])
         log.info(output_str)
     if tms is not None:
-        iter_data['first_token_latency'] = tms[0] * 1000 if len(tms) > 0 else -1
-        iter_data['other_tokens_avg_latency'] = sum(tms[1:]) / (len(tms) - 1) * 1000 if len(tms) > 1 else -1
+        iter_data['first_token_latency'] = tms[0] * 1000 * batch_size if len(tms) > 0 else -1
+        iter_data['other_tokens_avg_latency'] = sum(tms[1:]) / (len(tms) - 1) * 1000 * batch_size if len(tms) > 1 else -1
         first_token_latency = 'NA' if iter_data['first_token_latency'] == -1 else f"{iter_data['first_token_latency']:.2f} ms/{latency_unit}"
         other_token_latency = 'NA' if iter_data['other_tokens_avg_latency'] == -1 else f"{iter_data['other_tokens_avg_latency']:.2f} ms/{latency_unit}"
         log.info(
@@ -44,8 +42,8 @@ def print_metrics(
         if len(tms) == 0:
             log.warning(f'[{iter_str}] No hook data output for first token latency and other tokens latency')
     if tms_infer is not None:
-        iter_data['first_token_infer_latency'] = tms_infer[0] * 1000 if len(tms_infer) > 0 else -1
-        iter_data['other_tokens_infer_avg_latency'] = sum(tms_infer[1:]) / (len(tms_infer) - 1) * 1000 if len(tms_infer) > 1 else -1
+        iter_data['first_token_infer_latency'] = tms_infer[0] * 1000 * batch_size if len(tms_infer) > 0 else -1
+        iter_data['other_tokens_infer_avg_latency'] = sum(tms_infer[1:]) / (len(tms_infer) - 1) * 1000 * batch_size if len(tms_infer) > 1 else -1
         first_infer_latency = 'NA' if iter_data['first_token_infer_latency'] == -1 else f"{iter_data['first_token_infer_latency']:.2f} ms/infer"
         other_infer_latency = 'NA' if iter_data['other_tokens_infer_avg_latency'] == -1 else f"{iter_data['other_tokens_infer_avg_latency']:.2f} ms/infer"
         log.info(
@@ -144,11 +142,6 @@ def output_avg_statis_tokens(prompt_dict, prompt_idx_list, iter_data_list, batch
             if avg_2nd_tokens_latency > 0:
                 avg_2nd_token_tput = (1 / avg_2nd_tokens_latency) * batch_size * 1000
             latency_unit = 'token' if is_text_gen is True else 'step'
-            if batch_size > 1:
-                if is_text_gen is True:
-                    latency_unit = '{}tokens'.format(batch_size)
-                else:
-                    latency_unit = '{}steps'.format(batch_size)
             avg_1st_token_latency = 'NA' if avg_1st_token_latency < 0 else f'{avg_1st_token_latency:.2f} ms/{latency_unit}'
             avg_2nd_tokens_latency = 'NA' if avg_2nd_tokens_latency < 0 else f'{avg_2nd_tokens_latency:.2f} ms/{latency_unit}'
             avg_2nd_token_tput = 'NA' if avg_2nd_tokens_latency == 'NA' else f'{avg_2nd_token_tput:.2f} {latency_unit}s/s'
