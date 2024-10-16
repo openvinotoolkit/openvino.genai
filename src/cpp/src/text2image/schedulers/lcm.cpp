@@ -7,9 +7,9 @@
 #include <iterator>
 
 #include "text2image/schedulers/lcm.hpp"
-#include "utils.hpp"
 #include "text2image/numpy_utils.hpp"
 
+#include "json_utils.hpp"
 
 namespace ov {
 namespace genai {

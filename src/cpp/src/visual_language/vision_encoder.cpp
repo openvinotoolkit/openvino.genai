@@ -430,12 +430,7 @@ ov::Tensor preprocess_image_llava(const ov::Tensor& image, const ProcessorConfig
 
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap device_config, ov::Core core) :
     model_type(model_type) {
-        if (model_type == VLMModelType::MINICPM) {
-            m_vision_encoder = core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config).create_infer_request();
-        } else if (model_type == VLMModelType::LLAVA) {
-            // Vision embeddings model is merged with multi modal projector at model export stage by optimum-intel
-            m_vision_encoder = core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config).create_infer_request();
-        }
+        m_vision_encoder = core.compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, device_config).create_infer_request();
         m_processor_config = ov::genai::utils::from_config_json_if_exists<ov::genai::ProcessorConfig>(
             model_dir, "preprocessor_config.json"
         );

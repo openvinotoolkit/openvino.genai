@@ -18,7 +18,7 @@ def get_ov_model(model_dir):
     ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(processor.tokenizer, with_detokenizer=True)
     openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
     openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
-    model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, load_in_8bit=False, trust_remote_code=True)
+    model = OVModelForVisualCausalLM.from_pretrained(model_id, compile=False, device="CPU", export=True, trust_remote_code=True)
     model.config.save_pretrained(model_dir)
     model.generation_config.save_pretrained(model_dir)
     model.save_pretrained(model_dir)
@@ -64,6 +64,15 @@ def test_vlm_pipeline(cache):
             pipe.generate(prompt, generation_config=get_greedy(), streamer=streamer)
 
         pipe.finish_chat()
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
+def test_vlm_get_tokenizer(cache):
+    model_path = get_ov_model(cache.mkdir("MiniCPM-V-2_6"))
+    pipe = VLMPipeline(str(model_path), "CPU")
+    tokenizer = pipe.get_tokenizer()
+    tokenizer.encode("")
 
 
 @pytest.mark.precommit
