@@ -6,54 +6,13 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
-#include "openvino/genai/vision_encoder.hpp"
-#include "openvino/genai/vlm_config.hpp"
+#include <filesystem>
 
 namespace ov::genai {
-/// @brief A string prompt and source image.
-struct PromptImages {
-    /// @brief A prompt represented as std::string.
-    std::string prompt;
-    /// @brief An image represented as ov::Tensor.
-    std::vector<ov::Tensor> images;
-};
-
 /// @brief A Visual language modeling pipeline class used to generate a
 /// response or run a chat given a prompt and an image.
 class OPENVINO_GENAI_EXPORTS VLMPipeline {
 public:
-    // A config to follow for LLM input construction.
-    VLMConfig m_vlm_config;
-    // A config to follow for text generation.
-    GenerationConfig m_generation_config;
-    // A tokenizer encoding a prompt.
-    Tokenizer m_tokenizer;
-    // An encoder to infer embeddings of an image.
-    VisionEncoder m_vision_encoder;
-    // A resampler model to resample image embeddings.
-    // [N, H*W, old_hidden_size] is the input shape.
-    // [N, query_num, hidden_size] is the output shape.
-    ov::InferRequest m_resampler;
-    // A model to compute token embeddings.
-    // Input shape: [N, conversation length].
-    // Output shape: [1, conversation length, hidden_size].
-    ov::InferRequest m_embedding;
-    // A language model used to generate a response.
-    // Input shapes: inputs_embeds[N, conversation length, hidden_size],
-    // position_ids[N, conversation length], beam_idx[N].
-    // Output shape: logits[N, conversation length, vocab_size].
-    ov::InferRequest m_language;
-    // Precomputed positional embeddings for the resampler.
-    // [70, 70, hidden_size]. 70 is the initial guess of the image
-    // height and width after dividing by patch_size.
-    ov::Tensor m_pos_embed_cache;
-    // True if chat mode is activated to save conversation
-    // history between generate() calls.
-    bool m_is_chat_conversation;
-    ChatHistory m_history;
-    std::string m_templated_chat_history;
-    size_t image_id = 0;  // Used to insert <image_id>i</image_id> per image (not a slice).
-
     /// @brief Construct a pipeline form a folder containing tokenizer
     /// and model IRs.
     /// @param model_dir A folder to read tokenizer and model IRs.
@@ -122,7 +81,7 @@ public:
     /// role.
     void start_chat(const std::string& system_message="");
     /// @brief Deactivate chat mode.
-    void finish_chat() {m_is_chat_conversation = false;}
+    void finish_chat();
     /// @brief Set a custom chat template. Can be used to deactivate
     /// chat_template application for chat mode if called with
     /// "{% for message in messages %}{{ message['content'] }}{% endfor %}"
@@ -130,6 +89,9 @@ public:
     /// model chat_template.
     /// @param new_template A new template to override with.
     void set_chat_template(const std::string& new_template);
+    /// @brief Get a Tokenizer used to tokenize input and detokenize
+    /// output.
+    ov::genai::Tokenizer get_tokenizer() const;
     /// @brief Extract GenerationConfig used to get default values.
     /// @return Default values used.
     GenerationConfig get_generation_config() const;
@@ -139,9 +101,6 @@ public:
 private:
     class VLMPipelineImpl;
     std::unique_ptr<VLMPipelineImpl> m_pimpl;
-
-    ov::Tensor get_inputs_embeds_minicpm(const std::string& prompt, const std::vector<ov::Tensor>& images);
-    ov::Tensor get_inputs_embeds_llava(const std::string& prompt, const std::vector<ov::Tensor>& images);
 };
 
 /*

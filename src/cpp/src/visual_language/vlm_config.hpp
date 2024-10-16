@@ -4,9 +4,9 @@
 #pragma once
 
 #include "openvino/genai/visibility.hpp"
+#include "visual_language/vlm_model_type.hpp"
 #include <openvino/runtime/properties.hpp>
 #include <filesystem>
-#include "vlm_model_type.hpp"
 
 namespace ov::genai {
 /// @brief A Configuration class passed to VLMPipeline and used to

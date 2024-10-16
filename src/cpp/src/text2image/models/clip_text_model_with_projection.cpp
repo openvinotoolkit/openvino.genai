@@ -7,7 +7,7 @@
 
 #include "openvino/runtime/core.hpp"
 
-#include "utils.hpp"
+#include "json_utils.hpp"
 
 namespace ov {
 namespace genai {
