@@ -58,7 +58,6 @@ jobs:
           source openvino_sd_cpp/bin/activate
           python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
           python -m pip install -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-          python -m pip install -U "optimum<1.23" --no-dependencies
 
       - name: Download and convert models and tokenizer
         run: |
@@ -115,7 +114,6 @@ jobs:
             . "./openvino_sd_cpp/Scripts/Activate.ps1"
             python -m pip install ./thirdparty/openvino_tokenizers/[transformers] --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
             python -m pip install -r ./samples/requirements.txt --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-            python -m pip install -U "optimum<1.23" --no-dependencies
 
         - name: Download and convert models and tokenizer
           run: |
