@@ -9,7 +9,6 @@
 struct clip_ctx {
     float image_mean[3] = {0.0f, 0.0f, 0.0f};
     float image_std[3] = {1.0f, 1.0f, 1.0f};
-    size_t patch_size = 0;
     size_t image_size = 0;
 };
 
