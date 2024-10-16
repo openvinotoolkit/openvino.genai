@@ -18,7 +18,7 @@ if(NOT pybind11_POPULATED)
     add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
 endif()
 
-pybind11_add_module(py_generate_pipeline py_vlm_pipeline.cpp py_generate_pipeline.cpp py_whisper_pipeline.cpp utils.cpp)
+pybind11_add_module(py_generate_pipeline py_lora_adapter.cpp py_vlm_pipeline.cpp py_generate_pipeline.cpp py_whisper_pipeline.cpp py_text2image_models.cpp py_text2image_pipeline.cpp utils.cpp)
 target_link_libraries(py_generate_pipeline PRIVATE openvino::genai)
 set_target_properties(py_generate_pipeline PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
