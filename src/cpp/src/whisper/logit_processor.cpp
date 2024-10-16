@@ -38,7 +38,7 @@ void process_whisper_timestamp_logits(ov::Tensor& logits,
     // supress<|notimestamps|>
     logits_data[config.no_timestamps_token_id] = -std::numeric_limits<float>::infinity();
 
-    size_t timestamp_begin = config.no_timestamps_token_id + 1;
+    const size_t timestamp_begin = config.no_timestamps_token_id + 1;
 
     // timestamps have to appear in pairs, except directly before eos_token; mask logits accordingly
     size_t generated_length = generated_tokens.size();
