@@ -118,9 +118,6 @@ public:
     // removes n last tokens and updates cumulative log prob
     // used to remove stop_string from the output
     void remove_last_tokens(int n) {
-        if (m_generated_ids.size() < n) {
-            auto a = 0;
-        }
         OPENVINO_ASSERT(m_generated_ids.size() >= n, "Cannot remove more tokens than has been generated");
         for (int i = 0; i < n; i++) {
             m_cumulative_log_prob -= m_generated_log_probs.back();

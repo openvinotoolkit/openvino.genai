@@ -272,24 +272,18 @@ private:
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(StreamerVariant func);
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const GenerationConfig& config);
 
-OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> draft_model(
+OPENVINO_GENAI_EXPORTS
+std::pair<std::string, Any> get_draft_model(
     const std::string& model_path,
-    const std::string& device = "",
-    const ov::AnyMap& plugin_config = {},
-    const SchedulerConfig& scheduler_cconfig = {} 
-);
+    const std::string& device,
+    const ov::AnyMap& config);
 
-template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+template <typename... Properties>
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> draft_model(
         const std::string& path,
-        const std::string& device="CPU",
+        const std::string& device,
         Properties&&... properties) {
-    ov::AnyMap plugin_config = AnyMap{std::forward<Properties>(properties)...};
-    if (plugin_config.count(ov::genai::scheduler_config.name())) {
-        SchedulerConfig scheduler_config = plugin_config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
-        plugin_config.erase(ov::genai::scheduler_config.name());
-        return draft_model(path, device, plugin_config, scheduler_config);
-    }
+    return get_draft_model(path, device, AnyMap{std::forward<Properties>(properties)...});
 }
 
 }  // namespace genai
