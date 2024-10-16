@@ -30,7 +30,7 @@ jobs:
       run:
         shell: bash
     runs-on: ubuntu-20.04
-
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     steps:
       - name: Download OpenVINO build
         id: openvino_download
@@ -60,6 +60,7 @@ jobs:
       run:
         shell: bash
     runs-on: 'macos-12-large'
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     env:
       MACOSX_DEPLOYMENT_TARGET: '10.15'
       CMAKE_BUILD_TYPE: 'Release'
@@ -185,6 +186,7 @@ jobs:
       run:
         shell: bash
     runs-on: macos-13
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -249,6 +251,7 @@ jobs:
       run:
         shell: bash
     runs-on: macos-13
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -316,6 +319,7 @@ jobs:
       run:
         shell: bash
     runs-on: macos-13
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
 
