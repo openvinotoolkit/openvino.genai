@@ -39,5 +39,6 @@ install(DIRECTORY
             python/multinomial_causal_lm
             python/whisper_speech_recognition
             # python/text2image
+            python/speculative_decoding_lm
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)

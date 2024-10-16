@@ -37,6 +37,7 @@ using ov::genai::StreamerVariant;
 using ov::genai::StringInputs;
 using ov::genai::TokenizedInputs;
 using ov::genai::Tokenizer;
+using ov::genai::draft_model;
 
 template <typename T, typename U>
 std::vector<float> get_ms(const T& instance, U T::*member) {
@@ -580,6 +581,8 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
         .def_readwrite("frequency_penalty", &GenerationConfig::frequency_penalty)
         .def_readwrite("rng_seed", &GenerationConfig::rng_seed)
         .def_readwrite("stop_strings", &GenerationConfig::stop_strings)
+        .def_readwrite("assistant_confidence_threshold", &GenerationConfig::assistant_confidence_threshold)
+        .def_readwrite("num_assistant_tokens", &GenerationConfig::num_assistant_tokens)
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def("set_eos_token_id", &GenerationConfig::set_eos_token_id)
@@ -761,6 +764,21 @@ PYBIND11_MODULE(py_generate_pipeline, m) {
             py::arg("prompts"),
             py::arg("sampling_params"),
             py::arg("streamer") = std::monostate{}
+        );
+    
+    py::class_<ov::Any>(m, "DraftModel", "This class is used to enable Speculative Decoding")
+        .def(py::init([](
+            const std::string& model_path,
+            const std::string& device,
+            const ov::AnyMap& config,
+            const ov::genai::SchedulerConfig& scheduler_config
+        ) {
+            return ov::genai::draft_model(model_path, device, config, scheduler_config).second;
+        }),
+        py::arg("model_path"), "folder with openvino_model.xml and openvino_tokenizer[detokenizer].xml files", 
+        py::arg("device") = "CPU", "device on which inference will be done",
+        py::arg("config") = ov::AnyMap({}), "openvino.properties map",
+        py::arg("scheduler_config") = ov::genai::SchedulerConfig({}), "openvino.properties map"
         );
     
     // init whisper bindings

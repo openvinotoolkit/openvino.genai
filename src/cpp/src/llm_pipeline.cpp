@@ -17,6 +17,7 @@
 #include "text_callback_streamer.hpp"
 #include "openvino/genai/lora_adapter.hpp"
 #include "lora_helper.hpp"
+#include "speculative_decoding/speculative_decoding_impl.hpp"
 
 namespace ov {
 namespace genai {
@@ -367,8 +368,17 @@ std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
 }
 
+std::pair<std::string, Any> draft_model(
+    const std::string& model_path,
+    const std::string& device,
+    const ov::AnyMap& plugin_config,
+    const ov::genai::SchedulerConfig& scheduler_config) {
+    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model_path, device, plugin_config, scheduler_config) };
+}
+
 }  // namespace genai
 }  // namespace ov
+
 
 namespace {
 using namespace ov::genai;
