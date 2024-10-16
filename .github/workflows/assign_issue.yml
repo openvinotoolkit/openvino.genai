@@ -12,6 +12,7 @@ jobs:
   take-issue:
     name: Take issue
     runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
     permissions:
       issues: write
     timeout-minutes: 10
