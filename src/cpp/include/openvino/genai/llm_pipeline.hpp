@@ -273,18 +273,11 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> streamer(StreamerVariant func
 OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> generation_config(const GenerationConfig& config);
 
 OPENVINO_GENAI_EXPORTS
-std::pair<std::string, Any> get_draft_model(
+std::pair<std::string, Any> draft_model(
     const std::string& model_path,
-    const std::string& device,
-    const ov::AnyMap& config);
-
-template <typename... Properties>
-OPENVINO_GENAI_EXPORTS std::pair<std::string, Any> draft_model(
-        const std::string& path,
-        const std::string& device,
-        Properties&&... properties) {
-    return get_draft_model(path, device, AnyMap{std::forward<Properties>(properties)...});
-}
+    const std::string& device = "",
+    const ov::AnyMap& plugin_config = {},
+    const ov::genai::SchedulerConfig& scheduler_config = {});
 
 }  // namespace genai
 }  // namespace ov

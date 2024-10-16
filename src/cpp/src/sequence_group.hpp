@@ -614,9 +614,10 @@ public:
                 (m_sampling_params.stop_strings.empty() || m_sampling_params.include_stop_str_in_output)) {
                 auto previous_step_gen_len = get_num_processed_tokens() > 0 ? get_num_processed_tokens() - get_prompt_len() + 1 : 0;
                 auto generation_len = m_sequences.front()->get_generated_len();
-                OPENVINO_ASSERT(previous_step_gen_len <= generation_len);
-                auto token_to_print = generation_len - previous_step_gen_len;
-                push_partial_outputs(token_to_print);
+                if (previous_step_gen_len < generation_len) {
+                    auto token_to_print = generation_len - previous_step_gen_len;
+                    push_partial_outputs(token_to_print);
+                }
             } else if (has_finished() || out_of_memory()) {
                 push_outputs();
             }

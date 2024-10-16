@@ -368,17 +368,12 @@ std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
 }
 
-std::pair<std::string, Any> get_draft_model(
+std::pair<std::string, Any> draft_model(
     const std::string& model_path,
     const std::string& device,
-    const ov::AnyMap& plugin_config) {
-    ov::AnyMap new_plugin_config = plugin_config;
-    if (new_plugin_config.count(ov::genai::scheduler_config.name())) {
-        SchedulerConfig scheduler_config = plugin_config.at(ov::genai::scheduler_config.name()).as<SchedulerConfig>();
-        new_plugin_config.erase(ov::genai::scheduler_config.name());
-        return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model_path, device, new_plugin_config, scheduler_config) };
-    }
-    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model_path, device, new_plugin_config) };
+    const ov::AnyMap& plugin_config,
+    const ov::genai::SchedulerConfig& scheduler_config) {
+    return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model_path, device, plugin_config, scheduler_config) };
 }
 
 }  // namespace genai
