@@ -806,7 +806,6 @@ public:
 
     ov::Tensor get_inputs_embeds_llava(const std::string& prompt, const std::vector<ov::Tensor>& images) {
         std::string image_token = m_vlm_config.im_start;
-        // TODO Enable and reuse chat mode
         std::string formatted_prompt = "USER: " + (images.empty() ? prompt : image_token + "\n" + prompt) + " ASSISTANT:";
         ov::Tensor input_ids = m_tokenizer.encode(formatted_prompt).input_ids;
         if (images.empty()) {
@@ -827,9 +826,7 @@ public:
 
     ov::Tensor get_inputs_embeds_llava_next(const std::string& prompt, const std::vector<ov::Tensor>& images) {
         std::string image_token = m_vlm_config.im_start;
-        // TODO Enable and reuse chat mode
         std::string content = images.empty() ? prompt : image_token + "\n" + prompt;
-        ChatHistory m_history;
         m_history.push_back({{"role", "user"}, {"content", content}});
         constexpr bool add_generation_prompt = true;
         std::string new_templated_chat_history;
