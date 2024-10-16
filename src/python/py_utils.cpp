@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "./utils.hpp"
+#include "py_utils.hpp"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -9,7 +9,7 @@
 
 #include <openvino/runtime/auto/properties.hpp>
 
-#include "../cpp/src/tokenizers_path.hpp"
+#include "tokenizers_path.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 
 namespace py = pybind11;

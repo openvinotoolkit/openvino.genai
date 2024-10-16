@@ -8,8 +8,8 @@
 #include <pybind11/stl_bind.h>
 #include <pybind11/functional.h>
 #include "openvino/genai/visual_language/pipeline.hpp"
-#include "../cpp/src/tokenizers_path.hpp"
-#include "./utils.hpp"
+#include "tokenizers_path.hpp"
+#include "py_utils.hpp"
 
 namespace py = pybind11;
 namespace utils = ov::genai::pybind::utils;
@@ -120,6 +120,7 @@ void init_vlm_pipeline(py::module_& m) {
 
         .def("start_chat", &ov::genai::VLMPipeline::start_chat, py::arg("system_message") = "")
         .def("finish_chat", &ov::genai::VLMPipeline::finish_chat) 
+        .def("get_tokenizer", &ov::genai::VLMPipeline::get_tokenizer)
         .def("get_generation_config", &ov::genai::VLMPipeline::get_generation_config)
         .def("set_generation_config", &ov::genai::VLMPipeline::set_generation_config)
         .def(

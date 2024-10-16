@@ -68,6 +68,15 @@ def test_vlm_pipeline(cache):
 
 @pytest.mark.precommit
 @pytest.mark.nightly
+def test_vlm_get_tokenizer(cache):
+    model_path = get_ov_model(cache.mkdir("MiniCPM-V-2_6"))
+    pipe = VLMPipeline(str(model_path), "CPU")
+    tokenizer = pipe.get_tokenizer()
+    tokenizer.encode("")
+
+
+@pytest.mark.precommit
+@pytest.mark.nightly
 @pytest.mark.parametrize("config", [
     get_beam_search(),
     get_multinomial_all_parameters(),

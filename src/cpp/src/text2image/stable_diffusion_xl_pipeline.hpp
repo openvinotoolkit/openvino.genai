@@ -6,7 +6,7 @@
 #include <ctime>
 #include <cassert>
 
-#include "utils.hpp"
+#include "json_utils.hpp"
 
 namespace ov {
 namespace genai {

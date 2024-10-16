@@ -5,7 +5,7 @@
 
 #include <fstream>
 
-#include "utils.hpp"
+#include "json_utils.hpp"
 
 #include "text2image/schedulers/lcm.hpp"
 #include "text2image/schedulers/lms_discrete.hpp"
