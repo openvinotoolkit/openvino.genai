@@ -13,8 +13,11 @@
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/constant.hpp"
 
+#include "openvino/genai/text2image/txt2img_core.hpp"
+
 #include "json_utils.hpp"
 #include "lora_helper.hpp"
+
 namespace ov {
 namespace genai {
 
@@ -34,7 +37,8 @@ AutoencoderKL::Config::Config(const std::string& config_path) {
 
 AutoencoderKL::AutoencoderKL(const std::string& root_dir)
     : m_config(root_dir + "/config.json") {
-    m_model = ov::Core().read_model(root_dir + "/openvino_model.xml");
+    ov::Core core = txt2img_core::singleton_core();
+    m_model = core.read_model(root_dir + "/openvino_model.xml");
     // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
     merge_vae_image_processor();
 }
@@ -69,7 +73,8 @@ AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
 
 AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
-    ov::CompiledModel compiled_model = ov::Core().compile_model(m_model, device, properties);
+    ov::Core core = txt2img_core::singleton_core();
+    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
     m_request = compiled_model.create_infer_request();
     // release the original model
     m_model.reset();
