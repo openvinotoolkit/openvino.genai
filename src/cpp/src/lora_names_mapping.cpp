@@ -155,7 +155,6 @@ NameMap maybe_map_sgm_blocks_to_diffusers(std::set<std::string> state_dict, int 
                 throw std::runtime_error("Layer format is incorrect: " + layer);
             }
             int layer_id = std::stoi(parts[block_slice_pos -1]); // zero-based indexing
-            std::cerr << "layer_id: " << layer_id << "\n";
 
             if (layer.find("input_blocks") != std::string::npos) {
                 input_block_ids.insert(layer_id);
@@ -329,7 +328,6 @@ NameMap maybe_map_non_diffusers_lora_to_diffusers(const std::set<std::string>& k
         }
         new_key = _convert_unet_lora_key(new_key);
         new_keys[key] = new_key;
-        std::cerr << "FINAL REPLACEMENT: " << key << "  -->  " << new_key << "\n";
     }
     return new_keys;
 }

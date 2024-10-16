@@ -38,7 +38,6 @@ CLIPTextModelWithProjection::CLIPTextModelWithProjection(const std::string& root
     AdapterConfig adapters;
     if(auto filtered_properties = extract_adapters_from_properties(properties, &adapters)) {
         adapters.set_tensor_name_prefix(adapters.get_tensor_name_prefix().value_or("lora_te"));
-        std::cerr << "te2: " << *adapters.get_tensor_name_prefix() << "\n";
         m_adapter_controller = AdapterController(m_model, adapters, device);
         compile(device, *filtered_properties);
     } else {

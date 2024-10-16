@@ -48,7 +48,7 @@ extern "C" {
 #define FP16_BF16_TENSORS_SUPPORTED_IN_STATE 0
 
 // FIXME: Remove or move to a dedicated common header
-#if false
+#ifdef NDEBUG
     #define DEBUG_PRINT(X) do {} while(false)
 #else
     #define DEBUG_PRINT(X) do { std::cerr << "[ DEBUG ] " << X << "\n"; } while(false)
@@ -257,13 +257,15 @@ using LoRAParametersGetter = std::function<std::optional<LoRAParameters>(NodePtr
 // It works for a single LoRA adapter.
 // Returns std::nullopt, if there is no LoRA adapter for a given layer name.
 struct LoRAWeightGetterDefault {
-    const LoRATensors* lora_tensors;
+    const LoRATensors* lora_tensors = nullptr;
     const std::string prefix;
-    //mutable std::set<std::string> used_tensors;
+    mutable std::set<std::string> used_tensors;
+    mutable bool active = false;    // true if operator() was called at least once to filter out the case when this object is temporary object that is not used for tensor queries
 
     LoRAWeightGetterDefault (const LoRATensors* lora_tensors, const std::string& prefix) : lora_tensors(lora_tensors), prefix(prefix) {}
 
     std::optional<LoRANode> operator() (const std::string& name) const {
+        active = true;
         std::string name_with_underscores = name;
         // TODO: Investigate what is the root cause for this replacement in the name. Customize mapping or change PT FE to produce correct weight names.
         std::replace(name_with_underscores.begin(), name_with_underscores.end(), '.', '_');
@@ -280,32 +282,48 @@ struct LoRAWeightGetterDefault {
             return variants.end() != std::find_if(variants.begin(), variants.end(), [lora_name](const std::string& name) { return name.find(lora_name) != std::string::npos; });
         });
         if(it != lora_tensors->end()) {
-            //used_tensors.insert(it->first);
+            used_tensors.insert(it->first);
             return it->second;
         }
         return std::nullopt;
     }
 
-    #if 0  // for debugging purposes
-    ~LoRAWeightGetterDefault () {
-        // figure out which tensors haven't been used
-        size_t unused = 0;
-        size_t used = 0;
+    // Return list of LoRA tensors that are dedicated for the model but left unused
+    std::list<std::string> get_unused_tensors() const {
+        std::list<std::string> unused;
         for(auto const& tensor: *lora_tensors) {
-            if(tensor.first.find(prefix) == 0)
+            if(tensor.first.find(prefix) == 0) {
                 if(used_tensors.find(tensor.first) == used_tensors.end()) {
-                    DEBUG_PRINT("Unused LoRA Tensor: " << tensor.first);
-                    unused++;
-                } else {
-                    //DEBUG_PRINT("Unused LoRA Tensor: " << tensor.first);
-                    used++;
+                    unused.push_back(tensor.first);
                 }
+            }
         }
-        DEBUG_PRINT("Unused tensors total: " << unused);
-        DEBUG_PRINT("Used tensors total: " << used);
+        return unused;
     }
-    #endif
+
+    ~LoRAWeightGetterDefault() {
+        try {
+            if(!active || !lora_tensors) {
+                return;
+            }
+
+            auto unused = get_unused_tensors();
+            if(unused.empty()) {
+                return;
+            }
+
+            std::cerr << "[ WARNING ] There unused LoRA tensors. The result of generation can be not accurate. Check if a given adapter file is compatible with the base model.\n";
+
+            for(const auto& unused_name: unused) {
+                std::cerr << "    Unused LoRA tensor: " << unused_name << "\n";
+            }
+        }catch(...) {
+            std::cerr << "[ UNKNOWN EXEPTION IN DTOR ]\n";
+        }
+    }
+
 };
+
 
 
 // Maps a node in the base model to LoRA parameters object that describes how the LoRA tensors should be injected for that node.
@@ -773,11 +791,9 @@ public:
                 auto it = mapping.find(kv.first);
                 if(it == mapping.end()) {
                     // pass
-                    DEBUG_PRINT("Passed lora name: " << kv.first);
                     new_tensors[kv.first] = kv.second;
                 } else {
                     // replace key
-                    DEBUG_PRINT("Replace lora name: " << kv.first << "  -->  " << it->second);
                     new_tensors[it->second] = kv.second;
                 }
             }
@@ -1340,9 +1356,7 @@ void AdapterConfig::update (const AdapterConfig& other) {
     if(other.mode != MODE_AUTO) {
         mode = other.mode;
     }
-    std::cerr << "current value of tensor_name_prefix: " << *tensor_name_prefix << "\n";
     if(other.tensor_name_prefix) {
-        std::cerr << "UPDATED TENSOR NAME PREFIX: " << *other.tensor_name_prefix << "\n";
         tensor_name_prefix = other.tensor_name_prefix;
     }
 }
