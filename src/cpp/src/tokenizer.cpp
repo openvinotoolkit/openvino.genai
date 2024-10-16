@@ -17,6 +17,7 @@
 #include "make_combine_segments_stateful.hpp"
 #include "tokenizers_path.hpp"
 #include "circular_buffer_queue.hpp"
+#include "json_utils.hpp"
 #include "utils.hpp"
 
 namespace {
