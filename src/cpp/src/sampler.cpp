@@ -594,7 +594,11 @@ create_n_forked_sequences(SequenceGroup::Ptr sequence_group,
                           const std::vector<Token>& sampled_tokens) {
     const auto& running_sequences = sequence_group->get_running_sequences();
     OPENVINO_ASSERT(running_sequences.size() == 1);
-    Sequence::Ptr sequence_to_fork = running_sequences.front();
+    Sequence::Ptr sequence_to_fork = running_sequences[0];
+    if (sequence_to_fork->get_generated_len() > 0) {
+        logit_processor.update_generated_len(0);
+        sequence_to_fork->remove_last_tokens(sequence_to_fork->get_generated_len());
+    }
     std::list<uint64_t> forked_seq_ids;
     for (size_t i = 1; i < sampled_tokens.size(); ++i) {
         const auto forked_sequence = sequence_group->fork_sequence(sequence_to_fork);
@@ -719,14 +723,17 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                         logit_processor.apply(logit_vector);
 
                         Token sampled_token_id;
+                        bool is_generate_n_tokens = false;
                         if (sampling_params.is_greedy_decoding()) {
                             sampled_token_id = { _greedy_sample(logit_vector) };
                         } else {
                             // is_multinomial()
-                            const bool is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
+                            is_generate_n_tokens = sequence_group->num_total_seqs() == 1;
                             const size_t num_tokens_per_sequence = is_generate_n_tokens ? sampling_params.num_return_sequences : 1;
+                            is_generate_n_tokens &= (num_tokens_per_sequence > 1);
                             auto sampled_token_ids = _multinomial_sample(logit_vector, num_tokens_per_sequence);
                             OPENVINO_ASSERT(sampled_token_ids.size(), num_tokens_per_sequence);
+                            // to create n sequence just in case of `sequence_group->num_total_seqs() == 1` and `sampling_params.num_return_sequences > 1`
                             if (is_generate_n_tokens) {
                                 const auto forked_seq_ids = create_n_forked_sequences(sequence_group, logit_processor, sampled_token_ids);
                                 sampler_output.m_forked_sequences.insert({running_sequences[0]->get_id(), forked_seq_ids});
@@ -734,11 +741,11 @@ SamplerOutput Sampler::sample(std::vector<SequenceGroup::Ptr> & sequence_groups,
                             sampled_token_id = sampled_token_ids.front();
                         }
                         // flag to add sampled token to generated sequence or extend logit processors only
-                        bool is_extend_sequence = token_offset == 0,
+                        bool is_extend_sequence = token_offset == 0 || is_generate_n_tokens,
                              // flag to update generated length of sequence group in logit processor
                              is_update_len_logit_processor = running_sequence_id == num_running_sequences - 1,
                              is_validation_passed = true;
-                        if (is_validation_mode_enabled) {
+                        if (is_validation_mode_enabled && !is_generate_n_tokens) {
                             is_validation_passed = validate_candidate(running_sequences[running_sequence_id], token_offset, sampled_token_id, is_extend_sequence, max_removed_tokens_per_request);
                         }
                         register_new_token(sampled_token_id, running_sequences[running_sequence_id], logit_processor, is_extend_sequence, is_update_len_logit_processor, is_validation_mode_enabled);

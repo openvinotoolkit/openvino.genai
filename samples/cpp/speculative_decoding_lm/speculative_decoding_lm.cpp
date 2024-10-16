@@ -2,19 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/openvino.hpp>
+#include <openvino/genai/llm_pipeline.hpp>
 #include <cxxopts.hpp>
-
-#include "openvino/genai/continuous_batching_pipeline.hpp"
 
 void print_generation_result(const std::vector<std::string>& texts, const std::vector<float>& log_probs) {
     for (size_t output_id = 0; output_id < texts.size(); ++output_id) {
         std::cout << "Answer " << output_id << " (" << log_probs[output_id] << ") : " << texts[output_id] << std::endl;
-    }
-}
-
-void print_cb_generation_result(const ov::genai::GenerationResult& generation_result) {
-    for (size_t output_id = 0; output_id < generation_result.m_generation_ids.size(); ++output_id) {
-        std::cout << "Answer " << output_id << " (" << generation_result.m_scores[output_id] << ") : " << generation_result.m_generation_ids[output_id] << std::endl;
     }
 }
 
@@ -133,13 +126,6 @@ int main(int argc, char* argv[]) try {
     scheduler_config.max_num_seqs = 2;
     scheduler_config.enable_prefix_caching = use_prefix;
 
-    // ov::AnyMap plugin_config{
-    //     { ov::genai::scheduler_config.name(), scheduler_config },
-    //     // device to run draft pipeline. Can be different with the main pipeline.
-    //     // in case of same devices, plugin_config will be reused for both pipeline, KV cache will be splitted for main and draft pipeline
-    //     { ov::genai::draft_model.name(), ov::genai::ModelDesc(draft_model_path, device) },
-    // };
-
     // It's possible to construct a Tokenizer from a different path.
     // If the Tokenizer isn't specified, it's loaded from the same folder.
     ov::genai::LLMPipeline pipe(model_path, device, ov::genai::draft_model(draft_model_path, device), ov::genai::scheduler_config(scheduler_config));
@@ -157,38 +143,6 @@ int main(int argc, char* argv[]) try {
         print_generation_result(text_results, log_prob_results);
         std::cout << std::endl;
     }
-    
-    // ov::genai::ContinuousBatchingPipeline pipe(model_path, scheduler_config, device, plugin_config);
-    // std::vector<ov::genai::GenerationResult> generation_results = pipe.generate(prompts, generation_config);
-
-    // for (size_t request_id = 0; request_id < generation_results.size(); ++request_id) {
-    //     const ov::genai::GenerationResult & generation_result = generation_results[request_id];
-    //     std::cout << "Question: " << prompts[request_id] << std::endl;
-    //     switch (generation_result.m_status)
-    //     {
-    //     case ov::genai::GenerationStatus::FINISHED:
-    //         print_cb_generation_result(generation_result);
-    //         break;
-    //     case ov::genai::GenerationStatus::IGNORED:
-    //         std::cout << "Request was ignored due to lack of memory." <<std::endl;
-    //         if (generation_result.m_generation_ids.size() > 0) {
-    //             std::cout << "Partial result:" << std::endl;
-    //             print_cb_generation_result(generation_result);
-    //         }
-    //         break;
-    //     case ov::genai::GenerationStatus::DROPPED_BY_PIPELINE:
-    //         std::cout << "Request was aborted." <<std::endl;
-    //         if (generation_result.m_generation_ids.size() > 0) {
-    //             std::cout << "Partial result:" << std::endl;
-    //             print_cb_generation_result(generation_result);
-    //         }
-    //         break;   
-    //     default:
-    //         break;
-    //     }
-    //     std::cout << std::endl;
-    // }
-
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';

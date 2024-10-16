@@ -48,12 +48,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::f
     }
 }
 
-bool 
-ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::is_pipeline_not_started() {
-    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
-    return m_requests.empty() && !m_awaiting_requests.empty();
-}
-
 GeneratedRequests
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_generated_requests() {
     _pull_awaiting_requests();
@@ -143,26 +137,41 @@ insert_tokens_to_sequence(Sequence::Ptr& sequence,
     return (candidate_len - generated_len);
 }
 
+
+// `is_init_all_sequences_in_request` is flag to enable initialization of all sequences in case of `num_return_sequences > 1`.
+// Only first sequence from all will be initialized if flag is set to `false` state.
+// This approach helped to process prompt once in speculative decoding multisequence case.
 size_t
 init_request(
     SequenceGroup::Ptr request,
     const GeneratedSequences& candidates,
     LogitProcessor& logit_processor,
-    bool is_update_logit_processor) {
+    bool is_update_logit_processor,
+    bool is_init_all_sequences_in_request = false) {
+    if (candidates.begin()->second.token_ids.empty() && !is_init_all_sequences_in_request) {
+        return 0;
+    }
     size_t min_candidate_len = std::numeric_limits<size_t>::max();
-    for (const auto& candidate_sequence : candidates) {
-        min_candidate_len = std::min(candidate_sequence.second.token_ids.size(), min_candidate_len);
+    if (is_init_all_sequences_in_request) {
+        for (const auto& candidate_sequence : candidates) {
+            min_candidate_len = std::min(candidate_sequence.second.token_ids.size(), min_candidate_len);
+        }
+    } else {
+        // place only one token to first sequence in case of multisequence generation.
+        // Left sequences in request will be initialized in sampler and validated after (only one token).
+        min_candidate_len = request->get_sampling_parameters().num_return_sequences == 1 ? candidates.begin()->second.token_ids.size() : 1;
     }
     for (const auto& candidate_sequence : candidates) {
         Sequence::Ptr sequence;
-        if (candidate_sequence.first == 0) {
-            auto running_sequences = request->get_running_sequences();
-            OPENVINO_ASSERT(!running_sequences.empty());
-            sequence = request->get_running_sequences()[0];
-        } else {
+        if (is_init_all_sequences_in_request && candidate_sequence.first > 0) {
             sequence = Sequence::Ptr(new Sequence(candidate_sequence.first));
             sequence->set_status(ov::genai::SequenceStatus::RUNNING);
             request->add_sequence(sequence);
+            sequence = request->get_running_sequences()[candidate_sequence.first];
+        } else {
+            auto running_sequences = request->get_running_sequences();
+            OPENVINO_ASSERT(!running_sequences.empty());
+            sequence = request->get_running_sequences()[0];
         }
         auto token_ids = candidate_sequence.second.token_ids;
         auto log_probs = candidate_sequence.second.log_probs;
@@ -175,8 +184,33 @@ init_request(
                 logit_processor.register_new_generated_token(token_ids[i]);
             }
         }
+
+        if (!is_init_all_sequences_in_request) {
+            break;
+        }
     }
     return min_candidate_len;
+}
+
+UpdateRequestResult 
+ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::init_request_by_candidate(
+    uint64_t request_id,
+    const GeneratedSequences& candidates) {
+    _pull_awaiting_requests();
+
+    for (auto& request : m_requests) {
+        if (request->get_request_id() != request_id) {
+            continue;
+        }
+        
+        UpdateRequestResult result;
+        m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
+        auto& logit_processor = m_sampler->get_logit_processor(request_id);
+        result.inserted_tokens_cnt = init_request(request, candidates, logit_processor, true, true);
+        request->set_num_validated_tokens(result.inserted_tokens_cnt);
+        return result;
+    }
+    return {0, 0};
 }
 
 UpdateRequestResult
@@ -258,6 +292,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             const auto& sampling_params = request->get_sampling_parameters();
             if (!sampling_params.is_speculative_decoding()) {
                 // generate only one token in case of non speculative decoding
+                request->pause_generation(true);
+            } else if (request->get_num_processed_tokens() == 0 && sampling_params.num_return_sequences > 1) {
                 request->pause_generation(true);
             } else if (sampling_params.num_assistant_tokens <= generated_tokens_cnt) {
                 request->pause_generation(true);

@@ -66,8 +66,6 @@ int main(int argc, char* argv[]) try {
         ov::genai::multinomial(),
     };
 
-    sampling_params_examples.begin()->num_return_sequences = 2;
-
     std::vector<std::string> prompts(num_prompts);
     std::vector<ov::genai::GenerationConfig> sampling_params(num_prompts);
 

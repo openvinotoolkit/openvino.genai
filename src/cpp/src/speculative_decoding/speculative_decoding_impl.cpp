@@ -111,15 +111,6 @@ void print_generated_request(const ov::genai::GeneratedRequests& requests) {
 }
 
 void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
-    // to make first inference to process prompt once and generate first token by main model
-    if (m_main_pipeline->is_pipeline_not_started()) {
-        m_draft_pipeline->step();
-        m_main_pipeline->step();
-        for (const auto& prompt_generated_tokens : m_main_pipeline->get_generated_requests()) {
-            m_draft_pipeline->update_request(prompt_generated_tokens.first, prompt_generated_tokens.second, true);
-        }
-    }
-
     // generate candidates by draft model
     static ManualTimer draft_timer("speculative_decoding: draft_model: multistep()");
     draft_timer.start();
