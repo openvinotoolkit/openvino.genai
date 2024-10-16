@@ -353,25 +353,15 @@ public:
                     model_dir / "openvino_resampler_model.xml", device, device_config
                 ).create_infer_request();
 
-                m_embedding = ov::Core{}.compile_model(
-                    model_dir / "openvino_text_embeddings_model.xml", device, device_config
-                ).create_infer_request();
-
-                m_language = ov::Core{}.compile_model(
-                    model_dir / "openvino_language_model.xml", device, device_config
-                ).create_infer_request();
-
                 m_pos_embed_cache = get_2d_sincos_pos_embed(m_vlm_config.hidden_size, {70, 70});
-            } else if (m_vlm_config.model_type == VLMModelType::LLAVA) {
-                m_language = ov::Core{}.compile_model(
-                    model_dir / "openvino_language_model.xml", device, device_config
-                ).create_infer_request();
-
-                // Reusing the same m_embedding for llava text_embeddings model
-                m_embedding = ov::Core{}.compile_model(
-                    model_dir / "openvino_text_embeddings_model.xml", device, device_config
-                ).create_infer_request();
             }
+            m_embedding = ov::Core{}.compile_model(
+                model_dir / "openvino_text_embeddings_model.xml", device, device_config
+            ).create_infer_request();
+
+            m_language = ov::Core{}.compile_model(
+                model_dir / "openvino_language_model.xml", device, device_config
+            ).create_infer_request();
 
             m_language.get_tensor("attention_mask").set_shape({1, 0});
     }
