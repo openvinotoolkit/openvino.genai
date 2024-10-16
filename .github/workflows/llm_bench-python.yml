@@ -47,6 +47,7 @@ jobs:
       run: |
         # stop the build if there are Python syntax errors or undefined names
         python -m flake8 ${{ env.LLM_BENCH_PYPATH }} --config=${{ env.LLM_BENCH_PYPATH }}/setup.cfg
+        python -m flake8 ${{ env.WWB_PATH }} --config=${{ env.LLM_BENCH_PYPATH }}/setup.cfg
     - name: Create code style diff for samples
       if: failure()
       run: |
